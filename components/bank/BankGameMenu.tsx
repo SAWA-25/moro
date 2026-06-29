@@ -98,7 +98,7 @@ const BankGameMenu: React.FC<Props> = ({
                 {[
                     { key: 'staff', label: '员工' },
                     { key: 'goals', label: '目标' }
-                ].map((t, i) => {
+                ].map((t) => {
                     const on = tab === t.key;
                     return (
                         <button

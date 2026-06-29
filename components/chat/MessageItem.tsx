@@ -8,6 +8,7 @@ import { liveTakeoutStatus, STATUS_LABEL, etaText, TAKEOUT_UPDATED_EVENT } from 
 import { DB } from '../../utils/db';
 import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 import McdCard from './McdCard';
+import ScreenPeekCardView from './ScreenPeekCardView';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
 
@@ -939,6 +940,7 @@ const MessageItem = React.memo(({
     const swipeTriggered = useRef(false);
     // 角色撤回的消息：点「点击查看」偷看原文（防撤回）
     const [recallPeeked, setRecallPeeked] = useState(false);
+    const [forumDetailOpen, setForumDetailOpen] = useState(false);
     const canSwipeReply = !!onSwipeReply && !selectionMode && m.role !== 'system';
     // 角色头像单击/双击区分：260ms 内第二次点击 = 戳一戳，否则单击进角色设置
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1096,8 +1098,27 @@ const MessageItem = React.memo(({
         </div>
     );
 
+    const systemCardLayout = (content: React.ReactNode) => (
+        <div className={`flex items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+            {selectionMode && (
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                        {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                    </div>
+                </div>
+            )}
+            <div className="w-full px-4 my-3 flex justify-start" {...interactionProps}>
+                {content}
+            </div>
+        </div>
+    );
+
     // --- SYSTEM MESSAGE RENDERING ---
     if (isSystem) {
+        if (m.type === 'screen_peek_card') {
+            return <ScreenPeekCardView m={m} commonLayout={systemCardLayout} />;
+        }
+
         const isCallSummary = m.metadata?.source === 'call-end-popup';
 
         // Guidebook end card — rendered as pretty card, not ugly system pill
@@ -1597,6 +1618,10 @@ const MessageItem = React.memo(({
                 </div>
             </div>
         );
+    }
+
+    if (m.type === 'screen_peek_card') {
+        return <ScreenPeekCardView m={m} commonLayout={systemCardLayout} />;
     }
 
     // [New] Social Card Rendering
@@ -2155,6 +2180,79 @@ const MessageItem = React.memo(({
                         } catch { /* 同源也读不到时静默 */ }
                     }}
                 />
+            </div>
+        );
+    }
+
+    if ((m.type === 'forum_card' || m.metadata?.forumPost) && m.metadata?.forumPost) {
+        const fp: any = m.metadata.forumPost;
+        const stats = fp.stats || {};
+        const replies: any[] = Array.isArray(fp.repliesPreview) ? fp.repliesPreview : [];
+        const tags: string[] = Array.isArray(fp.tags) ? fp.tags : [];
+        return commonLayout(
+            <div className="relative">
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); if (!selectionMode) setForumDetailOpen(true); }}
+                    className="w-72 max-w-[78vw] rounded-2xl overflow-hidden text-left active:scale-[0.98] transition-transform"
+                    style={{ background: '#fffdfa', border: '1px solid #e3d7c6', boxShadow: '0 14px 26px -20px rgba(80,62,38,0.35)' }}
+                >
+                    <div className="px-3.5 py-2.5 flex items-center gap-2 border-b" style={{ background: '#f7f1e6', borderColor: '#e3d7c6' }}>
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[13px] font-black" style={{ background: '#fffdfa', color: '#5b4630', border: '1px solid #e3d7c6' }}>茶</div>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-bold tracking-[0.18em] truncate" style={{ color: '#9b7b54' }}>茶话亭 · {fp.boardName || fp.boardId || '帖子'}</div>
+                            <div className="text-[13px] font-black leading-snug line-clamp-2" style={{ color: '#3f352c' }}>{fp.title || '未命名茶话'}</div>
+                        </div>
+                    </div>
+                    <div className="px-3.5 py-3">
+                        <div className="text-[11px] mb-1" style={{ color: '#9b7b54' }}>楼主 {fp.author?.name || '匿名茶客'}</div>
+                        <p className="text-[12.5px] leading-relaxed line-clamp-3 whitespace-pre-wrap" style={{ color: '#51463a' }}>{fp.body || '（无正文）'}</p>
+                        {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                                {tags.slice(0, 3).map((t: string) => (
+                                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#f7f1e6', color: '#8a6a45' }}>#{t}</span>
+                                ))}
+                            </div>
+                        )}
+                        <div className="mt-2 pt-2 border-t flex items-center justify-between text-[10px]" style={{ borderColor: '#eee4d6', color: '#9b7b54' }}>
+                            <span>{stats.likes || 0} 赞 · {stats.floors || stats.replies || 0} 楼</span>
+                            <span>点开看帖</span>
+                        </div>
+                    </div>
+                </button>
+                {forumDetailOpen && (
+                    <div className="fixed inset-0 z-[160] bg-black/25 flex items-end justify-center px-3 pb-safe" onClick={() => setForumDetailOpen(false)}>
+                        <div className="w-full max-w-sm rounded-t-[22px] bg-[#fffdfa] shadow-2xl border border-[#e3d7c6] p-4 max-h-[78vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="min-w-0">
+                                    <div className="text-[10px] font-bold tracking-[0.22em]" style={{ color: '#9b7b54' }}>茶话亭 · {fp.boardName || fp.boardId || '帖子'}</div>
+                                    <div className="text-[17px] font-black leading-snug mt-1" style={{ color: '#2b2933' }}>{fp.title || '未命名茶话'}</div>
+                                    <div className="text-[11px] mt-1" style={{ color: '#8b8996' }}>楼主 {fp.author?.name || '匿名茶客'} · {stats.likes || 0} 赞 · {stats.floors || stats.replies || 0} 楼</div>
+                                </div>
+                                <button type="button" onClick={() => setForumDetailOpen(false)} className="shrink-0 px-2 py-1 rounded-full text-[11px] font-bold" style={{ background: '#f7f1e6', color: '#5b4630' }}>收起</button>
+                            </div>
+                            <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: '#3f352c' }}>{fp.body || '（无正文）'}</p>
+                            {tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-3">
+                                    {tags.map((t: string) => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#f7f1e6', color: '#8a6a45' }}>#{t}</span>)}
+                                </div>
+                            )}
+                            {replies.length > 0 ? (
+                                <div className="mt-4 space-y-2">
+                                    <div className="text-[12px] font-black" style={{ color: '#5b4630' }}>楼层预览</div>
+                                    {replies.map((r, i) => (
+                                        <div key={i} className="rounded-xl px-3 py-2" style={{ background: '#f7f1e6' }}>
+                                            <div className="text-[11px] font-bold" style={{ color: '#8a6a45' }}>{r.floor || '?'}楼 · {r.authorName || '茶客'}</div>
+                                            <div className="text-[12px] leading-relaxed mt-0.5" style={{ color: '#3f352c' }}>{r.body}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="mt-4 text-[12px]" style={{ color: '#8b8996' }}>这张快照里还没有楼层预览。</div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }

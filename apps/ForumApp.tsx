@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOS } from '../context/OSContext';
+import { AppID } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
 import {
-    ForumState, ForumPost, ForumReply, ForumPoll, FORUM_BOARDS, boardOf, seedForum, fid,
+    ForumState, ForumPost, ForumReply, ForumPoll, ForumDraft, ForumTopicEvent, ForumListFilter, ForumTrendPack, FORUM_BOARDS, boardOf, seedForum, fid,
     npcEmoji, fallbackReplies, buildForumPrompt, parseForumReplies, materializeReplies,
-    buildCharThreadPrompt, parseCharThread,
+    buildCharThreadPrompt, parseCharThread, buildCharReplyPrompt, parseCharReply, materializeCharReply,
     buildThreadsPrompt, parseThreads, materializeThreads, fallbackThreads, targetFloorCount,
     ForumUserMeta, defaultForumMeta, ForumNotif, ForumNotifKind, makeNotif, unreadCount,
     levelInfo, isCheckedIn, checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp,
     boardStat, hotRank, userLikesReceived, votePoll, pollTotal,
+    normalizeForumState, normalizeForumMeta, ensureForumTopic, upsertForumDraft, removeForumDraft,
+    touchRecentPost, filterForumPosts, withPostParticipants, loadForumTrendPack, defaultForumTrendPack,
+    buildForumSharePendingPayload, FORUM_PENDING_CHAT_SHARE_KEY, type ForumShareMode,
 } from '../utils/forum';
 import { InsButton, InsDialog, IconCircle, accent } from '../components/ui/insKit';
 
@@ -22,8 +26,6 @@ const INK_SOFT = '#8b8996';
 const PAPER = '#ffffff';
 const PAGE_BG = '#f7f5f2';
 const HALFTONE = 'none';
-const TAPE_STRIPES = 'repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 5px, transparent 5px 11px)';
-const WASHI: Record<string, { base: string }> = { ink: { base: INK }, butter: { base: '#fbe6bf' }, amber: { base: A.solid }, sage: { base: '#cdd6c4' } };
 
 // ── ins 风 shim：保持 scrapbook 组件 API，渲染清爽 ins 外观（全文调用点不变）──
 const PaperBackdrop: React.FC<{ corners?: boolean }> = () => (
@@ -31,9 +33,6 @@ const PaperBackdrop: React.FC<{ corners?: boolean }> = () => (
 );
 const ScrapButton: React.FC<{ children: React.ReactNode; variant?: 'ink' | 'paper' | 'ghost'; onClick?: () => void; disabled?: boolean; className?: string; icon?: React.ReactNode; type?: 'button' | 'submit'; title?: string }> = ({ children, variant = 'ink', onClick, disabled, className = '', icon, type = 'button', title }) => (
     <InsButton variant={variant === 'ink' ? 'solid' : variant === 'paper' ? 'soft' : 'ghost'} accent={variant === 'paper' ? 'slate' : AC} onClick={onClick} disabled={disabled} className={className} icon={icon} type={type} title={title}>{children}</InsButton>
-);
-const WashiTape: React.FC<{ color?: string; rotate?: number; className?: string; style?: React.CSSProperties; children?: React.ReactNode }> = ({ color = 'ink', rotate = -3, className = '', style, children }) => (
-    <span aria-hidden className={`select-none ${className}`} style={{ background: (WASHI[color] || WASHI.ink).base, backgroundImage: TAPE_STRIPES, opacity: 0.82, transform: `rotate(${rotate}deg)`, boxShadow: '0 3px 7px -3px rgba(0,0,0,0.25)', ...style }}>{children}</span>
 );
 const Stamp: React.FC<{ children: React.ReactNode; color?: string; size?: number; className?: string }> = ({ children, color = 'ink', size = 40, className = '' }) => (
     <span className={`inline-flex items-center justify-center shrink-0 rounded-xl ${className}`} style={{ width: size, height: size, background: color === 'ink' ? INK : A.soft, color: color === 'ink' ? '#fff' : A.ink, boxShadow: '0 4px 10px -6px rgba(0,0,0,0.3)' }}>{children}</span>
@@ -64,6 +63,7 @@ const META_KEY = 'moro_forum_meta_v1';
 const NOTIF_KEY = 'moro_forum_notif_v1';
 const FLOOR_BATCH = 12;   // 每次盖楼条数
 const THREAD_BATCH = 12;  // 每个板块一次生成帖子数（≥10）
+type ComposeState = ForumDraft;
 
 // 茶客们随手插的颜文字（回帖快捷插入）
 const KAOMOJI = ['[doge]', '(｡･ω･｡)', '( ´_ゝ`)', '(¦3[▓▓]', '(*•̀ᴗ•́*)', 'σ`∀´)σ', '(╯‵□′)╯', '꒰๑˃̶᷄ ⌑ ˂̶᷅๑꒱', '( ˘•ω•˘ )', '╮(╯▽╰)╭', '(๑•̀ㅂ•́)و✧', '哈哈哈哈哈'];
@@ -103,7 +103,17 @@ const Avatar: React.FC<{ a?: string; name: string; type: string; size?: number }
         : <span className="rounded-full shrink-0 flex items-center justify-center text-[16px]" style={{ width: size, height: size, background: 'linear-gradient(180deg,#fffdf8,#ece8dd)', border: '1px solid rgba(176,170,158,0.7)' }}>{type === 'npc' ? npcEmoji(name) : '🙂'}</span>;
 
 /** 等级章：高阶＝墨块，往下灰阶递减（黑白拼贴，纯灰阶） */
-const LevelBadge: React.FC<{ lv: number; md?: boolean }> = ({ lv, md }) => {
+const LevelBadge: React.FC<{ lv: number; md?: boolean; tone?: 'light' | 'paper' }> = ({ lv, md, tone = 'paper' }) => {
+    if (tone === 'light') {
+        return (
+            <span
+                className={`rounded-md font-black leading-none inline-flex items-center ${md ? 'text-[11px] px-2 py-1' : 'text-[9px] px-1.5 py-0.5'}`}
+                style={{ background: 'rgba(255,255,255,0.18)', color: '#fffdf7', border: '1px solid rgba(255,255,255,0.28)' }}
+            >
+                Lv.{lv}
+            </span>
+        );
+    }
     const tier: React.CSSProperties =
         lv >= 16 ? { background: INK, color: PAPER }
             : lv >= 11 ? { background: 'rgba(46,44,40,0.82)', color: PAPER }
@@ -132,7 +142,7 @@ const PostTags: React.FC<{ p: ForumPost }> = ({ p }) => (
 );
 
 const ForumApp: React.FC = () => {
-    const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
+    const { closeApp, openApp, setActiveCharacterId, characters, groups, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
     const [state, setState] = useState<ForumState>({ posts: [] });
     const [meta, setMeta] = useState<ForumUserMeta>(defaultForumMeta());
     const [notifs, setNotifs] = useState<ForumNotif[]>([]);
@@ -140,19 +150,22 @@ const ForumApp: React.FC = () => {
     const [tab, setTab] = useState<'home' | 'msg' | 'me'>('home');
     const [board, setBoard] = useState<string>('chat');
     const [openId, setOpenId] = useState<string | null>(null);
-    const [compose, setCompose] = useState<{ board: string; title: string; body: string; pollOn: boolean; pollQ: string; pollOpts: string[] } | null>(null);
+    const [compose, setCompose] = useState<ComposeState | null>(null);
     const [reply, setReply] = useState('');
     const [kaoOpen, setKaoOpen] = useState(false);
     const [genBoard, setGenBoard] = useState<string | null>(null); // 正在生成帖子列表的板块
     const [floorBusy, setFloorBusy] = useState(false);             // 正在盖楼
     const [charBusy, setCharBusy] = useState(false);
+    const [charReplyBusy, setCharReplyBusy] = useState(false);
     const [onlyOp, setOnlyOp] = useState(false);
     const [order, setOrder] = useState<'asc' | 'desc'>('asc');     // 楼层正序/倒序
+    const [listFilter, setListFilter] = useState<ForumListFilter>('latest');
     const [query, setQuery] = useState('');
     const [msgFilter, setMsgFilter] = useState<'all' | ForumNotifKind>('all');
-    const [meSub, setMeSub] = useState<'posts' | 'collect' | 'follow'>('posts');
+    const [meSub, setMeSub] = useState<'posts' | 'collect' | 'follow' | 'recent' | 'draft'>('posts');
     const [signCard, setSignCard] = useState<{ gained: number; streak: number; rank: number } | null>(null);
-    const triedBoards = useRef<Set<string>>(new Set());
+    const [trendPack, setTrendPack] = useState<ForumTrendPack>(() => defaultForumTrendPack());
+    const [shareTarget, setShareTarget] = useState<ForumPost | null>(null);
     const triedFloors = useRef<Set<string>>(new Set());
     const scrollRef = useRef<HTMLDivElement>(null);
     const metaRef = useRef(meta);
@@ -162,9 +175,9 @@ const ForumApp: React.FC = () => {
     const myLevel = useMemo(() => levelInfo(meta.exp), [meta.exp]);
 
     useEffect(() => {
-        try { const raw = localStorage.getItem(KEY); setState(raw ? JSON.parse(raw) : seedForum()); }
-        catch { setState(seedForum()); }
-        try { const raw = localStorage.getItem(META_KEY); if (raw) setMeta({ ...defaultForumMeta(), ...JSON.parse(raw) }); } catch { /* ignore */ }
+        try { const raw = localStorage.getItem(KEY); setState(raw ? normalizeForumState(JSON.parse(raw)) : normalizeForumState(seedForum())); }
+        catch { setState(normalizeForumState(seedForum())); }
+        try { const raw = localStorage.getItem(META_KEY); setMeta(raw ? normalizeForumMeta(JSON.parse(raw)) : defaultForumMeta()); } catch { setMeta(defaultForumMeta()); }
         try {
             const raw = localStorage.getItem(NOTIF_KEY);
             if (raw) setNotifs(JSON.parse(raw));
@@ -176,22 +189,47 @@ const ForumApp: React.FC = () => {
     useEffect(() => { if (loaded) { try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch { /* ignore */ } } }, [meta, loaded]);
     useEffect(() => { if (loaded) { try { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifs)); } catch { /* ignore */ } } }, [notifs, loaded]);
 
+    useEffect(() => {
+        if (!loaded) return;
+        let cancelled = false;
+        const refresh = () => {
+            loadForumTrendPack().then(pack => { if (!cancelled) setTrendPack(pack); }).catch(() => { /* silent fallback */ });
+        };
+        refresh();
+        const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            cancelled = true;
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [loaded]);
+
     const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || undefined })), [characters]);
     const charLite = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar })), [characters]);
 
     const api = () => resolveAuxApi(auxApiConfig, apiConfig);
     const unread = unreadCount(notifs);
 
+    useEffect(() => {
+        if (!loaded || board === 'all') return;
+        setMeta(m => ensureForumTopic(m, board).meta);
+    }, [loaded, board]);
+
+    useEffect(() => {
+        if (!loaded || !compose) return;
+        setMeta(m => upsertForumDraft(m, { ...compose, updatedAt: Date.now() }));
+    }, [loaded, compose]);
+
     const open = openId ? state.posts.find(p => p.id === openId) || null : null;
+    const currentTopic = useMemo(() => board === 'all' ? null : ensureForumTopic(meta, board).event, [meta, board]);
     const list = useMemo(() => {
-        let ps = board === 'all' ? state.posts : state.posts.filter(p => p.boardId === board);
-        const q = query.trim();
-        if (q) ps = ps.filter(p => p.title.includes(q) || p.body.includes(q) || p.authorName.includes(q));
-        return [...ps].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.hot ? 1 : 0) - (a.hot ? 1 : 0) || b.lastActiveAt - a.lastActiveAt);
-    }, [state.posts, board, query]);
+        return filterForumPosts(state.posts, meta, userName, listFilter, board, query);
+    }, [state.posts, meta, userName, listFilter, board, query]);
     const hotList = useMemo(() => hotRank(state.posts, 6), [state.posts]);
     const myPosts = useMemo(() => state.posts.filter(p => p.authorType === 'user' || p.authorName === userName), [state.posts, userName]);
     const myCollected = useMemo(() => meta.collectedPostIds.map(id => state.posts.find(p => p.id === id)).filter(Boolean) as ForumPost[], [meta.collectedPostIds, state.posts]);
+    const myRecent = useMemo(() => filterForumPosts(state.posts, meta, userName, 'recent', 'all'), [state.posts, meta, userName]);
+    const myDrafts = useMemo(() => [...(meta.drafts || [])].sort((a, b) => b.updatedAt - a.updatedAt), [meta.drafts]);
     const likesGot = useMemo(() => userLikesReceived(state.posts, userName), [state.posts, userName]);
 
     const patchPost = (id: string, fn: (p: ForumPost) => ForumPost) =>
@@ -199,43 +237,39 @@ const ForumApp: React.FC = () => {
     const pushNotif = (n: ForumNotif | ForumNotif[]) => setNotifs(s => [...(Array.isArray(n) ? n : [n]), ...s].slice(0, 200));
     const gainExp = (n: number) => setMeta(m => addExp(m, n));
 
+    useEffect(() => {
+        if (!openId) return;
+        setMeta(m => touchRecentPost(m, openId));
+        patchPost(openId, p => ({ ...p, lastReaderAt: Date.now() }));
+    }, [openId]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // ── 生成一个板块的「帖子列表」（≥10 帖，cache-first）──────────────────
-    const generateThreads = async (boardId: string, replace: boolean) => {
+    const generateThreads = async (boardId: string, replace: boolean, topic?: ForumTopicEvent | null) => {
         const bd = boardOf(boardId); if (!bd) return;
         setGenBoard(boardId);
         let raw = [] as ReturnType<typeof parseThreads>;
         try {
-            const { system, user } = buildThreadsPrompt(bd, charBriefs, THREAD_BATCH);
+            const { system, user } = buildThreadsPrompt(bd, charBriefs, THREAD_BATCH, topic || undefined, trendPack);
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
             ], { temperature: 1.05, maxTokens: 8000 });
             raw = parseThreads(out);
         } catch { /* fall through */ }
-        if (raw.length < THREAD_BATCH) raw = [...raw, ...fallbackThreads(boardId, THREAD_BATCH - raw.length)];
-        const fresh = materializeThreads(raw, boardId, charLite);
+        if (raw.length < THREAD_BATCH) raw = [...raw, ...fallbackThreads(boardId, THREAD_BATCH - raw.length, topic || undefined, trendPack)];
+        const fresh = materializeThreads(raw, boardId, charLite, topic?.id, topic?.tags || []);
         setState(s => ({
             posts: replace
                 ? [...fresh, ...s.posts.filter(p => p.boardId !== boardId || !p.generated)]
                 : [...fresh, ...s.posts],
         }));
         setGenBoard(null);
-        if (replace) {
-            addToast(`新沏了一壶帖子`, 'success');
-            if (metaRef.current.followedBoards.includes(boardId)) {
+        if (replace || topic) {
+            addToast(topic ? `围着「${topic.title.slice(0, 10)}」起了一桌` : `新沏了一壶帖子`, 'success');
+            if (replace && metaRef.current.followedBoards.includes(boardId)) {
                 pushNotif(makeNotif('newpost', { id: '', title: `${bd.name}吧 新添 ${fresh.length} 张话桌` }, { name: `${bd.emoji}${bd.name}吧`, type: 'npc' }, '你常去的吧又热闹起来了，去坐坐～'));
             }
         }
     };
-
-    // 进入板块时，若没有已生成的帖子则自动盖一批
-    useEffect(() => {
-        if (!loaded || tab !== 'home' || board === 'all') return;
-        const has = state.posts.some(p => p.boardId === board && p.generated);
-        if (!has && !triedBoards.current.has(board) && genBoard === null) {
-            triedBoards.current.add(board);
-            generateThreads(board, false);
-        }
-    }, [loaded, tab, board, state.posts, genBoard]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── 盖楼：生成下一批楼层（懒加载到 replyCount）────────────────────────
     const loadFloors = async (post: ForumPost, opts?: { auto?: boolean }) => {
@@ -257,7 +291,7 @@ const ForumApp: React.FC = () => {
         // 先一次性落成楼层（materializeReplies 会把楼中楼挂进 post.replies 的宿主对象），再用它更新 state + 派生通知
         const added = materializeReplies(raw, charLite, post.replies.length + 2, post.authorName, post.replies);
         const bonus = post.authorType === 'user' ? Math.ceil(added.length / 3) : 0; // 用户帖被盖楼→涨点赞
-        patchPost(post.id, p => ({ ...p, replies: [...p.replies, ...added], likes: p.likes + bonus, lastActiveAt: Date.now() }));
+        patchPost(post.id, p => withPostParticipants({ ...p, replies: [...p.replies, ...added], likes: p.likes + bonus, lastActiveAt: Date.now() }, added));
         // 用户自己的帖子被盖楼/点赞 → 进消息中心
         if (post.authorType === 'user' && added.length) {
             const notifList: ForumNotif[] = [];
@@ -295,14 +329,15 @@ const ForumApp: React.FC = () => {
             const opts = compose.pollOpts.map(o => o.trim()).filter(Boolean);
             if (compose.pollQ.trim() && opts.length >= 2) poll = { question: compose.pollQ.trim(), options: opts.map(t => ({ text: t, votes: 0 })) };
         }
-        const post: ForumPost = {
+        const post = withPostParticipants({
             id: fid(), boardId: compose.board, authorType: 'user', authorName: userName,
             avatar: userProfile.avatar, title: compose.title.trim(), body: compose.body.trim(),
             createdAt: now, lastActiveAt: now, likes: 0, replies: [], replyCount: targetFloorCount(), poll,
-        };
+            tags: [],
+        }, [{ authorType: 'user', authorName: userName, avatar: userProfile.avatar, createdAt: now }]);
         setState(s => ({ posts: [post, ...s.posts] }));
+        setMeta(m => removeForumDraft(addExp(m, 5), compose.id));
         setCompose(null); setTab('home'); setOpenId(post.id);
-        gainExp(5);
         addToast('话头已贴出 · 火候 +5', 'success');
     };
 
@@ -313,7 +348,7 @@ const ForumApp: React.FC = () => {
             id: fid(), floor: open.replies.length + 2, authorType: 'user', authorName: userName,
             avatar: userProfile.avatar, body: reply.trim(), createdAt: Date.now(), likes: 0, isOp,
         };
-        patchPost(open.id, p => ({ ...p, replies: [...p.replies, r], lastActiveAt: Date.now(), replyCount: Math.max(p.replyCount || 0, p.replies.length + 2) }));
+        patchPost(open.id, p => withPostParticipants({ ...p, replies: [...p.replies, r], lastActiveAt: Date.now(), replyCount: Math.max(p.replyCount || 0, p.replies.length + 2) }, [r]));
         setReply(''); setKaoOpen(false);
         gainExp(2);
         if (order === 'asc') setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50);
@@ -333,12 +368,12 @@ const ForumApp: React.FC = () => {
         } catch { /* fall through */ }
         if (!decided) decided = { boardId: 'chat', title: '今天也想找人说说话', body: '没什么大事，就是突然想冒个泡。有人在吗？' };
         const now = Date.now();
-        const post: ForumPost = {
+        const post = withPostParticipants({
             id: fid(), boardId: decided.boardId, authorType: 'char', authorId: c.id,
             authorName: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar,
             title: decided.title, body: decided.body, createdAt: now, lastActiveAt: now, likes: 0, replies: [],
             replyCount: targetFloorCount(),
-        };
+        }, [{ authorType: 'char', authorId: c.id, authorName: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar, createdAt: now }]);
         setState(s => ({ posts: [post, ...s.posts] }));
         setTab('home'); setBoard(decided.boardId);
         setCharBusy(false);
@@ -346,6 +381,35 @@ const ForumApp: React.FC = () => {
         if (metaRef.current.followedBoards.includes(decided.boardId)) {
             pushNotif(makeNotif('newpost', post, { name: c.name, type: 'char', avatar: post.avatar }, decided.title));
         }
+    };
+
+    const charOneReply = async () => {
+        if (!open) return;
+        if (characters.length === 0) { addToast('亭子里还没请来熟客', 'error'); return; }
+        if (charReplyBusy) return;
+        setCharReplyBusy(true);
+        const c = characters[Math.floor(Math.random() * characters.length)];
+        const lite = { id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar };
+        let body: string | null = null;
+        try {
+            const { system, user } = buildCharReplyPrompt(open, { id: c.id, name: c.name, persona: c.systemPrompt });
+            const out = await llmComplete(api(), [
+                { role: 'system', content: system }, { role: 'user', content: user },
+            ], { temperature: 0.92, maxTokens: 900 });
+            body = parseCharReply(out);
+        } catch { /* fallback */ }
+        if (!body) body = '路过看完，忍不住接一句：这事真不能只看表面。';
+        patchPost(open.id, p => {
+            const res = materializeCharReply(p, { name: c.name, body: body! }, lite);
+            return res.post;
+        });
+        if (open.authorType === 'user') {
+            pushNotif(makeNotif('reply', open, { name: c.name, type: 'char', avatar: lite.avatar }, body));
+            gainExp(1);
+        }
+        setCharReplyBusy(false);
+        addToast(`${c.name} 来接了一句`, 'success');
+        if (order === 'asc') setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50);
     };
 
     const likePost = (id: string) => patchPost(id, p => ({ ...p, likes: p.likes + 1 }));
@@ -363,7 +427,70 @@ const ForumApp: React.FC = () => {
     };
     const followBoard = (boardId: string) => setMeta(m => toggleFollowBoard(m, boardId));
     const collectPost = (postId: string) => { setMeta(m => toggleCollect(m, postId)); };
-    const sharePost = (p: ForumPost) => addToast(`已抄下帖子门牌：「${p.title.slice(0, 12)}…」`, 'success');
+    const openSharePanel = (p: ForumPost) => setShareTarget(p);
+    const writeSharePayload = (payload: ReturnType<typeof buildForumSharePendingPayload>) => {
+        try {
+            localStorage.setItem(FORUM_PENDING_CHAT_SHARE_KEY, JSON.stringify(payload));
+            return true;
+        } catch {
+            addToast('转发失败：本地存储不可用', 'error');
+            return false;
+        }
+    };
+    const shareToCharacter = (p: ForumPost, charId: string, mode: Extract<ForumShareMode, 'user_to_char' | 'char_to_user'>) => {
+        const c = characters.find(x => x.id === charId);
+        if (!c) return;
+        const payload = buildForumSharePendingPayload({
+            post: p,
+            targetKind: 'character',
+            targetId: c.id,
+            shareMode: mode,
+            boardName: boardOf(p.boardId)?.name,
+            sharedBy: mode === 'char_to_user'
+                ? { type: 'char', id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar }
+                : { type: 'user', name: userName, avatar: userProfile.avatar },
+        });
+        if (!writeSharePayload(payload)) return;
+        setShareTarget(null);
+        setActiveCharacterId(c.id);
+        openApp(AppID.Chat);
+        addToast(mode === 'char_to_user' ? `请 ${c.name} 把帖子带给你` : `已准备转给 ${c.name}`, 'success');
+    };
+    const shareToGroup = (p: ForumPost, groupId: string, mode: Extract<ForumShareMode, 'user_to_group' | 'char_to_group'>, sourceCharId?: string) => {
+        const g = groups.find(x => x.id === groupId);
+        if (!g) return;
+        const c = sourceCharId ? characters.find(x => x.id === sourceCharId) : undefined;
+        if (mode === 'char_to_group' && !c) { addToast('这个群里还没有可转发的角色', 'info'); return; }
+        const payload = buildForumSharePendingPayload({
+            post: p,
+            targetKind: 'group',
+            targetId: g.id,
+            charId: c?.id,
+            shareMode: mode,
+            boardName: boardOf(p.boardId)?.name,
+            sharedBy: mode === 'char_to_group' && c
+                ? { type: 'char', id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar }
+                : { type: 'user', name: userName, avatar: userProfile.avatar },
+        });
+        if (!writeSharePayload(payload)) return;
+        setShareTarget(null);
+        openApp(AppID.GroupChat);
+        addToast(mode === 'char_to_group' && c ? `请 ${c.name} 发到「${g.name}」` : `已准备发到「${g.name}」`, 'success');
+    };
+    const openCompose = (draft?: ForumDraft) => {
+        const targetBoard = board === 'all' ? 'chat' : board;
+        const picked = draft || myDrafts.find(d => d.board === targetBoard);
+        setCompose(picked ? { ...picked, pollOpts: picked.pollOpts.length >= 2 ? picked.pollOpts : ['', ''] } : {
+            id: fid(),
+            board: targetBoard,
+            title: '',
+            body: '',
+            pollOn: false,
+            pollQ: '',
+            pollOpts: ['', ''],
+            updatedAt: Date.now(),
+        });
+    };
 
     const openNotif = (n: ForumNotif) => {
         setNotifs(s => s.map(x => x.id === n.id ? { ...x, read: true } : x));
@@ -378,6 +505,7 @@ const ForumApp: React.FC = () => {
     // ── 帖子列表项（首页 / 我的 / 收藏 复用，纸卡）──
     const PostRow: React.FC<{ p: ForumPost; showBoard?: boolean }> = ({ p, showBoard }) => {
         const b = boardOf(p.boardId);
+        const charParts = (p.participants || []).filter(x => x.type === 'char').slice(0, 3);
         return (
             <button onClick={() => setOpenId(p.id)} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform"
                 style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
@@ -398,10 +526,79 @@ const ForumApp: React.FC = () => {
                     <span className="flex items-center gap-1"><ArrowFatUp size={12} weight="bold" />{kFmt(p.likes)}</span>
                     <span className="flex items-center gap-1"><ChatCircleText size={12} weight="bold" />{kFmt(p.replyCount || p.replies.length)}</span>
                     {(p.replyCount || 0) >= 200 && <span className="font-bold" style={{ color: INK }}>爆楼</span>}
+                    {charParts.length > 0 && (
+                        <span className="ml-auto flex items-center -space-x-1">
+                            {charParts.map(cp => <Avatar key={`${cp.type}-${cp.id || cp.name}`} a={cp.avatar} name={cp.name} type={cp.type} size={18} />)}
+                        </span>
+                    )}
                 </div>
             </button>
         );
     };
+
+    const renderShareDialog = () => (
+        <PaperDialog open={!!shareTarget} en="SEND TO LAIWANG" onClose={() => setShareTarget(null)} title="转到聊天" maxWidth={360}>
+            {shareTarget && (
+                <div className="space-y-4">
+                    <div className="rounded-2xl p-3" style={{ background: 'rgba(232,228,217,0.38)', border: '1px solid rgba(0,0,0,0.05)' }}>
+                        <div className="text-[11px] font-bold mb-1" style={{ color: INK_SOFT }}>{boardOf(shareTarget.boardId)?.name || '茶话亭'}</div>
+                        <div className="text-[14px] font-black line-clamp-2" style={{ color: INK }}>{shareTarget.title}</div>
+                        {shareTarget.body && <div className="text-[12px] line-clamp-2 mt-1" style={{ color: INK_SOFT }}>{shareTarget.body}</div>}
+                    </div>
+
+                    <div>
+                        <SectionTag en="PRIVATE">私聊</SectionTag>
+                        <div className="mt-2 space-y-2 max-h-52 overflow-y-auto no-scrollbar">
+                            {characters.map(c => (
+                                <div key={c.id} className="flex items-center gap-2 rounded-2xl p-2" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.05)' }}>
+                                    <Avatar a={c.convoSettings?.charAvatarOverride || c.avatar} name={c.name} type="char" size={34} />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-[13px] font-black truncate" style={{ color: INK }}>{c.name}</div>
+                                        <div className="text-[10px]" style={{ color: INK_SOFT }}>论坛卡片会进私聊并自动接话</div>
+                                    </div>
+                                    <button onClick={() => shareToCharacter(shareTarget, c.id, 'user_to_char')} className="px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(false)}>我转</button>
+                                    <button onClick={() => shareToCharacter(shareTarget, c.id, 'char_to_user')} className="px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(true)}>TA转</button>
+                                </div>
+                            ))}
+                            {characters.length === 0 && <div className="py-5 text-center text-[12px]" style={{ color: INK_SOFT }}>还没有可以聊天的角色</div>}
+                        </div>
+                    </div>
+
+                    <div>
+                        <SectionTag en="GROUPS">群聊</SectionTag>
+                        <div className="mt-2 space-y-2 max-h-52 overflow-y-auto no-scrollbar">
+                            {groups.map(g => {
+                                const memberChars = characters.filter(c => g.members.includes(c.id));
+                                return (
+                                    <div key={g.id} className="rounded-2xl p-2" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.05)' }}>
+                                        <div className="flex items-center gap-2">
+                                            {g.avatar ? <img src={g.avatar} className="w-[34px] h-[34px] rounded-full object-cover shrink-0" /> : <span className="w-[34px] h-[34px] rounded-full shrink-0 flex items-center justify-center text-[15px]" style={{ background: 'linear-gradient(180deg,#fffdf8,#ece8dd)', border: '1px solid rgba(176,170,158,0.7)' }}>群</span>}
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[13px] font-black truncate" style={{ color: INK }}>{g.name}</div>
+                                                <div className="text-[10px]" style={{ color: INK_SOFT }}>{g.members.length} 位成员</div>
+                                            </div>
+                                            <button onClick={() => shareToGroup(shareTarget, g.id, 'user_to_group')} className="px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(false)}>我发群里</button>
+                                        </div>
+                                        {memberChars.length > 0 && (
+                                            <div className="mt-2 pl-10">
+                                                <div className="text-[10px] mb-1" style={{ color: INK_SOFT }}>也可以让群友发</div>
+                                                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                                                    {memberChars.map(c => (
+                                                        <button key={c.id} onClick={() => shareToGroup(shareTarget, g.id, 'char_to_group', c.id)} className="shrink-0 px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(true)}>{c.name}发</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            {groups.length === 0 && <div className="py-5 text-center text-[12px]" style={{ color: INK_SOFT }}>还没有群聊</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </PaperDialog>
+    );
 
     // ═══════════════ 帖子详情 ═══════════════
     if (open) {
@@ -417,7 +614,12 @@ const ForumApp: React.FC = () => {
             <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
                 <PaperBackdrop corners={false} />
                 <Header title={`${b?.emoji || ''} ${b?.name || '帖子'}吧`} en="A TABLE BY THE WINDOW" onBack={() => { setOpenId(null); setOnlyOp(false); }} right={
-                    <button onClick={() => setOnlyOp(v => !v)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(onlyOp)}>只看楼主</button>
+                    <div className="flex items-center gap-1.5">
+                        <button onClick={charOneReply} disabled={charReplyBusy || characters.length === 0} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-50" style={chip(false)}>
+                            {charReplyBusy ? '接话中' : '熟客'}
+                        </button>
+                        <button onClick={() => setOnlyOp(v => !v)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(onlyOp)}>只看楼主</button>
+                    </div>
                 } />
                 <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-4 pt-1 pb-4">
                     {/* OP = 1 楼（纸卡 + 图钉） */}
@@ -520,9 +722,10 @@ const ForumApp: React.FC = () => {
                         ? <ScrapButton variant="ink" onClick={addUserReply} className="px-4 py-2.5 text-[13px]">接话</ScrapButton>
                         : <>
                             <button onClick={() => collectPost(open.id)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: collected ? INK : INK_SOFT }} title="夹起来"><BookmarkSimple size={22} weight={collected ? 'fill' : 'regular'} /></button>
-                            <button onClick={() => sharePost(open)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="抄门牌"><ShareNetwork size={22} weight="regular" /></button>
+                            <button onClick={() => openSharePanel(open)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="转到聊天"><ShareNetwork size={22} weight="regular" /></button>
                         </>}
                 </div>
+                {renderShareDialog()}
             </div>
         );
     }
@@ -558,6 +761,20 @@ const ForumApp: React.FC = () => {
                     );
                 })}
             </div>
+            <div className="relative z-10 shrink-0 flex gap-2 overflow-x-auto no-scrollbar px-4 pb-2">
+                {([
+                    ['latest', '最新'],
+                    ['hot', '热议'],
+                    ['mine', '我参与'],
+                    ['char', '角色参与'],
+                    ['collect', '已收藏'],
+                ] as const).map(([id, label]) => (
+                    <button key={id} onClick={() => setListFilter(id)}
+                        className="shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all active:scale-95" style={chip(listFilter === id)}>
+                        {label}
+                    </button>
+                ))}
+            </div>
             {/* 吧头招牌（纸卡 + 网点半调 + 胶带） */}
             {board !== 'all' && (() => {
                 const bd = boardOf(board)!; const st = boardStat(board);
@@ -566,7 +783,6 @@ const ForumApp: React.FC = () => {
                 return (
                     <div className="relative z-10 shrink-0 mx-4 mb-2 px-4 py-3 overflow-hidden" style={PANEL}>
                         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
-                        <WashiTape color="ink" rotate={-4} className="absolute -top-2 left-6 w-16 h-5 rounded-[2px]" />
                         <div className="relative flex items-center gap-3">
                             <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-[26px] shrink-0" style={{ background: 'linear-gradient(180deg,#fffdf8,#ece8dd)', border: '1px solid rgba(176,170,158,0.7)' }}>{bd.emoji}</div>
                             <div className="flex-1 min-w-0">
@@ -584,6 +800,28 @@ const ForumApp: React.FC = () => {
                     </div>
                 );
             })()}
+            {board !== 'all' && currentTopic && (
+                <div className="relative z-10 shrink-0 mx-4 mb-2 px-4 py-3 overflow-hidden" style={PANEL}>
+                    <div className="flex items-start gap-3">
+                        <Stamp size={34} color="sage"><Fire size={17} weight="fill" /></Stamp>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black tracking-[0.18em]" style={{ color: INK_SOFT }}>亭中风向</span>
+                                <span className="text-[10px] font-bold" style={{ color: INK }}>热度 {currentTopic.heat}</span>
+                            </div>
+                            <div className="text-[14px] font-black mt-0.5 line-clamp-1" style={{ color: INK }}>{currentTopic.title}</div>
+                            <div className="text-[11px] leading-snug mt-1 line-clamp-2" style={{ color: INK_SOFT }}>{currentTopic.intro}</div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                                {currentTopic.tags.map(t => <span key={t} className="px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(232,228,217,0.6)', color: '#5b554b' }}>#{t}</span>)}
+                            </div>
+                        </div>
+                        <ScrapButton variant="paper" onClick={() => generateThreads(board, false, currentTopic)} disabled={genning} className="px-3 py-1.5 text-[11px]"
+                            icon={genBoard === board ? <Spinner size={12} className="animate-spin" /> : <Sparkle size={12} weight="fill" />}>
+                            围炉起话
+                        </ScrapButton>
+                    </div>
+                </div>
+            )}
             {/* 换一批条 */}
             {board !== 'all' && (
                 <div className="relative z-10 shrink-0 flex items-center justify-between px-4 pb-2">
@@ -671,17 +909,19 @@ const ForumApp: React.FC = () => {
                 {/* 个人资料卡（墨色名牌） */}
                 <div className="relative px-5 pt-4 pb-4 mb-3 overflow-hidden" style={{ ...PANEL, background: 'linear-gradient(165deg,#26241f,#15140f)', border: '1px solid rgba(31,29,26,0.9)' }}>
                     <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.10]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
-                    <WashiTape color="butter" rotate={-3} className="absolute -top-2 right-7 w-16 h-5 rounded-[2px]" />
                     <div className="relative flex items-center gap-3.5">
                         {userProfile.avatar ? <img src={userProfile.avatar} className="w-16 h-16 rounded-full object-cover" style={{ border: '2px solid rgba(246,243,236,0.5)' }} /> : <div className="w-16 h-16 rounded-full flex items-center justify-center text-[30px]" style={{ background: 'rgba(246,243,236,0.12)' }}>🙂</div>}
                         <div className="flex-1 min-w-0">
-                            <div className="text-[18px] font-black flex items-center gap-2" style={{ color: PAPER }}>{userName}<LevelBadge lv={myLevel.level} md /></div>
-                            <div className="text-[11px] flex items-center gap-1 mt-0.5" style={{ color: 'rgba(246,243,236,0.8)' }}><Medal size={12} weight="fill" />{myLevel.title}</div>
+                            <div className="text-[18px] font-black flex items-center gap-2 min-w-0" style={{ color: '#fffdf7' }}>
+                                <span className="truncate">{userName}</span>
+                                <LevelBadge lv={myLevel.level} md tone="light" />
+                            </div>
+                            <div className="text-[11px] font-bold flex items-center gap-1 mt-1" style={{ color: 'rgba(255,253,247,0.9)' }}><Medal size={12} weight="fill" />{myLevel.title}</div>
                         </div>
                     </div>
                     {/* 火候进度条 */}
                     <div className="relative mt-3">
-                        <div className="flex items-center justify-between text-[10px] mb-1" style={{ color: 'rgba(246,243,236,0.8)' }}>
+                        <div className="flex items-center justify-between text-[11px] font-bold mb-1.5" style={{ color: 'rgba(255,253,247,0.92)' }}>
                             <span>Lv.{myLevel.level}</span>
                             <span>{myLevel.max ? '火候已满' : `${myLevel.cur} / ${myLevel.need} 攒满升级`}</span>
                             <span>Lv.{Math.min(18, myLevel.level + 1)}</span>
@@ -701,15 +941,33 @@ const ForumApp: React.FC = () => {
                     ))}
                 </div>
                 {/* 子页切换 */}
-                <div className="flex rounded-xl overflow-hidden mb-2" style={{ background: 'rgba(255,253,247,0.6)', border: '1px solid rgba(0,0,0,0.06)' }}>
-                    {([['posts', '我支的话头'], ['collect', '夹起的帖'], ['follow', '常去的吧']] as const).map(([k, label]) => (
-                        <button key={k} onClick={() => setMeSub(k)} className="flex-1 py-2.5 text-[13px] font-bold transition-colors" style={meSub === k ? { background: INK, color: PAPER } : { color: INK_SOFT }}>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar mb-2">
+                    {([['posts', '我支的话头'], ['collect', '夹起的帖'], ['recent', '最近看过'], ['draft', '草稿箱'], ['follow', '常去的吧']] as const).map(([k, label]) => (
+                        <button key={k} onClick={() => setMeSub(k)} className="shrink-0 px-3 py-2 rounded-full text-[12px] font-bold transition-colors" style={chip(meSub === k)}>
                             {label}
                         </button>
                     ))}
                 </div>
                 {meSub === 'posts' && (myPosts.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myPosts.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没在亭子里支过话头，去首页支一个吧～" />)}
                 {meSub === 'collect' && (myCollected.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myCollected.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没夹起想再看的帖子" />)}
+                {meSub === 'recent' && (myRecent.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myRecent.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没有最近看过的帖子" />)}
+                {meSub === 'draft' && (myDrafts.length ? (
+                    <div className="space-y-2">
+                        {myDrafts.map(d => {
+                            const bd = boardOf(d.board);
+                            return (
+                                <div key={d.id} className="p-3 flex items-start gap-2" style={PANEL}>
+                                    <button onClick={() => openCompose(d)} className="flex-1 min-w-0 text-left active:opacity-70">
+                                        <div className="text-[11px] mb-1" style={{ color: INK_SOFT }}>{bd?.emoji}{bd?.name || '水区'} · {timeAgo(d.updatedAt)}</div>
+                                        <div className="text-[14px] font-black line-clamp-1" style={{ color: INK }}>{d.title || '没起标题的草稿'}</div>
+                                        <div className="text-[12px] mt-0.5 line-clamp-2" style={{ color: INK_SOFT }}>{d.body || d.pollQ || '还没写正文'}</div>
+                                    </button>
+                                    <button onClick={() => setMeta(m => removeForumDraft(m, d.id))} className="p-1.5 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }}><X size={14} weight="bold" /></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : <Empty text="草稿箱是空的，写到一半关掉会自动留在这里" />)}
                 {meSub === 'follow' && (followedBoards.length ? (
                     <div className="grid grid-cols-2 gap-2.5">
                         {followedBoards.map(bd => {
@@ -761,7 +1019,7 @@ const ForumApp: React.FC = () => {
 
             {/* 支话头 FAB（仅首页） */}
             {tab === 'home' && (
-                <button onClick={() => setCompose({ board: board === 'all' ? 'chat' : board, title: '', body: '', pollOn: false, pollQ: '', pollOpts: ['', ''] })}
+                <button onClick={() => openCompose()}
                     className="absolute right-5 bottom-20 w-14 h-14 rounded-full flex items-center justify-center press-soft z-20"
                     style={{ background: A.solid, color: '#fff', boxShadow: `0 16px 28px -12px ${A.solid}` }}>
                     <PencilSimple size={24} weight="bold" />
@@ -780,6 +1038,8 @@ const ForumApp: React.FC = () => {
                     </div>
                 )}
             </PaperDialog>
+
+            {renderShareDialog()}
 
             {/* 支话头弹窗（纸面全屏） */}
             {compose && (

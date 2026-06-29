@@ -6,6 +6,8 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
+> 说明书同步约定：新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，必须同步更新 `apps/ManualApp.tsx` 里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`。内容写给普通用户看，讲清楚入口、用途、常用设置和注意事项；不要把开发维护步骤写进说明书 App。
+
 ## 文档地图
 
 | 主题 | 文档 | 什么时候看 |
@@ -26,7 +28,7 @@
 | **情侣空间（QQ 式）** | [`docs/couple-space.md`](./docs/couple-space.md) | 来往·情侣空间：聊天列表底栏「此刻」旁的入口、绑定另一半、恋爱天数/亲密度、情侣动态留言板、纪念日倒计时、九宫格相册、每日互动（亲亲抱抱牵手送礼）、约定任务、悄悄话信箱；数据注入聊天上下文 + 角色主动发动态/回留言/互动。改情侣空间前必读 |
 | **聊天界面·极简皮肤** | [`docs/chat-minimal-skin.md`](./docs/chat-minimal-skin.md) | 私聊默认观感：浅灰白 #EDEDED 背景、白色悬浮圆角顶栏 + 居中头像、纯浅灰无描边软胶囊气泡（新增 `bubbleVariant:'plain'`，昵称标签 + 时间戳移到该组上方）、长句拆短气泡、顶/底状态签名、颜文字占位符 + 爱心发送键。改聊天界面默认样式 / 气泡变体前必读 |
 | **折子戏·占卜 + 番外仿真图文 + 牌面美化** | [`docs/divination-and-faux.md`](./docs/divination-and-faux.md) | 占卜（塔罗78/雷诺曼36/六爻金钱卦/梅花易数，抽牌起卦 + 手动/API 解牌走世界书）、番外仿真图文（仿微信聊天截图/朋友圈/小红书/匿名论坛）、主题 App「牌面」美化（牌背/边框/风格）。改占卜引擎 / 牌库 / 番外仿真渲染前必读 |
-| **折子戏（原小剧场）· 黑白拼贴手账** | `apps/TheaterApp.tsx` + `apps/theater/scrapbook.tsx` | 「小剧场」已更名「折子戏」（戏单首页 + 九折：攻略本/番外/占卜/谈心/TRPG/轨迹/对影/狼人杀/真心话大冒险）。统一皮肤＝黑白拼贴手账，复用积木都在 `theater/scrapbook.tsx`（米白报纸 + 墨黑 + 牛皮胶带 + 邮票 + 拍立得；PaperShell/ScrapHeader/PaperCard/Polaroid/ScrapButton…），照片一律 grayscale。攻略本/TRPG 体量大，走根级 grayscale + GAME_THEMES 灰阶重映射落「黑白默片」。狼人杀（捌）＝`apps/theater/WerewolfApp.tsx` + 引擎 `utils/theaterWerewolf.ts`（一桌熟人开局，AI 按隐藏身份夜行动/昼发言/投票，对局存 IndexedDB）。真心话大冒险（玖）＝`apps/theater/TruthDareApp.tsx` + 引擎 `utils/theaterTruthDare.ts`（围圈转瓶子，受题者挑真心话/大冒险、另一人出题作答，尺度可调，存 IndexedDB）。改折子戏外观前看这里 |
+| **折子戏·黑白拼贴手账** | `apps/TheaterApp.tsx` + `apps/theater/scrapbook.tsx` | 折子戏（戏单首页 + 九折：攻略本/番外/占卜/谈心/TRPG/轨迹/对影/狼人杀/真心话大冒险）。统一皮肤＝黑白拼贴手账，复用积木都在 `theater/scrapbook.tsx`（米白报纸 + 墨黑 + 牛皮胶带 + 邮票 + 拍立得；PaperShell/ScrapHeader/PaperCard/Polaroid/ScrapButton…），照片一律 grayscale。攻略本/TRPG 体量大，走根级 grayscale + GAME_THEMES 灰阶重映射落「黑白默片」。狼人杀（捌）＝`apps/theater/WerewolfApp.tsx` + 引擎 `utils/theaterWerewolf.ts`（一桌熟人开局，AI 按隐藏身份夜行动/昼发言/投票，对局存 IndexedDB）。真心话大冒险（玖）＝`apps/theater/TruthDareApp.tsx` + 引擎 `utils/theaterTruthDare.ts`（围圈转瓶子，受题者挑真心话/大冒险、另一人出题作答，尺度可调，存 IndexedDB）。改折子戏外观前看这里 |
 | **来往 Prompt 中心** | [`docs/laiwang-prompts.md`](./docs/laiwang-prompts.md) | 改聊天 AI 的说话规则/语气/指令前必读。`utils/laiwangPrompts.ts` 是来往全部 prompt 文案的唯一可改处（关系/情侣空间/自主生活/回神/思考链/行动建议/核心系统提示/主动消息/偷看心声 分区注释），各功能从它 import、改了即生效 |
 | **折子戏 Prompt 中心** | `utils/theaterPrompts.ts` | 改折子戏（九折）AI 文案前必读。番外/占卜/谈心/TRPG/轨迹/对影/狼人杀/真心话大冒险 的全部 prompt 集中在此（按折分区、逐项注释），各功能从它 import、改了即生效；攻略本文案体量大、仍在 `utils/guidebookPrompts.ts`（已被中心 re-export）。番外的「题库 / 番外指令」内容仓库另见 `utils/theaterExtraBank.ts` |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |

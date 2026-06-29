@@ -202,7 +202,7 @@ const GameMarkdown: React.FC<{ content: string, theme: any, customStyle?: { font
     );
 };
 
-/** onExit：当本 App 嵌在「小剧场」壳里时，顶层返回回到小剧场封面页而非直接关到桌面。未传则回桌面。 */
+/** onExit：当本 App 嵌在「折子戏」壳里时，顶层返回回到折子戏封面页而非直接关到桌面。未传则回桌面。 */
 const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
     // TRPG/游戏属「聊天以外」的功能：走副 API（未配置副 API 时 resolveAuxApi 自动回退主 API）

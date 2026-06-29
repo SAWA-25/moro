@@ -1,5 +1,5 @@
 /**
- * Moro · 彼方虚拟邮局 —— 跨用户漂流信后端（Cloudflare Worker + D1）
+ * Moro · 页外虚拟邮局 —— 跨用户漂流信后端（Cloudflare Worker + D1）
  *
  * 这是一个共享后端：所有用户共用一个实例（如 https://noir2.cc.cd），
  * 别的用户无需任何配置。信件被丢进一个公共 D1 池，随机分发给别的设备回信，

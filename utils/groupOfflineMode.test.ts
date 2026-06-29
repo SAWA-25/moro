@@ -153,11 +153,33 @@ describe('group offline mode', () => {
     expect(body.model).toBe('test-model');
     const prompt = body.messages[0].content;
     expect(prompt).toContain('Weekend Table');
-    expect(prompt).toContain('Mia');
-    expect(prompt).toContain('Noah');
+    expect(prompt).toContain('Mia (ID: char-a)');
+    expect(prompt).toContain('Noah (ID: char-b)');
     expect(prompt).toContain('See you at 7.');
     expect(prompt).toContain('I will bring snacks.');
     expect(prompt).toContain('Meet at the tea house.');
+  });
+
+  it('keeps same-name group members separate with hidden ids in prompts', async () => {
+    const fetchMock = mockFetchContent('Opening scene');
+    const sameNameMembers = [
+      { id: 'char-a', name: 'Same', avatar: 'a.png' },
+      { id: 'char-b', name: 'Same', avatar: 'b.png' },
+    ] as CharacterProfile[];
+
+    await generateGroupOfflineOpening(
+      group,
+      sameNameMembers,
+      userProfile,
+      api,
+      DEFAULT_GROUP_OFFLINE_POV,
+      'Meet in the lobby.',
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const prompt = body.messages[0].content;
+    expect(prompt).toContain('Same (ID: char-a)');
+    expect(prompt).toContain('Same (ID: char-b)');
   });
 
   it('generates a group turn from the local scene transcript and user action', async () => {

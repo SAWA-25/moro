@@ -1,6 +1,12 @@
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1";
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 const XHS_BASE = "https://edith.xiaohongshu.com";
+const FORUM_TREND_CACHE_TTL = 6 * 3600;
+const FORUM_TREND_SOURCES = [
+  { source: "微博热搜", url: "https://rsshub.app/weibo/search/hot" },
+  { source: "B站热搜", url: "https://rsshub.app/bilibili/hot-search" },
+  { source: "知乎热榜", url: "https://rsshub.app/zhihu/hotlist" },
+];
 const XHS_MEDIA_HOST_CANDIDATES = [
   "https://edith.xiaohongshu.com",
   "https://creator.xiaohongshu.com",
@@ -40,6 +46,103 @@ function route(url) {
   if (p === "/images") return { kind: "images" };
   return null;
 }
+
+function decodeForumHtml(text) {
+  return String(text || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => {
+      const code = Number(n);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractForumTag(block, tag) {
+  const m = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return m ? decodeForumHtml(m[1]) : "";
+}
+
+function forumTrendKey(title) {
+  return String(title || "").toLowerCase().replace(/\s+/g, "").replace(/[，。！？、,.!?【】[\]#"'“”‘’：:（）()]/g, "");
+}
+
+function parseForumTrendXml(xml, source, limit = 20) {
+  const blocks = String(xml || "").match(/<item[\s\S]*?<\/item>/gi) || [];
+  const out = [];
+  for (const block of blocks) {
+    const title = extractForumTag(block, "title").slice(0, 80);
+    if (title.length < 2) continue;
+    const url = extractForumTag(block, "link");
+    const tags = [];
+    const categoryMatches = block.match(/<category(?:\s[^>]*)?>[\s\S]*?<\/category>/gi) || [];
+    for (const cat of categoryMatches.slice(0, 3)) {
+      const v = decodeForumHtml(cat);
+      if (v) tags.push(v.replace(/^#/, "").slice(0, 12));
+    }
+    out.push({
+      title,
+      source,
+      url: /^https?:\/\//.test(url) ? url : undefined,
+      heat: Math.max(1, 1000 - out.length * 30),
+      tags,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function mergeForumTrendItems(groups, limit = 36) {
+  const seen = new Set();
+  const out = [];
+  for (const group of groups) {
+    for (const item of group || []) {
+      const title = String(item && item.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
+      const key = forumTrendKey(title);
+      if (!key || key.length < 2 || seen.has(key)) continue;
+      seen.add(key);
+      const tags = Array.isArray(item.tags) ? item.tags.map(t => String(t).trim().replace(/^#/, "")).filter(Boolean).slice(0, 4) : [];
+      out.push({
+        title,
+        source: String(item.source || "热榜").slice(0, 20),
+        url: typeof item.url === "string" && /^https?:\/\//.test(item.url) ? item.url : undefined,
+        heat: Number.isFinite(Number(item.heat)) ? Math.max(0, Math.floor(Number(item.heat))) : undefined,
+        tags,
+      });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
+async function buildForumTrendPack(now = Date.now(), fetcher = fetch) {
+  const settled = await Promise.allSettled(FORUM_TREND_SOURCES.map(async src => {
+    const res = await fetcher(src.url, {
+      headers: {
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        "User-Agent": "moro-forum-trends/1.0",
+      },
+    });
+    if (!res.ok) throw new Error(`${src.source} ${res.status}`);
+    return parseForumTrendXml(await res.text(), src.source);
+  }));
+  const items = mergeForumTrendItems(settled.filter(x => x.status === "fulfilled").map(x => x.value));
+  return {
+    items,
+    fetchedAt: now,
+    expiresAt: now + FORUM_TREND_CACHE_TTL * 1000,
+    sources: FORUM_TREND_SOURCES.map(x => x.source),
+    errors: settled.filter(x => x.status === "rejected").map(x => String(x.reason && x.reason.message || x.reason)).slice(0, 5),
+  };
+}
+
+export const __forumTrendsTest = { parseForumTrendXml, mergeForumTrendItems, buildForumTrendPack };
 
 // ================================================================
 //  小红书签名 — 基于 xhshow 逆向的真实算法
@@ -1414,6 +1517,59 @@ export default {
       }
     }
 
+    // ========== 茶话亭热梗/热点抓取 (/forum/trends) ==========
+    if (url.pathname.replace(/\/+$/, '') === '/forum/trends') {
+      if (request.method !== 'GET') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const cacheKey = new Request(`${url.origin}/forum/trends`, { method: 'GET' });
+      const cached = await caches.default.match(cacheKey);
+      if (cached) {
+        return new Response(await cached.text(), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': `public, max-age=${FORUM_TREND_CACHE_TTL}`,
+            'X-Moro-Cache': 'HIT',
+            ...corsHeaders(origin),
+          },
+        });
+      }
+      try {
+        const pack = await buildForumTrendPack(Date.now(), fetch);
+        if (!pack.items.length) {
+          return jsonResponse({ error: 'No trend items fetched', ...pack }, { status: 502, origin });
+        }
+        const text = JSON.stringify(pack);
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          ctx.waitUntil(caches.default.put(cacheKey, new Response(text, {
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': `public, max-age=${FORUM_TREND_CACHE_TTL}`,
+            },
+          })));
+        } else {
+          caches.default.put(cacheKey, new Response(text, {
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': `public, max-age=${FORUM_TREND_CACHE_TTL}`,
+            },
+          })).catch(() => {});
+        }
+        return new Response(text, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': `public, max-age=${FORUM_TREND_CACHE_TTL}`,
+            'X-Moro-Cache': 'MISS',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'Forum trend fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
     // ========== WebDAV 代理 ==========
     if (url.pathname === '/webdav') {
       if (request.method !== 'POST') {
@@ -2567,7 +2723,7 @@ export default {
           'Authorization': auth,
           'Content-Type': request.headers.get('Content-Type') || 'application/json',
           'Accept': request.headers.get('Accept') || 'application/json, text/event-stream',
-          'User-Agent': 'aetheros-mcp-proxy/1.0',
+          'User-Agent': 'moro-mcp-proxy/1.0',
         };
         const sid = request.headers.get('Mcp-Session-Id') || request.headers.get('mcp-session-id');
         if (sid) fwdHeaders['Mcp-Session-Id'] = sid;

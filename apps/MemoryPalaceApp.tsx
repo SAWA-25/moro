@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import {
-    MemoryRoom, MemoryNode, ROOM_CONFIGS, ROOM_LABELS, getRoomLabel,
+    MemoryRoom, MemoryNode, ROOM_CONFIGS, getRoomLabel,
     MemoryNodeDB, AnticipationDB, MemoryLinkDB, EventBoxDB,
     migrateOldMemories, runCognitiveDigestion, getAvailableMonths, getAvailableChunks,
     detectPersonalityStyle,
@@ -9,7 +9,7 @@ import {
     reviveArchivedMemory,
     wipeAllMemoryPalace,
 } from '../utils/memoryPalace';
-import type { Anticipation, MigrationProgress, DigestResult, MemoryLink, EventBox } from '../utils/memoryPalace';
+import type { Anticipation, MigrationProgress, MemoryLink, EventBox } from '../utils/memoryPalace';
 import MindMap from '../components/memoryPalace/MindMap';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
@@ -402,10 +402,6 @@ const inputClass = "w-full bg-white border-2 border-black px-4 py-2.5 text-sm fo
 const labelClass = "text-[10px] font-bold text-black uppercase tracking-[0.2em] mb-1.5 block pl-1 font-mono";
 
 // 通用硬阴影（拼贴贴纸感）
-const CARD_SHADOW = '3px 3px 0 #1a1a1a';
-const PAPER = '#ececec';
-const INK = '#1a1a1a';
-
 // ─── 主组件 ───────────────────────────────────────────
 
 export default function MemoryPalaceApp() {
@@ -422,7 +418,7 @@ export default function MemoryPalaceApp() {
     const [deleting, setDeleting] = useState(false);
     const [roomNodes, setRoomNodes] = useState<MemoryNode[]>([]);
     const [totalCount, setTotalCount] = useState(0);
-    const [linkCount, setLinkCount] = useState(0);
+    const [, setLinkCount] = useState(0);
     const [boxCount, setBoxCount] = useState(0);
     const [anticipations, setAnticipations] = useState<Anticipation[]>([]);
     const [pinnedNodes, setPinnedNodes] = useState<MemoryNode[]>([]);

@@ -12,7 +12,7 @@ import { installWakeListener } from './utils/proactivePushConfig';
 KeepAlive.init().then(() => {
   // Resume any active proactive schedule after SW is ready
   ProactiveChat.resume();
-  // Resume 「彼方」 autonomous-login schedules
+  // Resume 「页外」 autonomous-login schedules
   VRScheduler.resume();
   void ActiveMsgRuntime.init();
   // Record every wake the SW reports so the diagnostic panel can show "last received".

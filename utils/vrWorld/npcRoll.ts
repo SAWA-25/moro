@@ -4,7 +4,7 @@
  * 做法：挂一个屏幕外的隐藏 iframe 载入捏脸器，等它 `like520_ready` 后发 `like520_init`
  * + `like520_roll`（headless 消息，见 html 里 rollAndExport），它会随机一套并用
  * html2canvas 导出透明立绘，回传 `like520_result`。超时/出错返回 null，调用方降级用
- * emoji 头像。彼方·剧院给缺演员的剧本角色补 NPC 用。
+ * emoji 头像。页外·剧院给缺演员的剧本角色补 NPC 用。
  */
 
 const CHAR_CREATOR_URL = `${(((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/')}?v=20260629-adjust`;

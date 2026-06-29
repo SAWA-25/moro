@@ -5,18 +5,20 @@ import {
     CharacterProfile, ChatTheme, Message, PrivateChatArchive, UserProfile,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
-    BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
+    BankTransaction, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
     XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings,
+    RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
     TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession,
     TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
+// Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 78; // Bumped: v78 推特 v2（账号 / 资料 / 私信 / 搜索）
+const DB_VERSION = 79; // Bumped: v79 relationship network char-char interactions
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -62,7 +64,7 @@ const STORE_HANDBOOK = 'handbook'; // 跨角色聚合手账，每天一条 entry
 const STORE_TRACKERS = 'trackers';                // 手账打卡 tracker 定义
 const STORE_TRACKER_ENTRIES = 'tracker_entries';  // tracker 每日打卡数据
 const STORE_HOTNEWS = 'hotnews_snapshots';        // 分时段热点快照（全角色共享，key=日期#时段）
-const STORE_VR_NOVELS = 'vr_novels';              // 虚拟世界「彼方」全局小说库（所有角色共享原文）
+const STORE_VR_NOVELS = 'vr_novels';              // 虚拟世界「页外」全局小说库（所有角色共享原文）
 const STORE_VR_ANNOTATIONS = 'vr_annotations';    // 虚拟世界小说批注（per-segment per-char，可互相吐槽）
 const STORE_CC_PARTS = 'cc_custom_parts';         // 捏脸系统自定义部件（开发模式追加，注入捏人器）
 const STORE_VR_MUSIC = 'vr_music';                // 听歌房共享状态（单例 nowPlaying + 循环队列）
@@ -71,7 +73,7 @@ const STORE_VR_SCRIPTS = 'vr_scripts';            // 剧院·投稿剧本库（�
 const STORE_VR_PLAYS = 'vr_plays';                // 剧院·历史舞台剧（每场演出一条）
 const STORE_VR_PRESETS = 'vr_presets';            // 剧院·用户自定义写作风格预设（key 为主键）
 const STORE_VR_LETTERS = 'vr_letters';            // 邮局信件（本地存档 + 待寄出/待回复队列）
-const STORE_VR_SETTINGS = 'vr_settings';          // 彼方设置单例：独立 API（id='api'）+ 调用记录（id='apilog'）
+const STORE_VR_SETTINGS = 'vr_settings';          // 页外设置单例：独立 API（id='api'）+ 调用记录（id='apilog'）
 const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 调用记录单例（id='log'，保留近 5 天）
 const STORE_PHONE_CALL_LOGS = 'phone_call_logs';  // 电话 App 通话记录（拨出/接听/未接，轻量条目）
 const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交换日记本（entries 内联在 book 里）
@@ -83,14 +85,33 @@ const STORE_XUNJI_RUNS = 'xunji_screenlife_runs';  // 循迹·Screenlife 演出�
 const STORE_XUNJI_SNAPSHOTS = 'xunji_monitor_snapshots'; // 循迹·监视快照
 const STORE_XUNJI_REPORTS = 'xunji_reports';       // 循迹·报备/提醒事件
 const STORE_XUNJI_SETTINGS = 'xunji_settings';     // 循迹·设置单例 id='settings'
-const STORE_TALK_SESSIONS = 'talk_sessions';      // 小剧场·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
+const STORE_RELATIONSHIP_NETWORK_EDGES = 'relationship_network_edges';
+const STORE_RELATIONSHIP_NETWORK_MESSAGES = 'relationship_network_messages';
+const STORE_RELATIONSHIP_NETWORK_SETTINGS = 'relationship_network_settings';
+const STORE_TALK_SESSIONS = 'talk_sessions';      // 折子戏·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_WEREWOLF_GAMES = 'werewolf_games';    // 折子戏·狼人杀对局（一桌熟人开局的完整流程，可存档/续局/回看）
 const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话大冒险（一圈玩家 + 一串回合记录，可存档/回看/续玩）
-const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/小剧场内容）
+const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/折子戏内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
-const STORE_DIVINATION_CARDS = 'divination_cards'; // 小剧场·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
+const STORE_DIVINATION_CARDS = 'divination_cards'; // 折子戏·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
+// Message-store change event used by views that derive summaries from IndexedDB.
+type MessagesUpdatedDetail = {
+  kind: 'created' | 'updated' | 'deleted' | 'cleared' | 'replaced';
+  charId?: string;
+  groupId?: string;
+  messageId?: number;
+  messageIds?: number[];
+  timestamp?: number;
+};
+
+const dispatchMessagesUpdated = (detail: MessagesUpdatedDetail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('messages-updated', { detail }));
+};
+
+// API call-log retention limits.
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
 const API_CALL_LOG_MAX_ENTRIES = 2000;
 
@@ -254,7 +275,7 @@ const DEFAULT_PRESET_EMOJIS = [
 ];
 
 // 单例连接缓存。openDB 原本每次调用都新开一条 IDB 连接, 既不复用也不 close ——
-// 在记忆管线 (hybridSearch / touchAccess 等) 并发读写下会瞬间堆出几十条 AetherOS_Data
+// 在记忆管线 (hybridSearch / touchAccess 等) 并发读写下会瞬间堆出几十条主库连接
 // 连接, 撑爆 Chromium 底层 backing store; 一旦底层报错, 整个 origin 的 IndexedDB
 // (含 Service Worker 的 dedupe / inbox 库) 可能跟着开不了或被强关, Instant Push 因此确认超时。
 // 改成复用同一条连接, 并在连接被外部失效 (另一 tab 升级版本 / 浏览器强制关闭) 时
@@ -389,7 +410,7 @@ export const openDB = (): Promise<IDBDatabase> => {
           }
       }
 
-      // v62: messages 加 [charId, type] 复合索引。彼方动态按 (charId, 'vr_card') 直取 vr_card，
+      // v62: messages 加 [charId, type] 复合索引。页外动态按 (charId, 'vr_card') 直取 vr_card，
       // 成本只跟 vr_card 条数相关，跟总消息量无关——上万条聊天的用户也不必把整段历史 getAll
       // 进内存再筛。没有 type 字段的老消息不会进此索引，正好不影响（我们只查 vr_card）。
       try {
@@ -672,7 +693,22 @@ export const openDB = (): Promise<IDBDatabase> => {
       }
       createStore(STORE_XUNJI_SETTINGS, { keyPath: 'id' });
 
-      // ─── v70: 小剧场·谈心会话 ───
+      // v79: Relationship Network char-char edges, private messages, and auto settings.
+      if (!db.objectStoreNames.contains(STORE_RELATIONSHIP_NETWORK_EDGES)) {
+          const rnEdgeStore = db.createObjectStore(STORE_RELATIONSHIP_NETWORK_EDGES, { keyPath: 'id' });
+          rnEdgeStore.createIndex('pairKey', 'pairKey', { unique: true });
+          rnEdgeStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          rnEdgeStore.createIndex('lastInteractionAt', 'lastInteractionAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_RELATIONSHIP_NETWORK_MESSAGES)) {
+          const rnMsgStore = db.createObjectStore(STORE_RELATIONSHIP_NETWORK_MESSAGES, { keyPath: 'id' });
+          rnMsgStore.createIndex('pairKey', 'pairKey', { unique: false });
+          rnMsgStore.createIndex('createdAt', 'createdAt', { unique: false });
+          rnMsgStore.createIndex('speakerId', 'speakerId', { unique: false });
+      }
+      createStore(STORE_RELATIONSHIP_NETWORK_SETTINGS, { keyPath: 'id' });
+
+      // ─── v70: 折子戏·谈心会话 ───
       if (!db.objectStoreNames.contains(STORE_TALK_SESSIONS)) {
           const tsStore = db.createObjectStore(STORE_TALK_SESSIONS, { keyPath: 'id' });
           tsStore.createIndex('charId', 'charId', { unique: false });
@@ -701,7 +737,7 @@ export const openDB = (): Promise<IDBDatabase> => {
           toStore.createIndex('charId', 'charId', { unique: false });
       }
 
-      // ─── v72: 小剧场·占卜牌库 ───
+      // ─── v72: 折子戏·占卜牌库 ───
       if (!db.objectStoreNames.contains(STORE_DIVINATION_CARDS)) {
           const dcStore = db.createObjectStore(STORE_DIVINATION_CARDS, { keyPath: 'id' });
           dcStore.createIndex('deck', 'deck', { unique: false });
@@ -907,9 +943,9 @@ export const DB = {
     });
   },
 
-  // 彼方动态专用：捞某角色全部 vr_card，不受"最近 N 条窗口"、记忆宫殿高水位
+  // 页外动态专用：捞某角色全部 vr_card，不受"最近 N 条窗口"、记忆宫殿高水位
   // （mp_lastMsgId）、归档隐藏起点（char.hideBeforeMessageId）影响。
-  // 这些机制只管「LLM 上下文能否看到」；彼方动态是用户自己的浏览界面，
+  // 这些机制只管「LLM 上下文能否看到」；页外动态是用户自己的浏览界面，
   // 只要消息还在 IndexedDB 里就应当永远可见——哪怕它早被新聊天挤出聊天取数窗口、
   // 或被归档标记为「对 AI 隐藏」。（清空聊天会真删消息，删掉就没了——那是预期行为。）
   //
@@ -1011,8 +1047,21 @@ export const DB = {
         const timestamp = typeof msg.timestamp === 'number' ? msg.timestamp : Date.now();
         const { timestamp: _ignored, ...payload } = msg;
         const request = store.add({ ...payload, timestamp });
-        request.onsuccess = () => resolve(request.result as number);
+        let newId = 0;
+        request.onsuccess = () => { newId = request.result as number; };
         request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => {
+            dispatchMessagesUpdated({
+                kind: 'created',
+                charId: msg.charId,
+                groupId: msg.groupId,
+                messageId: newId,
+                timestamp,
+            });
+            resolve(newId);
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('saveMessage aborted'));
     });
   },
 
@@ -1022,18 +1071,33 @@ export const DB = {
     const store = transaction.objectStore(STORE_MESSAGES);
     
     return new Promise((resolve, reject) => {
+        let updated: Message | undefined;
         const req = store.get(id);
         req.onsuccess = () => {
             const data = req.result as Message;
             if (data) {
                 data.content = content;
+                updated = data;
                 store.put(data);
-                resolve();
             } else {
                 reject(new Error('Message not found'));
             }
         };
         req.onerror = () => reject(req.error);
+        transaction.oncomplete = () => {
+            if (updated) {
+                dispatchMessagesUpdated({
+                    kind: 'updated',
+                    charId: updated.charId,
+                    groupId: updated.groupId,
+                    messageId: id,
+                    timestamp: updated.timestamp,
+                });
+            }
+            resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('updateMessage aborted'));
     });
   },
 
@@ -1043,18 +1107,33 @@ export const DB = {
     const store = transaction.objectStore(STORE_MESSAGES);
 
     return new Promise((resolve, reject) => {
+        let updated: Message | undefined;
         const req = store.get(id);
         req.onsuccess = () => {
             const data = req.result as Message | undefined;
             if (data) {
                 (data as any).metadata = updater((data as any).metadata);
+                updated = data;
                 store.put(data);
-                resolve();
             } else {
                 reject(new Error('Message not found'));
             }
         };
         req.onerror = () => reject(req.error);
+        transaction.oncomplete = () => {
+            if (updated) {
+                dispatchMessagesUpdated({
+                    kind: 'updated',
+                    charId: updated.charId,
+                    groupId: updated.groupId,
+                    messageId: id,
+                    timestamp: updated.timestamp,
+                });
+            }
+            resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('updateMessageMetadata aborted'));
     });
   },
 
@@ -1104,8 +1183,29 @@ export const DB = {
 
   deleteMessage: async (id: number): Promise<void> => {
     const db = await openDB();
-    const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
-    transaction.objectStore(STORE_MESSAGES).delete(id);
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+      const store = transaction.objectStore(STORE_MESSAGES);
+      let deleted: Message | undefined;
+      const req = store.get(id);
+      req.onsuccess = () => {
+        deleted = req.result as Message | undefined;
+        store.delete(id);
+      };
+      req.onerror = () => reject(req.error);
+      transaction.oncomplete = () => {
+        dispatchMessagesUpdated({
+          kind: 'deleted',
+          charId: deleted?.charId,
+          groupId: deleted?.groupId,
+          messageId: id,
+          timestamp: deleted?.timestamp,
+        });
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('deleteMessage aborted'));
+    });
   },
 
   deleteMessages: async (ids: number[]): Promise<void> => {
@@ -1113,8 +1213,13 @@ export const DB = {
       const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
       const store = transaction.objectStore(STORE_MESSAGES);
       ids.forEach(id => store.delete(id));
-      return new Promise((resolve) => {
-          transaction.oncomplete = () => resolve();
+      return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => {
+              dispatchMessagesUpdated({ kind: 'deleted', messageIds: ids });
+              resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteMessages aborted'));
       });
   },
 
@@ -1136,7 +1241,10 @@ export const DB = {
         }
       };
       request.onerror = () => reject(request.error);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => {
+        dispatchMessagesUpdated({ kind: 'cleared', charId });
+        resolve();
+      };
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -1272,7 +1380,10 @@ export const DB = {
               }
           };
           cursorReq.onerror = () => reject(cursorReq.error);
-          transaction.oncomplete = () => resolve();
+          transaction.oncomplete = () => {
+              dispatchMessagesUpdated({ kind: 'replaced', groupId });
+              resolve();
+          };
           transaction.onerror = () => reject(transaction.error);
           transaction.onabort = () => reject(transaction.error);
       });
@@ -1690,7 +1801,112 @@ export const DB = {
       });
   },
 
-  // ─── 小剧场·谈心会话 ───
+  getRelationshipNetworkEdges: async (): Promise<RelationshipNetworkEdge[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_EDGES, 'readonly');
+          const req = tx.objectStore(STORE_RELATIONSHIP_NETWORK_EDGES).getAll();
+          req.onsuccess = () => {
+              const all = ((req.result as RelationshipNetworkEdge[]) || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+              resolve(all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getRelationshipNetworkEdgeByPair: async (pairKey: string): Promise<RelationshipNetworkEdge | undefined> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_EDGES, 'readonly');
+          const req = tx.objectStore(STORE_RELATIONSHIP_NETWORK_EDGES).index('pairKey').get(pairKey);
+          req.onsuccess = () => resolve(req.result as RelationshipNetworkEdge | undefined);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveRelationshipNetworkEdge: async (edge: RelationshipNetworkEdge): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_EDGES, 'readwrite');
+      tx.objectStore(STORE_RELATIONSHIP_NETWORK_EDGES).put(edge);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  saveRelationshipNetworkEdges: async (edges: RelationshipNetworkEdge[]): Promise<void> => {
+      if (edges.length === 0) return;
+      const db = await openDB();
+      const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_EDGES, 'readwrite');
+      const store = tx.objectStore(STORE_RELATIONSHIP_NETWORK_EDGES);
+      edges.forEach(edge => store.put(edge));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getRelationshipNetworkMessagesByPair: async (pairKey: string, limit?: number): Promise<RelationshipNetworkMessage[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_MESSAGES, 'readonly');
+          const req = tx.objectStore(STORE_RELATIONSHIP_NETWORK_MESSAGES).index('pairKey').getAll(pairKey);
+          req.onsuccess = () => {
+              const all = ((req.result as RelationshipNetworkMessage[]) || []).sort((a, b) => a.createdAt - b.createdAt);
+              resolve(limit && limit > 0 ? all.slice(-limit) : all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveRelationshipNetworkMessage: async (message: RelationshipNetworkMessage): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_MESSAGES, 'readwrite');
+      tx.objectStore(STORE_RELATIONSHIP_NETWORK_MESSAGES).put(message);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  saveRelationshipNetworkMessages: async (messages: RelationshipNetworkMessage[]): Promise<void> => {
+      if (messages.length === 0) return;
+      const db = await openDB();
+      const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_MESSAGES, 'readwrite');
+      const store = tx.objectStore(STORE_RELATIONSHIP_NETWORK_MESSAGES);
+      messages.forEach(message => store.put(message));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getRelationshipNetworkAutoSettings: async (): Promise<RelationshipNetworkAutoSettings | undefined> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_SETTINGS, 'readonly');
+          const req = tx.objectStore(STORE_RELATIONSHIP_NETWORK_SETTINGS).get('settings');
+          req.onsuccess = () => resolve(req.result as RelationshipNetworkAutoSettings | undefined);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveRelationshipNetworkAutoSettings: async (settings: RelationshipNetworkAutoSettings): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_RELATIONSHIP_NETWORK_SETTINGS, 'readwrite');
+      tx.objectStore(STORE_RELATIONSHIP_NETWORK_SETTINGS).put(settings);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  // ─── 折子戏·谈心会话 ───
   getAllTalkSessions: async (): Promise<TalkSession[]> => {
       const db = await openDB();
       return new Promise((resolve, reject) => {
@@ -1869,7 +2085,7 @@ export const DB = {
       ));
   },
 
-  // ── 小剧场·占卜牌库 ──────────────────────────────────────────────
+  // ── 折子戏·占卜牌库 ──────────────────────────────────────────────
   getDivinationCards: async (deck?: 'tarot' | 'lenormand'): Promise<DivinationCard[]> => {
       const db = await openDB();
       return new Promise((resolve, reject) => {
@@ -3269,7 +3485,7 @@ export const DB = {
       transaction.objectStore(STORE_NOVELS).delete(id);
   },
 
-  // --- VR World 「彼方」 全局小说库 ---
+  // --- VR World 「页外」 全局小说库 ---
   getVRNovels: async (): Promise<VRWorldNovel[]> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_VR_NOVELS)) return [];
@@ -3484,7 +3700,7 @@ export const DB = {
       transaction.objectStore(STORE_VR_LETTERS).delete(id);
   },
 
-  // --- 彼方独立 API + 调用记录（vr_settings 单例 store）---
+  // --- 页外独立 API + 调用记录（vr_settings 单例 store）---
   getVRApiConfig: async (): Promise<any | null> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_VR_SETTINGS)) return null;
@@ -3866,6 +4082,12 @@ export const DB = {
           getAllFromStore(STORE_PERSONAS),
       ]);
 
+      const [relationshipNetworkEdges, relationshipNetworkMessages, relationshipNetworkAutoSettings] = await Promise.all([
+          getAllFromStore(STORE_RELATIONSHIP_NETWORK_EDGES),
+          getAllFromStore(STORE_RELATIONSHIP_NETWORK_MESSAGES),
+          getAllFromStore(STORE_RELATIONSHIP_NETWORK_SETTINGS),
+      ]);
+
       const userProfile = userProfiles.length > 0 ? {
           name: userProfiles[0].name,
           avatar: userProfiles[0].avatar,
@@ -3913,6 +4135,9 @@ export const DB = {
           innerVoices,
           llmPresets,
           personas,
+          relationshipNetworkEdges,
+          relationshipNetworkMessages,
+          relationshipNetworkAutoSettings,
       };
   },
 
@@ -3952,7 +4177,8 @@ export const DB = {
           STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
-          STORE_PHONE_CALL_LOGS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES
+          STORE_PHONE_CALL_LOGS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
+          STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS
       ].filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);
@@ -4053,6 +4279,9 @@ export const DB = {
           data.phoneCallLogs !== undefined,
           data.exchangeDiaryBooks !== undefined,
           data.innerVoices !== undefined,
+          data.relationshipNetworkEdges !== undefined,
+          data.relationshipNetworkMessages !== undefined,
+          data.relationshipNetworkAutoSettings !== undefined,
       ];
       const sectionTotal = Math.max(1, plannedSections.filter(Boolean).length);
       let sectionDone = 0;
@@ -4264,6 +4493,18 @@ export const DB = {
           await clearAndAdd(STORE_INNER_VOICES, data.innerVoices, '偷看心声', false);
           data.innerVoices = undefined as any;
       }, data.innerVoices?.length || 0);
+      await runSection('关系网关系', data.relationshipNetworkEdges !== undefined, async () => {
+          await clearAndAdd(STORE_RELATIONSHIP_NETWORK_EDGES, data.relationshipNetworkEdges, '关系网关系', false);
+          data.relationshipNetworkEdges = undefined as any;
+      }, data.relationshipNetworkEdges?.length || 0);
+      await runSection('关系网私聊', data.relationshipNetworkMessages !== undefined, async () => {
+          await clearAndAdd(STORE_RELATIONSHIP_NETWORK_MESSAGES, data.relationshipNetworkMessages, '关系网私聊', false);
+          data.relationshipNetworkMessages = undefined as any;
+      }, data.relationshipNetworkMessages?.length || 0);
+      await runSection('关系网后台设置', data.relationshipNetworkAutoSettings !== undefined, async () => {
+          await clearAndAdd(STORE_RELATIONSHIP_NETWORK_SETTINGS, data.relationshipNetworkAutoSettings, '关系网后台设置', false);
+          data.relationshipNetworkAutoSettings = undefined as any;
+      }, data.relationshipNetworkAutoSettings?.length || 0);
       await runSection('纪念日', data.anniversaries !== undefined, async () => {
           await clearAndAdd(STORE_ANNIVERSARIES, data.anniversaries, '纪念日', false);
           data.anniversaries = undefined as any;
@@ -4308,12 +4549,12 @@ export const DB = {
           await clearAndAdd(STORE_NOVELS, data.novels, '小说', false);
           data.novels = undefined as any;
       }, data.novels?.length || 0);
-      await runSection('彼方小说库', data.vrNovels !== undefined, async () => {
-          await clearAndAdd(STORE_VR_NOVELS, data.vrNovels, '彼方小说库', false);
+      await runSection('页外小说库', data.vrNovels !== undefined, async () => {
+          await clearAndAdd(STORE_VR_NOVELS, data.vrNovels, '页外小说库', false);
           data.vrNovels = undefined as any;
       }, data.vrNovels?.length || 0);
-      await runSection('彼方批注', data.vrAnnotations !== undefined, async () => {
-          await clearAndAdd(STORE_VR_ANNOTATIONS, data.vrAnnotations, '彼方批注', false);
+      await runSection('页外批注', data.vrAnnotations !== undefined, async () => {
+          await clearAndAdd(STORE_VR_ANNOTATIONS, data.vrAnnotations, '页外批注', false);
           data.vrAnnotations = undefined as any;
       }, data.vrAnnotations?.length || 0);
       await runSection('捏脸自定义部件', data.customCreatorParts !== undefined, async () => {
@@ -4344,7 +4585,7 @@ export const DB = {
           await clearAndAdd(STORE_VR_LETTERS, data.vrLetters, '邮局信件', false);
           data.vrLetters = undefined as any;
       }, data.vrLetters?.length || 0);
-      await runSection('彼方设置', data.vrSettings !== undefined, async () => {
+      await runSection('页外设置', data.vrSettings !== undefined, async () => {
           if (hasStore(STORE_VR_SETTINGS) && Array.isArray(data.vrSettings)) {
               for (const rec of data.vrSettings) await DB.saveVRSettingRecord(rec);
           }

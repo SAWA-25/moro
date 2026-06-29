@@ -26,6 +26,7 @@ import { generateLifeProfile } from '../utils/lifeProfile';
 import { generateAppearanceTags } from '../utils/appearanceTags';
 import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
+import { createCharacterId } from '../utils/characterIdentity';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 
 // ── 剪影集专属胶片资料册色板：冷雾白 + 鼠尾草绿 + 胶片灰 ──
@@ -861,7 +862,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       }
 
       const newChar: CharacterProfile = {
-          id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: createCharacterId('import'),
           name: result.name,
           avatar: avatarDataUrl || result.avatarFallback,
           description: result.description,
@@ -960,7 +961,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
       const newChar: CharacterProfile = {
           ...data,
-          id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: createCharacterId('import'),
           memories: [],
           refinedMemories: {},
           activeMemoryMonths: [],

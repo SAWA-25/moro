@@ -13,7 +13,7 @@ import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, PhoneSlash, SpeakerHigh, UserPlus, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, MicrophoneSlash, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, FastForward, Prohibit, Export } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, PhoneSlash, SpeakerHigh, UserPlus, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, MicrophoneSlash, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, PushPin } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
@@ -25,6 +25,8 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 import { ambientSocialToCharacter, ensureAmbientSocialState, patchAmbientSocialEntry } from '../utils/ambientSocial';
+import { formatCharacterWithId } from '../utils/characterIdentity';
+import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -51,6 +53,50 @@ type GroupCallSession = {
     startedAt: number;
     sessionId: string;
     members: { id: string; name: string; avatar?: string }[];
+};
+type GroupDirectorMode = 'director' | 'individual';
+type GroupDirectorRunOptions = {
+    allowAutoContinue?: boolean;
+    mode?: GroupDirectorMode;
+    maxAutoRounds?: number;
+    remainingAutoRounds?: number;
+    isAutoRound?: boolean;
+    suppressMemoryPalace?: boolean;
+};
+type GroupDirectorPreparedContext = {
+    group: GroupProfile;
+    groupMembers: CharacterProfile[];
+    context: string;
+    recentGroupMsgs: string;
+    attachedImages: { tag: number; url: string }[];
+    attachedImagesNote: string;
+    emojiContextStr: string;
+};
+type GroupDirectorAction = { charId: string; content: string };
+const parseGroupDirectorActions = (rawInput: unknown): GroupDirectorAction[] => {
+    let raw = String(rawInput || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+    const firstBracket = raw.indexOf('[');
+    const lastBracket = raw.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1) {
+        raw = raw.substring(firstBracket, lastBracket + 1);
+    } else {
+        const firstBrace = raw.indexOf('{');
+        const lastBrace = raw.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) raw = raw.substring(firstBrace, lastBrace + 1);
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+        return list
+            .map((item: any) => ({
+                charId: String(item?.charId || item?.id || '').trim(),
+                content: typeof item?.content === 'string' ? item.content : (typeof item?.text === 'string' ? item.text : ''),
+            }))
+            .filter(item => item.charId);
+    } catch (e) {
+        console.error('Director Parse Error', raw);
+        return [];
+    }
 };
 const getGroupCallStateLabel = (state: GroupCallState): string => ({
     connecting: '接线中…',
@@ -113,13 +159,13 @@ const groupBackgroundStyleFor = (
     return { backgroundColor: '#ededed' };
 };
 
-const GROUP_SETTINGS_SERIF: React.CSSProperties = { fontFamily: 'Georgia, "Times New Roman", "Songti SC", serif' };
 const GROUP_SETTINGS_MONO: React.CSSProperties = { fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace' };
 const CONVO_SWIPE_ACTION_WIDTH = 216;
 const CONVO_HIDDEN_WINDOWS_KEY = 'moro_chathub_hidden_windows_v1';
 
 type ConvoKind = 'char' | 'group' | 'ambient';
 type ConvoHiddenWindows = Record<string, number>;
+type GroupMemberLensDraft = Record<string, Record<string, string>>;
 type ConvoListItem = {
     kind: ConvoKind;
     id: string;
@@ -133,6 +179,45 @@ type ConvoListItem = {
     specialCareCount?: number;
     /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
     lifeStatus?: { activity: string; mood?: string };
+};
+
+const pruneGroupMemberLenses = (lenses: GroupProfile['memberLenses'] | undefined, memberIds: string[]): GroupMemberLensDraft => {
+    const memberSet = new Set(memberIds);
+    const next: GroupMemberLensDraft = {};
+    if (!lenses) return next;
+    Object.entries(lenses).forEach(([viewerId, targets]) => {
+        if (!memberSet.has(viewerId) || !targets) return;
+        Object.entries(targets).forEach(([targetId, text]) => {
+            const clean = String(text || '').trim();
+            if (!memberSet.has(targetId) || targetId === viewerId || !clean) return;
+            if (!next[viewerId]) next[viewerId] = {};
+            next[viewerId][targetId] = clean;
+        });
+    });
+    return next;
+};
+
+const groupMemberLensCount = (lenses: GroupProfile['memberLenses'] | undefined, memberIds: string[]): number =>
+    Object.values(pruneGroupMemberLenses(lenses, memberIds)).reduce((sum, targets) => sum + Object.keys(targets).length, 0);
+
+const buildGroupMemberLensBlock = (
+    group: GroupProfile,
+    viewer: CharacterProfile,
+    members: CharacterProfile[],
+    displayName: (charId: string) => string,
+): string => {
+    const targets = group.memberLenses?.[viewer.id];
+    if (!targets) return '';
+    const lines = members
+        .filter(target => target.id !== viewer.id)
+        .map(target => {
+            const text = targets[target.id]?.trim();
+            if (!text) return '';
+            return `- ${displayName(viewer.id)} 眼里的 ${displayName(target.id)}（${formatCharacterWithId(target)}）: ${text}`;
+        })
+        .filter(Boolean);
+    if (!lines.length) return '';
+    return `[角色之间的关系 - 只供 ${displayName(viewer.id)} 自己参考]\n${lines.join('\n')}\n这些是“在你眼里别人是谁、彼此什么关系、有没有过节”的私密视角。只影响你的发言，不是群公告，也不是所有人都知道的事实；请用它调整称呼、熟稔度、避让、调侃或旧账感，不要照抄成设定说明。\n`;
 };
 
 const loadHiddenConvoWindows = (): ConvoHiddenWindows => {
@@ -369,6 +454,7 @@ const GroupMessageItem = React.memo(({
     const styleConfig = isUser ? PRESET_THEME_GROUP.user : PRESET_THEME_GROUP.ai;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
+    const [forumDetailOpen, setForumDetailOpen] = useState(false);
     // 头像单击/双击区分：260ms 内第二次点击 = 戳一戳
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleAvatarClick = (e: React.MouseEvent) => {
@@ -497,7 +583,6 @@ const GroupMessageItem = React.memo(({
         if (last < text.length) parts.push(text.slice(last));
         return parts;
     };
-
     // Special Content Renderers
     const renderContent = () => {
         switch (msg.type) {
@@ -700,6 +785,68 @@ const GroupMessageItem = React.memo(({
                     </div>
                 );
             }
+            case 'forum_card': {
+                const fp: any = (msg.metadata as any)?.forumPost || {};
+                const stats = fp.stats || {};
+                const replies: any[] = Array.isArray(fp.repliesPreview) ? fp.repliesPreview : [];
+                return (
+                    <div className="relative">
+                        <button
+                            onClick={() => { if (!selectionMode) setForumDetailOpen(true); }}
+                            className="w-64 rounded-2xl overflow-hidden border bg-[#fffdfa] text-left active:scale-[0.98] transition-transform"
+                            style={{ borderColor: '#e3d7c6', boxShadow: '0 12px 24px -18px rgba(80,62,38,0.32)' }}
+                        >
+                            <div className="px-3.5 py-2.5 flex items-center gap-2 border-b" style={{ background: '#f7f1e6', borderColor: '#e3d7c6' }}>
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[13px] font-black" style={{ background: '#fffdfa', color: '#5b4630', border: '1px solid #e3d7c6' }}>茶</div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[10px] font-bold tracking-[0.18em]" style={{ color: '#9b7b54' }}>茶话亭 · {fp.boardName || fp.boardId || '帖子'}</div>
+                                    <div className="text-[13px] font-black leading-snug line-clamp-2" style={{ color: '#3f352c' }}>{fp.title || '未命名茶话'}</div>
+                                </div>
+                            </div>
+                            <div className="px-3.5 py-3">
+                                <div className="text-[11px] mb-1" style={{ color: '#9b7b54' }}>楼主 {fp.author?.name || '匿名茶客'}</div>
+                                <p className="text-[12.5px] leading-relaxed line-clamp-3" style={{ color: '#51463a' }}>{fp.body || '（无正文）'}</p>
+                                {Array.isArray(fp.tags) && fp.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {fp.tags.slice(0, 3).map((t: string) => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#f7f1e6', color: '#8a6a45' }}>#{t}</span>)}
+                                    </div>
+                                )}
+                                <div className="mt-2 pt-2 border-t flex items-center justify-between text-[10px]" style={{ borderColor: '#eee4d6', color: '#9b7b54' }}>
+                                    <span>{stats.likes || 0} 赞 · {stats.floors || stats.replies || 0} 楼</span>
+                                    <span>点开看帖</span>
+                                </div>
+                            </div>
+                        </button>
+                        {forumDetailOpen && (
+                            <div className="fixed inset-0 z-[160] bg-black/25 flex items-end justify-center px-3 pb-safe" onClick={() => setForumDetailOpen(false)}>
+                                <div className="w-full max-w-sm rounded-t-[22px] bg-[#fffdfa] shadow-2xl border border-[#e3d7c6] p-4 max-h-[78vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+                                    <div className="flex items-start justify-between gap-3 mb-3">
+                                        <div className="min-w-0">
+                                            <div className="text-[10px] font-bold tracking-[0.22em]" style={{ color: '#9b7b54' }}>茶话亭 · {fp.boardName || fp.boardId || '帖子'}</div>
+                                            <div className="text-[17px] font-black leading-snug mt-1" style={{ color: '#2b2933' }}>{fp.title || '未命名茶话'}</div>
+                                            <div className="text-[11px] mt-1" style={{ color: '#8b8996' }}>楼主 {fp.author?.name || '匿名茶客'} · {stats.likes || 0} 赞 · {stats.floors || 0} 楼</div>
+                                        </div>
+                                        <button onClick={() => setForumDetailOpen(false)} className="shrink-0 px-2 py-1 rounded-full text-[11px] font-bold" style={{ background: '#f7f1e6', color: '#5b4630' }}>收起</button>
+                                    </div>
+                                    <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: '#3f352c' }}>{fp.body || '（无正文）'}</p>
+                                    {replies.length > 0 && (
+                                        <div className="mt-4 space-y-2">
+                                            <div className="text-[12px] font-black" style={{ color: '#5b4630' }}>楼层预览</div>
+                                            {replies.map((r, i) => (
+                                                <div key={i} className="rounded-xl px-3 py-2" style={{ background: '#f7f1e6' }}>
+                                                    <div className="text-[11px] font-bold" style={{ color: '#8a6a45' }}>{r.floor || '?'}楼 · {r.authorName || '茶客'}</div>
+                                                    <div className="text-[12px] leading-relaxed mt-0.5" style={{ color: '#3f352c' }}>{r.body}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {replies.length === 0 && <div className="mt-4 text-[12px]" style={{ color: '#8b8996' }}>这张快照里还没有楼层预览。</div>}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
             case 'poll_card': {
                 const pmeta = (msg.metadata as any) || {};
                 const options: any[] = Array.isArray(pmeta.options) ? pmeta.options : [];
@@ -896,6 +1043,7 @@ const ChatHub: React.FC = () => {
     const momentsBackRef = useRef<(() => boolean) | null>(null);
     // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
     const [convos, setConvos] = useState<ConvoListItem[]>([]);
+    const [convoRefreshTick, setConvoRefreshTick] = useState(0);
     const [hiddenConvoWindows, setHiddenConvoWindows] = useState<ConvoHiddenWindows>(() => loadHiddenConvoWindows());
     const [ambientEntries, setAmbientEntries] = useState<AmbientSocialEntry[]>([]);
     // 成员资料页（点头像进入）
@@ -913,6 +1061,11 @@ const ChatHub: React.FC = () => {
     const [tempArchiveTitle, setTempArchiveTitle] = useState('');
     const [tempSpecialCareIds, setTempSpecialCareIds] = useState<Set<string>>(new Set());
     const [tempSpecialCareNotify, setTempSpecialCareNotify] = useState(true);
+    const [tempMemberLenses, setTempMemberLenses] = useState<GroupMemberLensDraft>({});
+    const [tempLensViewerId, setTempLensViewerId] = useState<string | null>(null);
+    const [tempReplyIndividually, setTempReplyIndividually] = useState(false);
+    const [tempAutoContinueEnabled, setTempAutoContinueEnabled] = useState(false);
+    const [tempAutoContinueRounds, setTempAutoContinueRounds] = useState(2);
     const [groupArchiveSearch, setGroupArchiveSearch] = useState('');
     const [renamingGroupRecordId, setRenamingGroupRecordId] = useState<string | null>(null);
     const [renamingGroupRecordTitle, setRenamingGroupRecordTitle] = useState('');
@@ -976,6 +1129,7 @@ const ChatHub: React.FC = () => {
     const [contextLimit, setContextLimit] = useState<number>(() => {
         try { return parseInt(localStorage.getItem('groupchat_context_limit') || '30'); } catch { return 30; }
     });
+    const ambientSocialEnabled = userProfile.ambientSocialEnabled !== false;
     
     // Selection Mode
     const [selectionMode, setSelectionMode] = useState(false);
@@ -1032,6 +1186,7 @@ const ChatHub: React.FC = () => {
     const [sysCmd, setSysCmd] = useState('');
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
+    const convoRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 聊天记录查找跳转目标：非空时 layout effect 滚到该消息而非底部
     const jumpTargetRef = useRef<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1041,6 +1196,8 @@ const ChatHub: React.FC = () => {
     const groupCallScrollRef = useRef<HTMLDivElement>(null);
     const groupCallIntroFiredRef = useRef<string | null>(null);
     const groupCallActiveSessionRef = useRef<string | null>(null);
+    const forumGroupShareTriggerRef = useRef<{ groupId: string; shareId: string } | null>(null);
+    const forumGroupShareConsumingRef = useRef<string | null>(null);
 
     const hydrateGroupSettingsDraft = (group: GroupProfile | null) => {
         if (!group) return;
@@ -1050,6 +1207,11 @@ const ChatHub: React.FC = () => {
         setTempArchiveTitle(group.chatArchiveTitle || group.name || '');
         setTempSpecialCareIds(new Set(group.specialCareMemberIds || []));
         setTempSpecialCareNotify(group.specialCareNotify !== false);
+        setTempMemberLenses(pruneGroupMemberLenses(group.memberLenses, group.members || []));
+        setTempLensViewerId(group.members?.[0] || null);
+        setTempReplyIndividually(!!group.replyIndividually);
+        setTempAutoContinueEnabled(!!group.autoContinueEnabled);
+        setTempAutoContinueRounds(Math.max(1, Math.min(8, group.autoContinueRounds || 2)));
     };
 
     const openGroupSettings = (group = activeGroup) => {
@@ -1065,6 +1227,16 @@ const ChatHub: React.FC = () => {
         }
     };
 
+    const handleToggleAmbientSocial = () => {
+        const enabled = !ambientSocialEnabled;
+        updateUserProfile({ ambientSocialEnabled: enabled });
+        if (!enabled) {
+            setAmbientEntries([]);
+            setConvos(prev => prev.filter(cv => cv.kind !== 'ambient'));
+        }
+        addToast(enabled ? '用户社交圈已开启' : '用户社交圈已关闭', 'success');
+    };
+
     // Load shared archive prompts from localStorage (same key as Chat app)
     useEffect(() => {
         const savedPrompts = localStorage.getItem('chat_archive_prompts');
@@ -1078,14 +1250,49 @@ const ChatHub: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const next = ensureAmbientSocialState(userProfile, characters);
-        const activeEntries = next.entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId));
-        setAmbientEntries(activeEntries);
-        if (JSON.stringify(next) !== JSON.stringify(userProfile.ambientSocial || null)) {
-            updateUserProfile({ ambientSocial: next });
+        if (!ambientSocialEnabled) {
+            setAmbientEntries([]);
+            setConvos(prev => prev.filter(cv => cv.kind !== 'ambient'));
+            return;
         }
+        let cancelled = false;
+        const showActiveEntries = (entries: AmbientSocialEntry[] = []) => {
+            setAmbientEntries(entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+        };
+        showActiveEntries(userProfile.ambientSocial?.entries || []);
+        (async () => {
+            try {
+                const next = await ensureAmbientSocialState(userProfile, characters, resolveAuxApi(auxApiConfig, apiConfig));
+                if (cancelled) return;
+                showActiveEntries(next.entries);
+                if (JSON.stringify(next) !== JSON.stringify(userProfile.ambientSocial || null)) {
+                    updateUserProfile({ ambientSocial: next });
+                }
+            } catch (err) {
+                console.warn('[AmbientSocial] generate from user profile failed', err);
+                if (!cancelled) showActiveEntries(userProfile.ambientSocial?.entries || []);
+            }
+        })();
+        return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [characters.length, userProfile.name, userProfile.bio, userProfile.ambientSocial]);
+    }, [
+        ambientSocialEnabled,
+        characters.length,
+        userProfile.name,
+        userProfile.bio,
+        userProfile.patSuffix,
+        userProfile.vrState?.enabled,
+        userProfile.vrState?.currentRoom,
+        userProfile.vrState?.activity,
+        userProfile.ambientSocial,
+        apiConfig.baseUrl,
+        apiConfig.apiKey,
+        apiConfig.model,
+        auxApiConfig.enabled,
+        auxApiConfig.baseUrl,
+        auxApiConfig.apiKey,
+        auxApiConfig.model,
+    ]);
 
     // Initial Load
     useEffect(() => {
@@ -1123,6 +1330,30 @@ const ChatHub: React.FC = () => {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages.length, activeGroup, showActions, showEmojiPicker, isTyping, selectionMode, jumpNonce]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const requestRefresh = () => {
+            if (convoRefreshTimerRef.current) clearTimeout(convoRefreshTimerRef.current);
+            convoRefreshTimerRef.current = setTimeout(() => {
+                convoRefreshTimerRef.current = null;
+                setConvoRefreshTick(t => t + 1);
+            }, 80);
+        };
+
+        window.addEventListener('messages-updated', requestRefresh);
+        window.addEventListener('focus', requestRefresh);
+        document.addEventListener('visibilitychange', requestRefresh);
+        return () => {
+            window.removeEventListener('messages-updated', requestRefresh);
+            window.removeEventListener('focus', requestRefresh);
+            document.removeEventListener('visibilitychange', requestRefresh);
+            if (convoRefreshTimerRef.current) {
+                clearTimeout(convoRefreshTimerRef.current);
+                convoRefreshTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const convoKey = (kind: ConvoKind, id: string) => `${kind}:${id}`;
     const hideConvoWindow = (kind: ConvoKind, id: string, hiddenAt = Date.now()) => {
@@ -1559,6 +1790,10 @@ const ChatHub: React.FC = () => {
         else void openAmbientGroup(entry);
     };
 
+    const isConvoPreviewMessage = (m?: Message): m is Message => (
+        !!m && !m.metadata?.hidden && !m.metadata?.proactiveHint
+    );
+
     // --- 聊天列表（单聊 + 群聊混排）---
     useEffect(() => {
         if (view !== 'list') return;
@@ -1566,8 +1801,8 @@ const ChatHub: React.FC = () => {
         (async () => {
             const items: typeof convos = [];
             for (const g of groups) {
-                const { messages: last } = await DB.getRecentGroupMessagesWithCount(g.id, 1);
-                const lastMsg = last[last.length - 1];
+                const { messages: recent } = await DB.getRecentGroupMessagesWithCount(g.id, 50);
+                const lastMsg = [...recent].reverse().find(isConvoPreviewMessage);
                 if (isConvoWindowHidden('group', g.id, lastMsg?.timestamp || 0)) continue;
                 items.push({
                     kind: 'group', id: g.id, name: g.name, avatar: g.avatar,
@@ -1582,11 +1817,12 @@ const ChatHub: React.FC = () => {
             const LIFE_STATUS_FRESH_MS = 5 * 60 * 60 * 1000; // 5 小时
             const nowTs = Date.now();
             for (const c of characters) {
-                const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
+                const { messages: recentMsgs } = await DB.getRecentMessagesWithCount(c.id, 50);
+                const visibleMsgs = recentMsgs.filter(isConvoPreviewMessage);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
                 // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
-                if (lastMsgs.length === 0 && !(c as any).addedToChat) continue;
-                const lastMsg = lastMsgs[lastMsgs.length - 1];
+                if (visibleMsgs.length === 0 && !(c as any).addedToChat) continue;
+                const lastMsg = visibleMsgs[visibleMsgs.length - 1];
                 if (isConvoWindowHidden('char', c.id, lastMsg?.timestamp || 0)) continue;
                 // 角色开了自主生活：把 TA「此刻」正在过的日子（最近一条生活事件，够新）带进列表
                 let lifeStatus: { activity: string; mood?: string } | undefined;
@@ -1642,7 +1878,7 @@ const ChatHub: React.FC = () => {
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
-    }, [view, groups, characters, ambientEntries, hiddenConvoWindows]);
+    }, [view, groups, characters, ambientEntries, hiddenConvoWindows, convoRefreshTick]);
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
@@ -1657,6 +1893,7 @@ const ChatHub: React.FC = () => {
             case 'voice': return '[一段留声]';
             case 'interaction': return m.content || '[碰了碰]';
             case 'social_card': return '[转发的此刻]';
+            case 'forum_card': return '[茶话亭帖子]';
             case 'system': return m.content;
             default: {
                 const t = typeof m.content === 'string' ? m.content : '';
@@ -1862,6 +2099,9 @@ const ChatHub: React.FC = () => {
             chatArchives: nextChatArchives,
             specialCareMemberIds,
             specialCareNotify: tempSpecialCareNotify,
+            replyIndividually: tempReplyIndividually,
+            autoContinueEnabled: tempAutoContinueEnabled,
+            autoContinueRounds: Math.max(1, Math.min(8, tempAutoContinueRounds || 2)),
         };
         if (!newMyNickname) delete updates.memberNicknames!['user'];
         const updatedGroup = await applyGroupUpdate(updates);
@@ -1882,6 +2122,25 @@ const ChatHub: React.FC = () => {
         return updatedGroup;
     };
     const handleUpdateGroupInfo = async () => { await saveGroupSettingsDraft({ close: true, toast: true }); };
+
+    const updateMemberLensDraft = (viewerId: string, targetId: string, value: string) => {
+        if (!activeGroup) return;
+        setTempMemberLenses(prev => {
+            const next: GroupMemberLensDraft = { ...prev, [viewerId]: { ...(prev[viewerId] || {}) } };
+            const clean = value.slice(0, 500);
+            if (clean.trim()) next[viewerId][targetId] = clean;
+            else delete next[viewerId][targetId];
+            if (Object.keys(next[viewerId]).length === 0) delete next[viewerId];
+            return next;
+        });
+    };
+
+    const saveMemberLensesDraft = async () => {
+        if (!activeGroup) return null;
+        const memberLenses = pruneGroupMemberLenses(tempMemberLenses, activeGroup.members);
+        setTempMemberLenses(memberLenses);
+        return applyGroupUpdate({ memberLenses });
+    };
 
     const handleToggleGroupPinned = async () => {
         if (!activeGroup) return;
@@ -2210,8 +2469,13 @@ const ChatHub: React.FC = () => {
     const handleRemoveMember = async (charId: string) => {
         if (!activeGroup) return;
         const name = displayNameOf(activeGroup, charId);
-        const updated = await applyGroupUpdate({ members: activeGroup.members.filter(id => id !== charId) });
+        const nextMembers = activeGroup.members.filter(id => id !== charId);
+        const updated = await applyGroupUpdate({
+            members: nextMembers,
+            memberLenses: pruneGroupMemberLenses(activeGroup.memberLenses, nextMembers),
+        });
         if (updated) {
+            setTempMemberLenses(pruneGroupMemberLenses(updated.memberLenses, updated.members));
             await postGroupNotice(activeGroup.id, `你将「${name}」移出了群聊`);
             setProfileMemberId(null);
             setModalType('none');
@@ -2636,7 +2900,7 @@ ${logText.substring(0, 10000)}
         setInput('');
 
         if (type === 'text' || type === 'voice' || type === 'image') {
-            void triggerDirector(updatedMsgs);
+            void triggerDirector(updatedMsgs, { allowAutoContinue: true });
         }
     };
 
@@ -3038,7 +3302,7 @@ ${logText.substring(0, 10000)}
             const muted = isMuted(group, m.id) ? ' | 禁言中，本轮不能说话' : '';
             const nick = group.memberNicknames?.[m.id];
             const title = group.memberTitles?.[m.id];
-            return `- ${m.name} (ID: ${m.id})${nick ? ` | 群名片: ${nick}` : ''}${title ? ` | 头衔: ${title}` : ''}${muted}`;
+            return `- ${formatCharacterWithId(m)}${nick ? ` | 群名片: ${nick}` : ''}${title ? ` | 头衔: ${title}` : ''}${muted}`;
         }).join('\n');
         const userName = group.memberNicknames?.['user'] || userProfile.name || '我';
         const currentTimeStr = `${virtualTime.hours.toString().padStart(2, '0')}:${virtualTime.minutes.toString().padStart(2, '0')}`;
@@ -3050,17 +3314,24 @@ ${logText.substring(0, 10000)}
                 skipUserProfile: true,
                 skipWorldview: sharedScene.worldviewIsShared,
                 skipWorldbookIds: sharedScene.sharedWorldbookIds,
-                headerOverride: `[Group Voice Call Member: ${member.name}]`,
+                headerOverride: `[Group Voice Call Member: ${formatCharacterWithId(member)}]`,
             });
+            const lensBlock = buildGroupMemberLensBlock(
+                group,
+                member,
+                groupMembers,
+                (charId) => displayNameOf(group, charId),
+            );
             const privateGapInfo = await getPrivateTimeGap(member.id);
             const recentPrivate = privateMsgs
                 .filter(m => !m.groupId)
                 .slice(-6)
-                .map(m => `[${m.role === 'user' ? userName : member.name}]: ${String(m.content || '').slice(0, 80)}`)
+                .map(m => `[${m.role === 'user' ? userName : formatCharacterWithId(member)}]: ${String(m.content || '').slice(0, 80)}`)
                 .join('\n');
             memberContexts.push(`
-<<< 成员档案 START: ${member.name} (ID: ${member.id}) >>>
+<<< 成员档案 START: ${formatCharacterWithId(member)} >>>
 ${coreContext}
+${lensBlock}
 
 [私聊状态]
 - 私聊空窗期: ${privateGapInfo}
@@ -3076,7 +3347,10 @@ ${recentPrivate || '(暂无私聊)'}
             .slice(-Math.max(10, Math.min(contextLimit, 40)))
             .map(m => {
                 if (m.role === 'system' || m.type === 'system') return `[系统通知] ${m.content}`;
-                const name = m.role === 'user' ? userName : displayNameOf(group, m.charId);
+                const msgMember = m.role === 'user' ? null : groupMembers.find(member => member.id === m.charId);
+                const name = m.role === 'user'
+                    ? userName
+                    : (msgMember ? formatCharacterWithId(msgMember, displayNameOf(group, msgMember.id)) : displayNameOf(group, m.charId));
                 const content = m.type === 'image'
                     ? '[图片]'
                     : m.type === 'emoji'
@@ -3122,6 +3396,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
 - 被标记「禁言中」的成员不能发言。
 - 角色要像自己，不要平均分配台词；谁更可能说话由你判断。
 - 不要输出表情包指令、PRIVATE、投票、接龙、改名片等普通群聊指令。
+- 输出里的 charId 必须精确使用花名册中的成员ID，不要用角色名、群名片或自己编的ID。
 
 输出必须是 JSON Array，格式如下:
 [
@@ -3386,13 +3661,56 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         </button>
     );
 
+    const kickGroupMemoryPalace = (groupForPalace: GroupProfile | null) => {
+        if (!groupForPalace) return;
+        // 读 ref 拿最新 characters，否则群里有成员在回复中途被用户关掉 palace
+        // 时，下面这一次还是会按"那时还有人启用"的旧状态去触发 LLM 提取
+        const liveCharacters = charactersRef.current;
+        const membersForPalace = liveCharacters.filter(c => groupForPalace.members.includes(c.id));
+        const hasAnyEnabled = membersForPalace.some(m => m.memoryPalaceEnabled);
+        if (!hasAnyEnabled) return;
+        processGroupNewMessages(
+            groupForPalace,
+            membersForPalace,
+            userProfile?.name || '',
+            (stage) => setGroupPalaceStatus(stage),
+        )
+            .then(result => {
+                setGroupPalaceStatus('');
+                if (!result) return;
+                // 真有产出（不是 skip 路径）才提示
+                if (result.stored > 0) {
+                    const enabledCount = Object.keys(result.perMemberStored).length;
+                    addToast(
+                        `🏰 【${groupForPalace.name}】群记忆整理完成：${result.processedMessageCount ?? '?'} 条消息 → ${result.extracted ?? '?'} 条记忆 × ${enabledCount} 位成员入库 ${result.stored} 条（含去重跳过）`,
+                        'success',
+                    );
+                    console.log(`🏰 [GroupChat] 群记忆整理完成`, result);
+                } else if (result.extracted === 0 && !result.reason) {
+                    addToast(`🏰 【${groupForPalace.name}】这段群聊没提到值得记的事，跳过`, 'info');
+                }
+                // hot_zone / threshold / lock / no_config / no_enabled_member —— 静默 skip
+            })
+            .catch(err => {
+                setGroupPalaceStatus('');
+                console.warn('🏰 [GroupChat] processGroupNewMessages 异常（已吞）:', err);
+            });
+    };
+
     // --- Logic: AI Director (The Core Logic) ---
 
-    const triggerDirector = async (currentMsgs: Message[]) => {
+    const triggerDirector = async (currentMsgs: Message[], options: GroupDirectorRunOptions = {}) => {
         if (!activeGroup || !apiConfig.apiKey) return;
         if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
         if (activeGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
-        setIsTyping(true);
+        if (!options.suppressMemoryPalace) setIsTyping(true);
+        const directorMode: GroupDirectorMode = options.mode || (activeGroup.replyIndividually ? 'individual' : 'director');
+        const remainingAutoRounds = typeof options.remainingAutoRounds === 'number'
+            ? options.remainingAutoRounds
+            : (options.allowAutoContinue !== true || !activeGroup.autoContinueEnabled
+                ? 0
+                : Math.max(0, Math.min(options.maxAutoRounds ?? 8, activeGroup.autoContinueRounds || 2)));
+        const isAutoRound = !!options.isAutoRound;
 
         try {
             // 1. Prepare Group Context
@@ -3419,7 +3737,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                     ? ` |【禁言中，至 ${new Date(mutedTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}，本轮不能发言】`
                     : '';
                 const ownerStr = ownerId === m.id ? ' | 群主' : (activeGroup.adminIds || []).includes(m.id) ? ' | 管理员' : '';
-                return `- ${m.name} (ID: ${m.id})${nick ? ` | 群名片:「${nick}」` : ''}${title ? ` | 头衔:「${title}」` : ''}${ownerStr}${mutedStr}`;
+                return `- ${formatCharacterWithId(m)}${nick ? ` | 群名片:「${nick}」` : ''}${title ? ` | 头衔:「${title}」` : ''}${ownerStr}${mutedStr}`;
             }).join('\n');
             const userNick = activeGroup.memberNicknames?.['user'];
             const userRosterLine = `- ${userProfile.name}（用户）${userNick ? ` | 群名片:「${userNick}」` : ''}${ownerId === 'user' ? ' | 群主' : ''}`;
@@ -3456,18 +3774,25 @@ ${sharedScene.text}`;
                     skipUserProfile: true,
                     skipWorldview: sharedScene.worldviewIsShared,
                     skipWorldbookIds: sharedScene.sharedWorldbookIds,
-                    headerOverride: `[Group Member Profile: ${member.name}]`,
+                    headerOverride: `[Group Member Profile: ${formatCharacterWithId(member)}]`,
                 });
+                const lensBlock = buildGroupMemberLensBlock(
+                    activeGroup,
+                    member,
+                    groupMembers,
+                    (charId) => displayNameOf(activeGroup, charId),
+                );
                 // Get private gap string
                 const privateGapInfo = await getPrivateTimeGap(member.id);
 
-                const recentPrivate = privateMsgs.slice(-10).map(m => `[${m.role === 'user' ? '用户' : '我'}]: ${m.content.substring(0, 50)}`).join('\n');
+                const recentPrivate = privateMsgs.slice(-10).map(m => `[${m.role === 'user' ? '用户' : formatCharacterWithId(member)}]: ${m.content.substring(0, 50)}`).join('\n');
 
                 // Construct Detailed Profile Wrapper
                 // CRITICAL FIX: Emphasize Private Context logic
                 context += `
-<<< 角色档案 START: ${member.name} (ID: ${member.id}) >>>
+<<< 角色档案 START: ${formatCharacterWithId(member)} >>>
 ${coreContext}
+${lensBlock}
 
 [重点：私聊状态 (Private Context)]:
 - **私聊空窗期**: ${privateGapInfo}
@@ -3506,12 +3831,14 @@ ${recentPrivate || '(暂无私聊)'}
                 }
                 // 撤回的消息（QQ/微信语义）：只让群成员知道"撤回了一条消息"，看不到原文。
                 if (m.metadata?.recalled) {
-                    const who = m.role === 'user' ? '用户' : (characters.find(c => c.id === m.charId)?.name || '未知');
+                    const recalledMember = groupMembers.find(c => c.id === m.charId);
+                    const who = m.role === 'user' ? '用户' : (recalledMember ? formatCharacterWithId(recalledMember, displayNameOf(activeGroup, recalledMember.id)) : '未知');
                     return `${who}: [撤回了一条消息]`;
                 }
                 let name = '用户';
                 if (m.role === 'assistant') {
-                    name = characters.find(c => c.id === m.charId)?.name || '未知';
+                    const speaker = groupMembers.find(c => c.id === m.charId);
+                    name = speaker ? formatCharacterWithId(speaker, displayNameOf(activeGroup, speaker.id)) : '未知';
                 }
                 const rawText = typeof m.content === 'string' ? m.content : '';
                 let content: string;
@@ -3545,6 +3872,14 @@ ${recentPrivate || '(暂无私聊)'}
                             ? `[红包: ${m.metadata?.amount}]`
                             : `[转账: ${m.metadata?.amount}]`;
                     }
+                } else if (m.type === 'forum_card') {
+                    const fp: any = m.metadata?.forumPost || {};
+                    const stats = fp.stats || {};
+                    const previews = Array.isArray(fp.repliesPreview)
+                        ? fp.repliesPreview.slice(0, 4).map((r: any) => `${r.floor || '?'}楼 ${r.authorName || '茶客'}:${r.body || ''}`).join(' / ')
+                        : '';
+                    const sharer = m.role === 'user' ? '用户' : (characters.find(c => c.id === m.charId)?.name || '群友');
+                    content = `[茶话亭帖子分享 by ${sharer}] 板块:${fp.boardName || fp.boardId || '茶话亭'} 楼主:${fp.author?.name || '匿名茶客'} 标题:${fp.title || '未命名'} 正文:${fp.body || '无'} 热度:${stats.likes || 0}赞/${stats.floors || 0}楼${fp.tags?.length ? ` 标签:${fp.tags.map((t: string) => `#${t}`).join(' ')}` : ''}${previews ? ` 楼层预览:${previews}` : ''}`;
                 } else if (m.type === 'poll_card') {
                     // 群投票：把问题/带序号的选项/当前票数喂给导演，方便没投过的成员投票
                     const opts: any[] = Array.isArray(m.metadata?.options) ? m.metadata.options : [];
@@ -3604,6 +3939,7 @@ ${recentPrivate || '(暂无私聊)'}
 
 ### 【AI 导演任务指令 (Director Mode)】
 当前场景：大家正在群里聊天。
+${isAutoRound ? '自动接话状态：这轮不是用户新发言，用户正在旁观。请承接最近几条角色发言，让成员之间自然聊下去，不要假装用户刚说了新话，也不要每句话都把用户拉回中心。\n' : ''}
 最近聊天记录：
 ${recentGroupMsgs}
 ${attachedImagesNote}
@@ -3677,6 +4013,7 @@ ${attachedImagesNote}
 - 但参考"对话质量"——不要因为私聊状态就给出套路化反应。
 
 ### 输出格式 (JSON Array)
+每条消息的 "charId" 必须精确使用上方群成员花名册中的成员ID；不要用角色名、群名片、头衔或自己编造的ID。
 [
   {
     "charId": "角色的ID",
@@ -3686,57 +4023,93 @@ ${attachedImagesNote}
 ]
 `;
 
-            // 当本轮有要附带的图片时，user 消息走结构化 content（text + image_url），
-            // 否则保持原来的纯文本，避免对不支持多模态字段的端点产生兼容问题。
-            const userMessageContent: any = attachedImages.length > 0
-                ? [
-                    { type: 'text', text: prompt },
-                    ...attachedImages.map(img => ({ type: 'image_url', image_url: { url: img.url } })),
-                  ]
-                : prompt;
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [{ role: "user", content: userMessageContent }],
-                    temperature: 0.9, // High creativity for banter
-                    max_tokens: 8000
-                })
-            });
-
-            if (!response.ok) throw new Error('Director Failed');
-
-            const data = await safeResponseJson(response);
-
-            // Token 统计：从导演响应里读 usage（兼容 OpenAI 兼容接口的标准字段）
-            if (data.usage?.total_tokens) {
-                setLastTokenUsage(data.usage.total_tokens);
-                setTokenBreakdown({
-                    prompt: data.usage.prompt_tokens || 0,
-                    completion: data.usage.completion_tokens || 0,
-                    total: data.usage.total_tokens,
-                    msgCount: currentMsgs.length,
-                    pass: 'director',
+            const callGroupCompletion = async (content: any, maxTokens: number, pass: string) => {
+                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    body: JSON.stringify({
+                        model: apiConfig.model,
+                        messages: [{ role: "user", content }],
+                        temperature: 0.9,
+                        max_tokens: maxTokens,
+                    })
                 });
-            }
+                if (!response.ok) throw new Error(`${pass} Failed`);
+                return safeResponseJson(response);
+            };
 
-            let jsonStr = data.choices[0].message.content;
-            
-            jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBracket = jsonStr.indexOf('[');
-            const lastBracket = jsonStr.lastIndexOf(']');
-            if (firstBracket !== -1 && lastBracket !== -1) {
-                jsonStr = jsonStr.substring(firstBracket, lastBracket + 1);
-            }
+            const buildMessageContent = (text: string): any => attachedImages.length > 0
+                ? [
+                    { type: 'text', text },
+                    ...attachedImages.map(img => ({ type: 'image_url', image_url: { url: img.url } })),
+                ]
+                : text;
 
-            let actions = [];
-            try {
-                actions = JSON.parse(jsonStr);
-                if (!Array.isArray(actions)) actions = [];
-            } catch (e) {
-                console.error("Director Parse Error", jsonStr);
-            }
+            const requestDirectorActions = async (): Promise<GroupDirectorAction[]> => {
+                const data = await callGroupCompletion(buildMessageContent(prompt), 8000, 'Director');
+                if (data.usage?.total_tokens) {
+                    setLastTokenUsage(data.usage.total_tokens);
+                    setTokenBreakdown({
+                        prompt: data.usage.prompt_tokens || 0,
+                        completion: data.usage.completion_tokens || 0,
+                        total: data.usage.total_tokens,
+                        msgCount: currentMsgs.length,
+                        pass: 'director',
+                    });
+                }
+                return parseGroupDirectorActions(data.choices?.[0]?.message?.content);
+            };
+
+            const requestIndividualActions = async (): Promise<GroupDirectorAction[]> => {
+                const collected: GroupDirectorAction[] = [];
+                let usage = { prompt: 0, completion: 0, total: 0 };
+                const callableMembers = groupMembers.filter(member => !isMuted(activeGroup, member.id));
+                for (const member of callableMembers) {
+                    const targetName = displayNameOf(activeGroup, member.id);
+                    const individualPrompt = `${prompt}
+
+### 【角色各自回复模式】
+现在只调用一个成员：${formatCharacterWithId(member, targetName)}
+- 你只决定「${targetName}」这一位成员此刻要不要说话。
+- 允许沉默：如果此刻更像真实群聊里的潜水、看见但不接、只在心里反应，请输出 []。
+- 如果要说，只输出 1 个对象，charId 必须是 "${member.id}"；不要替其他成员说话，也不要安排别人下一句。
+- 你可以使用上面允许的群工具指令，但仍保持低频、自然。
+
+输出必须是 JSON Array，格式：
+[
+  { "charId": "${member.id}", "content": "这一位成员的发言" }
+]
+或者：
+[]
+`;
+                    const data = await callGroupCompletion(buildMessageContent(individualPrompt), 1800, `Individual:${member.id}`);
+                    if (data.usage?.total_tokens) {
+                        usage.prompt += data.usage.prompt_tokens || 0;
+                        usage.completion += data.usage.completion_tokens || 0;
+                        usage.total += data.usage.total_tokens || 0;
+                    }
+                    const actionsForMember = parseGroupDirectorActions(data.choices?.[0]?.message?.content)
+                        .filter(action => action.charId === member.id)
+                        .slice(0, 1);
+                    collected.push(...actionsForMember);
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                if (usage.total > 0) {
+                    setLastTokenUsage(usage.total);
+                    setTokenBreakdown({
+                        prompt: usage.prompt,
+                        completion: usage.completion,
+                        total: usage.total,
+                        msgCount: currentMsgs.length,
+                        pass: 'individual',
+                    });
+                }
+                return collected;
+            };
+
+            const actions = directorMode === 'individual'
+                ? await requestIndividualActions()
+                : await requestDirectorActions();
 
             // Execute Actions with Splitting Logic
             // liveGroup：本轮执行期间的最新群状态（角色改群名片会就地更新，避免读到陈旧 state）
@@ -4011,50 +4384,119 @@ ${attachedImagesNote}
                 setActiveGroup(liveGroup);
             }
 
+            const freshAfterRound = await DB.getGroupMessages(activeGroup.id);
+            const hasGroupProgress = freshAfterRound.length > currentMsgs.length || groupChanged;
+            if (remainingAutoRounds > 0 && hasGroupProgress) {
+                await new Promise(r => setTimeout(r, 650));
+                await triggerDirector(freshAfterRound, {
+                    ...options,
+                    mode: directorMode,
+                    remainingAutoRounds: remainingAutoRounds - 1,
+                    isAutoRound: true,
+                    suppressMemoryPalace: true,
+                });
+            }
+
         } catch (e: any) {
             console.error(e);
         } finally {
-            setIsTyping(false);
-            // 群记忆宫殿：fire-and-forget，水位线/阈值/异常都在内部 swallow，不影响主流程
-            // groupMembers 在 try 块内声明，这里在 finally 重新解析
-            if (activeGroup) {
-                const groupForPalace = activeGroup;
-                // 读 ref 拿最新 characters，否则群里有成员在回复中途被用户关掉 palace
-                // 时，下面这一次还是会按"那时还有人启用"的旧状态去触发 LLM 提取
-                const liveCharacters = charactersRef.current;
-                const membersForPalace = liveCharacters.filter(c => groupForPalace.members.includes(c.id));
-                const hasAnyEnabled = membersForPalace.some(m => m.memoryPalaceEnabled);
-                if (hasAnyEnabled) {
-                    processGroupNewMessages(
-                        groupForPalace,
-                        membersForPalace,
-                        userProfile?.name || '',
-                        (stage) => setGroupPalaceStatus(stage),
-                    )
-                        .then(result => {
-                            setGroupPalaceStatus('');
-                            if (!result) return;
-                            // 真有产出（不是 skip 路径）才提示
-                            if (result.stored > 0) {
-                                const enabledCount = Object.keys(result.perMemberStored).length;
-                                addToast(
-                                    `🏰 【${groupForPalace.name}】群记忆整理完成：${result.processedMessageCount ?? '?'} 条消息 → ${result.extracted ?? '?'} 条记忆 × ${enabledCount} 位成员入库 ${result.stored} 条（含去重跳过）`,
-                                    'success',
-                                );
-                                console.log(`🏰 [GroupChat] 群记忆整理完成`, result);
-                            } else if (result.extracted === 0 && !result.reason) {
-                                addToast(`🏰 【${groupForPalace.name}】这段群聊没提到值得记的事，跳过`, 'info');
-                            }
-                            // hot_zone / threshold / lock / no_config / no_enabled_member —— 静默 skip
-                        })
-                        .catch(err => {
-                            setGroupPalaceStatus('');
-                            console.warn('🏰 [GroupChat] processGroupNewMessages 异常（已吞）:', err);
-                        });
-                }
+            if (!options.suppressMemoryPalace) {
+                setIsTyping(false);
+                // 群记忆宫殿：fire-and-forget，水位线/阈值/异常都在内部 swallow，不影响主流程
+                kickGroupMemoryPalace(activeGroup);
             }
         }
     };
+
+    useEffect(() => {
+        if (!Array.isArray(groups) || groups.length === 0) return;
+        let raw: string | null = null;
+        try { raw = localStorage.getItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+        if (!raw) return;
+
+        let parsed: unknown = null;
+        try { parsed = JSON.parse(raw); } catch {
+            try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+        const maybeTargetKind = parsed && typeof parsed === 'object'
+            ? ((parsed as any).targetKind === 'group' || !!(parsed as any).groupId ? 'group' : 'character')
+            : 'character';
+        if (maybeTargetKind !== 'group') return;
+
+        const payload = normalizeForumSharePendingPayload(parsed, {
+            validCharIds: characters.map(c => c.id),
+            validGroupIds: groups.map(g => g.id),
+        });
+        if (!payload || payload.targetKind !== 'group' || !payload.groupId) {
+            try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+        if (forumGroupShareConsumingRef.current === payload.id) return;
+
+        const group = groups.find(g => g.id === payload.groupId);
+        if (!group) {
+            try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+        const sourceCharId = payload.shareMode === 'char_to_group' ? payload.charId : undefined;
+        if (sourceCharId && !group.members.includes(sourceCharId)) {
+            try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+
+        let cancelled = false;
+        forumGroupShareConsumingRef.current = payload.id;
+        void (async () => {
+            try {
+                const isCharShare = payload.shareMode === 'char_to_group';
+                const snapshot = { ...payload.snapshot, shareMode: payload.shareMode };
+                await DB.saveMessage({
+                    charId: isCharShare ? sourceCharId! : 'user',
+                    groupId: group.id,
+                    role: isCharShare ? 'assistant' : 'user',
+                    type: 'forum_card',
+                    content: isCharShare ? '[分享的茶话亭帖子]' : '[转发的茶话亭帖子]',
+                    metadata: {
+                        forumPost: snapshot,
+                        forumShareMode: payload.shareMode,
+                        forumShareId: payload.id,
+                    },
+                } as any);
+                try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
+                if (cancelled) return;
+                openGroupChat(group);
+                const fresh = await DB.getGroupMessages(group.id);
+                if (cancelled) return;
+                setMessages(fresh);
+                forumGroupShareTriggerRef.current = { groupId: group.id, shareId: payload.id };
+            } catch (err) {
+                console.warn('[GroupChat] consume forum share failed', err);
+            } finally {
+                if (forumGroupShareConsumingRef.current === payload.id) forumGroupShareConsumingRef.current = null;
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [groups, characters]);
+
+    useEffect(() => {
+        const pending = forumGroupShareTriggerRef.current;
+        if (!pending || !activeGroup || pending.groupId !== activeGroup.id || isTyping) return;
+        let cancelled = false;
+        const timer = window.setTimeout(() => {
+            void (async () => {
+                const shareId = pending.shareId;
+                forumGroupShareTriggerRef.current = null;
+                const fresh = await DB.getGroupMessages(activeGroup.id);
+                if (cancelled) return;
+                setMessages(fresh);
+                const exists = fresh.some(m => (m.metadata as any)?.forumShareId === shareId);
+                if (exists) await triggerDirector(fresh);
+            })();
+        }, 300);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [activeGroup?.id, messages.length, isTyping]);
 
     // --- Renderers ---
 
@@ -4112,7 +4554,7 @@ ${attachedImagesNote}
                                     {/* 点空白处收起菜单 */}
                                     <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
                                     <div
-                                        className="absolute right-0 top-full mt-2 z-50 w-44 overflow-hidden animate-pop-in bg-white"
+                                        className="absolute right-0 top-full mt-2 z-50 w-64 overflow-hidden animate-pop-in bg-white"
                                         style={{
                                             border: '1px solid #f0cbd7',
                                             borderRadius: 18,
@@ -4134,6 +4576,32 @@ ${attachedImagesNote}
                                         >
                                             <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: '#9c5e74' }} />
                                             拉个新群聊
+                                        </button>
+                                        <div className="mx-4 border-t" style={{ borderColor: '#f2d9e2' }} />
+                                        <button
+                                            onClick={handleToggleAmbientSocial}
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-left active:scale-[0.98] transition-all hover:bg-[#fff6f9]"
+                                            role="switch"
+                                            aria-checked={ambientSocialEnabled}
+                                            aria-label="用户社交圈"
+                                        >
+                                            <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: ambientSocialEnabled ? '#9c5e74' : '#94a3b8' }} />
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-sm font-bold leading-tight truncate">用户社交圈</span>
+                                                <span className="block text-[10px] font-medium text-slate-400 leading-tight truncate">{ambientSocialEnabled ? '允许背景联系人出现' : '只显示主动添加的人'}</span>
+                                            </span>
+                                            <span
+                                                className="relative h-6 w-11 rounded-full border transition-colors shrink-0"
+                                                style={{
+                                                    background: ambientSocialEnabled ? '#9c5e74' : '#e2e8f0',
+                                                    borderColor: ambientSocialEnabled ? '#9c5e74' : '#cbd5e1',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                                                    style={{ transform: ambientSocialEnabled ? 'translateX(20px)' : 'translateX(2px)' }}
+                                                />
+                                            </span>
                                         </button>
                                     </div>
                                 </>
@@ -5407,7 +5875,106 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="04" title="特别关心" en="Special Care">
+                <GroupSettingsPage no="04" title="角色之间的关系" en="Perspective">
+                    {(() => {
+                        const memberList = (activeGroup?.members || [])
+                            .map(id => characters.find(ch => ch.id === id))
+                            .filter(Boolean) as CharacterProfile[];
+                        const selectedViewer = memberList.find(member => member.id === tempLensViewerId) || memberList[0] || null;
+                        const savedCount = activeGroup ? groupMemberLensCount(activeGroup.memberLenses, activeGroup.members) : 0;
+                        return (
+                            <div className="pt-3 space-y-4">
+                                <ScrapDivider className="mb-3" />
+                                <div>
+                                    <div className="flex items-baseline gap-2 mb-1">
+                                        <div className="text-[16px] font-black leading-tight" style={{ color: INK }}>角色之间的关系</div>
+                                        <div className="text-[9px] tracking-[0.32em]" style={{ ...GROUP_SETTINGS_MONO, color: INK_SOFT }}>PERSPECTIVE</div>
+                                    </div>
+                                    <ScrapNote>设置“在某个角色眼里，谁是谁、彼此什么关系、有没有过节”。这些只用于该角色自己的发言，不会写进群聊记录。</ScrapNote>
+                                </div>
+
+                                {memberList.length < 2 ? (
+                                    <ScrapNote center className="py-8">至少要有两个群成员，才写得出彼此眼里的关系。</ScrapNote>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <ScrapLabel en="VIEWPOINT">从谁的视角写</ScrapLabel>
+                                            <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto no-scrollbar pr-1">
+                                                {memberList.map(member => (
+                                                    <ScrapPickTile
+                                                        key={member.id}
+                                                        src={member.avatar}
+                                                        label={displayNameOf(activeGroup, member.id)}
+                                                        selected={selectedViewer?.id === member.id}
+                                                        badge={tempMemberLenses[member.id] && Object.keys(tempMemberLenses[member.id]).length > 0
+                                                            ? <span className="text-[9px] font-black" style={{ color: INK }}>{Object.keys(tempMemberLenses[member.id]).length}</span>
+                                                            : undefined}
+                                                        onClick={() => setTempLensViewerId(member.id)}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {selectedViewer && (
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <ScrapLabel en="RELATIONS">写给 {displayNameOf(activeGroup, selectedViewer.id)} 自己看的</ScrapLabel>
+                                                    <span className="shrink-0 text-[9px] font-bold px-2 py-1 rounded-full" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK_SOFT }}>
+                                                        已存 {savedCount}
+                                                    </span>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {memberList.filter(target => target.id !== selectedViewer.id).map(target => {
+                                                        const value = tempMemberLenses[selectedViewer.id]?.[target.id] || '';
+                                                        return (
+                                                            <div
+                                                                key={`${selectedViewer.id}-${target.id}`}
+                                                                className="p-3"
+                                                                style={{ background: 'rgba(255,253,247,0.76)', border: '1px solid #eed6df', borderRadius: 16 }}
+                                                            >
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <img src={target.avatar} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="text-[13px] font-black truncate" style={{ color: INK }}>
+                                                                            {displayNameOf(activeGroup, selectedViewer.id)} 眼里的 {displayNameOf(activeGroup, target.id)}
+                                                                        </div>
+                                                                        <div className="text-[9.5px] truncate" style={{ color: INK_SOFT }}>例：以前合作过，嘴上互怼但彼此认可；或：刚进群，还不熟。</div>
+                                                                    </div>
+                                                                </div>
+                                                                <ScrapTextarea
+                                                                    value={value}
+                                                                    onChange={e => updateMemberLensDraft(selectedViewer.id, target.id, e.target.value)}
+                                                                    onBlur={() => void saveMemberLensesDraft()}
+                                                                    rows={3}
+                                                                    maxLength={500}
+                                                                    placeholder={`写 ${displayNameOf(activeGroup, selectedViewer.id)} 怎么看 ${displayNameOf(activeGroup, target.id)}…`}
+                                                                />
+                                                                <div className="mt-1.5 flex items-center justify-between gap-2">
+                                                                    <ScrapNote>只给 {displayNameOf(activeGroup, selectedViewer.id)} 的发言参考。</ScrapNote>
+                                                                    <span className="text-[9px]" style={{ color: INK_SOFT }}>{value.length}/500</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <ScrapBtn
+                                                    variant="paper"
+                                                    className="text-xs"
+                                                    onClick={() => void saveMemberLensesDraft().then(() => addToast('角色关系视角已保存', 'success'))}
+                                                    icon={<IdentificationCard size={15} weight="bold" />}
+                                                >
+                                                    保存这些视角
+                                                </ScrapBtn>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })()}
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="05" title="特别关心" en="Special Care">
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <div className="flex items-center justify-between gap-3">
@@ -5454,7 +6021,86 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="05" title="背景与记忆" en="Background Memory">
+                <GroupSettingsPage no="06" title="背景与记忆" en="Background Memory">
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="AI REPLIES">角色怎么接话</ScrapLabel>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-3 py-1">
+                                <div className="min-w-0">
+                                    <div className="text-[13px] font-black flex items-center gap-1.5" style={{ color: INK }}><ChatsTeardrop size={14} weight="bold" style={{ color: INK_SOFT }} />角色各自回复</div>
+                                    <ScrapNote className="mt-0.5">开启后，每个成员各自调用一次 API，像各自拿着手机决定要不要回。</ScrapNote>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = !tempReplyIndividually;
+                                        setTempReplyIndividually(next);
+                                        void applyGroupUpdate({
+                                            replyIndividually: next,
+                                            autoContinueEnabled: tempAutoContinueEnabled,
+                                            autoContinueRounds: tempAutoContinueRounds,
+                                        });
+                                    }}
+                                    className="relative w-11 h-6 rounded-full shrink-0 transition-colors"
+                                    style={{ background: tempReplyIndividually ? INK : '#d9d3c7' }}
+                                    title={tempReplyIndividually ? '已开启角色各自回复' : '已关闭角色各自回复'}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${tempReplyIndividually ? 'translate-x-5' : ''}`} style={{ background: '#fbf9f2', boxShadow: '0 1px 3px rgba(31,29,26,0.35)' }} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 py-1">
+                                <div className="min-w-0">
+                                    <div className="text-[13px] font-black flex items-center gap-1.5" style={{ color: INK }}><ListNumbers size={14} weight="bold" style={{ color: INK_SOFT }} />让角色自动接话</div>
+                                    <ScrapNote className="mt-0.5">你发完一句后，角色会继续聊几轮；你可以像旁观者一样看他们自然对话。</ScrapNote>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = !tempAutoContinueEnabled;
+                                        setTempAutoContinueEnabled(next);
+                                        void applyGroupUpdate({
+                                            replyIndividually: tempReplyIndividually,
+                                            autoContinueEnabled: next,
+                                            autoContinueRounds: tempAutoContinueRounds,
+                                        });
+                                    }}
+                                    className="relative w-11 h-6 rounded-full shrink-0 transition-colors"
+                                    style={{ background: tempAutoContinueEnabled ? INK : '#d9d3c7' }}
+                                    title={tempAutoContinueEnabled ? '已开启自动接话' : '已关闭自动接话'}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${tempAutoContinueEnabled ? 'translate-x-5' : ''}`} style={{ background: '#fbf9f2', boxShadow: '0 1px 3px rgba(31,29,26,0.35)' }} />
+                                </button>
+                            </div>
+
+                            <div className={`transition-opacity ${tempAutoContinueEnabled ? 'opacity-100' : 'opacity-45'}`}>
+                                <ScrapLabel en="AUTO TURNS">自动接话轮数 · {tempAutoContinueRounds}</ScrapLabel>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="8"
+                                    step="1"
+                                    value={tempAutoContinueRounds}
+                                    disabled={!tempAutoContinueEnabled}
+                                    onChange={e => {
+                                        const v = Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 2));
+                                        setTempAutoContinueRounds(v);
+                                        void applyGroupUpdate({
+                                            replyIndividually: tempReplyIndividually,
+                                            autoContinueEnabled: tempAutoContinueEnabled,
+                                            autoContinueRounds: v,
+                                        });
+                                    }}
+                                    className="w-full h-2 rounded-full appearance-none disabled:cursor-not-allowed"
+                                    style={{ background: '#d9d3c7', accentColor: INK }}
+                                />
+                                <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>1 · 接一句</span><span>8 · 小剧场</span></div>
+                                <ScrapNote className="mt-1">轮数越多越热闹，也会多消耗 API 调用；开启「角色各自回复」时，每一轮会按成员分别调用。</ScrapNote>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <ScrapLabel en="BACKGROUND">这个群的聊天背景</ScrapLabel>
@@ -5497,7 +6143,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="06" title="数据管理" en="Data">
+                <GroupSettingsPage no="07" title="数据管理" en="Data">
                     {/* Memory & Context Management */}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />

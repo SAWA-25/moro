@@ -74,7 +74,7 @@ import {
 import { runConsolidation } from './consolidation';
 import { rerankDocuments } from './rerank';
 // 认知消化由用户在记忆宫殿 App 手动触发，不在聊天管线中自动运行
-import { MemoryNodeDB, MemoryVectorDB, MemoryLinkDB, AnticipationDB } from './db';
+import { MemoryNodeDB, MemoryVectorDB, AnticipationDB } from './db';
 import { DB } from '../db';
 import { isMessageSemanticallyRelevant, formatMessageForPrompt } from '../messageFormat';
 import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';

@@ -212,7 +212,7 @@ const mcpInitialize = async (serverUrl: string): Promise<void> => {
     const initReq = mcpBuildRequest('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
-        clientInfo: { name: 'AetherOS-XhsFreeRoam', version: '1.0.0' },
+        clientInfo: { name: 'Moro-XhsFreeRoam', version: '1.0.0' },
     });
     const { response, sessionId } = await mcpPost(serverUrl, initReq);
     if (sessionId) mcpSessionId = sessionId;

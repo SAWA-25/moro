@@ -23,6 +23,7 @@ import { MemoryNodeDB, MemoryVectorDB } from './db';
 import { getEmbeddings, cosineSimilarity } from './embedding';
 import { extractGroupMemoriesFromBuffer } from './groupExtraction';
 import { isMessageSemanticallyRelevant } from '../messageFormat';
+import { formatCharacterWithId } from '../characterIdentity';
 
 // ─── 群聊水位线：私聊用 200/100，群聊更宽松 300/200 ─────────────────
 const HOT_ZONE_SIZE_GROUP = 300;
@@ -89,7 +90,7 @@ function generateGroupMemoryId(): string {
 /** 把消息按 charId 映射成显示名（用户消息 → userName，角色消息 → 角色名） */
 function makeSpeakerNameOf(members: CharacterProfile[], userName: string) {
     const charIdToName = new Map<string, string>();
-    for (const m of members) charIdToName.set(m.id, m.name);
+    for (const m of members) charIdToName.set(m.id, formatCharacterWithId(m));
     return (msg: Message): string => {
         if (msg.role === 'user') return userName || '用户';
         if (msg.charId) return charIdToName.get(msg.charId) || '群友';
@@ -218,7 +219,7 @@ export async function processGroupNewMessages(
         onProgress?.(`正在整理 ${toProcess.length} 条群消息...`);
 
         // 5. LLM 提取（第三人称草稿）
-        const memberNames = members.map(m => m.name);
+        const memberNames = members.map(m => formatCharacterWithId(m));
         const speakerNameOf = makeSpeakerNameOf(members, userName);
         onProgress?.(`正在提取【${group.name}】群记忆...`);
         const { drafts } = await extractGroupMemoriesFromBuffer(

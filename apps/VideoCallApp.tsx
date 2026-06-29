@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
-import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate, PaperPlaneRight } from '@phosphor-icons/react';
+import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate, PaperPlaneRight, Minus } from '@phosphor-icons/react';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { ContextBuilder } from '../utils/context';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { videoCallPromptBody } from '../utils/laiwangPrompts';
 import { DB } from '../utils/db';
+import { AppID } from '../types';
 
 /**
  * 视频通话 —— 从聊天发起的视频通话页。
@@ -37,7 +38,7 @@ const summarizeKeepsakeLine = (lines: VideoChatLine[], charName: string) => {
 };
 
 const VideoCallApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, userProfile, addToast, apiConfig } = useOS();
+    const { activeApp, closeApp, characters, activeCharacterId, userProfile, addToast, apiConfig, suspendedVideoCall, suspendVideoCall, clearSuspendedVideoCall } = useOS();
     const char = useMemo(() => characters.find(c => c.id === activeCharacterId) || null, [characters, activeCharacterId]);
 
     const [secs, setSecs] = useState(0);
@@ -47,20 +48,28 @@ const VideoCallApp: React.FC = () => {
     const [chatLines, setChatLines] = useState<VideoChatLine[]>([]);
     const [textInput, setTextInput] = useState('');
     const [replying, setReplying] = useState(false);
+    const [isSuspended, setIsSuspended] = useState(false);
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const chatLinesRef = useRef<VideoChatLine[]>([]);
     const secsRef = useRef(0);
     const endedRef = useRef(false);
+    const suspendedRef = useRef(false);
     const sessionIdRef = useRef(`video-call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
 
     // 通话计时
-    useEffect(() => { const t = setInterval(() => setSecs(s => s + 1), 1000); return () => clearInterval(t); }, []);
+    useEffect(() => {
+        const t = setInterval(() => {
+            if (!endedRef.current && !suspendedRef.current) setSecs(s => s + 1);
+        }, 1000);
+        return () => clearInterval(t);
+    }, []);
     // 离开时停掉摄像头
     useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); audioRef.current?.pause(); }, []);
     useEffect(() => { chatLinesRef.current = chatLines; }, [chatLines]);
     useEffect(() => { secsRef.current = secs; }, [secs]);
+    useEffect(() => { suspendedRef.current = isSuspended; }, [isSuspended]);
 
     const hasVoiceOutput = !!(char?.voiceProfile?.voiceId || char?.voiceProfile?.timberWeights?.length) && !!resolveMiniMaxApiKey(apiConfig);
 
@@ -78,7 +87,7 @@ const VideoCallApp: React.FC = () => {
     };
 
     const requestCharReply = async (params: { userText?: string; eventLabel?: string; fallback: string; cameraOn?: boolean }) => {
-        if (!char || replying || endedRef.current) return;
+        if (!char || replying || endedRef.current || suspendedRef.current) return;
         const nextCameraOn = params.cameraOn ?? camOn;
         const text = params.userText?.trim();
         const userLine = text ? { id: `u-${Date.now()}`, role: 'user' as const, text, timestamp: Date.now() } : null;
@@ -86,7 +95,7 @@ const VideoCallApp: React.FC = () => {
         setReplying(true);
         try {
             if (!apiConfig.baseUrl || !apiConfig.apiKey) {
-                if (endedRef.current) return;
+                if (endedRef.current || suspendedRef.current) return;
                 setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: params.fallback, timestamp: Date.now() }]);
                 return;
             }
@@ -119,7 +128,7 @@ ${videoCallPromptBody({
             if (!response.ok) throw new Error(`API ${response.status}`);
             const data = await safeResponseJson(response);
             const reply = (extractContent(data) || '').trim() || params.fallback;
-            if (endedRef.current) return;
+            if (endedRef.current || suspendedRef.current) return;
             setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: reply, timestamp: Date.now() }]);
             void playReplyVoice(reply);
         } catch (err: any) {
@@ -152,9 +161,55 @@ ${videoCallPromptBody({
     };
     const toggleCam = () => { camOn ? stopCam(true) : startCam(facing, true); };
     const flip = () => { const next = facing === 'user' ? 'environment' : 'user'; setFacing(next); if (camOn) startCam(next, false); };
+
+    const handleSuspendVideoCall = () => {
+        if (!char || endedRef.current) return;
+        const wasCamOn = camOn;
+        const currentFacing = facing;
+        const elapsedSeconds = Math.max(0, secsRef.current);
+        const lines = chatLinesRef.current;
+        suspendedRef.current = true;
+        setIsSuspended(true);
+        stopCam(false);
+        audioRef.current?.pause();
+        setReplying(false);
+        suspendVideoCall({
+            charId: char.id,
+            charName,
+            charAvatar: char.avatar,
+            startedAt: Date.now() - elapsedSeconds * 1000,
+            elapsedSeconds,
+            chatLines: lines,
+            sessionId: sessionIdRef.current,
+            camOn: wasCamOn,
+            micOn,
+            facing: currentFacing,
+        });
+        addToast('视频通话已挂起', 'info');
+    };
+
+    useEffect(() => {
+        if (!suspendedVideoCall || activeApp !== AppID.VideoCall || !char || suspendedVideoCall.charId !== char.id) return;
+        sessionIdRef.current = suspendedVideoCall.sessionId;
+        setSecs(Math.max(0, suspendedVideoCall.elapsedSeconds || 0));
+        setChatLines(suspendedVideoCall.chatLines || []);
+        setMicOn(suspendedVideoCall.micOn);
+        setFacing(suspendedVideoCall.facing || 'user');
+        suspendedRef.current = false;
+        setIsSuspended(false);
+        endedRef.current = false;
+        clearSuspendedVideoCall();
+        if (suspendedVideoCall.camOn) {
+            void startCam(suspendedVideoCall.facing || 'user', false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeApp, suspendedVideoCall, char?.id]);
+
     const finishVideoCall = async () => {
         if (!char || endedRef.current) return;
         endedRef.current = true;
+        suspendedRef.current = false;
+        setIsSuspended(false);
         stopCam(false);
         audioRef.current?.pause();
 
@@ -211,6 +266,7 @@ ${videoCallPromptBody({
         } catch (err: any) {
             addToast(`视频通话记录保存失败：${err?.message || '未知错误'}`, 'error');
         } finally {
+            clearSuspendedVideoCall();
             closeApp();
         }
     };
@@ -253,9 +309,14 @@ ${videoCallPromptBody({
 
             <div className="relative z-10 flex flex-col h-full">
                 <div className="px-4 pt-10 pb-3 border-b-2 border-black flex items-center justify-between">
-                    <button onClick={hangUp} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断">
-                        <PhoneX size={15} weight="bold" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={hangUp} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断">
+                            <PhoneX size={15} weight="bold" />
+                        </button>
+                        <button onClick={handleSuspendVideoCall} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂起">
+                            <Minus size={15} weight="bold" />
+                        </button>
+                    </div>
                     <div className="flex items-center gap-2 min-w-0">
                         <div className="w-8 h-8 border-2 border-black flex items-center justify-center text-xs font-serif font-bold overflow-hidden -rotate-2 bg-white">
                             {char?.avatar ? <img src={char.avatar} alt="" className="w-full h-full object-cover" /> : charName[0]}

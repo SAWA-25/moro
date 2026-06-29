@@ -163,7 +163,7 @@ const initializeClient = async (config: ActiveMsg2GlobalConfig) => {
   return client;
 };
 
-const resolveApiConfig = (char: CharacterProfile, config: ActiveMsg2CharacterConfig, apiConfig: APIConfig) => {
+const resolveApiConfig = (_char: CharacterProfile, config: ActiveMsg2CharacterConfig, apiConfig: APIConfig) => {
   const useSecondary = config.useSecondaryApi && config.secondaryApi?.baseUrl;
   const source = useSecondary ? config.secondaryApi! : apiConfig;
 

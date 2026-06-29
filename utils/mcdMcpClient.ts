@@ -12,8 +12,10 @@
  */
 
 const MCP_PROXY_URL = 'https://sullymeow.ccwu.cc/mcp/mcd';
-const MCP_TOKEN_KEY = 'aetheros.mcd.mcpToken';
-const MCP_ENABLED_KEY = 'aetheros.mcd.mcpEnabled';
+const MCP_TOKEN_KEY = 'moro.mcd.mcpToken';
+const MCP_ENABLED_KEY = 'moro.mcd.mcpEnabled';
+const LEGACY_MCP_TOKEN_KEY = 'aetheros.mcd.mcpToken';
+const LEGACY_MCP_ENABLED_KEY = 'aetheros.mcd.mcpEnabled';
 
 export interface McdToolDef {
     name: string;
@@ -66,19 +68,45 @@ interface McpJsonRpcResponse {
 // ========== Token / 启用状态 (持久化在 localStorage) ==========
 
 export const getMcdToken = (): string => {
-    try { return localStorage.getItem(MCP_TOKEN_KEY) || ''; } catch { return ''; }
+    try {
+        const current = localStorage.getItem(MCP_TOKEN_KEY);
+        if (current !== null) return current;
+        const legacy = localStorage.getItem(LEGACY_MCP_TOKEN_KEY);
+        if (legacy !== null) {
+            localStorage.setItem(MCP_TOKEN_KEY, legacy);
+            localStorage.removeItem(LEGACY_MCP_TOKEN_KEY);
+            return legacy;
+        }
+        return '';
+    } catch { return ''; }
 };
 
 export const setMcdToken = (token: string): void => {
-    try { localStorage.setItem(MCP_TOKEN_KEY, token.trim()); } catch { /* ignore */ }
+    try {
+        localStorage.setItem(MCP_TOKEN_KEY, token.trim());
+        localStorage.removeItem(LEGACY_MCP_TOKEN_KEY);
+    } catch { /* ignore */ }
 };
 
 export const isMcdEnabled = (): boolean => {
-    try { return localStorage.getItem(MCP_ENABLED_KEY) === '1'; } catch { return false; }
+    try {
+        const current = localStorage.getItem(MCP_ENABLED_KEY);
+        if (current !== null) return current === '1';
+        const legacy = localStorage.getItem(LEGACY_MCP_ENABLED_KEY);
+        if (legacy !== null) {
+            localStorage.setItem(MCP_ENABLED_KEY, legacy);
+            localStorage.removeItem(LEGACY_MCP_ENABLED_KEY);
+            return legacy === '1';
+        }
+        return false;
+    } catch { return false; }
 };
 
 export const setMcdEnabled = (enabled: boolean): void => {
-    try { localStorage.setItem(MCP_ENABLED_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
+    try {
+        localStorage.setItem(MCP_ENABLED_KEY, enabled ? '1' : '0');
+        localStorage.removeItem(LEGACY_MCP_ENABLED_KEY);
+    } catch { /* ignore */ }
 };
 
 export const isMcdConfigured = (): boolean => {
@@ -165,7 +193,7 @@ const doInitialize = async (): Promise<void> => {
     const initReq = buildRequest('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
-        clientInfo: { name: 'AetherOS-Aetheros', version: '1.0.0' },
+        clientInfo: { name: 'Moro-McdMcp', version: '1.0.0' },
     });
     const { response } = await post(initReq);
     if (response?.error) throw new Error(`Initialize 失败: ${response.error.message}`);

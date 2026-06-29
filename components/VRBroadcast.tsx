@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * 「彼方」大世界喇叭 —— 当某角色正在登入彼方、调用 API 行动时，
+ * 「页外」大世界喇叭 —— 当某角色正在登入页外、调用 API 行动时，
  * 顶部滑出一条 MMO 风格的世界播报。监听 runSession 派发的
  * vr-session-start / vr-session-end 事件，全局挂载（App 根级）。
  */
@@ -41,7 +41,7 @@ const VRBroadcast: React.FC = () => {
 
     if (active.length === 0) return null;
     const cur = active[active.length - 1];
-    const room = ROOM_LABEL[cur.room] || { name: '彼方' };
+    const room = ROOM_LABEL[cur.room] || { name: '页外' };
     const extra = active.length > 1 ? ` 等 ${active.length} 人` : '';
 
     return (
@@ -65,7 +65,7 @@ const VRBroadcast: React.FC = () => {
                 }} />
                 <span className="relative text-[12px] opacity-80" style={{ filter: 'drop-shadow(0 0 5px rgba(180,195,255,.6))' }}>✦</span>
                 <span className="relative text-[11px] tracking-[0.04em] text-white/90 whitespace-nowrap font-light">
-                    <span className="text-amber-200/90 font-normal">{cur.charName}</span>{extra} 正漫游于彼方 · {room.name}
+                    <span className="text-amber-200/90 font-normal">{cur.charName}</span>{extra} 正漫游于页外 · {room.name}
                     {cur.novelTitle ? ` 读《${cur.novelTitle}》` : ''}
                 </span>
                 <span className="relative flex gap-1">

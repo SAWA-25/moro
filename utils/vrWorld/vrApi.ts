@@ -1,8 +1,8 @@
 /**
- * 「彼方」独立 API 配置 + 调用记录。存于 IndexedDB（vr_settings store），
+ * 「页外」独立 API 配置 + 调用记录。存于 IndexedDB（vr_settings store），
  * 随数据导出/备份一起走，不再依赖 localStorage。
  *
- * 彼方的角色会自主、频繁地登入触发 LLM 调用，比较费 API，所以允许用户单独
+ * 页外的角色会自主、频繁地登入触发 LLM 调用，比较费 API，所以允许用户单独
  * 指定一份 API（与聊天 App 共用同一批已保存的预设 os_api_presets，但选择独立）。
  * 不设则回退聊天默认 apiConfig。同时记录每次调用，方便对账。
  */
@@ -35,7 +35,7 @@ async function migrateOnce(): Promise<void> {
     } catch { /* ignore */ }
 }
 
-/** 彼方独立 API；null = 跟随聊天默认。 */
+/** 页外独立 API；null = 跟随聊天默认。 */
 export async function getVRApi(): Promise<APIConfig | null> {
     await migrateOnce();
     return (await DB.getVRApiConfig()) as APIConfig | null;

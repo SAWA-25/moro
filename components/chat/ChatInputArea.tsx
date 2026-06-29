@@ -795,6 +795,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <Detective className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
+                            <ActionStrip label="窥屏" hint="生成 TA 此刻手机屏幕截图" dark={isDiscordStyle} onClick={() => onPanelAction('screen-peek')}>
+                                <ImageSquare className="w-5 h-5" weight="duotone" />
+                            </ActionStrip>
+
                             <ActionStrip label="锁机" hint="远程锁住 TA 的屏幕，看 TA 怎么解" dark={isDiscordStyle} onClick={() => onPanelAction('phone-lock')}>
                                 <Lock className="w-5 h-5" weight="bold" />
                             </ActionStrip>

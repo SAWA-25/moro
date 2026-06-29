@@ -74,6 +74,17 @@ describe('materializeTwitterTweets', () => {
         expect(tweets[0].replies[0].charId).toBe('c2');
     });
 
+    it('does not keep phantom reply counts without visible replies', () => {
+        const tweets = materializeTwitterTweets([{
+            authorName: '路人甲',
+            content: '这条看起来很热闹',
+            replyCount: 9,
+            replies: [],
+        }], chars, user);
+        expect(tweets[0].replyCount).toBe(0);
+        expect(tweets[0].replies).toHaveLength(0);
+    });
+
     it('keeps multilingual metadata and account fields', () => {
         const tweets = materializeTwitterTweets([{
             authorName: 'Noah Park',
@@ -92,6 +103,26 @@ describe('materializeTwitterTweets', () => {
         expect(tweets[0].accountId).toContain('npc:');
         expect(tweets[0].replies[0].language).toBe('ja');
     });
+
+    it('materializes rich media, polls, mentions, and thread metadata', () => {
+        const tweets = materializeTwitterTweets([{
+            authorName: 'Noah Park',
+            authorHandle: '@noah',
+            content: 'Vote on this tiny design thing @User https://developer.mozilla.org/',
+            topics: ['design'],
+            mentions: ['@User'],
+            threadId: 'thread-1',
+            threadIndex: 1,
+            threadSize: 3,
+            media: [{ type: 'link-card', url: 'https://developer.mozilla.org/', title: 'Design note', description: 'A link card', domain: 'developer.mozilla.org' }],
+            poll: { question: 'Which one?', options: [{ label: 'A', votes: 2 }, { label: 'B', votes: 5 }] },
+        }], chars, user);
+        expect(tweets[0].media?.[0].type).toBe('link-card');
+        expect(tweets[0].media?.[0].title).toBe('Design note');
+        expect(tweets[0].poll?.options).toHaveLength(2);
+        expect(tweets[0].mentions).toContain('@User');
+        expect(tweets[0].threadSize).toBe(3);
+    });
 });
 
 describe('fallbackTwitterTweets', () => {
@@ -105,6 +136,12 @@ describe('fallbackTwitterTweets', () => {
         expect(tweets.some(t => t.language && t.language !== 'zh-CN')).toBe(true);
         expect(tweets.every(t => t.content.length > 20)).toBe(true);
     });
+
+    it('uses real image URLs for fallback image media', () => {
+        const tweets = fallbackTwitterTweets([], user);
+        const imageTweet = tweets.find(t => t.media?.some(m => m.type === 'image'));
+        expect(imageTweet?.media?.some(m => m.type === 'image' && /^https:\/\/picsum\.photos\//.test(m.url || ''))).toBe(true);
+    });
 });
 
 describe('accounts, search, and DMs', () => {
@@ -115,16 +152,22 @@ describe('accounts, search, and DMs', () => {
         expect(linxia?.handle).toBe('@linxia');
         expect(linxia?.postingWeight).toBeGreaterThan(aqing?.postingWeight || 0);
         expect(inferCharPostingWeight(chars[0])).toBeGreaterThan(inferCharPostingWeight(chars[1]));
+        expect(linxia?.profileTabs).toContain('about');
+        expect(linxia?.profileSummary).toBeTruthy();
+        expect(linxia?.recentStatus).toBeTruthy();
     });
 
     it('searches tweets by language, topic, content, and people', () => {
         const tweets = materializeTwitterTweets([
             { authorName: 'Noah Park', authorHandle: '@noah', language: 'en', country: 'Canada', content: 'Timeline design note', topics: ['tech culture'] },
             { charId: 'c1', authorName: '林夏', content: '今天继续吐槽时间线', topics: ['今日碎片'] },
+            { authorName: 'Linker', content: 'Look at this', topics: ['links'], media: [{ type: 'link-card', url: 'https://archive.org/', title: 'Hidden card title', domain: 'archive.org' }], poll: { options: [{ label: 'Quiet option', votes: 1 }, { label: 'Loud option', votes: 2 }] } },
         ], chars, user);
         const accounts = buildTwitterAccounts(chars, user, null, [], tweets);
         expect(searchTwitter('timeline', tweets, accounts, { language: 'en' }).top).toHaveLength(1);
         expect(searchTwitter('今日碎片', tweets, accounts).top).toHaveLength(1);
+        expect(searchTwitter('Hidden card', tweets, accounts).top).toHaveLength(1);
+        expect(searchTwitter('Quiet option', tweets, accounts).top).toHaveLength(1);
         expect(searchTwitter('linxia', tweets, accounts).people.some(a => a.charId === 'c1')).toBe(true);
         const rec = createTwitterSearchRecord('timeline', 1);
         expect(rec.query).toBe('timeline');
@@ -217,9 +260,13 @@ describe('materializeTwitterReactions', () => {
             { action: 'like', charId: 'c1', authorName: '林夏' },
             { action: 'retweet', authorName: '路人' },
             { action: 'quote', charId: 'c2', authorName: '阿青', content: '转一下。' },
+            { action: 'mention', authorName: 'Noah', content: '@User this made me think' },
+            { action: 'follow', authorName: 'Mina' },
         ], tweet, chars);
         expect(result.replies).toHaveLength(1);
-        expect(result.notifications).toHaveLength(4);
+        expect(result.notifications).toHaveLength(6);
+        expect(result.notifications.some(n => n.kind === 'mention')).toBe(true);
+        expect(result.notifications.some(n => n.kind === 'follow')).toBe(true);
         expect(result.patch.replyCount).toBe(1);
         expect(result.patch.likes).toBe(1);
         expect(result.patch.retweets).toBe(1);

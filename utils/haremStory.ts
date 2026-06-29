@@ -13,7 +13,7 @@
  *   ④ 好感度系统 / ⑤ 信任值 / ⑥ 嫉妒值 → applyChoice 的 effects 落地 + clamp + 连带
  *   ⑦ 记忆系统（长期 + 角色独立）→ StoryMemory + consolidateMemories
  *   ⑧ 事件 flag 系统          → state.flags + flagUpdates
- *   ⑨ AI 请求模块            → buildScenePrompt（把 14 条规则 + 输出 schema 烧进 prompt）
+ *   ⑨ AI 请求模块            → buildScenePrompt（把 15 条规则 + 输出 schema 烧进 prompt）
  *   ⑩ AI 输出解析模块         → parseScene（稳定 JSON → StoryScene，永远 3 个选项 + 兜底）
  *   ⑪ 存档读档模块            → 全 state 可 JSON 序列化；多档由 app 层 localStorage 管理
  *   ⑫ 结局判定模块            → ENDING_DEFS + checkEndings + computeEndingProgress
@@ -27,7 +27,7 @@ import { extractJson } from './safeApi';
 //  通用工具
 // ════════════════════════════════════════════════════════════════════════════
 
-export const STORY_VERSION = 1;
+export const STORY_VERSION = 3;
 
 const clampN = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(n)));
 /** 变量统一钳在 0~100。 */
@@ -37,6 +37,280 @@ const num = (v: any, def = 0): number => (typeof v === 'number' && isFinite(v) ?
 let _seq = 0;
 const sid = (): string => `${Date.now().toString(36)}${(_seq++).toString(36)}`;
 const pick = <T,>(arr: T[], rng: () => number = Math.random): T => arr[Math.floor(rng() * arr.length)];
+
+// ════════════════════════════════════════════════════════════════════════════
+//  长线主线 / 宫苑探索 / 轻养成资源
+// ════════════════════════════════════════════════════════════════════════════
+
+export type StoryResourceKey = 'power' | 'reputation' | 'silver' | 'energy' | 'rumor';
+export interface StoryResources {
+    power: number;       // 宫权
+    reputation: number;  // 声望
+    silver: number;      // 库银
+    energy: number;      // 心力
+    rumor: number;       // 风闻
+}
+export const STORY_RESOURCE_LABELS: Record<StoryResourceKey, string> = {
+    power: '宫权',
+    reputation: '声望',
+    silver: '库银',
+    energy: '心力',
+    rumor: '风闻',
+};
+const RESOURCE_KEYS: StoryResourceKey[] = ['power', 'reputation', 'silver', 'energy', 'rumor'];
+export const DEFAULT_RESOURCES: StoryResources = { power: 34, reputation: 32, silver: 46, energy: 76, rumor: 8 };
+
+export type PalaceLocationId =
+    | 'jiaofang' | 'garden' | 'shanggong' | 'library'
+    | 'yeting' | 'taiyi' | 'treasury' | 'ancestral' | 'court';
+export type PalaceActionType = 'explore' | 'visit' | 'govern' | 'gossip' | 'gift' | 'rest' | 'chapter';
+
+export interface PalaceLocation {
+    id: PalaceLocationId;
+    name: string;
+    blurb: string;
+    unlockDay: number;
+    unlockChapter: number;
+    actions: PalaceActionType[];
+}
+export interface StoryMapIntent {
+    locationId: PalaceLocationId;
+    action: PalaceActionType;
+    label: string;
+    targetCharId?: string;
+    note?: string;
+}
+export interface StoryPalaceMapState {
+    unlocked: PalaceLocationId[];
+    visited: Record<string, number>;
+    lastLocationId?: PalaceLocationId;
+}
+
+export interface StoryChapterState {
+    id: string;
+    index: number;
+    title: string;
+    subtitle: string;
+    minDay: number;
+    goal: number;
+    progress: number;
+    completed: boolean;
+    finaleReady: boolean;
+}
+export interface StoryObjective {
+    id: string;
+    kind: 'main' | 'side';
+    title: string;
+    description: string;
+    target: number;
+    progress: number;
+    done: boolean;
+    chapterId?: string;
+    reward?: Partial<StoryResources>;
+}
+export interface StoryInventoryItem {
+    id: string;
+    name: string;
+    kind: 'clue' | 'gift' | 'edict' | 'token';
+    text: string;
+    day: number;
+    charId?: string;
+    source?: string;
+}
+export interface StoryAchievement {
+    id: string;
+    title: string;
+    description: string;
+    unlockedAt: number;
+}
+export type StoryActionEntryPoint = 'scene' | 'map' | 'character' | 'inventory' | 'objective' | 'favor';
+export interface StoryGeneratedHook {
+    id: string;
+    kind: 'side' | 'intrigue' | 'location_event' | 'character_event';
+    title: string;
+    summary: string;
+    source: StoryActionEntryPoint | string;
+    day: number;
+    expiresDay: number;
+    locationId?: PalaceLocationId;
+    charId?: string;
+    objectiveId?: string;
+}
+export interface StoryRumor {
+    id: string;
+    text: string;
+    source: StoryActionEntryPoint | string;
+    day: number;
+    expiresDay: number;
+    heat: number;
+    truth?: string;
+    charId?: string;
+}
+export interface StoryNpcStub {
+    id: string;
+    name: string;
+    role: string;
+    summary: string;
+    disposition: string;
+    source: StoryActionEntryPoint | string;
+    day: number;
+    expiresDay: number;
+    locationId?: PalaceLocationId;
+}
+export interface StoryActionJudgement {
+    id: string;
+    entryPoint: StoryActionEntryPoint;
+    actionText: string;
+    title: string;
+    verdict: string;
+    risk: StoryChoice['risk'];
+    cost: Partial<StoryResources>;
+    reward: Partial<StoryResources>;
+    effects: StoryChoice['effects'];
+    involvedCharIds: string[];
+    mapIntent?: StoryMapIntent;
+    objectiveUpdates: StoryScene['objectiveUpdates'];
+    inventoryUpdates: StoryScene['inventoryUpdates'];
+    achievementUpdates: StoryScene['achievementUpdates'];
+    generatedHooks: StoryGeneratedHook[];
+    rumors: StoryRumor[];
+    npcStubs: StoryNpcStub[];
+    nextIntent: string;
+    confidence: number;
+}
+export type StoryFavorActionType = 'summon' | 'reward' | 'protect' | 'cool' | 'mediate' | 'balance';
+export type StoryFavorLedgerType = StoryFavorActionType | 'draft';
+export interface StoryFavorActionInput {
+    type: StoryFavorActionType;
+    targetCharId?: string;
+    secondaryCharId?: string;
+    note?: string;
+}
+export interface StoryFavorRelationshipDelta {
+    a: string;
+    b: string;
+    bond: number;
+    label: string;
+}
+export interface StoryFavorPreview {
+    ok: boolean;
+    type: StoryFavorActionType;
+    title: string;
+    actionText: string;
+    risk: StoryChoice['risk'];
+    resourceDelta: Partial<StoryResources>;
+    effects: StoryChoice['effects'];
+    relationshipDelta: StoryFavorRelationshipDelta[];
+    targetCharIds: string[];
+    message: string;
+    nextIntent: string;
+    blockers: string[];
+}
+export interface StoryFavorLedgerEntry {
+    id: string;
+    type: StoryFavorLedgerType;
+    title: string;
+    actionText: string;
+    day: number;
+    time: TimeSlot;
+    targetCharIds: string[];
+    resourceDelta: Partial<StoryResources>;
+    effects: StoryChoice['effects'];
+    relationshipDelta: StoryFavorRelationshipDelta[];
+    risk: StoryChoice['risk'];
+    note?: string;
+}
+export interface StoryFavorCourtSummary {
+    topCharId: string | null;
+    topName: string;
+    favorGap: number;
+    estrangedCount: number;
+    highJealousCount: number;
+    neglectedCharIds: string[];
+    warning: string;
+}
+
+export const PALACE_ACTION_LABELS: Record<PalaceActionType, string> = {
+    explore: '探访',
+    visit: '会面',
+    govern: '理宫务',
+    gossip: '听风闻',
+    gift: '赐物',
+    rest: '休整',
+    chapter: '推进主线',
+};
+export const STORY_FAVOR_ACTION_LABELS: Record<StoryFavorActionType, string> = {
+    summon: '召见',
+    reward: '赐赏',
+    protect: '护持',
+    cool: '冷处理',
+    mediate: '调停',
+    balance: '普赏安宫',
+};
+export const STORY_FAVOR_ACTION_HINTS: Record<StoryFavorActionType, string> = {
+    summon: '点名一人入殿，拉近情分，也容易留下偏宠风声。',
+    reward: '以库银赏赐一人，抬心情与好感，旁人可能生出比较。',
+    protect: '用宫权为一人挡风雨，稳信任，但会损声望。',
+    cool: '暂时冷下热局，压低嫉妒与风闻，也会伤及情分。',
+    mediate: '让两人坐下说开，缓和敌意，耗费心力。',
+    balance: '普赏诸位，安抚整体格局，代价更重。',
+};
+
+export const PALACE_LOCATIONS: PalaceLocation[] = [
+    { id: 'jiaofang', name: '椒房殿', blurb: '主殿灯火长明，最适合召见、休整与收束心绪。', unlockDay: 1, unlockChapter: 1, actions: ['visit', 'rest', 'chapter'] },
+    { id: 'garden', name: '御花园', blurb: '花木掩映，偶遇、试探与私语都容易在此发生。', unlockDay: 1, unlockChapter: 1, actions: ['explore', 'visit', 'gossip'] },
+    { id: 'shanggong', name: '尚宫局', blurb: '宫务、人手、账册都归这里，能稳住后宫秩序。', unlockDay: 3, unlockChapter: 2, actions: ['govern', 'gossip', 'chapter'] },
+    { id: 'library', name: '藏书阁', blurb: '旧档、密札与人物来历藏在书页夹层里。', unlockDay: 6, unlockChapter: 2, actions: ['explore', 'gossip', 'visit'] },
+    { id: 'yeting', name: '掖庭回廊', blurb: '宫人来往之处，风声最快，也最容易惹祸。', unlockDay: 10, unlockChapter: 3, actions: ['gossip', 'explore'] },
+    { id: 'taiyi', name: '太医署', blurb: '病榻、药方与暗伤牵动人心，危机常从这里浮出。', unlockDay: 18, unlockChapter: 4, actions: ['explore', 'govern', 'chapter'] },
+    { id: 'treasury', name: '内府宝库', blurb: '赏赐与用度的源头，能赐物，也会暴露偏宠。', unlockDay: 24, unlockChapter: 5, actions: ['gift', 'govern'] },
+    { id: 'ancestral', name: '宗祠', blurb: '誓言、名分与终局抉择都在这里变得沉重。', unlockDay: 42, unlockChapter: 7, actions: ['chapter', 'visit'] },
+    { id: 'court', name: '前朝丹陛', blurb: '后宫风波终会牵到前朝，权柄在此定局。', unlockDay: 55, unlockChapter: 8, actions: ['govern', 'chapter'] },
+];
+
+export const CHAPTER_DEFS: Omit<StoryChapterState, 'progress' | 'completed' | 'finaleReady'>[] = [
+    { id: 'arrival', index: 1, title: '初入椒房', subtitle: '择人入宫，立下第一卷人心账。', minDay: 1, goal: 24 },
+    { id: 'settle', index: 2, title: '宫苑初定', subtitle: '理清宫务，打开深宫各处门径。', minDay: 8, goal: 32 },
+    { id: 'undercurrent', index: 3, title: '暗香浮动', subtitle: '亲疏渐分，暗流也随花影浮起。', minDay: 16, goal: 38 },
+    { id: 'rumor', index: 4, title: '风闻四起', subtitle: '流言、病榻与旧事开始互相牵扯。', minDay: 24, goal: 42 },
+    { id: 'balance', index: 5, title: '权衡恩宠', subtitle: '赏赐、偏宠与宫权都要付出代价。', minDay: 32, goal: 46 },
+    { id: 'storm', index: 6, title: '宫阙风雨', subtitle: '一场危机检验谁与你同舟。', minDay: 42, goal: 52 },
+    { id: 'vow', index: 7, title: '定情与鼎', subtitle: '情意、名分与众人去留渐近终局。', minDay: 52, goal: 56 },
+    { id: 'finale', index: 8, title: '终局定鼎', subtitle: '六十日后，椒房旧梦可以收束，也可以继续。', minDay: 60, goal: 60 },
+];
+
+const chapterDefAt = (index: number) => CHAPTER_DEFS[Math.max(0, Math.min(CHAPTER_DEFS.length - 1, index - 1))] || CHAPTER_DEFS[0];
+const makeChapter = (index = 1, progress = 0): StoryChapterState => {
+    const def = chapterDefAt(index);
+    return { ...def, progress: clamp100(progress), completed: false, finaleReady: def.index >= CHAPTER_DEFS.length && progress >= def.goal };
+};
+const mainObjectiveId = (chapterId: string) => `main_${chapterId}`;
+const makeMainObjective = (chapter: StoryChapterState): StoryObjective => ({
+    id: mainObjectiveId(chapter.id),
+    kind: 'main',
+    title: chapter.title,
+    description: chapter.subtitle,
+    target: chapter.goal,
+    progress: chapter.progress,
+    done: chapter.progress >= chapter.goal,
+    chapterId: chapter.id,
+    reward: { power: 4, reputation: 4, energy: 8 },
+});
+
+function defaultObjectives(chapter: StoryChapterState): StoryObjective[] {
+    return [
+        makeMainObjective(chapter),
+        { id: 'side_balance_hearts', kind: 'side', title: '雨露均沾', description: '让至少三位角色维持亲厚以上关系，避免人心偏枯。', target: 3, progress: 0, done: false, reward: { reputation: 5, rumor: -4 } },
+        { id: 'side_collect_clues', kind: 'side', title: '暗线成册', description: '收集 5 条线索或信物，拼出椒房暗流。', target: 5, progress: 0, done: false, reward: { power: 4, rumor: -3 } },
+    ];
+}
+
+function defaultMapState(day = 1, chapterIndex = 1): StoryPalaceMapState {
+    const unlocked = PALACE_LOCATIONS
+        .filter(l => l.unlockDay <= day && l.unlockChapter <= chapterIndex)
+        .map(l => l.id);
+    return { unlocked: unlocked.length ? unlocked : ['jiaofang', 'garden'], visited: {}, lastLocationId: 'jiaofang' };
+}
 
 /**
  * 性别完全开放：玩家与每位可攻略对象都可独立设定性别，支持女帝男妃 / 同性 / 混合后宫等任意组合。
@@ -290,6 +564,10 @@ export interface StoryScene {
     effectsPreview: string;          // 给玩家的可读提示（不含精确数值）
     memoryUpdates: { charId?: string; text: string; kind?: MemoryKind; weight?: number }[];
     flagUpdates: Record<string, string | number | boolean>;
+    resourceDelta?: Partial<StoryResources>;
+    objectiveUpdates?: { id?: string; progress?: number; done?: boolean }[];
+    inventoryUpdates?: { id?: string; name: string; kind?: StoryInventoryItem['kind']; text: string; charId?: string; source?: string }[];
+    achievementUpdates?: ({ id: string; title?: string; description?: string } | string)[];
     nextSceneHint: string;
     mood?: string;                   // 本场氛围词（驱动 UI 氛围条 / 背景微染）
     turnType?: TurnType;             // 本回合的节奏类型（由引擎注入，便于存档回看）
@@ -315,6 +593,18 @@ export interface StoryState {
     activeCharacters: string[];     // 当前在场角色 charId
     characters: Record<string, StoryChar>;
     relationships: { a: string; b: string; bond: number }[]; // 角色之间（负=不睦，正=交好）
+    chapter: StoryChapterState;      // 长线主线章节
+    objectives: StoryObjective[];    // 主线 / 支线目标
+    resources: StoryResources;       // 宫权 / 声望 / 库银 / 心力 / 风闻
+    map: StoryPalaceMapState;        // 宫苑地图解锁与访问记录
+    inventory: StoryInventoryItem[]; // 线索 / 信物 / 诏令 / 赏赐
+    achievements: StoryAchievement[]; // 成就册 / 结局收藏
+    mapIntent: StoryMapIntent | null; // 当前探索意图（喂 AI，一次性）
+    generatedHooks: StoryGeneratedHook[]; // AI 半自动生成的支线/事件钩子
+    rumors: StoryRumor[];          // 风闻池
+    npcStubs: StoryNpcStub[];      // 局内临时 NPC 名片
+    pendingJudgement: StoryActionJudgement | null; // UI 判词预览，确认后落地
+    favorLedger: StoryFavorLedgerEntry[]; // 恩宠账：召见/赏罚/调停等宫廷经营记录
     memories: StoryMemory[];        // 长期/全局记忆（新在前）
     flags: Record<string, string | number | boolean>;
     history: StoryHistoryEntry[];   // 近期回合（滚动）
@@ -355,6 +645,7 @@ export function initStory(
     // 角色之间初始化为「点头之交」(bond 0)，随同场/嫉妒演化成盟友或宿敌
     const relationships: StoryState['relationships'] = [];
     for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) relationships.push({ a: ids[i], b: ids[j], bond: 0 });
+    const chapter = makeChapter(1);
     const state: StoryState = {
         version: STORY_VERSION,
         playthrough: carry ? carry.fromPlaythrough + 1 : 1,
@@ -366,6 +657,18 @@ export function initStory(
         activeCharacters: ids.slice(0, 1),
         characters,
         relationships,
+        chapter,
+        objectives: defaultObjectives(chapter),
+        resources: { ...DEFAULT_RESOURCES },
+        map: defaultMapState(1, chapter.index),
+        inventory: [],
+        achievements: [],
+        mapIntent: null,
+        generatedHooks: [],
+        rumors: [],
+        npcStubs: [],
+        pendingJudgement: null,
+        favorLedger: [],
         memories: [],
         flags: {},
         history: [],
@@ -408,6 +711,489 @@ export function relationshipSummary(s: StoryState): string[] {
     return s.relationships
         .filter(r => Math.abs(r.bond) >= 18 && s.characters[r.a] && s.characters[r.b])
         .map(r => `${s.characters[r.a].name} 与 ${s.characters[r.b].name}：${bondLabel(r.bond)}`);
+}
+
+const FAVOR_LEDGER_CAP = 60;
+const FAVOR_ACTIONS = new Set<StoryFavorActionType>(['summon', 'reward', 'protect', 'cool', 'mediate', 'balance']);
+const FAVOR_LEDGER_TYPES = new Set<StoryFavorLedgerType>(['summon', 'reward', 'protect', 'cool', 'mediate', 'balance', 'draft']);
+
+function addEffect(effects: StoryChoice['effects'], charId: string | undefined, delta: Omit<StoryChoice['effects'][number], 'charId'>): void {
+    if (!charId) return;
+    const existing = effects.find(e => e.charId === charId);
+    const target = existing || { charId };
+    for (const key of ['affection', 'trust', 'jealousy', 'mood'] as const) {
+        const value = delta[key];
+        if (value) target[key] = (target[key] || 0) + value;
+    }
+    if (!existing) effects.push(target);
+}
+
+const favorTargets = (s: StoryState, ids: string[]): string => {
+    const names = ids.map(id => s.characters[id]?.name).filter(Boolean);
+    return names.length ? names.join('、') : '诸位';
+};
+
+function recentSummonCount(s: StoryState, charId: string): number {
+    return (s.favorLedger || []).filter(e => e.type === 'summon' && e.targetCharIds.includes(charId) && s.day - e.day <= 2).length;
+}
+
+function resourceBlockers(s: StoryState, delta: Partial<StoryResources>): string[] {
+    const current = normalizeResources(s.resources);
+    const blockers: string[] = [];
+    for (const key of RESOURCE_KEYS) {
+        const value = delta[key] || 0;
+        if (value < 0 && current[key] + value < 0) blockers.push(`${STORY_RESOURCE_LABELS[key]}不足`);
+    }
+    return blockers;
+}
+
+function applyFavorRelationshipDeltas(rels: StoryState['relationships'], deltas: StoryFavorRelationshipDelta[]): StoryState['relationships'] {
+    if (!deltas.length) return rels;
+    const byKey = new Map<string, StoryState['relationships'][number]>();
+    for (const rel of rels) byKey.set(bondKey(rel.a, rel.b), { ...rel });
+    for (const delta of deltas) {
+        const k = bondKey(delta.a, delta.b);
+        const old = byKey.get(k) || { a: delta.a, b: delta.b, bond: 0 };
+        byKey.set(k, { ...old, bond: clampN(old.bond + delta.bond, -100, 100) });
+    }
+    return [...byKey.values()];
+}
+
+function makeFavorLedgerEntry(
+    s: StoryState,
+    preview: Pick<StoryFavorPreview, 'title' | 'actionText' | 'risk' | 'resourceDelta' | 'effects' | 'relationshipDelta' | 'targetCharIds'>,
+    type: StoryFavorLedgerType,
+    note?: string,
+): StoryFavorLedgerEntry {
+    return {
+        id: `favor_${Date.now().toString(36)}_${sid()}`,
+        type,
+        title: preview.title,
+        actionText: preview.actionText,
+        day: s.day,
+        time: s.time,
+        targetCharIds: preview.targetCharIds.filter(id => !!s.characters[id]).slice(0, 6),
+        resourceDelta: sanitizeResourceDelta(preview.resourceDelta),
+        effects: preview.effects.slice(0, 10),
+        relationshipDelta: preview.relationshipDelta.slice(0, 4),
+        risk: preview.risk,
+        note: note ? note.slice(0, 120) : undefined,
+    };
+}
+
+function addFavorLedger(s: StoryState, entry: StoryFavorLedgerEntry): StoryFavorLedgerEntry[] {
+    return [entry, ...(s.favorLedger || [])].slice(0, FAVOR_LEDGER_CAP);
+}
+
+function sanitizeFavorRelationshipDelta(raw: any, s: StoryState): StoryFavorRelationshipDelta | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const a = String(raw.a || '');
+    const b = String(raw.b || '');
+    if (!a || !b || a === b || !s.characters[a] || !s.characters[b]) return null;
+    return {
+        a,
+        b,
+        bond: clampN(num(raw.bond, 0), -25, 25),
+        label: String(raw.label || '羁绊微调').slice(0, 24),
+    };
+}
+
+function sanitizeFavorLedger(raw: any, s: StoryState): StoryFavorLedgerEntry[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.slice(0, FAVOR_LEDGER_CAP).map((e: any) => {
+        const type: StoryFavorLedgerType = FAVOR_LEDGER_TYPES.has(e?.type) ? e.type : 'draft';
+        const title = String(e?.title || (type === 'draft' ? '自拟谕旨' : STORY_FAVOR_ACTION_LABELS[type])).slice(0, 24);
+        const actionText = String(e?.actionText || title).slice(0, 120);
+        return {
+            id: String(e?.id || `favor_${sid()}`),
+            type,
+            title,
+            actionText,
+            day: clampN(num(e?.day, s.day), 1, 9999),
+            time: TIME_SLOTS.includes(e?.time) ? e.time : s.time,
+            targetCharIds: Array.isArray(e?.targetCharIds) ? e.targetCharIds.filter((id: any) => s.characters[id]).map(String).slice(0, 6) : [],
+            resourceDelta: sanitizeResourceDelta(e?.resourceDelta),
+            effects: sanitizeEffects(e?.effects, s).slice(0, 10),
+            relationshipDelta: Array.isArray(e?.relationshipDelta) ? e.relationshipDelta.map((r: any) => sanitizeFavorRelationshipDelta(r, s)).filter(Boolean).slice(0, 4) : [],
+            risk: asRisk(e?.risk),
+            note: e?.note ? String(e.note).slice(0, 120) : undefined,
+        } as StoryFavorLedgerEntry;
+    });
+}
+
+export function favorCourtSummary(s: StoryState): StoryFavorCourtSummary {
+    const chars = sortByAff(allChars(s));
+    const top = chars[0] || null;
+    const second = chars[1] || null;
+    const estranged = chars.filter(c => c.estranged);
+    const highJealous = chars.filter(c => c.jealousy >= 70);
+    const neglected = chars.filter(c => c.presentStreak >= 3 && !c.estranged).map(c => c.charId);
+    const favorGap = top && second ? Math.max(0, top.affection - second.affection) : 0;
+    let warning = '此刻宫中尚能维持体面。';
+    if (estranged.length) warning = `${estranged.length} 位已离心，需先稳住人心。`;
+    else if (highJealous.length) warning = `${highJealous.length} 位醋意渐重，偏宠会继续抬高风闻。`;
+    else if (neglected.length) warning = `${neglected.length} 位已有数幕未见，适合召见或普赏安宫。`;
+    else if (favorGap >= 24) warning = `君心明显偏向${top?.name || '一人'}，旁人会更容易生隙。`;
+    return {
+        topCharId: top?.charId || null,
+        topName: top?.name || '—',
+        favorGap,
+        estrangedCount: estranged.length,
+        highJealousCount: highJealous.length,
+        neglectedCharIds: neglected,
+        warning,
+    };
+}
+
+export function previewFavorAction(s: StoryState, input: StoryFavorActionInput): StoryFavorPreview {
+    const type = FAVOR_ACTIONS.has(input.type) ? input.type : 'summon';
+    const label = STORY_FAVOR_ACTION_LABELS[type];
+    const target = input.targetCharId ? s.characters[input.targetCharId] : undefined;
+    const secondary = input.secondaryCharId ? s.characters[input.secondaryCharId] : undefined;
+    const blockers: string[] = [];
+    const effects: StoryChoice['effects'] = [];
+    const relationshipDelta: StoryFavorRelationshipDelta[] = [];
+    let resourceDelta: Partial<StoryResources> = {};
+    let risk: StoryChoice['risk'] = 'low';
+    let targetCharIds: string[] = [];
+    let message = '';
+
+    if (type !== 'balance' && !target) blockers.push('请选择一位角色');
+    if (type === 'mediate') {
+        if (!secondary) blockers.push('请选择要调停的另一位');
+        if (target && secondary && target.charId === secondary.charId) blockers.push('调停双方不能是同一人');
+    }
+
+    if (type === 'summon' && target) {
+        const repeated = recentSummonCount(s, target.charId) > 0;
+        resourceDelta = { energy: -8, rumor: repeated ? 5 : 2 };
+        addEffect(effects, target.charId, { affection: 4, trust: 1, mood: 2 });
+        if (repeated) for (const c of allChars(s)) if (c.charId !== target.charId && c.affection >= 60) addEffect(effects, c.charId, { jealousy: 2 });
+        risk = repeated ? 'mid' : 'low';
+        targetCharIds = [target.charId];
+        message = repeated ? `近两日再召${target.name}，情分会进，偏宠风声也会更响。` : `召${target.name}入殿独叙，让下一幕更贴近 ta。`;
+    } else if (type === 'reward' && target) {
+        resourceDelta = { silver: -12, rumor: 1 };
+        addEffect(effects, target.charId, { affection: 5, mood: 4 });
+        for (const c of allChars(s)) if (c.charId !== target.charId && c.affection >= 60) addEffect(effects, c.charId, { jealousy: 2 });
+        risk = 'mid';
+        targetCharIds = [target.charId];
+        message = `赐赏${target.name}，欢心易得，也会让旁人看见你的偏向。`;
+    } else if (type === 'protect' && target) {
+        resourceDelta = { power: -8, reputation: -2 };
+        addEffect(effects, target.charId, { trust: 6, jealousy: -4, mood: 3 });
+        risk = 'mid';
+        targetCharIds = [target.charId];
+        message = `为${target.name}挡下风雨，ta 会更信你，但朝野目光会记下一笔。`;
+    } else if (type === 'cool' && target) {
+        resourceDelta = { reputation: 1, rumor: -4, energy: 4 };
+        addEffect(effects, target.charId, { affection: -3, trust: -2, jealousy: -10, mood: -4 });
+        risk = 'high';
+        targetCharIds = [target.charId];
+        message = `暂冷${target.name}，能压住醋意与风闻，也会伤到 ta 的心。`;
+    } else if (type === 'mediate' && target && secondary && target.charId !== secondary.charId) {
+        resourceDelta = { energy: -10, reputation: 3, rumor: -4 };
+        addEffect(effects, target.charId, { trust: 2, jealousy: -6, mood: 2 });
+        addEffect(effects, secondary.charId, { trust: 2, jealousy: -6, mood: 2 });
+        relationshipDelta.push({ a: target.charId, b: secondary.charId, bond: 10, label: '调停释隙' });
+        risk = 'mid';
+        targetCharIds = [target.charId, secondary.charId];
+        message = `请${target.name}与${secondary.name}坐下说开，后宫暗流会稍缓。`;
+    } else if (type === 'balance') {
+        const targets = allChars(s).slice(0, 6);
+        resourceDelta = { silver: -18, energy: -8, reputation: 4, rumor: -6 };
+        for (const c of targets) addEffect(effects, c.charId, { affection: 1, jealousy: -4, mood: 3 });
+        risk = 'low';
+        targetCharIds = targets.map(c => c.charId);
+        message = '普赏安宫，照顾诸位体面，能缓偏宠之议。';
+    }
+
+    blockers.push(...resourceBlockers(s, resourceDelta));
+    const actionText = type === 'balance'
+        ? label
+        : type === 'mediate'
+            ? `${label}${favorTargets(s, targetCharIds)}`
+            : `${label}${target ? target.name : ''}`;
+    return {
+        ok: blockers.length === 0,
+        type,
+        title: label,
+        actionText,
+        risk,
+        resourceDelta,
+        effects,
+        relationshipDelta,
+        targetCharIds,
+        message,
+        nextIntent: `宠爱经营台：${actionText}。${message}`,
+        blockers,
+    };
+}
+
+function normalizeResources(raw?: Partial<StoryResources>): StoryResources {
+    const base = { ...DEFAULT_RESOURCES, ...(raw || {}) };
+    return {
+        power: clamp100(num(base.power, DEFAULT_RESOURCES.power)),
+        reputation: clamp100(num(base.reputation, DEFAULT_RESOURCES.reputation)),
+        silver: clampN(num(base.silver, DEFAULT_RESOURCES.silver), 0, 999),
+        energy: clamp100(num(base.energy, DEFAULT_RESOURCES.energy)),
+        rumor: clamp100(num(base.rumor, DEFAULT_RESOURCES.rumor)),
+    };
+}
+
+export function applyResourceDelta(resources: StoryResources, delta: Partial<StoryResources> = {}): StoryResources {
+    const next: StoryResources = { ...normalizeResources(resources) };
+    for (const key of RESOURCE_KEYS) {
+        if (delta[key] == null) continue;
+        const max = key === 'silver' ? 999 : 100;
+        next[key] = clampN(num(next[key]) + num(delta[key]), 0, max);
+    }
+    return next;
+}
+
+function unlockedLocationIds(day: number, chapterIndex: number, keep: PalaceLocationId[] = []): PalaceLocationId[] {
+    const ids = new Set<PalaceLocationId>(keep);
+    for (const loc of PALACE_LOCATIONS) if (loc.unlockDay <= day && loc.unlockChapter <= chapterIndex) ids.add(loc.id);
+    return [...ids];
+}
+
+export function availableLocations(s: StoryState): PalaceLocation[] {
+    const ids = new Set(unlockedLocationIds(s.day, s.chapter?.index || 1, s.map?.unlocked || []));
+    return PALACE_LOCATIONS.filter(loc => ids.has(loc.id));
+}
+
+function normalizeMap(raw: any, day: number, chapterIndex: number): StoryPalaceMapState {
+    const keep = Array.isArray(raw?.unlocked) ? raw.unlocked.filter((id: any) => PALACE_LOCATIONS.some(l => l.id === id)) as PalaceLocationId[] : [];
+    const unlocked = unlockedLocationIds(day, chapterIndex, keep);
+    return {
+        unlocked,
+        visited: raw?.visited && typeof raw.visited === 'object' ? raw.visited : {},
+        lastLocationId: PALACE_LOCATIONS.some(l => l.id === raw?.lastLocationId) ? raw.lastLocationId : 'jiaofang',
+    };
+}
+
+function sanitizeResourceDelta(raw: any): Partial<StoryResources> {
+    const out: Partial<StoryResources> = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const key of RESOURCE_KEYS) {
+        if (raw[key] == null) continue;
+        const limit = key === 'silver' ? 80 : 25;
+        out[key] = clampN(num(raw[key]), -limit, limit);
+    }
+    return out;
+}
+
+const INVENTORY_KINDS = new Set<StoryInventoryItem['kind']>(['clue', 'gift', 'edict', 'token']);
+function sanitizeInventoryUpdates(raw: any, s: StoryState): StoryScene['inventoryUpdates'] {
+    if (!Array.isArray(raw)) return [];
+    return raw.slice(0, 4).map((it: any) => {
+        const name = String(it?.name || '').trim().slice(0, 24);
+        const text = String(it?.text || it?.description || '').trim().slice(0, 120);
+        if (!name || !text) return null;
+        const kind = INVENTORY_KINDS.has(it?.kind) ? it.kind as StoryInventoryItem['kind'] : 'clue';
+        const cid = it?.charId && s.characters[it.charId] ? String(it.charId) : undefined;
+        return { id: it?.id ? String(it.id).slice(0, 40) : undefined, name, text, kind, charId: cid, source: it?.source ? String(it.source).slice(0, 40) : undefined };
+    }).filter(Boolean) as StoryScene['inventoryUpdates'];
+}
+
+function mergeInventory(existing: StoryInventoryItem[], updates: StoryScene['inventoryUpdates'] = [], day: number): StoryInventoryItem[] {
+    const byId = new Map(existing.map(it => [it.id, it]));
+    for (const u of updates) {
+        const id = u.id || `item_${sid()}`;
+        byId.set(id, {
+            id,
+            name: u.name,
+            kind: u.kind || 'clue',
+            text: u.text,
+            day,
+            charId: u.charId,
+            source: u.source,
+        });
+    }
+    return [...byId.values()].sort((a, b) => b.day - a.day).slice(0, 60);
+}
+
+export function unlockAchievement(s: StoryState, achievement: StoryAchievement | { id: string; title: string; description: string }): StoryState {
+    if (!achievement.id || s.achievements.some(a => a.id === achievement.id)) return s;
+    return { ...s, achievements: [{ ...achievement, unlockedAt: Date.now() }, ...s.achievements].slice(0, 80) };
+}
+
+function sanitizeAchievementUpdates(raw: any): { id: string; title: string; description: string }[] {
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr.slice(0, 4).map((a: any) => {
+        if (typeof a === 'string') {
+            const id = a.trim().slice(0, 40);
+            return id ? { id, title: id, description: '剧情中解锁的印记。' } : null;
+        }
+        const id = String(a?.id || '').trim().slice(0, 40);
+        if (!id) return null;
+        return {
+            id,
+            title: String(a?.title || id).trim().slice(0, 24),
+            description: String(a?.description || '剧情中解锁的印记。').trim().slice(0, 80),
+        };
+    }).filter(Boolean) as { id: string; title: string; description: string }[];
+}
+
+const HOOK_KINDS = new Set<StoryGeneratedHook['kind']>(['side', 'intrigue', 'location_event', 'character_event']);
+const ACTION_ENTRY_POINTS = new Set<StoryActionEntryPoint>(['scene', 'map', 'character', 'inventory', 'objective', 'favor']);
+const safeSlug = (v: string): string => v.toLowerCase().replace(/[^a-z0-9_\-\u4e00-\u9fa5]+/g, '_').slice(0, 40) || `id_${sid()}`;
+
+export function sanitizeGeneratedHook(raw: any, s: StoryState, source: StoryActionEntryPoint | string = 'scene'): StoryGeneratedHook | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const title = String(raw.title || raw.name || '').trim().slice(0, 28);
+    const summary = String(raw.summary || raw.text || raw.description || '').trim().slice(0, 140);
+    if (!title || !summary) return null;
+    const locId = PALACE_LOCATIONS.some(l => l.id === raw.locationId) ? raw.locationId as PalaceLocationId : undefined;
+    const charId = raw.charId && s.characters[raw.charId] ? String(raw.charId) : undefined;
+    const objectiveId = raw.objectiveId && s.objectives.some(o => o.id === raw.objectiveId) ? String(raw.objectiveId).slice(0, 50) : undefined;
+    const id = raw.id ? safeSlug(String(raw.id)) : `hook_${safeSlug(title)}_${s.day}`;
+    return {
+        id,
+        kind: HOOK_KINDS.has(raw.kind) ? raw.kind : 'intrigue',
+        title,
+        summary,
+        source,
+        day: s.day,
+        expiresDay: clampN(num(raw.expiresDay, s.day + 14), s.day + 1, s.day + 60),
+        locationId: locId,
+        charId,
+        objectiveId,
+    };
+}
+
+function sanitizeRumor(raw: any, s: StoryState, source: StoryActionEntryPoint | string): StoryRumor | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const text = String(raw.text || raw.summary || '').trim().slice(0, 120);
+    if (!text) return null;
+    return {
+        id: raw.id ? safeSlug(String(raw.id)) : `rumor_${safeSlug(text)}_${s.day}`,
+        text,
+        source,
+        day: s.day,
+        expiresDay: clampN(num(raw.expiresDay, s.day + 10), s.day + 1, s.day + 45),
+        heat: clampN(num(raw.heat, 30), 0, 100),
+        truth: raw.truth ? String(raw.truth).slice(0, 100) : undefined,
+        charId: raw.charId && s.characters[raw.charId] ? String(raw.charId) : undefined,
+    };
+}
+
+function sanitizeNpcStub(raw: any, s: StoryState, source: StoryActionEntryPoint | string): StoryNpcStub | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name || '').trim().slice(0, 16);
+    const role = String(raw.role || '宫人').trim().slice(0, 20);
+    const summary = String(raw.summary || raw.text || '').trim().slice(0, 120);
+    if (!name || !summary) return null;
+    return {
+        id: raw.id ? safeSlug(String(raw.id)) : `npc_${safeSlug(name)}_${s.day}`,
+        name,
+        role,
+        summary,
+        disposition: String(raw.disposition || '观望').trim().slice(0, 20),
+        source,
+        day: s.day,
+        expiresDay: clampN(num(raw.expiresDay, s.day + 18), s.day + 1, s.day + 60),
+        locationId: PALACE_LOCATIONS.some(l => l.id === raw.locationId) ? raw.locationId as PalaceLocationId : undefined,
+    };
+}
+
+function uniqueById<T extends { id: string }>(items: T[], cap: number): T[] {
+    const m = new Map<string, T>();
+    for (const item of items) m.set(item.id, item);
+    return [...m.values()].slice(0, cap);
+}
+
+export function expireGeneratedHooks(s: StoryState): StoryState {
+    return {
+        ...s,
+        generatedHooks: (s.generatedHooks || []).filter(h => h.expiresDay >= s.day).slice(0, 40),
+        rumors: (s.rumors || []).filter(r => r.expiresDay >= s.day).slice(0, 60),
+        npcStubs: (s.npcStubs || []).filter(n => n.expiresDay >= s.day).slice(0, 40),
+    };
+}
+
+function mergeActionContent(s: StoryState, judgement: StoryActionJudgement): StoryState {
+    const generatedHooks = uniqueById([...(judgement.generatedHooks || []), ...(s.generatedHooks || [])], 40);
+    const rumors = uniqueById([...(judgement.rumors || []), ...(s.rumors || [])], 60);
+    const npcStubs = uniqueById([...(judgement.npcStubs || []), ...(s.npcStubs || [])], 40);
+    const objectives = [...s.objectives];
+    for (const hook of judgement.generatedHooks || []) {
+        if (hook.kind !== 'side') continue;
+        const id = `hook_${hook.id}`;
+        if (objectives.some(o => o.id === id)) continue;
+        objectives.push({
+            id,
+            kind: 'side',
+            title: hook.title,
+            description: hook.summary,
+            target: 12,
+            progress: 0,
+            done: false,
+            reward: { reputation: 3, rumor: -2 },
+        });
+    }
+    return expireGeneratedHooks({ ...s, generatedHooks, rumors, npcStubs, objectives: objectives.slice(0, 16), pendingJudgement: null });
+}
+
+function achievementSweep(s: StoryState): StoryState {
+    let next = s;
+    if (s.day >= 60) next = unlockAchievement(next, { id: 'survive_60_days', title: '六十日长卷', description: '这场椒房旧梦走过了六十日。' });
+    if (s.inventory.length >= 5) next = unlockAchievement(next, { id: 'five_clues', title: '暗线成册', description: '收集五条线索或信物。' });
+    if (Object.values(s.characters).some(c => c.affection >= 90 && c.trust >= 80)) next = unlockAchievement(next, { id: 'deep_vow', title: '深盟已成', description: '有人与你情深而信重。' });
+    if (s.resources.power >= 80 && s.resources.reputation >= 70) next = unlockAchievement(next, { id: 'palace_mastery', title: '凤阙在握', description: '宫权与声望足以压住风波。' });
+    return next;
+}
+
+export function advanceObjectives(s: StoryState, updates: StoryScene['objectiveUpdates'] = [], passiveProgress = 0): StoryState {
+    let resources = s.resources;
+    const objectives = s.objectives.map(o => ({ ...o, reward: o.reward ? { ...o.reward } : undefined }));
+    const main = objectives.find(o => o.kind === 'main' && o.chapterId === s.chapter.id);
+    if (main && passiveProgress > 0 && !main.done) main.progress = clampN(main.progress + passiveProgress, 0, main.target);
+
+    for (const upd of updates || []) {
+        const target = upd.id ? objectives.find(o => o.id === upd.id) : main;
+        if (!target || target.done) continue;
+        if (upd.progress != null) target.progress = clampN(target.progress + num(upd.progress), 0, target.target);
+        if (upd.done) target.progress = target.target;
+    }
+
+    const clueObjective = objectives.find(o => o.id === 'side_collect_clues');
+    if (clueObjective && !clueObjective.done) clueObjective.progress = Math.min(clueObjective.target, Math.max(clueObjective.progress, s.inventory.length));
+    const balanceObjective = objectives.find(o => o.id === 'side_balance_hearts');
+    if (balanceObjective && !balanceObjective.done) {
+        const close = Object.values(s.characters).filter(c => c.affection >= 50 && !c.estranged).length;
+        balanceObjective.progress = Math.min(balanceObjective.target, Math.max(balanceObjective.progress, close));
+    }
+
+    for (const o of objectives) {
+        if (!o.done && o.progress >= o.target) {
+            o.done = true;
+            if (o.reward) resources = applyResourceDelta(resources, o.reward);
+        }
+    }
+
+    const mainAfter = objectives.find(o => o.kind === 'main' && o.chapterId === s.chapter.id);
+    const chapter = { ...s.chapter, progress: mainAfter ? mainAfter.progress : s.chapter.progress };
+    return { ...s, objectives, resources, chapter };
+}
+
+export function advanceChapter(s: StoryState): StoryState {
+    const chapter = { ...s.chapter };
+    if (chapter.index >= CHAPTER_DEFS.length) {
+        chapter.completed = chapter.progress >= chapter.goal;
+        chapter.finaleReady = s.day >= 60 && chapter.progress >= Math.min(chapter.goal, 50);
+        return { ...s, chapter, map: normalizeMap(s.map, s.day, chapter.index) };
+    }
+    if (chapter.progress < chapter.goal) return { ...s, chapter, map: normalizeMap(s.map, s.day, chapter.index) };
+    const nextDef = chapterDefAt(chapter.index + 1);
+    if (s.day < nextDef.minDay) {
+        chapter.completed = true;
+        return { ...s, chapter, map: normalizeMap(s.map, s.day, chapter.index) };
+    }
+    const nextChapter = makeChapter(nextDef.index);
+    const exists = s.objectives.some(o => o.id === mainObjectiveId(nextChapter.id));
+    const objectives = exists ? s.objectives : [makeMainObjective(nextChapter), ...s.objectives].slice(0, 12);
+    return { ...s, chapter: nextChapter, objectives, map: normalizeMap(s.map, s.day, nextChapter.index) };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -550,7 +1336,7 @@ export function determineTurnType(s: StoryState, rng: () => number = Math.random
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ⑨ AI 请求模块：把 14 条规则 + 输出 schema 烧进 prompt
+//  ⑨ AI 请求模块：把 15 条规则 + 输出 schema 烧进 prompt
 // ════════════════════════════════════════════════════════════════════════════
 
 const RULES = [
@@ -568,21 +1354,62 @@ const RULES = [
     '每个选项必须有明确的变量影响（effects 至少作用一位在场角色）。',
     '可在 memoryUpdates / flagUpdates 里更新记忆与事件标记（按需，不强求）。',
     '不允许直接跳结局——除非本回合 turnType 已是 ending。',
+    '必须写成长剧情单幕：有铺垫、动作、情绪推进和回合末尾的选择压力，不得只写剧情梗概。',
 ];
 
 const SCHEMA = `{
   "sceneTitle": "本场标题(简短)",
   "mood": "本场氛围词(如 缠绵/静谧/剑拔弩张/暗潮汹涌)",
-  "narration": "旁白叙事(可多句，描述场景/动作/心理，不替玩家说话)",
-  "dialogues": [{"speaker":"角色名","text":"台词","emotion":"情绪(可选)","inner":"该角色此刻没说出口的心声(可选，玩家能偷看到)"}],
+  "narration": "旁白叙事(2到4段，用\\n\\n分段；写环境、动作、局势、暗涌与玩家可观察到的反应，不替玩家说话)",
+  "dialogues": [{"speaker":"角色名","text":"台词(每句可2到4个短句，承接前文推进冲突或亲近)","emotion":"情绪(可选)","inner":"该角色此刻没说出口的心声(可选，玩家能偷看到)"}],
   "choices": [
     {"text":"选项文案","tone":"语气","effects":[{"charId":"角色id","affection":整数,"trust":整数,"jealousy":整数,"mood":整数}],"risk":"low|mid|high","nextIntent":"选此项后剧情走向"}
   ],
   "effectsPreview": "给玩家的朦胧提示(不写精确数字)",
   "memoryUpdates": [{"charId":"角色id(可空=全局)","text":"要记住的事","kind":"event|promise|conflict|intimacy|gift|fact","weight":1到5}],
   "flagUpdates": {"flag名":"值"},
+  "resourceDelta": {"power":整数,"reputation":整数,"silver":整数,"energy":整数,"rumor":整数},
+  "objectiveUpdates": [{"id":"目标id(可空=当前主线)","progress":整数,"done":布尔}],
+  "inventoryUpdates": [{"id":"稳定id(可选)","name":"线索/信物名","kind":"clue|gift|edict|token","text":"说明","charId":"关联角色id(可选)"}],
+  "achievementUpdates": [{"id":"成就id","title":"成就名","description":"说明"}],
   "nextSceneHint": "下一场的走向暗示"
 }`;
+
+function resourcesBlock(s: StoryState): string {
+    return RESOURCE_KEYS.map(k => `${STORY_RESOURCE_LABELS[k]}${s.resources?.[k] ?? DEFAULT_RESOURCES[k]}`).join(' / ');
+}
+
+function objectiveBlock(s: StoryState): string {
+    return s.objectives.slice(0, 6).map(o => `- ${o.kind === 'main' ? '主线' : '支线'} ${o.id}：${o.title} ${o.progress}/${o.target}${o.done ? '（已成）' : ''}｜${o.description}`).join('\n') || '（暂无）';
+}
+
+function mapIntentBlock(s: StoryState): string {
+    if (!s.mapIntent) return '（无，本回合按节奏自然推进）';
+    const loc = PALACE_LOCATIONS.find(l => l.id === s.mapIntent?.locationId);
+    return `${loc?.name || s.location} · ${s.mapIntent.label}${s.mapIntent.note ? `｜${s.mapIntent.note}` : ''}`;
+}
+
+function generatedContextBlock(s: StoryState): string {
+    const hooks = (s.generatedHooks || []).slice(0, 6).map(h => {
+        const loc = h.locationId ? PALACE_LOCATIONS.find(l => l.id === h.locationId)?.name : '';
+        const who = h.charId && s.characters[h.charId] ? s.characters[h.charId].name : '';
+        return `- ${h.id}|${h.title}|${h.summary}${loc ? `|location:${loc}` : ''}${who ? `|char:${who}` : ''}|expiresDay:${h.expiresDay}`;
+    });
+    const rumors = (s.rumors || []).slice(0, 6).map(r => {
+        const who = r.charId && s.characters[r.charId] ? `|char:${s.characters[r.charId].name}` : '';
+        return `- ${r.id}|heat:${r.heat}${who}|${r.text}|expiresDay:${r.expiresDay}`;
+    });
+    const npcs = (s.npcStubs || []).slice(0, 5).map(n => {
+        const loc = n.locationId ? PALACE_LOCATIONS.find(l => l.id === n.locationId)?.name : '';
+        return `- ${n.id}|${n.name}/${n.role}|${n.disposition}|${n.summary}${loc ? `|location:${loc}` : ''}|expiresDay:${n.expiresDay}`;
+    });
+    const lines = [
+        hooks.length ? `AI hooks:\n${hooks.join('\n')}` : '',
+        rumors.length ? `Rumors:\n${rumors.join('\n')}` : '',
+        npcs.length ? `NPC stubs:\n${npcs.join('\n')}` : '',
+    ].filter(Boolean);
+    return lines.join('\n') || 'None';
+}
 
 function rosterBlock(s: StoryState): string {
     return allChars(s).map(c => {
@@ -605,6 +1432,35 @@ function historyBlock(s: StoryState): string {
     return s.history.slice(0, 4).map(h => `· 第${h.day}日${h.time}·${TURN_LABEL(h.turnType)}「${h.sceneTitle}」→ 你选择「${h.choiceText}」（${h.tone}）`).join('\n');
 }
 
+function resourceDeltaBlock(delta: Partial<StoryResources> = {}): string {
+    const lines = RESOURCE_KEYS
+        .filter(k => delta[k])
+        .map(k => `${STORY_RESOURCE_LABELS[k]}${(delta[k] || 0) > 0 ? '+' : ''}${delta[k]}`);
+    return lines.join('/') || '无资源变动';
+}
+
+function favorEffectsBlock(s: StoryState, effects: StoryChoice['effects'] = []): string {
+    const lines = effects.map(e => {
+        const tags: string[] = [];
+        if (e.affection) tags.push(`好感${e.affection > 0 ? '+' : ''}${e.affection}`);
+        if (e.trust) tags.push(`信任${e.trust > 0 ? '+' : ''}${e.trust}`);
+        if (e.jealousy) tags.push(`嫉妒${e.jealousy > 0 ? '+' : ''}${e.jealousy}`);
+        if (e.mood) tags.push(`心情${e.mood > 0 ? '+' : ''}${e.mood}`);
+        return tags.length ? `${s.characters[e.charId]?.name || e.charId}:${tags.join('/')}` : '';
+    }).filter(Boolean);
+    return lines.join('；') || '无显著人物变化';
+}
+
+function favorLedgerBlock(s: StoryState): string {
+    const entries = (s.favorLedger || []).slice(0, 8);
+    if (!entries.length) return '（暂无恩宠账）';
+    return entries.map(e => {
+        const targets = favorTargets(s, e.targetCharIds);
+        const rel = e.relationshipDelta.length ? `；关系:${e.relationshipDelta.map(r => `${s.characters[r.a]?.name || r.a}-${s.characters[r.b]?.name || r.b}${r.bond > 0 ? '+' : ''}${r.bond}`).join('/')}` : '';
+        return `· 第${e.day}日${e.time} ${e.title}「${e.actionText}」｜${targets}｜${resourceDeltaBlock(e.resourceDelta)}｜${favorEffectsBlock(s, e.effects)}${rel}${e.note ? `｜${e.note}` : ''}`;
+    }).join('\n');
+}
+
 /**
  * 组装单回合 prompt。opening=true 时为开场（无历史）。
  * 引擎已在外部定好 turnType / activeCharacters / time / location，AI 只负责「在给定节奏里把这场戏写好」，
@@ -625,18 +1481,32 @@ export function buildScenePrompt(s: StoryState, opts: { opening?: boolean } = {}
         + (cfg.premise ? `【玩家设定的开场/世界观】${cfg.premise.slice(0, 300)}（请贯穿全程、尊重此设定）\n` : '');
 
     const system = `你是一款古风宫廷恋爱文字互动游戏（galgame 式）的「实时编剧」。玩家扮演一位宫廷之主「${s.player.title}」，身边有多位可攻略的恋慕对象（即「后宫」）。`
-        + `你的职责：依据下方**当前游戏状态**，写好「这一回合」的一小段剧情，并给玩家 3 个选择。重人物与情感、有张力。\n\n`
+        + `你的职责：依据下方**当前游戏状态**，写好「这一回合」的一整幕长剧情，并给玩家 3 个选择。重人物与情感、有张力。\n\n`
         + styleBlock + '\n'
         + `【身份与性别 · 极重要】玩家与每位角色的性别都已在下方标明，可为男可为女（支持女帝男妃、同性、混合后宫等任意组合）。`
         + `务必按各自性别选用相称的称谓与自称（如男性侍君者可自称「臣」「微臣」、女性可自称「臣妾」「妾身」，按其人设而定），`
         + `**绝不要默认所有角色都是女性，也不要默认玩家是男性**；性别标为「依人设」的，按其人设/名字气质自行判断并保持前后一致。\n\n`
         + `【铁律 · 必须全部遵守】\n${RULES.map((r, i) => `${i + 1}. ${r}`).join('\n')}\n\n`
+        + `【主线边界】章节、地图、资源、目标与结局节奏均由游戏引擎控制；你只写当前场景，不要擅自越章、跳时间或宣布结局。`
+        + `可以在 resourceDelta/objectiveUpdates/inventoryUpdates/achievementUpdates 里给出温和后果，由引擎二次钳制。\n\n`
         + `【本回合节奏：${tm.label}】\n应当：${tm.guide}\n避免：${tm.avoid}\n变量取向：宜升「${tm.raise}」、宜降「${tm.lower}」。\n\n`
+        + `【篇幅与质感 · 极重要】这一幕必须像可阅读的仿真文游正文，不是摘要。`
+        + `narration 写 2~4 段，每段 80~160 个汉字，使用 \\n\\n 分段；dialogues 写 4~8 条，至少让主要在场角色说 2 条以上。`
+        + `每幕要包含：场景细节、角色动作、话外情绪、关系/权力暗流、上回合后果的一处回响、结尾的选择压力。`
+        + `不要用“片刻后/众人寒暄/气氛微妙”这类空泛跳写糊弄过去；要让玩家感觉这一幕真的发生过。\n\n`
         + `【输出格式】只输出一个 JSON（不要任何解释、不要 Markdown、不要代码块标记），结构如下：\n${SCHEMA}\n`
-        + `约束：choices 必须恰好 3 个；每个选项 effects 至少含一位在场角色、数值为整数（好感/信任建议 -12~12、嫉妒/心情 -15~15）；speaker 用上面出现过的角色名；id 用上面的 id。`;
+        + `约束：choices 必须恰好 3 个；每个选项 effects 至少含一位在场角色、数值为整数（好感/信任建议 -12~12、嫉妒/心情 -15~15）；`
+        + `资源变化要小幅且与场景有关；speaker 用上面出现过的角色名；id 用上面的 id。`;
 
     const user = `【玩家】${playerIdentity(s)}${s.player.persona ? `｜${s.player.persona.slice(0, 120)}` : ''}\n`
         + `【时空】第 ${s.day} 日 · ${s.time} · ${s.location}\n`
+        + `【主线章节】第 ${s.chapter.index} 章「${s.chapter.title}」：${s.chapter.subtitle}｜进度 ${s.chapter.progress}/${s.chapter.goal}${s.chapter.finaleReady ? '｜终局已可收束' : ''}\n`
+        + `【当前探索意图】${mapIntentBlock(s)}\n`
+        + `【资源】${resourcesBlock(s)}\n`
+        + `【目标】\n${objectiveBlock(s)}\n`
+        + `【线索/信物】${s.inventory.length ? s.inventory.slice(0, 5).map(i => `${i.name}：${i.text}`).join('；') : '（暂无）'}\n`
+        + `【AI判官生成的暗线/风闻/NPC】\n${generatedContextBlock(s)}\n`
+        + `【最近恩宠账】\n${favorLedgerBlock(s)}\n`
         + `【在场】${present}\n`
         + `【后宫诸位】\n${rosterBlock(s)}\n`
         + (rels.length ? `【她/他们之间】${rels.join('；')}\n` : '')
@@ -647,6 +1517,140 @@ export function buildScenePrompt(s: StoryState, opts: { opening?: boolean } = {}
         + `\n\n请据此写「${opts.opening ? '开场' : '这一回合'}」的剧情 JSON。`;
 
     return { system, user };
+}
+
+const ACTION_JUDGEMENT_SCHEMA = `{
+  "title": "判词标题(≤12字)",
+  "verdict": "对玩家行动的判定，说明为何可行/有风险(40~90字)",
+  "risk": "low|mid|high",
+  "cost": {"power":整数,"reputation":整数,"silver":整数,"energy":整数,"rumor":整数},
+  "reward": {"power":整数,"reputation":整数,"silver":整数,"energy":整数,"rumor":整数},
+  "effects": [{"charId":"角色id","affection":整数,"trust":整数,"jealousy":整数,"mood":整数}],
+  "involvedCharIds": ["角色id"],
+  "mapIntent": {"locationId":"地点id","action":"explore|visit|govern|gossip|gift|rest|chapter","label":"行动名","targetCharId":"角色id(可选)","note":"给下一幕的意图"},
+  "objectiveUpdates": [{"id":"目标id(可空=当前主线)","progress":整数,"done":布尔}],
+  "inventoryUpdates": [{"id":"稳定id","name":"线索/信物名","kind":"clue|gift|edict|token","text":"说明","charId":"关联角色id(可选)"}],
+  "achievementUpdates": [{"id":"成就id","title":"成就名","description":"说明"}],
+  "generatedHooks": [{"id":"稳定id","kind":"side|intrigue|location_event|character_event","title":"标题","summary":"摘要","expiresDay":数字,"locationId":"地点id(可选)","charId":"角色id(可选)"}],
+  "rumors": [{"id":"稳定id","text":"传闻正文","heat":0到100,"expiresDay":数字,"truth":"真相(可选)","charId":"角色id(可选)"}],
+  "npcStubs": [{"id":"稳定id","name":"临时NPC名","role":"身份","summary":"作用摘要","disposition":"态度","expiresDay":数字,"locationId":"地点id(可选)"}],
+  "nextIntent": "确认后下一幕要展开的方向",
+  "confidence": 0到100
+}`;
+
+export function buildActionJudgementPrompt(
+    s: StoryState,
+    input: { entryPoint: StoryActionEntryPoint; actionText: string; context?: string; targetCharId?: string; itemId?: string; objectiveId?: string; locationId?: PalaceLocationId },
+): { system: string; user: string } {
+    const locs = availableLocations(s).map(l => `${l.id}:${l.name}(${l.actions.join('/')})`).join('；');
+    const rels = relationshipSummary(s);
+    const hooks = (s.generatedHooks || []).slice(0, 6).map(h => `${h.id}:${h.title}(${h.summary})`).join('；') || '（无）';
+    const rumors = (s.rumors || []).slice(0, 6).map(r => `${r.id}:${r.text}`).join('；') || '（无）';
+    const npcs = (s.npcStubs || []).slice(0, 6).map(n => `${n.id}:${n.name}/${n.role}(${n.summary})`).join('；') || '（无）';
+    const system = `你是古风宫廷文游「椒房记」的宫廷判官/导演。你的任务不是写下一幕正文，而是把玩家的自由行动判定成结构化后果。`
+        + `你可以创造局内支线、传闻、临时NPC或地点事件钩子，但不能改真实角色档案，不能直接宣告结局，不能越过引擎给出的地点/角色/目标 id。`
+        + `数值变化必须克制：单项资源建议 -20~20；好感/信任 -10~10；嫉妒/心情 -12~12。只输出 JSON。\n\n`
+        + `【输出格式】\n${ACTION_JUDGEMENT_SCHEMA}`;
+    const user = `【玩家行动入口】${input.entryPoint}\n`
+        + `【玩家行动】${input.actionText.slice(0, 240)}\n`
+        + (input.context ? `【入口上下文】${input.context.slice(0, 240)}\n` : '')
+        + `【玩家】${playerIdentity(s)}\n`
+        + `【时空】第 ${s.day} 日 · ${s.time} · ${s.location}\n`
+        + `【章节】第 ${s.chapter.index} 章「${s.chapter.title}」${s.chapter.progress}/${s.chapter.goal}\n`
+        + `【资源】${resourcesBlock(s)}\n`
+        + `【地点白名单】${locs}\n`
+        + `【目标】\n${objectiveBlock(s)}\n`
+        + `【角色白名单】\n${rosterBlock(s)}\n`
+        + (rels.length ? `【她/他们之间】${rels.join('；')}\n` : '')
+        + `【线索/信物】${s.inventory.length ? s.inventory.slice(0, 8).map(i => `${i.id}:${i.name}(${i.text})`).join('；') : '（暂无）'}\n`
+        + `【最近恩宠账】\n${favorLedgerBlock(s)}\n`
+        + `【既有支线钩子】${hooks}\n`
+        + `【既有风闻】${rumors}\n`
+        + `【临时NPC】${npcs}\n`
+        + `【近期历史】\n${historyBlock(s)}\n\n`
+        + `请判定这个行动：给出风险、代价、收益、牵动角色、可新增的支线/传闻/NPC/线索，并保证所有 id 使用上方白名单或为新内容生成稳定 id。`;
+    return { system, user };
+}
+
+function sanitizeJudgementMapIntent(raw: any, s: StoryState): StoryMapIntent | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const locId = raw.locationId as PalaceLocationId;
+    const action = raw.action as PalaceActionType;
+    if (!PALACE_LOCATIONS.some(l => l.id === locId)) return undefined;
+    const probe: StoryMapIntent = {
+        locationId: locId,
+        action,
+        label: String(raw.label || PALACE_ACTION_LABELS[action] || '谋划').slice(0, 32),
+        targetCharId: raw.targetCharId && s.characters[raw.targetCharId] ? String(raw.targetCharId) : undefined,
+        note: raw.note ? String(raw.note).slice(0, 80) : undefined,
+    };
+    return sanitizeMapIntent(s, probe) || undefined;
+}
+
+function sanitizeJudgementResource(raw: any, sign: -1 | 1): Partial<StoryResources> {
+    const delta = sanitizeResourceDelta(raw);
+    const out: Partial<StoryResources> = {};
+    for (const key of RESOURCE_KEYS) {
+        const v = delta[key];
+        if (v == null) continue;
+        out[key] = sign < 0 ? -Math.abs(v) : Math.abs(v);
+    }
+    return out;
+}
+
+export function parseActionJudgement(
+    raw: string,
+    s: StoryState,
+    fallback: { entryPoint: StoryActionEntryPoint; actionText: string },
+): StoryActionJudgement | null {
+    const o = extractJson(raw);
+    if (!o || typeof o !== 'object') return null;
+    const entryPoint: StoryActionEntryPoint = ACTION_ENTRY_POINTS.has(o.entryPoint) ? o.entryPoint : fallback.entryPoint;
+    const actionText = String(o.actionText || fallback.actionText || '').trim().slice(0, 180);
+    if (!actionText) return null;
+    const source = entryPoint;
+    const effects = sanitizeEffects(o.effects, s).slice(0, 4);
+    const involved: string[] = Array.isArray(o.involvedCharIds)
+        ? o.involvedCharIds.filter((id: any) => s.characters[id]).map(String).slice(0, 6)
+        : effects.map(e => e.charId);
+    const generatedHooks = (Array.isArray(o.generatedHooks) ? o.generatedHooks : [])
+        .map((h: any) => sanitizeGeneratedHook(h, s, source))
+        .filter(Boolean) as StoryGeneratedHook[];
+    const rumors = (Array.isArray(o.rumors) ? o.rumors : [])
+        .map((r: any) => sanitizeRumor(r, s, source))
+        .filter(Boolean) as StoryRumor[];
+    const npcStubs = (Array.isArray(o.npcStubs) ? o.npcStubs : [])
+        .map((n: any) => sanitizeNpcStub(n, s, source))
+        .filter(Boolean) as StoryNpcStub[];
+    const objectiveUpdates: StoryScene['objectiveUpdates'] = (Array.isArray(o.objectiveUpdates) ? o.objectiveUpdates : [])
+        .slice(0, 4)
+        .map((u: any) => ({
+            id: u?.id && s.objectives.some(x => x.id === u.id) ? String(u.id).slice(0, 50) : undefined,
+            progress: u?.progress != null ? clampN(num(u.progress), -8, 16) : undefined,
+            done: !!u?.done,
+        }))
+        .filter((u: any) => u.progress != null || u.done);
+    return {
+        id: o.id ? safeSlug(String(o.id)) : `judge_${Date.now().toString(36)}`,
+        entryPoint,
+        actionText,
+        title: String(o.title || '宫廷判词').trim().slice(0, 24),
+        verdict: String(o.verdict || o.summary || '此事可行，但后果需入局承担。').trim().slice(0, 140),
+        risk: asRisk(o.risk),
+        cost: sanitizeJudgementResource(o.cost, -1),
+        reward: sanitizeJudgementResource(o.reward, 1),
+        effects,
+        involvedCharIds: Array.from(new Set<string>(involved.filter((id): id is string => typeof id === 'string'))),
+        mapIntent: sanitizeJudgementMapIntent(o.mapIntent, s),
+        objectiveUpdates,
+        inventoryUpdates: sanitizeInventoryUpdates(o.inventoryUpdates, s),
+        achievementUpdates: sanitizeAchievementUpdates(o.achievementUpdates),
+        generatedHooks: generatedHooks.slice(0, 4),
+        rumors: rumors.slice(0, 4),
+        npcStubs: npcStubs.slice(0, 3),
+        nextIntent: String(o.nextIntent || o.verdict || actionText).trim().slice(0, 120),
+        confidence: clamp100(num(o.confidence, 60)),
+    };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -705,18 +1709,18 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
             const speaker = String(d?.speaker || d?.name || '').trim();
             const text = String(d?.text || d?.line || '').trim();
             if (!text) return null;
-            return { speaker, charId: byName.get(speaker), text, emotion: d?.emotion ? String(d.emotion).slice(0, 8) : undefined, inner: d?.inner ? String(d.inner).trim().slice(0, 60) : undefined };
+            return { speaker, charId: byName.get(speaker), text, emotion: d?.emotion ? String(d.emotion).slice(0, 8) : undefined, inner: d?.inner ? String(d.inner).trim().slice(0, 140) : undefined };
         })
         .filter(Boolean) as StoryDialogue[];
 
     let choices: StoryChoice[] = (Array.isArray(o.choices) ? o.choices : [])
         .slice(0, 3)
         .map((c: any) => ({
-            text: String(c?.text || c?.label || '').trim().slice(0, 60),
+            text: String(c?.text || c?.label || '').trim().slice(0, 90),
             tone: String(c?.tone || '平和').trim().slice(0, 8) || '平和',
             effects: sanitizeEffects(c?.effects, s),
             risk: asRisk(c?.risk),
-            nextIntent: String(c?.nextIntent || c?.intent || '').trim().slice(0, 80),
+            nextIntent: String(c?.nextIntent || c?.intent || '').trim().slice(0, 140),
         }))
         .filter((c: StoryChoice) => c.text);
     if (choices.length < 3) choices = [...choices, ...fallbackChoices(s, choices.length)];
@@ -728,7 +1732,7 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
             if (!text) return null;
             let cid = String(m?.charId || '').trim();
             if (cid && !s.characters[cid]) cid = byName.get(cid) || '';
-            return { charId: cid && s.characters[cid] ? cid : undefined, text: text.slice(0, 120), kind: asKind(m?.kind), weight: clampN(num(m?.weight, 1), 1, 5) };
+            return { charId: cid && s.characters[cid] ? cid : undefined, text: text.slice(0, 180), kind: asKind(m?.kind), weight: clampN(num(m?.weight, 1), 1, 5) };
         })
         .filter(Boolean) as StoryScene['memoryUpdates'];
 
@@ -739,6 +1743,15 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
             if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') flagUpdates[String(k).slice(0, 40)] = v;
         }
     }
+
+    const objectiveUpdates: StoryScene['objectiveUpdates'] = (Array.isArray(o.objectiveUpdates) ? o.objectiveUpdates : [])
+        .slice(0, 4)
+        .map((u: any) => ({
+            id: u?.id ? String(u.id).trim().slice(0, 50) : undefined,
+            progress: u?.progress != null ? clampN(num(u.progress), -8, 16) : undefined,
+            done: !!u?.done,
+        }))
+        .filter((u: any) => u.progress != null || u.done);
 
     const narration = String(o.narration || o.scene || '').trim();
     if (!narration && dialogues.length === 0) return null; // 一片空白视作失败，让 app 兜底
@@ -751,6 +1764,10 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
         effectsPreview: String(o.effectsPreview || '').trim().slice(0, 80),
         memoryUpdates,
         flagUpdates,
+        resourceDelta: sanitizeResourceDelta(o.resourceDelta),
+        objectiveUpdates,
+        inventoryUpdates: sanitizeInventoryUpdates(o.inventoryUpdates, s),
+        achievementUpdates: sanitizeAchievementUpdates(o.achievementUpdates),
         nextSceneHint: String(o.nextSceneHint || '').trim().slice(0, 100),
         mood: o.mood ? String(o.mood).trim().slice(0, 12) || undefined : undefined,
         turnType: s.turnType,
@@ -767,11 +1784,12 @@ export function fallbackScene(s: StoryState): StoryScene {
     const who = present[0];
     const name = who?.name || '那个人';
     const title = s.player.title || '君上';
+    const names = present.map(c => c.name).join('、');
     const narration = present.length
-        ? `${s.location}，${s.time}色微茫。${name}立于近前，${who.attitude}，似有话要说，又咽了回去。这是一场${tm.label}的照面，气氛说不清的微妙。`
-        : `${s.location}独坐，${s.time}风穿廊。无人相伴，思绪却没停下。`;
+        ? `${s.location}，${s.time}色微茫。帘外的风贴着廊柱过去，宫灯把${names}的影子拉得很长，连案上那盏茶都像在等一个迟迟未落的字。\n\n${name}立于近前，${who.attitude}，似有话要说，又咽了回去。这是一场${tm.label}的照面，气氛说不清的微妙：若开口太早，像邀宠；若退得太远，又怕这一退便被旁人占了先。`
+        : `${s.location}独坐，${s.time}风穿廊。无人相伴，思绪却没停下，旧事、风闻与未完的宫务一并压在案头。\n\n殿外偶有宫铃轻响，传到里面已经很轻，却更显得此刻空旷。下一步往哪里去，见谁，赏谁，冷谁，都会被人记在心里。`;
     const me = who ? selfRef(who.gender) : '我';
-    const dialogues: StoryDialogue[] = who ? [{ speaker: who.name, charId: who.charId, text: pick([`…${title}今日，可还安好？`, `${me}候着${title}呢。`, `${title}若得空，能否多留片刻？`], Math.random) }] : [];
+    const dialogues: StoryDialogue[] = who ? [{ speaker: who.name, charId: who.charId, text: pick([`…${title}今日，可还安好？方才外头有人提起旧事，${me}听着不该入耳，却还是记住了。`, `${me}候着${title}呢。宫里这些日子风声多，人人都说自己不在意，可谁又真能不听？`, `${title}若得空，能否多留片刻？有些话放久了会冷，有些心意却越放越沉。`], Math.random), emotion: '试探', inner: '这一句若说得太轻，怕被当作无心；说得太重，又怕惊扰了眼前人。' }] : [];
     const MOOD_BY_TURN: Record<TurnType, string> = {
         daily: '闲适', date: '缱绻', group: '暗流涌动', jealousy: '剑拔弩张', cold_war: '冷寂',
         night_talk: '静谧', breakthrough: '心动', crisis: '风雨欲来', route_lock: '郑重', ending: '余韵',
@@ -781,7 +1799,7 @@ export function fallbackScene(s: StoryState): StoryScene {
         narration,
         dialogues,
         choices: fallbackChoices(s, 0),
-        effectsPreview: '（离线模式·剧情从简）',
+        effectsPreview: '（离线兜底·剧情小幕）',
         memoryUpdates: [],
         flagUpdates: {},
         nextSceneHint: '',
@@ -797,6 +1815,53 @@ export function fallbackScene(s: StoryState): StoryScene {
 function recomputeChar(c: StoryChar): void {
     c.stage = stageOf(c.affection).key;
     c.attitude = deriveAttitude(c);
+}
+
+function mapActionResourceDelta(action: PalaceActionType): Partial<StoryResources> {
+    switch (action) {
+        case 'govern': return { energy: -10, power: 5, reputation: 2, silver: -2 };
+        case 'gossip': return { energy: -7, rumor: 8, reputation: -1 };
+        case 'gift': return { silver: -8, reputation: 1 };
+        case 'rest': return { energy: 18, rumor: -2 };
+        case 'chapter': return { energy: -12, power: 3, reputation: 3, rumor: 2 };
+        case 'visit': return { energy: -5 };
+        case 'explore':
+        default: return { energy: -8, rumor: 5, reputation: 1 };
+    }
+}
+
+function mapActionProgress(action: PalaceActionType): number {
+    switch (action) {
+        case 'chapter': return 9;
+        case 'govern': return 5;
+        case 'explore': return 4;
+        case 'gossip': return 3;
+        case 'gift': return 2;
+        case 'visit': return 2;
+        case 'rest': return 1;
+        default: return 2;
+    }
+}
+
+function turnTypeForMapAction(action: PalaceActionType, time: TimeSlot): TurnType {
+    if (action === 'visit') return time === '夜' ? 'night_talk' : 'date';
+    if (action === 'gossip' || action === 'govern') return 'group';
+    if (action === 'gift') return 'date';
+    if (action === 'chapter') return 'crisis';
+    if (action === 'rest') return time === '夜' ? 'night_talk' : 'daily';
+    return 'daily';
+}
+
+function sanitizeMapIntent(s: StoryState, intent: StoryMapIntent): StoryMapIntent | null {
+    const loc = availableLocations(s).find(l => l.id === intent.locationId);
+    if (!loc || !loc.actions.includes(intent.action)) return null;
+    return {
+        locationId: loc.id,
+        action: intent.action,
+        label: intent.label || `${loc.name}·${PALACE_ACTION_LABELS[intent.action]}`,
+        targetCharId: intent.targetCharId && s.characters[intent.targetCharId] ? intent.targetCharId : undefined,
+        note: intent.note ? String(intent.note).slice(0, 80) : undefined,
+    };
 }
 
 /**
@@ -836,7 +1901,122 @@ export function visitCharacter(s: StoryState, scene: StoryScene, charId: string,
     return resolveTurn(s, scene, choice, rng, { custom: true, focus: charId });
 }
 
-function resolveTurn(s: StoryState, scene: StoryScene, choice: StoryChoice, rng: () => number = Math.random, meta: { custom?: boolean; focus?: string | null } = {}): StoryState {
+export function applyFavorAction(s: StoryState, scene: StoryScene, input: StoryFavorActionInput, rng: () => number = Math.random): StoryState {
+    const preview = previewFavorAction(s, input);
+    if (!preview.ok) return s;
+    const entry = makeFavorLedgerEntry(s, preview, preview.type, input.note);
+    const base: StoryState = {
+        ...s,
+        relationships: applyFavorRelationshipDeltas(s.relationships, preview.relationshipDelta),
+        favorLedger: addFavorLedger(s, entry),
+    };
+    const choice: StoryChoice = {
+        text: preview.actionText,
+        tone: '谕旨',
+        effects: preview.effects,
+        risk: preview.risk,
+        nextIntent: preview.nextIntent,
+    };
+    const syntheticScene: StoryScene = {
+        sceneTitle: preview.title,
+        narration: preview.message,
+        dialogues: [],
+        choices: [choice, ...fallbackChoices(base, 1)].slice(0, 3),
+        effectsPreview: preview.message,
+        memoryUpdates: [{
+            text: `你在宠爱经营台落下谕旨：${preview.actionText}。`,
+            kind: preview.risk === 'high' ? 'conflict' : 'event',
+            weight: preview.risk === 'high' ? 3 : 2,
+        }],
+        flagUpdates: { last_favor_action: preview.type },
+        resourceDelta: preview.resourceDelta,
+        objectiveUpdates: [],
+        inventoryUpdates: [],
+        achievementUpdates: [],
+        nextSceneHint: preview.nextIntent,
+        mood: preview.risk === 'high' ? '险诏' : preview.risk === 'mid' ? '暗涌' : '安宫',
+        turnType: s.turnType,
+    };
+    return resolveTurn(base, syntheticScene, choice, rng, { custom: true, focus: preview.targetCharIds[0] || null });
+}
+
+/** 宫苑地图动作：把当前场景收束为「前往某处做某事」，下一回合由 AI 写该行动的后果。 */
+export function applyMapAction(s: StoryState, scene: StoryScene, intent: StoryMapIntent, rng: () => number = Math.random): StoryState {
+    const clean = sanitizeMapIntent(s, intent);
+    if (!clean) return s;
+    const loc = PALACE_LOCATIONS.find(l => l.id === clean.locationId)!;
+    const choice: StoryChoice = {
+        text: `前往${loc.name}·${PALACE_ACTION_LABELS[clean.action]}`,
+        tone: '调度',
+        effects: clean.targetCharId ? [{ charId: clean.targetCharId, affection: clean.action === 'gift' ? 3 : 1, trust: clean.action === 'visit' ? 1 : undefined }] : [],
+        risk: clean.action === 'gossip' || clean.action === 'chapter' ? 'mid' : 'low',
+        nextIntent: clean.note || `${loc.name}${PALACE_ACTION_LABELS[clean.action]}，让剧情围绕此行动展开`,
+    };
+    return resolveTurn(s, scene, choice, rng, { custom: true, focus: clean.targetCharId || null, mapIntent: clean });
+}
+
+function combineJudgementResources(judgement: StoryActionJudgement): Partial<StoryResources> {
+    const delta: Partial<StoryResources> = {};
+    for (const key of RESOURCE_KEYS) {
+        const value = num(judgement.cost?.[key], 0) + num(judgement.reward?.[key], 0);
+        if (value) delta[key] = value;
+    }
+    return sanitizeResourceDelta(delta);
+}
+
+export function applyActionJudgement(
+    s: StoryState,
+    scene: StoryScene,
+    judgement: StoryActionJudgement,
+    rng: () => number = Math.random,
+): StoryState {
+    if (!judgement || !judgement.actionText) return s;
+    let base = mergeActionContent({ ...s, pendingJudgement: null }, judgement);
+    if (judgement.entryPoint === 'favor') {
+        const resourceDelta = combineJudgementResources(judgement);
+        const entry = makeFavorLedgerEntry(base, {
+            title: judgement.title || '自拟谕旨',
+            actionText: judgement.actionText,
+            risk: judgement.risk,
+            resourceDelta,
+            effects: judgement.effects,
+            relationshipDelta: [],
+            targetCharIds: judgement.involvedCharIds,
+        }, 'draft', judgement.verdict);
+        base = { ...base, favorLedger: addFavorLedger(base, entry) };
+    }
+    const focus = judgement.mapIntent?.targetCharId || judgement.involvedCharIds.find(id => !!base.characters[id]) || null;
+    const choice: StoryChoice = {
+        text: judgement.actionText,
+        tone: '判词',
+        effects: judgement.effects.length ? judgement.effects : (focus ? [{ charId: focus, trust: 1 }] : []),
+        risk: judgement.risk,
+        nextIntent: judgement.nextIntent || judgement.verdict || judgement.actionText,
+    };
+    const syntheticScene: StoryScene = {
+        sceneTitle: judgement.title || scene.sceneTitle || '宫廷判词',
+        narration: judgement.verdict || scene.narration || judgement.actionText,
+        dialogues: [],
+        choices: [choice, ...fallbackChoices(base, 1)].slice(0, 3),
+        effectsPreview: judgement.verdict,
+        memoryUpdates: [{
+            text: `你依判官所断行事：${judgement.actionText}`,
+            kind: judgement.risk === 'high' ? 'conflict' : 'event',
+            weight: judgement.risk === 'high' ? 3 : 2,
+        }],
+        flagUpdates: { last_action_judgement: judgement.id },
+        resourceDelta: combineJudgementResources(judgement),
+        objectiveUpdates: judgement.objectiveUpdates || [],
+        inventoryUpdates: judgement.inventoryUpdates || [],
+        achievementUpdates: judgement.achievementUpdates || [],
+        nextSceneHint: judgement.nextIntent || judgement.verdict || scene.nextSceneHint || '',
+        mood: judgement.risk === 'high' ? '险棋' : judgement.risk === 'low' ? '稳妥' : '暗涌',
+        turnType: s.turnType,
+    };
+    return resolveTurn(base, syntheticScene, choice, rng, { custom: true, focus, mapIntent: judgement.mapIntent || null });
+}
+
+function resolveTurn(s: StoryState, scene: StoryScene, choice: StoryChoice, rng: () => number = Math.random, meta: { custom?: boolean; focus?: string | null; mapIntent?: StoryMapIntent | null } = {}): StoryState {
     // 深拷贝角色
     const characters: Record<string, StoryChar> = {};
     for (const [id, c] of Object.entries(s.characters)) characters[id] = { ...c, memories: [...c.memories], flags: { ...c.flags } };
@@ -872,6 +2052,15 @@ function resolveTurn(s: StoryState, scene: StoryScene, choice: StoryChoice, rng:
 
     // 4) flag（⑧）
     const flags = { ...s.flags, ...scene.flagUpdates };
+
+    // 4.5) 长线玩法：资源 / 线索 / 成就（AI 建议 + 地图动作，均经白名单钳制）
+    let resources = applyResourceDelta(s.resources || DEFAULT_RESOURCES, scene.resourceDelta || {});
+    if (meta.mapIntent) resources = applyResourceDelta(resources, mapActionResourceDelta(meta.mapIntent.action));
+    let inventory = mergeInventory(s.inventory || [], scene.inventoryUpdates || [], s.day);
+    let achievements = [...(s.achievements || [])];
+    for (const a of sanitizeAchievementUpdates(scene.achievementUpdates || [])) {
+        if (!achievements.some(x => x.id === a.id)) achievements.unshift({ ...a, unlockedAt: Date.now() });
+    }
 
     // 5) 路线锁定（仅在「路线锁定回合」且玩家选了对主角正向的选项时落锁）
     let route = { ...s.route };
@@ -921,24 +2110,46 @@ function resolveTurn(s: StoryState, scene: StoryScene, choice: StoryChoice, rng:
     // 10) 推进时辰
     const { time, day } = advanceTime(s.time, s.day);
 
+    // 10.5) 宫苑地图：记录访问，给下一幕保留一次探索意图
+    const map = normalizeMap(s.map, day, s.chapter?.index || 1);
+    if (meta.mapIntent) {
+        map.lastLocationId = meta.mapIntent.locationId;
+        map.visited = { ...map.visited, [meta.mapIntent.locationId]: num(map.visited[meta.mapIntent.locationId], 0) + 1 };
+    }
+
     // 组装中间态
-    const mid: StoryState = {
+    let mid: StoryState = {
         ...s, characters, memories, flags, route, relationships, history, time, day,
+        resources,
+        inventory,
+        achievements,
+        map,
         currentScene: null,
         lastTurn: { choiceText: choice.text, tone: choice.tone, nextIntent: choice.nextIntent, custom: meta.custom },
         // 主动择幸：把焦点临时放进 state，供下一回合判定/调度读取（用后即清）
         focusHint: meta.focus ?? s.focusHint ?? null,
+        mapIntent: meta.mapIntent ?? null,
         turnCount: s.turnCount + 1,
     };
 
-    // 11) 结局进度
+    // 11) 目标 / 章节 / 成就进度
+    const passiveProgress = 2 + (s.turnType === 'crisis' ? 2 : 0) + (s.turnType === 'breakthrough' ? 2 : 0) + (meta.mapIntent ? mapActionProgress(meta.mapIntent.action) : 0);
+    mid = advanceObjectives(mid, scene.objectiveUpdates || [], passiveProgress);
+    mid = advanceChapter(mid);
+    mid = achievementSweep(mid);
+
+    // 12) 结局进度
     mid.endingProgress = computeEndingProgress(mid);
 
-    // 12) 下一回合：类型 → 登场 → 地点（读取 focusHint 后清空，保证只生效一次）
-    const nextType = determineTurnType(mid, rng);
+    // 13) 下一回合：类型 → 登场 → 地点（地图动作优先；focusHint 用后清空，mapIntent 保留给下一次 AI prompt）
+    const nextType = meta.mapIntent ? turnTypeForMapAction(meta.mapIntent.action, mid.time) : determineTurnType(mid, rng);
     mid.turnType = nextType;
-    mid.activeCharacters = scheduleCast(mid, nextType, rng);
-    mid.location = pickLocation(nextType, rng);
+    mid.activeCharacters = meta.mapIntent?.targetCharId
+        ? [meta.mapIntent.targetCharId]
+        : scheduleCast(mid, nextType, rng);
+    mid.location = meta.mapIntent
+        ? (PALACE_LOCATIONS.find(l => l.id === meta.mapIntent?.locationId)?.name || pickLocation(nextType, rng))
+        : pickLocation(nextType, rng);
     mid.focusHint = null;
 
     return mid;
@@ -963,36 +2174,43 @@ export interface EndingDef {
 const topChar = (s: StoryState): StoryChar | null => { const a = sortByAff(allChars(s)); return a[0] || null; };
 
 const estrangedCount = (s: StoryState): number => allChars(s).filter(c => c.estranged).length;
+const finaleWindow = (s: StoryState): boolean => s.day >= 60 || !!s.chapter?.finaleReady;
 
 export const ENDING_DEFS: EndingDef[] = [
     {
         key: 'jealousy_ruin', label: '醋海覆舟', tone: 'bad', priority: 90,
         blurb: '善妒成灾，后宫倾覆。爱到极处反成刀，一段孽缘以玉石俱焚收场。',
-        test: s => allChars(s).some(c => c.jealousy >= 96 && c.trust < 40) && s.day >= 5,
+        test: s => allChars(s).some(c => c.jealousy >= 96 && c.trust < 40) && s.day >= 20,
         score: s => { const m = Math.max(0, ...allChars(s).map(c => c.jealousy >= 96 ? 100 : c.jealousy)); return clamp100(m); },
     },
     {
         key: 'estranged_collapse', label: '人心尽失', tone: 'bad', priority: 85,
         blurb: '众叛亲离，宫阙空余冷月。你冷落了太多人，到头来身边一个不剩。',
-        test: s => { const n = allChars(s).length; return n >= 2 && estrangedCount(s) >= Math.max(2, Math.ceil(n / 2)) && s.day >= 6; },
+        test: s => { const n = allChars(s).length; return n >= 2 && estrangedCount(s) >= Math.max(2, Math.ceil(n / 2)) && s.day >= 30; },
         score: s => { const n = allChars(s).length; return n ? clamp100((estrangedCount(s) / n) * 130) : 0; },
     },
     {
         key: 'cold_lonely', label: '孤家寡人', tone: 'bad', priority: 80,
         blurb: '人心渐离，宫阙生寒。坐拥满宫却无一人交心，终是孤家寡人。',
-        test: s => s.day >= 8 && allChars(s).length > 0 && allChars(s).every(c => c.affection <= 32),
+        test: s => s.day >= 45 && allChars(s).length > 0 && allChars(s).every(c => c.affection <= 32),
         score: s => { const chars = allChars(s); if (!chars.length) return 0; const avg = chars.reduce((a, c) => a + c.affection, 0) / chars.length; return clamp100((40 - avg) * 2.5); },
     },
     {
         key: 'true_love', label: '一生一世一双人', tone: 'true', priority: 70,
         blurb: '弱水三千只取一瓢。独许一人、患难与共，终成神仙眷侣。',
-        test: s => { const t = s.route.locked && s.route.charId ? s.characters[s.route.charId] : null; return !!t && t.affection >= 88 && t.trust >= 80 && t.jealousy <= 35 && s.day >= 8; },
+        test: s => { const t = s.route.locked && s.route.charId ? s.characters[s.route.charId] : null; return !!t && t.affection >= 88 && t.trust >= 80 && t.jealousy <= 35 && finaleWindow(s); },
         score: s => { const t = s.route.locked && s.route.charId ? s.characters[s.route.charId] : topChar(s); if (!t) return 0; return clamp100((t.affection * 0.6 + t.trust * 0.4) * (s.route.locked ? 1 : 0.7)); },
+    },
+    {
+        key: 'imperial_pact', label: '凤阙定鼎', tone: 'true', priority: 65,
+        blurb: '你稳住宫权与人心，让椒房不再只是情爱之所，也成了一座可托付的宫阙。',
+        test: s => finaleWindow(s) && s.chapter?.index >= 8 && s.resources.power >= 70 && s.resources.reputation >= 65 && s.resources.energy >= 25,
+        score: s => clamp100((s.resources.power * 0.45) + (s.resources.reputation * 0.4) + Math.max(0, 100 - s.resources.rumor) * 0.15),
     },
     {
         key: 'harem', label: '众芳同辉', tone: 'harem', priority: 60,
         blurb: '雨露均沾，满宫佳人皆得其所。一段众星拱月、各得圆满的后宫佳话。',
-        test: s => { const hi = allChars(s).filter(c => c.affection >= 70); return hi.length >= 3 && allChars(s).every(c => c.jealousy <= 50) && s.day >= 8 && !s.route.locked; },
+        test: s => { const hi = allChars(s).filter(c => c.affection >= 70); return hi.length >= 3 && allChars(s).every(c => c.jealousy <= 50) && finaleWindow(s) && !s.route.locked; },
         score: s => { const chars = allChars(s); if (chars.length < 3) return 0; const hi = chars.filter(c => c.affection >= 70).length; const calm = chars.every(c => c.jealousy <= 50) ? 1 : 0.6; return clamp100((hi / chars.length) * 100 * calm); },
     },
     {
@@ -1018,6 +2236,7 @@ export function checkEndings(s: StoryState, hardOnly = false): EndingDef | null 
     const eligible = ENDING_DEFS.filter(d => d.key !== 'open' && d.test(s)).sort((a, b) => b.priority - a.priority);
     if (eligible.length) return eligible[0];
     if (hardOnly) return null;
+    if (!finaleWindow(s)) return ENDING_DEFS.find(d => d.key === 'open') || null;
     // 非硬条件：到了 ending 回合也得给个结局——按分数挑最高的，否则 open
     const ranked = ENDING_DEFS.filter(d => d.key !== 'open').map(d => ({ d, sc: d.score(s) })).sort((a, b) => b.sc - a.sc);
     if (ranked[0] && ranked[0].sc >= 50) return ranked[0].d;
@@ -1063,6 +2282,8 @@ export function fallbackStoryEnding(s: StoryState, def: EndingDef): StoryEnding 
             ? `历 ${s.day} 日，六宫安和，满宫佳人各得其所。你坐拥盈盈春色，亦守得一宫人心，传为佳话。`
             : def.key === 'jealousy_ruin'
                 ? `历 ${s.day} 日，醋海翻波，终成大祸。爱到极处反成刀，繁华一夜倾覆，徒留满地狼藉。`
+                : def.key === 'imperial_pact'
+                    ? `历 ${s.day} 日，你以宫权镇风雨，以声望定人心。椒房从此不只记情爱，也记一场被你亲手扶稳的宫阙长卷。`
                 : def.key === 'estranged_collapse'
                     ? `历 ${s.day} 日，你冷落了太多人，一个个心灰意冷地离你而去。到头来众叛亲离，空荡宫阙只剩冷月相照。`
                     : def.key === 'cold_lonely'
@@ -1096,7 +2317,18 @@ export function startNewGamePlus(prev: StoryState, seeds: StorySeed[], player?: 
 //  存档读档辅助（多档由 app 层管理；这里给「打包/校验」）
 // ════════════════════════════════════════════════════════════════════════════
 
-export interface StorySaveMeta { day: number; time: TimeSlot; turn: number; playthrough: number; topName: string; routeName: string | null; ts: number; }
+export interface StorySaveMeta {
+    day: number;
+    time: TimeSlot;
+    turn: number;
+    playthrough: number;
+    topName: string;
+    routeName: string | null;
+    chapterTitle: string;
+    mainProgress: number;
+    resourceSummary: string;
+    ts: number;
+}
 
 export function saveMetaOf(s: StoryState): StorySaveMeta {
     const top = topChar(s);
@@ -1104,6 +2336,9 @@ export function saveMetaOf(s: StoryState): StorySaveMeta {
         day: s.day, time: s.time, turn: s.turnCount, playthrough: s.playthrough,
         topName: top?.name || '—',
         routeName: s.route.charId && s.characters[s.route.charId] ? s.characters[s.route.charId].name : null,
+        chapterTitle: s.chapter?.title || '初入椒房',
+        mainProgress: s.chapter ? clamp100((s.chapter.progress / Math.max(1, s.chapter.goal)) * 100) : 0,
+        resourceSummary: resourcesBlock(s),
         ts: Date.now(),
     };
 }
@@ -1128,6 +2363,48 @@ export function reviveStory(raw: any): StoryState | null {
             };
             recomputeChar(characters[id]);
         }
+        const revivedDay = num(raw.day, 1);
+        const revivedTime: TimeSlot = TIME_SLOTS.includes(raw.time) ? raw.time : '晨';
+        const inferredChapterIndex = [...CHAPTER_DEFS].reverse().find(c => revivedDay >= c.minDay)?.index || 1;
+        const rawChapterIndex = clampN(num(raw.chapter?.index, inferredChapterIndex), 1, CHAPTER_DEFS.length);
+        const chapter = makeChapter(rawChapterIndex, num(raw.chapter?.progress, 0));
+        chapter.completed = !!raw.chapter?.completed || chapter.progress >= chapter.goal;
+        chapter.finaleReady = !!raw.chapter?.finaleReady || (chapter.index >= CHAPTER_DEFS.length && revivedDay >= 60 && chapter.progress >= Math.min(chapter.goal, 50));
+        const resources = normalizeResources(raw.resources);
+        const rawObjectives = Array.isArray(raw.objectives) ? raw.objectives : [];
+        const objectives: StoryObjective[] = rawObjectives.length
+            ? rawObjectives.map((o: any) => ({
+                id: String(o.id || sid()),
+                kind: o.kind === 'side' ? 'side' : 'main',
+                title: String(o.title || '未名目标').slice(0, 40),
+                description: String(o.description || '').slice(0, 120),
+                target: clampN(num(o.target, 10), 1, 999),
+                progress: clampN(num(o.progress, 0), 0, clampN(num(o.target, 10), 1, 999)),
+                done: !!o.done,
+                chapterId: o.chapterId ? String(o.chapterId) : undefined,
+                reward: o.reward && typeof o.reward === 'object' ? sanitizeResourceDelta(o.reward) : undefined,
+            }))
+            : defaultObjectives(chapter);
+        if (!objectives.some(o => o.id === mainObjectiveId(chapter.id))) objectives.unshift(makeMainObjective(chapter));
+        const inventory: StoryInventoryItem[] = Array.isArray(raw.inventory)
+            ? raw.inventory.slice(0, 60).map((it: any) => ({
+                id: String(it.id || sid()),
+                name: String(it.name || '无名线索').slice(0, 24),
+                kind: INVENTORY_KINDS.has(it.kind) ? it.kind : 'clue',
+                text: String(it.text || '').slice(0, 120),
+                day: num(it.day, revivedDay),
+                charId: it.charId && characters[it.charId] ? String(it.charId) : undefined,
+                source: it.source ? String(it.source).slice(0, 40) : undefined,
+            }))
+            : [];
+        const achievements: StoryAchievement[] = Array.isArray(raw.achievements)
+            ? raw.achievements.slice(0, 80).map((a: any) => ({
+                id: String(a.id || sid()),
+                title: String(a.title || a.id || '无名印记').slice(0, 24),
+                description: String(a.description || '').slice(0, 80),
+                unlockedAt: num(a.unlockedAt, Date.now()),
+            }))
+            : [];
         const s: StoryState = {
             version: STORY_VERSION,
             playthrough: num(raw.playthrough, 1),
@@ -1135,7 +2412,7 @@ export function reviveStory(raw: any): StoryState | null {
             settings: raw.settings && typeof raw.settings === 'object'
                 ? { style: String(raw.settings.style || DEFAULT_SETTINGS.style), heat: clampN(num(raw.settings.heat, 1), 0, 3), pace: String(raw.settings.pace || DEFAULT_SETTINGS.pace), premise: raw.settings.premise ? String(raw.settings.premise).slice(0, 400) : undefined }
                 : { ...DEFAULT_SETTINGS },
-            day: num(raw.day, 1), time: (TIME_SLOTS.includes(raw.time) ? raw.time : '晨'),
+            day: revivedDay, time: revivedTime,
             location: String(raw.location || '椒房殿'),
             turnType: (TURN_META[raw.turnType as TurnType] ? raw.turnType : 'daily'),
             turnCount: num(raw.turnCount, 0),
@@ -1143,6 +2420,18 @@ export function reviveStory(raw: any): StoryState | null {
             activeCharacters: Array.isArray(raw.activeCharacters) ? raw.activeCharacters.filter((id: any) => characters[id]) : Object.keys(characters).slice(0, 1),
             characters,
             relationships: Array.isArray(raw.relationships) ? raw.relationships : [],
+            chapter,
+            objectives,
+            resources,
+            map: normalizeMap(raw.map, revivedDay, chapter.index),
+            inventory,
+            achievements,
+            mapIntent: raw.mapIntent && typeof raw.mapIntent === 'object' ? sanitizeMapIntent({ day: revivedDay, chapter, map: normalizeMap(raw.map, revivedDay, chapter.index), characters, favorLedger: [] } as unknown as StoryState, raw.mapIntent) : null,
+            generatedHooks: [],
+            rumors: [],
+            npcStubs: [],
+            pendingJudgement: null,
+            favorLedger: [],
             memories: Array.isArray(raw.memories) ? raw.memories : [],
             flags: raw.flags && typeof raw.flags === 'object' ? raw.flags : {},
             history: Array.isArray(raw.history) ? raw.history : [],
@@ -1159,6 +2448,20 @@ export function reviveStory(raw: any): StoryState | null {
             for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) s.relationships.push({ a: ids[i], b: ids[j], bond: 0 });
         }
         if (!s.activeCharacters.length) s.activeCharacters = Object.keys(characters).slice(0, 1);
+        s.generatedHooks = (Array.isArray(raw.generatedHooks) ? raw.generatedHooks : [])
+            .map((h: any) => sanitizeGeneratedHook(h, s, h?.source || 'scene'))
+            .filter(Boolean) as StoryGeneratedHook[];
+        s.rumors = (Array.isArray(raw.rumors) ? raw.rumors : [])
+            .map((r: any) => sanitizeRumor(r, s, r?.source || 'scene'))
+            .filter(Boolean) as StoryRumor[];
+        s.npcStubs = (Array.isArray(raw.npcStubs) ? raw.npcStubs : [])
+            .map((n: any) => sanitizeNpcStub(n, s, n?.source || 'scene'))
+            .filter(Boolean) as StoryNpcStub[];
+        s.favorLedger = sanitizeFavorLedger(raw.favorLedger, s);
+        const cleaned = expireGeneratedHooks(s);
+        s.generatedHooks = cleaned.generatedHooks;
+        s.rumors = cleaned.rumors;
+        s.npcStubs = cleaned.npcStubs;
         s.endingProgress = computeEndingProgress(s);
         return s;
     } catch { return null; }

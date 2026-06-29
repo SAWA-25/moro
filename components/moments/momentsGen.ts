@@ -79,6 +79,61 @@ const feedDigest = (feed: SocialPost[], characters: CharacterProfile[], userName
     }).join('\n');
 };
 
+const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): string => {
+    const lines: string[] = [
+        `名字: ${userProfile.name || '用户'}`,
+        `简介: ${userProfile.bio || '（没写简介）'}`,
+    ];
+    // 「用户社交圈」开关只控制絮语里是否自动出现背景联系人；朋友圈始终按用户社交设定生成。
+    if (userProfile.patSuffix) lines.push(`拍一拍后缀: ${userProfile.patSuffix}`);
+    if (userProfile.vrState?.enabled) {
+        const state = [
+            userProfile.vrState.currentRoom ? `所在房间: ${userProfile.vrState.currentRoom}` : '',
+            userProfile.vrState.activity ? `此刻活动: ${userProfile.vrState.activity}` : '',
+        ].filter(Boolean).join('；');
+        if (state) lines.push(`页外状态: ${state}`);
+    }
+
+    const ambient = (userProfile.ambientSocial?.entries || [])
+        .filter(e => !e.hidden)
+        .slice(0, 12);
+    if (ambient.length > 0) {
+        lines.push('已建立的用户社交圈（朋友圈 NPC 优先从这里取，不要重复正式角色名）：');
+        ambient.forEach(e => {
+            if (e.kind === 'group') {
+                lines.push(`- 群聊「${e.name}」(${e.relationLabel})：${e.note}；成员：${e.memberNames.join('、')}；最近消息：${e.lastMessage}${e.linkedGroupId ? '；已转正式群聊，NPC 作者不要重复它' : ''}`);
+            } else {
+                lines.push(`- ${e.relationLabel}「${e.name}」：${e.note}；最近消息：${e.lastMessage}${e.linkedCharId ? '；已转正式角色，NPC 作者不要重复它' : ''}`);
+            }
+        });
+    } else {
+        lines.push('已建立的用户社交圈：暂无。只能从用户简介中能明确推出的关系生成 NPC；简介没有支撑时，少生成或不生成 NPC 动态。');
+    }
+
+    const knownNpcNames = Array.from(new Set(
+        feed.filter(p => p.authorType === 'stranger').map(p => p.authorName)
+    )).slice(0, 12);
+    if (knownNpcNames.length > 0) lines.push(`已出现过的朋友圈 NPC（可沿用，保持连续性；不要无故换身份）：${knownNpcNames.join('、')}`);
+    return lines.join('\n');
+};
+
+const userSocialNpcNames = (userProfile: UserProfile, feed: SocialPost[]): Set<string> | undefined => {
+    const ambient = (userProfile.ambientSocial?.entries || [])
+        .filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId));
+    if (ambient.length === 0) return undefined;
+    const names = new Set<string>();
+    ambient.forEach(e => {
+        if (e.kind === 'group') {
+            if (!e.linkedGroupId) names.add(e.name);
+            e.memberNames.forEach(n => { if (n.trim()) names.add(n.trim()); });
+        } else {
+            names.add(e.name);
+        }
+    });
+    feed.filter(p => p.authorType === 'stranger').forEach(p => names.add(p.authorName));
+    return names;
+};
+
 const buildCharBlock = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
     const core = ContextBuilder.buildCoreContext(char, userProfile, false);
     let status = '(最近无私聊，生活平淡)';
@@ -99,6 +154,7 @@ const parseMixedComments = (
     raw: any,
     characters: CharacterProfile[],
     userName: string,
+    allowedNpcNames?: Set<string>,
 ): SocialComment[] => {
     const out: SocialComment[] = [];
     // replyToName 按"楼上同名评论"回链，模拟评论区的有来有回
@@ -120,7 +176,7 @@ const parseMixedComments = (
                 authorType: 'character',
                 authorCharId: commenter.id,
             };
-        } else if (npcName && npcName !== userName) {
+        } else if (npcName && npcName !== userName && (!allowedNpcNames || allowedNpcNames.has(npcName))) {
             comment = {
                 id: newId('cmt'),
                 authorName: npcName,
@@ -150,9 +206,9 @@ const heatLikes = (heat: string, namedLikes: number): number => {
 };
 
 /**
- * 「刷新」轮：生成角色 + NPC（用户的亲友圈）的新朋友圈动态。
+ * 「刷新」轮：生成角色 + NPC（用户社交设定里的联系人/群聊）的新朋友圈动态。
  * - 角色严格按人设决定发不发：高冷/社恐的可以一条不发；
- * - NPC 帖围绕用户资料虚构亲友（闺蜜/父母/同事…），让朋友圈像真实社交圈；
+ * - NPC 帖围绕用户社交圈/简介推断，不套本地亲友模板；
  * - 每条动态都带至少 10 条评论（角色+NPC 混合，有来有回），并按内容判断热度（爆火帖更热闹）。
  * 帖子一律纯文本（绝不让 LLM 编造图片 URL），可带位置、可转发已有公开帖。
  */
@@ -168,22 +224,18 @@ export const generateCharacterMoments = async (params: {
     const selected = pickRandom(characters, Math.min(4, characters.length));
     const blocks = await Promise.all(selected.map(c => buildCharBlock(c, userProfile)));
     const roster = characters.map(c => `- charId="${c.id}" 名字:"${c.name}"`).join('\n');
-    // 已出现过的 NPC 名字：让亲友圈是"回头客"而不是每轮全新陌生人
-    const knownNpcNames = Array.from(new Set(
-        feed.filter(p => p.authorType === 'stranger').map(p => p.authorName)
-    )).slice(0, 12);
+    const socialCircle = userSocialCircleDigest(userProfile, feed);
+    const allowedNpcNames = userSocialNpcNames(userProfile, feed);
 
     const prompt = `### 任务: 模拟微信朋友圈（刷新一轮）
 请生成一批新的朋友圈动态，分两类：
 
 A. **角色动态** —— 下面列出的候选角色，【严格按人设决定发不发】：高冷、社恐、不爱网上冲浪的角色这一轮可以一条都不发（直接不输出条目）；爱分享的可以发 1~2 条。内容要贴合人设、近况和说话风格：生活碎片、心情、吐槽、或暗戳戳的小心思，长短不一才真实。
 
-B. **NPC 动态** —— ${userProfile.name} 朋友圈里的虚构亲友：闺蜜、死党、爸妈、亲戚、同学、同事等，生成 2~4 条。NPC 的身份和昵称要像真实微信好友（如"老妈"、"莉莉酱🍓"、"工位邻居老王"），内容贴合用户资料里的生活背景（家长里短、晒娃晒饭、加班吐槽、旅行打卡、转发养生文……）。
+B. **NPC 动态** —— ${userProfile.name} 朋友圈里由「用户社交设定」支撑的联系人/群聊成员，生成 0~4 条。优先沿用已建立的用户社交圈；如果没有社交圈条目，只能从用户简介中明确推断，不能硬造亲友。NPC 的昵称、关系、内容必须有设定来源，不要套用固定亲友模板。
 
-### 用户资料（NPC 关系网围绕 TA 展开）
-名字: ${userProfile.name}
-简介: ${userProfile.bio || '（没写简介）'}
-${knownNpcNames.length > 0 ? `已出现过的亲友（优先沿用这些人，保持人物连续性）: ${knownNpcNames.join('、')}` : ''}
+### 用户社交设定（NPC 关系网只能从这里展开）
+${socialCircle}
 
 ### 本轮候选发动态的角色
 ${blocks.join('\n\n')}
@@ -198,10 +250,11 @@ ${feedDigest(feed, characters, userProfile.name)}
 1. 动态是纯文字，**禁止**编造任何图片 URL 或描述"[图片]"占位。
 2. location 可选：偶尔带一个符合身份的地点（如"老城区·巷口咖啡"），大多数动态不带。
 3. 转发(repostOfPostId)是低频行为：整轮最多 1 条，且必须用上面列出的真实 postId；转发时 content 写转发语。
-4. **每条动态都必须带至少 10 条评论（10~16 条）**：评论者混合「角色名单里的角色」（用 charId）和「围观的 NPC 亲友」（用 npcName）。评论要有来有回——可以用 replyToName 回复楼上某人；每条都要口语化、短、贴评论者身份。
+4. **每条动态都必须带至少 10 条评论（10~16 条）**：评论者混合「角色名单里的角色」（用 charId）和「用户社交设定里能成立的 NPC」（用 npcName）。评论要有来有回——可以用 replyToName 回复楼上某人；每条都要口语化、短、贴评论者身份。
 5. heat 按内容判断这条动态的热度："normal"（普通日常）/ "hot"（小热门，有点意思）/ "viral"（爆火：内容劲爆/爆笑/感人，全朋友圈都在讨论）。爆火的动态评论给到 15~16 条、likedByNpcNames 给 10 个以上。
 6. **绝对禁止**以用户 "${userProfile.name}" 的身份发动态、点赞或评论。
 7. 禁止上帝视角，角色不知道自己是 AI，NPC 是普通人。
+8. 不要使用固定模板、通用占位名或本地兜底感关系；不要默认生成爸妈、闺蜜、同事、同学，除非用户社交设定明确支持。
 
 ### 输出格式 (JSON Array)
 [
@@ -209,7 +262,7 @@ ${feedDigest(feed, characters, userProfile.name)}
     "authorKind": "character 或 npc",
     "charId": "角色帖必填：发布者 charId",
     "npcName": "NPC 帖必填：NPC 的微信昵称",
-    "npcRelation": "NPC 帖可选：与用户的关系（闺蜜/妈妈/同事…）",
+    "npcRelation": "NPC 帖可选：与用户的关系（必须来自用户社交设定）",
     "content": "动态文字内容",
     "location": "可选，所在位置",
     "repostOfPostId": "可选，转发的原帖 postId",
@@ -243,7 +296,7 @@ ${feedDigest(feed, characters, userProfile.name)}
             authorAvatar = author.avatar;
             authorType = 'character';
             authorCharId = author.id;
-        } else if (npcName && npcName !== userProfile.name) {
+        } else if (npcName && npcName !== userProfile.name && (!allowedNpcNames || allowedNpcNames.has(npcName))) {
             authorName = npcName;
             authorAvatar = npcAvatar(npcName);
             authorType = 'stranger';
@@ -270,12 +323,12 @@ ${feedDigest(feed, characters, userProfile.name)}
             .map((c: CharacterProfile) => ({ id: c.id, name: c.name }));
         const npcLikes = (Array.isArray(item?.likedByNpcNames) ? item.likedByNpcNames : [])
             .map((n: any) => String(n || '').trim())
-            .filter((n: string) => !!n && n !== userProfile.name && n !== authorName)
+            .filter((n: string) => !!n && n !== userProfile.name && n !== authorName && (!allowedNpcNames || allowedNpcNames.has(n)))
             .slice(0, 20)
             .map((n: string) => ({ id: `npc-${n}`, name: n }));
         const likedBy = [...charLikes, ...npcLikes];
 
-        const comments = parseMixedComments(item?.comments, characters, userProfile.name);
+        const comments = parseMixedComments(item?.comments, characters, userProfile.name, allowedNpcNames);
         const heat = String(item?.heat || 'normal').toLowerCase();
 
         posts.push({

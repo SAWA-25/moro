@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import Modal, { ScrapBtn, INK, INK_SOFT } from './ScrapModal';
+import Modal, { ScrapBtn } from './ScrapModal';
 import { APIConfig, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../../types';
 import { ActiveMsgClient, getDefaultActiveMsgFirstSendTime } from '../../utils/activeMsgClient';
 

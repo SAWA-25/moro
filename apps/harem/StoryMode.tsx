@@ -9,17 +9,23 @@ import {
     buildStoryEndingPrompt, parseStoryEnding, fallbackStoryEnding,
     startNewGamePlus, reviveStory, saveMetaOf, RULER_PRESETS, GENDER_WORD,
     STORY_STYLES, HEAT_LABELS, PACE_OPTIONS, type StorySaveMeta,
-    type TimeSlot, type TurnType, type Gender,
+    applyMapAction, availableLocations, PALACE_ACTION_LABELS, STORY_RESOURCE_LABELS,
+    buildActionJudgementPrompt, parseActionJudgement, applyActionJudgement,
+    previewFavorAction, applyFavorAction, favorCourtSummary, STORY_FAVOR_ACTION_LABELS, STORY_FAVOR_ACTION_HINTS,
+    type TimeSlot, type TurnType, type Gender, type PalaceActionType, type PalaceLocation,
+    type StoryObjective, type StoryInventoryItem, type StoryAchievement, type StoryResourceKey,
+    type StoryActionEntryPoint, type StoryActionJudgement, type StoryFavorActionInput, type StoryFavorPreview, type StoryFavorActionType,
 } from '../../utils/haremStory';
 import {
     PaperBackdrop, ScrapHeader, PaperCard, WashiTape, Polaroid, ScrapButton, StickyNote,
     SectionTag, DashedRule, PaperDialog, PaperSheet, Stamp,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE,
-} from '../ui/insScrapKit';
+} from './palaceSkin';
 import {
-    Crown, Scroll, BookOpen, FloppyDisk, UsersThree, Sparkle, CaretRight, X,
+    Crown, Scroll, BookOpen, FloppyDisk, UsersThree, Sparkle, CaretRight,
     ArrowClockwise, Heart, ShieldCheck, Drop, Smiley, Brain, MapPin, Trash,
     List, PlusCircle, PaperPlaneRight, PersonSimpleWalk, HeartBreak, ArrowsClockwise, Eye, TextAa,
+    CastleTurret, TreasureChest, Medal, FlagBanner, Compass, Coins, Lightning, Megaphone,
 } from '@phosphor-icons/react';
 
 const LIVE_KEY = 'moro_harem_story';
@@ -30,12 +36,12 @@ const MAX_SLOTS = 12;
 type CarryPack = { fromPlaythrough: number; notes: string[] } | null;
 interface SaveSlot { id: string; name: string; meta: StorySaveMeta; state: StoryState; }
 
-// 时辰底色（黑白拼贴皮肤：纸墨灰阶，只随时辰微微转深）
+// 宫廷红金底色：同一套朱墙金灯气质，随时辰微调明暗。
 const TIME_WASH: Record<TimeSlot, string> = {
-    晨: 'radial-gradient(120% 80% at 50% 0%, #f8f5ee 0%, #efeadf 100%)',
-    午: 'radial-gradient(120% 80% at 50% 0%, #f6f3ea 0%, #ebe6d9 100%)',
-    晚: 'radial-gradient(120% 80% at 50% 0%, #efeadf 0%, #e0dacc 100%)',
-    夜: 'radial-gradient(120% 90% at 50% 0%, #e6e1d5 0%, #d4cebf 100%)',
+    晨: 'radial-gradient(120% 80% at 50% 0%, rgba(244,212,138,0.26) 0%, transparent 58%), linear-gradient(180deg, #7b1724 0%, #4b1018 100%)',
+    午: 'radial-gradient(120% 80% at 50% 0%, rgba(255,238,174,0.32) 0%, transparent 58%), linear-gradient(180deg, #8f1e2b 0%, #55131b 100%)',
+    晚: 'radial-gradient(120% 80% at 50% 0%, rgba(198,110,64,0.26) 0%, transparent 58%), linear-gradient(180deg, #68151f 0%, #351014 100%)',
+    夜: 'radial-gradient(120% 90% at 50% 0%, rgba(49,93,138,0.25) 0%, transparent 62%), linear-gradient(180deg, #35101a 0%, #16080b 100%)',
 };
 const TIME_GLYPH: Record<TimeSlot, string> = { 晨: '🌅', 午: '☀️', 晚: '🌇', 夜: '🌙' };
 
@@ -47,6 +53,7 @@ const writeSaves = (s: SaveSlot[]) => { try { localStorage.setItem(SAVES_KEY, JS
 
 const RISK_LABEL: Record<string, string> = { low: '稳妥', mid: '微澜', high: '行险' };
 const RISK_PIPS: Record<string, number> = { low: 1, mid: 2, high: 3 };
+const RESOURCE_KEYS_UI: StoryResourceKey[] = ['power', 'reputation', 'silver', 'energy', 'rumor'];
 
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -73,6 +80,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     // 进行中：自由行动 / 主动择幸 / 立绘菜单 / 打字机
     const [customText, setCustomText] = useState('');
+    const [judgementBusy, setJudgementBusy] = useState(false);
     const [visitOpen, setVisitOpen] = useState(false);
     const [spriteMenu, setSpriteMenu] = useState<string | null>(null);
     const [typewriter, setTypewriter] = useState(true);
@@ -83,6 +91,12 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [saveOpen, setSaveOpen] = useState(false);
     const [statusOpen, setStatusOpen] = useState(false);
     const [memoryOpen, setMemoryOpen] = useState(false);
+    const [mapOpen, setMapOpen] = useState(false);
+    const [progressOpen, setProgressOpen] = useState(false);
+    const [inventoryOpen, setInventoryOpen] = useState(false);
+    const [achievementOpen, setAchievementOpen] = useState(false);
+    const [favorOpen, setFavorOpen] = useState(false);
+    const [favorDraft, setFavorDraft] = useState<{ preview: StoryFavorPreview; input: StoryFavorActionInput } | null>(null);
     const [saves, setSaves] = useState<SaveSlot[]>([]);
 
     const api = useCallback(() => resolveAuxApi(auxApiConfig, apiConfig), [auxApiConfig, apiConfig]);
@@ -126,7 +140,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         return () => clearInterval(id);
     }, [beatIdx, scene, typewriter, latestText]);
     const typingDone = !typewriter || typed >= latestText.length;
-    const ready = allRead && typingDone && !busy; // 读完且当前一拍打完、未在请求 → 可做选择
+    const ready = allRead && typingDone && !busy && !judgementBusy; // 读完且当前一拍打完、未在请求 → 可做选择
 
     const lastTap = useRef(0);
     const onBoxTap = () => {
@@ -144,7 +158,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         let sc: StoryScene | null = null;
         try {
             const { system, user } = buildScenePrompt(st, { opening });
-            const out = await llmComplete(api(), [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 1700, continueRounds: 1 });
+            const out = await llmComplete(api(), [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.92, maxTokens: 3200, continueRounds: 2 });
             sc = parseScene(out, st);
         } catch { /* fall through to fallback */ }
         if (!sc) sc = fallbackScene(st);
@@ -191,17 +205,123 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         if (!game || !scene || busy) return;
         advance(applyChoice(game, scene, i), scene.turnType === 'ending');
     };
+    const requestJudgement = async (
+        entryPoint: StoryActionEntryPoint,
+        actionText: string,
+        context?: string,
+        refs: { targetCharId?: string; itemId?: string; objectiveId?: string; locationId?: PalaceLocation['id'] } = {},
+    ) => {
+        const text = actionText.trim();
+        if (!game || !scene || busy || judgementBusy || !text) return;
+        const st = game;
+        const sc = scene;
+        setJudgementBusy(true);
+        try {
+            const { system, user } = buildActionJudgementPrompt(st, { entryPoint, actionText: text, context, ...refs });
+            const out = await llmComplete(api(), [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.78, maxTokens: 1300, continueRounds: 1 });
+            const judgement = parseActionJudgement(out, st, { entryPoint, actionText: text });
+            if (!judgement) throw new Error('bad judgement');
+            setGame(prev => prev ? { ...prev, pendingJudgement: judgement } : prev);
+        } catch {
+            if (entryPoint === 'scene') {
+                addToast('判官暂未成词，已按旧法落子。', 'error');
+                advance(applyCustomAction(st, sc, text), sc.turnType === 'ending');
+            } else {
+                addToast('判官暂未成词，这步尚未落档。', 'error');
+            }
+        } finally {
+            setJudgementBusy(false);
+        }
+    };
     const submitCustom = () => {
         const t = customText.trim();
         if (!game || !scene || busy || !t) return;
         setCustomText('');
-        advance(applyCustomAction(game, scene, t), scene.turnType === 'ending');
+        requestJudgement('scene', t, '剧情自由行动：玩家没有选择三项按钮，而是自行陈述想做的事。');
     };
     const visit = (cid: string) => {
         if (!game || !scene || busy) return;
         setVisitOpen(false);
         advance(visitCharacter(game, scene, cid), scene.turnType === 'ending');
     };
+    const judgeCharacter = (cid: string) => {
+        if (!game || !scene || busy) return;
+        const c = game.characters[cid];
+        if (!c) return;
+        setVisitOpen(false);
+        setSpriteMenu(null);
+        requestJudgement(
+            'character',
+            `向${c.name}下达密令，或邀约${c.name}私下商议下一步。`,
+            `角色：${c.name}；好感${c.affection}，信任${c.trust}，嫉妒${c.jealousy}，心情${c.mood}；态度：${c.attitude}`,
+            { targetCharId: cid },
+        );
+    };
+    const doMapAction = (loc: PalaceLocation, action: PalaceActionType) => {
+        if (!game || !scene || busy) return;
+        setMapOpen(false);
+        advance(applyMapAction(game, scene, {
+            locationId: loc.id,
+            action,
+            label: `${loc.name} · ${PALACE_ACTION_LABELS[action]}`,
+            note: loc.blurb,
+        }), scene.turnType === 'ending');
+    };
+    const doMapPlan = (loc: PalaceLocation) => {
+        if (!game || !scene || busy) return;
+        setMapOpen(false);
+        requestJudgement(
+            'map',
+            `在${loc.name}谋划一手，借此牵动宫中局势。`,
+            `地点：${loc.name}；可行动：${loc.actions.map(a => PALACE_ACTION_LABELS[a]).join('、')}；地点摘要：${loc.blurb}`,
+            { locationId: loc.id },
+        );
+    };
+    const judgeInventoryItem = (item: StoryInventoryItem) => {
+        if (!game || !scene || busy) return;
+        setInventoryOpen(false);
+        requestJudgement(
+            'inventory',
+            `追查并使用「${item.name}」。`,
+            `物件：${item.name}；类型：${item.kind}；说明：${item.text}${item.charId && game.characters[item.charId] ? `；关联角色：${game.characters[item.charId].name}` : ''}`,
+            { itemId: item.id, targetCharId: item.charId },
+        );
+    };
+    const judgeObjective = (objective: StoryObjective) => {
+        if (!game || !scene || busy) return;
+        setProgressOpen(false);
+        requestJudgement(
+            'objective',
+            `请判官为「${objective.title}」出谋划策。`,
+            `目标：${objective.title}；${objective.description}；进度：${objective.progress}/${objective.target}；类型：${objective.kind}`,
+            { objectiveId: objective.id },
+        );
+    };
+    const draftFavorAction = (input: StoryFavorActionInput) => {
+        if (!game || !scene || busy || judgementBusy) return;
+        setFavorDraft({ preview: previewFavorAction(game, input), input });
+    };
+    const confirmFavorAction = () => {
+        if (!game || !scene || busy || judgementBusy || !favorDraft?.preview.ok) return;
+        const input = favorDraft.input;
+        setFavorDraft(null);
+        setFavorOpen(false);
+        advance(applyFavorAction(game, scene, input), scene.turnType === 'ending');
+    };
+    const judgeFavorDraft = (text: string) => {
+        if (!game || !scene || busy || judgementBusy || !text.trim()) return;
+        setFavorOpen(false);
+        requestJudgement(
+            'favor',
+            text.trim(),
+            '宠爱经营台自拟谕旨：玩家希望用召见、赏罚、护持、调停或安宫之类的宫廷手段处理眼前格局。',
+        );
+    };
+    const confirmJudgement = () => {
+        if (!game || !scene || busy || judgementBusy || !game.pendingJudgement) return;
+        advance(applyActionJudgement(game, scene, game.pendingJudgement), scene.turnType === 'ending');
+    };
+    const cancelJudgement = () => setGame(prev => prev ? { ...prev, pendingJudgement: null } : prev);
 
     const resolveEnding = useCallback(async (st: StoryState) => {
         const def: EndingDef = checkEndings(st, false) || ENDING_DEFS[ENDING_DEFS.length - 1];
@@ -397,51 +517,61 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <button onClick={() => setMenu(true)} className="p-2 -mr-1 active:scale-90 transition-transform" style={{ color: INK }} title="菜单"><List size={20} weight="bold" /></button>
             </div>
             {/* 在场角色关系小条 + 氛围 + 换写 */}
-            <div className="relative z-20 shrink-0 px-3 pb-1 flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black" style={{ background: 'rgba(31,29,26,0.08)', border: '1px dashed rgba(150,144,132,0.6)', color: INK }}>{tm.label}回合</span>
+            <div className="relative z-20 shrink-0 mx-3 mb-1 px-2 py-1.5 rounded-xl flex items-center gap-1.5 flex-wrap" style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.34)', boxShadow: '0 8px 18px -16px rgba(31,29,26,0.62)' }}>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-black" style={{ background: 'rgba(255,253,247,0.78)', border: '1px dashed rgba(150,144,132,0.78)', color: INK }}>{tm.label}回合</span>
                 {scene?.mood && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: INK, color: PAPER }}>{scene.mood}</span>}
                 {activeChars.map(c => (
-                    <span key={c.charId} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(176,170,158,0.6)' }}>
+                    <span key={c.charId} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(255,253,247,0.86)', border: '1px solid rgba(176,170,158,0.68)' }}>
                         {game.route.charId === c.charId && <Crown size={10} weight="fill" style={{ color: INK }} />}
                         <span className="font-bold" style={{ color: INK }}>{c.name}</span>
                         <span style={{ color: INK_SOFT }}>{stageOf(c.affection).label}</span>
                     </span>
                 ))}
+                <span className="min-w-[120px] flex-1 px-2 py-0.5 rounded-full text-[10px] font-bold truncate" style={{ background: 'rgba(255,253,247,0.68)', color: INK_SOFT, border: '1px solid rgba(176,170,158,0.38)' }}>
+                    {scene?.sceneTitle || game.location} · {game.location}
+                </span>
                 {scene && !busy && (
-                    <button onClick={regenerate} className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(176,170,158,0.6)', color: INK }} title="对这一场不满意？换一种写法">
+                    <button onClick={regenerate} className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.72)', color: INK }} title="对这一场不满意？换一种写法">
                         <ArrowsClockwise size={11} weight="bold" />换种写法
                     </button>
                 )}
             </div>
-
-            {/* ②③ 背景 + 立绘区 */}
-            <div className="relative z-10 flex-1 min-h-0 flex items-end justify-center px-4 pb-1 overflow-hidden">
-                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.05]" style={{ backgroundImage: HALFTONE, backgroundSize: '8px 8px' }} />
-                <span aria-hidden className="absolute top-2 right-4 text-[64px] leading-none opacity-[0.08] select-none">{TIME_GLYPH[game.time]}</span>
-                <div className="relative flex items-end justify-center gap-3">
-                    {activeChars.length === 0 && <span className="text-[13px] mb-6" style={{ color: INK_SOFT }}>{game.location}，此刻无人相伴。</span>}
-                    {activeChars.map((c, i) => {
-                        const speaking = speakingId === c.charId;
-                        const emo = speaking ? curBeat?.emotion : undefined;
-                        return (
-                            <button key={c.charId} onClick={() => setSpriteMenu(c.charId)} className="flex flex-col items-center transition-all active:scale-95" style={{ opacity: speakingId && !speaking ? 0.5 : 1, transform: speaking ? 'translateY(-4px)' : 'none' }} title="点查看状态 / 主动去见">
-                                <div className="relative">
-                                    {c.avatar
-                                        ? <img src={c.avatar} className="object-cover rounded-2xl" style={{ width: activeChars.length >= 3 ? 76 : 96, height: activeChars.length >= 3 ? 100 : 128, border: `2px solid ${speaking ? INK : 'rgba(176,170,158,0.7)'}`, boxShadow: speaking ? '0 10px 22px -10px rgba(31,29,26,0.55)' : '0 8px 18px -12px rgba(31,29,26,0.4)' }} />
-                                        : <div className="rounded-2xl flex items-center justify-center text-[28px]" style={{ width: 86, height: 116, background: 'rgba(176,170,158,0.25)', border: '2px solid rgba(176,170,158,0.7)' }}>🎐</div>}
-                                    {speaking && <WashiTape color="butter" rotate={-6} className="absolute -top-2 -left-2 w-9 h-3.5 rounded-[2px]" />}
-                                    {emo && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap" style={{ background: INK, color: PAPER }}>{emo}</span>}
-                                    {c.estranged && <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#6b655a', color: PAPER }}><HeartBreak size={11} weight="fill" /></span>}
-                                </div>
-                                <span className="mt-1 text-[11px] font-bold" style={{ color: speaking ? INK : INK_SOFT }}>{c.name}</span>
-                            </button>
-                        );
-                    })}
-                </div>
+            <div className="relative z-20 shrink-0 px-3 pb-1.5 flex flex-wrap items-center gap-1.5">
+                <button onClick={() => setProgressOpen(true)} className="min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={{ maxWidth: 'calc(100% - 104px)', background: 'rgba(255,247,232,0.92)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                    <FlagBanner size={12} weight="fill" className="shrink-0" />
+                    <span className="min-w-0 truncate">第 {game.chapter.index} 章 · {game.chapter.title}</span>
+                    <span className="shrink-0" style={{ color: INK_SOFT }}>{game.chapter.progress}/{game.chapter.goal}</span>
+                </button>
+                <button onClick={() => setFavorOpen(true)} className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={{ background: INK, border: '1px solid rgba(201,154,58,0.45)', color: PAPER }}>
+                    <Crown size={12} weight="fill" />宠爱经营台
+                </button>
+                {champion && (
+                    <span className="min-w-[120px] flex-1 px-2 py-1 rounded-full text-[10px] font-bold truncate" style={{ background: 'rgba(255,247,232,0.82)', border: '1px solid rgba(201,154,58,0.34)', color: INK_SOFT }}>
+                        君心 {champion.name} · 好感 {champion.affection}
+                    </span>
+                )}
+                <ResourceStrip resources={game.resources} wrap />
             </div>
 
+            <SceneStage
+                game={game}
+                scene={scene}
+                tmLabel={tm.label}
+                activeChars={activeChars}
+                speakingId={speakingId}
+                currentEmotion={curBeat?.kind === 'dialogue' ? curBeat.emotion : undefined}
+                ready={ready}
+                onSprite={setSpriteMenu}
+                onVisit={visit}
+                onJudgeCharacter={judgeCharacter}
+                onOpenVisit={() => setVisitOpen(true)}
+                onOpenMap={() => setMapOpen(true)}
+                onOpenFavor={() => setFavorOpen(true)}
+                onOpenProgress={() => setProgressOpen(true)}
+            />
+
             {/* ④⑤ 对话框 + 名框 + ⑥ 选项 */}
-            <div className="relative z-10 shrink-0 px-3 pt-1 pb-safe">
+            <div className="relative z-10 shrink-0 max-h-[48vh] overflow-y-auto no-scrollbar px-3 pt-1 pb-safe">
                 {/* 名框 */}
                 {curBeat?.kind === 'dialogue' && curBeat.speaker && (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 ml-1 rounded-t-lg text-[13px] font-black" style={{ background: INK, color: PAPER }}>
@@ -452,7 +582,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 {/* 对话框（点击推进 / 双击全文） */}
                 <div onClick={onBoxTap} className="relative rounded-2xl overflow-hidden cursor-pointer select-none" style={dialogueBox}>
                     <WashiTape color="ink" rotate={-2} className="absolute -top-1.5 right-6 w-12 h-3.5 rounded-[2px] opacity-80" />
-                    <div className="px-4 py-3 overflow-y-auto no-scrollbar" style={{ maxHeight: '34vh', minHeight: 96 }}>
+                    <div className="px-4 py-3 overflow-y-auto no-scrollbar" style={{ maxHeight: 'min(34vh, 260px)', minHeight: 104 }}>
                         {busy && !scene ? (
                             <div className="flex items-center gap-2 text-[13px] py-6 justify-center" style={{ color: INK_SOFT }}>
                                 <Sparkle size={16} weight="fill" className="animate-pulse" />执笔铺陈剧情中…
@@ -527,20 +657,26 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="flex items-center gap-1.5">
                                 <input value={customText} onChange={e => setCustomText(e.target.value.slice(0, 120))} onKeyDown={e => { if (e.key === 'Enter') submitCustom(); }}
                                     placeholder="或…自陈心意（自由行动）" className="flex-1 min-w-0 px-3 py-2 text-[12.5px] rounded-full outline-none" style={inputStyle} />
-                                <button onClick={submitCustom} disabled={!customText.trim()} className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER }} title="付诸行动">
+                                <button onClick={submitCustom} disabled={!customText.trim() || judgementBusy} className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER }} title="先请判官预判，再确认落子">
                                     <PaperPlaneRight size={16} weight="fill" />
                                 </button>
                             </div>
-                            <div className="flex items-center gap-2 mt-1.5 px-1">
-                                <button onClick={() => setVisitOpen(true)} className="flex items-center gap-1 text-[11px] font-bold active:scale-95 transition-transform" style={{ color: INK }}>
+                            <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 rounded-xl overflow-x-auto no-scrollbar" style={{ background: 'rgba(255,247,232,0.88)', border: '1px solid rgba(201,154,58,0.34)', boxShadow: '0 8px 18px -16px rgba(31,29,26,0.6)' }}>
+                                <button onClick={() => setVisitOpen(true)} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={{ color: INK, background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.42)' }}>
                                     <PersonSimpleWalk size={13} weight="bold" />主动去见…
                                 </button>
-                                {scene.effectsPreview && <span className="ml-auto text-[10px] truncate" style={{ color: INK_SOFT }}>{scene.effectsPreview}</span>}
+                                <button onClick={() => setMapOpen(true)} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={{ color: INK, background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.42)' }}>
+                                    <MapPin size={13} weight="fill" />宫苑地图
+                                </button>
+                                <button onClick={() => setFavorOpen(true)} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={{ color: INK, background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.42)' }}>
+                                    <Crown size={13} weight="fill" />宠爱经营台
+                                </button>
+                                {scene.effectsPreview && <span className="shrink-0 ml-auto max-w-[44%] px-2 py-1 rounded-full text-[10px] truncate" style={{ color: INK_SOFT, background: 'rgba(255,253,247,0.64)' }}>{scene.effectsPreview}</span>}
                             </div>
                         </div>
                     )}
-                    {busy && scene && (
-                        <div className="flex items-center gap-2 text-[12px] py-2 justify-center" style={{ color: INK_SOFT }}><Sparkle size={14} weight="fill" className="animate-pulse" />剧情顺着你的心意往下走…</div>
+                    {(busy || judgementBusy) && scene && (
+                        <div className="flex items-center gap-2 text-[12px] py-2 justify-center" style={{ color: INK_SOFT }}><Sparkle size={14} weight="fill" className="animate-pulse" />{judgementBusy ? '判官正在拆解此局…' : '剧情顺着你的心意往下走…'}</div>
                     )}
                 </div>
             </div>
@@ -550,21 +686,43 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <p className="text-[11px] mb-2" style={{ color: INK_SOFT }}>挑一位，下一场便去与 ta 独处。</p>
                 <div className="max-h-[46vh] overflow-y-auto no-scrollbar space-y-1.5">
                     {Object.values(game.characters).sort((a, b) => b.affection - a.affection).map(c => (
-                        <button key={c.charId} onClick={() => visit(c.charId)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl active:scale-[0.98] transition-transform" style={{ background: 'rgba(255,253,247,0.85)', border: '1px solid rgba(176,170,158,0.6)' }}>
+                        <div key={c.charId} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl" style={{ background: 'rgba(255,253,247,0.85)', border: '1px solid rgba(176,170,158,0.6)' }}>
                             <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
                             <div className="flex-1 min-w-0 text-left">
                                 <div className="text-[13px] font-bold truncate" style={{ color: INK }}>{c.name}{c.estranged && <span className="ml-1 text-[10px]" style={{ color: INK_SOFT }}>· 离心</span>}</div>
                                 <div className="text-[10px]" style={{ color: INK_SOFT }}>{stageOf(c.affection).label} · 好感 {c.affection} · {c.attitude}</div>
                             </div>
-                            <PersonSimpleWalk size={16} weight="bold" style={{ color: INK_SOFT }} />
-                        </button>
+                            <button onClick={() => judgeCharacter(c.charId)} disabled={judgementBusy} className="px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>密令/邀约</button>
+                            <button onClick={() => visit(c.charId)} className="w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform" style={{ background: INK, color: PAPER }} title="去见 ta">
+                                <PersonSimpleWalk size={15} weight="bold" />
+                            </button>
+                        </div>
                     ))}
                 </div>
             </PaperSheet>
 
+            <FavorCourtSheet
+                open={favorOpen}
+                onClose={() => setFavorOpen(false)}
+                game={game}
+                ready={!!scene && ready && !busy && !judgementBusy}
+                onDraft={draftFavorAction}
+                onJudgeDraft={judgeFavorDraft}
+            />
+            <PalaceMapSheet open={mapOpen} onClose={() => setMapOpen(false)} game={game} ready={!!scene && ready && !busy && !judgementBusy} onAction={doMapAction} onPlan={doMapPlan} />
+            <ProgressSheet open={progressOpen} onClose={() => setProgressOpen(false)} game={game} ready={!!scene && ready && !busy && !judgementBusy} onJudgeObjective={judgeObjective} />
+            <InventorySheet open={inventoryOpen} onClose={() => setInventoryOpen(false)} items={game.inventory} chars={game.characters} ready={!!scene && ready && !busy && !judgementBusy} onJudgeItem={judgeInventoryItem} />
+            <AchievementSheet open={achievementOpen} onClose={() => setAchievementOpen(false)} achievements={game.achievements} />
+            <FavorDraftDialog draft={favorDraft} game={game} busy={busy || judgementBusy} onCancel={() => setFavorDraft(null)} onConfirm={confirmFavorAction} />
+
             {/* ⑦ 菜单 */}
             <PaperSheet open={menu} onClose={() => setMenu(false)} tape="ink" title="掌事菜单">
                 <div className="grid grid-cols-2 gap-2">
+                    <MenuBtn icon={<Crown size={18} weight="fill" />} label="宠爱经营台" onClick={() => { setMenu(false); setFavorOpen(true); }} />
+                    <MenuBtn icon={<MapPin size={18} weight="fill" />} label="宫苑地图" onClick={() => { setMenu(false); setMapOpen(true); }} />
+                    <MenuBtn icon={<Scroll size={18} weight="fill" />} label="章节卷轴" onClick={() => { setMenu(false); setProgressOpen(true); }} />
+                    <MenuBtn icon={<TreasureChest size={18} weight="fill" />} label="背包线索" onClick={() => { setMenu(false); setInventoryOpen(true); }} />
+                    <MenuBtn icon={<Medal size={18} weight="fill" />} label="成就册" onClick={() => { setMenu(false); setAchievementOpen(true); }} />
                     <MenuBtn icon={<FloppyDisk size={18} weight="fill" />} label="存档 · 读档" onClick={openSaves} />
                     <MenuBtn icon={<UsersThree size={18} weight="fill" />} label="后宫诸位" onClick={() => { setMenu(false); setStatusOpen(true); }} />
                     <MenuBtn icon={<Brain size={18} weight="fill" />} label="记忆回顾" onClick={() => { setMenu(false); setMemoryOpen(true); }} />
@@ -591,8 +749,9 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[13px] font-bold truncate" style={{ color: INK }}>{s.name}</div>
                                     <div className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>
-                                        周目{s.meta.playthrough} · 第{s.meta.day}日{s.meta.time} · 第{s.meta.turn}幕 · 君心属{s.meta.topName}{s.meta.routeName ? ` · 定情${s.meta.routeName}` : ''}
+                                        周目{s.meta.playthrough} · 第{s.meta.day}日{s.meta.time} · 第{s.meta.turn}幕 · {s.meta.chapterTitle || '初入椒房'} {s.meta.mainProgress || 0}% · 君心属{s.meta.topName}{s.meta.routeName ? ` · 定情${s.meta.routeName}` : ''}
                                     </div>
+                                    {s.meta.resourceSummary && <div className="text-[9px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{s.meta.resourceSummary}</div>}
                                     <div className="text-[9px] mt-0.5" style={{ color: INK_SOFT }}>{fmtTime(s.meta.ts)}</div>
                                 </div>
                                 <div className="flex flex-col gap-1 shrink-0">
@@ -648,6 +807,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         </div>
                         <div className="flex gap-2">
                             <ScrapButton variant="paper" onClick={() => { setSpriteMenu(null); setStatusOpen(true); }} className="flex-1 py-2 text-[12px]" icon={<UsersThree size={13} weight="fill" />}>详看全部</ScrapButton>
+                            <ScrapButton variant="paper" onClick={() => judgeCharacter(c.charId)} disabled={judgementBusy} className="flex-1 py-2 text-[12px]" icon={<Scroll size={13} weight="fill" />}>密令</ScrapButton>
                             <ScrapButton variant="ink" onClick={() => { const id = c.charId; setSpriteMenu(null); visit(id); }} className="flex-1 py-2 text-[12px]" icon={<PersonSimpleWalk size={13} weight="bold" />}>去见 ta</ScrapButton>
                         </div>
                     </div>
@@ -656,6 +816,8 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             {/* ⑩ 记忆回顾 */}
             <MemoryReview open={memoryOpen} onClose={() => setMemoryOpen(false)} game={game} />
+
+            <JudgementPreview judgement={game.pendingJudgement} game={game} busy={busy || judgementBusy} onCancel={cancelJudgement} onConfirm={confirmJudgement} />
 
             {/* 结局 */}
             <PaperDialog open={!!ending} onClose={() => setEnding(null)} en="THE FINALE" maxWidth={350}>
@@ -693,6 +855,688 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
 const GENDER_GLYPH: Record<Gender, { g: string; label: string }> = { male: { g: '♂', label: '男' }, female: { g: '♀', label: '女' }, unknown: { g: '?', label: '未定' } };
 const GENDER_ORDER: Gender[] = ['unknown', 'male', 'female'];
+
+const ResourceStrip: React.FC<{ resources: StoryState['resources']; wrap?: boolean }> = ({ resources, wrap = false }) => {
+    const iconOf: Partial<Record<StoryResourceKey, React.ReactNode>> = {
+        power: <Crown size={10} weight="fill" />,
+        reputation: <Megaphone size={10} weight="fill" />,
+        silver: <Coins size={10} weight="fill" />,
+        energy: <Lightning size={10} weight="fill" />,
+        rumor: <Eye size={10} weight="fill" />,
+    };
+    return (
+        <div className={`${wrap ? 'basis-full min-w-0 flex flex-wrap' : 'shrink-0 flex items-center'} gap-1.5`}>
+            {RESOURCE_KEYS_UI.map(k => (
+                <span key={k} className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(255,247,232,0.86)', border: '1px solid rgba(201,154,58,0.4)', color: INK }}>
+                    {iconOf[k]}{STORY_RESOURCE_LABELS[k]} {resources[k]}
+                </span>
+            ))}
+        </div>
+    );
+};
+
+const pct = (value: number) => Math.max(0, Math.min(100, Math.round(value || 0)));
+
+const StageMiniBar: React.FC<{ icon: React.ReactNode; label: string; value: number; danger?: boolean }> = ({ icon, label, value, danger }) => (
+    <div className="min-w-0 flex items-center gap-1">
+        <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-bold" style={{ color: INK_SOFT }}>{icon}{label}</span>
+        <div className="min-w-0 flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(176,170,158,0.32)' }}>
+            <div className="h-full rounded-full" style={{ width: `${pct(value)}%`, background: danger && value >= 60 ? '#7b1724' : INK, opacity: danger ? 0.78 : 1 }} />
+        </div>
+        <span className="shrink-0 w-5 text-right text-[9px] tabular-nums" style={{ color: INK_SOFT }}>{pct(value)}</span>
+    </div>
+);
+
+const StageQuickButton: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; dark?: boolean; title?: string }> = ({ icon, label, onClick, disabled, dark, title }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        title={title || label}
+        className="min-w-0 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-black active:scale-95 transition-transform disabled:opacity-40"
+        style={dark
+            ? { background: INK, color: PAPER, border: '1px solid rgba(201,154,58,0.55)' }
+            : { background: 'rgba(255,247,232,0.88)', color: INK, border: '1px solid rgba(201,154,58,0.42)' }}
+    >
+        <span className="shrink-0">{icon}</span>
+        <span className="truncate">{label}</span>
+    </button>
+);
+
+const SceneStage: React.FC<{
+    game: StoryState;
+    scene: StoryScene | null;
+    tmLabel: string;
+    activeChars: StoryChar[];
+    speakingId?: string;
+    currentEmotion?: string;
+    ready: boolean;
+    onSprite: (charId: string) => void;
+    onVisit: (charId: string) => void;
+    onJudgeCharacter: (charId: string) => void;
+    onOpenVisit: () => void;
+    onOpenMap: () => void;
+    onOpenFavor: () => void;
+    onOpenProgress: () => void;
+}> = ({ game, scene, tmLabel, activeChars, speakingId, currentEmotion, ready, onSprite, onVisit, onJudgeCharacter, onOpenVisit, onOpenMap, onOpenFavor, onOpenProgress }) => {
+    const summary = favorCourtSummary(game);
+    const latestFavor = game.favorLedger[0];
+    const primaryObjective = game.objectives.find(o => o.kind === 'main' && !o.done) || game.objectives.find(o => !o.done) || game.objectives[0];
+    const hotRumor = (game.rumors || []).slice().sort((a, b) => b.heat - a.heat)[0];
+    const liveHook = (game.generatedHooks || []).find(h => h.expiresDay >= game.day) || game.generatedHooks[0];
+    const rel = relationshipSummary(game)[0];
+    const hint = scene?.effectsPreview || scene?.nextSceneHint || game.lastTurn?.nextIntent;
+    const chapterGoal = Math.max(1, game.chapter.goal || 1);
+    const chapterPct = Math.max(0, Math.min(100, Math.round((game.chapter.progress / chapterGoal) * 100)));
+    const favorLabel = latestFavor
+        ? latestFavor.type === 'draft' ? '自拟谕旨' : STORY_FAVOR_ACTION_LABELS[latestFavor.type]
+        : '恩宠格局';
+    const favorText = latestFavor
+        ? `第${latestFavor.day}日${latestFavor.time} · ${latestFavor.title || latestFavor.actionText}`
+        : `${summary.topName}居首，差距${summary.favorGap}，高嫉妒${summary.highJealousCount}`;
+    const intelItems = [
+        primaryObjective ? {
+            key: 'objective',
+            icon: <FlagBanner size={12} weight="fill" />,
+            tag: primaryObjective.kind === 'main' ? '主线' : '支线',
+            title: primaryObjective.title,
+            body: `${primaryObjective.progress}/${primaryObjective.target} · ${primaryObjective.description}`,
+            onClick: onOpenProgress,
+        } : null,
+        {
+            key: 'favor',
+            icon: <Crown size={12} weight="fill" />,
+            tag: favorLabel,
+            title: latestFavor ? '最近落旨' : '君心账',
+            body: favorText,
+            onClick: onOpenFavor,
+        },
+        hotRumor ? {
+            key: 'rumor',
+            icon: <Eye size={12} weight="fill" />,
+            tag: `风闻 ${hotRumor.heat}`,
+            title: '宫中传言',
+            body: hotRumor.text,
+            onClick: onOpenMap,
+        } : liveHook ? {
+            key: 'hook',
+            icon: <Compass size={12} weight="fill" />,
+            tag: '暗线',
+            title: liveHook.title,
+            body: liveHook.summary,
+            onClick: onOpenMap,
+        } : null,
+        rel ? {
+            key: 'rel',
+            icon: <UsersThree size={12} weight="fill" />,
+            tag: '关系',
+            title: '宫中暗流',
+            body: rel,
+            onClick: onOpenFavor,
+        } : null,
+    ].filter(Boolean) as Array<{ key: string; icon: React.ReactNode; tag: string; title: string; body: string; onClick: () => void }>;
+
+    return (
+        <div className="relative z-10 flex-1 min-h-[198px] overflow-hidden px-3 pb-1.5">
+            <div
+                className="relative overflow-hidden rounded-xl"
+                style={{
+                    height: '100%',
+                    background: 'linear-gradient(135deg, rgba(255,247,232,0.92), rgba(232,206,150,0.76) 48%, rgba(92,22,28,0.7))',
+                    border: '1px solid rgba(201,154,58,0.5)',
+                    boxShadow: '0 18px 38px -24px rgba(22,8,11,0.75)',
+                }}
+            >
+                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: HALFTONE, backgroundSize: '8px 8px' }} />
+                <span aria-hidden className="absolute -right-1 -top-5 text-[92px] leading-none opacity-[0.08] select-none">{TIME_GLYPH[game.time]}</span>
+                <div className="relative h-full grid grid-cols-[minmax(0,1fr)_minmax(132px,40%)] gap-2 p-2">
+                    <div className="min-w-0 min-h-0 flex flex-col gap-2">
+                        <section className="shrink-0 rounded-lg px-3 py-2" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                            <div className="flex items-start gap-2">
+                                <div className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: INK, color: PAPER }}>
+                                    <CastleTurret size={18} weight="fill" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: INK_SOFT }}>
+                                        <span>{tmLabel}</span>
+                                        <span>第{game.day}日{game.time}</span>
+                                    </div>
+                                    <div className="text-[15px] leading-snug font-black truncate" style={{ color: INK }}>{scene?.sceneTitle || `${game.location}未开场`}</div>
+                                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] min-w-0" style={{ color: INK_SOFT }}>
+                                        <MapPin size={11} weight="fill" className="shrink-0" />
+                                        <span className="truncate">{game.location}</span>
+                                        {scene?.mood && <span className="shrink-0 px-1.5 py-0.5 rounded-full font-bold" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{scene.mood}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={onOpenProgress} className="mt-2 w-full text-left active:scale-[0.99] transition-transform" title="查看章节卷轴">
+                                <div className="flex items-center gap-2 text-[10px] font-bold" style={{ color: INK_SOFT }}>
+                                    <span className="truncate">第 {game.chapter.index} 章 · {game.chapter.title}</span>
+                                    <span className="ml-auto shrink-0 tabular-nums">{game.chapter.progress}/{game.chapter.goal}</span>
+                                </div>
+                                <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(176,170,158,0.28)' }}>
+                                    <div className="h-full rounded-full" style={{ width: `${chapterPct}%`, background: INK }} />
+                                </div>
+                            </button>
+                            {hint && <div className="mt-1.5 text-[10px] leading-snug line-clamp-2" style={{ color: '#694036' }}>{hint}</div>}
+                        </section>
+
+                        <section className="min-h-0 flex-1 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(255,253,247,0.76)', border: '1px solid rgba(176,170,158,0.48)' }}>
+                            <div className="shrink-0 flex items-center gap-1.5 text-[10px] font-black" style={{ color: INK }}>
+                                <Scroll size={12} weight="fill" />宫廷情报
+                            </div>
+                            <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1.5">
+                                {intelItems.map(item => (
+                                    <button key={item.key} onClick={item.onClick} className="w-full min-w-0 text-left rounded-lg px-2 py-1.5 active:scale-[0.99] transition-transform" style={{ background: 'rgba(255,247,232,0.68)', border: '1px solid rgba(201,154,58,0.28)' }}>
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="shrink-0" style={{ color: INK }}>{item.icon}</span>
+                                            <span className="shrink-0 px-1.5 py-0.5 rounded text-[8.5px] font-black" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{item.tag}</span>
+                                            <span className="min-w-0 truncate text-[10.5px] font-black" style={{ color: INK }}>{item.title}</span>
+                                        </div>
+                                        <div className="mt-0.5 text-[9.5px] leading-snug line-clamp-2" style={{ color: INK_SOFT }}>{item.body}</div>
+                                    </button>
+                                ))}
+                                {intelItems.length === 0 && <div className="text-center py-4 text-[11px]" style={{ color: INK_SOFT }}>暂无暗线，先读完这一幕。</div>}
+                            </div>
+                        </section>
+
+                        <div className="shrink-0 grid grid-cols-4 gap-1.5">
+                            <StageQuickButton icon={<PersonSimpleWalk size={12} weight="bold" />} label="择见" onClick={onOpenVisit} disabled={!ready} title="主动去见" />
+                            <StageQuickButton icon={<Crown size={12} weight="fill" />} label="宠爱" onClick={onOpenFavor} disabled={!ready} dark title="宠爱经营台" />
+                            <StageQuickButton icon={<MapPin size={12} weight="fill" />} label="地图" onClick={onOpenMap} disabled={!ready} title="宫苑地图" />
+                            <StageQuickButton icon={<FlagBanner size={12} weight="fill" />} label="章卷" onClick={onOpenProgress} title="章节卷轴" />
+                        </div>
+                    </div>
+
+                    <section className="min-w-0 min-h-0 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(255,253,247,0.84)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                        <div className="shrink-0 flex items-center gap-1.5">
+                            <UsersThree size={13} weight="fill" style={{ color: INK }} />
+                            <span className="text-[11px] font-black" style={{ color: INK }}>在场诸位</span>
+                            <span className="ml-auto text-[9px]" style={{ color: INK_SOFT }}>{activeChars.length || 0} 人</span>
+                        </div>
+                        <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1.5">
+                            {activeChars.length === 0 && (
+                                <div className="h-full min-h-[96px] rounded-lg flex flex-col items-center justify-center px-2 text-center" style={{ background: 'rgba(176,170,158,0.16)', color: INK_SOFT }}>
+                                    <CastleTurret size={24} weight="fill" />
+                                    <div className="mt-1 text-[11px] leading-snug">{game.location}，此刻无人相伴。</div>
+                                </div>
+                            )}
+                            {activeChars.map(c => {
+                                const speaking = speakingId === c.charId;
+                                return (
+                                    <div key={c.charId} className="rounded-lg px-2 py-1.5" style={{ background: speaking ? 'rgba(255,247,232,0.96)' : 'rgba(255,253,247,0.64)', border: `1px solid ${speaking ? 'rgba(31,29,26,0.45)' : 'rgba(176,170,158,0.38)'}`, opacity: speakingId && !speaking ? 0.68 : 1 }}>
+                                        <div className="flex items-start gap-2">
+                                            <button onClick={() => onSprite(c.charId)} className="shrink-0 relative active:scale-95 transition-transform" title="查看状态 / 快捷行动">
+                                                {c.avatar
+                                                    ? <img src={c.avatar} alt={c.name} className="w-12 h-[58px] object-cover rounded-lg" style={{ border: `2px solid ${speaking ? INK : 'rgba(176,170,158,0.62)'}`, boxShadow: speaking ? '0 8px 18px -10px rgba(31,29,26,0.7)' : 'none' }} />
+                                                    : <div className="w-12 h-[58px] rounded-lg flex items-center justify-center text-[22px]" style={{ background: 'rgba(176,170,158,0.25)', border: '2px solid rgba(176,170,158,0.62)' }}>🎐</div>}
+                                                {speaking && <WashiTape color="butter" rotate={-6} className="absolute -top-1.5 -left-1.5 w-8 h-3 rounded-[2px]" />}
+                                                {speaking && currentEmotion && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold whitespace-nowrap" style={{ background: INK, color: PAPER }}>{currentEmotion}</span>}
+                                                {c.estranged && <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#6b655a', color: PAPER }}><HeartBreak size={11} weight="fill" /></span>}
+                                            </button>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1 min-w-0">
+                                                    {game.route.charId === c.charId && <Crown size={10} weight="fill" className="shrink-0" style={{ color: INK }} />}
+                                                    <span className="min-w-0 truncate text-[12px] font-black" style={{ color: speaking ? INK : '#3a362f' }}>{c.name}</span>
+                                                </div>
+                                                <div className="mt-0.5 text-[9.5px] leading-snug line-clamp-2" style={{ color: INK_SOFT }}>{stageOf(c.affection).label} · {c.attitude}</div>
+                                                <div className="mt-1 grid grid-cols-1 gap-0.5">
+                                                    <StageMiniBar icon={<Heart size={9} weight="fill" />} label="好" value={c.affection} />
+                                                    <StageMiniBar icon={<ShieldCheck size={9} weight="fill" />} label="信" value={c.trust} />
+                                                    <StageMiniBar icon={<Drop size={9} weight="fill" />} label="妒" value={c.jealousy} danger />
+                                                    <StageMiniBar icon={<Smiley size={9} weight="fill" />} label="晴" value={c.mood} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-1.5 grid grid-cols-2 gap-1">
+                                            <button onClick={() => onJudgeCharacter(c.charId)} disabled={!ready} className="flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[9.5px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: 'rgba(31,29,26,0.08)', color: INK }} title="密令 / 邀约">
+                                                <Scroll size={10} weight="fill" />密令
+                                            </button>
+                                            <button onClick={() => onVisit(c.charId)} disabled={!ready} className="flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[9.5px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER }} title="下一幕去见 ta">
+                                                <PersonSimpleWalk size={10} weight="bold" />去见
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const FAVOR_ACTION_ORDER: StoryFavorActionType[] = ['summon', 'reward', 'protect', 'cool'];
+
+const formatResourceDelta = (delta: Partial<Record<StoryResourceKey, number>>) => {
+    const out = RESOURCE_KEYS_UI
+        .filter(k => delta[k])
+        .map(k => `${STORY_RESOURCE_LABELS[k]} ${(delta[k] || 0) > 0 ? '+' : ''}${delta[k]}`);
+    return out.length ? out : ['无显著变动'];
+};
+
+const formatFavorEffect = (game: StoryState, effect: StoryFavorPreview['effects'][number]) => {
+    const tags: string[] = [];
+    if (effect.affection) tags.push(`好感${effect.affection > 0 ? '+' : ''}${effect.affection}`);
+    if (effect.trust) tags.push(`信任${effect.trust > 0 ? '+' : ''}${effect.trust}`);
+    if (effect.jealousy) tags.push(`嫉妒${effect.jealousy > 0 ? '+' : ''}${effect.jealousy}`);
+    if (effect.mood) tags.push(`心情${effect.mood > 0 ? '+' : ''}${effect.mood}`);
+    return `${game.characters[effect.charId]?.name || effect.charId} · ${tags.join(' / ') || '无显著变动'}`;
+};
+
+const FavorCourtSheet: React.FC<{
+    open: boolean;
+    onClose: () => void;
+    game: StoryState;
+    ready: boolean;
+    onDraft: (input: StoryFavorActionInput) => void;
+    onJudgeDraft: (text: string) => void;
+}> = ({ open, onClose, game, ready, onDraft, onJudgeDraft }) => {
+    const chars = Object.values(game.characters).sort((a, b) => b.affection - a.affection);
+    const summary = favorCourtSummary(game);
+    const [primary, setPrimary] = useState(chars[0]?.charId || '');
+    const [secondary, setSecondary] = useState(chars.find(c => c.charId !== primary)?.charId || '');
+    const [draftText, setDraftText] = useState('');
+
+    useEffect(() => {
+        if (!open) return;
+        if (!game.characters[primary] && chars[0]) setPrimary(chars[0].charId);
+        if ((!secondary || secondary === primary || !game.characters[secondary]) && chars.length > 1) {
+            setSecondary(chars.find(c => c.charId !== (primary || chars[0].charId))?.charId || '');
+        }
+    }, [open, game, chars, primary, secondary]);
+
+    const sendDraft = () => {
+        const text = draftText.trim();
+        if (!text || !ready) return;
+        setDraftText('');
+        onJudgeDraft(text);
+    };
+
+    return (
+        <PaperSheet open={open} onClose={onClose} tape="rose" title="宠爱经营台 · 恩宠与宫权">
+            <div className="max-h-[64vh] overflow-y-auto no-scrollbar space-y-3">
+                <PaperCard className="px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                        <Stamp size={36} color={summary.highJealousCount || summary.estrangedCount ? 'ink' : 'amber'}><Crown size={18} weight="fill" /></Stamp>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-black" style={{ color: INK }}>君心属 {summary.topName}</div>
+                            <div className="text-[10.5px] leading-snug" style={{ color: INK_SOFT }}>
+                                差距 {summary.favorGap} · 高嫉妒 {summary.highJealousCount} · 离心 {summary.estrangedCount}
+                            </div>
+                            <div className="text-[11px] leading-snug mt-1" style={{ color: '#694036' }}>{summary.warning}</div>
+                        </div>
+                    </div>
+                </PaperCard>
+
+                <ResourceStrip resources={game.resources} />
+                {!ready && <StickyNote color="butter" className="px-3 py-2 text-[11px]">当前一幕尚未读完，谕旨会暂缓落下。</StickyNote>}
+
+                <div className="grid grid-cols-2 gap-2">
+                    {FAVOR_ACTION_ORDER.map(type => (
+                        <button key={type} disabled={!ready || !primary} onClick={() => onDraft({ type, targetCharId: primary })}
+                            title={STORY_FAVOR_ACTION_HINTS[type]}
+                            className="px-3 py-2.5 rounded-xl text-left active:scale-[0.98] transition-transform disabled:opacity-40"
+                            style={{ background: type === 'cool' ? 'rgba(31,29,26,0.08)' : 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                            <div className="flex items-center gap-1.5 text-[12px] font-black">
+                                {type === 'protect' ? <ShieldCheck size={14} weight="fill" /> : type === 'cool' ? <Drop size={14} weight="fill" /> : type === 'reward' ? <TreasureChest size={14} weight="fill" /> : <Crown size={14} weight="fill" />}
+                                {STORY_FAVOR_ACTION_LABELS[type]}
+                            </div>
+                            <div className="text-[9.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{primary && game.characters[primary] ? game.characters[primary].name : '未择人'}</div>
+                        </button>
+                    ))}
+                    <button disabled={!ready || !primary || !secondary || primary === secondary} onClick={() => onDraft({ type: 'mediate', targetCharId: primary, secondaryCharId: secondary })}
+                        className="px-3 py-2.5 rounded-xl text-left active:scale-[0.98] transition-transform disabled:opacity-40"
+                        style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                        <div className="flex items-center gap-1.5 text-[12px] font-black"><UsersThree size={14} weight="fill" />调停</div>
+                        <div className="text-[9.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>
+                            {primary && secondary ? `${game.characters[primary]?.name || ''} / ${game.characters[secondary]?.name || ''}` : '择两人'}
+                        </div>
+                    </button>
+                    <button disabled={!ready} onClick={() => onDraft({ type: 'balance' })}
+                        className="px-3 py-2.5 rounded-xl text-left active:scale-[0.98] transition-transform disabled:opacity-40"
+                        style={{ background: INK, border: '1px solid rgba(201,154,58,0.45)', color: PAPER }}>
+                        <div className="flex items-center gap-1.5 text-[12px] font-black"><Sparkle size={14} weight="fill" />普赏安宫</div>
+                        <div className="text-[9.5px] mt-0.5 truncate" style={{ color: 'rgba(255,247,232,0.74)' }}>照拂诸位</div>
+                    </button>
+                </div>
+
+                <div className="space-y-1.5">
+                    {chars.map(c => {
+                        const isPrimary = primary === c.charId;
+                        const isSecondary = secondary === c.charId;
+                        return (
+                            <PaperCard key={c.charId} className="px-2.5 py-2">
+                                <div className="flex items-center gap-2">
+                                    {c.avatar ? <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" style={{ border: '1px solid rgba(176,170,158,0.7)' }} /> : <span className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center" style={{ background: 'rgba(176,170,158,0.25)' }}>?</span>}
+                                    <button onClick={() => setPrimary(c.charId)} className="min-w-0 flex-1 text-left active:scale-[0.99] transition-transform">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-[13px] font-black truncate" style={{ color: INK }}>{c.name}</span>
+                                            {isPrimary && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: INK, color: PAPER }}>主</span>}
+                                            {isSecondary && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>乙</span>}
+                                        </div>
+                                        <div className="text-[10px]" style={{ color: INK_SOFT }}>好感 {c.affection} · 信任 {c.trust} · 嫉妒 {c.jealousy} · 心情 {c.mood}</div>
+                                    </button>
+                                    <button onClick={() => setSecondary(c.charId)} disabled={primary === c.charId}
+                                        className="px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-35"
+                                        style={{ background: isSecondary ? INK : 'rgba(255,247,232,0.85)', color: isSecondary ? PAPER : INK, border: '1px solid rgba(201,154,58,0.45)' }}>
+                                        调停乙
+                                    </button>
+                                </div>
+                            </PaperCard>
+                        );
+                    })}
+                </div>
+
+                <PaperCard className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 mb-2">
+                        <Scroll size={14} weight="fill" />
+                        <span className="text-[12px] font-black" style={{ color: INK }}>自拟谕旨</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <input value={draftText} onChange={e => setDraftText(e.target.value.slice(0, 140))} onKeyDown={e => { if (e.key === 'Enter') sendDraft(); }}
+                            placeholder="写一句想落下的恩宠、赏罚或调停" className="flex-1 min-w-0 px-3 py-2 text-[12px] rounded-full outline-none" style={inputStyle} />
+                        <button onClick={sendDraft} disabled={!ready || !draftText.trim()} className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER }}>
+                            <PaperPlaneRight size={15} weight="fill" />
+                        </button>
+                    </div>
+                </PaperCard>
+
+                <div className="space-y-1.5">
+                    {(game.favorLedger || []).slice(0, 6).map(entry => (
+                        <div key={entry.id} className="px-2.5 py-1.5 rounded-lg text-[11px] leading-snug" style={{ background: 'rgba(255,247,232,0.72)', border: '1px solid rgba(201,154,58,0.32)', color: '#694036' }}>
+                            <span className="font-black" style={{ color: INK }}>第{entry.day}日{entry.time} · {entry.title}</span>
+                            <span> · {entry.actionText}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </PaperSheet>
+    );
+};
+
+const FavorDraftDialog: React.FC<{ draft: { preview: StoryFavorPreview; input: StoryFavorActionInput } | null; game: StoryState; busy: boolean; onCancel: () => void; onConfirm: () => void }> = ({ draft, game, busy, onCancel, onConfirm }) => {
+    const preview = draft?.preview || null;
+    const relLines = preview?.relationshipDelta.map(r => `${game.characters[r.a]?.name || r.a} / ${game.characters[r.b]?.name || r.b} 羁绊 ${r.bond > 0 ? '+' : ''}${r.bond}`) || [];
+    return (
+        <PaperDialog open={!!preview} onClose={onCancel} en="FAVOR DECREE" maxWidth={350}>
+            {preview && (
+                <div className="max-h-[66vh] overflow-y-auto no-scrollbar text-left">
+                    <div className="flex items-start gap-2.5 mb-3">
+                        <Stamp size={40} color={preview.risk === 'high' ? 'ink' : preview.risk === 'mid' ? 'amber' : 'rose'}><Crown size={20} weight="fill" /></Stamp>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[16px] font-black leading-tight" style={{ color: INK }}>{preview.title}</div>
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: INK, color: PAPER }}>{RISK_LABEL[preview.risk]}</span>
+                                <span className="text-[10px]" style={{ color: INK_SOFT }}>{preview.actionText}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p className="text-[13px] leading-relaxed mb-3" style={{ color: '#3a362f' }}>{preview.message || '这道谕旨会牵动宫中人心。'}</p>
+                    {preview.blockers.length > 0 && (
+                        <StickyNote color="butter" className="px-3 py-2 mb-2 text-[11px]">
+                            {preview.blockers.join('；')}
+                        </StickyNote>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                        <PaperCard className="px-2.5 py-2">
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK }}>资源</div>
+                            <div className="space-y-0.5">
+                                {formatResourceDelta(preview.resourceDelta).map(line => <div key={line} className="text-[11px]" style={{ color: INK_SOFT }}>{line}</div>)}
+                            </div>
+                        </PaperCard>
+                        <PaperCard className="px-2.5 py-2">
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK }}>人物</div>
+                            <div className="space-y-0.5">
+                                {preview.effects.length ? preview.effects.map(e => <div key={e.charId} className="text-[11px]" style={{ color: INK_SOFT }}>{formatFavorEffect(game, e)}</div>) : <div className="text-[11px]" style={{ color: INK_SOFT }}>无显著变动</div>}
+                            </div>
+                        </PaperCard>
+                    </div>
+                    {relLines.length > 0 && (
+                        <PaperCard className="px-3 py-2.5 mb-2">
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK }}>关系</div>
+                            {relLines.map(line => <div key={line} className="text-[11px]" style={{ color: INK_SOFT }}>{line}</div>)}
+                        </PaperCard>
+                    )}
+                    <div className="flex gap-2 mt-3">
+                        <ScrapButton variant="paper" onClick={onCancel} disabled={busy} className="flex-1 py-2.5 text-[12px]">撤回</ScrapButton>
+                        <ScrapButton variant="ink" onClick={onConfirm} disabled={busy || !preview.ok} className="flex-1 py-2.5 text-[12px]" icon={<PaperPlaneRight size={13} weight="fill" />}>照旨落下</ScrapButton>
+                    </div>
+                </div>
+            )}
+        </PaperDialog>
+    );
+};
+
+const PalaceMapSheet: React.FC<{ open: boolean; onClose: () => void; game: StoryState; ready: boolean; onAction: (loc: PalaceLocation, action: PalaceActionType) => void; onPlan: (loc: PalaceLocation) => void }> = ({ open, onClose, game, ready, onAction, onPlan }) => {
+    const locs = availableLocations(game);
+    return (
+        <PaperSheet open={open} onClose={onClose} tape="amber" title="宫苑地图 · 何处起笔">
+            <div className="mb-2">
+                <ResourceStrip resources={game.resources} />
+            </div>
+            {!ready && <StickyNote color="butter" className="px-3 py-2 mb-2 text-[11px]">读完当前一幕，方可改道前往宫苑。</StickyNote>}
+            <div className="max-h-[54vh] overflow-y-auto no-scrollbar space-y-2">
+                {locs.map(loc => (
+                    <PaperCard key={loc.id} className="px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                            <Stamp size={32} color={loc.id === game.map.lastLocationId ? 'rose' : 'amber'}><MapPin size={16} weight="fill" /></Stamp>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[13px] font-black" style={{ color: INK }}>{loc.name}</span>
+                                    <span className="text-[9px]" style={{ color: INK_SOFT }}>访 {game.map.visited[loc.id] || 0}</span>
+                                </div>
+                                <div className="text-[11px] leading-snug mt-0.5" style={{ color: '#694036' }}>{loc.blurb}</div>
+                                <div className="flex gap-1.5 flex-wrap mt-2">
+                                    <button disabled={!ready} onClick={() => onPlan(loc)} className="px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER, border: '1px solid rgba(201,154,58,0.45)' }}>
+                                        谋划
+                                    </button>
+                                    {loc.actions.map(action => (
+                                        <button key={action} disabled={!ready} onClick={() => onAction(loc, action)} className="px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: action === 'chapter' ? INK : 'rgba(255,247,232,0.86)', color: action === 'chapter' ? PAPER : INK, border: '1px solid rgba(201,154,58,0.45)' }}>
+                                            {PALACE_ACTION_LABELS[action]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </PaperCard>
+                ))}
+            </div>
+        </PaperSheet>
+    );
+};
+
+const ProgressSheet: React.FC<{ open: boolean; onClose: () => void; game: StoryState; ready: boolean; onJudgeObjective: (objective: StoryObjective) => void }> = ({ open, onClose, game, ready, onJudgeObjective }) => (
+    <PaperSheet open={open} onClose={onClose} tape="ink" title="章节卷轴 · 主线与支线">
+        <PaperCard className="px-3 py-3 mb-3">
+            <div className="flex items-center gap-2">
+                <Stamp size={38} color="rose"><Scroll size={20} weight="fill" /></Stamp>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[14px] font-black" style={{ color: INK }}>第 {game.chapter.index} 章 · {game.chapter.title}</div>
+                    <div className="text-[11px] leading-snug" style={{ color: INK_SOFT }}>{game.chapter.subtitle}</div>
+                    <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(90,35,28,0.12)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, (game.chapter.progress / Math.max(1, game.chapter.goal)) * 100)}%`, background: 'linear-gradient(90deg, #8a1f2b, #d7a84a)' }} />
+                    </div>
+                </div>
+            </div>
+        </PaperCard>
+        <div className="max-h-[50vh] overflow-y-auto no-scrollbar space-y-2">
+            {game.objectives.map(o => <ObjectiveCard key={o.id} objective={o} ready={ready} onJudge={onJudgeObjective} />)}
+            {(game.generatedHooks?.length || game.rumors?.length || game.npcStubs?.length) ? <GeneratedIntel game={game} /> : null}
+        </div>
+    </PaperSheet>
+);
+
+const ObjectiveCard: React.FC<{ objective: StoryObjective; ready?: boolean; onJudge?: (objective: StoryObjective) => void }> = ({ objective, ready = false, onJudge }) => (
+    <PaperCard className="px-3 py-2.5">
+        <div className="flex items-start gap-2">
+            <Stamp size={28} color={objective.done ? 'sage' : objective.kind === 'main' ? 'rose' : 'amber'}>{objective.kind === 'main' ? <Crown size={15} weight="fill" /> : <Scroll size={15} weight="fill" />}</Stamp>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[13px] font-black" style={{ color: INK }}>{objective.title}</span>
+                    <span className="text-[9px] font-bold" style={{ color: objective.done ? '#2f766d' : INK_SOFT }}>{objective.done ? '已成' : `${objective.progress}/${objective.target}`}</span>
+                </div>
+                <div className="text-[11px] leading-snug" style={{ color: '#694036' }}>{objective.description}</div>
+                <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(90,35,28,0.12)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, (objective.progress / Math.max(1, objective.target)) * 100)}%`, background: objective.done ? '#2f766d' : '#d7a84a' }} />
+                </div>
+                {onJudge && !objective.done && (
+                    <button disabled={!ready} onClick={() => onJudge(objective)} className="mt-2 px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                        请 AI 出谋划策
+                    </button>
+                )}
+            </div>
+        </div>
+    </PaperCard>
+);
+
+const GeneratedIntel: React.FC<{ game: StoryState }> = ({ game }) => (
+    <PaperCard className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5 mb-2">
+            <Stamp size={26} color="ink"><Eye size={14} weight="fill" /></Stamp>
+            <div className="text-[13px] font-black" style={{ color: INK }}>判官暗线</div>
+        </div>
+        <div className="space-y-1.5">
+            {game.generatedHooks.slice(0, 6).map(h => (
+                <div key={h.id} className="text-[11px] leading-snug px-2 py-1 rounded-lg" style={{ background: 'rgba(232,228,217,0.5)', color: '#4a463f' }}>
+                    <span className="font-black" style={{ color: INK }}>{h.title}</span> · {h.summary}
+                    <span className="ml-1" style={{ color: INK_SOFT }}>至第{h.expiresDay}日</span>
+                </div>
+            ))}
+            {game.rumors.slice(0, 6).map(r => (
+                <div key={r.id} className="text-[11px] leading-snug px-2 py-1 rounded-lg" style={{ background: 'rgba(255,247,232,0.75)', color: '#694036' }}>
+                    风闻{r.heat} · {r.text}
+                    <span className="ml-1" style={{ color: INK_SOFT }}>至第{r.expiresDay}日</span>
+                </div>
+            ))}
+            {game.npcStubs.slice(0, 5).map(n => (
+                <div key={n.id} className="text-[11px] leading-snug px-2 py-1 rounded-lg" style={{ background: 'rgba(31,29,26,0.06)', color: '#4a463f' }}>
+                    <span className="font-black" style={{ color: INK }}>{n.name}</span>/{n.role} · {n.summary}
+                </div>
+            ))}
+        </div>
+    </PaperCard>
+);
+
+const InventorySheet: React.FC<{ open: boolean; onClose: () => void; items: StoryInventoryItem[]; chars: Record<string, StoryChar>; ready: boolean; onJudgeItem: (item: StoryInventoryItem) => void }> = ({ open, onClose, items, chars, ready, onJudgeItem }) => (
+    <PaperSheet open={open} onClose={onClose} tape="amber" title="背包线索 · 暗线成册">
+        <div className="max-h-[56vh] overflow-y-auto no-scrollbar space-y-2">
+            {items.length === 0 && <div className="text-center py-8 text-[12px]" style={{ color: INK_SOFT }}>尚无收入册中的线索或信物。</div>}
+            {items.map(it => (
+                <PaperCard key={it.id} className="px-3 py-2.5">
+                    <div className="flex items-start gap-2">
+                        <Stamp size={30} color={it.kind === 'gift' ? 'rose' : it.kind === 'edict' ? 'ink' : 'amber'}>{it.kind === 'gift' ? <TreasureChest size={15} weight="fill" /> : <BookOpen size={15} weight="fill" />}</Stamp>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-black" style={{ color: INK }}>{it.name}</div>
+                            <div className="text-[11.5px] leading-snug" style={{ color: '#694036' }}>{it.text}</div>
+                            <button disabled={!ready} onClick={() => onJudgeItem(it)} className="mt-2 px-2 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform disabled:opacity-40" style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                                追查/使用
+                            </button>
+                            <div className="text-[9px] mt-1" style={{ color: INK_SOFT }}>第 {it.day} 日{it.charId && chars[it.charId] ? ` · ${chars[it.charId].name}` : ''}{it.source ? ` · ${it.source}` : ''}</div>
+                        </div>
+                    </div>
+                </PaperCard>
+            ))}
+        </div>
+    </PaperSheet>
+);
+
+const judgementResourceLines = (judgement: StoryActionJudgement): string[] => {
+    const out: string[] = [];
+    for (const k of RESOURCE_KEYS_UI) {
+        const cost = judgement.cost?.[k] || 0;
+        const reward = judgement.reward?.[k] || 0;
+        const total = cost + reward;
+        if (total) out.push(`${STORY_RESOURCE_LABELS[k]} ${total > 0 ? '+' : ''}${total}`);
+    }
+    return out;
+};
+
+const JudgementPreview: React.FC<{ judgement: StoryActionJudgement | null; game: StoryState; busy: boolean; onCancel: () => void; onConfirm: () => void }> = ({ judgement, game, busy, onCancel, onConfirm }) => {
+    const loc = judgement?.mapIntent ? availableLocations(game).find(l => l.id === judgement.mapIntent?.locationId) : null;
+    const resourceLines = judgement ? judgementResourceLines(judgement) : [];
+    const objectiveUpdates = judgement?.objectiveUpdates || [];
+    const inventoryUpdates = judgement?.inventoryUpdates || [];
+    const achievementUpdates = judgement?.achievementUpdates || [];
+    const generatedHooks = judgement?.generatedHooks || [];
+    const rumors = judgement?.rumors || [];
+    const npcStubs = judgement?.npcStubs || [];
+    return (
+        <PaperDialog open={!!judgement} onClose={onCancel} en="COURT VERDICT" maxWidth={360}>
+            {judgement && (
+                <div className="max-h-[68vh] overflow-y-auto no-scrollbar">
+                    <div className="flex items-start gap-2.5 mb-3">
+                        <Stamp size={40} color={judgement.risk === 'high' ? 'ink' : judgement.risk === 'low' ? 'sage' : 'amber'}><Scroll size={20} weight="fill" /></Stamp>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[16px] font-black leading-tight" style={{ color: INK }}>{judgement.title}</div>
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: INK, color: PAPER }}>{RISK_LABEL[judgement.risk]}</span>
+                                <span className="text-[10px]" style={{ color: INK_SOFT }}>把握 {judgement.confidence}%</span>
+                                <span className="text-[10px]" style={{ color: INK_SOFT }}>{judgement.entryPoint}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p className="text-[13px] leading-relaxed mb-3" style={{ color: '#3a362f' }}>{judgement.verdict}</p>
+                    <PaperCard className="px-3 py-2.5 mb-2">
+                        <div className="text-[11px] font-black mb-1" style={{ color: INK }}>将行之事</div>
+                        <div className="text-[12.5px] leading-snug" style={{ color: '#694036' }}>{judgement.actionText}</div>
+                        {judgement.nextIntent && <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>{judgement.nextIntent}</div>}
+                    </PaperCard>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                        <PaperCard className="px-2.5 py-2">
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK }}>资源</div>
+                            <div className="text-[11px] leading-snug" style={{ color: INK_SOFT }}>{resourceLines.length ? resourceLines.join(' / ') : '无显著变动'}</div>
+                        </PaperCard>
+                        <PaperCard className="px-2.5 py-2">
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK }}>牵动</div>
+                            <div className="text-[11px] leading-snug" style={{ color: INK_SOFT }}>
+                                {judgement.involvedCharIds.length ? judgement.involvedCharIds.map(id => game.characters[id]?.name).filter(Boolean).join('、') : '无指定人物'}
+                                {loc ? ` · ${loc.name}` : ''}
+                            </div>
+                        </PaperCard>
+                    </div>
+                    {(inventoryUpdates.length || generatedHooks.length || rumors.length || npcStubs.length || objectiveUpdates.length || achievementUpdates.length) ? (
+                        <PaperCard className="px-3 py-2.5 mb-3">
+                            <div className="text-[11px] font-black mb-1" style={{ color: INK }}>入局内容</div>
+                            <div className="space-y-1">
+                                {objectiveUpdates.map((o, i) => <div key={`o${i}`} className="text-[11px]" style={{ color: '#4a463f' }}>目标 {o.id || '当前主线'} {o.done ? '完成' : `+${o.progress || 0}`}</div>)}
+                                {inventoryUpdates.map(i => <div key={`i${i.id || i.name}`} className="text-[11px]" style={{ color: '#4a463f' }}>线索 {i.name}</div>)}
+                                {generatedHooks.map(h => <div key={h.id} className="text-[11px]" style={{ color: '#4a463f' }}>暗线 {h.title}</div>)}
+                                {rumors.map(r => <div key={r.id} className="text-[11px]" style={{ color: '#4a463f' }}>风闻 {r.text}</div>)}
+                                {npcStubs.map(n => <div key={n.id} className="text-[11px]" style={{ color: '#4a463f' }}>临时人物 {n.name}</div>)}
+                                {achievementUpdates.map(a => <div key={typeof a === 'string' ? a : a.id} className="text-[11px]" style={{ color: '#4a463f' }}>印记 {typeof a === 'string' ? a : a.title || a.id}</div>)}
+                            </div>
+                        </PaperCard>
+                    ) : null}
+                    <div className="flex gap-2 mt-3">
+                        <ScrapButton variant="paper" onClick={onCancel} disabled={busy} className="flex-1 py-2.5 text-[12px]">撤回</ScrapButton>
+                        <ScrapButton variant="ink" onClick={onConfirm} disabled={busy} className="flex-1 py-2.5 text-[12px]" icon={<PaperPlaneRight size={13} weight="fill" />}>照此落子</ScrapButton>
+                    </div>
+                </div>
+            )}
+        </PaperDialog>
+    );
+};
+
+const AchievementSheet: React.FC<{ open: boolean; onClose: () => void; achievements: StoryAchievement[] }> = ({ open, onClose, achievements }) => (
+    <PaperSheet open={open} onClose={onClose} tape="rose" title="成就册 · 金泥小印">
+        <div className="max-h-[56vh] overflow-y-auto no-scrollbar space-y-2">
+            {achievements.length === 0 && <div className="text-center py-8 text-[12px]" style={{ color: INK_SOFT }}>尚无成就落印。长线推进、收集线索或稳住人心后会逐步解锁。</div>}
+            {achievements.map(a => (
+                <PaperCard key={a.id} className="px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                        <Stamp size={34} color="amber"><Medal size={18} weight="fill" /></Stamp>
+                        <div className="min-w-0">
+                            <div className="text-[13px] font-black" style={{ color: INK }}>{a.title}</div>
+                            <div className="text-[11px] leading-snug" style={{ color: '#694036' }}>{a.description}</div>
+                        </div>
+                    </div>
+                </PaperCard>
+            ))}
+        </div>
+    </PaperSheet>
+);
+
 const GenderCycle: React.FC<{ value: Gender; onChange: (g: Gender) => void }> = ({ value, onChange }) => {
     const m = GENDER_GLYPH[value];
     return (

@@ -1,6 +1,5 @@
 
-import React from 'react';
-import { ShopRecipe, ShopStaff, RoomLayout, DollhouseRoom, DollhouseState } from '../../types';
+import { ShopRecipe, ShopStaff, RoomLayout, DollhouseState } from '../../types';
 
 // Pixel Art Assets (Twemoji CDN for consistent cross-platform rendering)
 export const BANK_ASSETS = {

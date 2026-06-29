@@ -1,5 +1,5 @@
 /**
- * 彼方·剧院 面板。
+ * 页外·剧院 面板。
  *
  * 视觉分两套：
  * - 主体（投稿/选剧/编排/表单/历史）走「深红丝绒 + 烫金」正剧院风（高对比、读得清）；
@@ -95,7 +95,7 @@ type View = 'list' | 'script' | 'stage' | 'play';
 
 const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ addToast }) => {
     const { characters, userProfile, groups, apiConfig, auxApiConfig } = useOS();
-    // 彼方·剧院属「聊天以外」的功能：走副 API（剧院自带 VR API 优先，否则副 API，再回退主 API）
+    // 页外·剧院属「聊天以外」的功能：走副 API（剧院自带 VR API 优先，否则副 API，再回退主 API）
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [tab, setTab] = useState<'scripts' | 'history'>('scripts');
     const [scripts, setScripts] = useState<VRScript[]>([]);
@@ -282,7 +282,7 @@ const StageView: React.FC<{ script: VRScript; ctx: TheaterCtx; apiConfig: any; a
             for (const n of result) {
                 if (n.actorId.startsWith('npc')) continue;
                 const act = !n.cooperative ? `对舞台剧《${script.title}》有点抵触，觉得：${n.note}` : n.lines ? `把自己在《${script.title}》里的戏份改成了自己的演法，觉得：${n.note}` : `读了舞台剧《${script.title}》，觉得：${n.note}`;
-                await DB.saveMessage({ charId: n.actorId, role: 'assistant', type: 'vr_card', content: `「彼方 · 剧院」${n.actorName}${act}`, metadata: { vrCard: true, room: 'theater', activity: act, behavior: n.lines } } as any);
+                await DB.saveMessage({ charId: n.actorId, role: 'assistant', type: 'vr_card', content: `「页外 · 剧院」${n.actorName}${act}`, metadata: { vrCard: true, room: 'theater', activity: act, behavior: n.lines } } as any);
             }
         } catch (e: any) { addToast?.('编排失败：' + (e?.message || '检查网络/API'), 'error'); }
         finally { setBusy(''); }
@@ -296,7 +296,7 @@ const StageView: React.FC<{ script: VRScript; ctx: TheaterCtx; apiConfig: any; a
             const d = await runDirector(script, cast, notes, ctx, api, userReq.trim() || undefined);
             const play: VRStagedPlay = { id: tid('play'), scriptId: script.id, title: script.title, logline: script.logline, cast, notes, stage: d.stage, reviews: d.reviews, rating: d.rating, createdAt: Date.now() };
             const castNames = cast.map(c => c.actorName).join('、');
-            for (const c of cast) { if (c.isNpc) continue; const act = `参演的舞台剧《${script.title}》落幕了（演员：${castNames}）。综评 ${d.rating}`; await DB.saveMessage({ charId: c.actorId, role: 'assistant', type: 'vr_card', content: `「彼方 · 剧院」${act}`, metadata: { vrCard: true, room: 'theater', activity: act } } as any); }
+            for (const c of cast) { if (c.isNpc) continue; const act = `参演的舞台剧《${script.title}》落幕了（演员：${castNames}）。综评 ${d.rating}`; await DB.saveMessage({ charId: c.actorId, role: 'assistant', type: 'vr_card', content: `「页外 · 剧院」${act}`, metadata: { vrCard: true, room: 'theater', activity: act } } as any); }
             onStaged(play);
         } catch (e: any) { addToast?.('导演罢工了：' + (e?.message || '检查网络/API'), 'error'); }
         finally { setBusy(''); }

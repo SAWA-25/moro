@@ -1,17 +1,15 @@
 
 import { useState, useRef, useEffect, MutableRefObject } from 'react';
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff, AuxApiConfig } from '../types';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, AuxApiConfig } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { DB } from '../utils/db';
-import { ChatPrompts } from '../utils/chatPrompts';
-import { safeFetchJson, safeResponseJson } from '../utils/safeApi';
+import { safeFetchJson } from '../utils/safeApi';
 import { KeepAlive } from '../utils/keepAlive';
 import { ProactiveChat } from '../utils/proactiveChat';
-import { ContextBuilder } from '../utils/context';
 // 思考链 / HTML / MCD / memoryPalace 注入已下沉到 chatRequestPayload；这里不再直接调用
 import { useMusic, loadMusicHooks } from '../context/MusicContext';
 import { processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
-import { incrementDigestRound, runCognitiveDigestion, detectPersonalityStyle } from '../utils/memoryPalace';
+import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 // evolveFlowNarrative 保留为低频深刷新备用，日常意识流由副 API 的情绪评估同轮产出（innerState 字段）
 // import { evolveFlowNarrative } from '../utils/scheduleGenerator';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';

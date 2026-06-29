@@ -33,7 +33,7 @@ export enum AppID {
   Handbook = 'handbook', // 手账 — 跨角色聚合的生活留痕本（LLM 代笔 + 角色生活流陪伴）
   QQBridge = 'qq_bridge', // QQ 桥接 — 通过 NapCat 把 QQ 私聊接入当前角色，共享 IndexedDB 上下文
   HotNews = 'hot_news', // 热点 — 分时段召回的多平台热榜可视化（决定角色可能聊起的话题）
-  VRWorld = 'vrworld', // 彼方 — 角色自主登入的虚拟世界（定时驱动，房间里看小说/听歌/留言，产出活动卡注入聊天+记忆）
+  VRWorld = 'vrworld', // 页外 — 角色自主登入的虚拟世界（定时驱动，房间里看小说/听歌/留言，产出活动卡注入聊天+记忆）
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
   Phone = 'phone', // 电话 — 拨号键盘 / 通话记录（拨出·接听·未接）/ 通话录音回放与逐字稿
   ExchangeDiary = 'exchange_diary', // 日记社 — 多角色交换日记本（角色视角日记 + 每日对话总结）
@@ -41,7 +41,7 @@ export enum AppID {
   Personas = 'personas', // 人设 — SillyTavern 式用户人设管理（多套用户身份，可绑定角色 / 默认 / 世界书，描述按位置注入 prompt）
   Regex = 'regex', // 正则 — SillyTavern 式正则脚本（全局/角色局部，作用于用户输入/AI 输出/提示词/显示，可导入酒馆正则 JSON）
   Creative = 'creative', // 创作社 — 「笔友会」（共创小说）与「写歌」（共创歌曲）合并入口，首页选模式后进入对应创作台
-  Theater = 'theater', // 小剧场 — 「攻略本」(galgame 恋爱攻略) 与「TRPG」(跑团冒险) 合并入口，封面页选模式后进入对应剧目（Guidebook/Game 子 App 保留路由兼容）
+  Theater = 'theater', // 折子戏 — 「攻略本」(galgame 恋爱攻略) 与「TRPG」(跑团冒险) 合并入口，封面页选模式后进入对应剧目（Guidebook/Game 子 App 保留路由兼容）
   Almanac = 'almanac', // 岁时记 — 「时光契约」(日程/心愿单/纪念日倒数) 与「特别时光」(节日记忆活动) 合并入口，封面页选模式后进入对应页（Schedule/SpecialMoments 子 App 保留路由兼容）
   Takeout = 'takeout', // 外卖 — 参考美团：本地生成店铺点菜下单、配送进度、和骑手/商家聊天、自付/代付，并与来往联动（给角色点单/代付）
   Shop = 'shop', // 购物商城 — 虚拟礼物商城：买礼物送角色（聊天里落礼物卡 + 角色回应/感谢信），角色也会自己逛（自购/回赠），查角色购物小票
@@ -315,7 +315,7 @@ export interface OSTheme {
   /** 锁屏样式自定义（专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS），在「主题 → 锁屏」编辑。 */
   lockScreenStyle?: LockScreenStyle;
   offlineModeStyle?: OfflineModeStyle;
-  /** 占卜牌面美化（小剧场·占卜读这里渲染牌面）：牌背图 / 边框风格 / 渲染风格。 */
+  /** 占卜牌面美化（折子戏·占卜读这里渲染牌面）：牌背图 / 边框风格 / 渲染风格。 */
   tarotSkin?: {
     cardBack?: string;                                  // 牌背图 dataURL（牌面未翻开 / 占位时显示）
     frame?: 'none' | 'gold' | 'ink' | 'film';           // 边框：无 / 描金 / 水墨 / 胶片
@@ -1054,7 +1054,7 @@ export interface NovelBook {
 }
 
 // =====================================================================
-// --- VR WORLD ("彼方") TYPES ---
+// --- VR WORLD ("页外") TYPES ---
 // 角色自主登入的虚拟世界。定时器驱动每个角色独立调用一次 LLM，在某个房间
 // 完成一次活动（v1：图书馆看小说），产出一张活动卡注入该角色的 1v1 聊天，
 // 天然被上下文与记忆总结捕捉。
@@ -1123,7 +1123,7 @@ export interface VRWorldCharState {
     currentRoom?: VRRoomId;
     /** 最近一次活动时间戳（UI / 调度展示用） */
     lastActiveAt?: number;
-    /** 该角色专属 API 覆盖（用户可单独为「彼方」活动配 api）；不设则回落全局 apiConfig。 */
+    /** 该角色专属 API 覆盖（用户可单独为「页外」活动配 api）；不设则回落全局 apiConfig。 */
     api?: { baseUrl: string; apiKey: string; model: string };
     /**
      * 角色在「页外」里的 chibi 形象（Q版小人）。启用自主登入时要求设定，可随时编辑。
@@ -1375,7 +1375,7 @@ export interface VRStagedPlay {
 
 /**
  * 捏脸系统自定义部件（开发模式追加）。运行时由 CreatorIframe 读出，随 like520_init
- * 以 extraItems 注入捏人器，合并进对应类目的 PARTS。520 / 彼方 都会拿到。
+ * 以 extraItems 注入捏人器，合并进对应类目的 PARTS。520 / 页外 都会拿到。
  */
 export interface CustomCreatorPart {
     id: string;
@@ -2337,6 +2337,122 @@ export interface XunjiSettings {
   reportRules: Record<XunjiReportType, boolean>;
 }
 
+export interface ScreenPeekCard {
+  id: string;
+  charId: string;
+  charName: string;
+  generatedAt: number;
+  title: string;
+  narrative: string;
+  screen?: {
+    appKind: 'chat' | 'takeout' | 'browser' | 'notes' | 'gallery' | 'music' | 'map' | 'social' | 'calendar' | 'app' | 'home';
+    appName: string;
+    title: string;
+    subtitle?: string;
+    action?: string;
+    layout?: 'feed' | 'detail' | 'favorite' | 'search' | 'compose' | 'article' | 'day' | 'month' | 'player' | 'route' | 'store' | 'generic';
+    url?: string;
+    timeText?: string;
+    batteryLevel?: number;
+    wallpaper?: string;
+    avatar?: string;
+    contactName?: string;
+    contactAvatar?: string;
+    tabs?: string[];
+    activeTab?: string;
+    messages?: { id: string; side: 'left' | 'right' | 'center'; text?: string; imageUrl?: string; senderName?: string }[];
+    rows?: { id: string; title: string; subtitle?: string; body?: string; meta?: string; imageUrl?: string; badge?: string }[];
+    notes?: { id: string; text: string; meta?: string }[];
+    hero?: { title?: string; subtitle?: string; imageUrl?: string };
+  };
+  chats: { id: string; time: number; target: string; summary: string; messages: string[] }[];
+  browsed: { id: string; time: number; appName: string; title: string; summary: string }[];
+  notes: { id: string; time: number; text: string }[];
+  moments?: XunjiGeneratedMoment[];
+  sourceRunId?: string;
+}
+
+export interface RelationshipNetworkEdge {
+  id: string;
+  pairKey: string;
+  charIds: [string, string];
+  label: string;
+  summary: string;
+  confidence: number;
+  intimacy: number;
+  tension: number;
+  signals: {
+    intimacy: string[];
+    friction: string[];
+    conflict: string[];
+  };
+  source: 'ai' | 'fallback' | 'manual' | 'auto';
+  createdAt: number;
+  updatedAt: number;
+  lastInteractionAt?: number;
+}
+
+export interface RelationshipNetworkMessage {
+  id: string;
+  pairKey: string;
+  speakerId: string;
+  speakerName: string;
+  content: string;
+  createdAt: number;
+  source: 'manual' | 'auto';
+  forwardedByCharIds?: string[];
+}
+
+export interface RelationshipNetworkThread {
+  id: string;
+  pairKey: string;
+  charIds: [string, string];
+  createdAt: number;
+  updatedAt: number;
+  lastMessagePreview?: string;
+  messageCount?: number;
+}
+
+export interface RelationshipNetworkAutoSettings {
+  id: 'settings';
+  enabled: boolean;
+  selectedCharIds: string[];
+  intervalMinutes: number;
+  charCooldownMinutes: number;
+  pairCooldownMinutes: number;
+  nextRunAt: number;
+  lastRunAtByChar: Record<string, number>;
+  lastRunAtByPair: Record<string, number>;
+  forwardedCountByPair: Record<string, number>;
+  updatedAt: number;
+}
+
+export interface RelationshipNetworkForwardDecision {
+  shouldForward: boolean;
+  forwarderId?: string;
+  reason?: string;
+  excerptMessageIds?: string[];
+}
+
+export interface RelationshipNetworkGenerationResult {
+  messages: RelationshipNetworkMessage[];
+  edgePatch?: Partial<RelationshipNetworkEdge>;
+  forward?: RelationshipNetworkForwardDecision;
+}
+
+export interface SuspendedVideoCallInfo {
+  charId: string;
+  charName: string;
+  charAvatar?: string;
+  startedAt: number;
+  elapsedSeconds: number;
+  chatLines: { id: string; role: 'user' | 'char'; text: string; timestamp: number }[];
+  sessionId: string;
+  camOn: boolean;
+  micOn: boolean;
+  facing: 'user' | 'environment';
+}
+
 /**
  * 角色真实城市配置（见 utils/charCity.ts）。
  * real：现实世界角色直接选真实城市；virtual：架空角色可选原型城市 + 虚拟程度。
@@ -2693,7 +2809,7 @@ export interface CharacterProfile {
   thinkingChainCustomPrompt?: string;
 
   /**
-   * 虚拟世界「彼方」的个人状态：是否自主登入、登入间隔、各本小说的独立书签等。
+   * 虚拟世界「页外」的个人状态：是否自主登入、登入间隔、各本小说的独立书签等。
    * 独立于 proactiveConfig（主动发消息），互不挤占触发。
    */
   vrState?: VRWorldCharState;
@@ -3045,10 +3161,18 @@ export interface GroupProfile {
     memberNicknames?: Record<string, string>;
     /** 头衔：charId（或 'user'）→ 群主/管理员设置的专属头衔，显示在名字旁的小徽章。 */
     memberTitles?: Record<string, string>;
+    /** 角色视角关系：viewer charId → target charId → “在 viewer 眼里 target 是谁 / 什么关系 / 有没有过节”。只给 viewer 自己发言时参考。 */
+    memberLenses?: Record<string, Record<string, string>>;
     /** 禁言：charId → 解禁时间戳（ms）。当前时间小于该值时该成员被禁言。 */
     mutedUntil?: Record<string, number>;
     /** 全员禁言：开启后所有角色成员本轮都不发言（仅群主/管理员＝用户可发），导演直接跳过。 */
     mutedAll?: boolean;
+    /** 角色各自回复：开启后群聊每轮按成员分别调用 API，而不是一次导演调用统筹全场。 */
+    replyIndividually?: boolean;
+    /** 让角色自动接话：用户发言后，额外续跑若干轮角色之间的自然对话。 */
+    autoContinueEnabled?: boolean;
+    /** 自动接话轮数。每轮会让群成员在用户旁观状态下继续接话一次。 */
+    autoContinueRounds?: number;
     /** 群公告：群主/管理员发布，进入群聊时置顶展示，并注入群聊上下文让成员知晓。撤下时为 undefined。 */
     announcement?: GroupAnnouncement;
     /** 聊天列表置顶。 */
@@ -3175,10 +3299,12 @@ export interface UserProfile {
     /** 购物商城·上次每日签到的时间戳（同一自然日只能签到一次）。 */
     shopCheckinAt?: number;
     /**
-     * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
-     * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
+     * 用户本人接入「页外」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
+     * enabled=false（登出）时，聊天里给角色的"用户在页外"提示词随之消失。
      */
     vrState?: UserVRState;
+    /** 絮语·是否开启用户社交圈：关闭后不再自动出现随机家人/同事/朋友/亲戚/群聊等背景会话。 */
+    ambientSocialEnabled?: boolean;
     /** 絮语·用户完整社交关系：随机家人/同事/朋友/亲戚/群聊等背景会话，随剧情时间轻微生长。 */
     ambientSocial?: AmbientSocialState;
     /** 拍一拍后缀（微信式）：别人「拍了拍 你 的<后缀>」里的后缀。用户自定义，默认「脑袋」。 */
@@ -3186,11 +3312,11 @@ export interface UserProfile {
 }
 
 export interface UserVRState {
-    /** 是否接入彼方（登出后不再向角色注入"用户在彼方"提示） */
+    /** 是否接入页外（登出后不再向角色注入"用户在页外"提示） */
     enabled: boolean;
     /** 用户此刻把自己挂在哪个房间 */
     currentRoom?: VRRoomId;
-    /** 用户自己写的"在彼方干嘛"，会注入聊天提示词 + 广播成行为卡片 */
+    /** 用户自己写的"在页外干嘛"，会注入聊天提示词 + 广播成行为卡片 */
     activity?: string;
     /** 最近一次更新时间 */
     updatedAt?: number;
@@ -3215,7 +3341,7 @@ export interface XhsStockImage {
     lastUsedAt?: number;   // 上次使用时间
 }
 
-// ── 占卜（小剧场·占卜）─────────────────────────────────────────────────────
+// ── 占卜（折子戏·占卜）─────────────────────────────────────────────────────
 /** 一张导入的占卜牌图。塔罗按 index 0~77、雷诺曼按 index 1~36 对应文件名。 */
 export interface DivinationCard {
     id: string;            // `${deck}_${index}`
@@ -3239,7 +3365,7 @@ export interface DivinationSession {
     createdAt: number;
 }
 
-// ── 番外仿真图文（小剧场·番外）结构化数据 ───────────────────────────────────
+// ── 番外仿真图文（折子戏·番外）结构化数据 ───────────────────────────────────
 /** 仿微信聊天截图 */
 export interface FauxWeChat {
     contactName: string;
@@ -3649,6 +3775,35 @@ export interface TwitterTranslation {
     translatedAt: number;
 }
 
+export type TwitterMediaType = 'image' | 'video' | 'gif' | 'link-card' | 'quote-card';
+
+export interface TwitterMedia {
+    type: TwitterMediaType;
+    url?: string;
+    alt?: string;
+    color?: string;
+    title?: string;
+    description?: string;
+    domain?: string;
+    durationMs?: number;
+    thumbnailColor?: string;
+}
+
+export interface TwitterPollOption {
+    id: string;
+    label: string;
+    votes: number;
+}
+
+export interface TwitterPoll {
+    id: string;
+    question?: string;
+    options: TwitterPollOption[];
+    votedOptionId?: string;
+    closesAt?: number;
+    closed?: boolean;
+}
+
 export interface TwitterReply {
     id: string;
     accountId?: string;
@@ -3685,7 +3840,9 @@ export interface TwitterTweet {
     location?: string;
     translations?: Record<string, TwitterTranslation>;
     topics: string[];
-    media?: { type: 'image' | 'quote-card'; url?: string; alt?: string; color?: string }[];
+    media?: TwitterMedia[];
+    poll?: TwitterPoll;
+    mentions?: string[];
     replies: TwitterReply[];
     replyCount: number;
     retweets: number;
@@ -3695,6 +3852,10 @@ export interface TwitterTweet {
     liked?: boolean;
     retweeted?: boolean;
     bookmarked?: boolean;
+    repostedBy?: string;
+    pinned?: boolean;
+    visibility?: 'public' | 'followers' | 'circle';
+    threadSize?: number;
     createdAt: number;
     sourceTweetId?: string;
     sourceTweet?: {
@@ -3773,6 +3934,12 @@ export interface TwitterAccount {
     styleTags?: string[];
     interests?: string[];
     commonContacts?: string[];
+    profileSummary?: string;
+    relationshipHint?: string;
+    recentStatus?: string;
+    pinnedTweetId?: string;
+    profileTabs?: Array<'posts' | 'replies' | 'media' | 'likes' | 'quotes' | 'about'>;
+    lastActiveAt?: number;
     followed?: boolean;
     generated?: boolean;
     updatedAt: number;
@@ -3943,7 +4110,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'forum_card' | 'chat_forward' | 'screen_peek_card' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
 
 /** 购物商城：一件礼物（内置目录条目）。 */
 export interface ShopItem {
@@ -4196,7 +4363,7 @@ export interface FullBackupData {
     roomCustomAssets?: { id?: string; name: string; image: string; defaultScale: number; description?: string; visibility?: 'public' | 'character'; assignedCharIds?: string[] }[]; 
     
     novels?: NovelBook[];
-    vrNovels?: VRWorldNovel[];          // 虚拟世界「彼方」全局小说库
+    vrNovels?: VRWorldNovel[];          // 虚拟世界「页外」全局小说库
     vrAnnotations?: VRNovelAnnotation[]; // 虚拟世界小说批注
     customCreatorParts?: CustomCreatorPart[]; // 捏脸系统自定义部件
     vrMusicRoom?: VRMusicRoomState;            // 听歌房共享状态
@@ -4205,7 +4372,7 @@ export interface FullBackupData {
     vrStagedPlays?: VRStagedPlay[];             // 剧院·历史舞台剧
     vrPresets?: { key: string; name: string; prompt: string; blurb?: string }[]; // 剧院·用户自定义写作风格预设
     vrLetters?: VRLetter[];                    // 邮局信件（本地存档+队列）
-    vrSettings?: any[];                        // 彼方设置（独立 API + 调用记录）
+    vrSettings?: any[];                        // 页外设置（独立 API + 调用记录）
     vrPostOffice?: Record<string, string>;     // 邮局本机配置：身份 deviceId / 后端地址（存 localStorage）
     songs?: SongSheet[]; // Songwriting app data
     phoneCallLogs?: PhoneCallLog[];           // 电话 App 通话记录
@@ -4213,6 +4380,9 @@ export interface FullBackupData {
     innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
     llmPresets?: TavernPreset[];              // 预设 App：SillyTavern 式 Chat Completion 预设
     personas?: Persona[];                     // 人设 App：SillyTavern 式用户人设
+    relationshipNetworkEdges?: RelationshipNetworkEdge[];
+    relationshipNetworkMessages?: RelationshipNetworkMessage[];
+    relationshipNetworkAutoSettings?: RelationshipNetworkAutoSettings[];
 
     // Bank Data
     bankState?: BankFullState;
@@ -4744,7 +4914,7 @@ export interface DateWorldline {
 }
 
 // ──────────────────────────────────────────────────────────────────
-// 小剧场·谈心（heart-to-heart）：让 user 有个被认真倾听、被安慰的地方。
+// 折子戏·谈心（heart-to-heart）：让 user 有个被认真倾听、被安慰的地方。
 // 每段谈心是一串 user / char 轮流的话，可存档、可收录进岁时记·典藏馆、可转发给别的角色。
 // ──────────────────────────────────────────────────────────────────
 export interface TalkTurn {
@@ -4851,7 +5021,7 @@ export interface TruthDareSession {
 }
 
 // ──────────────────────────────────────────────────────────────────
-// 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
+// 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 折子戏」里完成的内容收进来，
 // 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
 // ──────────────────────────────────────────────────────────────────
 export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game' | 'chat';

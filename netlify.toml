@@ -40,7 +40,7 @@
   to = "/.netlify/functions/send-notifications"
   status = 200
 
-# 彼方邮局同源代理：noir2.cc.cd 在部分网络/地区客户端直连不可达（报 Failed to fetch）。
+# 页外邮局同源代理：noir2.cc.cd 在部分网络/地区客户端直连不可达（报 Failed to fetch）。
 # 由 Netlify 边缘把同源 /po/* 服务端转发到真实后端，绕过客户端网络封锁。
 # 客户端（utils/vrWorld/postOffice.ts）直连失败时会自动退到同源 /po。
 [[redirects]]

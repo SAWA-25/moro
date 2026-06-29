@@ -12,7 +12,7 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
-import type { PixelHomeState, PixelRoomLayout, PixelAsset } from './types';
+import type { PixelRoomLayout, PixelAsset } from './types';
 import { decodeColorField } from './types';
 import { ROOM_SIZES, ROOM_SLOTS } from './roomTemplates';
 

@@ -78,14 +78,14 @@ describe('parsePostOfficeOutput', () => {
 describe('parseGuestbookOutput', () => {
     it('parses posts (with reply) + activity, caps at 4', () => {
         const raw = [
-            '<彼方>',
+            '<页外>',
             '<留言 回复="#a1b2">同意楼上</留言>',
             '<留言>顺便问个问题</留言>',
             '<留言>再补一条</留言>',
             '<留言>第四条</留言>',
             '<留言>第五条应被忽略</留言>',
             '<动态>在留言簿接了句嘴</动态>',
-            '</彼方>',
+            '</页外>',
         ].join('\n');
         const out = parseGuestbookOutput(raw);
         expect(out.posts).toHaveLength(4);
@@ -107,12 +107,12 @@ describe('parseGymOutput', () => {
 describe('parseMusicOutput', () => {
     it('parses pick / review / behavior / activity', () => {
         const raw = [
-            '<彼方>',
+            '<页外>',
             '<点歌 序号="3"/>',
             '<乐评>前奏一出我就跪了，但副歌太水。</乐评>',
             '<行为>跟着鼓点甩头，顺手给屏幕外录了一段。</行为>',
             '<动态>在听歌房单曲循环到上头。</动态>',
-            '</彼方>',
+            '</页外>',
         ].join('\n');
         const out = parseMusicOutput(raw);
         expect(out.pickIdx).toBe(3);
@@ -234,11 +234,11 @@ describe('getReadingWindow', () => {
 
 describe('parseVROutput', () => {
     it('parses annotations with seg index and ref, plus activity', () => {
-        const raw = `<彼方>
+        const raw = `<页外>
 <批注 段落="3">男主也太迟钝了吧</批注>
 <批注 段落="5" 回应="#ab12">才不是你说的那样</批注>
 <动态>在《某书》读到了初遇，吐槽了男主</动态>
-</彼方>`;
+</页外>`;
         const out = parseVROutput(raw);
         expect(out.annotations).toHaveLength(2);
         expect(out.annotations[0].segIdx).toBe(3);
@@ -247,9 +247,16 @@ describe('parseVROutput', () => {
     });
 
     it('tolerates zero annotations', () => {
-        const out = parseVROutput(`<彼方><动态>安静读完</动态></彼方>`);
+        const out = parseVROutput(`<页外><动态>安静读完</动态></页外>`);
         expect(out.annotations).toHaveLength(0);
         expect(out.activity).toBe('安静读完');
+    });
+
+    it('accepts legacy wrapper tags around saved output', () => {
+        const legacyTag = '\u5f7c\u65b9';
+        const out = parseVROutput(`<${legacyTag}><动态>旧外层也能读</动态></${legacyTag}>`);
+        expect(out.annotations).toHaveLength(0);
+        expect(out.activity).toBe('旧外层也能读');
     });
 
     it('ignores annotations without a paragraph number', () => {
@@ -259,12 +266,12 @@ describe('parseVROutput', () => {
 
     it('tolerates full-width quotes / colons / no-space tags', () => {
         const raw = [
-            '<彼方>',
+            '<页外>',
             '<批注 段落="2">全角引号</批注>',   // 全角引号
             '<批注段落=4>无空格无引号</批注>',     // 无空格、无引号
             '<批注 段落：7 回应：#9f3a>全角冒号+回应</批注>',
             '<动态>读完了</动态>',
-            '</彼方>',
+            '</页外>',
         ].join('\n');
         const out = parseVROutput(raw);
         expect(out.annotations.map(a => a.segIdx)).toEqual([2, 4, 7]);

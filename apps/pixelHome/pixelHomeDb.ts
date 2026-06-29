@@ -13,9 +13,9 @@ import type { PlacedFurniture } from './types';
 import { openDB } from '../../utils/db';
 
 // ─── DB 常量 ─────────────────────────────────────────
-// pixel_home_* 两个 store 由 utils/db.ts 的 AetherOS_Data upgradeneeded 统一创建,
+// pixel_home_* 两个 store 由 utils/db.ts 的主库 upgradeneeded 统一创建,
 // 这里直接复用 utils/db.ts 的单例 openDB —— 本地原来那个 openDB 每次操作都裸开一条
-// AetherOS_Data 连接 (连版本号都没传), 既漏连接又绕过单例, 会一起喂大连接风暴。
+// 主库连接 (连版本号都没传), 既漏连接又绕过单例, 会一起喂大连接风暴。
 
 const STORE_ASSETS = 'pixel_home_assets';
 const STORE_LAYOUTS = 'pixel_home_layouts';

@@ -1,4 +1,4 @@
-# 彼方邮局 · 互动功能接入交接（给 UI）
+# 页外邮局 · 互动功能接入交接（给 UI）
 
 后端（`worker/post-office/`）和客户端 API（`utils/vrWorld/postOffice.ts`）已补齐**点赞 / 点踩(=举报) /
 浏览量 / 身份导出导入**。后端已离线 e2e 跑通（23/23）。UI 这层在 `apps/VRWorldApp.tsx` 的邮局房间接入即可，

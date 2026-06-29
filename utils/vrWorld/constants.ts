@@ -80,7 +80,7 @@ export const VR_ROOMS: VRRoomDef[] = [
     {
         id: 'theater',
         name: '剧院',
-        blurb: '一座纸板搭的小剧场，幕布后堆满手写投稿的剧本，等人挑去排演。',
+        blurb: '一座纸板搭的折子戏台，幕布后堆满手写投稿的剧本，等人挑去排演。',
         affordance: '你可以即兴写一整出舞台剧投稿——定个题材、安排登场角色和性格、写好台词，丢进剧本箱等导演相中来排演。',
         emoji: '',
         implemented: true,

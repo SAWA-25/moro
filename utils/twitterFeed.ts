@@ -4,7 +4,9 @@ import {
     TwitterAccount,
     TwitterDMMessage,
     TwitterDMThread,
+    TwitterMedia,
     TwitterNotification,
+    TwitterPoll,
     TwitterProfile,
     TwitterReply,
     TwitterSearchRecord,
@@ -13,6 +15,7 @@ import {
     UserProfile,
 } from '../types';
 import { safeResponseJson, extractContent } from './safeApi';
+import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 export const TWITTER_BATCH_SIZE = 12;
 export const TWITTER_MIN_BATCH_SIZE = 10;
@@ -303,6 +306,136 @@ const charRegion = (char: CharacterProfile): string =>
     || (char.cityConfig?.mode === 'real' ? char.cityConfig.realCity : char.cityConfig?.virtualName || char.cityConfig?.prototypeCity)
     || '';
 
+const extractMentions = (text: string): string[] =>
+    Array.from(new Set((text.match(/@\w+/g) || []).map(x => x.slice(0, 32)))).slice(0, 8);
+
+const extractFirstUrl = (text: string): string | undefined =>
+    (text.match(/https?:\/\/[^\s]+/i) || [])[0];
+
+const domainFromUrl = (url?: string): string | undefined => {
+    if (!url) return undefined;
+    try {
+        return new URL(url).hostname.replace(/^www\./, '').slice(0, 48);
+    } catch {
+        return undefined;
+    }
+};
+
+const softenCardText = (value: any, max = 220): string => cleanText(value, max)
+    .replace(/本地虚拟(?:社交网络| X)?(?:里)?的?/g, '')
+    .replace(/不会访问真实外网数据。?/g, '')
+    .replace(/占位[:：]?/g, '')
+    .replace(/链接预览卡/g, '链接')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^一张\s*/, '')
+    .trim();
+
+const normalizeLinkUrl = (url?: string, domain?: string): string | undefined => {
+    const cleanUrl = cleanText(url, 500);
+    if (/^https?:\/\//i.test(cleanUrl)) return cleanUrl;
+    const cleanDomain = cleanText(domain, 120).replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    if (cleanDomain && cleanDomain.includes('.') && cleanDomain !== 'moro.local') return `https://${cleanDomain}`;
+    return undefined;
+};
+
+const relationshipHintForChar = (char: CharacterProfile): string => {
+    const label = char.relationship?.label;
+    const affection = Number(char.affection);
+    if (label && Number.isFinite(affection)) return `${label} · 好感 ${Math.max(0, Math.min(100, Math.round(affection)))}%`;
+    if (label) return label;
+    if (Number.isFinite(affection)) return `好感 ${Math.max(0, Math.min(100, Math.round(affection)))}%`;
+    return char.addedToChat ? '已在来往里保持联系' : '尚未建立明确关系';
+};
+
+const profileSummaryForChar = (char: CharacterProfile): string => {
+    const parts = [
+        char.socialProfile?.bio,
+        char.description,
+        char.lifeProfile?.content,
+        char.systemPrompt,
+    ].map(x => cleanText(x, 180)).filter(Boolean);
+    return parts[0] || `${char.name} 的公开账号。`;
+};
+
+const recentStatusForChar = (char: CharacterProfile): string => {
+    if (char.currentMood?.label) return `现在看起来${char.currentMood.label}`;
+    if (char.lifeProfile?.content) return '最近常把日常碎片带到时间线上';
+    if (char.proactiveConfig?.enabled) return '会主动出现，也会按自己的节奏潜水';
+    return '最近在线节奏比较随缘';
+};
+
+const materializeMedia = (item: any, seed: string, content: string): TwitterMedia[] | undefined => {
+    const raw: any[] = Array.isArray(item?.media) ? item.media : [];
+    const media: TwitterMedia[] = raw.slice(0, 4).map((m: any, idx: number) => {
+        const type = String(m?.type || m?.kind || 'image').toLowerCase();
+        const normalizedType: TwitterMedia['type'] = ['image', 'video', 'gif', 'link-card', 'quote-card'].includes(type)
+            ? type as TwitterMedia['type']
+            : 'image';
+        const url = normalizeLinkUrl(m?.url, m?.domain);
+        const domain = cleanText(m?.domain, 80) || domainFromUrl(url);
+        return {
+            type: normalizedType,
+            url,
+            alt: softenCardText(m?.alt || m?.caption || m?.description, 200) || undefined,
+            color: cleanText(m?.color || m?.thumbnailColor, 32) || pick(['#e8f5fd', '#f7f7f7', '#fef3c7', '#fce7f3', '#dcfce7'], `${seed}:media:${idx}`),
+            title: softenCardText(m?.title, 120) || (normalizedType === 'link-card' ? domain : undefined),
+            description: softenCardText(m?.description || m?.summary, 220) || undefined,
+            domain,
+            durationMs: Number.isFinite(Number(m?.durationMs)) ? Number(m.durationMs) : undefined,
+            thumbnailColor: cleanText(m?.thumbnailColor, 32) || undefined,
+        };
+    }).filter((m: TwitterMedia) => m.alt || m.url || m.title || m.description);
+
+    const mediaAlt = softenCardText(item?.mediaAlt, 200);
+    if (mediaAlt) {
+        const type = String(item?.mediaType || '').toLowerCase();
+        media.push({
+            type: type === 'video' || type === 'gif' ? type : 'quote-card',
+            alt: mediaAlt,
+            color: pick(['#e8f5fd', '#f7f7f7', '#fef3c7', '#fce7f3', '#dcfce7'], seed),
+            durationMs: type === 'video' ? 12000 + (hashString(seed) % 110000) : undefined,
+        });
+    }
+
+    const rawUrl = cleanText(item?.linkUrl || item?.url || extractFirstUrl(content), 500);
+    if (rawUrl && !media.some(m => m.type === 'link-card')) {
+        const url = normalizeLinkUrl(rawUrl);
+        const domain = cleanText(item?.linkDomain, 80) || domainFromUrl(url);
+        media.push({
+            type: 'link-card',
+            url,
+            title: softenCardText(item?.linkTitle || item?.title, 120) || domain || '网页链接',
+            description: softenCardText(item?.linkDescription || item?.description, 220) || undefined,
+            domain,
+            color: pick(['#f7f9f9', '#eff6ff', '#f0fdf4', '#fff7ed'], `${seed}:link`),
+        });
+    }
+
+    return media.length ? media.slice(0, 4) : undefined;
+};
+
+const materializePoll = (item: any, seed: string): TwitterPoll | undefined => {
+    const poll = item?.poll;
+    const rawOptions: any[] = Array.isArray(poll?.options) ? poll.options : Array.isArray(item?.pollOptions) ? item.pollOptions : [];
+    const options = rawOptions
+        .slice(0, 4)
+        .map((option: any, idx: number) => ({
+            id: cleanText(option?.id, 40) || `opt-${idx}`,
+            label: cleanText(option?.label || option?.text || option, 80),
+            votes: clampInt(option?.votes, 0, 9999999, 4 + ((hashString(`${seed}:poll:${idx}`) % 80))),
+        }))
+        .filter((o: { label: string }) => o.label);
+    if (options.length < 2) return undefined;
+    return {
+        id: cleanText(poll?.id || item?.pollId, 80) || `poll-${hashString(seed).toString(36)}`,
+        question: cleanText(poll?.question || item?.pollQuestion, 140) || undefined,
+        options,
+        votedOptionId: cleanText(poll?.votedOptionId || item?.votedOptionId, 40) || undefined,
+        closesAt: Number.isFinite(Number(poll?.closesAt || item?.pollClosesAt)) ? Number(poll?.closesAt || item?.pollClosesAt) : Date.now() + (6 + (hashString(seed) % 42)) * 3600000,
+        closed: !!(poll?.closed || item?.pollClosed),
+    };
+};
+
 const salvageObjects = (s: string): any[] => {
     const out: any[] = [];
     let depth = 0, startIdx = -1, inStr = false, esc = false;
@@ -409,7 +542,8 @@ const charBrief = (chars: CharacterProfile[]): string => chars.map(c => {
     const handle = c.socialProfile?.handle || normalizeHandle(c.name);
     const weight = inferCharPostingWeight(c);
     const region = charRegion(c);
-    return `- charId="${c.id}" name="${c.name}" handle="${handle}" postingWeight=${weight} region="${region}" persona="${persona || 'no detailed persona'}"`;
+    const id = getCharacterModelId(c);
+    return `- ${formatCharacterWithId(c)} charId="${id}" name="${c.name}" handle="${handle}" postingWeight=${weight} region="${region}" persona="${persona || 'no detailed persona'}"`;
 }).join('\n');
 
 const languageMeta = [
@@ -435,6 +569,23 @@ const npcPool = [
     { name: 'Camille D.', handle: '@camille_d', language: 'fr', country: 'France', location: 'Paris', bio: 'Translator, gallery wanderer, chronic bookmarker.', interests: ['language exchange', 'bookmarked', 'city life'] },
     { name: '普通网友小满', handle: '@xiaoman_live', language: 'zh-CN', country: '中国', location: '上海', bio: '热衷围观和认真生活。', interests: ['今日碎片', '虚拟社交', '生活切片'] },
 ];
+
+const realLinkPool = [
+    { url: 'https://developer.mozilla.org/', title: 'MDN Web Docs', description: 'Web 平台文档、API 说明和可运行示例。' },
+    { url: 'https://archive.org/', title: 'Internet Archive', description: '可检索网页、书籍、音频和影像的公共档案馆。' },
+    { url: 'https://commons.wikimedia.org/', title: 'Wikimedia Commons', description: '可浏览开放授权图片、声音和媒体文件的资料库。' },
+    { url: 'https://www.metmuseum.org/art/collection', title: 'The Met Collection', description: '大都会艺术博物馆的线上馆藏目录。' },
+    { url: 'https://bandcamp.com/', title: 'Bandcamp', description: '独立音乐人与厂牌发布作品的音乐平台。' },
+    { url: 'https://www.gutenberg.org/', title: 'Project Gutenberg', description: '提供公共领域电子书的数字图书馆。' },
+];
+
+const realLinkForSeed = (seed: string | number) => {
+    const picked = pick(realLinkPool, seed);
+    return { ...picked, domain: domainFromUrl(picked.url) || picked.url.replace(/^https?:\/\//, '') };
+};
+
+const realImageForSeed = (seed: string | number): string =>
+    `https://picsum.photos/seed/moro-twitter-${hashString(String(seed))}/960/640`;
 
 export const defaultTwitterProfile = (user: UserProfile): TwitterProfile => {
     const handle = normalizeHandle(user.name || 'user');
@@ -476,6 +627,10 @@ export const accountFromProfile = (profile: TwitterProfile): TwitterAccount => (
     postingWeight: 1,
     styleTags: ['personal'],
     interests: ['timeline', 'friends'],
+    profileSummary: profile.bio || `${profile.displayName} 的公开主页。`,
+    recentStatus: '正在使用虚拟手机刷时间线',
+    profileTabs: ['posts', 'replies', 'media', 'likes', 'quotes'],
+    lastActiveAt: profile.updatedAt,
     followed: true,
     updatedAt: profile.updatedAt,
 });
@@ -509,7 +664,12 @@ export const accountFromCharacter = (char: CharacterProfile): TwitterAccount => 
         postingWeight: inferCharPostingWeight(char),
         styleTags,
         interests: deriveTopicsFromText(`${char.systemPrompt || ''} ${char.lifeProfile?.content || ''}`, 5),
-        commonContacts: [],
+        commonContacts: [char.relationship?.label, char.currentMood?.label].filter(Boolean) as string[],
+        profileSummary: profileSummaryForChar(char),
+        relationshipHint: relationshipHintForChar(char),
+        recentStatus: recentStatusForChar(char),
+        profileTabs: ['posts', 'replies', 'media', 'likes', 'quotes', 'about'],
+        lastActiveAt: char.currentMood?.updatedAt || Date.now() - (seed % 36) * 3600000,
         followed: true,
         updatedAt: Date.now(),
     };
@@ -540,6 +700,10 @@ const accountFromNpc = (item: any, fallbackSeed: string): TwitterAccount => {
         postingWeight: clampInt(item?.postingWeight, 1, 5, 1),
         styleTags: Array.isArray(item?.styleTags) ? item.styleTags.slice(0, 5).map((x: any) => cleanText(x, 32)).filter(Boolean) : ['npc'],
         interests: Array.isArray(item?.interests) ? item.interests.slice(0, 6).map((x: any) => cleanText(x, 32)).filter(Boolean) : fallback.interests,
+        profileSummary: cleanText(item?.profileSummary || item?.authorBio || item?.bio || fallback.bio, 180),
+        recentStatus: cleanText(item?.recentStatus, 120) || '最近在公开时间线活跃',
+        profileTabs: ['posts', 'replies', 'media', 'likes', 'quotes'],
+        lastActiveAt: Date.now() - (hashString(`${handle}:active`) % 72) * 3600000,
         followed: false,
         generated: true,
         updatedAt: Date.now(),
@@ -618,21 +782,24 @@ ${recent || '(empty)'}
 Quality rules:
 1. Produce at least ${TWITTER_BATCH_SIZE} tweets and at most ${TWITTER_MAX_BATCH_SIZE}.
 2. Do not limit any single character. The same character may post, reply, quote, retweet, or DM-style tease several times.
-3. Mix character posts, international NPCs, replies, quote tweets, long posts, short takes, threads, media placeholders, and cross-language discussion.
+3. Mix character posts, international NPCs, replies, quote tweets, long posts, short takes, threads, real image/link/video/GIF cards, polls, mentions, and cross-language discussion.
 4. Make each tweet concrete: a scene, opinion, conflict, joke, observation, useful detail, or emotional turn. Avoid empty generic "today is nice" filler.
 5. Include non-Chinese content. Use original language for English/Japanese/Korean/Spanish/French posts. Chinese is still allowed.
 6. Every item must include language, country, authorBio, authorLocation, authorVerified when plausible.
 7. sourceIndex may quote a previous item in this same batch. It must point to an earlier array item.
 8. replies may contain 0-6 replies. Reply authors can be repeated characters or NPCs.
+9. Polls should feel like real low-stakes timeline prompts, with 2-4 options. Link cards must include a real public https URL, title, description, and domain.
+10. Image/video/GIF media must include a real public https URL. If you only know the scene description and do not have a URL, put the description in mediaAlt instead of pretending there is an image.
+11. Never put implementation notes in user-facing fields: do not write "placeholder", "local virtual", "mock", "moro.local", or "generated card" in content, media text, link text, or poll text.
 
 Return JSON array only:
-[{"authorType":"character|npc","charId":"optional character id","authorName":"display","authorHandle":"@handle","authorBio":"bio","authorLocation":"city","authorVerified":false,"language":"zh-CN|en|ja|ko|es|fr","country":"country","content":"full tweet","topics":["topic"],"likes":12,"retweets":1,"quotes":0,"views":300,"mediaAlt":"optional image/card description","sourceIndex":0,"quoteNote":"optional","threadId":"optional","threadIndex":0,"qualityTags":["scene","opinion"],"replies":[{"authorType":"character|npc","charId":"optional","authorName":"display","authorHandle":"@handle","language":"en","country":"country","content":"reply","likes":3}]}]`;
+[{"authorType":"character|npc","charId":"optional character id","authorName":"display","authorHandle":"@handle","authorBio":"bio","authorLocation":"city","authorVerified":false,"language":"zh-CN|en|ja|ko|es|fr","country":"country","content":"full tweet","topics":["topic"],"mentions":["@handle"],"likes":12,"retweets":1,"quotes":0,"views":300,"media":[{"type":"image|video|gif|link-card|quote-card","alt":"visual description","title":"link title","description":"link/card summary","domain":"example.com","durationMs":42000}],"mediaAlt":"legacy optional image/card description","poll":{"question":"optional","options":[{"label":"A","votes":12},{"label":"B","votes":9}]},"sourceIndex":0,"quoteNote":"optional","threadId":"optional","threadIndex":0,"threadSize":3,"qualityTags":["scene","opinion"],"replies":[{"authorType":"character|npc","charId":"optional","authorName":"display","authorHandle":"@handle","language":"en","country":"country","content":"reply","likes":3}]}]`;
 };
 
 const findChar = (chars: CharacterProfile[], item: any): CharacterProfile | undefined => {
     const id = String(item?.charId || item?.authorCharId || '').trim();
     const name = String(item?.authorName || item?.name || item?.author || '').trim();
-    return chars.find(c => c.id === id) || chars.find(c => c.name === name);
+    return chars.find(c => getCharacterModelId(c) === id) || chars.find(c => c.name === name);
 };
 
 const materializeAccountForItem = (item: any, chars: CharacterProfile[], user: UserProfile, fallbackSeed: string): TwitterAccount => {
@@ -689,6 +856,11 @@ export const materializeTwitterTweets = (
         const topics = Array.isArray(item?.topics)
             ? item.topics.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').trim().slice(0, 32)).filter(Boolean)
             : deriveTopicsFromText(content, 4);
+        const media = materializeMedia(item, `${i}:${content}`, content);
+        const poll = materializePoll(item, `${i}:${content}`);
+        const mentions = Array.isArray(item?.mentions)
+            ? item.mentions.slice(0, 8).map((m: any) => normalizeHandle(String(m || '').replace(/^@/, ''))).filter(Boolean)
+            : extractMentions(content);
         out.push({
             id: uid(),
             accountId,
@@ -706,9 +878,11 @@ export const materializeTwitterTweets = (
             country,
             location: cleanText(item?.location || account.location, 80) || undefined,
             topics,
-            media: item?.mediaAlt ? [{ type: 'quote-card', alt: cleanText(item.mediaAlt, 160), color: pick(['#e8f5fd', '#f7f7f7', '#fef3c7', '#fce7f3', '#dcfce7'], `${i}${content}`) }] : undefined,
+            media,
+            poll,
+            mentions,
             replies,
-            replyCount: Math.max(replies.length, clampInt(item?.replyCount ?? item?.repliesCount, replies.length, 999999, replies.length)),
+            replyCount: replies.length,
             retweets: clampInt(item?.retweets, 0, 999999, Math.floor(Math.random() * 50)),
             quotes: clampInt(item?.quotes, 0, 999999, Math.floor(Math.random() * 12)),
             likes: clampInt(item?.likes, 0, 9999999, Math.floor(Math.random() * 300)),
@@ -726,6 +900,8 @@ export const materializeTwitterTweets = (
             quoteNote: cleanText(item?.quoteNote, 260) || undefined,
             threadId: cleanText(item?.threadId, 80) || undefined,
             threadIndex: Number.isFinite(Number(item?.threadIndex)) ? Number(item.threadIndex) : undefined,
+            threadSize: Number.isFinite(Number(item?.threadSize)) ? Math.max(1, Number(item.threadSize)) : undefined,
+            visibility: ['public', 'followers', 'circle'].includes(String(item?.visibility)) ? item.visibility : 'public',
             qualityTags: Array.isArray(item?.qualityTags) ? item.qualityTags.slice(0, 6).map((x: any) => cleanText(x, 24)).filter(Boolean) : undefined,
             generated: true,
         });
@@ -742,7 +918,7 @@ const fallbackLines = [
     { language: 'fr', country: 'France', text: 'Une bonne timeline ressemble a un cafe: des voix differentes, des silences, une phrase qui traverse la table et reste avec vous toute la journee.', topics: ['coffee break', 'global chatter'] },
 ];
 
-export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], user?: UserProfile, count = TWITTER_BATCH_SIZE): TwitterTweet[] => {
+export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], _user?: UserProfile, count = TWITTER_BATCH_SIZE): TwitterTweet[] => {
     const now = Date.now();
     const target = Math.max(count, TWITTER_MIN_BATCH_SIZE);
     return Array.from({ length: target }).map((_, i) => {
@@ -760,6 +936,29 @@ export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], user?: Use
         const account = char ? accountFromCharacter(char) : accountFromNpc(npc, String(i));
         const authorName = char?.name || account.displayName;
         const authorHandle = char ? normalizeHandle(char.name, char.socialProfile?.handle) : account.handle;
+        const link = realLinkForSeed(`${i}:${authorName}:${line.text}`);
+        const media: TwitterMedia[] | undefined = i % 7 === 0
+            ? [{
+                type: 'link-card',
+                url: link.url,
+                title: link.title,
+                description: link.description,
+                domain: link.domain,
+                color: pick(['#f7f9f9', '#eff6ff', '#f0fdf4'], i),
+            }]
+            : i % 5 === 0
+                ? [{ type: 'image', url: realImageForSeed(`${i}:${authorName}:${line.text}`), alt: '深夜时间线上几句不同语言的短句叠在一起。', color: '#f7f9f9' }]
+                : undefined;
+        const poll: TwitterPoll | undefined = i % 6 === 2 ? {
+            id: `fallback-poll-${i}-${now}`,
+            question: '今天时间线更像什么？',
+            options: [
+                { id: 'light', label: '路灯', votes: 18 + i },
+                { id: 'window', label: '亮着的窗', votes: 11 + i },
+                { id: 'rain', label: '下雨前的街', votes: 7 + i },
+            ],
+            closesAt: now + (12 + i) * 3600000,
+        } : undefined;
         return {
             id: uid(),
             accountId: char ? twitterAccountIdFor('character', char.id) : twitterAccountIdFor('npc', authorHandle),
@@ -777,14 +976,18 @@ export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], user?: Use
             country: line.country,
             location: account.location,
             topics: line.topics,
-            media: i % 5 === 0 ? [{ type: 'quote-card', alt: '一张时间线截图占位：几条不同语言的短句叠在一起。', color: pick(['#f7f9f9', '#e8f5fd', '#fef3c7'], i) }] : undefined,
+            media,
+            poll,
+            mentions: [],
             replies: [],
-            replyCount: i % 4,
+            replyCount: 0,
             retweets: i * 2,
             quotes: i % 3,
             likes: 12 + i * 17,
             views: 500 + i * 311,
             createdAt: now - i * 300000,
+            visibility: 'public',
+            threadSize: i % 4 === 0 ? 2 : undefined,
             qualityTags: ['fallback', 'complete'],
             generated: false,
         } as TwitterTweet;
@@ -855,7 +1058,10 @@ export const searchTwitter = (
             || t.authorHandle.toLowerCase().includes(q)
             || (t.language || '').toLowerCase().includes(q)
             || (t.country || '').toLowerCase().includes(q)
-            || t.topics.some(topic => topic.toLowerCase().includes(q));
+            || t.topics.some(topic => topic.toLowerCase().includes(q))
+            || (t.mentions || []).some(m => m.toLowerCase().includes(q))
+            || (t.media || []).some(m => [m.alt, m.title, m.description, m.domain].some(x => (x || '').toLowerCase().includes(q)))
+            || (t.poll?.options || []).some(o => o.label.toLowerCase().includes(q));
     };
     const matchedTweets = tweets.filter(matchTweet);
     const top = [...matchedTweets].sort((a, b) => (b.likes + b.retweets * 2 + b.replyCount * 3) - (a.likes + a.retweets * 2 + a.replyCount * 3));
@@ -868,6 +1074,8 @@ export const searchTwitter = (
             || (a.bio || '').toLowerCase().includes(q)
             || (a.location || '').toLowerCase().includes(q)
             || (a.country || '').toLowerCase().includes(q)
+            || (a.profileSummary || '').toLowerCase().includes(q)
+            || (a.relationshipHint || '').toLowerCase().includes(q)
             || (a.interests || []).some(x => x.toLowerCase().includes(q));
     });
     return { top, latest, media, people };
@@ -930,8 +1138,16 @@ export const readTwitterContextSummary = (charId?: string, limit = 5): string =>
     } catch { return ''; }
 };
 
-export const createUserTweet = (content: string, user: UserProfile, source?: TwitterTweet, quoteNote?: string, profile?: TwitterProfile | null): TwitterTweet => {
+export const createUserTweet = (
+    content: string,
+    user: UserProfile,
+    source?: TwitterTweet,
+    quoteNote?: string,
+    profile?: TwitterProfile | null,
+    extras: Partial<Pick<TwitterTweet, 'media' | 'poll' | 'visibility'>> = {},
+): TwitterTweet => {
     const p = profile || defaultTwitterProfile(user);
+    const clean = cleanText(content, 1600);
     return {
         id: uid(),
         accountId: twitterAccountIdFor('user', p.handle),
@@ -942,11 +1158,14 @@ export const createUserTweet = (content: string, user: UserProfile, source?: Twi
         authorBio: p.bio,
         authorLocation: p.location,
         authorFollowers: p.followers,
-        content: cleanText(content, 1600),
+        content: clean,
         language: p.language || 'zh-CN',
         country: p.country || '中国',
         location: p.location,
         topics: Array.from(new Set((content.match(/#[\p{L}\p{N}_-]+/gu) || []).map(t => t.replace(/^#/, '').slice(0, 32)))),
+        media: extras.media,
+        poll: extras.poll,
+        mentions: extractMentions(clean),
         replies: [],
         replyCount: 0,
         retweets: 0,
@@ -957,10 +1176,11 @@ export const createUserTweet = (content: string, user: UserProfile, source?: Twi
         sourceTweetId: source?.id,
         sourceTweet: source ? { id: source.id, accountId: source.accountId, authorName: source.authorName, authorHandle: source.authorHandle, content: source.content, language: source.language } : undefined,
         quoteNote,
+        visibility: extras.visibility || 'public',
     };
 };
 
-export const createTwitterReply = (tweet: TwitterTweet, content: string, user: UserProfile, profile?: TwitterProfile | null): TwitterReply => {
+export const createTwitterReply = (_tweet: TwitterTweet, content: string, user: UserProfile, profile?: TwitterProfile | null): TwitterReply => {
     const p = profile || defaultTwitterProfile(user);
     return {
         id: uid(),
@@ -1020,7 +1240,7 @@ export const generateTwitterReactions = async (
     const raw = await callLlm(
         apiConfig,
         sys,
-        `Characters:\n${charBrief(chars)}\n\nUser tweet:\n${tweet.content}\n\nGenerate 5-12 interactions. action is reply|like|retweet|quote. reply/quote need content. Use persona-specific reactions and some international NPCs. Format: [{"action":"reply","authorType":"character|npc","charId":"optional","authorName":"name","authorHandle":"@x","language":"zh-CN","country":"country","content":"..."}]`,
+        `Characters:\n${charBrief(chars)}\n\nUser tweet:\n${tweet.content}\n\nGenerate 5-12 interactions. action is reply|like|retweet|quote|mention|follow. reply/quote/mention need content. Use persona-specific reactions and some international NPCs. Format: [{"action":"reply","authorType":"character|npc","charId":"optional","authorName":"name","authorHandle":"@x","language":"zh-CN","country":"country","content":"..."}]`,
         4000,
     );
     return materializeTwitterReactions(parseTwitterJsonLoose(raw), tweet, chars);
@@ -1076,6 +1296,10 @@ export const materializeTwitterReactions = (
         } else if (action === 'quote') {
             quoteDelta++;
             notifications.push({ ...baseNotif, kind: 'quote', snippet: cleanText(item?.content, 160) || '引用了你的推文' });
+        } else if (action === 'mention') {
+            notifications.push({ ...baseNotif, kind: 'mention', snippet: cleanText(item?.content, 160) || '在时间线上提到了你' });
+        } else if (action === 'follow') {
+            notifications.push({ ...baseNotif, tweetId: '', kind: 'follow', snippet: '关注了你' });
         } else {
             likeDelta++;
             notifications.push({ ...baseNotif, kind: 'like', snippet: '喜欢了你的推文' });

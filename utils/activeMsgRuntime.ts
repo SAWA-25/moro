@@ -364,7 +364,7 @@ async function logInstantPushLlmExchange(message: ActiveMsg2InboxMessage): Promi
  *   - 不管在线/离线, eval 最终用 useChatAI 内 buildChatRequestPayload 的 full ctx 跑 — 不再 degraded.
  */
 async function runPushTailPipeline(
-  message: ActiveMsg2InboxMessage,
+  _message: ActiveMsg2InboxMessage,
   char: import('../types').CharacterProfile,
   userProfile: UserProfile,
 ): Promise<void> {

@@ -863,7 +863,7 @@ export function notifyTakeoutUpdated(): void {
 }
 
 /** 进行中的订单（备餐 / 配送 / 待收货），按最快送达排序——灵动岛 Live Activity 用。 */
-export function pickActiveOrders(orders: TakeoutOrder[], now = Date.now()): TakeoutOrder[] {
+export function pickActiveOrders(orders: TakeoutOrder[], _now = Date.now()): TakeoutOrder[] {
     return orders
         .filter(o => o.status !== 'cancelled' && !o.deliveredAt)
         .sort((a, b) => a.etaAt - b.etaAt);

@@ -1,12 +1,12 @@
 /**
- * 「彼方」会话运行器 —— 一次自主登入的完整闭环。
+ * 「页外」会话运行器 —— 一次自主登入的完整闭环。
  *
  * 触发某角色后：
  *   1. 在"有意义的已实装房间"里随机 roll 一个（图书馆永远可选；听歌房当角色
  *      有音乐人格、或房里正放着歌时可选）—— 每次只进一个房间、只做一件事，
  *      天然避免不同玩法的提示词互相打架。
  *   2. 取角色既有人设/向量记忆/最近 contextLimit 上下文（buildChatRequestPayload），
- *      叠加「彼方」世界观 + 该房间现场（user turn）。
+ *      叠加「页外」世界观 + 该房间现场（user turn）。
  *   3. 调一次 LLM（per-char API 覆盖 → 回落全局）。
  *   4. 解析输出，做房间各自的副作用（图书馆：落批注/推书签；听歌房：点歌进队列/
  *      乐评/推进循环队列），更新 vrState。
@@ -136,7 +136,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
 
     if (running.has(char.id)) return { ok: false, reason: 'busy' };
 
-    // API 优先级：角色自带覆盖 > 彼方独立 API > 聊天默认
+    // API 优先级：角色自带覆盖 > 页外独立 API > 聊天默认
     const vrGlobalApi = await getVRApi();
     const vrApi = char.vrState?.api?.baseUrl ? char.vrState.api : (vrGlobalApi?.baseUrl ? vrGlobalApi : apiConfig);
     if (!vrApi.baseUrl) return { ok: false, reason: 'no-api' };
@@ -161,7 +161,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         const contextLimit = char.contextLimit || 500;
         const historyMsgs = await DB.getRecentMessagesByCharId(char.id, contextLimit);
 
-        // 在某房间的在场玩家名（含自己；用户本人接入彼方且挂在该房间时也算在场）
+        // 在某房间的在场玩家名（含自己；用户本人接入页外且挂在该房间时也算在场）
         const occupantsOf = (rid: VRRoomId) => {
             const ns = characters.filter(c => c.vrState?.enabled && c.vrState.currentRoom === rid).map(c => c.name);
             if (!ns.includes(char.name)) ns.push(char.name);

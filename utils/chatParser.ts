@@ -1,7 +1,7 @@
 
 import { DB } from './db';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { CharacterProfile, CharPlaylistSong } from '../types';
+import { CharPlaylistSong } from '../types';
 import { sanitizeForBubble } from './sanitize';
 
 export interface MusicActionSnapshot {

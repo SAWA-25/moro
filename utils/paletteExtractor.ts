@@ -15,7 +15,7 @@
  * @returns hex 颜色数组
  */
 export function extractPalette(imageData: ImageData, colorCount: number): string[] {
-  const { data, width, height } = imageData;
+  const { data } = imageData;
   const pixels: [number, number, number][] = [];
 
   // 收集所有非透明像素

@@ -19,7 +19,7 @@ import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
-import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
+import type { MusicCfg, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
 import { renderMesExampleBlock } from './context';
 import { WorldbookRuntime } from './worldbookRuntime';
@@ -41,6 +41,7 @@ import {
     notifyXunjiReports,
     shouldAutoAdvanceXunji,
 } from './xunji';
+import { buildRelationshipNetworkContextBlock } from './relationshipNetwork';
 
 export interface UserListeningContext {
     songName: string;
@@ -65,7 +66,7 @@ export interface BuildChatPayloadInput {
     contextLimit: number;
     /**
      * 额外的记忆召回提示词（拼进向量/BM25 检索的 context query）。
-     * 用途：彼方等场景下，把"此刻在场的其他玩家名字 / 房间上下文"塞进召回 query，
+     * 用途：页外等场景下，把"此刻在场的其他玩家名字 / 房间上下文"塞进召回 query，
      * 让角色能回忆起自己跟对面这些人的关系，而不是只按聊天历史召回。
      */
     recallQueryHint?: string;
@@ -179,10 +180,11 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         realtimeConfig, innerState,
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap,
     } = input;
-    const recentMsgsHint = input.recentMsgsHint ?? historyMsgs;
+    const contextHistoryMsgs = historyMsgs.filter(m => !m.metadata?.excludeFromContext);
+    const recentMsgsHint = (input.recentMsgsHint ?? contextHistoryMsgs).filter(m => !m.metadata?.excludeFromContext);
 
     if (isPromptBuildSkipped()) {
-        const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, userProfile, emojis);
+        const { apiMessages } = ChatPrompts.buildMessageHistory(contextHistoryMsgs, contextLimit, char, userProfile, emojis);
         const cleanedApiMessages = cleanApiMessages(apiMessages);
         console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
         return {
@@ -249,7 +251,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 
     // 关键词扫描上下文（ST 世界书绿灯条目移植）：喂入最近消息文本，
     // activation='keyword' 的条目在本次构建中按命中结果决定是否注入。
-    const scanTexts = historyMsgs
+    const scanTexts = contextHistoryMsgs
         .slice(-20)
         .map(m => (typeof (m as any).content === 'string' ? (m as any).content as string : ''))
         .filter(Boolean);
@@ -343,6 +345,13 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         console.warn('[Xunji] chat context injection skipped:', error);
     }
 
+    try {
+        const relationshipBlock = await buildRelationshipNetworkContextBlock(char.id, [char]);
+        if (relationshipBlock) systemPrompt += `\n\n${relationshipBlock}`;
+    } catch (error) {
+        console.warn('[RelationshipNetwork] chat context injection skipped:', error);
+    }
+
     // ── 4. 双语指令注入 ───────────────────────────────────
     const bilingualActive = !!(translationConfig?.enabled && translationConfig.sourceLang && translationConfig.targetLang);
     if (bilingualActive && translationConfig) {
@@ -401,7 +410,7 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
     }
 
     // ── 7. 历史消息构造 ───────────────────────────────────
-    const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, effectiveUser, emojis);
+    const { apiMessages } = ChatPrompts.buildMessageHistory(contextHistoryMsgs, contextLimit, char, effectiveUser, emojis);
 
     // ── 8. 剥离历史里旧的双语标签 ─────────────────────────
     const cleanedApiMessages = cleanApiMessages(apiMessages);
@@ -490,9 +499,9 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
     // 消息的语言。放在双语 reminder 之后 → thinking 语言指令成为整条流的最后一句。
     if (thinkingActive) {
         let lastUserText = '';
-        for (let i = historyMsgs.length - 1; i >= 0; i--) {
-            if (historyMsgs[i]?.role !== 'user') continue;
-            const t = (historyMsgs[i].content || '').replace(/<[^>]+>/g, '').trim();
+        for (let i = contextHistoryMsgs.length - 1; i >= 0; i--) {
+            if (contextHistoryMsgs[i]?.role !== 'user') continue;
+            const t = (contextHistoryMsgs[i].content || '').replace(/<[^>]+>/g, '').trim();
             if (t) { lastUserText = t; break; }
         }
         const hanCount = (lastUserText.match(/[一-鿿㐀-䶿豈-﫿]/g) || []).length;

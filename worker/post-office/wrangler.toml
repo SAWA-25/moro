@@ -2,7 +2,7 @@ name = "moro-post-office"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
-# 彼方虚拟邮局 —— 跨用户漂流信的共享后端。
+# 页外虚拟邮局 —— 跨用户漂流信的共享后端。
 #
 # 这是一个【所有用户共用】的后端：客户端默认指向你部署的这一个实例
 # （如 https://noir2.cc.cd/po），其他用户无需任何配置即可互相通信。

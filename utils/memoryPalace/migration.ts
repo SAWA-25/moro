@@ -18,10 +18,9 @@ import { safeFetchJson } from '../safeApi';
 import { safeParseJsonArray } from './jsonUtils';
 import {
     buildRelatedMemoriesBlock, buildRelatedToRule, buildRelatedToFormatHint,
-    parseRelatedToAndHints,
 } from './extraction';
 import type { RelatedMemoryRef, EventBoxHint } from './extraction';
-import { fetchRelatedMemoriesForExtraction, splitLogsToBullets, sampleSnippetsFromMessages } from './relatedMemories';
+import { fetchRelatedMemoriesForExtraction, splitLogsToBullets } from './relatedMemories';
 import { bindMemoriesIntoEventBox } from './eventBox';
 import { maybeCompressEventBoxes } from './eventBoxCompression';
 
@@ -322,7 +321,7 @@ export async function migrateOldMemories(
     charId: string,
     charName: string,
     memories: MemoryFragment[],
-    refinedMemories: Record<string, string> | undefined,
+    _refinedMemories: Record<string, string> | undefined,
     llmConfig: LightLLMConfig,
     embeddingConfig: EmbeddingConfig,
     onProgress?: (p: MigrationProgress) => void,
@@ -342,8 +341,6 @@ export async function migrateOldMemories(
         .sort((a, b) => a[0].localeCompare(b[0]));
 
     // 2. 每月拆成上旬/中旬/下旬 3 个分块
-    const allNodes: MemoryNode[] = [];
-
     const chunks: { key: string; logs: MemoryFragment[] }[] = [];
     for (const [monthKey, dailyLogs] of months) {
         const parts = splitMonthToThirds(monthKey, dailyLogs);

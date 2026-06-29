@@ -10,7 +10,6 @@ import {
   probeInstantWorkerCapabilities,
   probeInstantWorkerVersion,
   copyInstantWorkerBundleToClipboard,
-  buildCloudflareDashboardUrl,
   normalizeWorkerUrl,
 } from '../../utils/instantPushClient';
 import { isPushVapidReady } from '../../utils/pushVapid';

@@ -5,7 +5,7 @@
  * 人格风格影响不同关联类型的权重。
  */
 
-import type { MemoryNode, PersonalityStyle, ScoredMemory } from './types';
+import type { PersonalityStyle, ScoredMemory } from './types';
 import { PERSONALITY_WEIGHTS } from './types';
 import { MemoryNodeDB, MemoryLinkDB } from './db';
 
@@ -26,7 +26,7 @@ const ACTIVATION_DECAY = 0.3;
  */
 export async function spreadActivation(
     seeds: ScoredMemory[],
-    charId: string,
+    _charId: string,
     style: PersonalityStyle = 'emotional',
     maxExpand: number = 3,
 ): Promise<ScoredMemory[]> {

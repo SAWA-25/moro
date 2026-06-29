@@ -2,9 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
     targetFloorCount, parseThreads, materializeThreads, fallbackThreads,
     parseForumReplies, materializeReplies, buildThreadsPrompt, FORUM_BOARDS,
-    levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, dayStr, isCheckedIn,
+    levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, isCheckedIn,
     checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp, boardStat,
     makeNotif, unreadCount, hotRank, userLikesReceived, votePoll, pollTotal,
+    normalizeForumState, normalizeForumMeta, fallbackTopicEvent, ensureForumTopic,
+    materializeCharReply, filterForumPosts, upsertForumDraft, removeForumDraft, touchRecentPost,
+    loadForumTrendPack, normalizeForumTrendItems, defaultForumTrendPack, FORUM_TRENDS_KEY, FORUM_TRENDS_COOLDOWN_MS,
+    buildForumPostShareSnapshot, buildForumSharePendingPayload, normalizeForumSharePendingPayload,
+    type ForumTrendPack,
     type RawReply, type ForumReply, type ForumPost, type ForumPoll,
 } from './forum';
 
@@ -107,6 +112,85 @@ describe('fallbackThreads', () => {
     it('未知板块回退到水区池', () => {
         expect(fallbackThreads('nope', 3).length).toBe(3);
     });
+    it('有趋势素材时生成不重复标题与更具体正文', () => {
+        const ts = fallbackThreads('chat', 6, undefined, [{ title: '网友说这届打工人太抽象', source: '测试热榜', tags: ['打工人'] }]);
+        expect(new Set(ts.map(t => t.title)).size).toBe(ts.length);
+        expect(ts.some(t => t.title.includes('网友说这届打工人太抽象'))).toBe(true);
+        expect(ts.every(t => t.body.length > 30)).toBe(true);
+    });
+    it('话题兜底会结合趋势素材生成不同角度', () => {
+        const topic = fallbackTopicEvent('gossip', '2026-06-30');
+        const ts = fallbackThreads('gossip', 4, topic, [{ title: '后续比正片还离谱', source: '测试热榜' }]);
+        expect(ts.length).toBe(4);
+        expect(new Set(ts.map(t => t.title)).size).toBeGreaterThan(1);
+        expect(ts.some(t => t.body.includes('后续比正片还离谱'))).toBe(true);
+    });
+});
+
+describe('ForumTrendPack', () => {
+    const makeStorage = (initial?: Record<string, string>) => {
+        const data = new Map(Object.entries(initial || {}));
+        return {
+            getItem: (key: string) => data.get(key) || null,
+            setItem: (key: string, value: string) => { data.set(key, value); },
+            dump: () => data,
+        };
+    };
+
+    it('trend items 会去重、过滤空标题并限制数量', () => {
+        const items = normalizeForumTrendItems([
+            { title: ' 热梗 A ', source: 's' },
+            { title: '热梗A', source: 's2' },
+            { title: '', source: 'bad' },
+            { title: '热梗 B', source: 's' },
+        ], 2);
+        expect(items.map(x => x.title)).toEqual(['热梗 A', '热梗 B']);
+    });
+
+    it('缓存未过期时不请求远端', async () => {
+        const now = 1000;
+        const cached: ForumTrendPack = { items: [{ title: '缓存热梗', source: 'cache' }], fetchedAt: now, expiresAt: now + FORUM_TRENDS_COOLDOWN_MS };
+        const storage = makeStorage({ [FORUM_TRENDS_KEY]: JSON.stringify(cached) });
+        let calls = 0;
+        const pack = await loadForumTrendPack({
+            now,
+            storage,
+            fetcher: async () => { calls++; return new Response('{}'); },
+        });
+        expect(calls).toBe(0);
+        expect(pack.items[0].title).toBe('缓存热梗');
+    });
+
+    it('缓存过期时请求远端并写入本地缓存', async () => {
+        const now = 10_000;
+        const storage = makeStorage();
+        const pack = await loadForumTrendPack({
+            now,
+            storage,
+            fetcher: async () => new Response(JSON.stringify({ items: [{ title: '远端热梗', source: 'worker' }], fetchedAt: now - 1, expiresAt: now + 1 })),
+        });
+        expect(pack.items[0].title).toBe('远端热梗');
+        expect(pack.expiresAt).toBe(now + FORUM_TRENDS_COOLDOWN_MS);
+        expect(JSON.parse(storage.dump().get(FORUM_TRENDS_KEY)!).items[0].title).toBe('远端热梗');
+    });
+
+    it('远端失败时回退到旧缓存或本地梗库', async () => {
+        const expired: ForumTrendPack = { items: [{ title: '旧缓存热梗', source: 'cache' }], fetchedAt: 1, expiresAt: 2 };
+        const storage = makeStorage({ [FORUM_TRENDS_KEY]: JSON.stringify(expired) });
+        const pack = await loadForumTrendPack({
+            now: 10_000,
+            storage,
+            fetcher: async () => { throw new Error('offline'); },
+        });
+        expect(pack.items[0].title).toBe('旧缓存热梗');
+
+        const local = await loadForumTrendPack({
+            now: 10_000,
+            storage: makeStorage(),
+            fetcher: async () => { throw new Error('offline'); },
+        });
+        expect(local.items.length).toBe(defaultForumTrendPack(10_000).items.length);
+    });
 });
 
 describe('parseForumReplies', () => {
@@ -158,12 +242,159 @@ describe('materializeReplies', () => {
     });
 });
 
+describe('normalizeForumState / participants', () => {
+    it('旧状态归一化后补齐安全字段，不丢旧帖', () => {
+        const old = { posts: [{ id: 'p1', boardId: 'chat', authorType: 'npc', authorName: '甲', title: '旧帖', body: '旧正文', createdAt: 1, lastActiveAt: 2, likes: 3 }] };
+        const s = normalizeForumState(old);
+        expect(s.posts).toHaveLength(1);
+        expect(s.posts[0].replies).toEqual([]);
+        expect(s.posts[0].tags).toEqual([]);
+        expect(s.posts[0].participants?.[0].name).toBe('甲');
+    });
+
+    it('角色单条回复落成后写入 participants', () => {
+        const base = mkPost({ id: 'p2', authorType: 'user', authorName: '我' });
+        const { post, reply } = materializeCharReply(base, { name: '林夏', body: '我接一句' }, { id: 'c1', name: '林夏', avatar: 'a.png' });
+        expect(reply.authorType).toBe('char');
+        expect(post.replies).toHaveLength(1);
+        expect(post.participants?.some(p => p.type === 'char' && p.id === 'c1')).toBe(true);
+    });
+});
+
+describe('forum chat share helpers', () => {
+    it('buildForumPostShareSnapshot truncates long body and reply previews with complete fields', () => {
+        const post = mkPost({
+            id: 'post-share-1',
+            boardId: 'gossip',
+            authorType: 'char',
+            authorId: 'c1',
+            authorName: '林夏',
+            title: '一个很像真论坛的帖子标题',
+            body: '正文'.repeat(400),
+            likes: 88,
+            replyCount: 260,
+            tags: ['热梗', '好贴', '蹲后续', '很长很长很长很长很长的标签'],
+            replies: [
+                { id: 'r1', floor: 2, authorType: 'npc', authorName: '路人甲', body: '短回复', createdAt: 1, likes: 2 },
+                { id: 'r2', floor: 3, authorType: 'char', authorName: '沈星', body: '长回复'.repeat(120), createdAt: 2, likes: 3 },
+            ],
+        });
+        const snap = buildForumPostShareSnapshot(post, { boardName: '吃瓜', bodyLimit: 80, replyBodyLimit: 30, now: 123 });
+        expect(snap.postId).toBe('post-share-1');
+        expect(snap.boardName).toBe('吃瓜');
+        expect(snap.author.name).toBe('林夏');
+        expect(snap.stats.likes).toBe(88);
+        expect(snap.stats.floors).toBe(260);
+        expect(snap.body.length).toBeLessThanOrEqual(80);
+        expect(snap.repliesPreview).toHaveLength(2);
+        expect(snap.repliesPreview[1].body.length).toBeLessThanOrEqual(30);
+        expect(snap.tags.length).toBeGreaterThan(0);
+        expect(snap.sharedAt).toBe(123);
+    });
+
+    it('normalizes private pending payload and rejects invalid char or post ids', () => {
+        const post = mkPost({ id: 'p-valid', title: '分享帖', body: '正文' });
+        const payload = buildForumSharePendingPayload({
+            post,
+            targetKind: 'character',
+            targetId: 'c1',
+            shareMode: 'char_to_user',
+            sharedBy: { type: 'char', id: 'c1', name: '林夏' },
+            now: 1000,
+        });
+        const ok = normalizeForumSharePendingPayload(payload, { validCharIds: ['c1'] });
+        expect(ok?.targetKind).toBe('character');
+        expect(ok?.charId).toBe('c1');
+        expect(ok?.shareMode).toBe('char_to_user');
+        expect(ok?.snapshot.postId).toBe('p-valid');
+
+        expect(normalizeForumSharePendingPayload({ ...payload, targetId: 'missing', charId: 'missing' }, { validCharIds: ['c1'] })).toBeNull();
+        expect(normalizeForumSharePendingPayload({ ...payload, snapshot: { ...payload.snapshot, postId: '' } }, { validCharIds: ['c1'] })).toBeNull();
+    });
+
+    it('normalizes group pending payload and preserves group share modes', () => {
+        const post = mkPost({ id: 'p-group', title: '群聊分享帖', body: '正文' });
+        const userPayload = buildForumSharePendingPayload({
+            post,
+            targetKind: 'group',
+            targetId: 'g1',
+            shareMode: 'user_to_group',
+            sharedBy: { type: 'user', name: '我' },
+            now: 2000,
+        });
+        const userOk = normalizeForumSharePendingPayload(userPayload, { validGroupIds: ['g1'] });
+        expect(userOk?.targetKind).toBe('group');
+        expect(userOk?.groupId).toBe('g1');
+        expect(userOk?.shareMode).toBe('user_to_group');
+
+        const charPayload = buildForumSharePendingPayload({
+            post,
+            targetKind: 'group',
+            targetId: 'g1',
+            charId: 'c2',
+            shareMode: 'char_to_group',
+            sharedBy: { type: 'char', id: 'c2', name: '沈星' },
+            now: 2001,
+        });
+        const charOk = normalizeForumSharePendingPayload(charPayload, { validCharIds: ['c2'], validGroupIds: ['g1'] });
+        expect(charOk?.charId).toBe('c2');
+        expect(charOk?.shareMode).toBe('char_to_group');
+        expect(normalizeForumSharePendingPayload(charPayload, { validCharIds: ['c3'], validGroupIds: ['g1'] })).toBeNull();
+        expect(normalizeForumSharePendingPayload(charPayload, { validCharIds: ['c2'], validGroupIds: ['g2'] })).toBeNull();
+    });
+});
+
 describe('buildThreadsPrompt', () => {
     it('包含板块名与「一次性生成 N 个」指令', () => {
         const { system, user } = buildThreadsPrompt(FORUM_BOARDS[0], [{ id: 'c1', name: '林夏' }], 12);
         expect(system).toContain(FORUM_BOARDS[0].name);
         expect(user).toContain('12');
         expect(user).toContain('floors');
+    });
+    it('带今日风向时写入主题要求', () => {
+        const topic = fallbackTopicEvent('chat', '2026-06-30');
+        const { user } = buildThreadsPrompt(FORUM_BOARDS[0], [], 6, topic);
+        expect(user).toContain(topic.title);
+        expect(user).toContain('不同人物、场景或立场');
+    });
+    it('带趋势素材时写入热梗与混合帖型要求', () => {
+        const { system, user } = buildThreadsPrompt(FORUM_BOARDS[0], [], 6, undefined, {
+            items: [{ title: '这届网友太会整活', source: '测试热榜', tags: ['整活'] }],
+            fetchedAt: 1,
+            expiresAt: 2,
+        });
+        expect(system).toContain('热梗短帖');
+        expect(user).toContain('这届网友太会整活');
+        expect(user).toContain('混合帖型');
+        expect(user).toContain('不要复刻真实事件细节');
+    });
+});
+
+describe('ForumTopicEvent', () => {
+    it('兜底今日风向稳定且字段完整', () => {
+        const a = fallbackTopicEvent('gossip', '2026-06-30');
+        const b = fallbackTopicEvent('gossip', '2026-06-30');
+        expect(a.title).toBe(b.title);
+        expect(a.boardId).toBe('gossip');
+        expect(a.heat).toBeGreaterThan(0);
+        expect(a.tags.length).toBeGreaterThan(0);
+    });
+    it('ensureForumTopic 会写入 meta，旧 meta 也能兼容', () => {
+        const { meta, event } = ensureForumTopic({ exp: 1, followedBoards: [], collectedPostIds: [], checkIn: {} }, 'emo', '2026-06-30');
+        expect(meta.topicEvents?.['2026-06-30:emo']).toEqual(event);
+    });
+    it('ensureForumTopic 命中已有话题时也返回归一化 meta', () => {
+        const event = fallbackTopicEvent('chat', '2026-06-30');
+        const { meta } = ensureForumTopic({
+            exp: 1,
+            followedBoards: [],
+            collectedPostIds: [],
+            checkIn: {},
+            topicEvents: { '2026-06-30:chat': event },
+        }, 'chat', '2026-06-30');
+        expect(meta.drafts).toEqual([]);
+        expect(meta.recentPostIds).toEqual([]);
+        expect(meta.topicEvents?.['2026-06-30:chat']).toEqual(event);
     });
 });
 
@@ -244,6 +475,48 @@ describe('toggleFollowBoard / toggleCollect', () => {
         expect(m.collectedPostIds).toContain('p1');
         m = toggleCollect(m, 'p1');
         expect(m.collectedPostIds).not.toContain('p1');
+    });
+});
+
+describe('forum meta helpers', () => {
+    it('旧 meta 归一化后补齐新字段', () => {
+        const m = normalizeForumMeta({ exp: 3, followedBoards: ['chat', 'bad'], collectedPostIds: ['p1'], checkIn: {} });
+        expect(m.followedBoards).toEqual(['chat']);
+        expect(m.recentPostIds).toEqual([]);
+        expect(m.drafts).toEqual([]);
+        expect(m.topicEvents).toEqual({});
+    });
+
+    it('草稿保存、覆盖、删除', () => {
+        let m = defaultForumMeta();
+        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '标题', body: '', pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 1 });
+        expect(m.drafts?.[0].title).toBe('标题');
+        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '新标题', body: '正文', pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 2 });
+        expect(m.drafts).toHaveLength(1);
+        expect(m.drafts?.[0].title).toBe('新标题');
+        m = removeForumDraft(m, 'd1');
+        expect(m.drafts).toEqual([]);
+    });
+
+    it('最近看过去重且最新在前', () => {
+        let m = defaultForumMeta();
+        m = touchRecentPost(m, 'p1');
+        m = touchRecentPost(m, 'p2');
+        m = touchRecentPost(m, 'p1');
+        expect(m.recentPostIds).toEqual(['p1', 'p2']);
+    });
+});
+
+describe('filterForumPosts', () => {
+    it('支持我参与 / 角色参与 / 收藏 / 最近看过筛选', () => {
+        const mine = mkPost({ id: 'mine', authorType: 'user', authorName: '我' });
+        const char = mkPost({ id: 'char', authorType: 'npc', participants: [{ type: 'char', id: 'c1', name: '林夏', lastAt: 1, count: 1 }] });
+        const plain = mkPost({ id: 'plain', authorType: 'npc', authorName: '路人' });
+        const meta = { ...defaultForumMeta(), collectedPostIds: ['plain'], recentPostIds: ['char', 'mine'] };
+        expect(filterForumPosts([mine, char, plain], meta, '我', 'mine').map(p => p.id)).toEqual(['mine']);
+        expect(filterForumPosts([mine, char, plain], meta, '我', 'char').map(p => p.id)).toEqual(['char']);
+        expect(filterForumPosts([mine, char, plain], meta, '我', 'collect').map(p => p.id)).toEqual(['plain']);
+        expect(filterForumPosts([mine, char, plain], meta, '我', 'recent').map(p => p.id)).toEqual(['char', 'mine']);
     });
 });
 

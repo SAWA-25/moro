@@ -423,7 +423,7 @@ const AppLoadingFallback: React.FC = () => {
 };
 
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, activeCharacterId, errorDialog, dismissError } = useOS();
+  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
@@ -645,7 +645,7 @@ const PhoneShell: React.FC = () => {
     }
   };
 
-  // 安全区策略（方案 B）：彼方/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
+  // 安全区策略（方案 B）：页外/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
   const shellHandlesSafeArea = ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
@@ -678,7 +678,7 @@ const PhoneShell: React.FC = () => {
        {/* 外壳安全区两种策略：
           - 未迁移 App：外壳铺满 body（含 --app-height 多出的 +safe-bottom 溢出区），用 padding 让位安全区，
             内容只画到可见 viewport 内，home 条上方留出 safe-bottom 视觉间隙。
-          - 已迁移 App（彼方/聊天/群聊/桌面）：自理安全区。外壳直接把底边收回到可见 viewport
+          - 已迁移 App（页外/聊天/群聊/桌面）：自理安全区。外壳直接把底边收回到可见 viewport
             （bottom = --standalone-safe-area-bottom），不让那多出来的 34px 把 App 底部控件压到 home 条上。 */}
       <div
         className="absolute top-0 left-0 right-0 z-10 overflow-hidden bg-transparent overscroll-none flex flex-col"
@@ -737,6 +737,23 @@ const PhoneShell: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-white animate-ping" />
               <span>通话中 · {suspendedCall.charName}</span>
               <span className="opacity-70">点击返回</span>
+            </button>
+          )}
+
+          {suspendedVideoCall && activeApp !== AppID.VideoCall && (
+            <button
+              onClick={resumeVideoCall}
+              className="absolute right-4 top-[calc(var(--chrome-top)+3.25rem)] z-[56] w-36 rounded-2xl bg-slate-950/90 text-white border border-white/20 shadow-2xl px-3 py-2 flex items-center gap-2 active:scale-95 transition-transform"
+            >
+              {suspendedVideoCall.charAvatar ? (
+                <img src={suspendedVideoCall.charAvatar} className="w-9 h-9 rounded-xl object-cover border border-white/20 shrink-0" alt="" />
+              ) : (
+                <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-sm font-bold shrink-0">{suspendedVideoCall.charName.slice(0, 1)}</span>
+              )}
+              <span className="min-w-0 text-left">
+                <span className="block text-[10px] text-white/55">视频通话中</span>
+                <span className="block text-xs font-bold truncate">{suspendedVideoCall.charName}</span>
+              </span>
             </button>
           )}
 

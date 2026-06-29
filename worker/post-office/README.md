@@ -1,4 +1,4 @@
-# 彼方虚拟邮局 · 后端 Worker
+# 页外虚拟邮局 · 后端 Worker
 
 跨用户漂流信的**共享后端**（Cloudflare Worker + D1）。所有用户共用同一个实例，
 其他用户无需任何配置。匿名：客户端只带一个随机 `deviceId`（owner_id），无登录、无 PII。
@@ -26,7 +26,7 @@ wrangler deploy
 - **B. 合并进现有 worker**：把 `src/index.ts` 的 `fetch` 逻辑并进你现有的 noir2
   worker（按 path 结尾匹配，和现有 push 路由不冲突），并绑定 D1 `DB`。
 
-客户端后端地址可在「彼方 → 邮局 → ⚙」里改（默认 `https://noir2.cc.cd/po`）。
+客户端后端地址可在「页外 → 邮局 → ⚙」里改（默认 `https://noir2.cc.cd/po`）。
 
 ## 接口
 

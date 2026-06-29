@@ -1,4 +1,4 @@
--- 彼方虚拟邮局 · D1 schema
+-- 页外虚拟邮局 · D1 schema
 -- 默认无需手动执行：Worker 启动时会自动建表（加性、不破坏老数据）。
 -- 想提前建表 / 排查时可手动：
 --   wrangler d1 create moro-post-office

@@ -1,8 +1,8 @@
-# 小剧场·占卜 + 番外仿真图文 + 牌面美化
+# 折子戏·占卜 + 番外仿真图文 + 牌面美化
 
-小剧场（`apps/TheaterApp.tsx`）新增的两块内容：**占卜**（和角色一起抽牌/起卦 + 解牌）与**番外·仿真图文**（仿微信/朋友圈/小红书/论坛）。牌面外观在主题 App（`apps/Appearance.tsx`「牌面」页）美化。改这些前看这里。
+折子戏（`apps/TheaterApp.tsx`）新增的两块内容：**占卜**（和角色一起抽牌/起卦 + 解牌）与**番外·仿真图文**（仿微信/朋友圈/小红书/论坛）。牌面外观在主题 App（`apps/Appearance.tsx`「牌面」页）美化。改这些前看这里。
 
-## 占卜（小剧场 → 占卜）
+## 占卜（折子戏 → 占卜）
 
 入口：`TheaterApp` 的 `section='divination'` → `apps/theater/DivinationApp.tsx`。
 
@@ -44,7 +44,7 @@
 - **抽牌结果＝大牌面 + 3D 翻牌揭示**（仿 Quin 等实体占卜 App）：`CardFace` 先背面朝上（牌背图 = `skin.cardBack` 或 `DEFAULT_CARD_BACK`），逐张错峰 `rotateY(180→0)` 翻面（`backface-visibility:hidden` + `preserve-3d`），配柔光光晕（`animate-tarot-glow`）+ 一次性高光扫过（`animate-tarot-shine`）+ 轻微浮动（`animate-tarot-bob`，错峰相位）。三个 keyframe 定义在 `index.html` 的 Tailwind 配置里。
 - 牌面尺寸按牌阵张数自适应（`widthFor`：单张最大 200px、越多越小、横向可滚），比旧版（112px）明显增大。逆位＝牌面 `rotate(180deg)` + 右上「逆位」角标。`TarotSpreadView` / `LenormandSpreadView` 接收 `cardBack` 作翻牌背面。
 
-## 番外 · 仿真图文（小剧场 → 番外 → 仿真图文）
+## 番外 · 仿真图文（折子戏 → 番外 → 仿真图文）
 
 入口：`apps/theater/ExtraApp.tsx` 的 `mode='faux'`（番外首页新增「仿真图文」卡）。
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { DB, openDB } from './db';
+import type { RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -126,5 +127,52 @@ describe('openDB blocked-then-unblocked 不泄漏连接', () => {
       del.onerror = () => reject(del.error);
       del.onblocked = () => reject(new Error('deleteDatabase 被 block —— 有孤儿连接没关闭'));
     })).resolves.toBeUndefined();
+  });
+});
+
+describe('relationship network stores', () => {
+  it('saves and reads edges, pair messages, and auto settings', async () => {
+    await DB.deleteDB();
+    const pairKey = 'rn_a__b';
+    const edge: RelationshipNetworkEdge = {
+      id: pairKey,
+      pairKey,
+      charIds: ['a', 'b'],
+      label: 'test relation',
+      summary: 'two chars know each other',
+      confidence: 80,
+      intimacy: 70,
+      tension: 10,
+      signals: { intimacy: ['same scene'], friction: [], conflict: [] },
+      source: 'manual',
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const messages: RelationshipNetworkMessage[] = [
+      { id: 'm1', pairKey, speakerId: 'a', speakerName: 'A', content: 'hello', createdAt: 101, source: 'manual' },
+      { id: 'm2', pairKey, speakerId: 'b', speakerName: 'B', content: 'hi', createdAt: 102, source: 'auto' },
+    ];
+    const settings: RelationshipNetworkAutoSettings = {
+      id: 'settings',
+      enabled: true,
+      selectedCharIds: ['a'],
+      intervalMinutes: 30,
+      charCooldownMinutes: 60,
+      pairCooldownMinutes: 120,
+      nextRunAt: 999,
+      lastRunAtByChar: { a: 10 },
+      lastRunAtByPair: { [pairKey]: 10 },
+      forwardedCountByPair: { [pairKey]: 1 },
+      updatedAt: 20,
+    };
+
+    await DB.saveRelationshipNetworkEdge(edge);
+    await DB.saveRelationshipNetworkMessages(messages);
+    await DB.saveRelationshipNetworkAutoSettings(settings);
+
+    await expect(DB.getRelationshipNetworkEdgeByPair(pairKey)).resolves.toMatchObject({ pairKey, label: 'test relation' });
+    await expect(DB.getRelationshipNetworkMessagesByPair(pairKey)).resolves.toEqual(messages);
+    await expect(DB.getRelationshipNetworkMessagesByPair(pairKey, 1)).resolves.toEqual([messages[1]]);
+    await expect(DB.getRelationshipNetworkAutoSettings()).resolves.toEqual(settings);
   });
 });

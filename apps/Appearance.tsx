@@ -1348,7 +1348,7 @@ const DesktopLockEditor: React.FC<{
     );
 };
 
-// ── 占卜牌面美化（小剧场·占卜读 theme.tarotSkin 渲染牌面）──────────────────
+// ── 占卜牌面美化（折子戏·占卜读 theme.tarotSkin 渲染牌面）──────────────────
 const TAROT_FRAMES: { id: 'none' | 'gold' | 'ink' | 'film'; label: string }[] = [
     { id: 'none', label: '无边' },
     { id: 'gold', label: '描金' },
@@ -1387,7 +1387,7 @@ const TarotSkinEditor: React.FC<{
         <>
             <section className={sectionCls}>
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">牌面美化</h2>
-                <p className="text-[10px] text-[#6b6b6b] mb-3">小剧场 → 占卜里抽出的塔罗 / 雷诺曼牌面会套用这里的边框与风格；牌背图用于未翻开 / 未导入牌库时的占位。</p>
+                <p className="text-[10px] text-[#6b6b6b] mb-3">折子戏 → 占卜里抽出的塔罗 / 雷诺曼牌面会套用这里的边框与风格；牌背图用于未翻开 / 未导入牌库时的占位。</p>
                 <div className="flex items-end gap-4">
                     {/* 牌面预览 */}
                     <div className={`w-24 aspect-[2/3] overflow-hidden bg-gradient-to-br from-indigo-900/80 to-violet-900/60 relative ${

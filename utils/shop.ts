@@ -628,7 +628,7 @@ export function orderTrace(order: ShopOrder, now: number = Date.now()): TraceNod
 export type OrderStatusKey = 'toReceive' | 'toReview' | 'done' | 'refunded';
 
 /** 单个订单当前归到哪个状态桶（结合是否已评价）。 */
-export function orderStatusKey(order: ShopOrder, reviews: ShopUserReview[] | undefined, now: number = Date.now()): OrderStatusKey {
+export function orderStatusKey(order: ShopOrder, reviews: ShopUserReview[] | undefined, _now: number = Date.now()): OrderStatusKey {
     if (order.refundedAt) return 'refunded';
     if (!order.receivedAt) return 'toReceive';
     // 已签收：只要还有未评价的商品行就算「待评价」，否则「已完成」

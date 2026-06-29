@@ -22,8 +22,6 @@ export const BANK_LIFE_VERSION = 2;
 export const SHOP_UNLOCK_COST = 10000;
 export const COMPANY_FOUND_COST = 100000;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const genId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 export const todayStr = () => new Date().toISOString().slice(0, 10);

@@ -72,9 +72,6 @@ const resolveGroupOpeningFrame = (
     return (def?.frame || '').replace(/\{group\}/g, groupName).replace(/\{user\}/g, userName);
 };
 
-const memberDisplayName = (group: GroupProfile, member: CharacterProfile): string =>
-    group.memberNicknames?.[member.id]?.trim() || member.name;
-
 const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     group,
     members,

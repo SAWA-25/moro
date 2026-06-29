@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffe
 import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
 import {
-    ArrowLeft, Plus, Trash, BookOpen, Planet, Clock, Play, CaretRight, X,
+    ArrowLeft, Plus, Trash, BookOpen, Planet, Play, CaretRight, X,
     UploadSimple, PencilSimple, FlipHorizontal, CaretLeft, Sparkle,
     CircleNotch, TextAa, Palette, Pause, MusicNotes, Queue, Check, Gear,
-    Camera, Shuffle, Sticker, Smiley, Confetti, Heart, Star, MagicWand,
-    ArrowsClockwise, UsersThree, HandWaving,
+    Camera, Sticker, Smiley, Star, MagicWand,
+    UsersThree, HandWaving,
 } from '@phosphor-icons/react';
 import TheaterPanel from './theater/TheaterPanel';
 import { CreatorIframe, type ChibiResult } from '../components/Like520Event';
@@ -107,7 +107,6 @@ const VR_OVERLAY_BG = 'rgba(60,52,56,.22)';
 const VR_BLUSH = '#f8f4f5';
 const VR_DARK_GLASS = '#fffdf8';
 const VR_SUNSET = 'linear-gradient(135deg, #c6aab4 0%, #aeb7cf 100%)';
-const VR_MINT_GRAD = 'linear-gradient(135deg, #f8faf7 0%, #edf4ef 48%, #f6f2f4 100%)';
 const VR_CREAM_GRAD = 'linear-gradient(135deg, #fffdf8 0%, #f8f4f5 58%, #f4f5fa 100%)';
 const NOTE_COLORS = ['#f8f4f5', '#f4f5fa', '#f6faf7', '#fff8ea', '#f3f7fa', '#fffdf8', '#f7f5f3'];
 const ROOM_THEME: Record<VRRoomId, { sticker: string; ink: string; paper: string; wash: string; cover: string }> = {
@@ -148,17 +147,6 @@ const StoryAvatar: React.FC<{ src?: string; name: string; size?: number; active?
         </span>
     </span>
 );
-const MiniPolaroid: React.FC<{
-    src?: string; caption: string; rotate?: number; children?: React.ReactNode; style?: React.CSSProperties; className?: string;
-}> = ({ src, caption, rotate = 0, children, style, className = '' }) => (
-    <div className={`relative p-1.5 pb-5 ${className}`} style={{ background: '#fffdf8', borderRadius: 10, border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW, transform: `rotate(${rotate}deg)`, ...style }}>
-        <div className="relative overflow-hidden" style={{ width: 56, height: 56, borderRadius: 5, background: VR_BLUSH }}>
-            {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[20px]" style={{ color: PAPER.violet }}>{caption.slice(0, 1)}</div>}
-            {children}
-        </div>
-        <span className="absolute left-1 right-1 bottom-1 text-center text-[10.5px] font-bold truncate" style={{ fontFamily: 'var(--font-hand)', color: PAPER.inkSoft }}>{caption}</span>
-    </div>
-);
 // 小人姿势 → 动画（世界房间里小人更生动；解析自 LLM 的 <姿势>）
 const POSE_ANIM: Record<string, string> = {
     idle: 'vrfloat 3.4s ease-in-out infinite',
@@ -188,9 +176,6 @@ const haloBg = (halo?: ChibiHalo) => HALO_OPTIONS.find(h => h.key === halo)?.bg 
 const InkTag: React.FC<{ children: React.ReactNode; color?: string; className?: string; style?: React.CSSProperties }> = ({ children, color, className, style }) => (
     <span className={`inline-flex items-center px-2.5 py-1 text-[10.5px] font-semibold ${className || ''}`}
         style={{ fontFamily: HAND, color: PAPER.ink, background: color || VR_BLUSH, border: `1px solid ${PAPER.edge}`, borderRadius: 999, boxShadow: '0 6px 14px -12px rgba(80,72,76,.22)', ...style }}>{children}</span>
-);
-const Stitch: React.FC<{ className?: string; color?: string }> = ({ className, color }) => (
-    <div className={className} style={{ height: 1, background: color || PAPER.line }} />
 );
 const InkBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'ink' | 'red' | 'teal' | 'soft' }> = ({ tone = 'ink', className, style, children, ...rest }) => {
     const bg = tone === 'red'
@@ -263,7 +248,7 @@ const IDLE_QUIPS: Record<VRRoomId, string[]> = {
 
 const VRWorldApp: React.FC = () => {
     const { closeApp, characters, updateCharacter, addToast, registerBackHandler, userProfile, updateUserProfile, apiPresets, apiConfig, auxApiConfig } = useOS();
-    // 彼方·VR世界属「聊天以外」的功能：「跟随聊天 API」时改跟随副 API（剧院自带 VR API 仍优先；副 API 没配时回退主 API）
+    // 页外·VR世界属「聊天以外」的功能：「跟随聊天 API」时改跟随副 API（剧院自带 VR API 仍优先；副 API 没配时回退主 API）
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const userName = userProfile?.name || '我';
     const [tab, setTab] = useState<Tab>('world');

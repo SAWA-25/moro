@@ -1,5 +1,5 @@
 /**
- * 「彼方」小说工具 —— 切块、阅读窗口、书签推进、批注组织。
+ * 「页外」小说工具 —— 切块、阅读窗口、书签推进、批注组织。
  */
 
 import { VRWorldNovel, VRNovelSegment, VRNovelAnnotation } from '../../types';

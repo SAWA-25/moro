@@ -2,19 +2,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { StudyCourse, StudyChapter, CharacterProfile, Message, UserProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
+import { StudyCourse, CharacterProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
-    PaperBackdrop, ScrapButton, WashiTape, PaperDialog, PaperSheet, SectionTag, DashedRule,
+    PaperBackdrop, ScrapButton, WashiTape, PaperDialog, PaperSheet, SectionTag,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
 } from './ui/insScrapKit';
 import {
     Notepad, Check, X, CheckCircle, XCircle, Hand, CaretLeft, CaretDown, ArrowRight,
-    ArrowsClockwise, Trash, GearSix, BookOpen, Plus, PencilSimpleLine, ChatCircleText,
-    Eye, Spinner, Sparkle, PencilSimple,
+    ArrowsClockwise, Trash, GearSix, Plus, PencilSimpleLine, ChatCircleText,
+    Eye, Spinner,
 } from '@phosphor-icons/react';
 
 // ── 黑白拼贴手账·通用样式片（呼应折子戏 / 心意铺 / 茶话亭）────────────────

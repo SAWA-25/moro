@@ -2,6 +2,7 @@ import type { CharacterProfile, GroupProfile, Message, UserProfile } from '../ty
 import { DB } from './db';
 import { extractContent, safeResponseJson } from './safeApi';
 import type { OfflinePovPerson } from './offlineMode';
+import { formatCharacterWithId } from './characterIdentity';
 
 export interface GroupOfflineSceneEntry {
   role: 'scene';
@@ -126,7 +127,7 @@ const speakerNameFor = (
 ): string => {
   if (msg.role === 'user' || msg.charId === 'user') return group.memberNicknames?.user || userName;
   const member = members.find(item => item.id === msg.charId);
-  return member ? memberDisplayName(group, member) : (msg.charId || 'Group member');
+  return member ? formatCharacterWithId(member, memberDisplayName(group, member)) : (msg.charId || 'Group member');
 };
 
 const formatRoster = (group: GroupProfile, members: CharacterProfile[]): string => {
@@ -134,7 +135,7 @@ const formatRoster = (group: GroupProfile, members: CharacterProfile[]): string 
   return members.map(member => {
     const name = memberDisplayName(group, member);
     const title = group.memberTitles?.[member.id];
-    return `- ${name} (id: ${member.id})${title ? `, title: ${title}` : ''}`;
+    return `- ${formatCharacterWithId(member, name)}${title ? `, title: ${title}` : ''}`;
   }).join('\n');
 };
 

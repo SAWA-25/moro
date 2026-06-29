@@ -1,7 +1,7 @@
 /**
  * 岁时记·典藏馆 数据层。
  * ================================
- * 把「谈心 / 创作社（笔友会·写歌）/ 自习室（课程·测验）/ 小剧场（攻略本·TRPG）」里
+ * 把「谈心 / 创作社（笔友会·写歌）/ 自习室（课程·测验）/ 折子戏（攻略本·TRPG）」里
  * 已完成的内容统一成可浏览、可收录、可转发的条目。收录只存一条引用（CollectionItem），
  * 不复制原文；转发则把一段可读的预览作为 user 消息塞进目标角色的聊天（让 char B 能看见
  * 并回应 user 和 char A 的同人 / 谈心记录）。
@@ -145,7 +145,7 @@ export function candidateToItem(c: CollectibleCandidate): CollectionItem {
 }
 
 /** 转发到目标角色聊天的可读消息文案。involvedNames 为这份内容里涉及的角色名。 */
-export function buildForwardText(item: CollectionItem, userName: string, involvedNames: string[]): string {
+export function buildForwardText(item: CollectionItem, _userName: string, involvedNames: string[]): string {
     const label = SOURCE_LABEL[item.sourceType] || '收藏';
     const who = involvedNames.filter(Boolean).join('、');
     const lines = [

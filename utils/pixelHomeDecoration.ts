@@ -6,7 +6,6 @@
  */
 
 import type { DecorationDiff, DecorationAction, PixelRoomLayout } from '../apps/pixelHome/types';
-import type { MemoryRoom } from './memoryPalace/types';
 import type { DigestResult } from './memoryPalace/digestion';
 import { PixelLayoutDB } from '../apps/pixelHome/pixelHomeDb';
 import { ROOM_META, ALL_ROOMS } from '../apps/pixelHome/roomTemplates';
@@ -150,7 +149,7 @@ ${JSON.stringify(layoutSummary, null, 2)}
 
 /** 将装修 diff 应用到 DB */
 async function applyDecoration(
-  charId: string,
+  _charId: string,
   diff: DecorationDiff,
   layouts: PixelRoomLayout[],
 ): Promise<void> {

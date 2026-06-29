@@ -13,7 +13,7 @@ import TruthDareApp from './theater/TruthDareApp';
 import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './ui/insScrapKit';
 
 /**
- * 折子戏（原「小剧场」）：一个图标、一张戏单，先挑一折戏。
+ * 折子戏：一个图标、一张戏单，先挑一折戏。
  * 黑白拼贴手账皮肤——米白报纸 + 墨黑 + 牛皮胶带 + 邮票 + 网点半调，由 theater/scrapbook 套件统一。
  * 七折各自保留原玩法、数据与名字（攻略本 / 番外 / 占卜 / 谈心 / TRPG / 轨迹 / 对影），
  * 合并后只占一个入口；子页通过 onExit 回到本戏单页（不直接回桌面）。换肤不改、不减任何功能。

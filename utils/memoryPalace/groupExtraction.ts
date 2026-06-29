@@ -44,7 +44,8 @@ function buildGroupRulesBlock(groupName: string, memberNames: string[], userLabe
     return `## 规则
 
 1. **第三人称叙事**：你是【${groupName}】的群聊观察者，记录"群里发生了什么"。
-   - 用户称呼为"${userLabel}"，群成员名字直接用：${memberList}
+   - 用户称呼为"${userLabel}"，群成员身份标签直接用：${memberList}
+   - 群成员身份标签里的 ID 是区分同名/相似角色的身份锚，写记忆时不要把不同 ID 的成员合并成同一个人
    - **绝对不要用"我"** —— 这条记忆会平等地发给群里每个成员，所以不能站在某一个人的视角
    - 内容前缀统一为："在【${groupName}】里，..."
    例：

@@ -12,7 +12,7 @@
 
 ## 背景：现象与触发链
 
-Moro 是 local-first 应用，整个 origin 跑着多个 IndexedDB 库（应用主库 `AetherOS_Data`、`ActiveMsg` inbox、以及本包的 `rei-sw` dedupe/queue 库）。在高并发下，Chromium 底层 backing store 一旦报错（`Internal error opening backing store for indexedDB.open`），**可能强制关闭**该 origin 已打开的连接（这是结合「多个库同时报错」的现场得出的推断，不是单条日志能坐实的铁证；也不排除磁盘/配额/profile 损坏等其它诱因）。被强关的连接通常不会触发 `versionchange` 事件，而是触发 `close` 事件，之后对它发起事务会抛：
+Moro 是 local-first 应用，整个 origin 跑着多个 IndexedDB 库（应用主库、`ActiveMsg` inbox、以及本包的 `rei-sw` dedupe/queue 库）。在高并发下，Chromium 底层 backing store 一旦报错（`Internal error opening backing store for indexedDB.open`），**可能强制关闭**该 origin 已打开的连接（这是结合「多个库同时报错」的现场得出的推断，不是单条日志能坐实的铁证；也不排除磁盘/配额/profile 损坏等其它诱因）。被强关的连接通常不会触发 `versionchange` 事件，而是触发 `close` 事件，之后对它发起事务会抛：
 
 ```
 InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase': The database connection is closing
@@ -186,6 +186,6 @@ if (businessWork) await businessWork;   // :186 已经 catch 过, 永不 reject
 | 侧 | 改什么 | 状态 |
 |----|--------|------|
 | **amsg-sw 包** | 本 spec 的 Gap 1（必修）、Gap 2（建议） | 待这边 agent 实现 + 发版 |
-| **Moro** | 主库 `utils/db.ts`、`utils/activeMsgStore.ts`、SW `worker/sw-keep-alive.ts` 的 IDB 连接全部改单例复用 + `onversionchange`/`onclose` 失效自愈 + `onblocked` 统一清缓存重试；另把 `apps/pixelHome/pixelHomeDb.ts`（之前自带一个裸开同一个 `AetherOS_Data` 的 `openDB`）并到共享单例。这是连接风暴的**根因**，消除后 backing store 不再被撑爆，Gap 1 的强关诱因基本消失，Gap 1 退化为「极少数其它原因强关」的兜底 | ✅ 已修 |
+| **Moro** | 主库 `utils/db.ts`、`utils/activeMsgStore.ts`、SW `worker/sw-keep-alive.ts` 的 IDB 连接全部改单例复用 + `onversionchange`/`onclose` 失效自愈 + `onblocked` 统一清缓存重试；另把 `apps/pixelHome/pixelHomeDb.ts`（之前自带一个裸开主库的 `openDB`）并到共享单例。这是连接风暴的**根因**，消除后 backing store 不再被撑爆，Gap 1 的强关诱因基本消失，Gap 1 退化为「极少数其它原因强关」的兜底 | ✅ 已修 |
 
 **发版后 Moro 侧动作**：bump `package.json` 里 `@rei-standard/amsg-sw` 版本 → `pnpm install` → `pnpm run build:workers`（bundle 自动带上修好的包）→ bump `worker/sw-keep-alive.ts` 的 `SW_VERSION`（触发字节比较让浏览器重装 SW）。

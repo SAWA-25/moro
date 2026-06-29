@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread } from '../../types';
+import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
@@ -65,9 +65,16 @@ interface CheckScript {
 }
 
 interface ContactSnap {
-    char: CharacterProfile;
+    id: string;
+    source: 'formal' | 'ambient';
+    kind: 'contact' | 'group';
+    name: string;
+    avatar?: string;
+    label?: string;
     preview: string;
     lastAt: number;
+    char?: CharacterProfile;
+    ambient?: AmbientSocialEntry;
 }
 
 interface LocationSnap {
@@ -536,12 +543,46 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                         const recent = await DB.getRecentMessagesByCharId(c.id, 3);
                         const lastVisible = [...recent].reverse().find(m => m.role !== 'system');
                         snaps.push({
+                            id: c.id,
+                            source: 'formal',
+                            kind: 'contact',
+                            name: c.name,
+                            avatar: c.avatar,
                             char: c,
                             preview: lastVisible ? String(lastVisible.content || '').slice(0, 60) : '（暂无消息）',
                             lastAt: lastVisible?.timestamp || 0,
                         });
                     } catch {
-                        snaps.push({ char: c, preview: '（暂无消息）', lastAt: 0 });
+                        snaps.push({
+                            id: c.id,
+                            source: 'formal',
+                            kind: 'contact',
+                            name: c.name,
+                            avatar: c.avatar,
+                            char: c,
+                            preview: '（暂无消息）',
+                            lastAt: 0,
+                        });
+                    }
+                }
+                if (userProfile.ambientSocialEnabled !== false) {
+                    const ambientEntries = Array.isArray(userProfile.ambientSocial?.entries) ? userProfile.ambientSocial.entries : [];
+                    for (const entry of ambientEntries) {
+                        if (!entry || entry.hidden) continue;
+                        if (entry.kind === 'contact' && entry.linkedCharId) continue;
+                        if (entry.kind === 'group' && entry.linkedGroupId) continue;
+                        const preview = String(entry.lastMessage || entry.note || '（社交圈联系人，暂无最近消息）').slice(0, 60);
+                        snaps.push({
+                            id: `ambient:${entry.id}`,
+                            source: 'ambient',
+                            kind: entry.kind,
+                            name: entry.name,
+                            avatar: entry.avatar,
+                            label: entry.kind === 'group' ? '社交圈群聊' : (entry.relationLabel || '社交圈联系人'),
+                            preview,
+                            lastAt: entry.lastAt || entry.createdAt || 0,
+                            ambient: entry,
+                        });
                     }
                 }
                 snaps.sort((a, b) => b.lastAt - a.lastAt);
@@ -549,26 +590,27 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 setContacts(snaps);
 
                 // 最近活跃的几个对话给角色"翻记录"的素材
-                const excerptTargets = snaps.filter(s => s.lastAt > 0).slice(0, 4);
+                const excerptTargets = snaps.filter(s => s.source === 'formal' && s.char && s.lastAt > 0).slice(0, 4);
                 const excerpts: string[] = [];
                 const locationSnaps: LocationSnap[] = [];
                 for (const t of excerptTargets) {
                     try {
+                        if (!t.char) continue;
                         const msgs = await DB.getRecentMessagesByCharId(t.char.id, 12);
                         msgs
                             .filter(m => m.type === 'location')
                             .slice(-2)
                             .forEach(m => locationSnaps.push({
-                                source: t.char.name,
+                                source: t.char?.name || t.name,
                                 title: String(m.content || '位置分享').slice(0, 50),
                                 detail: typeof m.metadata?.address === 'string' ? m.metadata.address.slice(0, 80) : undefined,
                                 at: m.timestamp || 0,
                             }));
                         const lines = msgs
                             .filter(m => m.role !== 'system' && typeof m.content === 'string')
-                            .map(m => `${m.role === 'user' ? userProfile.name : t.char.name}: ${String(m.content).slice(0, 80)}`)
+                            .map(m => `${m.role === 'user' ? userProfile.name : t.name}: ${String(m.content).slice(0, 80)}`)
                             .join('\n');
-                        if (lines) excerpts.push(`【与「${t.char.name}」的最近对话】\n${lines}`);
+                        if (lines) excerpts.push(`【与「${t.name}」的最近对话】\n${lines}`);
                     } catch { /* 单个对话取不到不阻塞 */ }
                 }
                 if (cancelled) return;
@@ -684,7 +726,11 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 ${personaBlock}
 
 ### ${userProfile.name} 手机里的聊天列表（按最近活跃排序）
-${snaps.map(s => `- ${s.char.name}${s.char.id === char.id ? '（这是你自己和TA的对话）' : ''}：最后一条「${s.preview}」`).join('\n')}
+${snaps.map(s => {
+    const tag = s.source === 'ambient' ? `（${s.label || (s.kind === 'group' ? '社交圈群聊' : '社交圈联系人')}）` : (s.char?.id === char.id ? '（这是你自己和TA的对话）' : '');
+    const memberText = s.ambient?.kind === 'group' && s.ambient.memberNames?.length ? `，成员：${s.ambient.memberNames.slice(0, 6).join('、')}` : '';
+    return `- ${s.name}${tag}：最后一条「${s.preview}」${memberText}`;
+}).join('\n')}
 
 ### 可翻看的对话记录节选
 ${excerpts.join('\n\n') || '（手机里几乎没有聊天记录）'}
@@ -766,22 +812,56 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
     }, []);
 
     const currentStep = script?.steps[stepIdx] || null;
+    const targetContact = useMemo(() => {
+        if (!currentStep?.targetName) return null;
+        const targetName = currentStep.targetName.trim();
+        return contacts.find(c => c.name === targetName)
+            || contacts.find(c => targetName && c.name.includes(targetName))
+            || contacts.find(c => targetName && targetName.includes(c.name))
+            || null;
+    }, [currentStep, contacts]);
     const targetChar = useMemo(() => {
+        if (targetContact?.char) return targetContact.char;
         if (!currentStep?.targetName) return null;
         return characters.find(c => c.name === currentStep.targetName)
             || characters.find(c => currentStep.targetName && c.name.includes(currentStep.targetName))
             || null;
-    }, [currentStep, characters]);
+    }, [currentStep, characters, targetContact]);
 
-    // chat-thread 步骤：拉真实对话记录展示
+    // chat-thread 步骤：正式联系人拉真实对话；社交圈联系人展示影子快照
     useEffect(() => {
-        if (!currentStep || currentStep.app !== 'chat-thread' || !targetChar) { setThreadMsgs([]); return; }
+        if (!currentStep || currentStep.app !== 'chat-thread') { setThreadMsgs([]); return; }
+        if (!targetChar && targetContact?.ambient) {
+            const entry = targetContact.ambient;
+            const now = Date.now();
+            const faux: Message[] = [
+                entry.note ? {
+                    id: -1,
+                    charId: `ambient:${entry.id}`,
+                    role: 'system',
+                    type: 'text',
+                    content: entry.kind === 'group' && entry.memberNames?.length ? `${entry.note}\n成员：${entry.memberNames.join('、')}` : entry.note,
+                    timestamp: entry.createdAt || now,
+                } as Message : null,
+                entry.lastMessage ? {
+                    id: -2,
+                    charId: `ambient:${entry.id}`,
+                    role: 'assistant',
+                    type: 'text',
+                    content: entry.lastMessage,
+                    timestamp: entry.lastAt || now,
+                } as Message : null,
+            ].filter(Boolean) as Message[];
+            setThreadMsgs(faux.filter(m => m.role !== 'system' || !!m.content));
+            return;
+        }
+        if (!targetChar) { setThreadMsgs([]); return; }
         let cancelled = false;
         DB.getRecentMessagesByCharId(targetChar.id, 40)
             .then(msgs => { if (!cancelled) setThreadMsgs(msgs.filter(m => m.role !== 'system')); })
             .catch(() => { if (!cancelled) setThreadMsgs([]); });
         return () => { cancelled = true; };
-    }, [stepIdx, currentStep, targetChar]);
+    }, [stepIdx, currentStep, targetChar, targetContact]);
 
     // 执行当前步骤的副作用动作（每步只执行一次）
     useEffect(() => {
@@ -789,6 +869,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         appliedStepsRef.current.add(stepIdx);
         const act = currentStep.action;
         const target = targetChar;
+        const targetLabel = target?.name || targetContact?.name;
         const log = (line: string) => setActionLog(prev => [...prev, line]);
         (async () => {
             try {
@@ -824,6 +905,10 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                         : `想把「${target.name}」删掉，最终把对方加入了黑名单（删好友按拉黑执行）`);
                 } else if (act.type === 'ignore' && target) {
                     log(`看完了与「${target.name}」的对话，什么都没做`);
+                } else if ((act.type === 'reply' || act.type === 'block' || act.type === 'delete') && !target && targetLabel) {
+                    log(`看到了社交圈里的「${targetLabel}」，但这不是正式联系人，没有实际替你${act.type === 'reply' ? '回复' : '处理关系'}`);
+                } else if (act.type === 'ignore' && targetLabel) {
+                    log(`看完了与「${targetLabel}」的社交圈记录，什么都没做`);
                 } else if (act.type === 'post_moment' && act.content) {
                     // 代发朋友圈：以用户名义贴一条公开动态（角色随后能在上下文里看到这条）
                     const newPost: SocialPost = {
@@ -1282,12 +1367,12 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">絮语</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80">
-                        {contacts.map(({ char: c, preview }) => (
-                            <div key={c.id} className={`px-4 py-3 flex items-center gap-3 border-b border-slate-50 ${targetChar?.id === c.id ? 'bg-amber-50' : ''}`}>
-                                <img src={c.avatar} className="w-11 h-11 rounded-lg object-cover shrink-0" alt="" />
+                        {contacts.map((c) => (
+                            <div key={c.id} className={`px-4 py-3 flex items-center gap-3 border-b border-slate-50 ${targetContact?.id === c.id ? 'bg-amber-50' : ''}`}>
+                                {c.avatar ? <img src={c.avatar} className="w-11 h-11 rounded-lg object-cover shrink-0" alt="" /> : <div className="w-11 h-11 rounded-lg bg-slate-200 shrink-0 flex items-center justify-center text-slate-500 text-sm font-bold">{c.name.slice(0, 1)}</div>}
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[14px] font-medium text-slate-800 truncate">{c.name}</div>
-                                    <div className="text-[12px] text-slate-400 truncate">{preview}</div>
+                                    <div className="text-[12px] text-slate-400 truncate">{c.label ? `${c.label} · ` : ''}{c.preview}</div>
                                 </div>
                             </div>
                         ))}
@@ -1295,12 +1380,13 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'chat-thread' && targetChar) {
+        if (app === 'chat-thread' && targetContact) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90 flex items-center gap-2">
-                        <img src={targetChar.avatar} className="w-6 h-6 rounded-md object-cover" alt="" />
-                        {targetChar.name}
+                        {targetContact.avatar ? <img src={targetContact.avatar} className="w-6 h-6 rounded-md object-cover" alt="" /> : <div className="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center text-[10px] text-slate-500 font-bold">{targetContact.name.slice(0, 1)}</div>}
+                        <span className="truncate">{targetContact.name}</span>
+                        {targetContact.label && <span className="text-[10px] text-slate-400 font-normal shrink-0">{targetContact.label}</span>}
                     </div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-[#f3f3f3] px-3 py-3 space-y-2">
                         {threadMsgs.length === 0 && <div className="text-center text-xs text-slate-400 pt-8">（没有聊天记录）</div>}

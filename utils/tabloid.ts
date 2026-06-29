@@ -160,7 +160,7 @@ export const generateTabloid = async (
 ): Promise<Tabloid> => {
     const to = Date.now();
     const from = to - TABLOID_META[period].spanMs;
-    const { digest, hasMaterial } = await gatherDigest(char, user, from, to);
+    const { digest } = await gatherDigest(char, user, from, to);
     const meta = TABLOID_META[period];
 
     const persona = [

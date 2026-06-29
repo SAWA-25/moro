@@ -5,7 +5,6 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { SongSheet, SongLine, SongComment, SongMood, SongGenre, SongAudio, MusicProvider, AppID } from '../types';
 import { SONG_GENRES, SONG_MOODS, SECTION_LABELS, COVER_STYLES, SongPrompts, LYRIC_TEMPLATES, getLyricTemplate } from '../utils/songPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { ContextBuilder } from '../utils/context';
 import { safeResponseJson, extractJson } from '../utils/safeApi';
 import { DB } from '../utils/db';
 import {
@@ -20,10 +19,8 @@ import {
 } from '../utils/aceStepApi';
 import {
     synthesizeSongMinimax,
-    buildMinimaxMusicPrompt,
     buildMinimaxMusicLyrics,
     hashMinimaxMusicInputs,
-    loadMinimaxMusicBlob,
     type MinimaxMusicInput,
 } from '../utils/minimaxMusic';
 import {
@@ -33,8 +30,8 @@ import {
     HeartStraight, Plus, Trash, ShareNetwork, CaretRight, ArrowsClockwise, MagicWand, ListChecks, PaperPlaneRight,
 } from '@phosphor-icons/react';
 import {
-    PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, GRID_BG, LINES_BG, BARCODE_BG,
-    Tape, Cut, Stitch, Kicker, SectionTitle, BackSticker, TopBar, IconStamp, InkButton, Chip, TypingDots,
+    PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, GRID_BG, LINES_BG,
+    Tape, SectionTitle, BackSticker, TopBar, IconStamp, InkButton, Chip, TypingDots,
     CollageModal, CollageConfirm,
 } from './creative/collage';
 import { useMusic, type Song as MusicSong } from '../context/MusicContext';
@@ -98,7 +95,6 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [tempCollaboratorId, setTempCollaboratorId] = useState('');
     const [tempCoverStyle, setTempCoverStyle] = useState(COVER_STYLES[0]?.id || 'dawn-blush');
     const [tempTemplate, setTempTemplate] = useState<string>('free');
-    const [showStructureBanner, setShowStructureBanner] = useState(true);
     const [customCoverFrom, setCustomCoverFrom] = useState('#FB7185');
     const [customCoverVia, setCustomCoverVia] = useState('#A855F7');
     const [customCoverTo, setCustomCoverTo] = useState('#2563EB');
@@ -120,7 +116,6 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [completionReview, setCompletionReview] = useState('');
     const [isCompleting, setIsCompleting] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
-    const [shareTargetCharId, setShareTargetCharId] = useState('');
 
     // ACE-Step audio synth (preview view)
     const [audioUrl, setAudioUrl] = useState<string | null>(null);

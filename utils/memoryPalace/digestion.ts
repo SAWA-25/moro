@@ -889,6 +889,4 @@ ${memoryContext}
         throw new Error(`性格检测失败: ${err?.message || err}`);
     }
 
-    console.warn(`🎭 [PersonalityDetect] ${charName} LLM 未返回有效 JSON（回复中找不到 {...} 片段）`);
-    throw new Error('性格检测: LLM 未返回有效 JSON');
 }

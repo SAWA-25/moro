@@ -1,5 +1,5 @@
 
-import { CharacterProfile, UserProfile, SongSheet, SongLine, SongComment, SongMood, SongGenre } from '../types';
+import { CharacterProfile, UserProfile, SongSheet, SongMood, SongGenre } from '../types';
 import { ContextBuilder } from './context';
 
 // --- Song Genre & Mood Config ---
@@ -152,7 +152,7 @@ export const SongPrompts = {
         char: CharacterProfile,
         user: UserProfile,
         song: SongSheet,
-        recentMessages: { role: string; content: string }[]
+        _recentMessages: { role: string; content: string }[]
     ): string => {
         // Use ContextBuilder with includeDetailedMemories = true
         const charContext = ContextBuilder.buildCoreContext(char, user, true);

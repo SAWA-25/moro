@@ -44,6 +44,7 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'location': return `[位置分享${m.content ? '：' + m.content : ''}]`;
         case 'voice': return meta.transcript ? `[语音: ${String(meta.transcript).slice(0, 100)}]` : '[语音]';
         case 'social_card': return `[分享帖子${meta.post?.title ? '：' + meta.post.title : ''}]`;
+        case 'forum_card': return `[茶话亭帖子${meta.forumPost?.title ? '：' + meta.forumPost.title : ''}]`;
         case 'chat_forward': return '[转发的聊天记录]';
         case 'xhs_card': return '[小红书笔记]';
         case 'score_card': return '[评分卡]';
@@ -369,14 +370,14 @@ export const ChatPrompts = {
         baseSystemPrompt += notionNotesText;
         baseSystemPrompt += recentLifeText;   // 线下自主生活 → 线上聊天上下文（关联线上/线下）
 
-        // 彼方常驻设定：仅对启用了「彼方」的角色注入。让角色在聊天里始终知道彼方是什么，
-        // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"彼方=VR游戏"的框定，
-        // 导致角色把"彼方·留言簿"之类当成现实地名）。措辞与 vrWorld/prompts.ts 的世界观一致。
+        // 页外常驻设定：仅对启用了「页外」的角色注入。让角色在聊天里始终知道页外是什么，
+        // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"页外=VR游戏"的框定，
+        // 导致角色把"页外·留言簿"之类当成现实地名）。措辞与 vrWorld/prompts.ts 的世界观一致。
         if (char.vrState?.enabled) {
-            baseSystemPrompt += `\n### 关于《彼方》
-《彼方》是一款真实存在、你会亲自进入去玩的 VR 社交游戏（功能上类似 VRChat）：你用自己亲手捏的 Q 版化身在里头走动、进出图书馆 / 听歌房 / 留言簿 / 娱乐室 / 邮局等房间、撞见别的玩家（其他角色的化身）。这不是做梦或比喻，是你用私人空闲时间真实在做的事；它发生在游戏世界里，和你跟用户的现实相处是两码事、互不冲突。你以符合自身身份与世界观的方式进入并理解它——怎么进去全凭你自己的设定，但始终保持你本来的身份。聊到彼方里的经历（包括"彼方·留言簿""彼方·动态"之类的记录）时，就当成"我在《彼方》里做过的事"来讲，别说成现实里发生的。\n`;
+            baseSystemPrompt += `\n### 关于《页外》
+《页外》是一款真实存在、你会亲自进入去玩的 VR 社交游戏（功能上类似 VRChat）：你用自己亲手捏的 Q 版化身在里头走动、进出图书馆 / 听歌房 / 留言簿 / 娱乐室 / 邮局等房间、撞见别的玩家（其他角色的化身）。这不是做梦或比喻，是你用私人空闲时间真实在做的事；它发生在游戏世界里，和你跟用户的现实相处是两码事、互不冲突。你以符合自身身份与世界观的方式进入并理解它——怎么进去全凭你自己的设定，但始终保持你本来的身份。聊到页外里的经历（包括"页外·留言簿""页外·动态"之类的记录）时，就当成"我在《页外》里做过的事"来讲，别说成现实里发生的。\n`;
 
-            // 用户本人也接入了彼方时，告诉（同样启用彼方的）角色"用户此刻在彼方做什么"。
+            // 用户本人也接入了页外时，告诉（同样启用页外的）角色"用户此刻在页外做什么"。
             // 强调这只是虚拟空间的挂机状态，不代表用户本人真的在场——避免角色据此误判现实。
             // 注意：用户登出（vrState.enabled=false）后这段自然不再注入。
             const uv = userProfile?.vrState;
@@ -384,12 +385,12 @@ export const ChatPrompts = {
                 const VR_ROOM_NAMES: Record<string, string> = {
                     library: '图书馆', music: '听歌房', guestbook: '留言簿', gym: '娱乐室', postoffice: '邮局',
                 };
-                const roomName = VR_ROOM_NAMES[uv.currentRoom || ''] || '彼方';
+                const roomName = VR_ROOM_NAMES[uv.currentRoom || ''] || '页外';
                 const act = (uv.activity || '').trim();
                 const uname = userProfile?.name || '用户';
-                baseSystemPrompt += `\n### ${uname} 此刻也在《彼方》里
-${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写着：「${act}」` : ''}。在彼方里你会看到 ta 的小人、也知道那就是 ${uname} 本人的化身，可以对着 ta 的虚拟形象做你自己的动作、搭话、围观或调侃。
-但务必记住：这只是 ta 挂在虚拟空间里的一个化身状态（类似游戏挂机 / AFK），**并不代表 ${uname} 本人此刻真守在游戏里**——ta 很可能早已离开屏幕、正在现实里忙别的或休息。所以别据此认定"ta 正盯着你""ta 现实里也在干这件事"，也别把它当成 ta 在跟你说话。你和 ta 的真实关系、近况一律以你们的聊天记录为准；这条只是彼方这个虚拟空间里的一个在场提示而已。\n`;
+                baseSystemPrompt += `\n### ${uname} 此刻也在《页外》里
+${uname} 的化身正挂在《页外》的【${roomName}】${act ? `，状态写着：「${act}」` : ''}。在页外里你会看到 ta 的小人、也知道那就是 ${uname} 本人的化身，可以对着 ta 的虚拟形象做你自己的动作、搭话、围观或调侃。
+但务必记住：这只是 ta 挂在虚拟空间里的一个化身状态（类似游戏挂机 / AFK），**并不代表 ${uname} 本人此刻真守在游戏里**——ta 很可能早已离开屏幕、正在现实里忙别的或休息。所以别据此认定"ta 正盯着你""ta 现实里也在干这件事"，也别把它当成 ta 在跟你说话。你和 ta 的真实关系、近况一律以你们的聊天记录为准；这条只是页外这个虚拟空间里的一个在场提示而已。\n`;
             }
         }
 
@@ -785,7 +786,9 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         processedExcludeIds?: Set<number>,
     ) => {
         // Filter Logic
-        let effectiveHistory = messages.filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
+        let effectiveHistory = messages
+            .filter(m => !m.metadata?.excludeFromContext)
+            .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
         // Memory Palace: 过滤已被记忆宫殿处理过的消息（由向量记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
             effectiveHistory = effectiveHistory.filter(m => !processedExcludeIds.has(m.id));
@@ -890,6 +893,21 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                         ? `${timeStr} [系统: 用户从「心意铺」送了你一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}。请按你的性格自然地表达感谢 / 惊喜 / 在意，可以写一封简短的感谢信]`
                         : `${timeStr} [系统: 你从「心意铺」送了用户一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}]`;
                 }
+                else if (m.type === 'forum_card') {
+                    const fp: any = m.metadata?.forumPost || {};
+                    const stats = fp.stats || {};
+                    const tags = Array.isArray(fp.tags) && fp.tags.length > 0
+                        ? fp.tags.map((t: string) => `#${t}`).join(' ')
+                        : '无';
+                    const replies = Array.isArray(fp.repliesPreview) && fp.repliesPreview.length > 0
+                        ? fp.repliesPreview.map((r: any) => `${r.floor || '?'}楼 ${r.authorName || '茶客'}: ${r.body || ''}`).join('\n')
+                        : '（暂无楼层预览）';
+                    const sender = m.role === 'user' ? '用户' : '你';
+                    const intent = m.role === 'user'
+                        ? '用户把这条茶话亭帖子转给了你。请按你的人设自然评论一条，可以吐槽、接梗、认真分析或追问，不要像客服总结。'
+                        : '你之前主动把这条茶话亭帖子转给了用户。后续聊到时，请记得这是你分享出去的内容，可以解释为什么想让用户看。';
+                    content = `${timeStr} [${sender}分享了茶话亭帖子]\n${intent}\n板块: ${fp.boardName || fp.boardId || '茶话亭'}\n楼主: ${fp.author?.name || '匿名茶客'}\n标题: ${fp.title || '未命名茶话'}\n正文: ${fp.body || '（无正文）'}\n热度: ${stats.likes || 0}赞 / ${stats.floors || stats.replies || 0}楼\n标签: ${tags}\n楼层预览:\n${replies}`;
+                }
                 else if (m.type === 'social_card') {
                     const post = m.metadata?.post || {};
                     // Look up this character's own Spark handles (sub-accounts) so the model can
@@ -934,13 +952,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     content = `${timeStr} [${sender}分享了小红书笔记]\n标题: ${note.title || '无标题'}\n作者: ${note.author || '未知'}\n赞: ${note.likes || 0}\n简介: ${note.desc || '无'}\n${m.role === 'user' ? '(请根据你的性格对这个帖子发表看法)' : ''}`;
                 }
                 else if ((m.type as string) === 'vr_card') {
-                    // vr_card：你自己进入 VR 社交游戏《彼方》时留下的动态。
-                    // 启用了彼方的角色已在系统提示里常驻"《彼方》是什么"的设定，这里就不再逐卡重复，
-                    // 只留一句极简标记省 token；没启用彼方的角色（可能是旧卡片）才补完整框定兜底。
+                    // vr_card：你自己进入 VR 社交游戏《页外》时留下的动态。
+                    // 启用了页外的角色已在系统提示里常驻"《页外》是什么"的设定，这里就不再逐卡重复，
+                    // 只留一句极简标记省 token；没启用页外的角色（可能是旧卡片）才补完整框定兜底。
                     const body = typeof m.content === 'string' ? m.content : '';
                     content = char.vrState?.enabled
-                        ? `${timeStr}（你在《彼方》里的动态）\n${body}`
-                        : `${timeStr}（系统记录：这是你之前自己进入 VR 社交游戏《彼方》(功能上类似 VRChat) 时留下的动态——你确实进入并参与了这款游戏，只是事情发生在游戏世界里。聊到时就当成"我在《彼方》里做的事"来讲，别说成现实里发生的经历。）\n${body}`;
+                        ? `${timeStr}（你在《页外》里的动态）\n${body}`
+                        : `${timeStr}（系统记录：这是你之前自己进入 VR 社交游戏《页外》(功能上类似 VRChat) 时留下的动态——你确实进入并参与了这款游戏，只是事情发生在游戏世界里。聊到时就当成"我在《页外》里做的事"来讲，别说成现实里发生的经历。）\n${body}`;
                 }
                 else if ((m.type as string) === 'html_card') {
                     // html_card：上下文里只塞纯文字摘要，剥离掉所有 HTML，省 token、不污染 LLM 思考

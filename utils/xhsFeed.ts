@@ -1,5 +1,6 @@
 import { APIConfig, CharacterProfile, UserProfile, XhsFeedComment, XhsFeedPost, XhsStockImage } from '../types';
 import { safeResponseJson, extractContent } from './safeApi';
+import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 /**
  * 小红书 App 本地生成信息流。
@@ -150,11 +151,28 @@ const pickPosterChars = (characters: CharacterProfile[], max = 4): CharacterProf
     return pool.slice(0, max);
 };
 
-const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfile): string => {
+export const resolveXhsAuthorCharacter = (
+    post: any,
+    posters: CharacterProfile[],
+    usedChar: Set<string> = new Set(),
+): CharacterProfile | undefined => {
+    if (!post?.isCharacter) return undefined;
+    const charId = String(post?.charId || post?.authorCharId || '').trim();
+    const authorName = String(post?.author || post?.authorName || post?.name || '').trim();
+    let matched = charId ? posters.find(c => getCharacterModelId(c) === charId) : undefined;
+    if (!matched && authorName) matched = posters.find(c => c.name === authorName);
+    if (matched && usedChar.has(matched.id)) return undefined;
+    if (matched) usedChar.add(matched.id);
+    return matched;
+};
+
+export const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfile): string => {
     const charLines = chars.map((c, i) => {
         const persona = (c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300);
         const handle = c.socialProfile?.handle ? `（账号名也可用 ${c.socialProfile.handle}）` : '';
-        return `${i + 1}. 「${c.name}」${handle}：${persona || '（无人设描述）'}`;
+        const id = getCharacterModelId(c);
+        const idPart = id ? ` charId="${id}"` : '';
+        return `${i + 1}. ${formatCharacterWithId(c)}${idPart}${handle}：${persona || '（无人设描述）'}`;
     }).join('\n');
     const topics = pickTopics(22);
     const charPostCount = chars.length ? Math.min(chars.length, 5) : 0;
@@ -177,9 +195,10 @@ ${topics.join('、')}
 4. **不重复**：标题不重样、题材不撞车、昵称不重复。
 5. title 有钩子；tags 4~8 个（不带 #，贴合话题便于聚合）；likes 0~9999、分布自然（多数几十到几百、偶有爆款上千）。
 6. 每条帖子带 3~6 条评论（让热门帖有「评论区」氛围）：author 为各异的虚构昵称，content 口语化有互动感（附和/提问/玩梗/抬杠/求链接），可有 1 条「热评」likes 偏高，其余 0~500。
+7. 角色帖必须输出 charId，且 charId 必须从上方角色列表中逐字选择；author 只是展示昵称，真正归属以 charId 为准。NPC 帖不要冒用角色 charId。
 
 **务必输出完整且合法的 JSON**：只输出一个紧凑的 JSON 数组（无多余空白、无 markdown 围栏、无解释），把 ${FEED_BATCH_SIZE} 条全部写完、最后用 ] 收尾，绝不中途截断。长帖该长就长，但要保证整批写完。格式：
-[{"author":"昵称","isCharacter":false,"title":"…","body":"…","tags":["…"],"likes":123,"comments":[{"author":"…","content":"…","likes":3}]}]`;
+[{"author":"昵称","charId":"角色ID(角色帖必填，NPC省略)","isCharacter":false,"title":"…","body":"…","tags":["…"],"likes":123,"comments":[{"author":"…","content":"…","likes":3}]}]`;
 };
 
 /** 刷新信息流：LLM 生成一批帖子（角色帖 + NPC 帖），映射回 XhsFeedPost */
@@ -219,9 +238,7 @@ export const generateFeedBatch = async (
         return true;
     }).map((p: any, i: number): XhsFeedPost => {
         const authorName = String(p?.author || '小红薯').slice(0, 24);
-        let matched = p?.isCharacter ? posters.find(c => c.name === authorName) : undefined;
-        if (matched && usedChar.has(matched.id)) matched = undefined; // 角色已发过→当 NPC
-        if (matched) usedChar.add(matched.id);
+        const matched = resolveXhsAuthorCharacter(p, posters, usedChar);
         const comments: XhsFeedComment[] = Array.isArray(p?.comments)
             ? p.comments.slice(0, FEED_COMMENTS_PER_POST).map((cm: any): XhsFeedComment => ({
                 id: uid(),

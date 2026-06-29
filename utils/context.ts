@@ -7,6 +7,7 @@ import { MARRIAGE_STAGE_LABEL } from './relationship';
 import { buildCoupleSpacePromptBlock } from './coupleSpace';
 import { relationshipBlock, coreText, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
 import { readTwitterContextSummary } from './twitterFeed';
+import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -41,6 +42,12 @@ export const renderMesExampleBlock = (mesExample?: string): string => {
     return `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的参考示例，<START> 表示一段新示例的开始。它们不是真实发生过的对话，不要当成共同记忆引用，只用来把握语气与措辞。）\n${text}\n\n`;
 };
 
+const characterIdentityRule = (char: CharacterProfile): string => {
+    const id = getCharacterModelId(char);
+    if (!id) return '';
+    return `### 角色身份锚 (Hidden Character ID)\n- 角色ID: ${id}\n- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。\n- 这个ID只用于你在内部区分身份；日常对话里不要主动把角色ID念给用户听，除非用户明确询问识别码。\n\n`;
+};
+
 export const ContextBuilder = {
 
     /**
@@ -55,6 +62,7 @@ export const ContextBuilder = {
         // 1. 角色名
         context += `### 角色名\n`;
         context += `${char.name}\n\n`;
+        context += characterIdentityRule(char);
 
         // 2. 核心指令（完整，不截断）
         context += `### 核心指令\n`;
@@ -178,6 +186,11 @@ export const ContextBuilder = {
         // 1. 核心身份 (Identity)
         context += `### 你的身份 (Character)\n`;
         context += `- 名字: ${char.name}\n`;
+        const modelId = getCharacterModelId(char);
+        if (modelId) {
+            context += `- 角色ID: ${modelId}\n`;
+        }
+        context += `- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。这个ID只用于内部区分身份，日常对话里不要主动念给用户听。\n`;
         context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知

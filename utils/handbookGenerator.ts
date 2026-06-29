@@ -18,7 +18,7 @@ import {
     HandbookPage, HandbookFragment, HandbookLayout, LayoutPlacement, LayoutRole,
 } from '../types';
 import { DB } from './db';
-import { safeResponseJson, extractJson } from './safeApi';
+import { safeResponseJson, extractJson as safeExtractJson } from './safeApi';
 import { ContextBuilder } from './context';
 
 // 局部 seedFloat — composePageLayout 用 (不引用 components/ 避免 utils → components 反向依赖).
@@ -39,41 +39,6 @@ interface ApiConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
-}
-
-// ─── 工具：把 LLM 输出的 JSON 数组解析成 HandbookFragment[] ─
-function parseFragmentsFromLLMOutput(raw: string): HandbookFragment[] {
-    let s = raw.trim()
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-    let parsed: any = null;
-    try {
-        parsed = JSON.parse(s);
-    } catch {
-        // extractJson 兜底:从乱七八糟里掏 JSON
-        try { parsed = extractJson(s); } catch {}
-    }
-    if (!parsed || !Array.isArray(parsed)) return [];
-    return parsed
-        .map((item: any, i: number): HandbookFragment | null => {
-            if (typeof item === 'string') {
-                return { id: `frag-${Date.now()}-${i}`, text: item.trim() };
-            }
-            if (item && typeof item === 'object') {
-                const text = typeof item.text === 'string' ? item.text.trim()
-                           : typeof item.content === 'string' ? item.content.trim()
-                           : '';
-                if (!text) return null;
-                const time = typeof item.time === 'string' ? item.time.trim()
-                           : typeof item.timeHint === 'string' ? item.timeHint.trim()
-                           : undefined;
-                return { id: `frag-${Date.now()}-${i}`, text, time };
-            }
-            return null;
-        })
-        .filter((f): f is HandbookFragment => !!f && f.text.length > 1);
 }
 
 // 把 fragments 拼成可读的 plain text(存 content 字段,user 编辑/兜底用)
@@ -130,11 +95,10 @@ async function getTodayChatLines(
 
 // ─── 共用: 估高 / 占位渲染 / turn 输出解析 ───────────────
 
-const PAGE_W_DEFAULT = 360;
 const PAGE_H_DEFAULT = 720;
 
 /** 估计一张卡片的高度(% of page);chars + widthPct → est lines → est px → est %. */
-export function estHeightPctFromChars(chars: number, widthPct: number, pageHeight: number = PAGE_H_DEFAULT, role: 'main' | 'side' | 'corner' | 'margin' = 'main'): number {
+export function estHeightPctFromChars(chars: number, widthPct: number, _pageHeight: number = PAGE_H_DEFAULT, role: 'main' | 'side' | 'corner' | 'margin' = 'main'): number {
     const charsPerLine = Math.max(8, Math.floor(widthPct * 0.16));
     const lines = Math.max(1, Math.ceil(chars / charsPerLine));
     const base = role === 'margin' ? 4 : role === 'corner' ? 6 : 9;
@@ -183,7 +147,7 @@ function parseTurnOutput(raw: string, pageId: string, occupied: PlacementHint[])
         .trim();
     let parsed: any;
     try { parsed = JSON.parse(stripped); }
-    catch { try { parsed = extractJson(stripped); } catch { parsed = null; } }
+    catch { try { parsed = safeExtractJson(stripped); } catch { parsed = null; } }
 
     if (!parsed) return { fragments: [], placements: [] };
     // 兼容: { items: [...] } / { fragments: [...] } / [ ... ]

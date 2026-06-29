@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BankTransaction, SavingsGoal, APIConfig } from '../../types';
 import { safeResponseJson } from '../../utils/safeApi';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo } from '../types';
 import { DB } from '../utils/db';
 import { createAutoBankTransaction } from '../utils/bankLedger';
 import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
@@ -24,6 +24,7 @@ import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
+import { createCharacterId } from '../utils/characterIdentity';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
@@ -33,6 +34,15 @@ import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { extractThinkingChainFromCompletion, flattenContent, stripThinkBlocks } from '../utils/llmReasoning';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
+import {
+  buildRelationshipForwardCard,
+  chooseAutoRelationshipTargets,
+  generateCharPairInteraction,
+  markAutoRelationshipRun,
+  mergeRelationshipEdge,
+  normalizeRelationshipNetworkSettings,
+  RELATIONSHIP_NETWORK_UPDATED_EVENT,
+} from '../utils/relationshipNetwork';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
@@ -373,6 +383,10 @@ interface OSContextType {
   suspendCall: (info: { charId: string; charName: string; charAvatar?: string; startedAt: number; bubbles?: any[]; sessionId?: string; elapsedSeconds?: number; voiceLang?: string }) => void;
   resumeCall: () => void;
   clearSuspendedCall: () => void;
+  suspendedVideoCall: SuspendedVideoCallInfo | null;
+  suspendVideoCall: (info: SuspendedVideoCallInfo) => void;
+  resumeVideoCall: () => void;
+  clearSuspendedVideoCall: () => void;
 }
 
 // 默认壁纸：奶白手帐纸面 —— 由上至下微微变暖的米白，承托白色拼贴卡片（黑白手帐风）。
@@ -430,7 +444,8 @@ const defaultUserProfile: UserProfile = {
     name: 'User',
     avatar: generateAvatar('User'),
     bio: 'No description yet.',
-    balance: 0
+    balance: 0,
+    ambientSocialEnabled: true,
 };
 
 // Moro 四张本地表情头像（public/moro-avatars/）：平静 / 撒娇 / 可怜 / 疑惑
@@ -730,6 +745,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Call Suspend
   const [suspendedCall, setSuspendedCall] = useState<{ charId: string; charName: string; charAvatar?: string; startedAt: number; bubbles?: any[]; sessionId?: string; elapsedSeconds?: number; voiceLang?: string } | null>(null);
+  const [suspendedVideoCall, setSuspendedVideoCall] = useState<SuspendedVideoCallInfo | null>(null);
+  const relationshipNetworkAutoRunningRef = useRef(false);
 
   const sendProactiveNativeNotification = useCallback(async (charId: string, charName: string, body: string) => {
       if (!Capacitor.isNativePlatform()) return;
@@ -1450,6 +1467,109 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setUnreadMessages(prev => ({ ...prev, [charId]: Math.max(prev[charId] || 0, inc) }));
       setLastMsgTimestamp(Date.now());
   }, []);
+
+  useEffect(() => {
+      if (!isDataLoaded) return;
+
+      const tickRelationshipNetwork = async () => {
+          if (relationshipNetworkAutoRunningRef.current) return;
+          relationshipNetworkAutoRunningRef.current = true;
+          try {
+              const now = Date.now();
+              const storedSettings = await DB.getRelationshipNetworkAutoSettings();
+              const settings = normalizeRelationshipNetworkSettings(storedSettings, now);
+              if (!settings.enabled || settings.nextRunAt > now || settings.selectedCharIds.length === 0) return;
+              const currentCharacters = charactersRef.current.filter(c => !c.blacklisted);
+              if (currentCharacters.length < 2) return;
+              const edges = await DB.getRelationshipNetworkEdges().catch(() => []);
+              const targets = chooseAutoRelationshipTargets({
+                  selectedCharIds: settings.selectedCharIds,
+                  characters: currentCharacters,
+                  edges,
+                  settings,
+                  now,
+                  maxPairs: 2,
+              });
+              if (targets.length === 0) {
+                  await DB.saveRelationshipNetworkAutoSettings({
+                      ...settings,
+                      nextRunAt: now + settings.intervalMinutes * 60_000,
+                      updatedAt: now,
+                  });
+                  return;
+              }
+
+              const api = resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current);
+              const completed: Array<{ a: CharacterProfile; b: CharacterProfile; pairKey: string; forwarded?: boolean }> = [];
+              let forwardedTotal = 0;
+              for (const target of targets) {
+                  const recent = await DB.getRelationshipNetworkMessagesByPair(target.pairKey, 12).catch(() => []);
+                  const result = await generateCharPairInteraction({
+                      a: target.a,
+                      b: target.b,
+                      edge: target.edge,
+                      recentMessages: recent,
+                      api,
+                      userProfile: userProfileRef.current,
+                      source: 'auto',
+                  });
+                  if (result.messages.length === 0) continue;
+                  await DB.saveRelationshipNetworkMessages(result.messages);
+                  const merged = mergeRelationshipEdge(target.edge, target.a, target.b, result.edgePatch, 'auto', now);
+                  await DB.saveRelationshipNetworkEdge(merged);
+                  let forwarded = false;
+                  if (result.forward?.shouldForward && result.forward.forwarderId) {
+                      const forwarder = result.forward.forwarderId === target.a.id ? target.a : target.b;
+                      const other = forwarder.id === target.a.id ? target.b : target.a;
+                      const excerpt = result.forward.excerptMessageIds?.length
+                          ? result.messages.filter(m => result.forward?.excerptMessageIds?.includes(m.id))
+                          : result.messages.slice(-Math.min(3, result.messages.length));
+                      if (excerpt.length > 0) {
+                          const card = buildRelationshipForwardCard({ forwarder, other, messages: excerpt, edge: merged, partial: true });
+                          await DB.saveMessage({
+                              charId: forwarder.id,
+                              role: 'assistant',
+                              type: 'chat_forward',
+                              content: JSON.stringify(card),
+                              metadata: {
+                                  relationshipNetworkForward: true,
+                                  pairKey: target.pairKey,
+                                  forwardReason: result.forward.reason,
+                              },
+                          } as any);
+                          markUnread(forwarder.id, 1);
+                          forwarded = true;
+                          forwardedTotal += 1;
+                      }
+                  }
+                  completed.push({ a: target.a, b: target.b, pairKey: target.pairKey, forwarded });
+              }
+
+              if (completed.length > 0) {
+                  await DB.saveRelationshipNetworkAutoSettings(markAutoRelationshipRun(settings, completed, now));
+                  window.dispatchEvent(new Event(RELATIONSHIP_NETWORK_UPDATED_EVENT));
+                  const pairCount = completed.length;
+                  addToast(`关系网后台生成了 ${pairCount} 段互动${forwardedTotal ? `，${forwardedTotal} 段已转发` : ''}`, 'info');
+              }
+          } catch (err) {
+              console.warn('[RelationshipNetwork] auto tick failed:', err);
+          } finally {
+              relationshipNetworkAutoRunningRef.current = false;
+          }
+      };
+
+      const timer = window.setInterval(() => { void tickRelationshipNetwork(); }, 60_000);
+      const visible = () => {
+          if (document.visibilityState === 'visible') void tickRelationshipNetwork();
+      };
+      void tickRelationshipNetwork();
+      document.addEventListener('visibilitychange', visible);
+      return () => {
+          window.clearInterval(timer);
+          document.removeEventListener('visibilitychange', visible);
+      };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded, markUnread]);
 
   // Listen for proactive messages to show unread red dot
   useEffect(() => {
@@ -2356,7 +2476,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const takeoutReactTimer = setInterval(() => { void checkTakeoutDeliveries(); }, 30_000);
       void checkTakeoutDeliveries();
 
-      // 「彼方」自主登入 —— 独立调度，复用同一批 refs 拿最新状态
+      // 「页外」自主登入 —— 独立调度，复用同一批 refs 拿最新状态
       const runVR = async (charId: string, room?: string, letterId?: string) => {
           const char = charactersRef.current.find(c => c.id === charId);
           if (!char || !char.vrState?.enabled) return;
@@ -2775,7 +2895,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     // 注意：memoryPalaceEnabled 不在这里默认开 —— 那是用户在记忆宫殿 App 显式 opt-in
     // 的功能，自动开会替用户决策。
     const newChar: CharacterProfile = {
-      id: `char-${Date.now()}`,
+      id: createCharacterId('char'),
       name,
       avatar: generateAvatar(name),
       description: '点击编辑设定...',
@@ -2796,7 +2916,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const importCharacter = async (char: CharacterProfile) => {
     // 导入即视为已加入「往来」：强制置 true，导入后无需「添加好友」即可在往来直接开聊
     // （不沿用卡里可能带的 addedToChat:false，保证任何导入都直接出现在往来）
-    const withChat: CharacterProfile = { ...char, addedToChat: true };
+    const withChat: CharacterProfile = normalizeCharacterDefaults({
+      ...char,
+      id: char.id || createCharacterId('import'),
+      addedToChat: true,
+    } as CharacterProfile);
     setCharacters(prev => [...prev.filter(c => c.id !== withChat.id), withChat]);
     setActiveCharacterId(withChat.id);
     await DB.saveCharacter(withChat);
@@ -3359,7 +3483,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
               'daily_schedule', 'memory_batches',
               'pixel_home_assets', 'pixel_home_layouts',
-              // 「彼方」虚拟世界各房间 store —— 早期导出清单漏了，导致备份不含房间数据
+              // 「页外」虚拟世界各房间 store —— 早期导出清单漏了，导致备份不含房间数据
               'vr_novels', 'vr_annotations', 'cc_custom_parts', 'vr_music', 'vr_guestbook', 'vr_letters', 'vr_settings'
           ];
 
@@ -3717,7 +3841,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'memory_batches': backupData.memoryBatches = processedData; break;
                   case 'pixel_home_assets': backupData.pixelHomeAssets = processedData; break;
                   case 'pixel_home_layouts': backupData.pixelHomeLayouts = processedData; break;
-                  // 「彼方」虚拟世界 —— 键名须与 importFullData 读取的字段对齐
+                  // 「页外」虚拟世界 —— 键名须与 importFullData 读取的字段对齐
                   case 'vr_novels': backupData.vrNovels = processedData; break;
                   case 'vr_annotations': backupData.vrAnnotations = processedData; break;
                   case 'cc_custom_parts': backupData.customCreatorParts = processedData; break;
@@ -4225,6 +4349,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const clearSuspendedCall = () => {
     setSuspendedCall(null);
   };
+  const suspendVideoCall = (info: SuspendedVideoCallInfo) => {
+    setSuspendedVideoCall(info);
+    setActiveApp(AppID.Launcher);
+  };
+  const resumeVideoCall = () => {
+    setActiveApp(AppID.VideoCall);
+  };
+  const clearSuspendedVideoCall = () => {
+    setSuspendedVideoCall(null);
+  };
 
   // --- Back Handler Logic ---
   const registerBackHandler = useCallback((handler: () => boolean, appId?: AppID) => {
@@ -4347,7 +4481,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     suspendedCall,
     suspendCall,
     resumeCall,
-    clearSuspendedCall
+    clearSuspendedCall,
+    suspendedVideoCall,
+    suspendVideoCall,
+    resumeVideoCall,
+    clearSuspendedVideoCall
   };
 
   return (
