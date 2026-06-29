@@ -246,6 +246,12 @@
       input, textarea {
         user-select: text;
         -webkit-user-select: text;
+        -webkit-touch-callout: default;
+      }
+      button,
+      [role="button"],
+      .select-none {
+        -webkit-touch-callout: none;
       }
       .no-scrollbar::-webkit-scrollbar {
         display: none;

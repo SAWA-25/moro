@@ -1132,7 +1132,7 @@ const Launcher: React.FC = () => {
 
   return (
     <div
-      className="moro-desktop-root h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none"
+      className="moro-desktop-root h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none isolate"
       data-has-wallpaper={hasCustomWallpaper ? 'true' : undefined}
       style={{
         color: contentColor,
@@ -1218,12 +1218,12 @@ const Launcher: React.FC = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onClickCapture={handleClickCapture}
-        className="relative z-10 flex-1 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+        className="moro-desktop-scroll relative z-10 flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
         style={{
             scrollBehavior: 'smooth',
-            overscrollBehaviorX: 'contain',
+            overscrollBehaviorX: 'none',
             overscrollBehaviorY: 'none',
-            touchAction: 'pan-x pan-y',
+            touchAction: 'pan-x',
             willChange: 'scroll-position',
             transform: 'translateZ(0)',
             WebkitOverflowScrolling: 'touch',
@@ -1235,8 +1235,13 @@ const Launcher: React.FC = () => {
                 key={idx}
                 data-desk-page={idx}
                 data-page-index={idx}
-                className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--safe-top)+3.15rem)] pb-7 h-full relative"
-                style={{ transform: 'translateZ(0)' }}
+                className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--safe-top)+3.15rem)] pb-7 h-full relative overflow-hidden"
+                style={{
+                    transform: 'translateZ(0)',
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden',
+                    contain: 'layout paint style',
+                }}
               >
                   {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
                   {idx === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (

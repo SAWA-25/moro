@@ -663,6 +663,7 @@ const PhoneShell: React.FC = () => {
        <div 
          className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
          style={{ 
+             backgroundColor: '#f4f2ed',
              backgroundImage: bgImageValue,
              transform: activeApp !== AppID.Launcher ? 'scale(1.1)' : 'scale(1)',
              filter: activeApp !== AppID.Launcher ? 'blur(10px)' : 'none',
@@ -672,7 +673,7 @@ const PhoneShell: React.FC = () => {
          }}
        />
        
-       <div className={`absolute inset-0 transition-all duration-500 ${activeApp === AppID.Launcher ? 'bg-transparent' : 'bg-white/50 backdrop-blur-3xl'}`} />
+       <div className={`absolute inset-0 transition-all duration-500 ${activeApp === AppID.Launcher ? 'bg-transparent' : 'bg-white/50 backdrop-blur-3xl'}`} style={{ backgroundColor: activeApp === AppID.Launcher ? 'transparent' : undefined }} />
        
        {/* 外壳安全区两种策略：
           - 未迁移 App：外壳铺满 body（含 --app-height 多出的 +safe-bottom 溢出区），用 padding 让位安全区，

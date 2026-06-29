@@ -87,6 +87,20 @@ const FIELD = 'w-full px-3 py-2 bg-white border border-[#e7e1d6] rounded-[14px] 
 const LABEL = 'label-mono text-[9px] text-[#8a918d] block mb-1';
 
 const POLAROID_SCOPE_CSS = `
+.settings-polaroid {
+  overscroll-behavior: contain;
+  -webkit-text-size-adjust: 100%;
+}
+.settings-polaroid * {
+  -webkit-tap-highlight-color: transparent;
+}
+.settings-polaroid button,
+.settings-polaroid [role="button"],
+.settings-polaroid .select-none {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 .settings-polaroid [class*="text-[#26242a]"], .settings-polaroid [class*="text-[#5a3140]"] { color: #2f3437 !important; }
 .settings-polaroid [class*="text-[#26242a]/"], .settings-polaroid [class*="text-[#8f6b7b]"] { color: #69716d !important; }
 .settings-polaroid [class*="text-[#a892a3]"] { color: #8a918d !important; }
@@ -102,6 +116,13 @@ const POLAROID_SCOPE_CSS = `
 .settings-polaroid .border-dashed { border-style: solid !important; }
 .settings-polaroid .border-2 { border-width: 1px !important; }
 .settings-polaroid code { background-color: #f3f7f6 !important; color: #577782 !important; border-radius: 7px; }
+.settings-polaroid input,
+.settings-polaroid textarea,
+.settings-polaroid select {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: manipulation;
+}
 .settings-polaroid input[type="range"] { accent-color: #7fa8b3; }
 `;
 
