@@ -70,6 +70,31 @@ const LINE = '#e7e1d6';
 const CARD_BORDER = '#eee9df';
 const CARD_SHADOW = '0 1px 2px rgba(31,35,38,0.04), 0 18px 42px -34px rgba(31,35,38,0.36)';
 const AUX_MODELS_STORAGE_KEY = 'os_aux_available_models';
+const normalizeModelList = (data: any): string[] => {
+    const list =
+        Array.isArray(data) ? data :
+        Array.isArray(data?.data) ? data.data :
+        Array.isArray(data?.models) ? data.models :
+        Array.isArray(data?.model_list) ? data.model_list :
+        [];
+    return Array.from(new Set(
+        list
+            .map((m: any) => typeof m === 'string' ? m : (m?.id ?? m?.name ?? m?.model))
+            .filter((m: any): m is string => typeof m === 'string' && !!m.trim())
+            .map((m: string) => m.trim())
+    ));
+};
+
+const extractApiErrorMessage = (data: any, fallback: string): string => {
+    const candidates = [
+        data?.error?.message,
+        typeof data?.error === 'string' ? data.error : undefined,
+        data?.message,
+        data?.detail,
+        data?.details,
+    ];
+    return candidates.find((v): v is string => typeof v === 'string' && !!v.trim()) || fallback;
+};
 /** 轻量按钮：白色照片纸底 + 极淡边线 */
 const STICKER = 'border border-[#e7e1d6] rounded-full bg-white/90 text-[#577782] shadow-[0_1px_2px_rgba(31,35,38,0.05)] press-soft';
 /** 主按钮：低饱和雾蓝胶囊 */
@@ -88,11 +113,22 @@ const LABEL = 'label-mono text-[9px] text-[#8a918d] block mb-1';
 
 const POLAROID_SCOPE_CSS = `
 .settings-polaroid {
+  max-width: 100%;
+  overflow: hidden;
+  overflow-x: clip;
   overscroll-behavior: contain;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
   -webkit-text-size-adjust: 100%;
 }
 .settings-polaroid * {
+  max-width: 100%;
   -webkit-tap-highlight-color: transparent;
+}
+.settings-polaroid-scroll {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
 }
 .settings-polaroid button,
 .settings-polaroid [role="button"],
@@ -119,6 +155,8 @@ const POLAROID_SCOPE_CSS = `
 .settings-polaroid input,
 .settings-polaroid textarea,
 .settings-polaroid select {
+  max-width: 100%;
+  min-width: 0;
   -webkit-user-select: text;
   user-select: text;
   touch-action: manipulation;
@@ -358,6 +396,8 @@ const Settings: React.FC = () => {
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
       openApp,
   } = useOS();
+  const settingsRootRef = useRef<HTMLDivElement>(null);
+  const settingsScrollRef = useRef<HTMLDivElement>(null);
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
@@ -374,6 +414,42 @@ const Settings: React.FC = () => {
   );
   const [localAceStepKey, setLocalAceStepKey] = useState(apiConfig.aceStepApiKey || '');
   const [showAceStepGuide, setShowAceStepGuide] = useState(false);
+
+  useEffect(() => {
+      let frame = 0;
+      const keepSettingsAligned = () => {
+          if (frame) return;
+          frame = window.requestAnimationFrame(() => {
+              frame = 0;
+              const root = settingsRootRef.current;
+              const scroller = settingsScrollRef.current;
+              if (root) root.scrollLeft = 0;
+              if (scroller) scroller.scrollLeft = 0;
+              if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
+              if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
+              if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
+          });
+      };
+
+      document.addEventListener('selectionchange', keepSettingsAligned);
+      window.addEventListener('scroll', keepSettingsAligned, { passive: true });
+      window.visualViewport?.addEventListener('scroll', keepSettingsAligned);
+      window.visualViewport?.addEventListener('resize', keepSettingsAligned);
+      settingsRootRef.current?.addEventListener('select', keepSettingsAligned, true);
+      settingsRootRef.current?.addEventListener('focusin', keepSettingsAligned, true);
+      settingsRootRef.current?.addEventListener('touchend', keepSettingsAligned, true);
+
+      return () => {
+          if (frame) window.cancelAnimationFrame(frame);
+          document.removeEventListener('selectionchange', keepSettingsAligned);
+          window.removeEventListener('scroll', keepSettingsAligned);
+          window.visualViewport?.removeEventListener('scroll', keepSettingsAligned);
+          window.visualViewport?.removeEventListener('resize', keepSettingsAligned);
+          settingsRootRef.current?.removeEventListener('select', keepSettingsAligned, true);
+          settingsRootRef.current?.removeEventListener('focusin', keepSettingsAligned, true);
+          settingsRootRef.current?.removeEventListener('touchend', keepSettingsAligned, true);
+      };
+  }, []);
 
   // 副 API（处理主聊天以外的辅助任务：日程、生活侧写……）
   const [localAuxEnabled, setLocalAuxEnabled] = useState<boolean>(!!auxApiConfig.enabled);
@@ -798,15 +874,12 @@ const Settings: React.FC = () => {
                 apiRole: target,
             },
         } as RequestInit & { __moroMeta?: unknown });
-        if (!response.ok) throw new Error(`Status ${response.status}`);
         const data = await safeResponseJson(response);
-        const list = data.data || data.models || [];
-        if (Array.isArray(list)) {
-            const models = Array.from(new Set(
-                list
-                    .map((m: any) => typeof m === 'string' ? m : m?.id)
-                    .filter((m: any): m is string => typeof m === 'string' && !!m.trim())
-            ));
+        if (!response.ok) {
+            throw new Error(extractApiErrorMessage(data, `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`));
+        }
+        const models = normalizeModelList(data);
+        if (models.length > 0) {
             if (target === 'aux') {
                 setAuxAvailableModels(models);
                 localStorage.setItem(AUX_MODELS_STORAGE_KEY, JSON.stringify(models));
@@ -820,7 +893,6 @@ const Settings: React.FC = () => {
             setStatus('模型列表格式不兼容');
         }
     } catch (error: any) {
-        console.error(error);
         setStatus(`拉取失败：${error?.message || '请检查地址和密钥'}`);
     } finally {
         setLoadingModelTarget(null);
@@ -1178,7 +1250,7 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+    <div ref={settingsRootRef} className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
       <style>{POLAROID_SCOPE_CSS}</style>
 
       {/* GLOBAL PROGRESS OVERLAY */}
@@ -1221,7 +1293,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
+      <div ref={settingsScrollRef} className="settings-polaroid-scroll flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
 
         <section className="relative overflow-hidden bg-white/92 border border-[#eee9df] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-8" />

@@ -187,9 +187,10 @@
         /* 安全区单一来源：原生 env 与 JS 探测值 --standalone-safe-area-*（见 utils/iosStandalone.ts）取大，
            iOS 全屏 PWA 下原生 env 偶发返回 0 时由探测值兜底。新增 App 一律引用这三个变量。 */
         --safe-top: max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px));
+        --cutout-top: max(var(--safe-top), 10px);
         --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px));
         /* 全屏界面顶栏让开「安全区 + Moro 顶部状态栏(时间/电量, 约 1.5rem)」；背景仍铺满，只挪控件。 */
-        --chrome-top: calc(var(--safe-top) + 1.5rem);
+        --chrome-top: calc(var(--cutout-top) + 1.5rem);
         --app-height: 100lvh;
         --keyboard-inset: 0px;
         --app-font: 'Quicksand', 'Noto Sans SC', sans-serif;
@@ -208,8 +209,16 @@
       }
       html, body, #root {
         width: 100%;
+        max-width: 100%;
         min-height: var(--app-height, 100lvh);
         height: var(--app-height, 100lvh);
+        overflow: hidden;
+        overflow-x: clip;
+        overscroll-behavior-x: none;
+        touch-action: manipulation;
+      }
+      *, *::before, *::after {
+        box-sizing: border-box;
       }
       body {
         background-color: #f4f2ed;
@@ -222,8 +231,14 @@
         -webkit-user-select: none;
         height: var(--app-height);
         min-height: var(--app-height);
-        width: 100vw;
+        width: 100%;
+        max-width: 100%;
         font-family: var(--app-font);
+      }
+      @supports not (overflow: clip) {
+        html, body, #root {
+          overflow-x: hidden;
+        }
       }
       body.ios-standalone {
         min-height: var(--app-height);
@@ -1186,6 +1201,7 @@
         display: grid;
         height: 100%;
         min-height: 0;
+        overflow: hidden;
         grid-template-rows: min-content minmax(3.25rem, 1fr) min-content;
         row-gap: 0.58rem;
         padding: 0.85rem 1rem 0.8rem;
@@ -1279,11 +1295,16 @@
       .moro-routine-copy {
         min-width: 0;
         min-height: 0;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
         justify-content: center;
       }
       .moro-routine-activity {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         font-size: 14px;
         line-height: 1.05;
         font-weight: 900;
@@ -1333,49 +1354,61 @@
         font-variant-numeric: tabular-nums;
       }
       .moro-routine-widget--compact .moro-routine-shell {
-        grid-template-rows: min-content minmax(2.85rem, 1fr) 0.62rem;
-        row-gap: 0.42rem;
-        padding: 0.72rem 0.88rem 0.7rem;
+        grid-template-rows: min-content minmax(0, 1fr);
+        grid-auto-rows: min-content;
+        row-gap: 0.3rem;
+        padding: 0.58rem 0.72rem;
+      }
+      .moro-routine-widget--compact .moro-routine-header {
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .moro-routine-widget--compact .moro-routine-kicker {
+        font-size: 8px;
       }
       .moro-routine-widget--compact .moro-routine-date {
+        margin-top: 0.2rem;
         font-size: 11px;
       }
+      .moro-routine-widget--compact .moro-routine-open {
+        width: 1.55rem;
+        height: 1.55rem;
+      }
       .moro-routine-widget--compact .moro-routine-body {
-        grid-template-columns: 4.35rem 46px minmax(0, 1fr);
-        gap: 0.6rem;
+        grid-template-columns: minmax(3.25rem, 4rem) 40px minmax(0, 1fr);
+        gap: 0.5rem;
       }
       .moro-routine-widget--compact .moro-routine-timecard {
-        width: 4.35rem;
-        min-height: 2.45rem;
-        padding: 0.44rem 0.58rem;
+        width: auto;
+        min-height: 2.1rem;
+        padding: 0.36rem 0.48rem;
+        border-radius: 0.85rem;
       }
       .moro-routine-widget--compact .moro-routine-timecard span {
-        font-size: 17px;
+        font-size: 16px;
       }
       .moro-routine-widget--compact .moro-routine-timecard i {
-        margin-top: 0.32rem;
+        margin-top: 0.24rem;
         font-size: 8px;
       }
       .moro-routine-widget--compact .moro-routine-avatar {
-        width: 46px;
-        height: 46px;
-        flex-basis: 46px;
+        width: 40px;
+        height: 40px;
+        flex-basis: 40px;
       }
       .moro-routine-widget--compact .moro-routine-avatar > div {
-        width: 46px !important;
-        height: 46px !important;
+        width: 40px !important;
+        height: 40px !important;
       }
       .moro-routine-widget--compact .moro-routine-activity {
         font-size: 13px;
+        line-height: 1.1;
       }
       .moro-routine-widget--compact .moro-routine-note {
         display: none;
       }
       .moro-routine-widget--compact .moro-routine-timeline {
-        align-items: center;
-        gap: 0.3rem;
-        min-height: 0.62rem;
-        padding-top: 0;
+        display: none;
       }
       .moro-routine-widget--compact .moro-routine-tick {
         gap: 0;

@@ -25,7 +25,7 @@ export async function safeResponseJson(response: Response): Promise<any> {
     const text = await response.text();
 
     // Detect HTML / XML responses
-    const trimmed = text.trimStart();
+    const trimmed = text.trimStart().replace(/^\uFEFF/, '');
     if (trimmed.startsWith('<')) {
         // Extract useful info from HTML error pages
         const titleMatch = trimmed.match(/<title>(.*?)<\/title>/i);
@@ -49,10 +49,18 @@ export async function safeResponseJson(response: Response): Promise<any> {
     }
 
     try {
-        return JSON.parse(text);
+        return JSON.parse(trimmed);
     } catch (e) {
+        const cleaned = trimmed.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+        if (cleaned !== trimmed) {
+            try {
+                return JSON.parse(cleaned);
+            } catch {
+                // Fall through to the normal diagnostic below.
+            }
+        }
         // Show a snippet of what we got for debugging
-        const preview = text.slice(0, 200);
+        const preview = trimmed.slice(0, 200);
         throw new Error(
             `API返回了无效JSON (HTTP ${response.status}): ${preview}`
         );

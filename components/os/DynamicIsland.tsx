@@ -456,7 +456,7 @@ const DynamicIsland: React.FC = () => {
             )}
 
             {/* 胶囊本体 */}
-            <div className="absolute left-1/2 -translate-x-1/2 z-[59]" style={{ top: 'max(6px, var(--safe-top))' }}>
+            <div className="absolute left-1/2 -translate-x-1/2 z-[59]" style={{ top: 'var(--cutout-top)' }}>
                 <button
                     onClick={() => {
                         // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）。
@@ -567,7 +567,7 @@ const DynamicIsland: React.FC = () => {
                 <div
                     className="moro-dynamic-island-panel absolute left-4 right-4 z-[59] rounded-[1.5rem] p-3 text-white border border-white/10"
                     style={{
-                        top: 'calc(max(6px, var(--safe-top)) + 2.3rem)',
+                        top: 'calc(var(--cutout-top) + 2.3rem)',
                         background: 'rgba(13,13,22,0.94)',
                         backdropFilter: 'blur(18px)',
                         boxShadow: '0 24px 48px -16px rgba(0,0,0,0.6)',

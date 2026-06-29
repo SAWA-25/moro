@@ -254,7 +254,7 @@ const loadStoredDeskOrder = (): string[] => {
     } catch { return []; }
 };
 
-const DESK_LAYOUT_KEY = 'moro_desktop_layout_v15_requested_rows';
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v16_cutout_schedule';
 const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
     try {
         const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
@@ -382,13 +382,13 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
 
     place('widget:clock', 0, 0, 0);
     place('widget:schedule', 0, 0, 2);
-    place('widget:music', 0, 0, 4);
-    place('widget:image', 0, 2, 4);
-    placeApp(AppID.Gallery, 0, 0, 7);
-    placeApp(AppID.Music, 0, 1, 7);
-    placeApp(AppID.HotNews, 0, 2, 7);
-    placeApp(AppID.Appearance, 0, 3, 7);
-    place('widget:character', 0, 0, 9);
+    place('widget:music', 0, 0, 5);
+    place('widget:image', 0, 2, 5);
+    placeApp(AppID.Gallery, 0, 0, 8);
+    placeApp(AppID.Music, 0, 1, 8);
+    placeApp(AppID.HotNews, 0, 2, 8);
+    placeApp(AppID.Appearance, 0, 3, 8);
+    place('widget:character', 0, 0, 10);
 
     placeApp(AppID.Personas, 1, 0, 2);
     placeApp(AppID.Almanac, 1, 1, 2);
@@ -629,7 +629,7 @@ const Launcher: React.FC = () => {
         { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 2 },
         { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 2 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
-        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 2 },
+        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 3 },
         { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 3 },
         { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 3 },
         { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
@@ -1155,7 +1155,7 @@ const Launcher: React.FC = () => {
           <button
             onClick={() => setEditMode(false)}
             className="absolute right-5 z-40 px-5 py-2 rounded-full text-white text-xs font-bold shadow-lg press-soft animate-pop-in"
-            style={{ top: 'calc(max(6px, var(--safe-top)) + 2.4rem)', background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
+            style={{ top: 'calc(var(--chrome-top) + 0.75rem)', background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
           >完成</button>
         </>
       )}
@@ -1235,7 +1235,7 @@ const Launcher: React.FC = () => {
                 key={idx}
                 data-desk-page={idx}
                 data-page-index={idx}
-                className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--safe-top)+3.15rem)] pb-7 h-full relative overflow-hidden"
+                className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--chrome-top)+2.35rem)] pb-7 h-full relative overflow-hidden"
                 style={{
                     transform: 'translateZ(0)',
                     backfaceVisibility: 'hidden',

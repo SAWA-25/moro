@@ -10,6 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildPhoneCityHint } from '../utils/charCity';
 import { evaluatePhoneLockSubmission, isPhoneLocked, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
+import { toWallpaperBackground } from '../utils/defaultWallpapers';
 import {
     User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
     NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
@@ -96,7 +97,7 @@ interface CheckPhoneProps {
 }
 
 const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfront }) => {
-    const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile, theme: osTheme } = useOS();
     // 查岗（生成 TA 的手机内容）属「聊天以外」的功能：走副 API（未配置时回退主 API）
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [view, setView] = useState<'select' | 'phone'>(initialCharId ? 'phone' : 'select');
@@ -142,6 +143,10 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         const base = paletteFor(targetChar);
         return phoneProfile.accent ? { ...base, accent: phoneProfile.accent } : base;
     }, [targetChar?.id, phoneProfile.accent]);
+    const desktopWallpaper = useMemo(
+        () => toWallpaperBackground(osTheme.wallpaper, theme.grad),
+        [osTheme.wallpaper, theme.grad]
+    );
     const deviceName = phoneProfile.deviceName || (targetChar ? `${targetChar.name} 的手机` : '手机');
     const tagline = phoneProfile.tagline || '一台属于 TA 的手机';
 
@@ -1016,8 +1021,9 @@ Format:
         if (activePhoneLock) {
             const firstQuestion = activePhoneLock.questions[0]?.text || '没有题目，得靠口令或继续交流';
             return (
-                <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: '#202124', color: '#f7f7f7' }}>
-                    <div className="h-10 px-6 pt-3 flex items-center justify-between text-[12px] font-semibold tabular-nums opacity-85">
+                <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: desktopWallpaper, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', color: '#f7f7f7' }}>
+                    <div className="absolute inset-0 pointer-events-none bg-black/70 backdrop-blur-sm" />
+                    <div className="relative h-10 px-6 pt-3 flex items-center justify-between text-[12px] font-semibold tabular-nums opacity-85">
                         <span>{clock}</span>
                         <span className="tracking-[0.16em]">5G 60%</span>
                     </div>
@@ -1028,12 +1034,12 @@ Format:
                     >
                         试解锁
                     </button>
-                    <div className="px-6 pt-12 text-center">
+                    <div className="relative px-6 pt-12 text-center">
                         {targetChar?.avatar && <img src={targetChar.avatar} className="mx-auto w-16 h-16 rounded-2xl object-cover ring-1 ring-white/15 shadow-xl" alt="" />}
                         <div className="mt-4 text-[24px] font-black">{targetChar?.name}</div>
                         <div className="mt-3 text-[16px] tracking-[0.28em] opacity-60">手机已锁住</div>
                     </div>
-                    <div className="flex-1 flex flex-col justify-center px-8 pb-16">
+                    <div className="relative flex-1 flex flex-col justify-center px-8 pb-16">
                         <div className="text-center text-[24px] leading-[1.65] font-serif font-bold whitespace-pre-wrap">
                             {activePhoneLock.note || activePhoneLock.message}
                         </div>
@@ -1057,6 +1063,7 @@ Format:
 
         return (
             <div className="absolute inset-0 flex flex-col z-0 overflow-hidden" style={{ background: theme.grad }}>
+                <div className="absolute inset-0 pointer-events-none" style={{ background: desktopWallpaper, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', opacity: hasBg ? 0.18 : 0.58 }} />
                 {/* 壁纸：有约会底图就用它（角色专属），叠一层暗化保证图标可读 */}
                 {hasBg && (
                     <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url(${targetChar!.dateBackground})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.42 }} />

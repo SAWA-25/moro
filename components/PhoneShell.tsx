@@ -684,7 +684,7 @@ const PhoneShell: React.FC = () => {
         className="absolute top-0 left-0 right-0 z-10 overflow-hidden bg-transparent overscroll-none flex flex-col"
         style={
           shellHandlesSafeArea
-            ? { bottom: 0, paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }
+            ? { bottom: 0, paddingTop: 'var(--cutout-top)', paddingBottom: 'var(--safe-bottom)' }
             : { bottom: 'var(--standalone-safe-area-bottom, 0px)' }
         }
       >
@@ -744,7 +744,7 @@ const PhoneShell: React.FC = () => {
           <GlobalMiniPlayer />
 
           {/* Overlays: Toasts (Top) — 奶白胶囊手帐风：细描边 + 柔影 + 墨色小圆点 */}
-          <div className="absolute top-12 left-0 w-full flex flex-col items-center gap-2 pointer-events-none z-[60]">
+          <div className="absolute left-0 w-full flex flex-col items-center gap-2 pointer-events-none z-[60]" style={{ top: 'calc(var(--chrome-top) + 0.75rem)' }}>
               {toasts.map(toast => (
                  <div key={toast.id} className="animate-fade-in bg-white/95 backdrop-blur-xl px-4 py-2.5 rounded-full shadow-[0_16px_32px_-16px_rgba(50,48,60,0.45)] border border-slate-100 flex items-center gap-2.5 max-w-[85%]">
                      {toast.type === 'success' && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.7)' }}></span>}

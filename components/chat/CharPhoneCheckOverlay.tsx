@@ -11,6 +11,7 @@ import AppIcon from '../os/AppIcon';
 import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 import { isDevDebugAvailable } from '../../utils/devDebug';
 import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
+import { toWallpaperBackground } from '../../utils/defaultWallpapers';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -379,11 +380,12 @@ const buildUserDesktopSnapshot = (theme: OSTheme): UserDesktopSnapshot => {
 
 /** 壁纸值 → CSS background（与 PhoneShell 的处理一致：链接/dataURL 包 url()，渐变原样用） */
 const wallpaperBackground = (wallpaper?: string): React.CSSProperties => {
-    if (!wallpaper) return { background: 'linear-gradient(160deg, #6d83b2 0%, #a4b0c8 55%, #d8c8b8 100%)' };
-    const isImage = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:');
-    return isImage
-        ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-        : { background: wallpaper };
+    return {
+        background: toWallpaperBackground(wallpaper, 'linear-gradient(160deg, #6d83b2 0%, #a4b0c8 55%, #d8c8b8 100%)'),
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+    };
 };
 
 const shortTime = (ts?: number): string => {
@@ -1517,7 +1519,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
             {/* 顶部悬浮状态 + 退出申请。 */}
             <div className="absolute left-3 right-3 z-30 flex items-center justify-between pointer-events-none"
-                style={{ top: 'max(10px, var(--safe-top))' }}>
+                style={{ top: 'var(--cutout-top)' }}>
                 <div className="flex items-center gap-2 min-w-0">
                     <img src={char.avatar} className="w-7 h-7 rounded-full object-cover ring-2 ring-white shadow-sm shrink-0" alt="" />
                     <span className="text-xs font-bold text-white truncate px-3 py-2 rounded-full bg-black/40 backdrop-blur-xl shadow-lg">

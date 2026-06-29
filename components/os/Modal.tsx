@@ -15,13 +15,22 @@ const Modal: React.FC<ModalProps> = ({ isOpen, title, onClose, children, footer,
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-fade-in">
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center px-6 pb-6 animate-fade-in"
+            style={{ paddingTop: 'calc(var(--chrome-top) + 0.75rem)' }}
+        >
             <div className="absolute inset-0 bg-black/35" style={{ backdropFilter: 'blur(3px)' }} onClick={onClose} />
-            <div className={`relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden animate-slide-up ${panelClassName}`}>
+            <div
+                className={`relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden animate-slide-up ${panelClassName}`}
+                style={{ maxHeight: 'calc(100dvh - var(--chrome-top) - 2rem)' }}
+            >
                 <div className="px-6 pt-6 pb-2">
                     <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>
                 </div>
-                <div className={`px-6 py-4 max-h-[60vh] overflow-y-auto no-scrollbar ${contentClassName}`}>
+                <div
+                    className={`px-6 py-4 overflow-y-auto no-scrollbar ${contentClassName}`}
+                    style={{ maxHeight: 'min(60vh, calc(100dvh - var(--chrome-top) - 11rem))' }}
+                >
                     {children}
                 </div>
                 {footer ? (

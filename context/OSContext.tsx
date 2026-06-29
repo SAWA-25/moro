@@ -809,12 +809,37 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return String(method).toUpperCase();
       };
       const isTrackedApiUrl = (url: string): boolean => /\/(?:chat\/completions|models)(?:[/?#]|$)/i.test(url);
+      const isNoisyExternalUrl = (url: string): boolean => {
+          try {
+              const parsed = new URL(url, window.location.href);
+              return /(^|\.)google-analytics\.com$|(^|\.)googletagmanager\.com$/i.test(parsed.hostname);
+          } catch {
+              return /google-analytics\.com|googletagmanager\.com/i.test(url);
+          }
+      };
+      const isBenignConsoleError = (msg: string): boolean => {
+          if (msg.includes('Warning:')) return true;
+          if (/google-analytics\.com|googletagmanager\.com/i.test(msg)) return true;
+          if (/Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(msg)) return true;
+          if (/\b(Status|HTTP|API Error)\s*:?\s*(401|403)\b/i.test(msg)) return true;
+          if (/(invalid_api_key|authentication_error|permission_denied)/i.test(msg)) return true;
+          if (/\/(?:chat\/completions|models)(?:[/?#]|\b)/i.test(msg) && /\b(401|403)\b/.test(msg)) return true;
+          return false;
+      };
       const parseJsonIfPossible = (text: string): any | undefined => {
-          try { return JSON.parse(text); } catch { return undefined; }
+          const trimmed = text.trimStart().replace(/^\uFEFF/, '');
+          try { return JSON.parse(trimmed); } catch {
+              const cleaned = trimmed.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+              if (cleaned !== trimmed) {
+                  try { return JSON.parse(cleaned); } catch { /* ignore */ }
+              }
+              return undefined;
+          }
       };
       const invalidJsonMessage = (text: string, status: number): string | undefined => {
-          const trimmed = text.trimStart();
+          const trimmed = text.trimStart().replace(/^\uFEFF/, '');
           if (!trimmed || trimmed.startsWith('data:')) return undefined;
+          if (!trimmed.startsWith('<') && parseJsonIfPossible(trimmed) !== undefined) return undefined;
           if (trimmed.startsWith('<')) {
               const title = trimmed.match(/<title>(.*?)<\/title>/i)?.[1];
               return `API 返回了 HTML 而非 JSON (HTTP ${status}): ${title || trimmed.slice(0, 160)}`;
@@ -858,14 +883,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       try {
                           const text = await response.clone().text();
                           recordFromText(text);
-                          setSystemLogs(prev => [{
-                              id: `log-${Date.now()}`,
-                              timestamp: Date.now(),
-                              type: 'network',
-                              source: 'API Request',
-                              message: `HTTP ${response.status} ${response.statusText || 'Error'}`,
-                              detail: `URL: ${urlStr}\nResponse: ${text.substring(0, 500)}`
-                          }, ...prev.slice(0, 49)]); // Keep last 50
                       } catch (e) {
                           recordApiCall({
                               url: urlStr,
@@ -878,14 +895,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               durationMs,
                               meta,
                           });
-                          setSystemLogs(prev => [{
-                              id: `log-${Date.now()}`,
-                              timestamp: Date.now(),
-                              type: 'network',
-                              source: 'API Request',
-                              message: `HTTP ${response.status} (Unreadable Body)`,
-                              detail: `URL: ${urlStr}`
-                          }, ...prev.slice(0, 49)]);
                       }
                   } else {
                       // 成功响应异步读取 clone，避免阻塞调用方消费原 response。
@@ -909,6 +918,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       durationMs: Math.round(nowMs() - startedAt),
                       meta,
                   });
+                  throw err;
+              }
+              if (isNoisyExternalUrl(urlStr) && !isTrackedApiUrl(urlStr)) {
+                  throw err;
               }
               setSystemLogs(prev => [{
                   id: `log-${Date.now()}`,
@@ -941,7 +954,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           originalConsoleError(...args);
           const msg = args.map(a => (a instanceof Error ? a.message : String(a))).join(' ');
           const detail = args.map(a => (a instanceof Error ? a.stack : '')).join('\n');
-          if (msg.includes('Warning:')) return;
+          if (isBenignConsoleError(msg)) return;
           setSystemLogs(prev => [{
               id: `log-${Date.now()}-${Math.random()}`,
               timestamp: Date.now(),

@@ -215,7 +215,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                         <i>{currentSlot ? 'now' : 'idle'}</i>
                     </div>
                     <div className="moro-routine-avatar shrink-0" aria-hidden="true">
-                        <StoryAvatar character={character} size={isCompact ? 46 : 54} ring={pal.ring} accent={pal.accent} />
+                        <StoryAvatar character={character} size={isCompact ? 40 : 54} ring={pal.ring} accent={pal.accent} />
                     </div>
                     <div className="moro-routine-copy">
                         <div className="moro-routine-activity truncate">
