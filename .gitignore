@@ -36,3 +36,14 @@ xiaohongshu-skills/
 
 # APK build outputs
 *.apk
+
+# iOS build/export outputs
+*.ipa
+*.xcarchive
+ExportOptions.plist
+ios/App/build/
+ios/App/output/
+ios/App/DerivedData/
+ios/App/Pods/
+ios/App/*.xcworkspace/xcuserdata/
+ios/App/*.xcodeproj/xcuserdata/

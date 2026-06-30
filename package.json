@@ -8,7 +8,9 @@
     "build": "pnpm run build:workers && vite build",
     "preview": "vite preview",
     "cap:sync": "cap sync",
+    "build:ios": "pnpm build && cap sync ios",
     "cap:android": "cap open android",
+    "cap:ios": "cap open ios",
     "build:workers": "node scripts/build-workers.mjs",
     "test": "vitest",
     "test:run": "vitest run"
@@ -18,6 +20,7 @@
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/ios": "6.2.1",
     "@capacitor/keyboard": "^6.0.0",
     "@capacitor/local-notifications": "^6.0.0",
     "@capacitor/share": "^6.0.0",

@@ -1,0 +1,251 @@
+name: Build iOS IPA Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update. Defaults to ios-<run number>.
+        required: false
+        type: string
+      bundle_id:
+        description: iOS bundle identifier.
+        required: false
+        default: com.moro.app
+        type: string
+      export_method:
+        description: Xcode export method, such as release-testing, app-store-connect, enterprise, or debugging.
+        required: false
+        default: release-testing
+        type: string
+      code_sign_identity:
+        description: Code signing identity. Use Apple Distribution for release-testing/app-store-connect/enterprise, Apple Development for debugging.
+        required: false
+        default: Apple Distribution
+        type: string
+  push:
+    tags:
+      - 'ios-*'
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-release-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build-ipa:
+    name: Build and upload IPA
+    runs-on: macos-latest
+    env:
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+      IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+      INPUT_TAG: ${{ inputs.tag }}
+      INPUT_BUNDLE_ID: ${{ inputs.bundle_id }}
+      INPUT_EXPORT_METHOD: ${{ inputs.export_method }}
+      INPUT_CODE_SIGN_IDENTITY: ${{ inputs.code_sign_identity }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release settings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag_name="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            tag_name="${INPUT_TAG}"
+          else
+            tag_name="ios-${GITHUB_RUN_NUMBER}"
+          fi
+
+          bundle_id="${INPUT_BUNDLE_ID:-com.moro.app}"
+          export_method="${INPUT_EXPORT_METHOD:-release-testing}"
+          code_sign_identity="${INPUT_CODE_SIGN_IDENTITY:-Apple Distribution}"
+          safe_tag="$(printf '%s' "${tag_name}" | tr '/ ' '--')"
+
+          {
+            echo "TAG_NAME=${tag_name}"
+            echo "BUNDLE_ID=${bundle_id}"
+            echo "EXPORT_METHOD=${export_method}"
+            echo "CODE_SIGN_IDENTITY=${code_sign_identity}"
+            echo "IPA_NAME=Moro-${safe_tag}.ipa"
+          } >> "${GITHUB_ENV}"
+
+      - name: Check signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISION_PROFILE_BASE64 IOS_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("${name}")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing GitHub repository secrets: ${missing[*]}"
+            echo "::error::Add a base64-encoded .p12 certificate, its password, a base64-encoded .mobileprovision profile, and your Apple Developer Team ID."
+            exit 1
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app and sync Capacitor iOS
+        run: pnpm build:ios
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios/App
+        run: pod install
+
+      - name: Install signing certificate and provisioning profile
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          certificate_path="${RUNNER_TEMP}/ios-signing.p12"
+          profile_path="${RUNNER_TEMP}/moro.mobileprovision"
+          profile_plist="${RUNNER_TEMP}/moro-profile.plist"
+          keychain_path="${RUNNER_TEMP}/moro-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["RUNNER_TEMP"], "ios-signing.p12").write_bytes(
+              base64.b64decode(os.environ["IOS_CERTIFICATE_P12_BASE64"])
+          )
+          Path(os.environ["RUNNER_TEMP"], "moro.mobileprovision").write_bytes(
+              base64.b64decode(os.environ["IOS_PROVISION_PROFILE_BASE64"])
+          )
+          PY
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${certificate_path}" -P "${IOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}" $(security list-keychains -d user | sed s/\"//g)
+          security default-keychain -s "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}"
+
+          security cms -D -i "${profile_path}" > "${profile_plist}"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print UUID' "${profile_plist}")"
+          profile_name="$(/usr/libexec/PlistBuddy -c 'Print Name' "${profile_plist}")"
+
+          mkdir -p "${HOME}/Library/MobileDevice/Provisioning Profiles"
+          cp "${profile_path}" "${HOME}/Library/MobileDevice/Provisioning Profiles/${profile_uuid}.mobileprovision"
+
+          {
+            echo "PROFILE_UUID=${profile_uuid}"
+            echo "PROFILE_NAME=${profile_name}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Archive iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="${RUNNER_TEMP}/Moro.xcarchive"
+
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "${archive_path}" \
+            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
+            PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" \
+            CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}"
+
+          echo "ARCHIVE_PATH=${archive_path}" >> "${GITHUB_ENV}"
+
+      - name: Export IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_path="${RUNNER_TEMP}/ipa"
+          export_options="${RUNNER_TEMP}/ExportOptions.plist"
+
+          cat > "${export_options}" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>method</key>
+            <string>${EXPORT_METHOD}</string>
+            <key>signingCertificate</key>
+            <string>${CODE_SIGN_IDENTITY}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>teamID</key>
+            <string>${IOS_TEAM_ID}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "${ARCHIVE_PATH}" \
+            -exportPath "${export_path}" \
+            -exportOptionsPlist "${export_options}"
+
+          ipa_path="$(find "${export_path}" -maxdepth 1 -name '*.ipa' -print -quit)"
+          if [[ -z "${ipa_path}" ]]; then
+            echo "::error::No .ipa was produced by xcodebuild -exportArchive."
+            exit 1
+          fi
+
+          mkdir -p release
+          cp "${ipa_path}" "release/${IPA_NAME}"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: release/${{ env.IPA_NAME }}
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "release/${IPA_NAME}" --clobber
+          else
+            gh release create "${TAG_NAME}" "release/${IPA_NAME}" \
+              --target "${GITHUB_SHA}" \
+              --title "Moro ${TAG_NAME}" \
+              --notes "Signed iOS IPA built by GitHub Actions run ${GITHUB_RUN_NUMBER}."
+          fi

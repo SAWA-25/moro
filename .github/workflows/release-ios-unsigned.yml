@@ -1,0 +1,139 @@
+name: Build Unsigned iOS IPA Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update. Defaults to ios-unsigned-<run number>.
+        required: false
+        type: string
+      bundle_id:
+        description: iOS bundle identifier users will re-sign.
+        required: false
+        default: com.moro.app
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-unsigned-release-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build-unsigned-ipa:
+    name: Build and upload unsigned IPA
+    runs-on: macos-latest
+    env:
+      INPUT_TAG: ${{ inputs.tag }}
+      INPUT_BUNDLE_ID: ${{ inputs.bundle_id }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release settings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_TAG}" ]]; then
+            tag_name="${INPUT_TAG}"
+          else
+            tag_name="ios-unsigned-${GITHUB_RUN_NUMBER}"
+          fi
+
+          bundle_id="${INPUT_BUNDLE_ID:-com.moro.app}"
+          safe_tag="$(printf '%s' "${tag_name}" | tr '/ ' '--')"
+
+          {
+            echo "TAG_NAME=${tag_name}"
+            echo "BUNDLE_ID=${bundle_id}"
+            echo "IPA_NAME=Moro-${safe_tag}-unsigned.ipa"
+          } >> "${GITHUB_ENV}"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app and sync Capacitor iOS
+        run: pnpm build:ios
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios/App
+        run: pod install
+
+      - name: Build unsigned iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived_data="${RUNNER_TEMP}/DerivedData"
+
+          xcodebuild build \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "${derived_data}" \
+            PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+          app_path="$(find "${derived_data}/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          if [[ -z "${app_path}" ]]; then
+            echo "::error::No .app bundle was produced by xcodebuild."
+            exit 1
+          fi
+
+          echo "APP_PATH=${app_path}" >> "${GITHUB_ENV}"
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="${RUNNER_TEMP}/unsigned-ipa"
+          payload_dir="${package_root}/Payload"
+
+          rm -rf "${package_root}"
+          mkdir -p "${payload_dir}" release
+          cp -R "${APP_PATH}" "${payload_dir}/App.app"
+
+          (
+            cd "${package_root}"
+            zip -qry "${GITHUB_WORKSPACE}/release/${IPA_NAME}" Payload
+          )
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: release/${{ env.IPA_NAME }}
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes="Unsigned iOS IPA built by GitHub Actions run ${GITHUB_RUN_NUMBER}. This file will not install directly on iPhone or iPad until the user re-signs it with their own Apple account, certificate, and provisioning profile."
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "release/${IPA_NAME}" --clobber
+          else
+            gh release create "${TAG_NAME}" "release/${IPA_NAME}" \
+              --target "${GITHUB_SHA}" \
+              --title "Moro ${TAG_NAME}" \
+              --notes "${notes}"
+          fi
