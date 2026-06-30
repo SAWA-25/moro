@@ -55,6 +55,13 @@ const envReleaseRepo = () => (import.meta.env.VITE_MORO_RELEASE_REPO || DEFAULT_
 const envReleaseApiUrl = () => (import.meta.env.VITE_MORO_RELEASE_API_URL || '').trim();
 const envGithubProxyUrl = () => (import.meta.env.VITE_MORO_GITHUB_PROXY_URL || DEFAULT_GITHUB_PROXY_URL).trim();
 
+const githubLatestDownloadUrl = (assetName: string): string | undefined => {
+  const owner = envReleaseOwner();
+  const repo = envReleaseRepo();
+  if (!owner || !repo) return undefined;
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/latest/download/${encodeURIComponent(assetName)}`;
+};
+
 export function hasConfiguredAppUpdateSource(): boolean {
   return !!envManifestUrl() || !!envReleaseApiUrl() || (!!envReleaseOwner() && !!envReleaseRepo());
 }
@@ -126,7 +133,7 @@ const fetchJsonNoStore = async (url: string, headers: Record<string, string> = {
   if (Capacitor.isNativePlatform()) {
     const res = await CapacitorHttp.get({ url: requestUrl, headers });
     if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
-    if (typeof res.data === 'string') return JSON.parse(res.data);
+    if (typeof res.data === 'string') return JSON.parse(res.data.replace(/^\uFEFF/, ''));
     return res.data;
   }
 
@@ -279,8 +286,13 @@ async function fetchGithubReleaseUpdateManifest(): Promise<AppUpdateManifest> {
   const apk = findApkAsset(assets);
 
   if (manifestAsset?.browser_download_url) {
-    const data = await fetchGithubJsonNoStore(manifestAsset.browser_download_url);
-    return parseAppUpdateManifest(data, manifestAsset.browser_download_url, apk?.browser_download_url);
+    try {
+      const data = await fetchGithubJsonNoStore(manifestAsset.browser_download_url);
+      return parseAppUpdateManifest(data, manifestAsset.browser_download_url, apk?.browser_download_url);
+    } catch (manifestError) {
+      if (!apk?.browser_download_url) throw manifestError;
+      console.warn('[appUpdates] GitHub release manifest asset failed; falling back to release metadata', manifestError);
+    }
   }
 
   if (!apk?.browser_download_url) throw new Error('更新包暂不可用');
@@ -305,6 +317,18 @@ async function fetchGithubReleaseUpdateManifest(): Promise<AppUpdateManifest> {
 export async function fetchConfiguredAppUpdateManifest(): Promise<AppUpdateManifest> {
   const manifestUrl = envManifestUrl();
   if (manifestUrl) return fetchAppUpdateManifest(manifestUrl);
+
+  if (!envReleaseApiUrl()) {
+    const releaseManifestUrl = githubLatestDownloadUrl(GITHUB_RELEASE_MANIFEST_ASSET);
+    if (releaseManifestUrl) {
+      try {
+        return await fetchAppUpdateManifest(releaseManifestUrl, githubLatestDownloadUrl('moro.apk'));
+      } catch (manifestError) {
+        console.warn('[appUpdates] latest release manifest failed; falling back to GitHub API', manifestError);
+      }
+    }
+  }
+
   return fetchGithubReleaseUpdateManifest();
 }
 

@@ -1,11 +1,11 @@
 {
-  "versionCode": 2,
-  "versionName": "1.0.1",
+  "versionCode": 3,
+  "versionName": "1.0.2",
   "apkUrl": "https://github.com/SAWA-25/moro/releases/latest/download/moro.apk",
   "cnApkUrl": "https://sullymeow.ccwu.cc/github?url=https%3A%2F%2Fgithub.com%2FSAWA-25%2Fmoro%2Freleases%2Flatest%2Fdownload%2Fmoro.apk",
-  "sha256": "e516b698f1d04f522d35da984915909423ca922c028a36a144b4139863747761",
+  "sha256": "aab7160d5c233cd11c8ee18ab69f25a76d40a9c4ec41c2b97aef42540612ea8a",
   "sizeBytes": 211844297,
-  "releaseNotes": "正式版 1.0.1：更新正式签名 APK，并同步应用内更新清单。",
+  "releaseNotes": "正式版 1.0.2：修复应用更新信息读取失败问题，提高 GitHub Release 更新清单读取稳定性。",
   "mandatory": false,
-  "publishedAt": "2026-06-30T14:41:34+08:00"
+  "publishedAt": "2026-06-30T15:20:00+08:00"
 }
