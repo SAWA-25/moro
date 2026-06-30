@@ -117,6 +117,11 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   XunjiApp, TwitterApp, DesktopPetApp, ManualApp,
 ];
 
+const NATIVE_APP_PRELOAD_ORDER: PreloadableLazy[] = [
+  Chat, Character, ChatHub, Settings, Appearance, SocialApp, RoomApp, Gallery,
+  XunjiApp, ManualApp,
+];
+
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
 // AppID 由下方 import 引入，ES 模块提升后全模块可用。
 const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
@@ -149,7 +154,7 @@ import { App as CapApp } from '@capacitor/app';
 import { StatusBar as CapStatusBar, Style as StatusBarStyle } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
-import { requestNotifyPermission } from '../utils/browserNotify';
+import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import AppErrorBoundary from './os/AppErrorBoundary';
 import LockScreen from './os/LockScreen';
 import IncomingCallOverlay from './os/IncomingCallOverlay';
@@ -427,6 +432,7 @@ const AppLoadingFallback: React.FC = () => {
 const PhoneShell: React.FC = () => {
   const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
+  const nativeRuntime = isNativeAppRuntime();
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
   // 已打开 App 保活栈：回桌面时只隐藏、不卸载，让正在生成的回复/番外/评论继续跑完。
@@ -444,17 +450,23 @@ const PhoneShell: React.FC = () => {
     if (!isDataLoaded) return;
     let cancelled = false;
     let idx = 0;
+    const preloadOrder = nativeRuntime ? NATIVE_APP_PRELOAD_ORDER : APP_PRELOAD_ORDER;
+    const idleTimeout = nativeRuntime ? 3500 : 1500;
+    const startDelay = nativeRuntime ? 2200 : 150;
     const ric: (cb: () => void) => number = (window as any).requestIdleCallback
-      ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 1500 })
-      : (cb) => window.setTimeout(cb, 200);
+      ? (cb) => (window as any).requestIdleCallback(cb, { timeout: idleTimeout })
+      : (cb) => window.setTimeout(cb, nativeRuntime ? 900 : 200);
     const step = () => {
-      if (cancelled || idx >= APP_PRELOAD_ORDER.length) return;
-      warmLazy(APP_PRELOAD_ORDER[idx++]); // 下载 chunk + 解析 React.lazy 负载 → 首次打开不再 suspend、无底色闪烁
-      if (!cancelled) ric(step);
+      if (cancelled || idx >= preloadOrder.length) return;
+      warmLazy(preloadOrder[idx++]); // 下载 chunk + 解析 React.lazy 负载 → 首次打开不再 suspend、无底色闪烁
+      if (!cancelled) {
+        if (nativeRuntime) window.setTimeout(() => ric(step), 450);
+        else ric(step);
+      }
     };
-    const startId = window.setTimeout(() => ric(step), 150); // 让首帧先绘制一拍，随即开始（含开机动画期间）
+    const startId = window.setTimeout(() => ric(step), startDelay);
     return () => { cancelled = true; window.clearTimeout(startId); };
-  }, [isDataLoaded]);
+  }, [isDataLoaded, nativeRuntime]);
 
   // 免责声明弹窗已按需求移除：首次进入时静默写入接受标记，
   // 保持依赖 DISCLAIMER_KEY 的下游逻辑（导入恢复检测等）不变
@@ -516,8 +528,6 @@ const PhoneShell: React.FC = () => {
                 await CapStatusBar.setOverlaysWebView({ overlay: true });
                 await CapStatusBar.hide();
                 await CapStatusBar.setStyle({ style: StatusBarStyle.Dark });
-
-                await requestNotifyPermission();
             } catch (e) {
                 console.error("Native init failed", e);
             }
@@ -648,10 +658,10 @@ const PhoneShell: React.FC = () => {
   // 安全区策略（方案 B）：页外/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
-  const shellHandlesSafeArea = ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
+  const shellHandlesSafeArea = !nativeRuntime && ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">
+    <div className={`relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none ${nativeRuntime ? 'moro-native-shell' : ''}`}>
        {/* 全局自定义 CSS（主题 → 自定义 CSS）：注入整机，作用于 .moro-* 钩子类与任意元素 */}
        {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
        {/* 守护样式（注在用户 CSS 之后）：保证 Dock 与桌面 Palette 按钮永远可见可点 ——
@@ -661,19 +671,22 @@ const PhoneShell: React.FC = () => {
        )}
        {/* Optimized Background Layer */}
        <div 
-         className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+         className={`absolute inset-0 bg-cover bg-center ${nativeRuntime ? 'transition-opacity duration-200' : 'transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]'}`}
          style={{ 
              backgroundColor: '#f4f2ed',
              backgroundImage: bgImageValue,
-             transform: activeApp !== AppID.Launcher ? 'scale(1.1)' : 'scale(1)',
-             filter: activeApp !== AppID.Launcher ? 'blur(10px)' : 'none',
+             transform: nativeRuntime ? 'scale(1)' : activeApp !== AppID.Launcher ? 'scale(1.1)' : 'scale(1)',
+             filter: nativeRuntime ? 'none' : activeApp !== AppID.Launcher ? 'blur(10px)' : 'none',
              opacity: activeApp !== AppID.Launcher ? 0.6 : 1,
              backfaceVisibility: 'hidden',
              contain: useIOSStandaloneLayout ? undefined : 'strict'
          }}
        />
        
-       <div className={`absolute inset-0 transition-all duration-500 ${activeApp === AppID.Launcher ? 'bg-transparent' : 'bg-white/50 backdrop-blur-3xl'}`} style={{ backgroundColor: activeApp === AppID.Launcher ? 'transparent' : undefined }} />
+       <div
+         className={`absolute inset-0 ${nativeRuntime ? 'transition-colors duration-200' : 'transition-all duration-500'} ${activeApp === AppID.Launcher ? 'bg-transparent' : nativeRuntime ? 'bg-white/72' : 'bg-white/50 backdrop-blur-3xl'}`}
+         style={{ backgroundColor: activeApp === AppID.Launcher ? 'transparent' : undefined }}
+       />
        
        {/* 外壳安全区两种策略：
           - 未迁移 App：外壳铺满 body（含 --app-height 多出的 +safe-bottom 溢出区），用 padding 让位安全区，
@@ -685,7 +698,7 @@ const PhoneShell: React.FC = () => {
         style={
           shellHandlesSafeArea
             ? { bottom: 0, paddingTop: 'var(--cutout-top)', paddingBottom: 'var(--safe-bottom)' }
-            : { bottom: 'var(--standalone-safe-area-bottom, 0px)' }
+            : { bottom: nativeRuntime ? 0 : 'var(--standalone-safe-area-bottom, 0px)' }
         }
       >
           {/* App Container */}

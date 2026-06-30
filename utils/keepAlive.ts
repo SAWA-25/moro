@@ -10,9 +10,12 @@
  *   KeepAlive.stop();    // after API call completes
  */
 
+import { isNativeAppRuntime } from './nativeRuntime';
+
 let registered = false;
 
 async function ensureRegistered(): Promise<void> {
+  if (isNativeAppRuntime()) return;
   if (registered || !('serviceWorker' in navigator)) return;
   try {
     const base = import.meta.env.BASE_URL || '/';
