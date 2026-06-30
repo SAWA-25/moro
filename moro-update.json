@@ -1,11 +1,11 @@
 {
-  "versionCode": 3,
-  "versionName": "1.0.2",
+  "versionCode": 4,
+  "versionName": "1.0.3",
   "apkUrl": "https://github.com/SAWA-25/moro/releases/latest/download/moro.apk",
   "cnApkUrl": "https://sullymeow.ccwu.cc/github?url=https%3A%2F%2Fgithub.com%2FSAWA-25%2Fmoro%2Freleases%2Flatest%2Fdownload%2Fmoro.apk",
-  "sha256": "aab7160d5c233cd11c8ee18ab69f25a76d40a9c4ec41c2b97aef42540612ea8a",
-  "sizeBytes": 211844297,
-  "releaseNotes": "正式版 1.0.2：修复应用更新信息读取失败问题，提高 GitHub Release 更新清单读取稳定性。",
+  "sha256": "59ab60cc521a50fa2913e7bf80d6b3724a3ab7567071d1add20d5ec864446c6f",
+  "sizeBytes": 208374501,
+  "releaseNotes": "正式版 1.0.3：为 Android release 签名包加入基础防护：R8 混淆、资源压缩、禁调试/备份/明文流量，并校验发布签名。",
   "mandatory": false,
-  "publishedAt": "2026-06-30T15:20:00+08:00"
+  "publishedAt": "2026-06-30T21:55:00+08:00"
 }
