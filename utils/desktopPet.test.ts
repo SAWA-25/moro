@@ -17,6 +17,7 @@ import {
   dockDesktopPetOverlay,
   ensureDesktopPetState,
   feedDesktopPet,
+  getDesktopPetActionHoldLoops,
   getDesktopPetFallTargetY,
   markDueDesktopPetRemindersFired,
   setDesktopPetRolePrompt,
@@ -65,6 +66,12 @@ describe('desktop pet core', () => {
       'stand_2.png',
       'stand_10.png',
     ]);
+  });
+
+  it('keeps sleep and sit actions visible for extra loops', () => {
+    expect(getDesktopPetActionHoldLoops('sleep')).toBe(4);
+    expect(getDesktopPetActionHoldLoops('sit')).toBe(3);
+    expect(getDesktopPetActionHoldLoops('wavehand')).toBe(1);
   });
 
   it('feeds with clamped stats and favorite/dislike reactions', () => {

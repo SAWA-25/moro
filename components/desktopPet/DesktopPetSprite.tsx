@@ -24,15 +24,34 @@ const DesktopPetSprite: React.FC<Props> = ({ role, actionId, className = '', sca
   useEffect(() => {
     if (frames.length <= 1) return undefined;
     const ms = Math.max(35, (action?.frameRefresh || 0.08) * 1000);
-    const timer = window.setInterval(() => {
+    let timer: number | null = null;
+    const stop = () => {
+      if (timer === null) return;
+      window.clearInterval(timer);
+      timer = null;
+    };
+    const tick = () => {
       setFrameIndex(prev => {
         const next = (prev + 1) % frames.length;
         if (next === 0) onLoop?.();
         return next;
       });
-    }, ms);
-    return () => window.clearInterval(timer);
-  }, [action?.frameRefresh, frames.length, onLoop]);
+    };
+    const start = () => {
+      if (timer !== null || document.hidden) return;
+      timer = window.setInterval(tick, ms);
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    start();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [action?.frameRefresh, frames, frames.length, onLoop]);
 
   const width = Math.max(120, (role?.width || 300) * scale);
   const height = Math.max(128, (role?.height || 320) * scale);
@@ -49,6 +68,7 @@ const DesktopPetSprite: React.FC<Props> = ({ role, actionId, className = '', sca
           src={src}
           alt=""
           draggable={false}
+          decoding="async"
           className="max-w-full max-h-full object-contain select-none pointer-events-none"
           style={{ imageRendering: 'auto' }}
         />
@@ -61,4 +81,4 @@ const DesktopPetSprite: React.FC<Props> = ({ role, actionId, className = '', sca
   );
 };
 
-export default DesktopPetSprite;
+export default React.memo(DesktopPetSprite);

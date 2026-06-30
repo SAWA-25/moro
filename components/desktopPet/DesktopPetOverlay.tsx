@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowsOut, ArrowLineLeft, ArrowLineRight, BowlFood, Minus, PawPrint } from '@phosphor-icons/react';
-import { AppID } from '../../types';
+import { AppID, type DesktopPetState } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { useDesktopPet } from '../../context/DesktopPetContext';
 import {
@@ -11,6 +11,7 @@ import {
   canDesktopPetAutoWalkDuringAction,
   clampDesktopPetOverlay,
   dockDesktopPetOverlay,
+  getDesktopPetActionHoldLoops,
   getDesktopPetFallTargetY,
   getDesktopPetRoleState,
   isDesktopPetIdleAction,
@@ -29,6 +30,16 @@ const FALL_STEP_DISTANCE = 36;
 const CONTROLS_PANEL_WIDTH = 176;
 const CONTROLS_PANEL_MARGIN = 8;
 const CONTROLS_PANEL_ESTIMATED_HEIGHT = 248;
+const WALK_OVERLAY_COMMIT_MS = 1200;
+const PET_HITBOX_PARTS = [
+  { width: 0.34, height: 0.24, bottom: 0.5 },
+  { width: 0.24, height: 0.36, bottom: 0.19 },
+  { width: 0.18, height: 0.2, bottom: 0.02 },
+];
+
+const overlayTransform = (overlay: DesktopPetState['overlay']) => (
+  `translate3d(${overlay.x.toFixed(1)}px, ${overlay.y.toFixed(1)}px, 0)`
+);
 
 const DesktopPetOverlay: React.FC = () => {
   const { openApp, activeApp, isLocked } = useOS();
@@ -41,6 +52,7 @@ const DesktopPetOverlay: React.FC = () => {
   const [feedHint, setFeedHint] = useState('');
   const [overlayFoodId, setOverlayFoodId] = useState('');
   const [feedingEffect, setFeedingEffect] = useState<{ id: number; image: string; name: string } | null>(null);
+  const overlayRootRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     dx: number;
@@ -59,6 +71,8 @@ const DesktopPetOverlay: React.FC = () => {
   const settleTimerRef = useRef<number | null>(null);
   const fallFrameRef = useRef<number | null>(null);
   const randomIdleTimerRef = useRef<number | null>(null);
+  const lastOverlayCommitAtRef = useRef(0);
+  const actionLoopCountRef = useRef(0);
   const lastRandomActionAtRef = useRef(0);
   const walkDirectionRef = useRef<DesktopPetWalkDirection>('right');
   const walkingActionRef = useRef<'left_walk' | 'right_walk' | null>(null);
@@ -74,26 +88,33 @@ const DesktopPetOverlay: React.FC = () => {
   const hpPercent = Math.round((roleState.hp / DESKTOP_PET_HP_MAX) * 100);
   const fvPercent = Math.round((roleState.fv / DESKTOP_PET_FV_MAX) * 100);
   const quickFood = foods.find(food => food.id === overlayFoodId) || foods[0];
+  const visualOverlay = latestOverlayRef.current;
   const viewportWidth = typeof window === 'undefined' ? 390 : window.innerWidth;
   const viewportHeight = typeof window === 'undefined' ? 844 : window.innerHeight;
-  const controlsOnLeft = shouldPlaceDesktopPetControlsOnLeft(state.overlay, viewportWidth, spriteSize, CONTROLS_PANEL_WIDTH);
+  const controlsOnLeft = shouldPlaceDesktopPetControlsOnLeft(visualOverlay, viewportWidth, spriteSize, CONTROLS_PANEL_WIDTH);
   const entryButtonStyle = controlsOpen ? {
-    left: Math.min(Math.max(spriteSize.width / 2, 44 - state.overlay.x), viewportWidth - state.overlay.x - 44),
+    left: Math.min(Math.max(spriteSize.width / 2, 44 - visualOverlay.x), viewportWidth - visualOverlay.x - 44),
   } : undefined;
   const controlsPanelStyle = controlsOpen ? {
     left: Math.min(
       Math.max(
         controlsOnLeft ? -CONTROLS_PANEL_WIDTH - 12 : spriteSize.width + 12,
-        CONTROLS_PANEL_MARGIN - state.overlay.x,
+        CONTROLS_PANEL_MARGIN - visualOverlay.x,
       ),
-      viewportWidth - state.overlay.x - CONTROLS_PANEL_WIDTH - CONTROLS_PANEL_MARGIN,
+      viewportWidth - visualOverlay.x - CONTROLS_PANEL_WIDTH - CONTROLS_PANEL_MARGIN,
     ),
     top: Math.min(
-      Math.max(32, CONTROLS_PANEL_MARGIN - state.overlay.y),
-      viewportHeight - state.overlay.y - CONTROLS_PANEL_ESTIMATED_HEIGHT - CONTROLS_PANEL_MARGIN,
+      Math.max(32, CONTROLS_PANEL_MARGIN - visualOverlay.y),
+      viewportHeight - visualOverlay.y - CONTROLS_PANEL_ESTIMATED_HEIGHT - CONTROLS_PANEL_MARGIN,
     ),
     maxHeight: Math.max(168, viewportHeight - (CONTROLS_PANEL_MARGIN * 2)),
   } : undefined;
+  const spriteHitboxStyles = PET_HITBOX_PARTS.map(part => ({
+    width: Math.max(28, spriteSize.width * part.width),
+    height: Math.max(30, spriteSize.height * part.height),
+    bottom: Math.max(2, spriteSize.height * part.bottom),
+    clipPath: 'ellipse(48% 48% at 50% 50%)',
+  }));
   const canAutoWalk = !!(
     state.floatingEnabled
     && manifest
@@ -119,8 +140,29 @@ const DesktopPetOverlay: React.FC = () => {
     && canDesktopPetAutoWalkDuringAction(currentActionId, role.defaultAction)
   );
 
+  const applyVisualOverlay = useCallback((overlay: DesktopPetState['overlay']) => {
+    latestOverlayRef.current = overlay;
+    const root = overlayRootRef.current;
+    if (root) root.style.transform = overlayTransform(overlay);
+  }, []);
+
+  const commitOverlay = useCallback((overlay = latestOverlayRef.current) => {
+    applyVisualOverlay(overlay);
+    lastOverlayCommitAtRef.current = Date.now();
+    void updateOverlay(overlay);
+  }, [applyVisualOverlay, updateOverlay]);
+
+  const commitOverlayIfDue = useCallback((overlay: DesktopPetState['overlay']) => {
+    applyVisualOverlay(overlay);
+    const now = Date.now();
+    if (now - lastOverlayCommitAtRef.current < WALK_OVERLAY_COMMIT_MS) return;
+    lastOverlayCommitAtRef.current = now;
+    void updateOverlay(overlay);
+  }, [applyVisualOverlay, updateOverlay]);
+
   const showControls = () => {
     walkingActionRef.current = null;
+    commitOverlay(latestOverlayRef.current);
     setControlsOpen(true);
     if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current);
     controlsTimerRef.current = window.setTimeout(() => setControlsOpen(false), 5000);
@@ -132,8 +174,9 @@ const DesktopPetOverlay: React.FC = () => {
     longPressTimerRef.current = null;
   };
 
-  useEffect(() => { latestOverlayRef.current = state.overlay; }, [state.overlay]);
+  useEffect(() => { applyVisualOverlay(state.overlay); }, [applyVisualOverlay, state.overlay]);
   useEffect(() => { currentActionRef.current = currentActionId; }, [currentActionId]);
+  useEffect(() => { actionLoopCountRef.current = 0; }, [activeRoleId, currentActionId]);
 
   useEffect(() => {
     const speech = state.lastSpeech;
@@ -181,6 +224,7 @@ const DesktopPetOverlay: React.FC = () => {
     };
 
     if (!role.actions.fall) {
+      commitOverlay(latestOverlayRef.current);
       finishOnFloor();
       return;
     }
@@ -204,10 +248,10 @@ const DesktopPetOverlay: React.FC = () => {
         state.fallSpeed,
         targetY,
       );
-      latestOverlayRef.current = next.overlay;
-      void updateOverlay(next.overlay);
+      applyVisualOverlay(next.overlay);
       if (next.landed) {
         fallFrameRef.current = null;
+        commitOverlay(next.overlay);
         finishOnFloor();
         return;
       }
@@ -245,8 +289,7 @@ const DesktopPetOverlay: React.FC = () => {
         y: event.clientY - drag.dy,
         dockSide: 'none',
       }, { width: window.innerWidth, height: window.innerHeight }, spriteSize);
-      latestOverlayRef.current = next;
-      void updateOverlay(next);
+      applyVisualOverlay(next);
     };
     const onUp = (event: PointerEvent) => {
       const drag = dragRef.current;
@@ -256,16 +299,22 @@ const DesktopPetOverlay: React.FC = () => {
       if (drag?.moved) {
         setDragging(false);
         const docked = dockDesktopPetOverlay(latestOverlayRef.current, { width: window.innerWidth, height: window.innerHeight }, spriteSize);
-        latestOverlayRef.current = docked;
+        applyVisualOverlay(docked);
         if (docked.dockSide === 'left' || docked.dockSide === 'right') {
-          void updateOverlay(docked);
+          commitOverlay(docked);
         }
         if (role?.actions.fall || role?.actions.onfloor) playSettleAction();
-        else playAction(role?.defaultAction || 'default');
+        else {
+          commitOverlay(latestOverlayRef.current);
+          playAction(role?.defaultAction || 'default');
+        }
       } else if (drag?.longPressed) {
         setDragging(false);
       } else {
         setDragging(false);
+        setSpeechVisible(false);
+        walkingActionRef.current = null;
+        void patActivePet();
       }
     };
     window.addEventListener('pointermove', onMove);
@@ -276,7 +325,7 @@ const DesktopPetOverlay: React.FC = () => {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [playAction, role, spriteSize, updateOverlay]);
+  }, [applyVisualOverlay, commitOverlay, patActivePet, playAction, role, spriteSize]);
 
   useEffect(() => {
     if (!canAutoWalk) return undefined;
@@ -294,19 +343,20 @@ const DesktopPetOverlay: React.FC = () => {
         direction === 'right' ? rightWalkFrameMove : leftWalkFrameMove,
       );
       walkDirectionRef.current = next.direction;
-      latestOverlayRef.current = next.overlay;
+      applyVisualOverlay(next.overlay);
       if (walkingActionRef.current !== next.actionId) {
         walkingActionRef.current = next.actionId;
         currentActionRef.current = next.actionId;
         playAction(next.actionId);
       }
-      void updateOverlay(next.overlay);
+      commitOverlayIfDue(next.overlay);
     }, Math.max(50, (walkFrameRefresh * 1000) + 20));
     return () => {
       window.clearInterval(timer);
+      commitOverlay(latestOverlayRef.current);
       walkingActionRef.current = null;
     };
-  }, [canAutoWalk, currentActionId, leftWalkFrameMove, playAction, rightWalkFrameMove, spriteSize, updateOverlay, walkFrameRefresh]);
+  }, [applyVisualOverlay, canAutoWalk, commitOverlay, commitOverlayIfDue, currentActionId, leftWalkFrameMove, playAction, rightWalkFrameMove, spriteSize, walkFrameRefresh]);
 
   useEffect(() => {
     if (randomIdleTimerRef.current) {
@@ -342,6 +392,9 @@ const DesktopPetOverlay: React.FC = () => {
   const handleSpriteLoop = useCallback(() => {
     if (!role || dragging || settling || canAutoWalk) return;
     if (!isDesktopPetIdleAction(currentActionId, role.defaultAction)) {
+      actionLoopCountRef.current += 1;
+      if (actionLoopCountRef.current < getDesktopPetActionHoldLoops(currentActionId)) return;
+      actionLoopCountRef.current = 0;
       playAction(role.defaultAction);
     }
   }, [canAutoWalk, currentActionId, dragging, playAction, role, settling]);
@@ -380,17 +433,43 @@ const DesktopPetOverlay: React.FC = () => {
     }
   };
 
+  const handlePetPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const root = overlayRootRef.current?.getBoundingClientRect();
+    if (!root) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      dx: event.clientX - root.left,
+      dy: event.clientY - root.top,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      startedAt: Date.now(),
+      longPressed: false,
+    };
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId || drag.moved) return;
+      drag.longPressed = true;
+      setDragging(false);
+      setSpeechVisible(false);
+      showControls();
+    }, LONG_PRESS_CONTROLS_MS);
+  };
+
   if (!state.floatingEnabled || !manifest || activeApp === AppID.DesktopPet || isLocked) return null;
 
   const lastSpeech = state.lastSpeech;
 
   return (
     <div
-      className="absolute z-[58] touch-none will-change-[left,top]"
+      ref={overlayRootRef}
+      className="absolute z-[58] pointer-events-none touch-none will-change-transform"
       style={{
-        left: state.overlay.x,
-        top: state.overlay.y,
-        transition: dragging || canAutoWalk || settling ? 'none' : 'left 120ms ease-out, top 120ms ease-out',
+        left: 0,
+        top: 0,
+        transform: overlayTransform(latestOverlayRef.current),
+        transition: dragging || canAutoWalk || settling ? 'none' : 'transform 120ms ease-out',
       }}
     >
       <div className="relative">
@@ -402,7 +481,7 @@ const DesktopPetOverlay: React.FC = () => {
 
         {controlsOpen && (
           <button
-            className="absolute -top-8 -translate-x-1/2 h-7 px-2 rounded-full bg-white/90 border border-slate-200 shadow-lg flex items-center gap-1 text-[11px] font-black text-slate-700 active:scale-95"
+            className="absolute -top-8 -translate-x-1/2 h-7 px-2 rounded-full bg-white/90 border border-slate-200 shadow-lg flex items-center gap-1 text-[11px] font-black text-slate-700 active:scale-95 pointer-events-auto"
             style={entryButtonStyle}
             onClick={() => openApp(AppID.DesktopPet)}
             title="打开桌宠"
@@ -413,38 +492,7 @@ const DesktopPetOverlay: React.FC = () => {
         )}
 
         <div
-          className="cursor-grab active:cursor-grabbing drop-shadow-[0_18px_24px_rgba(15,23,42,0.28)]"
-          onPointerDown={(event) => {
-            const target = event.currentTarget.getBoundingClientRect();
-            dragRef.current = {
-              pointerId: event.pointerId,
-              dx: event.clientX - target.left,
-              dy: event.clientY - target.top,
-              startX: event.clientX,
-              startY: event.clientY,
-              moved: false,
-              startedAt: Date.now(),
-              longPressed: false,
-            };
-            clearLongPressTimer();
-            longPressTimerRef.current = window.setTimeout(() => {
-              const drag = dragRef.current;
-              if (!drag || drag.pointerId !== event.pointerId || drag.moved) return;
-              drag.longPressed = true;
-              setDragging(false);
-              setSpeechVisible(false);
-              showControls();
-            }, LONG_PRESS_CONTROLS_MS);
-          }}
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            clearLongPressTimer();
-            dragRef.current = null;
-            walkingActionRef.current = null;
-            setControlsOpen(false);
-            setSpeechVisible(false);
-            void patActivePet();
-          }}
+          className="relative pointer-events-none"
         >
           {feedingEffect && (
             <DesktopPetFoodEffect
@@ -457,11 +505,25 @@ const DesktopPetOverlay: React.FC = () => {
             />
           )}
           <DesktopPetSprite role={role} actionId={currentActionId} scale={state.overlay.scale} onLoop={handleSpriteLoop} />
+          {spriteHitboxStyles.slice(1).map((style, index) => (
+            <div
+              key={index}
+              className="absolute left-1/2 z-30 -translate-x-1/2 cursor-grab active:cursor-grabbing pointer-events-auto rounded-full"
+              style={style}
+              onPointerDown={handlePetPointerDown}
+            />
+          ))}
+          <div
+            className="absolute left-1/2 z-30 -translate-x-1/2 cursor-grab active:cursor-grabbing pointer-events-auto"
+            style={spriteHitboxStyles[0]}
+            onPointerDown={handlePetPointerDown}
+            aria-label={role ? `${role.name} 桌宠互动区域` : '桌宠互动区域'}
+          />
         </div>
 
         {controlsOpen && (
           <div
-            className="absolute w-44 rounded-lg bg-white/95 border border-slate-200 shadow-xl p-2 text-slate-800 overflow-y-auto no-scrollbar"
+            className="absolute w-44 rounded-lg bg-white/95 border border-slate-200 shadow-xl p-2 text-slate-800 overflow-y-auto no-scrollbar pointer-events-auto"
             style={controlsPanelStyle}
           >
             <div className="flex items-center justify-between gap-2 mb-2">

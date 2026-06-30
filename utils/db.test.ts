@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { DB, openDB } from './db';
+import { createDefaultDesktopPetState } from './desktopPet';
 import type { CharacterProfile, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
@@ -196,5 +197,28 @@ describe('relationship network stores', () => {
     await expect(DB.getRelationshipNetworkMessagesByPair(pairKey)).resolves.toEqual(messages);
     await expect(DB.getRelationshipNetworkMessagesByPair(pairKey, 1)).resolves.toEqual([messages[1]]);
     await expect(DB.getRelationshipNetworkAutoSettings()).resolves.toEqual(settings);
+  });
+});
+
+describe('desktop pet store', () => {
+  it('saves and reads desktop pet state', async () => {
+    await DB.deleteDB();
+    const state = {
+      ...createDefaultDesktopPetState(123),
+      floatingEnabled: true,
+      overlay: { x: 12, y: 34, scale: 0.8, dockSide: 'left' as const },
+      roleStates: { test_pet: { hp: 42, fv: 7, lastFedAt: 100 } },
+      updatedAt: 456,
+    };
+
+    await DB.saveDesktopPetState(state);
+
+    await expect(DB.getDesktopPetState()).resolves.toMatchObject({
+      id: 'main',
+      floatingEnabled: true,
+      overlay: { x: 12, y: 34, scale: 0.8, dockSide: 'left' },
+      roleStates: { test_pet: { hp: 42, fv: 7, lastFedAt: 100 } },
+      updatedAt: 456,
+    });
   });
 });

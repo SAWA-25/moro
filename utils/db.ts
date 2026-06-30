@@ -20,7 +20,7 @@ import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffi
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 79; // Bumped: v79 relationship network char-char interactions
+const DB_VERSION = 80; // Bumped: v80 backfill desktop pet store for users already on v79
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';

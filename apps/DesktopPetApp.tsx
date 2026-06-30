@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alarm,
   ArrowLeft,
@@ -24,10 +24,12 @@ import {
   DESKTOP_PET_HP_MAX,
   DESKTOP_PET_PROMPT_LIMIT,
   clampDesktopPetOverlay,
+  getDesktopPetActionHoldLoops,
   getDesktopPetRoleState,
 } from '../utils/desktopPet';
 
 const pad = (n: number) => String(n).padStart(2, '0');
+const FOOD_GRID_LIMIT = 24;
 
 const toInputDateTime = (ts: number) => {
   const date = new Date(ts);
@@ -75,6 +77,7 @@ const DesktopPetApp: React.FC = () => {
   const [promptDraft, setPromptDraft] = useState('');
   const [feedingEffect, setFeedingEffect] = useState<{ id: number; image: string; name: string } | null>(null);
   const [lastFeedRequestedAt, setLastFeedRequestedAt] = useState<number | null>(null);
+  const previewActionLoopRef = useRef(0);
 
   const roleIds = useMemo(() => Object.keys(manifest?.roles || {}), [manifest]);
   const role = manifest?.roles[activeRoleId];
@@ -87,6 +90,17 @@ const DesktopPetApp: React.FC = () => {
     : undefined;
   const activeRolePrompt = state.rolePrompts?.[activeRoleId] || '';
   const selectedFoodItem = foods.find(food => food.id === selectedFood) || foods[0];
+  const handlePreviewLoop = useCallback(() => {
+    if (!role || currentActionId === role.defaultAction) return;
+    previewActionLoopRef.current += 1;
+    if (previewActionLoopRef.current < getDesktopPetActionHoldLoops(currentActionId)) return;
+    previewActionLoopRef.current = 0;
+    playAction(role.defaultAction);
+  }, [currentActionId, playAction, role]);
+
+  useEffect(() => {
+    previewActionLoopRef.current = 0;
+  }, [activeRoleId, currentActionId]);
 
   useEffect(() => {
     setPromptDraft(activeRolePrompt);
@@ -248,9 +262,7 @@ const DesktopPetApp: React.FC = () => {
                 role={role}
                 actionId={currentActionId}
                 scale={0.9}
-                onLoop={() => {
-                  if (currentActionId !== role.defaultAction) playAction(role.defaultAction);
-                }}
+                onLoop={handlePreviewLoop}
               />
             </div>
 
@@ -421,7 +433,7 @@ const DesktopPetApp: React.FC = () => {
                 <div className="mb-3 rounded-lg bg-slate-50 border border-slate-100 p-3 grid grid-cols-[64px_1fr] gap-3 items-center">
                   <div className="w-16 h-16 rounded-lg bg-white border border-slate-100 grid place-items-center overflow-hidden">
                     {selectedFoodItem.image ? (
-                      <img src={selectedFoodItem.image} alt={selectedFoodItem.name} className="w-14 h-14 object-contain" />
+                      <img src={selectedFoodItem.image} alt={selectedFoodItem.name} loading="lazy" decoding="async" className="w-14 h-14 object-contain" />
                     ) : (
                       <BowlFood size={28} className="text-slate-300" />
                     )}
@@ -453,14 +465,14 @@ const DesktopPetApp: React.FC = () => {
                 </button>
               </div>
               <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
-                {foods.slice(0, 40).map(food => (
+                {foods.slice(0, FOOD_GRID_LIMIT).map(food => (
                   <button
                     key={food.id}
                     onClick={() => { setSelectedFood(food.id); }}
                     className={`rounded-lg border p-2 active:scale-95 transition ${selectedFood === food.id ? 'bg-slate-950 text-white border-slate-950' : 'bg-slate-50 border-slate-100'}`}
                     title={food.description}
                   >
-                    {food.image ? <img src={food.image} alt="" className="w-full aspect-square object-contain" /> : <BowlFood size={24} className="mx-auto text-slate-300" />}
+                    {food.image ? <img src={food.image} alt="" loading="lazy" decoding="async" className="w-full aspect-square object-contain" /> : <BowlFood size={24} className="mx-auto text-slate-300" />}
                     <div className="mt-1 text-[10px] font-bold truncate">{food.name}</div>
                   </button>
                 ))}

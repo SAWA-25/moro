@@ -75,8 +75,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type DesktopPetWalkDirection = 'left' | 'right';
 
+const DESKTOP_PET_ACTION_HOLD_LOOPS: Record<string, number> = {
+  sleep: 4,
+  sit: 3,
+};
+
 export const isDesktopPetWalkAction = (actionId: string): actionId is 'left_walk' | 'right_walk' => (
   actionId === 'left_walk' || actionId === 'right_walk'
+);
+
+export const getDesktopPetActionHoldLoops = (actionId: string): number => (
+  DESKTOP_PET_ACTION_HOLD_LOOPS[actionId] || 1
 );
 
 export const isDesktopPetIdleAction = (
