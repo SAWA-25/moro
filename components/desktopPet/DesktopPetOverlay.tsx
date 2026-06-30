@@ -41,6 +41,28 @@ const overlayTransform = (overlay: DesktopPetState['overlay']) => (
   `translate3d(${overlay.x.toFixed(1)}px, ${overlay.y.toFixed(1)}px, 0)`
 );
 
+const isPointInPetHitbox = (
+  clientX: number,
+  clientY: number,
+  rootRect: DOMRect,
+  spriteSize: { width: number; height: number },
+) => {
+  const localX = clientX - rootRect.left;
+  const localY = clientY - rootRect.top;
+  if (localX < 0 || localY < 0 || localX > spriteSize.width || localY > spriteSize.height) return false;
+  return PET_HITBOX_PARTS.some(part => {
+    const width = Math.max(28, spriteSize.width * part.width);
+    const height = Math.max(30, spriteSize.height * part.height);
+    const left = (spriteSize.width - width) / 2;
+    const top = spriteSize.height - Math.max(2, spriteSize.height * part.bottom) - height;
+    const centerX = left + width / 2;
+    const centerY = top + height / 2;
+    const dx = (localX - centerX) / (width / 2);
+    const dy = (localY - centerY) / (height / 2);
+    return (dx * dx) + (dy * dy) <= 1;
+  });
+};
+
 const DesktopPetOverlay: React.FC = () => {
   const { openApp, activeApp, isLocked } = useOS();
   const { manifest, state, activeRoleId, currentActionId, foods, updateOverlay, setFloatingEnabled, playAction, patActivePet, feedActivePet } = useDesktopPet();
@@ -109,12 +131,6 @@ const DesktopPetOverlay: React.FC = () => {
     ),
     maxHeight: Math.max(168, viewportHeight - (CONTROLS_PANEL_MARGIN * 2)),
   } : undefined;
-  const spriteHitboxStyles = PET_HITBOX_PARTS.map(part => ({
-    width: Math.max(28, spriteSize.width * part.width),
-    height: Math.max(30, spriteSize.height * part.height),
-    bottom: Math.max(2, spriteSize.height * part.bottom),
-    clipPath: 'ellipse(48% 48% at 50% 50%)',
-  }));
   const canAutoWalk = !!(
     state.floatingEnabled
     && manifest
@@ -261,10 +277,39 @@ const DesktopPetOverlay: React.FC = () => {
   };
 
   useEffect(() => {
+    const onDown = (event: PointerEvent) => {
+      if (!state.floatingEnabled || !manifest || activeApp === AppID.DesktopPet || isLocked) return;
+      if (controlsOpen) return;
+      const root = overlayRootRef.current?.getBoundingClientRect();
+      if (!root || !isPointInPetHitbox(event.clientX, event.clientY, root, spriteSize)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dragRef.current = {
+        pointerId: event.pointerId,
+        dx: event.clientX - root.left,
+        dy: event.clientY - root.top,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+        startedAt: Date.now(),
+        longPressed: false,
+      };
+      clearLongPressTimer();
+      longPressTimerRef.current = window.setTimeout(() => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId || drag.moved) return;
+        drag.longPressed = true;
+        setDragging(false);
+        setSpeechVisible(false);
+        showControls();
+      }, LONG_PRESS_CONTROLS_MS);
+    };
     const onMove = (event: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
       if (drag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
       if (drag.longPressed) return;
       const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
       if (!drag.moved && distance < 8) return;
@@ -294,6 +339,10 @@ const DesktopPetOverlay: React.FC = () => {
     const onUp = (event: PointerEvent) => {
       const drag = dragRef.current;
       if (drag && drag.pointerId !== event.pointerId) return;
+      if (drag) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       clearLongPressTimer();
       dragRef.current = null;
       if (drag?.moved) {
@@ -317,15 +366,17 @@ const DesktopPetOverlay: React.FC = () => {
         void patActivePet();
       }
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    document.addEventListener('pointerdown', onDown, { capture: true });
+    window.addEventListener('pointermove', onMove, { capture: true });
+    window.addEventListener('pointerup', onUp, { capture: true });
+    window.addEventListener('pointercancel', onUp, { capture: true });
     return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      document.removeEventListener('pointerdown', onDown, { capture: true });
+      window.removeEventListener('pointermove', onMove, { capture: true });
+      window.removeEventListener('pointerup', onUp, { capture: true });
+      window.removeEventListener('pointercancel', onUp, { capture: true });
     };
-  }, [applyVisualOverlay, commitOverlay, patActivePet, playAction, role, spriteSize]);
+  }, [activeApp, applyVisualOverlay, commitOverlay, controlsOpen, isLocked, manifest, patActivePet, playAction, role, spriteSize, state.floatingEnabled]);
 
   useEffect(() => {
     if (!canAutoWalk) return undefined;
@@ -433,30 +484,6 @@ const DesktopPetOverlay: React.FC = () => {
     }
   };
 
-  const handlePetPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const root = overlayRootRef.current?.getBoundingClientRect();
-    if (!root) return;
-    dragRef.current = {
-      pointerId: event.pointerId,
-      dx: event.clientX - root.left,
-      dy: event.clientY - root.top,
-      startX: event.clientX,
-      startY: event.clientY,
-      moved: false,
-      startedAt: Date.now(),
-      longPressed: false,
-    };
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      const drag = dragRef.current;
-      if (!drag || drag.pointerId !== event.pointerId || drag.moved) return;
-      drag.longPressed = true;
-      setDragging(false);
-      setSpeechVisible(false);
-      showControls();
-    }, LONG_PRESS_CONTROLS_MS);
-  };
-
   if (!state.floatingEnabled || !manifest || activeApp === AppID.DesktopPet || isLocked) return null;
 
   const lastSpeech = state.lastSpeech;
@@ -468,6 +495,8 @@ const DesktopPetOverlay: React.FC = () => {
       style={{
         left: 0,
         top: 0,
+        width: spriteSize.width,
+        height: spriteSize.height,
         transform: overlayTransform(latestOverlayRef.current),
         transition: dragging || canAutoWalk || settling ? 'none' : 'transform 120ms ease-out',
       }}
@@ -493,6 +522,7 @@ const DesktopPetOverlay: React.FC = () => {
 
         <div
           className="relative pointer-events-none"
+          style={{ width: spriteSize.width, height: spriteSize.height }}
         >
           {feedingEffect && (
             <DesktopPetFoodEffect
@@ -505,18 +535,10 @@ const DesktopPetOverlay: React.FC = () => {
             />
           )}
           <DesktopPetSprite role={role} actionId={currentActionId} scale={state.overlay.scale} onLoop={handleSpriteLoop} />
-          {spriteHitboxStyles.slice(1).map((style, index) => (
-            <div
-              key={index}
-              className="absolute left-1/2 z-30 -translate-x-1/2 cursor-grab active:cursor-grabbing pointer-events-auto rounded-full"
-              style={style}
-              onPointerDown={handlePetPointerDown}
-            />
-          ))}
           <div
-            className="absolute left-1/2 z-30 -translate-x-1/2 cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={spriteHitboxStyles[0]}
-            onPointerDown={handlePetPointerDown}
+            className="hidden pointer-events-none"
+            style={{ display: 'none' }}
+            onPointerDown={undefined}
             aria-label={role ? `${role.name} 桌宠互动区域` : '桌宠互动区域'}
           />
         </div>
