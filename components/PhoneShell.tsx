@@ -147,9 +147,9 @@ import { formatBytes } from '../utils/format';
 import { AppID } from '../types';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar as CapStatusBar, Style as StatusBarStyle } from '@capacitor/status-bar';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
+import { requestNotifyPermission } from '../utils/browserNotify';
 import AppErrorBoundary from './os/AppErrorBoundary';
 import LockScreen from './os/LockScreen';
 import IncomingCallOverlay from './os/IncomingCallOverlay';
@@ -517,10 +517,7 @@ const PhoneShell: React.FC = () => {
                 await CapStatusBar.hide();
                 await CapStatusBar.setStyle({ style: StatusBarStyle.Dark });
 
-                const permStatus = await LocalNotifications.checkPermissions();
-                if (permStatus.display !== 'granted') {
-                    await LocalNotifications.requestPermissions();
-                }
+                await requestNotifyPermission();
             } catch (e) {
                 console.error("Native init failed", e);
             }

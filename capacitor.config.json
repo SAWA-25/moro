@@ -1,6 +1,6 @@
 {
   "appId": "com.moro.app",
-  "appName": "手抓糯米机",
+  "appName": "Moro",
   "webDir": "dist",
   "server": {
     "androidScheme": "https",

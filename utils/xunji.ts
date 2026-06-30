@@ -666,7 +666,7 @@ export async function generateXunjiRealtimeSnapshot(args: {
   try {
     const latest = args.previous ? summarizeXunjiForCharacter({ snapshot: args.previous }) : '暂无旧快照。';
     const locationLine = args.locationSource?.mode === 'browser' && args.locationSource.browserLocation
-      ? `定位来源：用户已授权浏览器真实定位。请把当前位置写成“用户授权定位”，坐标 ${args.locationSource.browserLocation.lat.toFixed(5)}, ${args.locationSource.browserLocation.lng.toFixed(5)}，不要臆造真实门牌。`
+      ? `定位来源：用户已授权设备真实定位。请把当前位置写成“用户授权定位”，坐标 ${args.locationSource.browserLocation.lat.toFixed(5)}, ${args.locationSource.browserLocation.lng.toFixed(5)}，不要臆造真实门牌。`
       : args.locationSource?.customLocation?.trim()
         ? `定位来源：用户手动输入的角色设定定位「${args.locationSource.customLocation.trim().slice(0, 120)}」。请按这个定位生成 TA 的日常地点。`
         : '定位来源：角色卡里的地理设定。请按角色城市/生活侧写生成 TA 自己的日常地点。';

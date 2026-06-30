@@ -16,7 +16,7 @@ import { loadPushConfig, savePushConfig, registerScheduleOnWorker, startHeartbea
 import { ProactiveChat } from '../utils/proactiveChat';
 import { InstantPushSettingsModal } from '../components/settings/InstantPushSettingsModal';
 import { isBackgroundReplyNotifyEnabled, setBackgroundReplyNotify } from '../utils/backgroundReply';
-import { getNotifyPermission, requestNotifyPermission, type NotifyPermission } from '../utils/browserNotify';
+import { getNotifyPermission, isNativeNotificationRuntime, requestNotifyPermission, type NotifyPermission } from '../utils/browserNotify';
 import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
@@ -396,6 +396,7 @@ const Settings: React.FC = () => {
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
       openApp,
   } = useOS();
+  const nativeRuntime = isNativeNotificationRuntime();
   const settingsRootRef = useRef<HTMLDivElement>(null);
   const settingsScrollRef = useRef<HTMLDivElement>(null);
   
@@ -2004,11 +2005,18 @@ const Settings: React.FC = () => {
                         const p = await requestNotifyPermission();
                         setNotifyPerm(p);
                         if (p === 'granted') addToast('系统通知已开启', 'success');
-                        else if (p === 'denied') addToast('通知权限被拒绝，请到浏览器站点设置里手动开启', 'error');
+                        else if (p === 'denied') addToast(
+                            nativeRuntime
+                                ? '通知权限被拒绝，请到手机系统设置 → 应用 → Moro → 通知里手动开启'
+                                : '通知权限被拒绝，请到浏览器站点设置里手动开启',
+                            'error',
+                        );
                     }}
                     className={`w-full py-2.5 text-xs font-black mb-3 ${INK_BTN}`}
                 >
-                    {notifyPerm === 'denied' ? '权限被拒绝（去浏览器站点设置开启）' : '开启系统通知权限 →'}
+                    {notifyPerm === 'denied'
+                        ? (nativeRuntime ? '权限被拒绝（去手机系统设置开启）' : '权限被拒绝（去浏览器站点设置开启）')
+                        : '开启系统通知权限 →'}
                 </button>
             )}
 
@@ -2023,7 +2031,9 @@ const Settings: React.FC = () => {
                 />
             </div>
             <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
-                网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。
+                {nativeRuntime
+                    ? '安卓 App 使用手机系统通知。首次开启时会弹出系统授权；如果拒绝了，请到系统设置 → 应用 → Moro → 通知里重新允许。'
+                    : '网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。'}
             </p>
             </section>
 
@@ -2658,7 +2668,7 @@ const Settings: React.FC = () => {
                           </div>
                           {rtWeatherMode === 'geo' ? (
                               <p className="text-xs text-[#26242a]/60 leading-relaxed">
-                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。优先用浏览器定位（更准，首次会弹窗请求授权）；<b>即使拒绝授权或没有定位权限，也会自动按 IP 取城市级的本地实时天气</b>，无需填任何 Key。「手填 Key」仅作老用户兼容保留。
+                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。优先用{nativeRuntime ? '手机系统定位' : '浏览器定位'}（更准，首次会弹窗请求授权）；<b>即使拒绝授权或没有定位权限，也会自动按 IP 取城市级的本地实时天气</b>，无需填任何 Key。「手填 Key」仅作老用户兼容保留。
                               </p>
                           ) : (
                               <>

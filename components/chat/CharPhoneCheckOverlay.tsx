@@ -12,6 +12,7 @@ import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 import { isDevDebugAvailable } from '../../utils/devDebug';
 import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 import { toWallpaperBackground } from '../../utils/defaultWallpapers';
+import { isNativeNotificationRuntime } from '../../utils/browserNotify';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -469,6 +470,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 }) => {
     // 角色看到的是用户**实时真实**的桌面：真壁纸 + 真实安装的全部 App + 真实 dock
     const { theme, realtimeConfig } = useOS();
+    const nativeRuntime = isNativeNotificationRuntime();
     const desktopSnapshot = useMemo(() => buildUserDesktopSnapshot(theme), [theme]);
     const widgetCustomCss = useMemo(() => {
         const prefs = theme.desktopWidgetPrefs || {};
@@ -674,7 +676,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                     realtimeConfig.weatherEnabled
                         ? (realtimeConfig.weatherMode === 'manual' && realtimeConfig.weatherCity
                             ? `天气城市：${realtimeConfig.weatherCity}`
-                            : '天气使用浏览器定位')
+                            : `天气使用${nativeRuntime ? '手机定位' : '浏览器定位'}`)
                         : '',
                     ...locationSnaps.map(l => `${l.title}${l.detail ? ` ${l.detail}` : ''}`),
                     ...momentsSnap.map(p => p.location ? `朋友圈位置：${p.location}` : ''),
@@ -1278,7 +1280,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         }
         if (item.id === 'weather') {
             const place = regionHints[0] || (realtimeConfig.weatherEnabled
-                ? (realtimeConfig.weatherMode === 'manual' ? realtimeConfig.weatherCity || '天气城市' : '浏览器定位')
+                ? (realtimeConfig.weatherMode === 'manual' ? realtimeConfig.weatherCity || '天气城市' : nativeRuntime ? '手机定位' : '浏览器定位')
                 : '天气未开启');
             return (
                 <div className={`${widgetBase} px-3 py-3 flex flex-col justify-between`} style={translucent}>

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import JournalSheet, { SealBtn, CandyToggle, StickerChip, LinedInput, NoteStrip } from './JournalSheet';
 import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile } from '../../types';
-import { getNotifyPermission, requestNotifyPermission, detectBrowser, isRecommendedForWebNotify, type NotifyPermission } from '../../utils/browserNotify';
+import { getNotifyPermission, requestNotifyPermission, detectBrowser, isNativeNotificationRuntime, isRecommendedForWebNotify, type NotifyPermission } from '../../utils/browserNotify';
 
 interface ProactiveSettingsModalProps {
     isOpen: boolean;
@@ -38,6 +38,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     const [secKey, setSecKey] = useState(saved?.secondaryApi?.apiKey ?? '');
     const [secModel, setSecModel] = useState(saved?.secondaryApi?.model ?? '');
     const [showApiSection, setShowApiSection] = useState(saved?.useSecondaryApi ?? false);
+    const nativeNotify = isNativeNotificationRuntime();
 
     // Reset form when modal opens with new char data
     useEffect(() => {
@@ -222,41 +223,47 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             )}
                         </div>
 
-                        {/* 离线消息弹窗 · 浏览器授权 */}
+                        {/* 离线消息弹窗 · 通知授权 */}
                         <div className="pt-3 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] leading-none" aria-hidden>📣</span>
-                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>启用浏览器通知</span>
+                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>{nativeNotify ? '启用手机通知' : '启用浏览器通知'}</span>
                             </div>
                             <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
-                                授权一次浏览器通知，{char.name} 来信时即使你切到别的标签或最小化，也会弹出系统通知。电脑版 Chrome / Edge 体验最好。
+                                {nativeNotify
+                                    ? `授权一次手机系统通知，${char.name} 来信时即使 Moro 切到后台，也会进入通知栏。`
+                                    : `授权一次浏览器通知，${char.name} 来信时即使你切到别的标签或最小化，也会弹出系统通知。电脑版 Chrome / Edge 体验最好。`}
                             </p>
                             <div className="mt-2.5">
                                 {notifyPerm === 'granted' && (
                                     <div className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5" style={{ background: '#fff4f7', border: '1px solid #eed6df' }}>
                                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#5ca57f' }} />
-                                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>浏览器通知已开启</span>
+                                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>{nativeNotify ? '手机通知已开启' : '浏览器通知已开启'}</span>
                                     </div>
                                 )}
                                 {notifyPerm === 'default' && (
                                     <button type="button" onClick={handleRequestNotify}
                                         className="rounded-[10px] px-3.5 py-1.5 text-[11.5px] font-bold transition active:scale-95"
                                         style={{ ...CUTE_STACK, color: '#fff', background: 'linear-gradient(135deg,#c8a3dd,#857f74)', boxShadow: '0 2px 6px rgba(200,140,180,0.35)' }}>
-                                        开启浏览器通知
+                                        {nativeNotify ? '开启手机通知' : '开启浏览器通知'}
                                     </button>
                                 )}
                                 {notifyPerm === 'denied' && (
                                     <NoteStrip>
-                                        浏览器已拒绝通知权限。请点地址栏左侧的 🔒 / ⓘ 图标 →「通知」改为「允许」，再回到这里即可。
+                                        {nativeNotify
+                                            ? '手机系统已拒绝通知权限。请到系统设置 → 应用 → Moro → 通知里改为允许，再回到这里。'
+                                            : '浏览器已拒绝通知权限。请点地址栏左侧的 🔒 / ⓘ 图标 →「通知」改为「允许」，再回到这里即可。'}
                                     </NoteStrip>
                                 )}
                                 {notifyPerm === 'unsupported' && (
                                     <NoteStrip>
-                                        当前环境不支持网页通知。建议用电脑版 Chrome 或 Edge 打开；iOS 需先把 Moro「添加到主屏幕」装成 App。
+                                        {nativeNotify
+                                            ? '当前手机系统没有开放通知能力，请检查系统版本或应用通知设置。'
+                                            : '当前环境不支持网页通知。建议用电脑版 Chrome 或 Edge 打开；iOS 需先把 Moro「添加到主屏幕」装成 App。'}
                                     </NoteStrip>
                                 )}
                             </div>
-                            {notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && !isRecommendedForWebNotify() && (
+                            {!nativeNotify && notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && !isRecommendedForWebNotify() && (
                                 <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: '#857f74' }}>
                                     提示：当前是 {detectBrowser().name}。离线弹窗在电脑版 Chrome / Edge 上最稳定。
                                 </p>

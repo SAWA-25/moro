@@ -11,14 +11,31 @@
  *  - 仅做能力探测与文案，不强制部署任何 worker，本地标签页活着即可收到弹窗。
  */
 
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 export type NotifyPermission = 'unsupported' | 'default' | 'granted' | 'denied';
 
+let nativePermissionCache: NotifyPermission | null = null;
+
+const fromNativeDisplayPermission = (display?: string): NotifyPermission => {
+  if (display === 'granted') return 'granted';
+  if (display === 'denied') return 'denied';
+  return 'default';
+};
+
+export function isNativeNotificationRuntime(): boolean {
+  try { return Capacitor.isNativePlatform(); } catch { return false; }
+}
+
 export function notificationsSupported(): boolean {
+  if (isNativeNotificationRuntime()) return true;
   return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator;
 }
 
 export function getNotifyPermission(): NotifyPermission {
   if (!notificationsSupported()) return 'unsupported';
+  if (isNativeNotificationRuntime()) return nativePermissionCache ?? 'default';
   return Notification.permission as NotifyPermission;
 }
 
@@ -27,6 +44,19 @@ export function getNotifyPermission(): NotifyPermission {
  * 已 granted 直接返回；denied 无法再弹（浏览器记住了），需用户去站点设置里手动改。
  */
 export async function requestNotifyPermission(): Promise<NotifyPermission> {
+  if (isNativeNotificationRuntime()) {
+    try {
+      const cur = await LocalNotifications.checkPermissions();
+      nativePermissionCache = fromNativeDisplayPermission(cur.display);
+      if (nativePermissionCache === 'granted') return 'granted';
+      if (nativePermissionCache === 'denied') return 'denied';
+      const next = await LocalNotifications.requestPermissions();
+      nativePermissionCache = fromNativeDisplayPermission(next.display);
+      return nativePermissionCache;
+    } catch {
+      return 'unsupported';
+    }
+  }
   if (!notificationsSupported()) return 'unsupported';
   if (Notification.permission === 'granted') return 'granted';
   if (Notification.permission === 'denied') return 'denied';
@@ -90,6 +120,25 @@ export interface LocalNotificationOptions {
  * 仅在 permission === 'granted' 时有效；其余情况静默返回 false。
  */
 export async function showLocalNotification(title: string, opts: LocalNotificationOptions = {}): Promise<boolean> {
+  if (isNativeNotificationRuntime()) {
+    try {
+      const cur = await LocalNotifications.checkPermissions();
+      const finalPerm = cur.display === 'granted' ? cur : await LocalNotifications.requestPermissions();
+      nativePermissionCache = fromNativeDisplayPermission(finalPerm.display);
+      if (finalPerm.display !== 'granted') return false;
+      await LocalNotifications.schedule({
+        notifications: [{
+          id: Date.now() % 2147483647,
+          title,
+          body: opts.body,
+          extra: opts.data,
+        }],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
   if (getNotifyPermission() !== 'granted') return false;
   const notifOpts: NotificationOptions & { renotify?: boolean } = {
     body: opts.body,

@@ -1597,7 +1597,7 @@ const SettingsTab: React.FC<{
 
   const requestBrowserLocation = () => {
     if (!navigator.geolocation) {
-      window.alert('当前浏览器不支持定位。');
+      window.alert('当前设备不支持系统定位。');
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -1610,7 +1610,7 @@ const SettingsTab: React.FC<{
           capturedAt: Date.now(),
         },
       }),
-      err => window.alert(err.message || '定位授权失败。'),
+      err => window.alert(err.message || '系统定位授权失败。'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   };
