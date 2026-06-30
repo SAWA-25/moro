@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { callMcdTool, isMcdConfigured } from '../../utils/mcdMcpClient';
 import { autoFixProposalCodesByName } from '../../utils/mcdToolBridge';
 import { mcdItemEmoji } from '../../utils/mcdEmoji';
+import { stickerImageSrc } from '../../utils/stickerImage';
 import type { McdCartItem } from '../chat/McdCard';
 
 interface McdMiniAppProps {
@@ -1026,7 +1027,7 @@ const InAppChat: React.FC<{
                                         />
                                     ) : m.type === 'emoji' ? (
                                         <img
-                                            src={m.content}
+                                            src={stickerImageSrc(m.content)}
                                             alt="表情"
                                             className="w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-lg bg-white/40 p-1"
                                             loading="lazy"

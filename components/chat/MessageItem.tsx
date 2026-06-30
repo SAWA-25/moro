@@ -11,6 +11,7 @@ import McdCard from './McdCard';
 import ScreenPeekCardView from './ScreenPeekCardView';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
+import { stickerImageSrc } from '../../utils/stickerImage';
 
 /** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
 const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
@@ -510,7 +511,7 @@ const ForwardCard: React.FC<{
                                         <div className="text-[10px] text-slate-400 mb-1 px-1">{senderName} {msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
                                         <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-all ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
                                             {msg.type === 'image' ? (msg.content ? <img src={msg.content} className="max-w-[200px] rounded-xl" /> : <span className="italic opacity-60">[图片已丢失]</span>) :
-                                             msg.type === 'emoji' ? (msg.content ? <img src={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
+                                             msg.type === 'emoji' ? (msg.content ? <img src={stickerImageSrc(msg.content)} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
                                              msg.content}
                                         </div>
                                     </div>
@@ -931,7 +932,7 @@ const MessageItem = React.memo(({
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const avatarSizePx = avatarSize === 'small' ? 28 : avatarSize === 'large' ? 48 : 36;
-    const shouldShowAvatar = avatarMode === 'every_message' || isLastInGroup;
+    const shouldShowAvatar = isUser || avatarMode === 'every_message' || isLastInGroup;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 }); // Track touch start position
     // 左滑引用：swipeX 为气泡跟手左移量（负值），swipeActive 表示已锁定为水平滑动手势
@@ -2714,7 +2715,7 @@ const MessageItem = React.memo(({
     if (m.type === 'emoji') {
         return commonLayout(
             m.content ? (
-                <img src={m.content} className="max-w-[160px] max-h-[160px] hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
+                <img src={stickerImageSrc(m.content)} className="max-w-[160px] max-h-[160px] hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
             ) : (
                 <div className="px-3 py-2 rounded-2xl bg-slate-100 text-slate-400 text-xs italic">[表情已丢失]</div>
             )

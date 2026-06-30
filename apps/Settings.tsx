@@ -538,7 +538,7 @@ const Settings: React.FC = () => {
   const [cloudTestResult, setCloudTestResult] = useState<string>('');
   const [cloudTesting, setCloudTesting] = useState(false);
 
-  // 应用更新（APK 检查）
+  // 应用更新（手机安装版检查）
   const [nativeAppInfo, setNativeAppInfo] = useState<NativeAppInfo | null>(null);
   const [apkUpdateCheck, setApkUpdateCheck] = useState<AppUpdateCheckResult | null>(null);
   const [apkUpdateBusy, setApkUpdateBusy] = useState(false);
@@ -787,7 +787,7 @@ const Settings: React.FC = () => {
       if (apkUpdateBusy) return;
       setApkUpdateBusy(true);
       setApkDownloadProgress(null);
-      setApkUpdateStatus('正在检查 APK 更新...');
+      setApkUpdateStatus('正在检查更新...');
       try {
           const result = await checkConfiguredAppUpdate();
           setNativeAppInfo(result.current);
@@ -831,7 +831,7 @@ const Settings: React.FC = () => {
       }
 
       setApkUpdateBusy(true);
-      setApkUpdateStatus(useDomesticLine ? '正在通过国内线路下载 APK...' : '正在下载 APK...');
+      setApkUpdateStatus(useDomesticLine ? '正在通过国内线路下载更新包...' : '正在下载更新包...');
       setApkDownloadProgress(null);
       try {
           const downloadTarget = useDomesticLine && latest.domesticApkUrl
@@ -840,9 +840,9 @@ const Settings: React.FC = () => {
           await downloadAndInstallApk(downloadTarget, progress => {
               setApkDownloadProgress(progress);
               if (progress.status === 'downloading') {
-                  setApkUpdateStatus(`正在下载 APK：${Math.round(progress.progress * 100)}%`);
+                  setApkUpdateStatus(`正在下载更新包：${Math.round(progress.progress * 100)}%`);
               } else if (progress.status === 'verifying') {
-                  setApkUpdateStatus('正在校验 APK...');
+                  setApkUpdateStatus('正在校验更新包...');
               } else if (progress.status === 'installing') {
                   setApkUpdateStatus('正在打开系统安装器...');
               }
@@ -1469,78 +1469,80 @@ const Settings: React.FC = () => {
             <div data-manual-anchor="manual-settings-fullscreen"><FullscreenCard addToast={addToast} /></div>
             <div data-manual-anchor="manual-settings-statusbar"><TopStatusBarCard hidden={!!theme.hideStatusBar} onChange={(hidden) => updateTheme({ hideStatusBar: hidden })} /></div>
 
-            <SectionCard
-                manualAnchor="manual-settings-update"
-                tag="UPDATE"
-                title="应用更新"
-                hand="检查并安装开发者发布的新版本。"
-                rotate="rotate-[0.4deg]"
-                right={<StatusBadge active={!!apkUpdateCheck?.updateAvailable} activeText="有新版" inactiveText="已就绪" />}
-            >
-                <div className="space-y-4">
-                    <div className="rounded-[14px] border border-[#e7e1d6] bg-white px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="text-[11px] font-black text-[#2f3437]">当前安装包</p>
-                                <p className="text-[10px] text-[#69716d] font-mono truncate">
-                                    {nativeAppInfo?.native ? `${nativeAppInfo.versionName || '?'} · code ${nativeAppInfo.versionCode || 0}` : '网页版 / 未进入 Android App'}
-                                </p>
+            {nativeAppInfo?.native && (
+                <SectionCard
+                    manualAnchor="manual-settings-update"
+                    tag="UPDATE"
+                    title="应用更新"
+                    hand="检查并安装开发者发布的新版本。"
+                    rotate="rotate-[0.4deg]"
+                    right={<StatusBadge active={!!apkUpdateCheck?.updateAvailable} activeText="有新版" inactiveText="已就绪" />}
+                >
+                    <div className="space-y-4">
+                        <div className="rounded-[14px] border border-[#e7e1d6] bg-white px-3 py-2.5">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-black text-[#2f3437]">当前安装包</p>
+                                    <p className="text-[10px] text-[#69716d] font-mono truncate">
+                                        {nativeAppInfo?.native ? `${nativeAppInfo.versionName || '?'} · code ${nativeAppInfo.versionCode || 0}` : '网页版 / 未进入 Android App'}
+                                    </p>
+                                </div>
+                                {nativeAppInfo?.native && !nativeAppInfo.canRequestPackageInstalls && (
+                                    <button type="button" onClick={handleOpenInstallPermission} className={`shrink-0 px-2.5 py-1.5 text-[10px] font-black ${STICKER}`}>
+                                        安装权限
+                                    </button>
+                                )}
                             </div>
-                            {nativeAppInfo?.native && !nativeAppInfo.canRequestPackageInstalls && (
-                                <button type="button" onClick={handleOpenInstallPermission} className={`shrink-0 px-2.5 py-1.5 text-[10px] font-black ${STICKER}`}>
-                                    安装权限
-                                </button>
-                            )}
+                            <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
+                                有新版本时会下载安装包并打开 Android 系统安装器，仍需你手动确认安装。
+                            </p>
                         </div>
-                        <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
-                            有新版本时会下载安装包并打开 Android 系统安装器，仍需你手动确认安装。
-                        </p>
-                    </div>
 
-                    <div className={`grid gap-3 ${apkUpdateCheck?.latest.domesticApkUrl ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2'}`}>
-                        <button
-                            type="button"
-                            disabled={apkUpdateBusy}
-                            onClick={handleCheckApkUpdate}
-                            className={`py-2.5 text-xs font-black disabled:opacity-40 ${STICKER}`}
-                        >
-                            {apkUpdateBusy && !apkDownloadProgress ? '检查中...' : '检查 APK 更新'}
-                        </button>
-                        <button
-                            type="button"
-                            disabled={apkUpdateBusy || !apkUpdateCheck?.updateAvailable}
-                            onClick={() => handleDownloadApkUpdate(false)}
-                            className={`py-2.5 text-xs font-black disabled:opacity-40 ${apkUpdateCheck?.updateAvailable ? INK_BTN : STICKER}`}
-                        >
-                            下载新版 APK
-                        </button>
-                        {apkUpdateCheck?.latest.domesticApkUrl && (
+                        <div className={`grid gap-3 ${apkUpdateCheck?.latest.domesticApkUrl ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2'}`}>
+                            <button
+                                type="button"
+                                disabled={apkUpdateBusy}
+                                onClick={handleCheckApkUpdate}
+                                className={`py-2.5 text-xs font-black disabled:opacity-40 ${STICKER}`}
+                            >
+                                {apkUpdateBusy && !apkDownloadProgress ? '检查中...' : '检查更新'}
+                            </button>
                             <button
                                 type="button"
                                 disabled={apkUpdateBusy || !apkUpdateCheck?.updateAvailable}
-                                onClick={() => handleDownloadApkUpdate(true)}
+                                onClick={() => handleDownloadApkUpdate(false)}
                                 className={`py-2.5 text-xs font-black disabled:opacity-40 ${apkUpdateCheck?.updateAvailable ? INK_BTN : STICKER}`}
                             >
-                                国内线路
+                                下载新版
                             </button>
-                        )}
-                    </div>
-
-                    {(apkUpdateStatus || apkUpdateCheck?.latest) && (
-                        <div className="rounded-[14px] border border-[#dce8ea] bg-[#f3f7f6] p-3 text-[11px] text-[#2f3437] leading-relaxed">
-                            {apkUpdateStatus && <p className="font-bold">{apkUpdateStatus}</p>}
-                            {apkDownloadProgress && apkDownloadProgress.status === 'downloading' && (
-                                <div className="mt-2 h-2 rounded-full bg-white border border-[#e7e1d6] overflow-hidden">
-                                    <div className="h-full bg-[#7fa8b3] transition-all" style={{ width: `${Math.round(apkDownloadProgress.progress * 100)}%` }} />
-                                </div>
-                            )}
-                            {apkUpdateCheck?.latest.releaseNotes && (
-                                <p className="mt-2 whitespace-pre-wrap text-[#69716d]">{apkUpdateCheck.latest.releaseNotes}</p>
+                            {apkUpdateCheck?.latest.domesticApkUrl && (
+                                <button
+                                    type="button"
+                                    disabled={apkUpdateBusy || !apkUpdateCheck?.updateAvailable}
+                                    onClick={() => handleDownloadApkUpdate(true)}
+                                    className={`py-2.5 text-xs font-black disabled:opacity-40 ${apkUpdateCheck?.updateAvailable ? INK_BTN : STICKER}`}
+                                >
+                                    国内线路
+                                </button>
                             )}
                         </div>
-                    )}
-                </div>
-            </SectionCard>
+
+                        {(apkUpdateStatus || apkUpdateCheck?.latest) && (
+                            <div className="rounded-[14px] border border-[#dce8ea] bg-[#f3f7f6] p-3 text-[11px] text-[#2f3437] leading-relaxed">
+                                {apkUpdateStatus && <p className="font-bold">{apkUpdateStatus}</p>}
+                                {apkDownloadProgress && apkDownloadProgress.status === 'downloading' && (
+                                    <div className="mt-2 h-2 rounded-full bg-white border border-[#e7e1d6] overflow-hidden">
+                                        <div className="h-full bg-[#7fa8b3] transition-all" style={{ width: `${Math.round(apkDownloadProgress.progress * 100)}%` }} />
+                                    </div>
+                                )}
+                                {apkUpdateCheck?.latest.releaseNotes && (
+                                    <p className="mt-2 whitespace-pre-wrap text-[#69716d]">{apkUpdateCheck.latest.releaseNotes}</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </SectionCard>
+            )}
 
             {/* 锁屏与密码 */}
             <SectionCard manualAnchor="manual-settings-lock" tag="LOCK" title="锁屏与密码" hand="设置进入应用时的 4 位密码" rotate="rotate-[-0.5deg]">
@@ -2255,7 +2257,7 @@ const Settings: React.FC = () => {
             </div>
             <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
                 {nativeRuntime
-                    ? '安卓 App 使用手机系统通知。首次开启时会弹出系统授权；如果拒绝了，请到系统设置 → 应用 → Moro → 通知里重新允许。'
+                    ? '手机安装版使用手机系统通知。首次开启时会弹出系统授权；如果拒绝了，请到系统设置 → 应用 → Moro → 通知里重新允许。'
                     : '网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。'}
             </p>
             </section>

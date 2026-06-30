@@ -257,8 +257,8 @@ const choices = {
         { value: 'large', label: '大' },
     ],
     avatarMode: [
-        { value: 'grouped', label: '连续共用', desc: '一串消息只露一次头像' },
-        { value: 'every_message', label: '每条都显示', desc: '每条消息都带头像' },
+        { value: 'grouped', label: '对方连续', desc: '对方一串消息共用头像，我方每条保留' },
+        { value: 'every_message', label: '双方每条', desc: '双方每条消息都带头像' },
     ],
     spacing: [
         { value: 'compact', label: '紧凑' },
@@ -463,7 +463,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     const previewPad = headerDensity === 'compact' ? 'px-4 py-3' : headerDensity === 'airy' ? 'px-5 py-[18px]' : 'px-4 py-3.5';
     const previewMessages = [
         { id: 'ai-1', role: 'assistant', text: '今天这套聊天壳已经比之前像样多了。' },
-        { id: 'ai-2', role: 'assistant', text: '现在还能决定头像是连续共用，还是每条都显示。' },
+        { id: 'ai-2', role: 'assistant', text: '现在还能决定对方头像是连续共用，还是每条都显示。' },
         { id: 'user-1', role: 'user', text: '对，我想把头像频率也做成可以 DIY 的。' },
         { id: 'user-2', role: 'user', text: '这样不同软件的味道会更明显。' },
     ] as const;
@@ -540,7 +540,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                         {previewMessages.map((message, index) => {
                             const isUser = message.role === 'user';
                             const nextRole = index < previewMessages.length - 1 ? previewMessages[index + 1].role : null;
-                            const shouldShowAvatar = avatarMode === 'every_message' || nextRole !== message.role;
+                            const shouldShowAvatar = isUser || avatarMode === 'every_message' || nextRole !== message.role;
                             const avatarTone = isUser ? 'bg-primary/25' : 'bg-pink-200';
                             return (
                                 <div key={message.id} className={`flex items-end gap-2 ${isUser ? 'justify-end' : ''}`}>

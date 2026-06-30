@@ -99,7 +99,7 @@ const fmtReportStamp = (ts: number) => {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 const fmtMinutes = (mins: number) => mins >= 60 ? `${Math.floor(mins / 60)}小时${mins % 60}分` : `${mins}分`;
-const isImg = (s?: string) => !!s && /^(https?:|data:|blob:)/.test(s);
+const isImg = (s?: string) => !!s && /^(https?:|data:|blob:|\/)/.test(s);
 const cityLabel = (char?: CharacterProfile) => {
   if (!char) return '未设城市';
   if (char.cityConfig?.mode === 'real' && char.cityConfig.realCity) return char.cityConfig.realCity;
@@ -117,11 +117,26 @@ function fromLocalInput(value: string, fallback: number): number {
   return Number.isFinite(ts) ? ts : fallback;
 }
 
-const Avatar: React.FC<{ char?: CharacterProfile; size?: number }> = ({ char, size = 42 }) => (
-  <div className="shrink-0 rounded-2xl overflow-hidden flex items-center justify-center bg-white text-xl border border-black/10 shadow-sm" style={{ width: size, height: size }}>
-    {isImg(char?.avatar) ? <img src={char!.avatar} className="w-full h-full object-cover" /> : <span>{char?.avatar || '🧭'}</span>}
-  </div>
-);
+const Avatar: React.FC<{ char?: CharacterProfile; size?: number }> = ({ char, size = 42 }) => {
+  const [broken, setBroken] = useState(false);
+  const avatar = char?.avatar || '';
+  const showImage = isImg(avatar) && !broken;
+  const fallback = !isImg(avatar) && avatar ? avatar : '🧭';
+
+  useEffect(() => {
+    setBroken(false);
+  }, [avatar]);
+
+  return (
+    <div className="shrink-0 rounded-2xl overflow-hidden flex items-center justify-center bg-white text-xl border border-black/10 shadow-sm" style={{ width: size, height: size }}>
+      {showImage ? (
+        <img src={avatar} alt={char?.name || '角色头像'} className="w-full h-full object-cover" onError={() => setBroken(true)} />
+      ) : (
+        <span>{fallback}</span>
+      )}
+    </div>
+  );
+};
 
 const Toggle: React.FC<{ on: boolean; onChange: (next: boolean) => void; label?: string }> = ({ on, onChange, label }) => (
   <button

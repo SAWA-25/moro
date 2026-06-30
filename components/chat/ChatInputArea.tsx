@@ -3,6 +3,7 @@ import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteT
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
+import { stickerImageSrc } from '../../utils/stickerImage';
 
 interface ChatInputAreaProps {
     input: string;
@@ -726,7 +727,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                             className={`${emojiTileClass} ${isSelected ? '!border-blue-500' : ''}`}
                                         >
                                             <div className="aspect-square w-full">
-                                                <img src={e.url} className="w-full h-full object-contain pointer-events-none" />
+                                                <img src={stickerImageSrc(e.url)} className="w-full h-full object-contain pointer-events-none" />
                                             </div>
                                             <span className={`text-[9px] truncate w-full text-center mt-0.5 leading-tight pointer-events-none ${emojiLabelClass}`}>{e.name}</span>
                                             {isSelected && <div className="absolute inset-0 bg-blue-500/20 rounded-2xl pointer-events-none border-2 border-blue-500" />}

@@ -29,6 +29,7 @@ import { formatCharacterWithId, getCharacterModelId } from '../utils/characterId
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
+import { stickerImageSrc } from '../utils/stickerImage';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -749,7 +750,7 @@ const GroupMessageItem = React.memo(({
                     </div>
                 );
             case 'emoji':
-                return <img src={msg.content} className="w-24 h-24 object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
+                return <img src={stickerImageSrc(msg.content)} className="w-24 h-24 object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
             case 'transfer': {
                 const tmeta = (msg.metadata as any) || {};
                 // 群收款卡（AA）：收款方视角，展示进度，点开逐笔点收
@@ -5881,7 +5882,7 @@ ${attachedImagesNote}
                                     return e.name.toLowerCase().includes(term) || ((e as any).description || '').toLowerCase().includes(term);
                                 }).map((e, i) => (
                                     <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="scrap-card aspect-square rounded-xl p-2 active:scale-95 flex flex-col items-center justify-center" title={e.name}>
-                                        <img src={e.url} className="w-full h-full object-contain pointer-events-none" />
+                                        <img src={stickerImageSrc(e.url)} className="w-full h-full object-contain pointer-events-none" />
                                     </button>
                                 ))}
                             </div>

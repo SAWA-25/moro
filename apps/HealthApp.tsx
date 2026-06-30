@@ -447,7 +447,7 @@ const HealthApp: React.FC = () => {
                   通知状态：{notifyPerm === 'granted' ? '已授权，可以发送系统提醒。' : notifyPerm === 'denied' ? '已被拒绝，需要到浏览器或系统设置里改为允许。' : notifyPerm === 'unsupported' ? '当前环境不支持系统通知。' : '未授权，点右上角按钮允许后才会弹系统提醒。'}
                 </div>
                 <div className="text-[11px] font-bold text-[#91a29a]">
-                  浏览器完全关闭后不保证常驻提醒；APK 会排程软件本地通知。
+                  浏览器完全关闭后不保证常驻提醒；手机安装版会排程本地通知。
                 </div>
               </section>
 

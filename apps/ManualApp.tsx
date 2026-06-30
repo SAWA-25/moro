@@ -14,6 +14,7 @@ import {
 import { Icons, INSTALLED_APPS } from '../constants';
 import { useOS } from '../context/OSContext';
 import { queueManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
+import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import {
   CATEGORY_ORDER,
   MANUAL_DESTINATIONS,
@@ -42,7 +43,9 @@ const settingSearchText = (setting: ManualSetting) => [
   ...(setting.options || []).flatMap(option => [option.label, option.description]),
 ].join(' ');
 
-const entrySearchText = (entry: ManualEntry) => {
+const isNativeEntry = (entry: ManualEntry) => !!entry.nativeOnly;
+
+const entrySearchText = (entry: ManualEntry, nativeRuntime: boolean) => {
   const destination = MANUAL_DESTINATIONS[entry.app];
   return [
     entry.app,
@@ -57,13 +60,21 @@ const entrySearchText = (entry: ManualEntry) => {
       section.id,
       section.title,
       section.description || '',
-      ...section.settings.map(settingSearchText),
+      ...section.settings.filter(setting => nativeRuntime || !setting.nativeOnly).map(settingSearchText),
     ]),
   ].join(' ');
 };
 
-const settingCountOf = (entry: ManualEntry) =>
-  (entry.settingSections || []).reduce((sum, section) => sum + section.settings.length, 0);
+const settingCountOf = (entry: ManualEntry, nativeRuntime: boolean) =>
+  (entry.settingSections || []).reduce((sum, section) => sum + section.settings.filter(setting => nativeRuntime || !setting.nativeOnly).length, 0);
+
+const visibleSectionsOf = (entry: ManualEntry, nativeRuntime: boolean) =>
+  (entry.settingSections || [])
+    .map(section => ({
+      ...section,
+      settings: section.settings.filter(setting => nativeRuntime || !setting.nativeOnly),
+    }))
+    .filter(section => section.settings.length > 0);
 
 const SettingPath: React.FC<{ setting: ManualSetting }> = ({ setting }) => {
   const path = setting.path || [];
@@ -82,18 +93,24 @@ const SettingPath: React.FC<{ setting: ManualSetting }> = ({ setting }) => {
 
 const ManualApp: React.FC = () => {
   const { closeApp, openApp } = useOS();
+  const nativeRuntime = isNativeAppRuntime();
   const [category, setCategory] = useState<'all' | ManualCategory>('all');
   const [query, setQuery] = useState('');
   const [activeApp, setActiveApp] = useState(MANUAL_ENTRIES[0]?.app || '');
 
+  const visibleEntries = useMemo(
+    () => MANUAL_ENTRIES.filter(entry => nativeRuntime || !isNativeEntry(entry)),
+    [nativeRuntime],
+  );
+
   const filteredEntries = useMemo(() => {
     const q = normalize(query);
-    return MANUAL_ENTRIES.filter((entry) => {
+    return visibleEntries.filter((entry) => {
       if (category !== 'all' && entry.category !== category) return false;
       if (!q) return true;
-      return normalize(entrySearchText(entry)).includes(q);
+      return normalize(entrySearchText(entry, nativeRuntime)).includes(q);
     });
-  }, [category, query]);
+  }, [category, nativeRuntime, query, visibleEntries]);
 
   const activeEntry = useMemo(() => {
     if (filteredEntries.length === 0) return null;
@@ -114,9 +131,9 @@ const ManualApp: React.FC = () => {
       roleplay: 0,
       system: 0,
     };
-    MANUAL_ENTRIES.forEach((entry) => { counts[entry.category] += 1; });
+    visibleEntries.forEach((entry) => { counts[entry.category] += 1; });
     return counts;
-  }, []);
+  }, [visibleEntries]);
 
   const jumpTo = (target?: ManualDeepLinkTarget | null) => {
     if (!target) return;
@@ -205,7 +222,7 @@ const ManualApp: React.FC = () => {
           ) : filteredEntries.map((entry) => {
             const meta = CATEGORY_META[entry.category];
             const selected = activeEntry?.app === entry.app;
-            const settings = settingCountOf(entry);
+            const settings = settingCountOf(entry, nativeRuntime);
             return (
               <button
                 key={entry.app}
@@ -305,7 +322,7 @@ const ManualApp: React.FC = () => {
                   </div>
                 </div>
 
-                {activeEntry.settingSections && activeEntry.settingSections.length > 0 && (
+                {visibleSectionsOf(activeEntry, nativeRuntime).length > 0 && (
                   <div className="mt-5">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="h-px flex-1 bg-black/10" />
@@ -316,7 +333,7 @@ const ManualApp: React.FC = () => {
                       <span className="h-px flex-1 bg-black/10" />
                     </div>
                     <div className="space-y-3">
-                      {activeEntry.settingSections.map(section => (
+                      {visibleSectionsOf(activeEntry, nativeRuntime).map(section => (
                         <section key={section.id} className="rounded-[18px] bg-white/80 border border-black/[0.06] px-3 py-3">
                           <div className="flex items-start justify-between gap-2">
                             <div>

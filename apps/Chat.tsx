@@ -5940,7 +5940,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
              >
                 <div id="manual-chat-alarm-root" className="space-y-4">
                     <NoteStrip>
-                        页面或 PWA 运行时会按点检查；浏览器完全关闭后不保证响铃。到点后会让角色在聊天里发一条适合语音化的提醒，APK 会同步排原生提醒。
+                        页面或 PWA 运行时会按点检查；浏览器完全关闭后不保证响铃。到点后会让角色在聊天里发一条适合语音化的提醒，手机安装版会同步排原生提醒。
                     </NoteStrip>
 
                     <div className="grid grid-cols-2 gap-2">

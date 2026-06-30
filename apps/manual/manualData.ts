@@ -17,6 +17,7 @@ export interface ManualSetting {
   options?: ManualSettingOption[];
   path?: string[];
   deepLink?: ManualDeepLinkTarget;
+  nativeOnly?: boolean;
 }
 
 export interface ManualSettingSection {
@@ -34,6 +35,7 @@ export interface ManualEntry {
   features: string[];
   tips?: string[];
   settingSections?: ManualSettingSection[];
+  nativeOnly?: boolean;
 }
 
 export interface ManualDestination {
@@ -145,10 +147,10 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
     features: [
       '闹钟可给当前角色设置睡觉督促、起床叫醒或自定义提醒，默认按星期重复。',
       '到点后角色会用自己的语气在聊天里提醒你；起床闹钟可优先走语音来电。',
-      '浏览器版会联动系统通知；APK 版会排本地通知。浏览器完全关闭后不承诺常驻响铃。',
+      '浏览器版会联动系统通知；手机安装版会排本地通知。浏览器完全关闭后不承诺常驻响铃。',
       '拉黑或被拉黑期间，闹钟只做本地通知，不生成聊天或来电。',
     ],
-    tips: ['入口在单聊输入栏旁的回形针，不在右上角聊天设置里。新增或修改闹钟后，APK 会自动刷新未来一段时间的提醒排程。'],
+    tips: ['入口在单聊输入栏旁的回形针，不在右上角聊天设置里。新增或修改闹钟后，手机安装版会自动刷新未来一段时间的提醒排程。'],
     settingSections: [
       {
         id: 'private-chat-tools',
@@ -623,12 +625,12 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
     category: 'system',
     summary: '系统设置中心，集中管理界面、安全、备份、聊天连接、实时感知、通知和外部服务。',
     features: [
-      '基础与安全：界面全屏、顶部状态栏、APK 更新、锁屏密码。',
+      '基础与安全：界面全屏、顶部状态栏、手机安装版更新、锁屏密码。',
       '备份与恢复：本地 ZIP、文字数据、媒体与外观、云端备份和恢复。',
       '模型与服务：主 API、副 API、API 调用记录、MiniMax、Replicate / ACE-Step 等外部服务。',
       '实时与通知：天气、新闻、Notion、飞书、小红书、系统通知、VAPID、主动消息 Push、Instant Push。',
     ],
-    tips: ['APK 更新需要 Android 系统确认安装；备份文件和 API 凭据只保存在你的设备或你自己的云端账号下。'],
+    tips: ['手机安装版更新需要系统确认安装；备份文件和 API 凭据只保存在你的设备或你自己的云端账号下。'],
     settingSections: [
       {
         id: 'settings-basic',
@@ -661,9 +663,10 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'settings-apk-update',
             title: '应用更新',
-            description: '检查开发者发布的新版本，下载新版 APK；国内线路只是下载通道不同，版本相同。',
+            description: '检查开发者发布的新版本，下载新版安装包；国内线路只是下载通道不同，版本相同。',
             path: ['文具盒', '基础与安全', '应用更新'],
             deepLink: settingsLink('manual-settings-update', 'group:basic'),
+            nativeOnly: true,
           },
           {
             id: 'settings-lock',
@@ -786,7 +789,7 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'settings-notification',
             title: '系统通知',
-            description: '聊天生成完成后发送系统通知；网页端取决于浏览器权限，安卓 App 取决于手机系统权限。',
+            description: '聊天生成完成后发送系统通知；网页端取决于浏览器权限，手机安装版取决于手机系统权限。',
             options: [
               { label: '开启系统通知权限', description: '首次使用会弹出系统或浏览器授权。' },
               { label: '后台回复通知', description: '普通聊天切后台后，回复完成时尝试进入通知栏。' },
@@ -1218,7 +1221,7 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
       '首页直接设置最近一次开始日、周期长度、经期天数、提醒时间和提前提醒日。',
       '默认按 28 天周期、5 天经期预测，提前 2 天和当天 09:00 提醒；预测只做生活提醒，不是医疗诊断。',
       '浏览器版会在 Moro 标签页或 PWA 仍运行时弹系统通知；浏览器完全关闭后不承诺常驻提醒。',
-      'APK 版会用软件本地通知排程；点击通知会回到健康 App。',
+      '手机安装版会用软件本地通知排程；点击通知会回到健康 App。',
       '选择「公开给角色」后，可让选中的角色用自己的语气关心提醒；私密模式不会写入聊天，也不会告诉角色。',
     ],
     tips: ['如果手账里有「经期」打卡，点「今天开始 / 今天结束」时会尽量同步；没有也不影响健康 App 独立保存记录。'],
