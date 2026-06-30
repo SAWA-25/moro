@@ -243,7 +243,7 @@ export const PERSONALITY_WEIGHTS: Record<PersonalityStyle, Record<LinkType, numb
     analytical: { causal: 1.0, temporal: 0.4, person: 0.3, emotional: 0.2, metaphor: 0.2 },
 };
 
-// ─── Embedding 配置（独立于聊天 API） ─────────────────
+// ─── Embedding 配置（由文具盒副 API 派生） ─────────────────
 
 export interface EmbeddingConfig {
     baseUrl: string;            // OpenAI 兼容端点，如 https://api.siliconflow.cn/v1

@@ -10,6 +10,7 @@ import { runPendingToolCalls } from './instantToolRunner';
 import { drainPendingDiaries } from './pendingDiary';
 import { applyEmotionEvalRaw } from './emotionApply';
 import { processNewMessages } from './memoryPalace/pipeline';
+import { resolveMemoryPalaceAuxConfigsFromStorage } from './memoryPalace/auxConfig';
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
 import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled, makeDebugLogger } from './devDebug';
@@ -70,22 +71,6 @@ export const pushXhsCaches: XhsCaches = {
   commentParentIdCache: new Map(),
 };
 export const pushLastXhsNotesRef: { current: XhsNote[] } = { current: [] };
-
-type MemoryPalaceGlobalConfig = {
-  embedding: { baseUrl: string; apiKey: string; model: string; dimensions: number };
-  lightLLM: { baseUrl: string; apiKey: string; model: string };
-};
-
-/** 从 localStorage 读 memoryPalaceConfig — OSContext 同步存的是 os_memory_palace_config key */
-const loadMemoryPalaceConfigFromLocalStorage = (): MemoryPalaceGlobalConfig | undefined => {
-  try {
-    const raw = localStorage.getItem('os_memory_palace_config');
-    if (!raw) return undefined;
-    return JSON.parse(raw) as MemoryPalaceGlobalConfig;
-  } catch {
-    return undefined;
-  }
-};
 
 /** 从 localStorage 读 APIConfig (与 OSContext load 逻辑保持一致, 但这里在 React 之外跑) */
 const loadApiConfigFromLocalStorage = (): APIConfig => {
@@ -369,15 +354,9 @@ async function runPushTailPipeline(
   userProfile: UserProfile,
 ): Promise<void> {
   // 1. Memory Palace
-  const mpConfig = loadMemoryPalaceConfigFromLocalStorage();
-  const mpEmb = mpConfig?.embedding;
-  const mpLLMConfigured = mpConfig?.lightLLM;
-  const apiConfig = loadApiConfigFromLocalStorage();
-  const mpLLM = (mpLLMConfigured?.baseUrl)
-    ? mpLLMConfigured
-    : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+  const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigsFromStorage();
 
-  if ((char as any).memoryPalaceEnabled && mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {
+  if ((char as any).memoryPalaceEnabled && mpEmb && mpLLM) {
     try {
       const recentMsgs = await DB.getRecentMessagesByCharId(char.id, 50);
       // fire-and-forget: pipeline 内部有并发锁 + 水位线检查, 不会抢着跑两份

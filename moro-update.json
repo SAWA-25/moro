@@ -1,0 +1,11 @@
+{
+  "versionCode": 2,
+  "versionName": "1.0.1",
+  "apkUrl": "https://github.com/SAWA-25/moro/releases/latest/download/moro.apk",
+  "cnApkUrl": "https://sullymeow.ccwu.cc/github?url=https%3A%2F%2Fgithub.com%2FSAWA-25%2Fmoro%2Freleases%2Flatest%2Fdownload%2Fmoro.apk",
+  "sha256": "",
+  "sizeBytes": 0,
+  "releaseNotes": "这里写给用户看的更新内容。",
+  "mandatory": false,
+  "publishedAt": "2026-06-30T12:00:00+08:00"
+}

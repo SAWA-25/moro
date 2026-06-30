@@ -15,6 +15,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(MoroUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();

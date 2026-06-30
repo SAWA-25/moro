@@ -686,10 +686,11 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                 {/* ═══ P.04 说话的样子 ═══ */}
                 <Page no="04" title="说话的样子" en="Voice and Words" tape="mint" pattern="stripe" paper="lined">
-                    <Entry mark="❀" title="TA 打字的习惯" note="「一句一句蹦」像真人那样把话拆成几条短消息发；「一大段说完」则一条讲完。">
-                        <div className="flex gap-2">
+                    <Entry mark="❀" title="TA 打字的习惯" note="选择 TA 更常用的消息节奏；「按人设随意」会让长短和拆条都跟着角色当下状态自然变化。">
+                        <div className="flex flex-wrap gap-2">
                             <StickerChip seed="bm-split" active={(cs.bubbleStyleMode || 'split') === 'split'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'split' })}>一句一句蹦</StickerChip>
                             <StickerChip seed="bm-whole" active={cs.bubbleStyleMode === 'whole'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'whole' })}>一大段说完</StickerChip>
+                            <StickerChip seed="bm-freeform" active={cs.bubbleStyleMode === 'freeform'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'freeform' })}>按人设随意</StickerChip>
                         </div>
                     </Entry>
 

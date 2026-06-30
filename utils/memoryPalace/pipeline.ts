@@ -12,8 +12,7 @@
  * - 保留缓冲区尾部 15% 作为下次提取的上下文衔接
  *
  * LLM 调用策略：
- * - 记忆提取 → 用 LightLLMConfig（来自 memoryPalaceConfig.lightLLM 全局副 API，
- *   与情绪 API emotionConfig.api 完全独立）
+ * - 记忆提取 → 用 LightLLMConfig（来自文具盒全局副 API）
  * - 检索管线 → 纯计算，不调 LLM
  */
 
@@ -30,29 +29,6 @@ function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
     } catch { return undefined; }
 }
 
-/** 从 localStorage 读取 rerank 配置。关闭或未配齐时返回 undefined，调用方跳过。 */
-interface StoredRerankConfig {
-    enabled?: boolean;
-    baseUrl?: string;
-    apiKey?: string;
-    model?: string;
-    topN?: number;
-}
-function getRerankConfig(): { baseUrl: string; apiKey: string; model: string; topN: number } | undefined {
-    try {
-        const raw = localStorage.getItem('os_memory_palace_config');
-        if (!raw) return undefined;
-        const parsed = JSON.parse(raw);
-        const r: StoredRerankConfig | undefined = parsed?.rerank;
-        if (!r?.enabled || !r.baseUrl || !r.apiKey || !r.model) return undefined;
-        return {
-            baseUrl: r.baseUrl,
-            apiKey: r.apiKey,
-            model: r.model,
-            topN: Math.max(1, Math.min(20, r.topN ?? 5)),
-        };
-    } catch { return undefined; }
-}
 import { extractMemoriesFromBuffer } from './extraction';
 import type { RelatedMemoryRef, PinnedMemoryRef } from './extraction';
 import { fetchRelatedMemoriesForExtraction, sampleSnippetsFromMessages, splitMessagesToSpikes } from './relatedMemories';
@@ -72,7 +48,7 @@ import {
     getCognitionNodes, applyCognitionBoost,
 } from './cognition';
 import { runConsolidation } from './consolidation';
-import { rerankDocuments } from './rerank';
+import { resolveMemoryPalaceAuxConfigsFromStorage } from './auxConfig';
 // 认知消化由用户在记忆宫殿 App 手动触发，不在聊天管线中自动运行
 import { MemoryNodeDB, MemoryVectorDB, AnticipationDB } from './db';
 import { DB } from '../db';
@@ -83,7 +59,7 @@ import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
 
 /**
  * 轻量 LLM 配置，用于记忆提取等后台任务。
- * 来源是 memoryPalaceConfig.lightLLM（全局副 API），与情绪 API（emotionConfig.api）独立。
+ * 来源是文具盒全局副 API，与情绪 API（emotionConfig.api）独立。
  * 这样可以用便宜快速的小模型（如 DeepSeek-V2-Lite、GLM-4-Flash）
  * 而不是主聊天模型。
  */
@@ -543,24 +519,6 @@ export async function retrieveMemories(
         };
         const sourceTrace = new Map<string, TraceEntry>();
 
-        // ── Rerank 并行准备 ──
-        // Rerank 原本是主召回彻底跑完才串行启动的独立管线，拖后腿严重。
-        // 现在把 rerank 的 embedding 塞进主 prefetch 批、pool hybridSearch 塞进主 Promise.all、
-        // rerankDocuments 在 pool 就绪时立即 fire，只在最后 tail 等一下 dedup。
-        // 这样 rerank 几乎整段都跟主路后半段并行跑。
-        const rerankConfig = getRerankConfig();
-        const joinedUserQuery = (rerankConfig && userIntent.length > 0)
-            ? userIntent.map(m => m.content).join(' ').trim().slice(0, 2000)
-            : '';
-        const doRerank = !!(rerankConfig && joinedUserQuery);
-        const RERANK_POOL_SIZE = 50;
-        type RerankApiResult = {
-            pool: ScoredMemory[];
-            rrResults: Array<{ index: number; relevance_score: number }>;
-        };
-        // 由下面的 spike / fallback 分支各自赋值；tail 只 await 这个拿最终结果
-        let rerankApiPromise: Promise<RerankApiResult | null> = Promise.resolve(null);
-
         if (effectiveSpikes.length > 0) {
             // 并行：每条 spike + context
             //
@@ -586,11 +544,9 @@ export async function retrieveMemories(
             //   3. 远程向量路径不消费 allVectors，所以远程开启且没熔断时跳过
             //      allVectors 预取，避免无效 IO。
             const contextQueryTrimmed = contextQuery.trim();
-            // 把 rerank 的 joined query 也塞进同一次 getEmbeddings，共享 embedding RTT
             const queriesToEmbed: string[] = [
                 ...effectiveSpikes.map(s => s.text),
                 ...(contextQueryTrimmed ? [contextQuery] : []),
-                ...(doRerank ? [joinedUserQuery] : []),
             ];
             const useRemoteVector = !!(
                 remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
@@ -617,56 +573,6 @@ export async function retrieveMemories(
                     allVectors,
                 })
                 : Promise.resolve([] as ScoredMemory[]);
-
-            // Rerank 的 pool hybridSearch 跟主路一起发（共享 backend RTT）
-            // 不放进主 Promise.all —— 我们要把 pool 回来这事做成独立管线，
-            // pool 一到就 fire rerankDocuments，不被主路 post-search 阻塞。
-            //
-            // ⚠️ 隐式契约：这里和 spikePromises / contextPromise 复用同一份
-            //    prefetched allVectors，N 路并发共享一个 ArrayBuffer 池。
-            //    这能成立是因为 vectorSearch.ts 的 canTransferCandidates =
-            //    !prefetchedVectors 守卫在 prefetch 场景下禁用了 postMessage
-            //    的 Transferable 路径，避免首个路径 transfer 把 buffer neuter
-            //    成全 0 让后续路径静默返空。如果动 vectorSearch 那段逻辑，
-            //    grep 这条注释 —— rerank pool 会是第一个崩的。
-            const rerankPoolPromise: Promise<ScoredMemory[]> = doRerank
-                ? hybridSearch(joinedUserQuery, charId, embeddingConfig, RERANK_POOL_SIZE, remoteVectorConfig, {
-                    queryVector: queryVectors[queriesToEmbed.length - 1],
-                    allNodes,
-                    allVectors,
-                }).catch(e => {
-                    console.warn(`🎯 [Rerank] pool 检索失败（主召回不受影响）: ${e?.message || e}`);
-                    return [] as ScoredMemory[];
-                })
-                : Promise.resolve([] as ScoredMemory[]);
-
-            if (doRerank) {
-                rerankApiPromise = (async (): Promise<RerankApiResult | null> => {
-                    const rrT0 = performance.now();
-                    try {
-                        const pool = await rerankPoolPromise;
-                        if (pool.length === 0) {
-                            console.log(`🎯 [Rerank] 独立检索候选池为空，跳过 rerank`);
-                            retrieveTimings.push({ label: 'rerankDocuments(skip)', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                            return null;
-                        }
-                        const rerankWanted = rerankConfig!.topN;
-                        const rerankAskForN = Math.min(pool.length, rerankWanted + 10);
-                        const rrResults = await rerankDocuments(
-                            { baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
-                            joinedUserQuery,
-                            pool.map(p => p.node.content),
-                            rerankAskForN,
-                        );
-                        retrieveTimings.push({ label: 'rerankDocuments', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                        return { pool, rrResults };
-                    } catch (e: any) {
-                        console.warn(`🎯 [Rerank] 失败（主召回不受影响）: ${e?.message || e}`);
-                        retrieveTimings.push({ label: 'rerankDocuments(err)', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                        return null;
-                    }
-                })();
-            }
 
             const hybridKind: 'NET' | 'CPU' = useRemoteVector ? 'NET' : 'CPU';
             const [contextResults, ...spikeResultsArr] = await tRetrieve(
@@ -751,39 +657,10 @@ export async function retrieveMemories(
             const useRemoteVector = !!(
                 remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
             );
-            // 先 fire fallback 主搜 + rerank pipeline，两个独立管线并行
-            const fallbackSearchPromise = hybridSearch(fallbackQuery, charId, embeddingConfig, FINAL_TOP_K, remoteVectorConfig);
-            if (doRerank) {
-                rerankApiPromise = (async (): Promise<RerankApiResult | null> => {
-                    const rrT0 = performance.now();
-                    try {
-                        const pool = await hybridSearch(joinedUserQuery, charId, embeddingConfig, RERANK_POOL_SIZE, remoteVectorConfig, undefined);
-                        if (pool.length === 0) {
-                            console.log(`🎯 [Rerank] 独立检索候选池为空，跳过 rerank`);
-                            retrieveTimings.push({ label: 'rerankDocuments(skip)', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                            return null;
-                        }
-                        const rerankWanted = rerankConfig!.topN;
-                        const rerankAskForN = Math.min(pool.length, rerankWanted + 10);
-                        const rrResults = await rerankDocuments(
-                            { baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
-                            joinedUserQuery,
-                            pool.map(p => p.node.content),
-                            rerankAskForN,
-                        );
-                        retrieveTimings.push({ label: 'rerankDocuments', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                        return { pool, rrResults };
-                    } catch (e: any) {
-                        console.warn(`🎯 [Rerank] 失败（主召回不受影响）: ${e?.message || e}`);
-                        retrieveTimings.push({ label: 'rerankDocuments(err)', kind: 'NET', ms: Math.round(performance.now() - rrT0) });
-                        return null;
-                    }
-                })();
-            }
             results = await tRetrieve(
                 'hybridSearch(fallback)',
                 useRemoteVector ? 'NET' : 'CPU',
-                fallbackSearchPromise,
+                hybridSearch(fallbackQuery, charId, embeddingConfig, FINAL_TOP_K, remoteVectorConfig),
             );
             console.groupCollapsed(`🏰 [Retrieve] 单 query 兜底命中 ${results.length} 条（无末尾 user 消息）`);
             results.forEach((r, i) => console.log(fmt(r, `#${i + 1} `)));
@@ -906,69 +783,11 @@ export async function retrieveMemories(
         ]);
         retrieveTimings.push({ label: `idbWrites(${retrievedIds.length})`, kind: 'IDB', ms: Math.round(performance.now() - writeT0) });
 
-        // 8. Rerank 通道（独立检索 + cross-encoder 二次排序，可选）
-        //
-        //   Rerank 的 pool hybridSearch 和 rerankDocuments 已经在前面跟主路
-        //   一起发射了（见上文 rerankApiPromise）。tail 这里只等它并做最后的
-        //   dedup / merge，绝大多数情况下 rerank 已经先主路完成了。
-        //
-        //   注入层面不做特别对待：rerank 追加的几条直接混入主 results，formatter
-        //   按 finalScore 排序渲染。用户/LLM 不会感知是 rerank 推荐的，F12 里能看。
-        let formatterCap: number | undefined = undefined;
-        if (doRerank) {
-            const rerankTailT0 = performance.now();
-            const rrData = await rerankApiPromise;
-            if (rrData) {
-                const { pool, rrResults } = rrData;
-                const rerankWanted = rerankConfig!.topN;
-                const mainIds = new Set(results.map(r => r.node.id));
-                const rerankPicks: Array<{ sm: typeof pool[number]; rerankScore: number }> = [];
-                for (const rr of rrResults) {
-                    const cand = pool[rr.index];
-                    if (!cand || mainIds.has(cand.node.id)) continue;
-                    rerankPicks.push({ sm: cand, rerankScore: rr.relevance_score });
-                    if (rerankPicks.length >= rerankWanted) break;
-                }
-
-                // F12 调试日志：能看到 rerank 选了哪几条、模型打的相关性分、
-                // 以及它们原本在 hybrid 里的 finalScore
-                console.groupCollapsed(
-                    `🎯 [Rerank] ${rerankConfig!.model} · 独立检索池 ${pool.length} 条 · 去重后追加 ${rerankPicks.length} 条 ("${joinedUserQuery.slice(0, 40).replace(/\n/g, ' ')}${joinedUserQuery.length > 40 ? '…' : ''}")`
-                );
-                rerankPicks.forEach((p, i) => {
-                    const preview = p.sm.node.content.slice(0, 50).replace(/\n/g, ' ');
-                    const ageDays = Math.floor((Date.now() - p.sm.node.createdAt) / (1000 * 60 * 60 * 24));
-                    console.log(
-                        `#${i + 1} [${p.sm.node.room}|imp=${p.sm.node.importance}|${ageDays}d前] `
-                        + `rerank=${p.rerankScore.toFixed(3)} hybrid=${p.sm.finalScore.toFixed(3)}  `
-                        + `"${preview}${p.sm.node.content.length > 50 ? '...' : ''}"`
-                    );
-                });
-                if (rerankPicks.length === 0) {
-                    console.log('（rerank 返回的全部 top N 都已在主召回 15 条里，无新增）');
-                }
-                console.groupEnd();
-
-                // touch 一下让 rerank 选中的也走 accessCount / lastAccessedAt 更新（并发）
-                await Promise.all(rerankPicks.map(p => MemoryNodeDB.touchAccess(p.sm.node.id)));
-
-                // 追加到 results；formatter 的 MAX_OUTPUT_ITEMS 上调到 15 + N
-                // 不改 finalScore：保留 rerank pick 自己 hybridSearch 里的原始分，
-                // 排序自然落位；但通过 formatterCap 保证它们不被切掉。
-                if (rerankPicks.length > 0) {
-                    results = [...results, ...rerankPicks.map(p => p.sm)];
-                    formatterCap = 15 + rerankPicks.length;
-                }
-            }
-            // rerank_tail = 等 rerankApiPromise 落地 + dedup + touch，理想值接近 0
-            retrieveTimings.push({ label: 'rerank_tail', kind: 'NET', ms: Math.round(performance.now() - rerankTailT0) });
-        }
-
-        // 9. 获取期盼
+        // 8. 获取期盼
         const anticipations = await tRetrieve('AnticipationDB.getByCharId', 'IDB', AnticipationDB.getByCharId(charId));
 
-        // 10. 格式化
-        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap));
+        // 9. 格式化
+        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName));
 
         // 10.5 认知网络注入：长期认知（置顶，不占常规名额）+ 本轮工作记忆快照
         //   - 认知块放最顶：让角色「越聊越懂 TA」的稳定理解持续生效；
@@ -1015,20 +834,7 @@ export async function retrieveMemories(
  * 优先使用全局配置（localStorage），如果没有则回退到角色级别配置。
  */
 function getEmbeddingConfig(charEmbeddingConfig?: any): EmbeddingConfig | null {
-    try {
-        const raw = localStorage.getItem('os_memory_palace_config');
-        if (raw) {
-            const global = JSON.parse(raw);
-            if (global.embedding?.baseUrl && global.embedding?.apiKey) {
-                return global.embedding as EmbeddingConfig;
-            }
-        }
-    } catch {}
-    // 回退到角色级别（兼容旧数据）
-    if (charEmbeddingConfig?.baseUrl && charEmbeddingConfig?.apiKey) {
-        return charEmbeddingConfig as EmbeddingConfig;
-    }
-    return null;
+    return resolveMemoryPalaceAuxConfigsFromStorage().embedding;
 }
 
 export async function injectMemoryPalace(

@@ -1647,10 +1647,11 @@ export default {
     }
 
     // ========== GitHub 代理 ==========
-    // 给国内连不上 github.com 的用户兜底用。只放行 api.github.com 和
-    // uploads.github.com，方法用 X-GitHub-Method 头携带。
+    // 给国内连不上 github.com 的用户兜底用。只放行 GitHub API、上传域名
+    // 和公开 Release 下载页；POST 可用 X-GitHub-Method 头携带真实方法，
+    // GET 用于公开资源下载。
     if (url.pathname === '/github') {
-      if (request.method !== 'POST') {
+      if (request.method !== 'GET' && request.method !== 'POST') {
         return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
       }
       const targetUrl = url.searchParams.get('url');
@@ -1663,11 +1664,11 @@ export default {
       } catch {
         return jsonResponse({ error: 'Invalid URL' }, { status: 400, origin });
       }
-      const allowedHosts = new Set(['api.github.com', 'uploads.github.com']);
+      const allowedHosts = new Set(['api.github.com', 'uploads.github.com', 'github.com']);
       if (parsedGh.protocol !== 'https:' || !allowedHosts.has(parsedGh.hostname)) {
         return jsonResponse({ error: 'Host not allowed' }, { status: 400, origin });
       }
-      const ghMethod = (request.headers.get('X-GitHub-Method') || 'GET').toUpperCase();
+      const ghMethod = request.method === 'GET' ? 'GET' : (request.headers.get('X-GitHub-Method') || 'GET').toUpperCase();
       const ghAllowed = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
       if (!ghAllowed.includes(ghMethod)) {
         return jsonResponse({ error: 'Method not allowed' }, { status: 400, origin });
@@ -1681,6 +1682,8 @@ export default {
       if (ghAccept) ghHeaders['Accept'] = ghAccept;
       const ghApiVer = request.headers.get('X-GitHub-Api-Version');
       if (ghApiVer) ghHeaders['X-GitHub-Api-Version'] = ghApiVer;
+      const ghRange = request.headers.get('Range');
+      if (ghRange) ghHeaders['Range'] = ghRange;
       // GitHub 拒绝没有 UA 的请求
       ghHeaders['User-Agent'] = 'moro-backup-proxy';
       try {
@@ -1699,13 +1702,13 @@ export default {
         const ghRespHeaders = new Headers(corsHeaders(origin));
         const grct = ghUpstream.headers.get('Content-Type');
         if (grct) ghRespHeaders.set('Content-Type', grct);
-        if (ghUpstream.status === 206) {
-          const grcl = ghUpstream.headers.get('Content-Length');
-          if (grcl) ghRespHeaders.set('Content-Length', grcl);
-        }
+        const grcl = ghUpstream.headers.get('Content-Length');
+        if (grcl) ghRespHeaders.set('Content-Length', grcl);
+        const grcd = ghUpstream.headers.get('Content-Disposition');
+        if (grcd) ghRespHeaders.set('Content-Disposition', grcd);
         const grcr = ghUpstream.headers.get('Content-Range');
         if (grcr) ghRespHeaders.set('Content-Range', grcr);
-        ghRespHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+        ghRespHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Disposition');
         return new Response(ghUpstream.body, {
           status: ghUpstream.status,
           headers: ghRespHeaders,

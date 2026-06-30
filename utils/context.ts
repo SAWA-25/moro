@@ -279,6 +279,8 @@ export const ContextBuilder = {
                 }
                 if (cs.bubbleStyleMode === 'whole') {
                     lines.push(convoLines.bubbleWhole);
+                } else if (cs.bubbleStyleMode === 'freeform') {
+                    lines.push(convoLines.bubbleFreeform);
                 } else if (cs.bubbleStyleMode === 'split') {
                     lines.push(convoLines.bubbleSplit);
                 }

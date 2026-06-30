@@ -657,7 +657,7 @@ const BankApp: React.FC = () => {
         const cur = stateRef.current;
         let newSpent = cur.todaySpent;
         const today = new Date().toISOString().split('T')[0];
-        if (tx.dateStr === today) {
+        if (tx.dateStr === today && tx.type !== 'income') {
             newSpent = Math.max(0, cur.todaySpent - tx.amount);
         }
 

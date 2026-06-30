@@ -24,6 +24,7 @@ import { getEmbeddings, cosineSimilarity } from './embedding';
 import { extractGroupMemoriesFromBuffer } from './groupExtraction';
 import { isMessageSemanticallyRelevant } from '../messageFormat';
 import { formatCharacterWithId } from '../characterIdentity';
+import { resolveMemoryPalaceAuxConfigsFromStorage } from './auxConfig';
 
 // ─── 群聊水位线：私聊用 200/100，群聊更宽松 300/200 ─────────────────
 const HOT_ZONE_SIZE_GROUP = 300;
@@ -49,17 +50,11 @@ function readGlobalMemoryPalaceConfig(): {
     embedding?: EmbeddingConfig;
     lightLLM?: LightLLMConfig;
 } {
-    try {
-        const raw = localStorage.getItem('os_memory_palace_config');
-        if (!raw) return {};
-        const cfg = JSON.parse(raw);
-        return {
-            embedding: cfg?.embedding?.baseUrl && cfg?.embedding?.apiKey ? cfg.embedding as EmbeddingConfig : undefined,
-            lightLLM: cfg?.lightLLM?.baseUrl && cfg?.lightLLM?.apiKey ? cfg.lightLLM as LightLLMConfig : undefined,
-        };
-    } catch {
-        return {};
-    }
+    const { embedding, llm } = resolveMemoryPalaceAuxConfigsFromStorage();
+    return {
+        embedding: embedding || undefined,
+        lightLLM: llm || undefined,
+    };
 }
 
 function readRemoteVectorConfig(): RemoteVectorConfig | undefined {
@@ -76,10 +71,6 @@ function readRemoteVectorConfig(): RemoteVectorConfig | undefined {
  * 任何 member 没配 → 返回 null，调用方跳过该成员。
  */
 function getEmbeddingConfigForMember(member: CharacterProfile, fallbackGlobal?: EmbeddingConfig): EmbeddingConfig | null {
-    const charEmb = (member as any).embeddingConfig;
-    if (charEmb?.baseUrl && charEmb?.apiKey) {
-        return charEmb as EmbeddingConfig;
-    }
     return fallbackGlobal || null;
 }
 

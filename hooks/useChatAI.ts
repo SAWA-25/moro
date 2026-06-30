@@ -9,6 +9,7 @@ import { ProactiveChat } from '../utils/proactiveChat';
 // 思考链 / HTML / MCD / memoryPalace 注入已下沉到 chatRequestPayload；这里不再直接调用
 import { useMusic, loadMusicHooks } from '../context/MusicContext';
 import { processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
+import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 // evolveFlowNarrative 保留为低频深刷新备用，日常意识流由副 API 的情绪评估同轮产出（innerState 字段）
 // import { evolveFlowNarrative } from '../utils/scheduleGenerator';
@@ -351,7 +352,7 @@ interface UseChatAIProps {
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     realtimeConfig?: RealtimeConfig; // 新增：实时配置
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string; style?: string };
-    memoryPalaceConfig?: { embedding: { baseUrl: string; apiKey: string; model: string; dimensions: number }; lightLLM: { baseUrl: string; apiKey: string; model: string } };
+    memoryPalaceConfig?: { embedding?: { model: string; dimensions: number } };
     /** 从 OSContext 传入，用于 palace 自动归档写 char.memories + hideBeforeMessageId */
     updateCharacter?: (id: string, partial: Partial<CharacterProfile>) => void;
     /** 麦当劳小程序当前快照 (cart/menu/nutrition); open=true 时把这段实时状态追加到 system prompt 末尾, 让 char 协同选餐 */
@@ -1131,16 +1132,11 @@ export const useChatAI = ({
             } catch { /* 校准衰减失败不影响主流程 */ }
 
             // Memory Palace — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
-            // 使用全局配置（memoryPalaceConfig）。lightLLM 未配置时回退主 apiConfig；
-            // embedding 因端点类型特殊（/embeddings），不做回退，必须显式配置。
-            const mpEmb = memoryPalaceConfig?.embedding;
-            const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-            const mpLLM = (mpLLMConfigured?.baseUrl)
-                ? mpLLMConfigured
-                : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+            // 回忆标本馆只走文具盒副 API；未配置副 API 时完全跳过后台提取/向量化。
+            const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
             // 读 ref 拿到最新的 char 状态；同 id 才信任，否则保守跳过（用户已经切角色了）
             const liveChar = charRef.current?.id === char.id ? charRef.current : null;
-            if (liveChar?.memoryPalaceEnabled && mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {
+            if (liveChar?.memoryPalaceEnabled && mpEmb && mpLLM) {
                 const charName = char.name;
                 // 不再预置"正在回味"状态：pipeline 会在水位线未到时立刻 skip，
                 // 预置状态会让"沉思"指示器一闪让用户误以为在干活。

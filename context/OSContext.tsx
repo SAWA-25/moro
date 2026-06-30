@@ -198,35 +198,16 @@ const defaultRealtimeConfig: RealtimeConfig = {
   cacheMinutes: 30
 };
 
-// 记忆宫殿全局配置（所有角色共用 embedding、副 LLM 和 rerank）
+// 记忆宫殿全局配置。API 渠道统一走文具盒副 API，这里只保留标本馆内部模型偏好。
 export interface MemoryPalaceGlobalConfig {
   embedding: {
-    baseUrl: string;
-    apiKey: string;
     model: string;
     dimensions: number;
-  };
-  lightLLM: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-  };
-  // Rerank 模型配置（可选增强，接 cross-encoder rerank API）
-  // 遵循 Cohere/Jina/SiliconFlow 通用协议：POST {baseUrl}/rerank
-  // { model, query, documents, top_n } → { results: [{index, relevance_score}] }
-  rerank: {
-    enabled: boolean;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    topN: number; // 额外召回条数（去重后追加到主 15 条后面）
   };
 }
 
 const defaultMemoryPalaceConfig: MemoryPalaceGlobalConfig = {
-  embedding: { baseUrl: '', apiKey: '', model: 'BAAI/bge-m3', dimensions: 1024 },
-  lightLLM: { baseUrl: '', apiKey: '', model: '' },
-  rerank: { enabled: false, baseUrl: '', apiKey: '', model: 'BAAI/bge-reranker-v2-m3', topN: 5 },
+  embedding: { model: 'BAAI/bge-m3', dimensions: 1024 },
 };
 
 interface OSContextType {
@@ -285,7 +266,7 @@ interface OSContextType {
 
   // Groups
   groups: GroupProfile[];
-  createGroup: (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }) => Promise<GroupProfile>;
+  createGroup: (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[]; ambientSocialSource?: GroupProfile['ambientSocialSource'] }) => Promise<GroupProfile>;
   deleteGroup: (id: string) => void;
   updateGroup: (id: string, updates: Partial<GroupProfile>) => Promise<GroupProfile | null>;
 
@@ -319,7 +300,7 @@ interface OSContextType {
   updateRemoteVectorConfig: (updates: Partial<import('../utils/memoryPalace/types').RemoteVectorConfig>) => void;
 
   customThemes: ChatTheme[];
-  addCustomTheme: (theme: ChatTheme) => void;
+  addCustomTheme: (theme: ChatTheme) => Promise<void>;
   removeCustomTheme: (id: string) => void;
 
   // Appearance Presets
@@ -2874,8 +2855,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateMemoryPalaceConfig = (updates: Partial<MemoryPalaceGlobalConfig>) => {
     const newConfig: MemoryPalaceGlobalConfig = {
       embedding: { ...memoryPalaceConfig.embedding, ...(updates.embedding || {}) },
-      lightLLM: { ...memoryPalaceConfig.lightLLM, ...(updates.lightLLM || {}) },
-      rerank: { ...memoryPalaceConfig.rerank, ...(updates.rerank || {}) },
     };
     setMemoryPalaceConfig(newConfig);
     localStorage.setItem('os_memory_palace_config', JSON.stringify(newConfig));
@@ -2883,7 +2862,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // 情绪 API 同步到所有角色：API 字段（baseUrl/apiKey/model）所有角色共用，
   // 各角色自身的 enabled 标志保持不变。
-  // 注意：与记忆宫殿副 API（memoryPalaceConfig.lightLLM）完全独立，两者各管各的。
+  // 注意：与文具盒全局副 API 独立；情绪 API 是角色情绪感知的专用覆盖项。
   const syncEmotionApiToAllCharacters = (api: { baseUrl: string; apiKey: string; model: string } | undefined) => {
     setCharacters(prev => {
       const updated = prev.map(c => {
@@ -2967,7 +2946,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };
   
   // Group Methods
-  const createGroup = async (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }): Promise<GroupProfile> => {
+  const createGroup = async (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[]; ambientSocialSource?: GroupProfile['ambientSocialSource'] }): Promise<GroupProfile> => {
       const newGroup: GroupProfile = {
           id: `group-${Date.now()}`,
           name,
@@ -2976,6 +2955,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           createdAt: Date.now(),
           ownerId: opts?.ownerId || 'user',
           ...(opts?.adminIds && opts.adminIds.length > 0 ? { adminIds: opts.adminIds } : {}),
+          ...(opts?.ambientSocialSource ? { ambientSocialSource: opts.ambientSocialSource } : {}),
       };
       await DB.saveGroup(newGroup);
       setGroups(prev => [...prev, newGroup]);

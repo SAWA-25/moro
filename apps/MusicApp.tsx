@@ -4,6 +4,13 @@ import { useOS } from '../context/OSContext';
 import { useMusic, musicApi, normalizeCookie, toHttps, Song } from '../context/MusicContext';
 import { DB } from '../utils/db';
 import { discussMusic, ListenAction, ListenMsg } from '../utils/listenTogether';
+import {
+  buildListenActionNotice,
+  clearListenTogetherSession,
+  saveListenTogetherSession,
+  selectListenTogetherSessionForPartners,
+} from '../utils/listenTogetherSession';
+import { showLocalNotification } from '../utils/browserNotify';
 import { resolveAuxApi } from '../utils/auxApi';
 import { Gear, User as UserIcon, Crosshair, Play as PlayIcon, Pause as PauseIcon, UsersThree, PaperPlaneRight, DiceFive, SkipForward } from '@phosphor-icons/react';
 import {
@@ -138,13 +145,51 @@ const MusicApp: React.FC = () => {
   const lastListenSongRef = useRef<number | null>(null);
   const listenChar = useMemo(() => characters.find(c => c.id === listenCharId) || null, [characters, listenCharId]);
 
+  const restoreListenSession = useCallback((partnerIds: string[]): boolean => {
+    const session = selectListenTogetherSessionForPartners(partnerIds);
+    if (!session) return false;
+    setListenCharId(session.charId);
+    setListenMsgs(session.messages);
+    setListenInput(session.input);
+    lastListenSongRef.current = current?.id ?? session.songId ?? null;
+    suppressSongChangedRef.current = false;
+    return true;
+  }, [current?.id]);
+
   const songSnapshot = useCallback((s: Song) => ({
     songId: s.id, name: s.name, artists: s.artists, album: s.album,
     albumPic: s.albumPic, duration: s.duration, fee: s.fee,
   }), []);
 
+  useEffect(() => {
+    if (listenCharId || listeningTogetherWith.length === 0) return;
+    restoreListenSession(listeningTogetherWith);
+  }, [listenCharId, listeningTogetherWith, restoreListenSession]);
+
+  useEffect(() => {
+    if (!listenCharId) return;
+    saveListenTogetherSession({
+      charId: listenCharId,
+      messages: listenMsgs,
+      input: listenInput,
+      songId: current?.id ?? null,
+      songName: current?.name,
+    });
+  }, [listenCharId, listenMsgs, listenInput, current?.id, current?.name]);
+
+  const notifyListenAction = useCallback((action: ListenAction, songName?: string, actorName?: string, actorId?: string) => {
+    const notice = buildListenActionNotice(actorName || listenChar?.name || 'TA', action, songName);
+    if (!notice) return;
+    addToast(notice.toast, 'info');
+    void showLocalNotification(notice.title, {
+      body: notice.body,
+      tag: notice.tag,
+      data: { source: 'music-listen-together', charId: actorId || listenChar?.id, action: action.kind },
+    });
+  }, [listenChar?.id, listenChar?.name, addToast]);
+
   // 执行角色的播放控制动作（换歌 / 暂停 / 继续 / 下一首）
-  const executeListenAction = useCallback(async (action: ListenAction) => {
+  const executeListenAction = useCallback(async (action: ListenAction, actor?: { id: string; name: string }) => {
     if (action.kind === 'change_song') {
       // 先真实搜索网易云取最佳匹配；搜不到则回退角色歌单 / 一起写的歌。
       try {
@@ -160,7 +205,8 @@ const MusicApp: React.FC = () => {
             fee: s.fee ?? 0,
           };
           suppressSongChangedRef.current = true;
-          playSong(song);
+          void playSong(song);
+          notifyListenAction(action, song.name, actor?.name, actor?.id);
           return;
         }
       } catch { /* 落到回退 */ }
@@ -175,19 +221,23 @@ const MusicApp: React.FC = () => {
           ...(('local' in fallback) ? fallback as any : {}),
         };
         suppressSongChangedRef.current = true;
-        playSong(song);
+        void playSong(song);
+        notifyListenAction(action, song.name, actor?.name, actor?.id);
       } else {
         addToast(`没搜到《${action.query}》`, 'info');
       }
     } else if (action.kind === 'pause') {
       if (playing) togglePlay();
+      notifyListenAction(action, undefined, actor?.name, actor?.id);
     } else if (action.kind === 'resume') {
       if (!playing) togglePlay();
+      notifyListenAction(action, undefined, actor?.name, actor?.id);
     } else if (action.kind === 'next') {
       suppressSongChangedRef.current = true;
       nextSong();
+      notifyListenAction(action, undefined, actor?.name, actor?.id);
     }
-  }, [cfg, playSong, listenChar, localAlbumSongs, addToast, playing, togglePlay, nextSong]);
+  }, [cfg, playSong, listenChar, localAlbumSongs, addToast, playing, togglePlay, nextSong, notifyListenAction]);
 
   // 让角色就当前音乐说一句话（一次性调用，不走主聊天管线）
   const runDiscuss = useCallback(async (
@@ -210,7 +260,7 @@ const MusicApp: React.FC = () => {
         history: historyOverride ?? listenMsgs, userMsg, trigger,
       });
       setListenMsgs(prev => [...prev, { role: 'char', text: reply, action, at: Date.now() }]);
-      if (action.kind !== 'none') await executeListenAction(action);
+      if (action.kind !== 'none') await executeListenAction(action, { id: char.id, name: char.name });
     } catch (e: any) {
       addToast('一起听暂时没接上', 'error');
     } finally {
@@ -222,6 +272,7 @@ const MusicApp: React.FC = () => {
   const shareAndListen = useCallback(async (charId: string) => {
     const char = characters.find(c => c.id === charId);
     if (!char) return;
+    const wasAlreadyListening = listeningTogetherWith.includes(charId);
     setShowSharePicker(false);
     if (current) {
       try {
@@ -237,13 +288,18 @@ const MusicApp: React.FC = () => {
     }
     lastListenSongRef.current = current?.id ?? null;
     suppressSongChangedRef.current = false;
-    setListenCharId(charId);
-    setListenMsgs([]);
-    setListenInput('');
+    if (!wasAlreadyListening) clearListenTogetherSession(charId);
+    const cachedSession = wasAlreadyListening ? selectListenTogetherSessionForPartners([charId]) : null;
+    const restored = !!cachedSession && restoreListenSession([charId]);
+    if (!restored) {
+      setListenCharId(charId);
+      setListenMsgs([]);
+      setListenInput('');
+    }
     setView('listen_together');
     // 角色先开口（可能直接挑首歌）；显式传 charId，避开 setListenCharId 的异步。
-    runDiscuss('enter', undefined, [], charId);
-  }, [characters, current, songSnapshot, addListeningPartner, runDiscuss]);
+    if (!restored || cachedSession.messages.length === 0) runDiscuss('enter', undefined, cachedSession?.messages || [], charId);
+  }, [characters, current, listeningTogetherWith, songSnapshot, addListeningPartner, restoreListenSession, runDiscuss]);
 
   const sendListenMsg = useCallback(() => {
     const text = listenInput.trim();
@@ -276,12 +332,32 @@ const MusicApp: React.FC = () => {
 
   // 退出一起听界面但保留伴听徽标；点头像可重新进入
   const openListenTogether = useCallback(() => {
-    if (listenCharId && listeningTogetherWith.includes(listenCharId)) {
+    if (restoreListenSession(listeningTogetherWith)) {
+      setView('listen_together');
+    } else if (listenCharId && listeningTogetherWith.includes(listenCharId)) {
       setView('listen_together');
     } else {
       setShowSharePicker(true);
     }
-  }, [listenCharId, listeningTogetherWith]);
+  }, [listenCharId, listeningTogetherWith, restoreListenSession]);
+
+  const clearListenCompanion = useCallback((charId?: string | null) => {
+    const target = charId ?? listenCharId;
+    if (target) {
+      removeListeningPartner(target);
+      clearListenTogetherSession(target);
+    } else {
+      clearListenTogetherSession();
+    }
+    setListenCharId(null);
+    setListenMsgs([]);
+    setListenInput('');
+  }, [listenCharId, removeListeningPartner]);
+
+  const endListenTogether = useCallback((charId?: string | null) => {
+    clearListenCompanion(charId);
+    setView('player');
+  }, [clearListenCompanion]);
 
   // 歌词自动滚动：把 current line 对齐到滚动容器视觉中心
   // 注意 offsetTop 依赖 offsetParent，容器没 position:relative 时会跨到祖先节点、值偏大，
@@ -422,7 +498,7 @@ const MusicApp: React.FC = () => {
           userAvatar={userProfile?.avatar}
           userName={userProfile?.name}
           companions={companions}
-          onKickCompanion={removeListeningPartner}
+          onKickCompanion={clearListenCompanion}
           charsWithSong={charsWithSong}
           regenStatus={isCurrentRegenerating ? regeneratingStatus : undefined}
         />
@@ -794,7 +870,7 @@ const MusicApp: React.FC = () => {
           onBack={() => setView('player')}
           right={
             <button
-              onClick={() => { if (listenCharId) removeListeningPartner(listenCharId); setView('player'); }}
+              onClick={() => endListenTogether()}
               className="px-2 py-1 rounded-full text-[10px] transition-all active:scale-95"
               style={{ color: C.muted }}
               title="结束一起听"

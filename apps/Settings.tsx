@@ -31,6 +31,15 @@ import {
     setAuxContextBudgetEnabled,
     setMainContextBudgetEnabled,
 } from '../utils/contextBudget';
+import {
+    checkConfiguredAppUpdate,
+    downloadAndInstallApk,
+    getNativeAppInfo,
+    openInstallerPermissionSettings,
+    type AppUpdateCheckResult,
+    type ApkDownloadProgress,
+    type NativeAppInfo,
+} from '../utils/appUpdates';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -385,6 +394,20 @@ const FullscreenCard: React.FC<{ addToast: (m: string, t: 'info' | 'success' | '
     );
 };
 
+const TopStatusBarCard: React.FC<{ hidden: boolean; onChange: (hidden: boolean) => void }> = ({ hidden, onChange }) => (
+    <SectionCard
+        tag="STATUS BAR"
+        title="顶部状态栏"
+        hand="藏起 Moro 自带的时间、电量和网络状态"
+        rotate="rotate-[-0.35deg]"
+        right={<InkSwitch on={hidden} onChange={onChange} title="藏起顶部状态栏" />}
+    >
+        <p className="text-[11px] text-[#26242a]/55 leading-snug">
+            开启后会收起屏幕上方那条 Moro 时间 / 电量 / 网络状态栏；如果还想隐藏浏览器或手机系统顶栏，可同时使用「界面全屏」。
+        </p>
+    </SectionCard>
+);
+
 const Settings: React.FC = () => {
   const {
       apiConfig, updateApiConfig, auxApiConfig, updateAuxApiConfig, closeApp, availableModels, setAvailableModels,
@@ -395,6 +418,7 @@ const Settings: React.FC = () => {
       cloudBackupConfig, updateCloudBackupConfig,
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
       openApp,
+      theme, updateTheme,
   } = useOS();
   const nativeRuntime = isNativeNotificationRuntime();
   const settingsRootRef = useRef<HTMLDivElement>(null);
@@ -504,6 +528,13 @@ const Settings: React.FC = () => {
   const [cloudBackupFiles, setCloudBackupFiles] = useState<import('../types').CloudBackupFile[]>([]);
   const [cloudTestResult, setCloudTestResult] = useState<string>('');
   const [cloudTesting, setCloudTesting] = useState(false);
+
+  // 应用更新（APK 检查）
+  const [nativeAppInfo, setNativeAppInfo] = useState<NativeAppInfo | null>(null);
+  const [apkUpdateCheck, setApkUpdateCheck] = useState<AppUpdateCheckResult | null>(null);
+  const [apkUpdateBusy, setApkUpdateBusy] = useState(false);
+  const [apkUpdateStatus, setApkUpdateStatus] = useState('');
+  const [apkDownloadProgress, setApkDownloadProgress] = useState<ApkDownloadProgress | null>(null);
 
   // 锁屏密码（默认 0103；关闭后锁屏点按直接解锁）
   const [lockPassEnabled, setLockPassEnabled] = useState(() => isLockPasscodeEnabled());
@@ -733,6 +764,99 @@ const Settings: React.FC = () => {
   useEffect(() => {
       void refreshPpDiag();
   }, [refreshPpDiag, ppEnabled]);
+
+  useEffect(() => {
+      let cancelled = false;
+      (async () => {
+          const info = await getNativeAppInfo();
+          if (!cancelled) setNativeAppInfo(info);
+      })();
+      return () => { cancelled = true; };
+  }, []);
+
+  const handleCheckApkUpdate = async () => {
+      if (apkUpdateBusy) return;
+      setApkUpdateBusy(true);
+      setApkDownloadProgress(null);
+      setApkUpdateStatus('正在检查 APK 更新...');
+      try {
+          const result = await checkConfiguredAppUpdate();
+          setNativeAppInfo(result.current);
+          setApkUpdateCheck(result);
+          setApkUpdateStatus(result.updateAvailable
+              ? `发现新版本 ${result.latest.versionName}（${result.latest.versionCode}）`
+              : `当前已是最新版：${result.current.versionName || 'unknown'}（${result.current.versionCode || 0}）`);
+      } catch (e: any) {
+          console.warn('[Settings] check app update failed', e);
+          setApkUpdateCheck(null);
+          const message = e?.message || '检查更新失败';
+          setApkUpdateStatus(message);
+          addToast(message, 'error');
+      } finally {
+          setApkUpdateBusy(false);
+      }
+  };
+
+  const handleDownloadApkUpdate = async (useDomesticLine = false) => {
+      if (apkUpdateBusy) return;
+      let latest = apkUpdateCheck?.latest;
+      if (!latest) {
+          try {
+              const result = await checkConfiguredAppUpdate();
+              setNativeAppInfo(result.current);
+              setApkUpdateCheck(result);
+              if (!result.updateAvailable) {
+                  setApkUpdateStatus(`当前已是最新版：${result.current.versionName || 'unknown'}（${result.current.versionCode || 0}）`);
+                  return;
+              }
+              latest = result.latest;
+          } catch (e: any) {
+              console.warn('[Settings] load app update before download failed', e);
+              addToast(e?.message || '读取更新清单失败', 'error');
+              return;
+          }
+      }
+      if (useDomesticLine && !latest.domesticApkUrl) {
+          addToast('国内线路暂不可用', 'error');
+          return;
+      }
+
+      setApkUpdateBusy(true);
+      setApkUpdateStatus(useDomesticLine ? '正在通过国内线路下载 APK...' : '正在下载 APK...');
+      setApkDownloadProgress(null);
+      try {
+          const downloadTarget = useDomesticLine && latest.domesticApkUrl
+              ? { ...latest, apkUrl: latest.domesticApkUrl }
+              : latest;
+          await downloadAndInstallApk(downloadTarget, progress => {
+              setApkDownloadProgress(progress);
+              if (progress.status === 'downloading') {
+                  setApkUpdateStatus(`正在下载 APK：${Math.round(progress.progress * 100)}%`);
+              } else if (progress.status === 'verifying') {
+                  setApkUpdateStatus('正在校验 APK...');
+              } else if (progress.status === 'installing') {
+                  setApkUpdateStatus('正在打开系统安装器...');
+              }
+          });
+          setApkUpdateStatus('系统安装器已打开，请按提示确认安装。');
+      } catch (e: any) {
+          console.warn('[Settings] download app update failed', e);
+          const message = e?.message || '下载或安装失败';
+          setApkUpdateStatus(message);
+          addToast(message, 'error');
+      } finally {
+          setApkUpdateBusy(false);
+      }
+  };
+
+  const handleOpenInstallPermission = async () => {
+      try {
+          await openInstallerPermissionSettings();
+          addToast('已打开安装权限设置', 'info');
+      } catch (e: any) {
+          addToast(e?.message || '无法打开安装权限设置', 'error');
+      }
+  };
 
   // For web download link
   const [downloadUrl, setDownloadUrl] = useState<string>('');
@@ -1322,6 +1446,79 @@ const Settings: React.FC = () => {
         <SettingsGroup id="settings-basic" eyebrow="01 / DEVICE" title="基础与安全" desc="控制界面显示、锁屏密码和本机数据导入导出。">
             {/* 界面全屏（沉浸式铺满屏幕） */}
             <FullscreenCard addToast={addToast} />
+            <TopStatusBarCard hidden={!!theme.hideStatusBar} onChange={(hidden) => updateTheme({ hideStatusBar: hidden })} />
+
+            <SectionCard
+                tag="UPDATE"
+                title="应用更新"
+                hand="检查并安装开发者发布的新版本。"
+                rotate="rotate-[0.4deg]"
+                right={<StatusBadge active={!!apkUpdateCheck?.updateAvailable} activeText="有新版" inactiveText="已就绪" />}
+            >
+                <div className="space-y-4">
+                    <div className="rounded-[14px] border border-[#e7e1d6] bg-white px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-black text-[#2f3437]">当前安装包</p>
+                                <p className="text-[10px] text-[#69716d] font-mono truncate">
+                                    {nativeAppInfo?.native ? `${nativeAppInfo.versionName || '?'} · code ${nativeAppInfo.versionCode || 0}` : '网页版 / 未进入 Android App'}
+                                </p>
+                            </div>
+                            {nativeAppInfo?.native && !nativeAppInfo.canRequestPackageInstalls && (
+                                <button type="button" onClick={handleOpenInstallPermission} className={`shrink-0 px-2.5 py-1.5 text-[10px] font-black ${STICKER}`}>
+                                    安装权限
+                                </button>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
+                            有新版本时会下载安装包并打开 Android 系统安装器，仍需你手动确认安装。
+                        </p>
+                    </div>
+
+                    <div className={`grid gap-3 ${apkUpdateCheck?.latest.domesticApkUrl ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2'}`}>
+                        <button
+                            type="button"
+                            disabled={apkUpdateBusy}
+                            onClick={handleCheckApkUpdate}
+                            className={`py-2.5 text-xs font-black disabled:opacity-40 ${STICKER}`}
+                        >
+                            {apkUpdateBusy && !apkDownloadProgress ? '检查中...' : '检查 APK 更新'}
+                        </button>
+                        <button
+                            type="button"
+                            disabled={apkUpdateBusy || !apkUpdateCheck?.updateAvailable}
+                            onClick={() => handleDownloadApkUpdate(false)}
+                            className={`py-2.5 text-xs font-black disabled:opacity-40 ${apkUpdateCheck?.updateAvailable ? INK_BTN : STICKER}`}
+                        >
+                            下载新版 APK
+                        </button>
+                        {apkUpdateCheck?.latest.domesticApkUrl && (
+                            <button
+                                type="button"
+                                disabled={apkUpdateBusy || !apkUpdateCheck?.updateAvailable}
+                                onClick={() => handleDownloadApkUpdate(true)}
+                                className={`py-2.5 text-xs font-black disabled:opacity-40 ${apkUpdateCheck?.updateAvailable ? INK_BTN : STICKER}`}
+                            >
+                                国内线路
+                            </button>
+                        )}
+                    </div>
+
+                    {(apkUpdateStatus || apkUpdateCheck?.latest) && (
+                        <div className="rounded-[14px] border border-[#dce8ea] bg-[#f3f7f6] p-3 text-[11px] text-[#2f3437] leading-relaxed">
+                            {apkUpdateStatus && <p className="font-bold">{apkUpdateStatus}</p>}
+                            {apkDownloadProgress && apkDownloadProgress.status === 'downloading' && (
+                                <div className="mt-2 h-2 rounded-full bg-white border border-[#e7e1d6] overflow-hidden">
+                                    <div className="h-full bg-[#7fa8b3] transition-all" style={{ width: `${Math.round(apkDownloadProgress.progress * 100)}%` }} />
+                                </div>
+                            )}
+                            {apkUpdateCheck?.latest.releaseNotes && (
+                                <p className="mt-2 whitespace-pre-wrap text-[#69716d]">{apkUpdateCheck.latest.releaseNotes}</p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </SectionCard>
 
             {/* 锁屏与密码 */}
             <SectionCard tag="LOCK" title="锁屏与密码" hand="设置进入应用时的 4 位密码" rotate="rotate-[-0.5deg]">

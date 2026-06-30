@@ -5,6 +5,7 @@ import type {
     AmbientSocialRelation,
     AmbientSocialState,
     CharacterProfile,
+    GroupProfile,
     UserProfile,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
@@ -17,6 +18,7 @@ const MAX_INITIAL_ENTRIES = 3;
 const MAX_ENTRIES = 9;
 const GROWTH_INTERVAL_MS = 18 * 60 * 60 * 1000;
 export const MIN_AMBIENT_CHARACTER_PROMPT_CHARS = 2000;
+const AMBIENT_CHARACTER_DESCRIPTION = '从絮语里自然接入的人。有自己的生活、社交圈和日常节奏。';
 
 const AMBIENT_CHARACTER_DEPTH_NOTE = `
 # 深层角色设定
@@ -336,6 +338,17 @@ export function patchAmbientSocialEntry(
     };
 }
 
+export function isAmbientSocialCharacter(char: CharacterProfile | null | undefined): boolean {
+    if (!char) return false;
+    if (char.ambientSocialSource?.entryId) return true;
+    return String(char.id || '').startsWith('ambient-')
+        && String(char.description || '') === AMBIENT_CHARACTER_DESCRIPTION;
+}
+
+export function isAmbientSocialGroup(group: GroupProfile | null | undefined): boolean {
+    return !!group?.ambientSocialSource?.entryId;
+}
+
 function buildAmbientCharacterPrompt(entry: AmbientSocialContact, userName: string): string {
     const parts = [
         `# 角色核心`,
@@ -377,11 +390,16 @@ export function ambientSocialToCharacter(entry: AmbientSocialContact, userName: 
         id: createCharacterId('ambient'),
         name: entry.name,
         avatar: entry.avatar,
-        description: '从絮语里自然接入的人。有自己的生活、社交圈和日常节奏。',
+        description: AMBIENT_CHARACTER_DESCRIPTION,
         systemPrompt: buildAmbientCharacterPrompt(entry, userName),
         memories: [],
         contextLimit: 500,
         addedToChat: true,
+        ambientSocialSource: {
+            entryId: entry.id,
+            relation: entry.relation,
+            relationLabel: entry.relationLabel,
+        },
         proactiveConfig: {
             enabled: true,
             intervalMinutes: 120,

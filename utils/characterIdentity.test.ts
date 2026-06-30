@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AmbientSocialContact, CharacterProfile } from '../types';
-import { ambientSocialToCharacter } from './ambientSocial';
+import { ambientSocialToCharacter, isAmbientSocialCharacter } from './ambientSocial';
 import { createCharacterId, ensureCharacterModelId, formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 describe('character identity helpers', () => {
@@ -53,5 +53,19 @@ describe('character identity helpers', () => {
     expect(a.id).toMatch(/^ambient-/);
     expect(b.id).toMatch(/^ambient-/);
     expect(a.id).not.toBe(b.id);
+    expect(isAmbientSocialCharacter(a)).toBe(true);
+  });
+
+  it('recognizes legacy ambient social characters for list filtering', () => {
+    const legacy = {
+      id: 'ambient-old-123',
+      name: 'Old Street Friend',
+      avatar: '',
+      description: '从絮语里自然接入的人。有自己的生活、社交圈和日常节奏。',
+      systemPrompt: '',
+      memories: [],
+    } as CharacterProfile;
+
+    expect(isAmbientSocialCharacter(legacy)).toBe(true);
   });
 });

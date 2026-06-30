@@ -12,6 +12,7 @@ import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWit
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
 import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
+import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
@@ -1025,7 +1026,7 @@ ${parallelReplyPromptBody({
                 });
                 const cleaned = ChatParser.sanitize((extractContent(data) || '').trim());
                 if (!ChatParser.hasDisplayContent(cleaned)) return 'empty';
-                const chunks = (target.convoSettings?.bubbleStyleMode === 'whole' ? [cleaned] : ChatParser.chunkText(cleaned))
+                const chunks = ChatParser.chunkTextByBubbleMode(cleaned, target.convoSettings?.bubbleStyleMode)
                     .map(chunk => ChatParser.sanitize(chunk).trim())
                     .filter(chunk => ChatParser.hasDisplayContent(chunk));
                 if (!chunks.length) return 'empty';
@@ -4339,10 +4340,9 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
     const handleForceVectorize = async () => {
         if (!char || !char.memoryPalaceEnabled || isVectorizing) return;
-        const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLM = memoryPalaceConfig?.lightLLM;
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM?.baseUrl) {
-            addToast('请先在回忆标本馆设置中配置 API', 'error');
+        const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+        if (!mpEmb || !mpLLM) {
+            addToast('请先在文具盒开启并填好副 API', 'error');
             return;
         }
 

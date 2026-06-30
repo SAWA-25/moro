@@ -56,21 +56,26 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
     }, [transactions, viewMode, today, weekStart, currentMonth]);
 
     // Calculate totals
-    const totalSpent = useMemo(() => filteredTx.reduce((sum, tx) => sum + tx.amount, 0), [filteredTx]);
+    const expenseTx = useMemo(() => filteredTx.filter(tx => tx.type !== 'income'), [filteredTx]);
+    const incomeTx = useMemo(() => filteredTx.filter(tx => tx.type === 'income'), [filteredTx]);
+    const totalSpent = useMemo(() => expenseTx.reduce((sum, tx) => sum + tx.amount, 0), [expenseTx]);
+    const totalIncome = useMemo(() => incomeTx.reduce((sum, tx) => sum + tx.amount, 0), [incomeTx]);
+    const netTotal = totalIncome - totalSpent;
 
     // CSV Export
     const handleExportCSV = () => {
         if (transactions.length === 0) return;
         const BOM = '\uFEFF';
-        const header = '日期,时间,金额,备注,分类\n';
+        const header = '日期,时间,类型,金额,备注,分类\n';
         const rows = transactions
             .sort((a, b) => b.timestamp - a.timestamp)
             .map(tx => {
                 const date = tx.dateStr;
                 const time = new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const isIncome = tx.type === 'income';
                 const cat = CATEGORIES[categorizedTx[tx.id] || guessCategory(tx.note)]?.label || '其他';
                 const note = tx.note.replace(/,/g, '，').replace(/"/g, '""');
-                return `${date},${time},${tx.amount},"${note}",${cat}`;
+                return `${date},${time},${isIncome ? '收入' : '支出'},${isIncome ? tx.amount : -tx.amount},"${note}",${cat}`;
             })
             .join('\n');
         const csv = BOM + header + rows;
@@ -89,7 +94,7 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
     const categoryData = useMemo(() => {
         const groups: Record<string, { total: number; count: number; items: BankTransaction[] }> = {};
 
-        filteredTx.forEach(tx => {
+        expenseTx.forEach(tx => {
             const cat = categorizedTx[tx.id] || guessCategory(tx.note);
             if (!groups[cat]) groups[cat] = { total: 0, count: 0, items: [] };
             groups[cat].total += tx.amount;
@@ -100,7 +105,7 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
         return Object.entries(groups)
             .map(([key, data]) => ({ category: key, ...data, percentage: totalSpent > 0 ? (data.total / totalSpent) * 100 : 0 }))
             .sort((a, b) => b.total - a.total);
-    }, [filteredTx, categorizedTx, totalSpent]);
+    }, [expenseTx, categorizedTx, totalSpent]);
 
     // Simple keyword-based category guessing
     function guessCategory(note: string): string {
@@ -117,11 +122,11 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
 
     // AI categorization and summary
     const analyzeWithAI = async () => {
-        if (!apiConfig?.apiKey || filteredTx.length === 0) return;
+        if (!apiConfig?.apiKey || expenseTx.length === 0) return;
 
         setIsAnalyzing(true);
         try {
-            const txList = filteredTx.map(tx => `- ${tx.note}: ${currency}${tx.amount}`).join('\n');
+            const txList = expenseTx.map(tx => `- ${tx.note}: ${currency}${tx.amount}`).join('\n');
             const periodLabel = viewMode === 'today' ? '今天' : viewMode === 'week' ? '本周' : '本月';
 
             const prompt = `作为一个财务分析助手，分析以下消费记录：
@@ -151,7 +156,7 @@ ${txList}
 
                 // Map categories to transaction IDs
                 const newCategories: Record<string, string> = { ...categorizedTx };
-                filteredTx.forEach(tx => {
+                expenseTx.forEach(tx => {
                     if (result.categories[tx.note]) {
                         newCategories[tx.id] = result.categories[tx.note];
                     }
@@ -215,9 +220,24 @@ ${txList}
                             {currency}{totalSpent.toFixed(0)}
                         </div>
                         <div className="text-sm text-white/50 mt-1">
-                            共 {filteredTx.length} 笔
+                            支出 {expenseTx.length} 笔 · 收入 {incomeTx.length} 笔
                         </div>
                     </div>
+
+                    {(totalIncome > 0 || filteredTx.length > 0) && (
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            <div className="rounded-2xl bg-white/10 px-3 py-2 border border-white/10">
+                                <div className="text-[10px] text-white/50">进账</div>
+                                <div className="text-lg font-black text-green-200">+{currency}{totalIncome.toFixed(0)}</div>
+                            </div>
+                            <div className="rounded-2xl bg-white/10 px-3 py-2 border border-white/10">
+                                <div className="text-[10px] text-white/50">净额</div>
+                                <div className={`text-lg font-black ${netTotal >= 0 ? 'text-green-200' : 'text-rose-200'}`}>
+                                    {netTotal >= 0 ? '+' : '-'}{currency}{Math.abs(netTotal).toFixed(0)}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Budget Status (Today only) */}
                     {viewMode === 'today' && (
@@ -257,7 +277,7 @@ ${txList}
             <div className="p-5 space-y-5">
 
                 {/* AI Summary Card */}
-                {(aiSummary || filteredTx.length > 0) && (
+                {(aiSummary || expenseTx.length > 0) && (
                     <div className="bg-white rounded-3xl p-5 shadow-lg border border-[#E8DCC8] relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-[#FFE0B2]/30 to-transparent rounded-full -mr-8 -mt-8"></div>
 
@@ -360,6 +380,7 @@ ${txList}
                     ) : (
                         <div className="space-y-3 max-h-[400px] overflow-y-auto no-scrollbar">
                             {filteredTx.map(tx => {
+                                const isIncome = tx.type === 'income';
                                 const cat = CATEGORIES[categorizedTx[tx.id] || guessCategory(tx.note)] || CATEGORIES.other;
                                 return (
                                     <div key={tx.id} className="flex items-center justify-between p-3 rounded-2xl bg-[#FDF6E3] hover:bg-[#FFF8E1] transition-colors group relative">
@@ -371,11 +392,13 @@ ${txList}
                                                 <div className="font-bold text-[#5D4037] text-sm">{tx.note}</div>
                                                 <div className="text-[10px] text-[#A1887F] flex items-center gap-2">
                                                     <span>{new Date(tx.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: cat.color }}>{cat.label}</span>
+                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: isIncome ? '#43A047' : cat.color }}>{isIncome ? '进账' : cat.label}</span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="font-mono font-bold text-[#E64A19]">-{currency}{tx.amount}</div>
+                                        <div className={`font-mono font-bold ${isIncome ? 'text-[#43A047]' : 'text-[#E64A19]'}`}>
+                                            {isIncome ? '+' : '-'}{currency}{tx.amount}
+                                        </div>
 
                                         <button
                                             onClick={() => onDeleteTx(tx.id)}

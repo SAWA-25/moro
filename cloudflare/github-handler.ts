@@ -17,13 +17,13 @@
  * ~100 MB, so very large 'full' backups still need a direct upload.
  */
 
-const ALLOWED_HOSTS = new Set(['api.github.com', 'uploads.github.com']);
+const ALLOWED_HOSTS = new Set(['api.github.com', 'uploads.github.com', 'github.com']);
 
 export async function handleGithub(req: Request): Promise<Response> {
     const CORS: Record<string, string> = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers':
-            'Authorization, Content-Type, Accept, X-GitHub-Method, X-GitHub-Api-Version',
+            'Authorization, Content-Type, Accept, X-GitHub-Method, X-GitHub-Api-Version, Range',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Max-Age': '86400',
     };
@@ -32,7 +32,7 @@ export async function handleGithub(req: Request): Promise<Response> {
         return new Response(null, { status: 204, headers: CORS });
     }
 
-    if (req.method !== 'POST') {
+    if (req.method !== 'GET' && req.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), {
             status: 405,
             headers: { ...CORS, 'Content-Type': 'application/json' },
@@ -65,7 +65,7 @@ export async function handleGithub(req: Request): Promise<Response> {
         });
     }
 
-    const ghMethod = (req.headers.get('X-GitHub-Method') || 'GET').toUpperCase();
+    const ghMethod = req.method === 'GET' ? 'GET' : (req.headers.get('X-GitHub-Method') || 'GET').toUpperCase();
     const allowed = ['GET', 'POST', 'DELETE', 'PATCH', 'PUT'];
     if (!allowed.includes(ghMethod)) {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -83,6 +83,8 @@ export async function handleGithub(req: Request): Promise<Response> {
     if (accept) fwd['Accept'] = accept;
     const apiVer = req.headers.get('X-GitHub-Api-Version');
     if (apiVer) fwd['X-GitHub-Api-Version'] = apiVer;
+    const range = req.headers.get('Range');
+    if (range) fwd['Range'] = range;
     // GitHub rejects requests without a UA.
     fwd['User-Agent'] = 'moro-backup-proxy';
 
@@ -103,13 +105,13 @@ export async function handleGithub(req: Request): Promise<Response> {
         const resHeaders = new Headers(CORS);
         const rct = resp.headers.get('Content-Type');
         if (rct) resHeaders.set('Content-Type', rct);
-        if (resp.status === 206) {
-            const rcl = resp.headers.get('Content-Length');
-            if (rcl) resHeaders.set('Content-Length', rcl);
-        }
+        const rcl = resp.headers.get('Content-Length');
+        if (rcl) resHeaders.set('Content-Length', rcl);
+        const rcd = resp.headers.get('Content-Disposition');
+        if (rcd) resHeaders.set('Content-Disposition', rcd);
         const rcr = resp.headers.get('Content-Range');
         if (rcr) resHeaders.set('Content-Range', rcr);
-        resHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+        resHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Disposition');
 
         return new Response(resp.body, {
             status: resp.status,

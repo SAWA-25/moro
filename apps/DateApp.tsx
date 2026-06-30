@@ -10,6 +10,7 @@ import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import Modal from '../components/os/Modal';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
@@ -17,7 +18,7 @@ import { BookOpen } from '@phosphor-icons/react';
 
 const DateApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, auxApiConfig, addToast, updateCharacter, virtualTime, userProfile, memoryPalaceConfig } = useOS();
-    // 约会（街角·DateApp）属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API；记忆宫殿沿用其独立配置）
+    // 约会（街角·DateApp）属「聊天以外」的功能：走副 API；记忆宫殿也统一复用文具盒副 API。
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     // 记忆宫殿（与聊天侧共用同一套上下文：同 charId、同高水位线）
@@ -248,12 +249,8 @@ const DateApp: React.FC = () => {
         // 这里仍然按 charForHook 闭包里的旧 enabled 触发一次 LLM 总结
         const liveBefore = charactersRef.current.find(c => c.id === charForHook.id) || null;
         if (!liveBefore?.memoryPalaceEnabled) return;
-        const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-        const mpLLM = (mpLLMConfigured?.baseUrl)
-            ? mpLLMConfigured
-            : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM.baseUrl) return;
+        const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+        if (!mpEmb || !mpLLM) return;
 
         const recentMsgs = await DB.getRecentMessagesByCharId(charForHook.id, 50);
         try {
@@ -317,7 +314,7 @@ const DateApp: React.FC = () => {
             }
             setMemoryPalaceStatus('');
         }
-    }, [memoryPalaceConfig, apiConfig, userProfile?.name, updateCharacter, addToast]);
+    }, [auxApiConfig, memoryPalaceConfig, userProfile?.name, updateCharacter, addToast]);
 
     // --- Session API Logic ---
     const handleSendMessage = async (text: string): Promise<string> => {

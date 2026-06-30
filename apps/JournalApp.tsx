@@ -585,7 +585,7 @@ ${charPart}
                         diary.date,
                         diary.userPage.text,
                         diary.charPage?.text || '',
-                        memoryPalaceConfig?.lightLLM as any,
+                        auxApi,
                         userProfile.name,
                     );
                 } catch (e: any) {
@@ -763,7 +763,7 @@ ${charPart}
         } else if (p.status === 'palace_disabled') {
             palaceStatus = { tone: 'off', title: '回忆标本馆 · 没开', detail: `${archiveResult.charName} 没开回忆标本馆，走的是主 API 散文路径写往事柜。想让日记进向量记忆，去角色设置里打开"回忆标本馆"开关再收一次。` };
         } else if (p.status === 'lightllm_missing') {
-            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 副 API 没配', detail: '标本馆开着，但标本馆副 API (memoryPalaceConfig.lightLLM) 没填；没法做结构化抽取，往事柜已 fallback 走主 API 散文版。' };
+            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 副 API 没配', detail: '标本馆开着，但文具盒副 API 没填；没法做结构化抽取，往事柜已 fallback 走散文版。' };
         } else if (p.status === 'embedding_missing') {
             palaceStatus = { tone: 'warn', title: '回忆标本馆 · 嵌入模型没配', detail: '标本馆开着，但 embedding 配置缺失；没法向量化，往事柜已 fallback 走主 API 散文版。' };
         } else if (p.status === 'empty_input') {

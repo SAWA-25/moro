@@ -74,7 +74,7 @@
 
 #### Step 3 — 向量化（vectorStore.ts）
 
-- 批量调用 Embedding API（batch=20），模型如 `text-embedding-3-small`，1024维
+- 批量调用文具盒副 API 的 `/embeddings` 端点（batch=20），默认模型 `BAAI/bge-m3`，1024维；回忆标本馆不再保存独立 Base URL / API Key
 - **去重**：余弦相似度 > 0.9 视为重复，跳过
 - 写入 IndexedDB：`MemoryNode`（embedded=true）+ `MemoryVector`（float[]）
 

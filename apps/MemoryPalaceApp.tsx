@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
+import { AppID } from '../types';
 import {
     MemoryRoom, MemoryNode, ROOM_CONFIGS, getRoomLabel,
     MemoryNodeDB, AnticipationDB, MemoryLinkDB, EventBoxDB,
@@ -11,6 +12,7 @@ import {
 } from '../utils/memoryPalace';
 import type { Anticipation, MigrationProgress, MemoryLink, EventBox } from '../utils/memoryPalace';
 import MindMap from '../components/memoryPalace/MindMap';
+import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
 type LinkedMemoryUI = {
@@ -405,8 +407,11 @@ const labelClass = "text-[10px] font-bold text-black uppercase tracking-[0.2em] 
 // ─── 主组件 ───────────────────────────────────────────
 
 export default function MemoryPalaceApp() {
-    const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, apiPresets, userProfile, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, updateRemoteVectorConfig, addToast } = useOS();
+    const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, openApp, userProfile, auxApiConfig, memoryPalaceConfig, remoteVectorConfig, updateRemoteVectorConfig, addToast } = useOS();
     const char = characters.find(c => c.id === activeCharacterId);
+    const memoryPalaceAux = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+    const palaceEmbedding = memoryPalaceAux.embedding;
+    const palaceLLM = memoryPalaceAux.llm;
 
     const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes' | 'browser' | 'mindmap'>('picker');
     const [selectedRoom, setSelectedRoom] = useState<MemoryRoom | null>(null);
@@ -506,33 +511,6 @@ export default function MemoryPalaceApp() {
     const [editTags, setEditTags] = useState('');
     const [saving, setSaving] = useState(false);
 
-    // Embedding 配置本地状态（从全局配置初始化）
-    const [embUrl, setEmbUrl] = useState(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
-    const [embKey, setEmbKey] = useState(memoryPalaceConfig.embedding.apiKey || '');
-    const [embModel, setEmbModel] = useState(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
-    const [embDimensions, setEmbDimensions] = useState(memoryPalaceConfig.embedding.dimensions || 1024);
-    const [configSaved, setConfigSaved] = useState(false);
-    const [testingEmb, setTestingEmb] = useState(false);
-    const [testResult, setTestResult] = useState<string | null>(null);
-
-    // 副 API 配置（全局配置）
-    const [lightUrl, setLightUrl] = useState(memoryPalaceConfig.lightLLM.baseUrl || '');
-    const [lightKey, setLightKey] = useState(memoryPalaceConfig.lightLLM.apiKey || '');
-    const [lightModel, setLightModel] = useState(memoryPalaceConfig.lightLLM.model || '');
-    const [lightSaved, setLightSaved] = useState(false);
-    const [testingLight, setTestingLight] = useState(false);
-    const [lightTestResult, setLightTestResult] = useState<string | null>(null);
-
-    // Rerank 配置（全局；cross-encoder 二次排序，独立于主召回的可选增强通道）
-    const [rrEnabled, setRrEnabled] = useState(!!memoryPalaceConfig.rerank?.enabled);
-    const [rrUrl, setRrUrl] = useState(memoryPalaceConfig.rerank?.baseUrl || '');
-    const [rrKey, setRrKey] = useState(memoryPalaceConfig.rerank?.apiKey || '');
-    const [rrModel, setRrModel] = useState(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
-    const [rrTopN, setRrTopN] = useState(memoryPalaceConfig.rerank?.topN || 5);
-    const [rrSaved, setRrSaved] = useState(false);
-    const [rrTesting, setRrTesting] = useState(false);
-    const [rrTestResult, setRrTestResult] = useState<string | null>(null);
-
     // 远程向量存储配置
     const [rvUrl, setRvUrl] = useState(remoteVectorConfig.supabaseUrl);
     const [rvKey, setRvKey] = useState(remoteVectorConfig.supabaseAnonKey);
@@ -540,22 +518,6 @@ export default function MemoryPalaceApp() {
     const [rvTesting, setRvTesting] = useState(false);
     const [rvSyncing, setRvSyncing] = useState(false);
     const [showInitSQL, setShowInitSQL] = useState(false);
-
-    // 全局配置变更时同步到本地状态
-    useEffect(() => {
-        setEmbUrl(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
-        setEmbKey(memoryPalaceConfig.embedding.apiKey || '');
-        setEmbModel(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
-        setEmbDimensions(memoryPalaceConfig.embedding.dimensions || 1024);
-        setLightUrl(memoryPalaceConfig.lightLLM.baseUrl || '');
-        setLightKey(memoryPalaceConfig.lightLLM.apiKey || '');
-        setLightModel(memoryPalaceConfig.lightLLM.model || '');
-        setRrEnabled(!!memoryPalaceConfig.rerank?.enabled);
-        setRrUrl(memoryPalaceConfig.rerank?.baseUrl || '');
-        setRrKey(memoryPalaceConfig.rerank?.apiKey || '');
-        setRrModel(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
-        setRrTopN(memoryPalaceConfig.rerank?.topN || 5);
-    }, [memoryPalaceConfig]);
 
     // 远程向量配置变更时同步到本地状态
     useEffect(() => {
@@ -569,8 +531,8 @@ export default function MemoryPalaceApp() {
     // pendingPersonality 绑定到产生它的角色 id，防止切角色后把旧结果应用到新角色
     const [pendingPersonalityCharId, setPendingPersonalityCharId] = useState<string | null>(null);
     // 抽出原始字段作为 useEffect 依赖，避免 memoryPalaceConfig 对象新引用触发重跑
-    const lightLLMBaseUrl = memoryPalaceConfig.lightLLM?.baseUrl || '';
-    const lightLLMApiKey = memoryPalaceConfig.lightLLM?.apiKey || '';
+    const palaceAuxBaseUrl = palaceLLM?.baseUrl || '';
+    const palaceAuxApiKey = palaceLLM?.apiKey || '';
 
     // 切换角色时清掉上一个角色遗留的待确认结果
     useEffect(() => {
@@ -588,7 +550,7 @@ export default function MemoryPalaceApp() {
         // 已经尝试过或已确认过，不再重复检测（避免 LLM 偶发重置人格）
         const skipKey = `mp_personality_tried_${char!.id}`;
         if (localStorage.getItem(skipKey)) return;
-        if (!lightLLMBaseUrl || !lightLLMApiKey) return;
+        if (!palaceAuxBaseUrl || !palaceAuxApiKey || !palaceLLM) return;
 
         // 切换角色时，丢弃旧角色尚未返回的检测结果，避免把 A 的人格应用到 B
         let cancelled = false;
@@ -596,7 +558,7 @@ export default function MemoryPalaceApp() {
 
         setDetectingPersonality(true);
         const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-        detectPersonalityStyle(detectingCharId, char.name, persona, memoryPalaceConfig.lightLLM)
+        detectPersonalityStyle(detectingCharId, char.name, persona, palaceLLM)
             .then(result => {
                 if (cancelled) return;
                 setPendingPersonality(result);
@@ -614,11 +576,11 @@ export default function MemoryPalaceApp() {
 
         return () => { cancelled = true; };
         // 依赖用原始字符串字段，避免 memoryPalaceConfig 对象每次新引用都重跑
-    }, [char?.id, (char as any)?.personalityStyle, view, lightLLMBaseUrl, lightLLMApiKey]);
+    }, [char?.id, (char as any)?.personalityStyle, view, palaceAuxBaseUrl, palaceAuxApiKey]);
 
     // 判断是否已配置（使用全局配置）
-    const hasEmbeddingConfig = !!(memoryPalaceConfig.embedding.baseUrl && memoryPalaceConfig.embedding.apiKey);
-    const hasLightApi = !!(memoryPalaceConfig.lightLLM.baseUrl && memoryPalaceConfig.lightLLM.apiKey);
+    const hasEmbeddingConfig = !!palaceEmbedding;
+    const hasLightApi = !!palaceLLM;
 
     // 加载数据
     const loadStats = useCallback(async () => {
@@ -967,56 +929,6 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const handleSaveEmbeddingConfig = () => {
-        updateMemoryPalaceConfig({
-            embedding: {
-                baseUrl: embUrl.trim(),
-                apiKey: embKey.trim(),
-                model: embModel.trim() || 'BAAI/bge-m3',
-                dimensions: embDimensions || 1024,
-            },
-        });
-        // 同步到当前角色的 embeddingConfig（兼容已有的 injectMemoryPalace 调用）
-        if (char) {
-            updateCharacter(char.id, {
-                embeddingConfig: {
-                    baseUrl: embUrl.trim(),
-                    apiKey: embKey.trim(),
-                    model: embModel.trim() || 'BAAI/bge-m3',
-                    dimensions: embDimensions || 1024,
-                },
-            } as any);
-        }
-        setConfigSaved(true);
-        setTimeout(() => setConfigSaved(false), 2000);
-    };
-
-    const handleSaveRerankConfig = () => {
-        updateMemoryPalaceConfig({
-            rerank: {
-                enabled: rrEnabled,
-                baseUrl: rrUrl.trim(),
-                apiKey: rrKey.trim(),
-                model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3',
-                topN: Math.max(1, Math.min(20, rrTopN || 5)),
-            },
-        });
-        setRrSaved(true);
-        setTimeout(() => setRrSaved(false), 2000);
-    };
-
-    const handleSaveLightApi = () => {
-        const api = {
-            baseUrl: lightUrl.trim(),
-            apiKey: lightKey.trim(),
-            model: lightModel.trim(),
-        };
-        // 只写全局 lightLLM；与情绪 API（emotionConfig.api）完全独立，互不影响。
-        updateMemoryPalaceConfig({ lightLLM: api });
-        setLightSaved(true);
-        setTimeout(() => setLightSaved(false), 2000);
-    };
-
     const handleSwitchChar = (id: string) => {
         setActiveCharacterId(id);
         setShowCharPicker(false);
@@ -1051,10 +963,10 @@ export default function MemoryPalaceApp() {
             addToast('请先启用回忆标本馆再打开全自动记忆', 'error');
             return;
         }
-        const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLM = memoryPalaceConfig?.lightLLM;
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM?.baseUrl || !mpLLM?.apiKey) {
-            addToast('请先在回忆标本馆设置中配置 Embedding + 副 API', 'error');
+        const mpEmb = palaceEmbedding;
+        const mpLLM = palaceLLM;
+        if (!mpEmb || !mpLLM) {
+            addToast('请先在文具盒开启并填好副 API', 'error');
             return;
         }
 
@@ -1227,9 +1139,9 @@ export default function MemoryPalaceApp() {
 
     const handleMigrate = async () => {
         if (!char || migrating) return;
-        const emb = memoryPalaceConfig.embedding;
-        if (!emb?.baseUrl || !emb?.apiKey) {
-            setMigrationResult('[err]请先配置 Embedding API');
+        const emb = palaceEmbedding;
+        if (!emb) {
+            setMigrationResult('[err]请先在文具盒开启并填好副 API');
             return;
         }
 
@@ -1239,9 +1151,9 @@ export default function MemoryPalaceApp() {
             return;
         }
 
-        const lightApi = memoryPalaceConfig.lightLLM;
-        if (!lightApi?.baseUrl) {
-            setMigrationResult('[err]需要配置副 API（轻量副模型），用于 LLM 记忆提取');
+        const lightApi = palaceLLM;
+        if (!lightApi) {
+            setMigrationResult('[err]需要在文具盒开启并填好副 API，用于 LLM 记忆提取');
             return;
         }
 
@@ -1278,8 +1190,8 @@ export default function MemoryPalaceApp() {
 
     const handleDigest = async () => {
         if (!char || digesting) return;
-        const lightApi = memoryPalaceConfig.lightLLM;
-        if (!lightApi?.baseUrl) {
+        const lightApi = palaceLLM;
+        if (!lightApi) {
             setDigestResult('[err]请先在「文具盒」里配置副 API');
             return;
         }
@@ -1289,7 +1201,7 @@ export default function MemoryPalaceApp() {
 
         try {
             const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-            const embApi = memoryPalaceConfig.embedding;
+            const embApi = palaceEmbedding || undefined;
             const result = await runCognitiveDigestion(char.id, char.name, persona, lightApi, true, userProfile?.name, embApi);
             if (!result) {
                 setDigestResult('没有需要消化的内容');
@@ -1531,7 +1443,7 @@ export default function MemoryPalaceApp() {
                     </div>
                 </div>
 
-                {/* Embedding 未配置高亮提醒 */}
+                {/* 副 API 未配置高亮提醒 */}
                 {!hasEmbeddingConfig && (
                     <div
                         onClick={() => setView('globalSettings')}
@@ -1556,10 +1468,10 @@ export default function MemoryPalaceApp() {
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: '#454545' }}>
-                                未配置 Embedding API
+                                未配置副 API
                             </div>
                             <div style={{ fontSize: 10, color: '#535353', marginTop: 2 }}>
-                                点击此处进入全局配置 · 不配置则无法向量化
+                                点击此处查看配置说明 · 不配置则无法向量化
                             </div>
                         </div>
                         <span style={{ color: '#686868', flexShrink: 0 }}>
@@ -2273,561 +2185,47 @@ export default function MemoryPalaceApp() {
                     </span>
                 </div>
 
-                {/* 副 API 配置 */}
+                {/* 副 API 状态 */}
                 <div style={{ background: '#f8f8f8', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a', marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#484848', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#484848', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Icon name="robot" size={14} />
-                        <span>副 API（后台处理用）</span>
+                        <span>副 API（唯一通道）</span>
                     </div>
-                    <div style={{ fontSize: 10, color: '#727272', marginBottom: 10, lineHeight: 1.6 }}>
-                        用于<b>记忆提取、关联分析、认知消化</b>等后台任务。此配置全局生效，所有角色共用。
-                        <span style={{ color: '#a2a2a2' }}>仅作用于回忆标本馆相关流程，不影响主聊天，也不影响情绪感知。</span>
+                    <div style={{ fontSize: 11, color: '#4f4f4f', lineHeight: 1.7, marginBottom: 12 }}>
+                        回忆标本馆现在只使用「文具盒 → 副 API」。记忆提取、认知消化和向量化都会复用同一套副 API 的 Base URL / API Key，不再在标本馆里单独保存模型密钥。
                     </div>
                     <div style={{
-                        fontSize: 10, color: '#4f4f4f', background: '#f8f8f8',
-                        border: '2px solid #1a1a1a', borderRadius: 3, padding: '6px 8px',
-                        marginBottom: 12, lineHeight: 1.6,
+                        padding: 12, borderRadius: 3, border: '2px solid #1a1a1a',
+                        background: hasLightApi ? '#f2f2f2' : '#f6f6f6',
+                        fontSize: 11, color: '#414141', lineHeight: 1.7,
                     }}>
-                        下方<b>不填</b>（URL 留空）时，回忆标本馆会<b>自动回退用主 API</b> 跑后台处理。
-                        想让后台任务走更便宜的账户 / 不想占主 API 额度，就在这里填一个便宜模型。
-                        看不懂怎么选？直接挑一个<b>每百万 token 几毛钱</b>的模型即可，后台任务不需要推理能力。
+                        {hasLightApi ? (
+                            <>
+                                <div><b>当前副 API：</b>{palaceLLM?.model}</div>
+                                <div><b>Embedding：</b>{palaceEmbedding?.model} · {palaceEmbedding?.dimensions} 维</div>
+                                <div style={{ color: '#727272', marginTop: 4 }}>如果服务商不支持 /embeddings 或该 embedding 模型名，需要在文具盒把副 API 切到兼容 OpenAI /embeddings 的服务。</div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+                                    <Icon name="warning" size={12} />
+                                    <span>副 API 未配置</span>
+                                </div>
+                                <div style={{ marginTop: 4 }}>标本馆后台整理和向量化会暂停；请先去文具盒开启并填好副 API。</div>
+                            </>
+                        )}
                     </div>
-
-                    {/* API 预设快速填充 */}
-                    {apiPresets.length > 0 && (
-                        <div style={{ marginBottom: 10 }}>
-                            <label className={labelClass}>从预设导入</label>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {apiPresets.map(p => (
-                                    <button key={p.id} onClick={() => {
-                                        setLightUrl(p.config.baseUrl);
-                                        setLightKey(p.config.apiKey);
-                                        setLightModel(p.config.model);
-                                    }} style={{
-                                        padding: '4px 10px', borderRadius: 3, fontSize: 11, fontWeight: 600,
-                                        border: '2px solid #1a1a1a', background: 'white', color: '#484848',
-                                        cursor: 'pointer',
-                                    }}>
-                                        {p.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div>
-                            <label className={labelClass}>BASE URL</label>
-                            <input type="text" value={lightUrl} onChange={e => setLightUrl(e.target.value)}
-                                placeholder="https://api.siliconflow.cn/v1" className={inputClass} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>API KEY</label>
-                            <input type="password" value={lightKey} onChange={e => setLightKey(e.target.value)}
-                                placeholder="sk-..." className={inputClass} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>MODEL</label>
-                            <input type="text" value={lightModel} onChange={e => setLightModel(e.target.value)}
-                                placeholder="deepseek-ai/DeepSeek-V2.5" className={inputClass} />
-                            <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 4, paddingLeft: 4 }}>
-                                推荐: deepseek-ai/DeepSeek-V2.5 · Qwen/Qwen2.5-7B-Instruct · GLM-4-Flash
-                            </div>
-                        </div>
-                    </div>
-
-                    <button onClick={handleSaveLightApi}
-                        disabled={!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()}
+                    <button
+                        onClick={() => openApp(AppID.Settings)}
                         style={{
                             width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 3,
-                            border: 'none', fontWeight: 700, fontSize: 13, color: 'white',
-                            background: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? '#d3d3d3' : '#6f6f6f',
-                            cursor: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 'not-allowed' : 'pointer',
+                            border: '2px solid #1a1a1a', background: 'white', color: '#484848',
+                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
                         }}
                     >
-                        {lightSaved ? '✓ 已保存' : '保存副 API 配置'}
+                        打开文具盒副 API
                     </button>
-
-                    {/* 测试副 API 连接 */}
-                    <button
-                        onClick={async () => {
-                            if (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) return;
-                            setTestingLight(true);
-                            setLightTestResult(null);
-                            try {
-                                const res = await fetch(`${lightUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${lightKey.trim()}`,
-                                    },
-                                    body: JSON.stringify({
-                                        model: lightModel.trim(),
-                                        messages: [{ role: 'user', content: 'Hi' }],
-                                        max_tokens: 5,
-                                    }),
-                                });
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    const reply = (data.choices?.[0]?.message?.content || '').toString();
-                                    setLightTestResult(`[ok]连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-                                } else {
-                                    const text = await res.text().catch(() => '');
-                                    setLightTestResult(`[err]HTTP ${res.status}: ${text.slice(0, 120)}`);
-                                }
-                            } catch (err: any) {
-                                setLightTestResult(`[err]连接失败: ${err?.message || String(err)}`);
-                            } finally {
-                                setTestingLight(false);
-                            }
-                        }}
-                        disabled={testingLight || !lightUrl.trim() || !lightKey.trim() || !lightModel.trim()}
-                        style={{
-                            width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 3,
-                            border: '2px solid #1a1a1a', fontWeight: 600, fontSize: 13,
-                            color: '#6f6f6f', background: 'white',
-                            cursor: (testingLight || !lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 'not-allowed' : 'pointer',
-                            opacity: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 0.5 : 1,
-                        }}
-                    >
-                        {testingLight ? '测试中...' : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Icon name="beaker" size={13} />
-                                <span>测试 API 连接</span>
-                            </span>
-                        )}
-                    </button>
-
-                    {lightTestResult && (
-                        <div style={{
-                            marginTop: 8, fontSize: 12, padding: '8px 12px', borderRadius: 3,
-                            background: lightTestResult.startsWith('[ok]') ? '#f8f8f8' : '#f6f6f6',
-                            color: lightTestResult.startsWith('[ok]') ? '#6f6f6f' : '#5c5c5c',
-                        }}>
-                            <StatusMessage msg={lightTestResult} />
-                        </div>
-                    )}
-
-                    {!hasLightApi && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: '#6a6a6a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <Icon name="warning" size={12} />
-                            <span>副 API 未配置 — 后台处理会<b>回退使用主 API</b>（功能可用，但会占主 API 额度）</span>
-                        </div>
-                    )}
                 </div>
-
-                {/* Embedding API */}
-                <div style={{ background: '#f8f8f8', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#626262', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Icon name="link" size={14} />
-                        <span>Embedding API（OpenAI 兼容格式）</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#727272', marginBottom: 16, lineHeight: 1.6 }}>
-                        推荐使用硅基流动（SiliconFlow），注册即送免费额度。
-                        下方选择模型后只需填入 API Key 即可。
-                        <br/>
-                        <span style={{ color: '#6a6a6a', fontWeight: 600 }}>
-                            注意：Embedding 用的是 <code>/embeddings</code> 端点，和主 API 不通用，因此
-                            <b>不会自动回退</b>。不配置则回忆标本馆的向量化流程无法运行。
-                        </span>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div>
-                            <label className={labelClass}>BASE URL</label>
-                            <input
-                                type="text"
-                                value={embUrl}
-                                onChange={e => setEmbUrl(e.target.value)}
-                                placeholder="https://api.siliconflow.cn/v1"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>API KEY</label>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <input
-                                    type="password"
-                                    value={embKey}
-                                    onChange={e => setEmbKey(e.target.value)}
-                                    placeholder="sk-..."
-                                    className={inputClass}
-                                    style={{ flex: 1 }}
-                                />
-                                <button onClick={() => window.open('https://cloud.siliconflow.cn/account/ak', '_blank')} style={{
-                                    padding: '8px 12px', borderRadius: 3, fontSize: 11, fontWeight: 600,
-                                    border: '2px solid #1a1a1a', background: 'white', color: '#626262',
-                                    cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                                }}>
-                                    获取 Key →
-                                </button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>EMBEDDING 模型</label>
-
-                            {/* 红框警告：已有记忆时提醒不要随意换模型 */}
-                            {memoryPalaceConfig.embedding.model && totalCount > 0 && (
-                                <div style={{
-                                    margin: '0 0 10px 0', padding: '10px 14px', borderRadius: 3,
-                                    border: '2px solid #1a1a1a', background: '#f6f6f6',
-                                    fontSize: 11, color: '#414141', lineHeight: 1.7,
-                                }}>
-                                    <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
-                                        <Icon name="warning" size={12} />
-                                        <span>重要：</span>
-                                    </span>
-                                    当前已有 <b>{totalCount}</b> 件标本使用 <b>{memoryPalaceConfig.embedding.model.split('/').pop()}</b> 模型生成。
-                                    更换模型后系统会自动重新生成所有向量（需要一点时间和 API 额度），
-                                    <b>建议选定后就不要再换了</b>。如果不确定，选「推荐」就好。
-                                </div>
-                            )}
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                                {[
-                                    { model: 'BAAI/bge-m3', dim: 1024, tag: '推荐', desc: '多语言顶级模型，免费', color: '#626262' },
-                                    { model: 'Pro/BAAI/bge-m3', dim: 1024, tag: '最强', desc: '加速推理版，¥0.7/百万token', color: '#a7a7a7' },
-                                    { model: 'BAAI/bge-large-zh-v1.5', dim: 1024, tag: '免费', desc: '中文专精，轻量快速', color: '#808080' },
-                                    { model: 'netease-youdao/bce-embedding-base_v1', dim: 768, tag: '免费', desc: '网易有道，768维', color: '#808080' },
-                                ].map(opt => {
-                                    const isActive = embModel === opt.model && embDimensions === opt.dim;
-                                    return (
-                                        <button key={opt.model} onClick={() => {
-                                            setEmbModel(opt.model);
-                                            setEmbDimensions(opt.dim);
-                                            if (!embUrl.trim()) setEmbUrl('https://api.siliconflow.cn/v1');
-                                        }} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8,
-                                            padding: '10px 14px', borderRadius: 3, fontSize: 12,
-                                            border: isActive ? `2px solid ${opt.color}` : '2px solid #1a1a1a',
-                                            background: isActive ? `${opt.color}11` : 'white',
-                                            cursor: 'pointer', textAlign: 'left', width: '100%',
-                                            transition: 'all 0.15s',
-                                        }}>
-                                            <span style={{ fontWeight: 700, fontSize: 11, color: opt.color, whiteSpace: 'nowrap' }}>{opt.tag}</span>
-                                            <span style={{ flex: 1 }}>
-                                                <span style={{ fontWeight: 600, fontSize: 12, color: '#282828' }}>{opt.model.split('/').pop()}</span>
-                                                <span style={{ fontSize: 10, color: '#a2a2a2', marginLeft: 6 }}>{opt.desc}</span>
-                                            </span>
-                                            <span style={{ fontSize: 10, color: '#a2a2a2' }}>{opt.dim}维</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <div style={{ fontSize: 10, color: '#a2a2a2', paddingLeft: 4, marginBottom: 4 }}>
-                                或手动输入模型名（支持任何 OpenAI 兼容的 Embedding 端点）
-                            </div>
-                            <input
-                                type="text"
-                                value={embModel}
-                                onChange={e => setEmbModel(e.target.value)}
-                                placeholder="BAAI/bge-m3"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>DIMENSIONS</label>
-                            <input
-                                type="number"
-                                value={embDimensions}
-                                onChange={e => setEmbDimensions(parseInt(e.target.value) || 1024)}
-                                placeholder="1024"
-                                className={inputClass}
-                            />
-                            <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 4, paddingLeft: 4 }}>
-                                选择预设模型会自动填入。手动输入时推荐 1024，部分模型支持 512 / 768
-                            </div>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={handleSaveEmbeddingConfig}
-                        disabled={!embUrl.trim() || !embKey.trim()}
-                        style={{
-                            width: '100%',
-                            marginTop: 16,
-                            padding: '12px 0',
-                            borderRadius: 3,
-                            border: 'none',
-                            fontWeight: 700,
-                            fontSize: 14,
-                            color: 'white',
-                            background: (!embUrl.trim() || !embKey.trim()) ? '#d3d3d3' : '#626262',
-                            cursor: (!embUrl.trim() || !embKey.trim()) ? 'not-allowed' : 'pointer',
-                            transition: 'all 0.15s',
-                        }}
-                    >
-                        {configSaved ? '✓ 已保存' : '保存配置'}
-                    </button>
-
-                    {/* 测试 Embedding 连接 */}
-                    <button
-                        onClick={async () => {
-                            if (!embUrl.trim() || !embKey.trim()) return;
-                            setTestingEmb(true);
-                            setTestResult(null);
-                            try {
-                                const { getEmbedding } = await import('../utils/memoryPalace/embedding');
-                                const config = {
-                                    baseUrl: embUrl.trim(),
-                                    apiKey: embKey.trim(),
-                                    model: embModel.trim() || 'BAAI/bge-m3',
-                                    dimensions: embDimensions || 1024,
-                                };
-                                const vec = await getEmbedding('测试文本', config);
-                                setTestResult(`[ok]成功！返回 ${vec.length} 维向量`);
-                            } catch (err: any) {
-                                setTestResult(`[err]失败：${err.message}`);
-                            } finally {
-                                setTestingEmb(false);
-                            }
-                        }}
-                        disabled={testingEmb || !embUrl.trim() || !embKey.trim()}
-                        style={{
-                            width: '100%',
-                            marginTop: 8,
-                            padding: '10px 0',
-                            borderRadius: 3,
-                            border: '2px solid #1a1a1a',
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: '#626262',
-                            background: 'white',
-                            cursor: testingEmb ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        {testingEmb ? '测试中...' : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Icon name="beaker" size={13} />
-                                <span>测试连接</span>
-                            </span>
-                        )}
-                    </button>
-
-                    {testResult && (
-                        <div style={{
-                            marginTop: 8, fontSize: 12, padding: '8px 12px', borderRadius: 3,
-                            background: testResult.startsWith('[ok]') ? '#f8f8f8' : '#f6f6f6',
-                            color: testResult.startsWith('[ok]') ? '#6f6f6f' : '#5c5c5c',
-                        }}>
-                            <StatusMessage msg={testResult} />
-                        </div>
-                    )}
-                </div>
-
-                {/* Rerank API（可选 cross-encoder 二次排序） */}
-                <details style={{ marginTop: 16, background: '#f7f7f7', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
-                    <summary style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#515151', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <Icon name="target" size={14} />
-                            <span>Rerank 模型（可选 / 二次排序增强）</span>
-                        </span>
-                        {rrEnabled && (
-                            <span style={{
-                                fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3,
-                                color: (rrUrl && rrKey) ? '#585858' : '#535353',
-                                background: (rrUrl && rrKey) ? '#f0f0f0' : '#f1f1f1',
-                            }}>
-                                {(rrUrl && rrKey) ? '已启用' : '待配置'}
-                            </span>
-                        )}
-                    </summary>
-
-                    <div style={{
-                        marginTop: 12, padding: 12, borderRadius: 3,
-                        background: '#f5f5f5', border: '2px solid #1a1a1a',
-                        fontSize: 11, color: '#3b3b3b', lineHeight: 1.7,
-                    }}>
-                        <div style={{ fontWeight: 700, marginBottom: 4 }}>rerank 是干啥的？</div>
-                        主召回走 embedding + BM25 + 启发式加权，有时会被噪声 spike 稀释。
-                        rerank 用 <b>cross-encoder</b> 模型直接理解 (query, doc) 的语义相关性，
-                        额外挑几条追加到注入，对焦点话题的覆盖率更稳。
-                        <div style={{ marginTop: 6 }}>
-                            <b>只对"这一轮 user 发言"生效</b>——候选池用拼起来的 user 最新发言独立走一次 hybrid（优先云），
-                            再把 pool 交给 rerank 打分，去重后追加 top N（默认 5）。不启用也不影响主召回。
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-                        {/* 启用开关 */}
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                            <input
-                                type="checkbox"
-                                checked={rrEnabled}
-                                onChange={e => setRrEnabled(e.target.checked)}
-                                style={{ accentColor: '#515151' }}
-                            />
-                            <span style={{ fontSize: 12, fontWeight: 600, color: '#515151' }}>
-                                启用 Rerank 通道
-                            </span>
-                        </label>
-
-                        {/* 一键同步 embedding 服务商 */}
-                        <button
-                            onClick={() => {
-                                setRrUrl(embUrl.trim());
-                                setRrKey(embKey.trim());
-                            }}
-                            disabled={!embUrl.trim() || !embKey.trim()}
-                            style={{
-                                padding: '8px 12px', borderRadius: 3, fontSize: 11, fontWeight: 600,
-                                border: '2px solid #1a1a1a',
-                                background: (!embUrl.trim() || !embKey.trim()) ? '#f4f4f4' : 'white',
-                                color: (!embUrl.trim() || !embKey.trim()) ? '#a1a1a1' : '#515151',
-                                cursor: (!embUrl.trim() || !embKey.trim()) ? 'not-allowed' : 'pointer',
-                                textAlign: 'left',
-                            }}
-                            title="把上面 Embedding 的 baseUrl 和 API Key 直接复制到 rerank（同一服务商通常可以复用）"
-                        >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <Icon name="document" size={13} />
-                                <span>从 Embedding 配置一键同步（baseUrl + API Key）</span>
-                            </span>
-                        </button>
-
-                        <div>
-                            <label className={labelClass}>BASE URL</label>
-                            <input
-                                type="text"
-                                value={rrUrl}
-                                onChange={e => setRrUrl(e.target.value)}
-                                placeholder="https://api.siliconflow.cn/v1"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>API KEY</label>
-                            <input
-                                type="password"
-                                value={rrKey}
-                                onChange={e => setRrKey(e.target.value)}
-                                placeholder="sk-..."
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>RERANK 模型</label>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                                {[
-                                    { model: 'BAAI/bge-reranker-v2-m3', tag: '推荐', desc: '多语言 cross-encoder，中文强，免费额度大', color: '#515151' },
-                                    { model: 'Pro/BAAI/bge-reranker-v2-m3', tag: 'Pro 版', desc: '加速推理，延迟更低，按量计费', color: '#a7a7a7' },
-                                    { model: 'netease-youdao/bce-reranker-base_v1', tag: '免费', desc: '网易有道 BCE，中文专精', color: '#808080' },
-                                ].map(opt => {
-                                    const isActive = rrModel === opt.model;
-                                    return (
-                                        <button key={opt.model} onClick={() => setRrModel(opt.model)} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8,
-                                            padding: '10px 14px', borderRadius: 3, fontSize: 12,
-                                            border: isActive ? `2px solid ${opt.color}` : '2px solid #1a1a1a',
-                                            background: isActive ? `${opt.color}11` : 'white',
-                                            cursor: 'pointer', textAlign: 'left', width: '100%',
-                                        }}>
-                                            <span style={{ fontWeight: 700, fontSize: 11, color: opt.color, whiteSpace: 'nowrap' }}>{opt.tag}</span>
-                                            <span style={{ flex: 1 }}>
-                                                <span style={{ fontWeight: 600, fontSize: 12, color: '#282828' }}>{opt.model.split('/').pop()}</span>
-                                                <span style={{ fontSize: 10, color: '#a2a2a2', marginLeft: 6 }}>{opt.desc}</span>
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <div style={{ fontSize: 10, color: '#a2a2a2', paddingLeft: 4, marginBottom: 4 }}>
-                                或手动输入（支持任何遵循 Cohere/Jina 协议的 /rerank 端点）
-                            </div>
-                            <input
-                                type="text"
-                                value={rrModel}
-                                onChange={e => setRrModel(e.target.value)}
-                                placeholder="BAAI/bge-reranker-v2-m3"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <label className={labelClass}>额外召回条数（TOP N）</label>
-                            <input
-                                type="number"
-                                value={rrTopN}
-                                onChange={e => setRrTopN(parseInt(e.target.value) || 5)}
-                                min={1}
-                                max={20}
-                                className={inputClass}
-                            />
-                            <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 4, paddingLeft: 4 }}>
-                                去重后追加到主 15 件标本后面。默认 5，一般 3-10 合适。
-                            </div>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={handleSaveRerankConfig}
-                        style={{
-                            width: '100%', marginTop: 16, padding: '12px 0',
-                            borderRadius: 3, border: 'none', fontWeight: 700, fontSize: 14,
-                            color: 'white', background: '#515151', cursor: 'pointer',
-                        }}
-                    >
-                        {rrSaved ? '✓ 已保存' : '保存 Rerank 配置'}
-                    </button>
-
-                    {/* 测试 rerank 连接 */}
-                    <button
-                        onClick={async () => {
-                            if (!rrUrl.trim() || !rrKey.trim()) return;
-                            setRrTesting(true);
-                            setRrTestResult(null);
-                            try {
-                                const { rerankDocuments } = await import('../utils/memoryPalace/rerank');
-                                const results = await rerankDocuments(
-                                    { baseUrl: rrUrl.trim(), apiKey: rrKey.trim(), model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3' },
-                                    '测试问题：外公身体怎么样',
-                                    ['外公前几天去医院做了心脏检查，结果正常', '今天下雨了，路上有点堵', '她最喜欢吃妈妈做的红烧肉'],
-                                    3,
-                                );
-                                if (results.length > 0) {
-                                    setRrTestResult(`[ok]成功！返回 ${results.length} 条，top1 index=${results[0].index} score=${results[0].relevance_score.toFixed(3)}`);
-                                } else {
-                                    setRrTestResult(`[warn]API 接通了但返回空数组，检查模型名是否正确`);
-                                }
-                            } catch (err: any) {
-                                setRrTestResult(`[err]失败：${err.message}`);
-                            } finally {
-                                setRrTesting(false);
-                            }
-                        }}
-                        disabled={rrTesting || !rrUrl.trim() || !rrKey.trim()}
-                        style={{
-                            width: '100%', marginTop: 8, padding: '10px 0',
-                            borderRadius: 3, border: '2px solid #1a1a1a',
-                            fontWeight: 600, fontSize: 13, color: '#515151',
-                            background: 'white',
-                            cursor: rrTesting ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        {rrTesting ? '测试中...' : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Icon name="beaker" size={13} />
-                                <span>测试 rerank 连接</span>
-                            </span>
-                        )}
-                    </button>
-
-                    {rrTestResult && (
-                        <div style={{
-                            marginTop: 8, fontSize: 12, padding: '8px 12px', borderRadius: 3,
-                            background: rrTestResult.startsWith('[ok]') ? '#f8f8f8' : rrTestResult.startsWith('[warn]') ? '#fafafa' : '#f6f6f6',
-                            color: rrTestResult.startsWith('[ok]') ? '#6f6f6f' : rrTestResult.startsWith('[warn]') ? '#535353' : '#5c5c5c',
-                        }}>
-                            <StatusMessage msg={rrTestResult} />
-                        </div>
-                    )}
-                </details>
-
                 {/* 远程向量存储（Supabase，可选）— 默认折叠 */}
                 <details style={{ marginTop: 16, background: '#f8f8f8', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
                     <summary style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3154,7 +2552,7 @@ create table if not exists memory_vectors (
                             cursor: migrating || !hasEmbeddingConfig ? 'not-allowed' : 'pointer',
                         }}
                     >
-                        {migrating ? '迁移中...' : !hasEmbeddingConfig ? '请先配置 Embedding API' : selectedMonths.size > 0 ? `开始迁移（${selectedMonths.size} 个分块）` : '开始迁移（全部）'}
+                        {migrating ? '迁移中...' : !hasEmbeddingConfig ? '请先配置副 API' : selectedMonths.size > 0 ? `开始迁移（${selectedMonths.size} 个分块）` : '开始迁移（全部）'}
                     </button>
 
                     <button
@@ -3455,7 +2853,7 @@ create table if not exists memory_vectors (
                         </div>
                     )}
 
-                    {/* Embedding 配置警告 */}
+                    {/* 副 API 配置警告 */}
                     {!hasEmbeddingConfig && (
                         <div
                             onClick={() => setView('globalSettings')}
@@ -3467,7 +2865,7 @@ create table if not exists memory_vectors (
                             }}
                         >
                             <Icon name="warning" size={14} />
-                            <span>尚未配置 Embedding API — 点击此处配置</span>
+                            <span>尚未配置副 API — 点击此处查看</span>
                         </div>
                     )}
                 </div>

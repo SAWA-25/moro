@@ -706,7 +706,7 @@ export async function applyAssistantPostProcessing(
                 if (textBefore) {
                     const cleaned = ChatParser.sanitize(textBefore);
                     if (cleaned && ChatParser.hasDisplayContent(cleaned)) {
-                        const chunks = ChatParser.chunkText(cleaned);
+                        const chunks = ChatParser.chunkTextByBubbleMode(cleaned, char.convoSettings?.bubbleStyleMode);
                         for (const rawChunk of chunks) {
                             const chunk = resolveRichChunk(rawChunk).text;
                             if (!chunk) continue;
@@ -739,7 +739,7 @@ export async function applyAssistantPostProcessing(
             if (textAfter) {
                 const cleaned = ChatParser.sanitize(textAfter.replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '').trim());
                 if (cleaned && ChatParser.hasDisplayContent(cleaned)) {
-                    const chunks = ChatParser.chunkText(cleaned);
+                    const chunks = ChatParser.chunkTextByBubbleMode(cleaned, char.convoSettings?.bubbleStyleMode);
                     for (const rawChunk of chunks) {
                         const chunk = resolveRichChunk(rawChunk).text;
                         if (!chunk) continue;
@@ -778,7 +778,7 @@ export async function applyAssistantPostProcessing(
                     const rawBlocks = part.content.split(/^\s*---\s*$/m).filter(b => b.trim());
                     const allChunks: string[] = [];
                     for (const block of rawBlocks) {
-                        allChunks.push(...ChatParser.chunkText(block.trim()));
+                        allChunks.push(...ChatParser.chunkTextByBubbleMode(block.trim(), char.convoSettings?.bubbleStyleMode));
                     }
                     if (allChunks.length === 0 && part.content.trim()) allChunks.push(part.content.trim());
 

@@ -545,7 +545,7 @@ const PREVIEW_SCENES: PreviewScene[] = [
 
 // embedded：嵌在「主题」App 内当一个标签页用 —— 返回/保存退出走 onRequestClose 回到主题页，而不是关 App。
 const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> = ({ embedded = false, onRequestClose }) => {
-    const { closeApp, addCustomTheme, addToast } = useOS();
+    const { closeApp, addCustomTheme, addToast, activeCharacterId, updateCharacter } = useOS();
     const exitView = () => (onRequestClose ? onRequestClose() : closeApp());
     const [initialThemeId] = useState(() => `theme-${Date.now()}`);
     const [editingTheme, setEditingTheme] = useState<ChatTheme>({ ...DEFAULT_THEME, id: initialThemeId });
@@ -561,6 +561,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
     const [pendingDiscardAction, setPendingDiscardAction] = useState<(() => void) | null>(null);
     const [showLowContrastConfirm, setShowLowContrastConfirm] = useState(false);
     const [pendingSaveExit, setPendingSaveExit] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [isAppliedToPreview, setIsAppliedToPreview] = useState(false);
     const [undoStack, setUndoStack] = useState<ChatTheme[]>([]);
     const [redoStack, setRedoStack] = useState<ChatTheme[]>([]);
@@ -696,17 +697,31 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
         addToast('图床图片贴好了', 'success');
     };
 
-    const doSaveTheme = (exitAfterSave: boolean) => {
-        addCustomTheme(editingTheme);
-        setLastSavedTheme(cloneTheme(editingTheme));
-        setIsDirty(false);
-        setIsAppliedToPreview(true);
-        addToast('已贴好并应用到当前聊天', 'success');
-        if (exitAfterSave) exitView();
+    const doSaveTheme = async (exitAfterSave: boolean) => {
+        if (isSaving) return;
+        const themeToSave = cloneTheme(editingTheme);
+        setIsSaving(true);
+        try {
+            await addCustomTheme(themeToSave);
+            if (activeCharacterId) {
+                await updateCharacter(activeCharacterId, { bubbleStyle: themeToSave.id });
+            }
+            setLastSavedTheme(cloneTheme(themeToSave));
+            setIsDirty(false);
+            setIsAppliedToPreview(true);
+            addToast(activeCharacterId ? '已贴好并应用到当前聊天' : '已贴好，进聊天里选择这页即可使用', 'success');
+            if (exitAfterSave) exitView();
+        } catch (e) {
+            console.error('[ThemeMaker] save theme failed:', e);
+            addToast('气泡没贴上，保存时出了点错', 'error');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const saveTheme = ({ exitAfterSave }: { exitAfterSave: boolean }) => {
+    const saveTheme = async ({ exitAfterSave }: { exitAfterSave: boolean }) => {
         if (!editingTheme.name.trim()) return;
+        if (isSaving) return;
         const renderability = runCssRenderabilityCheck(editingTheme.customCss || '', cssValidation);
         if (!renderability.ok) {
             addToast(renderability.message, 'error');
@@ -717,7 +732,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
             setShowLowContrastConfirm(true);
             return;
         }
-        doSaveTheme(exitAfterSave);
+        await doSaveTheme(exitAfterSave);
     };
 
     const insertCssSnippet = (snippet: CssSnippet) => {
@@ -993,8 +1008,8 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={() => saveTheme({ exitAfterSave: false })} className="px-4 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono shadow-[3px_3px_0_rgba(43,41,51,0.3)] active:translate-x-[1px] active:translate-y-[1px] transition-transform -rotate-1">
-                        贴好 · 应用
+                    <button disabled={isSaving} onClick={() => void saveTheme({ exitAfterSave: false })} className="px-4 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono shadow-[3px_3px_0_rgba(43,41,51,0.3)] active:translate-x-[1px] active:translate-y-[1px] transition-transform -rotate-1 disabled:opacity-60 disabled:active:translate-x-0 disabled:active:translate-y-0">
+                        {isSaving ? '正在贴…' : '贴好 · 应用'}
                     </button>
                 </div>
             </div>
@@ -1506,7 +1521,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                         <p className="mt-2 text-sm text-[#6b6b6b]">字和底贴得太近，聊天内容可能读不清。还是要贴上吗？</p>
                         <div className="mt-5 flex gap-3">
                             <button onClick={() => setShowLowContrastConfirm(false)} className="flex-1 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] font-bold label-mono">再调调</button>
-                            <button onClick={() => { setShowLowContrastConfirm(false); doSaveTheme(pendingSaveExit); }} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold label-mono">照样贴</button>
+                            <button disabled={isSaving} onClick={() => { setShowLowContrastConfirm(false); void doSaveTheme(pendingSaveExit); }} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold label-mono disabled:opacity-60">{isSaving ? '正在贴…' : '照样贴'}</button>
                         </div>
                     </div>
                 </div>

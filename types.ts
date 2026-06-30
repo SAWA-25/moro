@@ -663,22 +663,8 @@ export interface HotNewsSnapshot {
 
 export interface MemoryPalaceBackupConfig {
   embedding: {
-    baseUrl: string;
-    apiKey: string;
     model: string;
     dimensions: number;
-  };
-  lightLLM: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-  };
-  rerank: {
-    enabled: boolean;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    topN: number;
   };
 }
 
@@ -2590,6 +2576,12 @@ export interface CharacterProfile {
   /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。
    *  让角色创建/导入后无需先「添加好友」即可在往来直接出现并开聊。 */
   addedToChat?: boolean;
+  /** 由「用户社交圈」影子联系人转成的正式角色。社交圈关闭时，往来列表会隐藏这类 NPC。 */
+  ambientSocialSource?: {
+      entryId: string;
+      relation?: AmbientSocialRelation;
+      relationLabel?: string;
+  };
   /** 拍一拍后缀（微信式）：别人「拍了拍 TA 的<后缀>」里的后缀。角色可用 [[PAT_SUFFIX: x]] 自己改，默认「脑袋」。 */
   patSuffix?: string;
   blacklisted?: boolean;
@@ -3115,8 +3107,8 @@ export interface ConvoSettings {
     allowPhoneBrowse?: boolean;
     /** 自动线下：对话发展到见面情境时自动切换线下面对面模式（提示词注入） */
     autoOffline?: boolean;
-    /** 发消息方式：'split' 碎片短句（默认习惯）/ 'whole' 完整段落 */
-    bubbleStyleMode?: 'split' | 'whole';
+    /** 发消息方式：'split' 碎片短句（默认习惯）/ 'whole' 完整段落 / 'freeform' 按人设自由长短 */
+    bubbleStyleMode?: 'split' | 'whole' | 'freeform';
     /** 表情联想：允许角色在合适时机联想并发送表情包（提示词注入） */
     emojiAssociation?: boolean;
     /** 每轮对话生图：生图管线配置位（开启后每轮回复尝试配图，需生图 API） */
@@ -3209,6 +3201,12 @@ export interface GroupProfile {
     specialCareMemberIds?: string[];
     /** 特别关心是否开启消息提醒。undefined 视为开启。 */
     specialCareNotify?: boolean;
+    /** 由「用户社交圈」影子群聊转成的正式群。社交圈关闭时，往来列表会隐藏这类群。 */
+    ambientSocialSource?: {
+        entryId: string;
+        relation?: AmbientSocialRelation;
+        relationLabel?: string;
+    };
     /** 当前群聊记录包标题，用于导出/导入后显示，不等同于群名。 */
     chatArchiveTitle?: string;
     /** 当前打开的群聊记录 id。未设置时沿用默认消息流。 */
@@ -3226,7 +3224,7 @@ export interface GroupProfile {
         openingPreset?: 'approach' | 'visit' | 'encounter' | 'appointment' | 'custom';
         customScenario?: string;
     };
-    /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
+    /** 已解散标记：保留底层记录供备份/清理兼容，但普通聊天列表和名册不再显示。 */
     dissolved?: boolean;
     dissolvedAt?: number;
 }
@@ -3333,6 +3331,8 @@ export interface UserProfile {
     vrState?: UserVRState;
     /** 絮语·是否开启用户社交圈：关闭后不再自动出现随机家人/同事/朋友/亲戚/群聊等背景会话。 */
     ambientSocialEnabled?: boolean;
+    /** 絮语·关闭用户社交圈时，是否一并隐藏已转成正式角色/群聊的社交圈 NPC。undefined 视为隐藏。 */
+    ambientSocialHideConverted?: boolean;
     /** 絮语·用户完整社交关系：随机家人/同事/朋友/亲戚/群聊等背景会话，随剧情时间轻微生长。 */
     ambientSocial?: AmbientSocialState;
     /** 拍一拍后缀（微信式）：别人「拍了拍 你 的<后缀>」里的后缀。用户自定义，默认「脑袋」。 */

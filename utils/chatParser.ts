@@ -1,7 +1,7 @@
 
 import { DB } from './db';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { CharPlaylistSong } from '../types';
+import { CharPlaylistSong, ConvoSettings } from '../types';
 import { sanitizeForBubble } from './sanitize';
 
 export interface MusicActionSnapshot {
@@ -431,5 +431,16 @@ export const ChatParser = {
         }
 
         return result;
+    },
+
+    // Apply the per-chat "typing habit" before messages are persisted as bubbles.
+    chunkTextByBubbleMode: (text: string, mode?: ConvoSettings['bubbleStyleMode']): string[] => {
+        if (mode === 'whole') return [text.trim()].filter(Boolean);
+        if (mode === 'freeform') {
+            return text.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/)
+                .map(c => c.trim())
+                .filter(Boolean);
+        }
+        return ChatParser.chunkText(text);
     }
 }

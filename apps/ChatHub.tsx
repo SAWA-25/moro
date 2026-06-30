@@ -24,7 +24,7 @@ import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, build
 import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
-import { ambientSocialToCharacter, ensureAmbientSocialState, patchAmbientSocialEntry } from '../utils/ambientSocial';
+import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialCharacter, isAmbientSocialGroup, patchAmbientSocialEntry } from '../utils/ambientSocial';
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
@@ -182,6 +182,8 @@ type ConvoListItem = {
     /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
     lifeStatus?: { activity: string; mood?: string };
 };
+
+const isVisibleGroup = (group?: GroupProfile | null): group is GroupProfile => !!group && !group.dissolved;
 
 const pruneGroupMemberLenses = (lenses: GroupProfile['memberLenses'] | undefined, memberIds: string[]): GroupMemberLensDraft => {
     const memberSet = new Set(memberIds);
@@ -1195,6 +1197,7 @@ const ChatHub: React.FC = () => {
         try { return parseInt(localStorage.getItem('groupchat_context_limit') || '30'); } catch { return 30; }
     });
     const ambientSocialEnabled = userProfile.ambientSocialEnabled !== false;
+    const ambientSocialHideConverted = userProfile.ambientSocialHideConverted !== false;
     
     // Selection Mode
     const [selectionMode, setSelectionMode] = useState(false);
@@ -1249,6 +1252,24 @@ const ChatHub: React.FC = () => {
     const [imgPreview, setImgPreview] = useState<string | null>(null);
     const [imgBusy, setImgBusy] = useState(false);
     const [sysCmd, setSysCmd] = useState('');
+    const ambientSocialLinkedGroupIds = useMemo(() => new Set(
+        (userProfile.ambientSocial?.entries || [])
+            .filter((entry): entry is Extract<AmbientSocialEntry, { kind: 'group' }> => entry.kind === 'group' && !!entry.linkedGroupId)
+            .map(entry => entry.linkedGroupId!)
+    ), [userProfile.ambientSocial]);
+    const isAmbientSocialGroupForUser = useCallback((group: GroupProfile | null | undefined): boolean => (
+        !!group && (isAmbientSocialGroup(group) || ambientSocialLinkedGroupIds.has(group.id))
+    ), [ambientSocialLinkedGroupIds]);
+    const shouldKeepConvoWhenAmbientSocialOff = useCallback((cv: ConvoListItem): boolean => {
+        if (cv.kind === 'ambient') return false;
+        if (!ambientSocialHideConverted) return true;
+        if (cv.kind === 'char') return !isAmbientSocialCharacter(characters.find(c => c.id === cv.id));
+        if (cv.kind === 'group') return !isAmbientSocialGroupForUser(groups.find(g => g.id === cv.id));
+        return true;
+    }, [ambientSocialHideConverted, characters, groups, isAmbientSocialGroupForUser]);
+    const visibleGroups = useMemo(() => groups.filter(group => (
+        isVisibleGroup(group) && (ambientSocialEnabled || !ambientSocialHideConverted || !isAmbientSocialGroupForUser(group))
+    )), [groups, ambientSocialEnabled, ambientSocialHideConverted, isAmbientSocialGroupForUser]);
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
     const convoRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1298,9 +1319,16 @@ const ChatHub: React.FC = () => {
         updateUserProfile({ ambientSocialEnabled: enabled });
         if (!enabled) {
             setAmbientEntries([]);
-            setConvos(prev => prev.filter(cv => cv.kind !== 'ambient'));
+            setConvos(prev => prev.filter(shouldKeepConvoWhenAmbientSocialOff));
         }
         addToast(enabled ? '用户社交圈已开启' : '用户社交圈已关闭', 'success');
+    };
+
+    const handleToggleAmbientSocialHideConverted = () => {
+        const next = !ambientSocialHideConverted;
+        updateUserProfile({ ambientSocialHideConverted: next });
+        setConvoRefreshTick(t => t + 1);
+        addToast(next ? '关闭社交圈时会隐藏已接入 NPC / 群聊' : '已接入 NPC / 群聊会保留在往来', 'success');
     };
 
     // Load shared archive prompts from localStorage (same key as Chat app)
@@ -1318,7 +1346,7 @@ const ChatHub: React.FC = () => {
     useEffect(() => {
         if (!ambientSocialEnabled) {
             setAmbientEntries([]);
-            setConvos(prev => prev.filter(cv => cv.kind !== 'ambient'));
+            setConvos(prev => prev.filter(shouldKeepConvoWhenAmbientSocialOff));
             return;
         }
         let cancelled = false;
@@ -1343,6 +1371,7 @@ const ChatHub: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         ambientSocialEnabled,
+        ambientSocialHideConverted,
         characters.length,
         userProfile.name,
         userProfile.bio,
@@ -1457,7 +1486,7 @@ const ChatHub: React.FC = () => {
             await updateCharacter(id, { starredFriend: !c.starredFriend } as any);
             addToast(c.starredFriend ? '已取消置顶' : '已置顶会话', 'success');
         } else if (kind === 'group') {
-            const g = groups.find(item => item.id === id);
+            const g = groups.find(item => item.id === id && isVisibleGroup(item));
             if (!g) return;
             await updateGroup(id, { pinned: !g.pinned });
             addToast(g.pinned ? '已取消置顶' : '已置顶群聊', 'success');
@@ -1702,6 +1731,11 @@ const ChatHub: React.FC = () => {
 
     /** 进入群聊：从名册打开时也会把被收起的往来窗口恢复回来 */
     const openGroupChat = (group: GroupProfile) => {
+        if (group.dissolved) {
+            addToast('该群聊已被解散', 'info');
+            setView('list');
+            return;
+        }
         restoreConvoWindow('group', group.id);
         try { localStorage.removeItem(`moro_group_unread_${group.id}`); } catch { /* ignore */ }
         setActiveGroup(group);
@@ -1804,7 +1838,7 @@ const ChatHub: React.FC = () => {
 
     const openAmbientGroup = async (entry: Extract<AmbientSocialEntry, { kind: 'group' }>) => {
         if (entry.linkedGroupId) {
-            const existingGroup = groups.find(g => g.id === entry.linkedGroupId);
+            const existingGroup = visibleGroups.find(g => g.id === entry.linkedGroupId);
             if (existingGroup) {
                 await syncAmbientGroupPreviewMessage(entry, existingGroup);
                 saveAmbientSocialEntry(entry.id, { unread: 0 } as Partial<AmbientSocialEntry>);
@@ -1842,7 +1876,14 @@ const ChatHub: React.FC = () => {
             addToast('这个群暂时还凑不齐人', 'info');
             return;
         }
-        const group = await createGroup(entry.name, memberIds, { ownerId: 'user' });
+        const group = await createGroup(entry.name, memberIds, {
+            ownerId: 'user',
+            ambientSocialSource: {
+                entryId: entry.id,
+                relation: entry.relation,
+                relationLabel: entry.relationLabel,
+            },
+        });
         await syncAmbientGroupPreviewMessage(entry, group, memberNameById);
         saveAmbientSocialEntry(entry.id, { linkedGroupId: group.id, unread: 0 } as Partial<AmbientSocialEntry>);
         await postGroupNotice(group.id, `你把「${entry.name}」接进了絮语`);
@@ -1866,7 +1907,7 @@ const ChatHub: React.FC = () => {
         let cancelled = false;
         (async () => {
             const items: typeof convos = [];
-            for (const g of groups) {
+            for (const g of visibleGroups) {
                 const { messages: recent } = await DB.getRecentGroupMessagesWithCount(g.id, 50);
                 const lastMsg = [...recent].reverse().find(isConvoPreviewMessage);
                 if (isConvoWindowHidden('group', g.id, lastMsg?.timestamp || 0)) continue;
@@ -1883,6 +1924,7 @@ const ChatHub: React.FC = () => {
             const LIFE_STATUS_FRESH_MS = 5 * 60 * 60 * 1000; // 5 小时
             const nowTs = Date.now();
             for (const c of characters) {
+                if (!ambientSocialEnabled && ambientSocialHideConverted && isAmbientSocialCharacter(c)) continue;
                 const { messages: recentMsgs } = await DB.getRecentMessagesWithCount(c.id, 50);
                 const visibleMsgs = recentMsgs.filter(isConvoPreviewMessage);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
@@ -1944,7 +1986,7 @@ const ChatHub: React.FC = () => {
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
-    }, [view, groups, characters, ambientEntries, hiddenConvoWindows, convoRefreshTick]);
+    }, [view, visibleGroups, characters, ambientEntries, ambientSocialEnabled, ambientSocialHideConverted, hiddenConvoWindows, convoRefreshTick]);
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
@@ -2847,19 +2889,25 @@ ${outputShape}`;
         setTempAdminIds(next);
     };
 
-    // 解散 ≠ 删除：标记 dissolved，群保留在聊天列表显示"此群聊已被解散"，历史可回看（只读）
+    // 解散后保留底层记录供备份/清理兼容，但从往来和名册里隐藏。
     const handleDissolveGroup = async (id: string) => {
         const updated = await updateGroup(id, { dissolved: true, dissolvedAt: Date.now() });
         if (updated) {
             await postGroupNotice(id, '你解散了该群聊');
-            if (activeGroup?.id === id) setActiveGroup(updated);
+            if (activeGroup?.id === id) {
+                setActiveGroup(null);
+                setMessages([]);
+                setTotalMsgCount(0);
+            }
+            setConvos(prev => prev.filter(cv => cv.kind !== 'group' || cv.id !== id));
+            try { localStorage.removeItem(`moro_group_unread_${id}`); } catch { /* ignore */ }
             setModalType('none');
             setView('list');
             addToast('群聊已解散', 'success');
         }
     };
 
-    // 彻底删除（聊天列表里对已解散的群提供）：清理群记忆后真删
+    // 彻底删除：清理群记忆后真删
     const handleDeleteGroup = async (id: string) => {
         // 先清理群记忆宫殿数据（成员各自存的副本一并删），再删群
         // 异常吞掉——清理失败不阻塞删除流程
@@ -4573,7 +4621,7 @@ ${attachedImagesNote}
     };
 
     useEffect(() => {
-        if (!Array.isArray(groups) || groups.length === 0) return;
+        if (visibleGroups.length === 0) return;
         let raw: string | null = null;
         try { raw = localStorage.getItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
         if (!raw) return;
@@ -4590,7 +4638,7 @@ ${attachedImagesNote}
 
         const payload = normalizeForumSharePendingPayload(parsed, {
             validCharIds: characters.map(c => c.id),
-            validGroupIds: groups.map(g => g.id),
+            validGroupIds: visibleGroups.map(g => g.id),
         });
         if (!payload || payload.targetKind !== 'group' || !payload.groupId) {
             try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
@@ -4598,7 +4646,7 @@ ${attachedImagesNote}
         }
         if (forumGroupShareConsumingRef.current === payload.id) return;
 
-        const group = groups.find(g => g.id === payload.groupId);
+        const group = visibleGroups.find(g => g.id === payload.groupId);
         if (!group) {
             try { localStorage.removeItem(FORUM_PENDING_CHAT_SHARE_KEY); } catch { /* ignore */ }
             return;
@@ -4642,7 +4690,7 @@ ${attachedImagesNote}
         })();
 
         return () => { cancelled = true; };
-    }, [groups, characters]);
+    }, [visibleGroups, characters]);
 
     useEffect(() => {
         const pending = forumGroupShareTriggerRef.current;
@@ -4764,6 +4812,32 @@ ${attachedImagesNote}
                                                 <span
                                                     className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
                                                     style={{ transform: ambientSocialEnabled ? 'translateX(20px)' : 'translateX(2px)' }}
+                                                />
+                                            </span>
+                                        </button>
+                                        <div className="mx-4 border-t" style={{ borderColor: '#f2d9e2' }} />
+                                        <button
+                                            onClick={handleToggleAmbientSocialHideConverted}
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-left active:scale-[0.98] transition-all hover:bg-[#fff6f9]"
+                                            role="switch"
+                                            aria-checked={ambientSocialHideConverted}
+                                            aria-label="隐藏已接入 NPC 与群聊"
+                                        >
+                                            <Detective size={18} weight="bold" className="shrink-0" style={{ color: ambientSocialHideConverted ? '#9c5e74' : '#94a3b8' }} />
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-sm font-bold leading-tight truncate">隐藏已接入 NPC 与群</span>
+                                                <span className="block text-[10px] font-medium text-slate-400 leading-tight truncate">{ambientSocialHideConverted ? '关闭社交圈时一并收起' : '关闭社交圈后仍留在往来'}</span>
+                                            </span>
+                                            <span
+                                                className="relative h-6 w-11 rounded-full border transition-colors shrink-0"
+                                                style={{
+                                                    background: ambientSocialHideConverted ? '#9c5e74' : '#e2e8f0',
+                                                    borderColor: ambientSocialHideConverted ? '#9c5e74' : '#cbd5e1',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                                                    style={{ transform: ambientSocialHideConverted ? 'translateX(20px)' : 'translateX(2px)' }}
                                                 />
                                             </span>
                                         </button>
@@ -4937,10 +5011,10 @@ ${attachedImagesNote}
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
-                        {groups.length > 0 && (
+                        {visibleGroups.length > 0 && (
                             <div className="px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">群聊</div>
                         )}
-                        {groups.map((g, i) => (
+                        {visibleGroups.map((g, i) => (
                             <div key={`contact-group-${g.id}`} onClick={() => openGroupChat(g)} style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }} className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${g.dissolved ? 'opacity-70' : ''}`}>
                                 <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${g.dissolved ? 'grayscale' : ''}`}>
                                     {g.avatar ? (
@@ -4978,7 +5052,7 @@ ${attachedImagesNote}
                             <div className="px-2 pt-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">角色</div>
                         )}
                         {characters.map((c, i) => (
-                            <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i + groups.length, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
+                            <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i + visibleGroups.length, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
@@ -5020,7 +5094,7 @@ ${attachedImagesNote}
                                 </div>
                             </div>
                         )}
-                        {characters.length === 0 && groups.length === 0 && ambientEntries.length === 0 && (
+                        {characters.length === 0 && visibleGroups.length === 0 && ambientEntries.length === 0 && (
                             <div className="text-center text-slate-400 text-xs py-10">名册里还没有角色或群聊</div>
                         )}
                     </div>

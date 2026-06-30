@@ -102,7 +102,7 @@ export async function expandAndFormat(
     charId: string,
     anticipations: Anticipation[] = [],
     userName?: string,
-    /** 注入上限。rerank 启用时传 15 + topN，让 rerank 额外召回的不被切。 */
+    /** 注入上限。默认使用主召回条数。 */
     maxOutputItems: number = DEFAULT_MAX_OUTPUT_ITEMS,
 ): Promise<string> {
     const MAX_OUTPUT_ITEMS = maxOutputItems;

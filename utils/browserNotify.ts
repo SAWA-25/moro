@@ -130,7 +130,7 @@ export async function showLocalNotification(title: string, opts: LocalNotificati
         notifications: [{
           id: Date.now() % 2147483647,
           title,
-          body: opts.body,
+          body: opts.body || '',
           extra: opts.data,
         }],
       });

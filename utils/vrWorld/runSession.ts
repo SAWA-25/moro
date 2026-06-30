@@ -23,6 +23,7 @@ import { DB } from '../db';
 import { buildChatRequestPayload } from '../chatRequestPayload';
 import { safeFetchJson } from '../safeApi';
 import { processNewMessages } from '../memoryPalace/pipeline';
+import { resolveMemoryPalaceAuxConfigsFromStorage } from '../memoryPalace/auxConfig';
 import { loadMusicCfgStandalone } from '../../context/MusicContext';
 import { getCharLyricSnippet } from '../charLyricCache';
 import { getRoom, VR_DEFAULT_INTERVAL_MIN } from './constants';
@@ -522,12 +523,10 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
 
         // 记忆管线（fire-and-forget）
         try {
-            const mpEmb = memoryPalaceConfig?.embedding;
-            const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-            const mpLLM = (mpLLMConfigured?.baseUrl) ? mpLLMConfigured : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
-            if (char.memoryPalaceEnabled && mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {
+            const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigsFromStorage();
+            if (char.memoryPalaceEnabled && mpEmb && mpLLM) {
                 const recentMsgs = await DB.getRecentMessagesByCharId(char.id, 50);
-                void processNewMessages(recentMsgs, char.id, char.name, mpEmb as any, mpLLM as any, userProfile?.name || '', false).catch(() => {});
+                void processNewMessages(recentMsgs, char.id, char.name, mpEmb, mpLLM, userProfile?.name || '', false).catch(() => {});
             }
         } catch { /* 记忆失败不影响主流程 */ }
 
