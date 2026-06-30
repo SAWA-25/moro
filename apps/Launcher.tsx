@@ -254,7 +254,7 @@ const loadStoredDeskOrder = (): string[] => {
     } catch { return []; }
 };
 
-const DESK_LAYOUT_KEY = 'moro_desktop_layout_v16_cutout_schedule';
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v17_native_dense_schedule';
 const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
     try {
         const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
@@ -382,12 +382,12 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
 
     place('widget:clock', 0, 0, 0);
     place('widget:schedule', 0, 0, 2);
-    place('widget:music', 0, 0, 5);
-    place('widget:image', 0, 2, 5);
-    placeApp(AppID.Gallery, 0, 0, 8);
-    placeApp(AppID.Music, 0, 1, 8);
-    placeApp(AppID.HotNews, 0, 2, 8);
-    placeApp(AppID.Appearance, 0, 3, 8);
+    place('widget:music', 0, 0, 4);
+    place('widget:image', 0, 2, 4);
+    placeApp(AppID.Gallery, 0, 0, 7);
+    placeApp(AppID.Music, 0, 1, 7);
+    placeApp(AppID.HotNews, 0, 2, 7);
+    placeApp(AppID.Appearance, 0, 3, 7);
     place('widget:character', 0, 0, 10);
 
     placeApp(AppID.Personas, 1, 0, 2);
@@ -630,7 +630,7 @@ const Launcher: React.FC = () => {
         { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 2 },
         { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 2 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
-        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 3 },
+        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 2 },
         { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 3 },
         { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 3 },
         { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
