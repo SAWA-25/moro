@@ -260,9 +260,18 @@
       }
       html.moro-native-app {
         --safe-top: 0px;
-        --cutout-top: 10px;
+        --cutout-top: 8px;
         --safe-bottom: 0px;
-        --chrome-top: 1.5rem;
+        --chrome-top: 1.35rem;
+        background-color: #f4f2ed;
+        color-scheme: light;
+      }
+      html.moro-native-app body {
+        background-color: #f4f2ed;
+        -webkit-font-smoothing: antialiased;
+      }
+      html.moro-native-app * {
+        -webkit-tap-highlight-color: transparent;
       }
       /* Global scroll behavior fix */
       .no-overscroll {
@@ -349,6 +358,40 @@
       }
       html.moro-native-app .moro-native-shell .blur-\[1px\] {
         filter: none;
+      }
+      html.moro-native-app .moro-native-shell [style*="backdrop-filter"],
+      html.moro-native-app .moro-native-shell [style*="backdropFilter"] {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+      html.moro-native-app .moro-native-shell .moro-desktop-root {
+        background-attachment: scroll;
+      }
+      html.moro-native-app .moro-native-shell .moro-desk-item,
+      html.moro-native-app .moro-native-shell .anim-row-in,
+      html.moro-native-app .moro-native-shell .anim-drop-in,
+      html.moro-native-app .moro-native-shell .anim-float-in,
+      html.moro-native-app .moro-native-shell .animate-develop,
+      html.moro-native-app .moro-native-shell .animate-photo-develop,
+      html.moro-native-app .moro-native-shell .animate-ins-card {
+        animation-duration: 0.18s !important;
+      }
+      html.moro-native-app .moro-native-shell .moro-desktop-mesh,
+      html.moro-native-app .moro-native-shell .moro-theme-sparkles,
+      html.moro-native-app .moro-native-shell .moro-theme-watermarks,
+      html.moro-native-app .moro-native-shell .moro-theme-collage,
+      html.moro-native-app .moro-native-shell .moro-clock-sheen,
+      html.moro-native-app .moro-native-shell .moro-vinyl-sheen {
+        display: none !important;
+      }
+      html.moro-native-app .moro-native-shell .moro-app-tile,
+      html.moro-native-app .moro-native-shell .glass-pill {
+        outline: none !important;
+      }
+      html.moro-native-app .moro-native-shell [data-desk-item] .moro-app-tile,
+      html.moro-native-app .moro-native-shell .scrap-list > .scrap-card,
+      html.moro-native-app .moro-native-shell .stationery-grid > .stationery-strip {
+        rotate: 0deg !important;
       }
       /* 手写体小标签（桌面组件英文标注） */
       .font-hand {

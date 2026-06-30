@@ -6,12 +6,17 @@
     "androidScheme": "https",
     "cleartext": true
   },
+  "android": {
+    "backgroundColor": "#f4f2ed",
+    "initialFocus": false,
+    "zoomEnabled": false
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
     },
     "Keyboard": {
-      "resize": "body",
+      "resize": "native",
       "style": "dark",
       "resizeOnFullScreen": true
     }

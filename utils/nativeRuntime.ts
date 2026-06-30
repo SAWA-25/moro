@@ -10,24 +10,26 @@ export function installNativeAppRuntimeClass(): boolean {
 
   document.documentElement.classList.add('moro-native-app');
   document.body.classList.add('moro-native-app');
+  document.documentElement.dataset.moroRuntime = 'native';
 
+  let frame = 0;
   const syncViewportVars = () => {
-    const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
-    const viewportOffsetTop = Math.round(window.visualViewport?.offsetTop || 0);
-    const innerHeight = Math.round(window.innerHeight);
-    const keyboardOverlap = Math.max(0, innerHeight - viewportHeight - viewportOffsetTop);
-    const keyboardInset = keyboardOverlap > 120 ? keyboardOverlap : 0;
+    if (frame) window.cancelAnimationFrame(frame);
+    frame = window.requestAnimationFrame(() => {
+      frame = 0;
+      const viewportHeight = Math.round(window.innerHeight || window.visualViewport?.height || 0);
 
-    document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
-    document.documentElement.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
-    document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
-    document.documentElement.style.setProperty('--standalone-safe-area-top', '0px');
-    document.documentElement.style.setProperty('--standalone-safe-area-bottom', '0px');
+      document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
+      document.documentElement.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
+      document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      document.documentElement.style.setProperty('--standalone-safe-area-top', '0px');
+      document.documentElement.style.setProperty('--standalone-safe-area-bottom', '0px');
+    });
   };
 
   syncViewportVars();
   window.addEventListener('resize', syncViewportVars, { passive: true });
-  window.visualViewport?.addEventListener('resize', syncViewportVars, { passive: true });
-  window.visualViewport?.addEventListener('scroll', syncViewportVars, { passive: true });
+  window.addEventListener('orientationchange', syncViewportVars, { passive: true });
+  document.addEventListener('visibilitychange', syncViewportVars, { passive: true });
   return true;
 }

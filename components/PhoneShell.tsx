@@ -118,8 +118,8 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
 ];
 
 const NATIVE_APP_PRELOAD_ORDER: PreloadableLazy[] = [
-  Chat, Character, ChatHub, Settings, Appearance, SocialApp, RoomApp, Gallery,
-  XunjiApp, ManualApp,
+  Chat, Character, ChatHub, SocialApp, RoomApp, XunjiApp, Settings, Appearance,
+  Gallery, PhoneApp, CallApp, MusicApp, TheaterApp, TakeoutApp, ManualApp,
 ];
 
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
@@ -152,7 +152,7 @@ import { formatBytes } from '../utils/format';
 import { AppID } from '../types';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar as CapStatusBar, Style as StatusBarStyle } from '@capacitor/status-bar';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
 import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import AppErrorBoundary from './os/AppErrorBoundary';
@@ -451,8 +451,8 @@ const PhoneShell: React.FC = () => {
     let cancelled = false;
     let idx = 0;
     const preloadOrder = nativeRuntime ? NATIVE_APP_PRELOAD_ORDER : APP_PRELOAD_ORDER;
-    const idleTimeout = nativeRuntime ? 3500 : 1500;
-    const startDelay = nativeRuntime ? 2200 : 150;
+    const idleTimeout = nativeRuntime ? 2500 : 1500;
+    const startDelay = nativeRuntime ? 1200 : 150;
     const ric: (cb: () => void) => number = (window as any).requestIdleCallback
       ? (cb) => (window as any).requestIdleCallback(cb, { timeout: idleTimeout })
       : (cb) => window.setTimeout(cb, nativeRuntime ? 900 : 200);
@@ -460,7 +460,7 @@ const PhoneShell: React.FC = () => {
       if (cancelled || idx >= preloadOrder.length) return;
       warmLazy(preloadOrder[idx++]); // 下载 chunk + 解析 React.lazy 负载 → 首次打开不再 suspend、无底色闪烁
       if (!cancelled) {
-        if (nativeRuntime) window.setTimeout(() => ric(step), 450);
+        if (nativeRuntime) window.setTimeout(() => ric(step), 280);
         else ric(step);
       }
     };
@@ -522,48 +522,53 @@ const PhoneShell: React.FC = () => {
 
   // Capacitor Native Handling
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let cancelled = false;
+    let backButtonHandle: PluginListenerHandle | null = null;
+
     const initNative = async () => {
-        if (Capacitor.isNativePlatform()) {
-            try {
-                await CapStatusBar.setOverlaysWebView({ overlay: true });
-                await CapStatusBar.hide();
-                await CapStatusBar.setStyle({ style: StatusBarStyle.Dark });
-            } catch (e) {
-                console.error("Native init failed", e);
-            }
-        }
+      try {
+        await CapStatusBar.show();
+        await CapStatusBar.setOverlaysWebView({ overlay: false });
+        await CapStatusBar.setBackgroundColor({ color: '#f4f2ed' });
+        await CapStatusBar.setStyle({ style: StatusBarStyle.Light });
+      } catch (e) {
+        console.error("Native init failed", e);
+      }
     };
-    initNative();
 
     // Handle Android Hardware Back Button
     const setupBackButton = async () => {
-        if (Capacitor.isNativePlatform()) {
-            try {
-                await CapApp.removeAllListeners();
-                CapApp.addListener('backButton', ({ canGoBack }) => {
-                    if (isLocked) {
-                        CapApp.exitApp();
-                    } else {
-                        handleBack(); // Delegate to OSContext logic
-                    }
-                });
-            } catch (e) { console.log('Back button listener setup failed'); }
+      try {
+        const handle = await CapApp.addListener('backButton', () => {
+          if (isLocked) {
+            CapApp.exitApp();
+          } else {
+            handleBack(); // Delegate to OSContext logic
+          }
+        });
+        if (cancelled) {
+          handle.remove().catch(() => {});
+        } else {
+          backButtonHandle = handle;
         }
+      } catch (e) { console.log('Back button listener setup failed'); }
     };
 
+    initNative();
     setupBackButton();
 
     return () => {
-        if (Capacitor.isNativePlatform()) {
-            CapApp.removeAllListeners().catch(() => {});
-        }
+      cancelled = true;
+      backButtonHandle?.remove().catch(() => {});
     };
-  }, [activeApp, isLocked, closeApp, handleBack]);
+  }, [isLocked, handleBack]);
 
   // Force scroll to top when app changes to prevent "push up" glitches on iOS
   useEffect(() => {
-      window.scrollTo(0, 0);
-  }, [activeApp]);
+      if (!nativeRuntime) window.scrollTo(0, 0);
+  }, [activeApp, nativeRuntime]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -684,7 +689,7 @@ const PhoneShell: React.FC = () => {
        />
        
        <div
-         className={`absolute inset-0 ${nativeRuntime ? 'transition-colors duration-200' : 'transition-all duration-500'} ${activeApp === AppID.Launcher ? 'bg-transparent' : nativeRuntime ? 'bg-white/72' : 'bg-white/50 backdrop-blur-3xl'}`}
+         className={`absolute inset-0 ${nativeRuntime ? 'transition-colors duration-200' : 'transition-all duration-500'} ${activeApp === AppID.Launcher ? 'bg-transparent' : nativeRuntime ? 'bg-white/60' : 'bg-white/50 backdrop-blur-3xl'}`}
          style={{ backgroundColor: activeApp === AppID.Launcher ? 'transparent' : undefined }}
        />
        
@@ -709,13 +714,17 @@ const PhoneShell: React.FC = () => {
                 <div
                   key={appId}
                   aria-hidden={!isActive}
-                  className={`absolute inset-0 w-full h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isActive
-                      ? 'z-10 opacity-100 pointer-events-auto translate-y-0 scale-100 blur-0'
-                      : 'z-0 opacity-0 pointer-events-none translate-y-1 scale-[0.992] blur-[1px]'
-                  }`}
+                  className={nativeRuntime
+                    ? `absolute inset-0 w-full h-full transition-opacity duration-150 ${isActive ? 'z-10 opacity-100 pointer-events-auto' : 'z-0 opacity-0 pointer-events-none'}`
+                    : `absolute inset-0 w-full h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                      isActive
+                        ? 'z-10 opacity-100 pointer-events-auto translate-y-0 scale-100 blur-0'
+                        : 'z-0 opacity-0 pointer-events-none translate-y-1 scale-[0.992] blur-[1px]'
+                    }`
+                  }
                   style={{
                     contain: useIOSStandaloneLayout ? undefined : 'layout style paint',
+                    contentVisibility: nativeRuntime && !isActive ? 'hidden' : undefined,
                     transformOrigin: '50% 54%',
                   }}
                 >
@@ -730,7 +739,7 @@ const PhoneShell: React.FC = () => {
           </div>
 
           {/* Overlays: Status Bar (Top) */}
-          {!theme.hideStatusBar && <StatusBar />}
+          {!nativeRuntime && !theme.hideStatusBar && <StatusBar />}
 
           {/* Overlays: 灵动岛（消息通知 + 下滑通知面板，点击直达对应角色聊天） */}
           <DynamicIsland />
