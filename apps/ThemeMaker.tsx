@@ -414,6 +414,118 @@ const CSS_SCOPE_SNIPPETS: CssSnippet[] = [
     }
 ];
 
+type BubbleCssPromptKind = 'complete' | 'user' | 'ai' | 'fix' | 'style';
+
+const BUBBLE_PROMPT_SELECTORS = ['.moro-bubble-user', '.moro-bubble-ai'];
+
+const copyBubblePromptToClipboard = async (text: string): Promise<boolean> => {
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // Fall through to the legacy copy path.
+    }
+
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return ok;
+    } catch {
+        return false;
+    }
+};
+
+const buildBubbleCssPrompt = (kind: BubbleCssPromptKind, currentCss?: string) => {
+    const kindText: Record<BubbleCssPromptKind, string> = {
+        complete: '完整定制：同时改我方和对方气泡，让它们像同一套聊天皮肤。',
+        user: '局部微调：只改我方气泡，不要改对方气泡。',
+        ai: '局部微调：只改对方气泡，不要改我方气泡。',
+        fix: '修坏修复：检查并修复已有 CSS 的语法、可读性、溢出、遮挡和选择器越界问题。',
+        style: '风格扩写：把口语化风格描述扩写成可直接粘贴的气泡 CSS。',
+    };
+    const targetSelector = kind === 'user'
+        ? '.moro-bubble-user'
+        : kind === 'ai'
+            ? '.moro-bubble-ai'
+            : '.moro-bubble-user / .moro-bubble-ai';
+    const cssText = currentCss?.trim()
+        ? `\n\n我现在已有的 CSS（请在此基础上改写或修复）：\n${currentCss.trim()}`
+        : '';
+
+    return `请帮我给 Moro「气泡裁剪台」写一段聊天气泡 CSS。
+要求：
+1. 只输出 CSS 代码，不要解释，不要 Markdown 代码块。
+2. 只能使用以 .moro-bubble-user 或 .moro-bubble-ai 开头的选择器；不要写 html、body、*、.moro-chat-root、.moro-chat-header、.moro-chat-inputbar。
+3. 关键覆盖项尽量加 !important，用来盖过裁剪台上方可视面板的设置。
+4. 不要使用 fixed/absolute 全屏遮罩，不要让气泡文字溢出、按钮/头像/聊天内容被挡住。
+5. 保持手机窄屏可读：长句要能自然换行，颜色对比要清楚。
+
+提示词类型：
+${kindText[kind]}
+
+目标选择器：
+${targetSelector}
+
+可用选择器：
+.moro-bubble-user
+.moro-bubble-ai
+.moro-bubble-user::before / .moro-bubble-user::after
+.moro-bubble-ai::before / .moro-bubble-ai::after
+
+我想要的风格/问题：
+【在这里写：例如 奶油软糖、黑白手账、玻璃拟态、像素游戏、旧报纸气泡，或描述哪里坏了】${cssText}`;
+};
+
+const BubblePromptCard: React.FC<{
+    title: string;
+    desc: string;
+    prompt: string;
+    selectors: string[];
+    addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}> = ({ title, desc, prompt, selectors, addToast }) => {
+    const [copied, setCopied] = useState(false);
+    const onCopy = async () => {
+        const ok = await copyBubblePromptToClipboard(prompt);
+        setCopied(ok);
+        addToast(ok ? '气泡 CSS 提示词已复制' : '复制失败，请手动选中文本复制', ok ? 'success' : 'error');
+        if (ok) window.setTimeout(() => setCopied(false), 1400);
+    };
+
+    return (
+        <button
+            type="button"
+            onClick={onCopy}
+            className="text-left p-2.5 border-2 border-[#2b2933]/30 bg-[#fbfaf7] hover:border-[#2b2933] hover:shadow-[2px_2px_0_#2b2933] transition-all active:translate-x-[1px] active:translate-y-[1px]"
+        >
+            <div className="flex items-start gap-2">
+                <span className={`mt-0.5 w-8 h-8 shrink-0 border-2 border-[#2b2933] flex items-center justify-center text-[10px] font-black label-mono ${copied ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#f4f2ed] text-[#2b2933]'}`}>
+                    {copied ? 'OK' : 'AI'}
+                </span>
+                <span className="min-w-0">
+                    <span className="block text-xs font-bold text-[#2b2933]">{title}</span>
+                    <span className="block text-[10px] text-[#6b6b6b] mt-1 leading-snug">{desc}</span>
+                </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1 pl-10">
+                {selectors.map(selector => (
+                    <code key={selector} className="text-[8px] bg-[#2b2933] text-[#fbfaf7] px-1.5 py-0.5">{selector}</code>
+                ))}
+            </div>
+        </button>
+    );
+};
+
 const STYLE_TEMPLATES: StyleTemplate[] = [
     {
         id: 'cream',
@@ -1151,6 +1263,50 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                                     >
                                         撕回上次能用的
                                     </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">提示词库 · 复制给 AI</label>
+                                    <span className="text-[9px] text-[#8b8996]">生成后粘回下方 CSS 框</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <BubblePromptCard
+                                        title="双方气泡完整定制"
+                                        desc="我方和对方气泡一起做成同一套皮肤。"
+                                        prompt={buildBubbleCssPrompt('complete', editingTheme.customCss)}
+                                        selectors={BUBBLE_PROMPT_SELECTORS}
+                                        addToast={addToast}
+                                    />
+                                    <BubblePromptCard
+                                        title="只改我方气泡"
+                                        desc="只动 .moro-bubble-user，适合单独改自己的气泡。"
+                                        prompt={buildBubbleCssPrompt('user', editingTheme.customCss)}
+                                        selectors={['.moro-bubble-user']}
+                                        addToast={addToast}
+                                    />
+                                    <BubblePromptCard
+                                        title="只改对方气泡"
+                                        desc="只动 .moro-bubble-ai，适合单独改角色气泡。"
+                                        prompt={buildBubbleCssPrompt('ai', editingTheme.customCss)}
+                                        selectors={['.moro-bubble-ai']}
+                                        addToast={addToast}
+                                    />
+                                    <BubblePromptCard
+                                        title="修坏修复"
+                                        desc="语法卡壳、文字溢出、越界选择器时用这张。"
+                                        prompt={buildBubbleCssPrompt('fix', editingTheme.customCss)}
+                                        selectors={BUBBLE_PROMPT_SELECTORS}
+                                        addToast={addToast}
+                                    />
+                                    <BubblePromptCard
+                                        title="风格扩写"
+                                        desc="把奶油风、黑白手账、像素风等描述扩写成 CSS。"
+                                        prompt={buildBubbleCssPrompt('style', editingTheme.customCss)}
+                                        selectors={BUBBLE_PROMPT_SELECTORS}
+                                        addToast={addToast}
+                                    />
                                 </div>
                             </div>
 

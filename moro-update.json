@@ -2,7 +2,6 @@
   "versionCode": 4,
   "versionName": "1.0.3",
   "apkUrl": "https://github.com/SAWA-25/moro/releases/latest/download/moro.apk",
-  "cnApkUrl": "https://sullymeow.ccwu.cc/github?url=https%3A%2F%2Fgithub.com%2FSAWA-25%2Fmoro%2Freleases%2Flatest%2Fdownload%2Fmoro.apk",
   "sha256": "59ab60cc521a50fa2913e7bf80d6b3724a3ab7567071d1add20d5ec864446c6f",
   "sizeBytes": 208374501,
   "releaseNotes": "正式版 1.0.3：为 Android release 签名包加入基础防护：R8 混淆、资源压缩、禁调试/备份/明文流量，并校验发布签名。",

@@ -1,4 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    ArrowsClockwise,
+    CalendarDots,
+    CaretLeft,
+    CaretRight,
+    MagicWand,
+    NotePencil,
+    PencilSimple,
+    Sparkle,
+    Trash,
+    X,
+} from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { CalendarMark, CharacterProfile } from '../../types';
@@ -6,20 +18,40 @@ import { ContextBuilder } from '../../utils/context';
 import { safeResponseJson } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT, tinyRotate } from './handbookKit';
+import {
+    Chip,
+    IconCircle,
+    InsButton,
+    InsCard,
+    InsHeader,
+    InsScroll,
+    InsShell,
+    SectionLabel,
+    accent,
+    INK,
+    INK_SOFT,
+} from '../../components/ui/insKit';
+import { tinyRotate } from './handbookKit';
 
 /**
- * 岁时记 · 实时日历（拼贴手账风）
+ * 岁时记 · 共享月历
  * ------------------------------------------------------------
- * - 真实月历，今天用手绘圈标出，可前后翻月
- * - 用户：点某天 → 贴一张便签（文字 + 胶带色 + 小贴纸），可改可撕
- * - 角色：按各自人设，AI 自己往未来某些天贴"想和你做的事 / 在意的日子"，
- *   带头像与专属色；同时写进聊天记忆（和纪念日感想一致）。每角色限频生成。
+ * - 真实月历，今天高亮，可前后翻月
+ * - 用户点日期贴便签，可修改和删除
+ * - 角色可按人设往未来日期贴小标记，并写入聊天记忆
  */
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 const MARK_COLORS = ['#e7a39c', '#e6c178', '#9ec9a3', '#9bbfe0', '#c4a6dd', '#d9846a'];
 const STICKERS = ['📌', '🌷', '💌', '⭐', '☕', '🍰', '🎬', '📷', '🌙', '🍀'];
+const EDGE = 'rgba(236,72,153,0.15)';
+const FIELD_STYLE: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.94)',
+    border: '1px solid rgba(236,72,153,0.16)',
+    borderRadius: 18,
+    color: INK,
+    boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)',
+};
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const toKey = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
@@ -27,6 +59,7 @@ const todayKey = () => {
     const n = new Date();
     return toKey(n.getFullYear(), n.getMonth(), n.getDate());
 };
+
 /** 角色专属色：用 id 散列到暖色盘，保证同一角色每次都同色。 */
 const colorForChar = (id: string) => {
     let h = 0;
@@ -55,8 +88,9 @@ const parseMarkJson = (raw: string): { date: string; text: string }[] => {
 
 const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     const { characters, activeCharacterId, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
-    // 岁时记·实时日历属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
-    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
+    // 岁时记·共享月历属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = useMemo(() => ({ ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }), [apiConfig, auxApiConfig]);
+    const a = accent('pink');
 
     const [marks, setMarks] = useState<CalendarMark[]>([]);
     const now = new Date();
@@ -96,6 +130,11 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     }, [viewY, viewM]);
 
     const tKey = todayKey();
+    const monthPrefix = `${viewY}-${pad2(viewM + 1)}-`;
+    const monthMarks = useMemo(() => marks.filter((m) => m.date.startsWith(monthPrefix)), [marks, monthPrefix]);
+    const selectedMarks = selected ? marksByDate[selected] || [] : [];
+    const selDateObj = selected ? new Date(selected + 'T00:00:00') : null;
+    const monthLabel = `${viewY}.${pad2(viewM + 1)}`;
 
     const stepMonth = (delta: number) => {
         let m = viewM + delta;
@@ -189,7 +228,7 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         } finally {
             setGenerating(false);
         }
-    }, [apiConfig, userProfile, addToast]);
+    }, [addToast, auxApi.apiKey, auxApi.baseUrl, auxApi.model, userProfile]);
 
     // 进页面后，给当前角色限频自标一次，让日历"活"起来
     useEffect(() => {
@@ -252,9 +291,6 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     };
 
     const charById = (id?: string) => characters.find((c) => c.id === id);
-    const monthLabel = `${viewY} 年 ${viewM + 1} 月`;
-    const selectedMarks = selected ? marksByDate[selected] || [] : [];
-    const selDateObj = selected ? new Date(selected + 'T00:00:00') : null;
 
     const triggerManualGen = () => {
         if (characters.length === 0) { addToast('还没有角色', 'info'); return; }
@@ -263,107 +299,137 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     };
 
     return (
-        <PaperPage kind="grid" style={{ paddingTop: 'var(--safe-top)' }}>
-            <div className="h-full flex flex-col" style={{ color: '#4a3b2e' }}>
-                {/* 顶栏 */}
-                <div className="relative flex items-center justify-between px-4 pt-3 pb-2 shrink-0 z-10">
-                    <button
-                        onClick={onExit}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-bold active:scale-95 transition-transform"
-                        style={{ background: '#fffdf7', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-1.5deg)', color: '#7a5c44' }}
-                    >
-                        ← 合上
-                    </button>
-                    <div className="text-center select-none" style={{ fontFamily: HAND_FONT }}>
-                        <div className="text-[20px] font-black leading-none" style={{ color: '#5b4636' }}>这个月</div>
-                        <div className="text-[10px] tracking-[0.3em] mt-0.5" style={{ color: '#a98e6f' }}>MONTHLY SPREAD</div>
-                    </div>
-                    <button
-                        onClick={triggerManualGen}
-                        disabled={generating}
-                        className="active:scale-95 transition-transform disabled:opacity-50"
-                        title="请角色记一笔"
-                    >
-                        <Postmark size={42} color="#b1543f" rotate={-12}>
-                            {generating ? '…' : '请记'}
-                        </Postmark>
-                    </button>
-                </div>
+        <InsShell accent="pink" className="almanac-calendar">
+            <InsHeader
+                title="这个月"
+                en="MONTHLY SPREAD"
+                onBack={onExit}
+                accent="pink"
+                right={
+                    <IconCircle onClick={triggerManualGen} title="请角色记一笔" size={38}>
+                        {generating
+                            ? <ArrowsClockwise size={18} weight="bold" className="animate-spin" />
+                            : <MagicWand size={18} weight="bold" />}
+                    </IconCircle>
+                }
+            />
 
-                <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-8 z-10">
-                    {/* 月历纸 */}
-                    <PaperNote className="mt-2 px-3 pt-7 pb-4" rotate={-0.6}>
-                        <WashiTape className="-top-3 left-1/2 -translate-x-1/2" color="rgba(158,201,163,0.7)" rotate={3} width={92} height={24} />
-                        {/* 月份切换 */}
-                        <div className="flex items-center justify-between mb-3 px-1">
-                            <button onClick={() => stepMonth(-1)} className="px-2 py-1 text-[18px] active:scale-90 transition-transform" style={{ color: '#a98e6f' }}>‹</button>
-                            <div className="text-[18px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>{monthLabel}</div>
-                            <button onClick={() => stepMonth(1)} className="px-2 py-1 text-[18px] active:scale-90 transition-transform" style={{ color: '#a98e6f' }}>›</button>
+            <InsScroll className="px-4 pb-8">
+                <section data-manual-anchor="manual-almanac-calendar-root" className="space-y-4">
+                    <InsCard className="p-4 overflow-visible" accent="pink">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                            <IconCircle size={34} onClick={() => stepMonth(-1)} title="上个月">
+                                <CaretLeft size={16} weight="bold" />
+                            </IconCircle>
+                            <div className="text-center min-w-0">
+                                <div className="text-[9px] tracking-[0.34em] uppercase" style={{ fontFamily: 'var(--font-label)', color: a.solid }}>
+                                    SHARED CALENDAR
+                                </div>
+                                <div className="text-[28px] leading-none font-black tabular-nums mt-1" style={{ color: INK }}>{monthLabel}</div>
+                            </div>
+                            <IconCircle size={34} onClick={() => stepMonth(1)} title="下个月">
+                                <CaretRight size={16} weight="bold" />
+                            </IconCircle>
                         </div>
-                        {/* 星期 */}
-                        <div className="grid grid-cols-7 mb-1">
+
+                        <div className="grid grid-cols-7 gap-1 mb-2">
                             {WEEK.map((w, i) => (
-                                <div key={w} className="text-center text-[10px] font-bold py-1" style={{ color: i === 0 || i === 6 ? '#c08a6a' : '#9a8262' }}>{w}</div>
+                                <div key={w} className="h-6 rounded-full flex items-center justify-center text-[10px] font-black" style={{ color: i === 0 || i === 6 ? a.solid : INK_SOFT }}>
+                                    {w}
+                                </div>
                             ))}
                         </div>
-                        {/* 日格 */}
-                        <div className="grid grid-cols-7 gap-y-0.5" style={{ borderTop: '1px dashed #d8c7a8' }}>
+
+                        <div className="grid grid-cols-7 gap-1.5">
                             {grid.map((key, idx) => {
-                                if (!key) return <div key={`e-${idx}`} className="aspect-square" style={{ borderBottom: '1px dashed #e6dcc6', borderRight: idx % 7 !== 6 ? '1px dashed #e6dcc6' : 'none' }} />;
+                                if (!key) return <div key={`e-${idx}`} className="aspect-square rounded-[14px]" style={{ background: '#f1eee8' }} />;
                                 const dnum = Number(key.slice(-2));
                                 const dayMarks = marksByDate[key] || [];
                                 const isToday = key === tKey;
+                                const userMark = dayMarks.find((m) => m.author === 'user');
+                                const firstMark = dayMarks[0];
                                 return (
                                     <button
                                         key={key}
                                         onClick={() => openDay(key)}
-                                        className="aspect-square relative flex flex-col items-center pt-1 active:scale-95 transition-transform"
-                                        style={{ borderBottom: '1px dashed #e6dcc6', borderRight: idx % 7 !== 6 ? '1px dashed #e6dcc6' : 'none' }}
+                                        className="aspect-square relative rounded-[14px] px-1.5 pt-1.5 flex flex-col items-start justify-between active:scale-95 transition-transform overflow-hidden"
+                                        style={{
+                                            background: isToday ? a.solid : dayMarks.length ? '#fff7fb' : '#fff',
+                                            color: isToday ? '#fff' : INK,
+                                            border: `1px solid ${isToday ? a.solid : dayMarks.length ? EDGE : 'rgba(0,0,0,0.055)'}`,
+                                            boxShadow: isToday ? `0 12px 22px -14px ${a.solid}` : '0 1px 2px rgba(38,38,38,0.04)',
+                                        }}
                                     >
-                                        <span
-                                            className="text-[12px] font-bold flex items-center justify-center"
-                                            style={isToday ? {
-                                                width: 20, height: 20, color: '#b1543f',
-                                                border: '2px solid #d98a6a', borderRadius: '60% 40% 55% 45%',
-                                                fontFamily: HAND_FONT,
-                                            } : { color: '#5b4636', fontFamily: HAND_FONT }}
-                                        >
-                                            {dnum}
-                                        </span>
-                                        {/* 标记点 */}
-                                        <div className="flex flex-wrap gap-0.5 justify-center mt-0.5 px-0.5">
+                                        <span className="text-[11px] font-black leading-none tabular-nums">{dnum}</span>
+                                        <span className="absolute right-1.5 top-1.5 text-[10px] leading-none">{userMark?.emoji}</span>
+                                        <span className="w-full flex items-center gap-0.5 min-h-[8px]">
                                             {dayMarks.slice(0, 3).map((m) => (
-                                                <span key={m.id} className="w-1.5 h-1.5 rounded-full" style={{ background: m.color || '#e7a39c' }} />
+                                                <span
+                                                    key={m.id}
+                                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                                    style={{ background: isToday ? '#fff' : m.color || firstMark?.color || a.solid }}
+                                                />
                                             ))}
-                                            {dayMarks.length > 3 && <span className="text-[7px] leading-none" style={{ color: '#a98e6f' }}>+{dayMarks.length - 3}</span>}
-                                        </div>
+                                            {dayMarks.length > 3 && <span className="text-[7px] font-bold leading-none" style={{ color: isToday ? '#fff' : INK_SOFT }}>+{dayMarks.length - 3}</span>}
+                                        </span>
                                     </button>
                                 );
                             })}
                         </div>
-                    </PaperNote>
+                    </InsCard>
 
-                    {/* 图例 / 提示 */}
-                    <div className="flex items-center justify-center gap-4 mt-4 text-[10px]" style={{ color: '#8a7155' }}>
-                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#9bbfe0' }} />点一天就能贴便签</span>
-                        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#b1543f' }} />印章请角色记一笔</span>
+                    <div className="grid grid-cols-3 gap-2">
+                        <InsCard className="px-3 py-3" accent="pink">
+                            <div className="text-[8px] tracking-[0.25em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>notes</div>
+                            <div className="mt-1 text-[20px] font-black tabular-nums" style={{ color: INK }}>{monthMarks.length}</div>
+                        </InsCard>
+                        <InsCard className="px-3 py-3" accent="pink">
+                            <div className="text-[8px] tracking-[0.25em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>mine</div>
+                            <div className="mt-1 text-[20px] font-black tabular-nums" style={{ color: INK }}>{monthMarks.filter((m) => m.author === 'user').length}</div>
+                        </InsCard>
+                        <InsCard className="px-3 py-3" accent="pink">
+                            <div className="text-[8px] tracking-[0.25em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>from ta</div>
+                            <div className="mt-1 text-[20px] font-black tabular-nums" style={{ color: INK }}>{monthMarks.filter((m) => m.author === 'character').length}</div>
+                        </InsCard>
                     </div>
-                </div>
-            </div>
 
-            {/* 角色选择（多角色时手动生成）*/}
+                    <InsCard className="p-4" accent="pink">
+                        <SectionLabel en="STICKERS" accent="pink" className="mb-3">月历怎么用</SectionLabel>
+                        <div className="flex flex-wrap gap-2">
+                            <Chip accent="pink">点日期贴便签</Chip>
+                            <Chip accent="pink">彩点代表有标记</Chip>
+                            <Chip accent="pink">右上魔杖请角色记一笔</Chip>
+                        </div>
+                    </InsCard>
+                </section>
+            </InsScroll>
+
             {showCharPick && (
-                <div className="fixed inset-0 z-[9998] flex items-end justify-center" onClick={() => setShowCharPick(false)}>
-                    <div className="absolute inset-0 bg-black/40" />
-                    <div className="relative w-full max-w-md m-3 p-5 animate-slide-up" style={{ background: '#fffdf7', boxShadow: '0 -6px 24px rgba(96,66,40,0.25)', borderRadius: 18 }} onClick={(e) => e.stopPropagation()}>
-                        <div className="text-[14px] font-black mb-3" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>让谁来记一笔？</div>
-                        <div className="grid grid-cols-4 gap-3 max-h-60 overflow-y-auto no-scrollbar">
+                <div className="fixed inset-0 z-[9998] flex items-end justify-center animate-fade-in" onClick={() => setShowCharPick(false)}>
+                    <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} />
+                    <div
+                        className="relative w-full max-w-md animate-slide-up rounded-t-[28px] overflow-hidden"
+                        style={{ background: 'linear-gradient(180deg,#ffffff 0%,#fbfaf8 100%)', border: `1px solid ${EDGE}`, boxShadow: '0 -22px 60px -24px rgba(20,18,16,0.45)', paddingBottom: 'var(--safe-bottom)' }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex justify-center pt-3"><span className="w-10 h-1.5 rounded-full" style={{ background: '#e3e0da' }} /></div>
+                        <div className="px-5 pt-4 pb-3 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: a.soft, color: a.solid }}>
+                                <Sparkle size={20} weight="fill" />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="text-[15px] font-extrabold" style={{ color: INK }}>让谁来记一笔？</div>
+                                <div className="text-[10px]" style={{ color: INK_SOFT }}>TA 会把自己的期待贴到未来日期上</div>
+                            </div>
+                            <IconCircle size={30} onClick={() => setShowCharPick(false)} title="关闭"><X size={15} weight="bold" /></IconCircle>
+                        </div>
+                        <div className="px-5 pb-5 grid grid-cols-4 gap-3 max-h-72 overflow-y-auto no-scrollbar">
                             {characters.map((c) => (
-                                <button key={c.id} onClick={() => { setShowCharPick(false); genCharMarks(c, false); }} className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
+                                <button key={c.id} onClick={() => { setShowCharPick(false); genCharMarks(c, false); }} className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform min-w-0">
                                     {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:')
-                                        ? <img src={c.avatar} className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${colorForChar(c.id)}` }} />
-                                        : <span className="w-12 h-12 rounded-full flex items-center justify-center text-xl" style={{ background: '#f3ead7', border: `2px solid ${colorForChar(c.id)}` }}>{c.avatar || '🌸'}</span>}
-                                    <span className="text-[10px] font-bold truncate w-full text-center" style={{ color: '#5b4636' }}>{c.name}</span>
+                                        ? <img src={c.avatar} alt="" className="w-13 h-13 rounded-full object-cover" style={{ width: 52, height: 52, border: `2px solid ${colorForChar(c.id)}` }} />
+                                        : <span className="w-13 h-13 rounded-full flex items-center justify-center text-xl" style={{ width: 52, height: 52, background: '#fff7fb', border: `2px solid ${colorForChar(c.id)}` }}>{c.avatar || '🌸'}</span>}
+                                    <span className="text-[10px] font-bold truncate w-full text-center" style={{ color: INK }}>{c.name}</span>
                                 </button>
                             ))}
                         </div>
@@ -371,106 +437,149 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                 </div>
             )}
 
-            {/* 某一天的便签抽屉 */}
             {selected && selDateObj && (
-                <div className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setSelected(null)}>
-                    <div className="absolute inset-0 bg-black/40 animate-fade-in" />
+                <div className="fixed inset-0 z-[9999] flex items-end justify-center animate-fade-in" onClick={() => setSelected(null)}>
+                    <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} />
                     <div
-                        className="relative w-full max-w-md m-2 animate-slide-up"
-                        style={{ background: '#fffdf7', boxShadow: '0 -8px 28px rgba(96,66,40,0.28)', borderRadius: '20px 20px 14px 14px', maxHeight: '80vh' }}
+                        className="relative w-full max-w-md animate-slide-up rounded-t-[28px] overflow-hidden"
+                        style={{ background: 'linear-gradient(180deg,#ffffff 0%,#fbfaf8 100%)', border: `1px solid ${EDGE}`, boxShadow: '0 -22px 60px -24px rgba(20,18,16,0.45)', maxHeight: '84vh', paddingBottom: 'var(--safe-bottom)' }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <WashiTape className="-top-2 left-8" color="rgba(231,163,156,0.7)" rotate={-14} width={70} />
-                        <WashiTape className="-top-2 right-8" color="rgba(230,193,120,0.7)" rotate={12} width={70} />
-                        <div className="px-5 pt-6 pb-4 overflow-y-auto no-scrollbar" style={{ maxHeight: '80vh' }}>
-                            {/* 日期抬头 */}
-                            <div className="flex items-end justify-between mb-3">
-                                <div style={{ fontFamily: HAND_FONT }}>
-                                    <div className="text-[26px] font-black leading-none" style={{ color: '#5b4636' }}>
-                                        {selDateObj.getMonth() + 1} 月 {selDateObj.getDate()} 日
-                                    </div>
-                                    <div className="text-[11px] mt-1" style={{ color: '#a98e6f' }}>周{WEEK[selDateObj.getDay()]}{selected === tKey ? ' · 就是今天' : ''}</div>
-                                </div>
-                                <button onClick={() => setSelected(null)} className="text-[20px] px-2 active:scale-90 transition-transform" style={{ color: '#b8a385' }}>✕</button>
+                        <div className="flex justify-center pt-3"><span className="w-10 h-1.5 rounded-full" style={{ background: '#e3e0da' }} /></div>
+                        <div className="px-5 pt-4 pb-3 flex items-center gap-3" style={{ borderBottom: `1px solid ${EDGE}` }}>
+                            <div className="w-12 h-12 rounded-[18px] flex flex-col items-center justify-center shrink-0" style={{ background: a.soft, color: a.ink }}>
+                                <span className="text-[9px] font-bold">周{WEEK[selDateObj.getDay()]}</span>
+                                <span className="text-[18px] font-black leading-none">{selDateObj.getDate()}</span>
                             </div>
+                            <div className="min-w-0">
+                                <div className="text-[17px] font-extrabold" style={{ color: INK }}>
+                                    {selDateObj.getMonth() + 1} 月 {selDateObj.getDate()} 日
+                                </div>
+                                <div className="text-[10px]" style={{ color: INK_SOFT }}>{selected === tKey ? '就是今天' : selected}</div>
+                            </div>
+                            <IconCircle size={30} onClick={() => setSelected(null)} title="关闭"><X size={15} weight="bold" /></IconCircle>
+                        </div>
 
-                            {/* 已有便签 */}
-                            <div className="space-y-2 mb-4">
+                        <div className="px-5 pt-4 pb-5 overflow-y-auto no-scrollbar" style={{ maxHeight: 'calc(84vh - 88px)' }}>
+                            <div className="space-y-2.5 mb-5">
                                 {selectedMarks.length === 0 && (
-                                    <div className="text-center text-[12px] py-4" style={{ color: '#b8a385' }}>这天还空着，贴点什么吧</div>
+                                    <div className="rounded-[18px] px-4 py-6 text-center" style={{ background: '#fff', border: `1px solid ${EDGE}`, color: INK_SOFT }}>
+                                        <NotePencil size={24} weight="bold" className="mx-auto mb-2 opacity-60" />
+                                        <div className="text-[12px] font-bold">这天还空着，贴点什么吧</div>
+                                    </div>
                                 )}
                                 {selectedMarks.map((m) => {
                                     const ch = charById(m.charId);
                                     return (
-                                        <div key={m.id} className="relative px-3 py-2 flex items-start gap-2" style={{ background: '#fff', borderLeft: `5px solid ${m.color || '#e7a39c'}`, boxShadow: '0 2px 6px rgba(96,66,40,0.12)', transform: `rotate(${tinyRotate(m.id)}deg)` }}>
+                                        <div
+                                            key={m.id}
+                                            className="relative rounded-[18px] px-3 py-3 flex items-start gap-3"
+                                            style={{
+                                                background: '#fff',
+                                                border: `1px solid ${EDGE}`,
+                                                boxShadow: '0 12px 26px -22px rgba(38,38,38,0.36)',
+                                                transform: `rotate(${tinyRotate(m.id) / 2}deg)`,
+                                            }}
+                                        >
+                                            <span className="absolute left-0 top-4 bottom-4 w-1 rounded-r-full" style={{ background: m.color || a.solid }} />
                                             {m.author === 'character' && ch ? (
                                                 ch.avatar?.startsWith('http') || ch.avatar?.startsWith('data:')
-                                                    ? <img src={ch.avatar} className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" />
-                                                    : <span className="w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 mt-0.5" style={{ background: '#f3ead7' }}>{ch.avatar || '🌸'}</span>
+                                                    ? <img src={ch.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 mt-0.5" />
+                                                    : <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm shrink-0 mt-0.5" style={{ background: '#fff7fb' }}>{ch.avatar || '🌸'}</span>
                                             ) : (
-                                                <span className="text-base shrink-0 mt-0.5">{m.emoji || '📌'}</span>
+                                                <span className="w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 mt-0.5" style={{ background: '#fff7fb' }}>{m.emoji || '📌'}</span>
                                             )}
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-[13px] leading-snug" style={{ color: '#4a3b2e', fontFamily: HAND_FONT, fontSize: 15 }}>{m.text}</div>
-                                                <div className="text-[9px] mt-0.5" style={{ color: '#b09877' }}>
+                                                <div className="text-[15px] leading-snug font-bold break-words" style={{ color: INK, fontFamily: 'var(--font-hand)' }}>{m.text}</div>
+                                                <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>
                                                     {m.author === 'character' ? `${ch?.name || '角色'} 贴的` : '我贴的'}
                                                 </div>
                                             </div>
-                                            <div className="flex flex-col gap-1 shrink-0">
+                                            <div className="flex items-center gap-1 shrink-0">
                                                 {m.author === 'user' && (
-                                                    <button onClick={() => startEdit(m)} className="text-[12px] active:scale-90" style={{ color: '#9a8262' }}>✎</button>
+                                                    <button onClick={() => startEdit(m)} className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90" style={{ background: '#fff7fb', color: a.solid }} title="修改">
+                                                        <PencilSimple size={13} weight="bold" />
+                                                    </button>
                                                 )}
-                                                <button onClick={() => removeMark(m.id)} className="text-[12px] active:scale-90" style={{ color: '#c98b7a' }}>✕</button>
+                                                <button onClick={() => removeMark(m.id)} className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90" style={{ background: '#fff1f2', color: '#e0526f' }} title="删除">
+                                                    <Trash size={13} weight="bold" />
+                                                </button>
                                             </div>
                                         </div>
                                     );
                                 })}
                             </div>
 
-                            {/* 贴一张新便签 */}
-                            <div className="pt-3" style={{ borderTop: '1px dashed #d8c7a8' }}>
-                                <TapeLabel color="#e8c8a0" className="mb-2">{editingId ? '改这张便签' : '贴一张便签'}</TapeLabel>
+                            <div className="rounded-[22px] p-4" style={{ background: '#fff', border: `1px solid ${EDGE}`, boxShadow: '0 12px 26px -24px rgba(38,38,38,0.32)' }}>
+                                <SectionLabel en="NEW NOTE" accent="pink" className="mb-3">{editingId ? '改这张便签' : '贴一张便签'}</SectionLabel>
                                 <textarea
                                     value={draftText}
                                     onChange={(e) => setDraftText(e.target.value.slice(0, 40))}
                                     rows={2}
                                     placeholder="想在这天记下点什么……"
-                                    className="w-full px-3 py-2 text-[14px] resize-none focus:outline-none mt-2"
-                                    style={{ background: '#f7f1e4', borderRadius: 10, color: '#4a3b2e', fontFamily: HAND_FONT }}
+                                    className="w-full px-4 py-3 text-[14px] resize-none focus:outline-none placeholder:text-slate-400"
+                                    style={{ ...FIELD_STYLE, fontFamily: 'var(--font-hand)', fontSize: 16 }}
                                 />
-                                {/* 胶带色 */}
-                                <div className="flex items-center gap-2 mt-3">
-                                    <span className="text-[10px]" style={{ color: '#9a8262' }}>色</span>
-                                    {MARK_COLORS.map((c) => (
-                                        <button key={c} onClick={() => setDraftColor(c)} className="w-6 h-6 rounded-full active:scale-90 transition-transform" style={{ background: c, boxShadow: draftColor === c ? '0 0 0 2px #fff, 0 0 0 4px #b1543f' : '0 1px 2px rgba(0,0,0,0.15)' }} />
-                                    ))}
+
+                                <div className="mt-4">
+                                    <div className="text-[9px] tracking-[0.24em] uppercase mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>color</div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        {MARK_COLORS.map((c) => (
+                                            <button
+                                                key={c}
+                                                onClick={() => setDraftColor(c)}
+                                                className="w-7 h-7 rounded-full active:scale-90 transition-transform"
+                                                style={{ background: c, boxShadow: draftColor === c ? '0 0 0 2px #fff, 0 0 0 4px #ec4899' : '0 1px 2px rgba(0,0,0,0.15)' }}
+                                                title={c}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
-                                {/* 贴纸 */}
-                                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-                                    <span className="text-[10px] mr-1" style={{ color: '#9a8262' }}>贴纸</span>
-                                    {STICKERS.map((s) => (
-                                        <button key={s} onClick={() => setDraftEmoji(s)} className="w-7 h-7 rounded-md text-base active:scale-90 transition-transform" style={{ background: draftEmoji === s ? '#f1e3c8' : 'transparent', boxShadow: draftEmoji === s ? 'inset 0 0 0 1.5px #d8b988' : 'none' }}>{s}</button>
-                                    ))}
+
+                                <div className="mt-4">
+                                    <div className="text-[9px] tracking-[0.24em] uppercase mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>sticker</div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {STICKERS.map((s) => (
+                                            <button
+                                                key={s}
+                                                onClick={() => setDraftEmoji(s)}
+                                                className="w-8 h-8 rounded-full text-base active:scale-90 transition-transform"
+                                                style={{ background: draftEmoji === s ? a.soft : '#fff', border: `1px solid ${draftEmoji === s ? a.solid : 'rgba(0,0,0,0.06)'}` }}
+                                            >
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div className="flex gap-2 mt-4">
+
+                                <div className="flex gap-2 mt-5">
                                     {editingId && (
-                                        <button onClick={() => { setEditingId(null); setDraftText(''); }} className="px-4 py-2.5 text-[13px] font-bold active:scale-95 transition-transform" style={{ background: '#f0e9da', color: '#9a8262', borderRadius: 12 }}>取消</button>
+                                        <InsButton
+                                            variant="ghost"
+                                            accent="pink"
+                                            className="px-4 py-3 text-[13px]"
+                                            onClick={() => { setEditingId(null); setDraftText(''); }}
+                                        >
+                                            取消
+                                        </InsButton>
                                     )}
-                                    <button
-                                        onClick={saveDraft}
+                                    <InsButton
+                                        variant="solid"
+                                        accent="pink"
                                         disabled={!draftText.trim()}
-                                        className="flex-1 py-2.5 text-[14px] font-black active:scale-95 transition-transform disabled:opacity-40"
-                                        style={{ background: '#b1543f', color: '#fff7ef', borderRadius: 12, fontFamily: HAND_FONT, letterSpacing: 1 }}
+                                        className="flex-1 py-3 text-[13px]"
+                                        onClick={saveDraft}
+                                        icon={<NotePencil size={15} weight="bold" />}
                                     >
                                         {editingId ? '改好了' : '贴上去'}
-                                    </button>
+                                    </InsButton>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
-        </PaperPage>
+        </InsShell>
     );
 };
 

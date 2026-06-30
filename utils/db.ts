@@ -2,7 +2,7 @@
 
 
 import {
-    CharacterProfile, ChatTheme, Message, PrivateChatArchive, UserProfile,
+    CharacterProfile, ChatTheme, Message, PrivateChatArchive, ChatAlarm, PeriodReminderSettings, PeriodCycleEvent, UserProfile,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
     BankTransaction, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
@@ -11,7 +11,7 @@ import {
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
     XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
-    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession,
+    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession,
     TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord,
     DesktopPetState
 } from '../types';
@@ -20,11 +20,14 @@ import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffi
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 80; // Bumped: v80 backfill desktop pet store for users already on v79
+const DB_VERSION = 83; // Bumped: v83 period reminders
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
 const STORE_PRIVATE_CHAT_ARCHIVES = 'private_chat_archives';
+const STORE_CHAT_ALARMS = 'chat_alarms';
+const STORE_PERIOD_REMINDER_SETTINGS = 'period_reminder_settings';
+const STORE_PERIOD_CYCLE_EVENTS = 'period_cycle_events';
 const STORE_EMOJIS = 'emojis';
 const STORE_EMOJI_CATEGORIES = 'emoji_categories'; 
 const STORE_THEMES = 'themes';
@@ -93,6 +96,7 @@ const STORE_RELATIONSHIP_NETWORK_SETTINGS = 'relationship_network_settings';
 const STORE_TALK_SESSIONS = 'talk_sessions';      // 折子戏·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_WEREWOLF_GAMES = 'werewolf_games';    // 折子戏·狼人杀对局（一桌熟人开局的完整流程，可存档/续局/回看）
 const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话大冒险（一圈玩家 + 一串回合记录，可存档/回看/续玩）
+const STORE_THEATER_QUIZ_SESSIONS = 'theater_quiz_sessions'; // 折子戏·番外问卷会话（多角色答题 + 题内评论，可续做/回看）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/折子戏内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
 const STORE_DIVINATION_CARDS = 'divination_cards'; // 折子戏·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
@@ -412,10 +416,54 @@ export const openDB = (): Promise<IDBDatabase> => {
               try { pcaStore.createIndex('updatedAt', 'updatedAt', { unique: false }); } catch { /* ignore */ }
           }
       }
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) {
+          const alarmStore = db.createObjectStore(STORE_CHAT_ALARMS, { keyPath: 'id' });
+          alarmStore.createIndex('charId', 'charId', { unique: false });
+          alarmStore.createIndex('nextAt', 'nextAt', { unique: false });
+          alarmStore.createIndex('enabled', 'enabled', { unique: false });
+      } else {
+          const alarmStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_CHAT_ALARMS);
+          if (alarmStore && !alarmStore.indexNames.contains('charId')) {
+              try { alarmStore.createIndex('charId', 'charId', { unique: false }); } catch { /* ignore */ }
+          }
+          if (alarmStore && !alarmStore.indexNames.contains('nextAt')) {
+              try { alarmStore.createIndex('nextAt', 'nextAt', { unique: false }); } catch { /* ignore */ }
+          }
+          if (alarmStore && !alarmStore.indexNames.contains('enabled')) {
+              try { alarmStore.createIndex('enabled', 'enabled', { unique: false }); } catch { /* ignore */ }
+          }
+      }
 
       // v62: messages 加 [charId, type] 复合索引。页外动态按 (charId, 'vr_card') 直取 vr_card，
       // 成本只跟 vr_card 条数相关，跟总消息量无关——上万条聊天的用户也不必把整段历史 getAll
       // 进内存再筛。没有 type 字段的老消息不会进此索引，正好不影响（我们只查 vr_card）。
+      if (!db.objectStoreNames.contains(STORE_PERIOD_REMINDER_SETTINGS)) {
+          const psStore = db.createObjectStore(STORE_PERIOD_REMINDER_SETTINGS, { keyPath: 'id' });
+          psStore.createIndex('nextAt', 'nextAt', { unique: false });
+          psStore.createIndex('enabled', 'enabled', { unique: false });
+      } else {
+          const psStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_PERIOD_REMINDER_SETTINGS);
+          if (psStore && !psStore.indexNames.contains('nextAt')) {
+              try { psStore.createIndex('nextAt', 'nextAt', { unique: false }); } catch { /* ignore */ }
+          }
+          if (psStore && !psStore.indexNames.contains('enabled')) {
+              try { psStore.createIndex('enabled', 'enabled', { unique: false }); } catch { /* ignore */ }
+          }
+      }
+      if (!db.objectStoreNames.contains(STORE_PERIOD_CYCLE_EVENTS)) {
+          const peStore = db.createObjectStore(STORE_PERIOD_CYCLE_EVENTS, { keyPath: 'id' });
+          peStore.createIndex('date', 'date', { unique: false });
+          peStore.createIndex('kind', 'kind', { unique: false });
+      } else {
+          const peStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_PERIOD_CYCLE_EVENTS);
+          if (peStore && !peStore.indexNames.contains('date')) {
+              try { peStore.createIndex('date', 'date', { unique: false }); } catch { /* ignore */ }
+          }
+          if (peStore && !peStore.indexNames.contains('kind')) {
+              try { peStore.createIndex('kind', 'kind', { unique: false }); } catch { /* ignore */ }
+          }
+      }
+
       try {
           const msgStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_MESSAGES);
           if (msgStore && !msgStore.indexNames.contains('charId_type')) {
@@ -727,6 +775,12 @@ export const openDB = (): Promise<IDBDatabase> => {
           const tdStore = db.createObjectStore(STORE_TRUTHDARE_SESSIONS, { keyPath: 'id' });
           tdStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
       }
+      // ─── v81: 折子戏·番外问卷会话 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_QUIZ_SESSIONS)) {
+          const tqStore = db.createObjectStore(STORE_THEATER_QUIZ_SESSIONS, { keyPath: 'id' });
+          tqStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          tqStore.createIndex('status', 'status', { unique: false });
+      }
       // ─── v70: 岁时记·典藏馆收录条目 ───
       if (!db.objectStoreNames.contains(STORE_COLLECTION_ITEMS)) {
           const ciStore = db.createObjectStore(STORE_COLLECTION_ITEMS, { keyPath: 'id' });
@@ -889,8 +943,27 @@ export const DB = {
 
   deleteCharacter: async (id: string): Promise<void> => {
     const db = await openDB();
-    const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
+    const stores = db.objectStoreNames.contains(STORE_CHAT_ALARMS)
+        ? [STORE_CHARACTERS, STORE_CHAT_ALARMS]
+        : [STORE_CHARACTERS];
+    const transaction = db.transaction(stores, 'readwrite');
     transaction.objectStore(STORE_CHARACTERS).delete(id);
+    if (db.objectStoreNames.contains(STORE_CHAT_ALARMS)) {
+        const alarmStore = transaction.objectStore(STORE_CHAT_ALARMS);
+        const idx = alarmStore.index('charId');
+        const req = idx.openCursor(IDBKeyRange.only(id));
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+    }
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('deleteCharacter aborted'));
+    });
   },
 
   /**
@@ -2011,6 +2084,35 @@ export const DB = {
       });
   },
 
+  // ─── 折子戏·番外问卷会话 ───
+  getAllTheaterQuizSessions: async (): Promise<TheaterQuizSession[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_QUIZ_SESSIONS, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_QUIZ_SESSIONS).getAll();
+          req.onsuccess = () => resolve(((req.result as TheaterQuizSession[]) || []).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  saveTheaterQuizSession: async (session: TheaterQuizSession): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_THEATER_QUIZ_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_THEATER_QUIZ_SESSIONS).put(session);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTheaterQuizSession: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_THEATER_QUIZ_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_THEATER_QUIZ_SESSIONS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
   // ─── 岁时记·典藏馆收录条目 ───
   getCollectionItems: async (): Promise<CollectionItem[]> => {
       const db = await openDB();
@@ -2746,6 +2848,172 @@ export const DB = {
 
   deleteScheduledMessagesByCharId: async (charId: string): Promise<number> => {
       return DB.deleteByIndex(STORE_SCHEDULED, 'charId', charId);
+  },
+
+  // ─── 絮语·单聊闹钟 ───
+  getAllChatAlarms: async (): Promise<ChatAlarm[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_CHAT_ALARMS, 'readonly');
+          const req = tx.objectStore(STORE_CHAT_ALARMS).getAll();
+          req.onsuccess = () => resolve(((req.result || []) as ChatAlarm[]).sort((a, b) => a.nextAt - b.nextAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getChatAlarmsByCharId: async (charId: string): Promise<ChatAlarm[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_CHAT_ALARMS, 'readonly');
+          const store = tx.objectStore(STORE_CHAT_ALARMS);
+          const idx = store.index('charId');
+          const req = idx.getAll(IDBKeyRange.only(charId));
+          req.onsuccess = () => resolve(((req.result || []) as ChatAlarm[]).sort((a, b) => {
+              if (a.timeHHmm === b.timeHHmm) return a.createdAt - b.createdAt;
+              return a.timeHHmm.localeCompare(b.timeHHmm);
+          }));
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getDueChatAlarms: async (now: number = Date.now()): Promise<ChatAlarm[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_CHAT_ALARMS, 'readonly');
+          const store = tx.objectStore(STORE_CHAT_ALARMS);
+          const finish = (rows: ChatAlarm[]) => resolve(rows.filter(a => a.enabled && a.nextAt <= now).sort((a, b) => a.nextAt - b.nextAt));
+          if (store.indexNames.contains('nextAt')) {
+              const idx = store.index('nextAt');
+              const req = idx.getAll(IDBKeyRange.upperBound(now));
+              req.onsuccess = () => finish((req.result || []) as ChatAlarm[]);
+              req.onerror = () => reject(req.error);
+              return;
+          }
+          const req = store.getAll();
+          req.onsuccess = () => finish((req.result || []) as ChatAlarm[]);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveChatAlarm: async (alarm: ChatAlarm): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) return;
+      const tx = db.transaction(STORE_CHAT_ALARMS, 'readwrite');
+      tx.objectStore(STORE_CHAT_ALARMS).put(alarm);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('saveChatAlarm aborted'));
+      });
+  },
+
+  deleteChatAlarm: async (id: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_ALARMS)) return;
+      const tx = db.transaction(STORE_CHAT_ALARMS, 'readwrite');
+      tx.objectStore(STORE_CHAT_ALARMS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('deleteChatAlarm aborted'));
+      });
+  },
+
+  deleteChatAlarmsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_CHAT_ALARMS, 'charId', charId);
+  },
+
+  // Health period reminders
+  getAllPeriodReminderSettings: async (): Promise<PeriodReminderSettings[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_REMINDER_SETTINGS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_PERIOD_REMINDER_SETTINGS, 'readonly');
+          const req = tx.objectStore(STORE_PERIOD_REMINDER_SETTINGS).getAll();
+          req.onsuccess = () => resolve(((req.result || []) as PeriodReminderSettings[]).sort((a, b) => a.createdAt - b.createdAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getPeriodReminderSettings: async (id = 'period_reminder_main'): Promise<PeriodReminderSettings | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_REMINDER_SETTINGS)) return null;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_PERIOD_REMINDER_SETTINGS, 'readonly');
+          const req = tx.objectStore(STORE_PERIOD_REMINDER_SETTINGS).get(id);
+          req.onsuccess = () => resolve((req.result || null) as PeriodReminderSettings | null);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getDuePeriodReminderSettings: async (now: number = Date.now()): Promise<PeriodReminderSettings[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_REMINDER_SETTINGS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_PERIOD_REMINDER_SETTINGS, 'readonly');
+          const store = tx.objectStore(STORE_PERIOD_REMINDER_SETTINGS);
+          const finish = (rows: PeriodReminderSettings[]) => resolve(rows.filter(s => s.enabled && s.nextAt > 0 && s.nextAt <= now).sort((a, b) => a.nextAt - b.nextAt));
+          if (store.indexNames.contains('nextAt')) {
+              const idx = store.index('nextAt');
+              const req = idx.getAll(IDBKeyRange.upperBound(now));
+              req.onsuccess = () => finish((req.result || []) as PeriodReminderSettings[]);
+              req.onerror = () => reject(req.error);
+              return;
+          }
+          const req = store.getAll();
+          req.onsuccess = () => finish((req.result || []) as PeriodReminderSettings[]);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  savePeriodReminderSettings: async (settings: PeriodReminderSettings): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_REMINDER_SETTINGS)) return;
+      const tx = db.transaction(STORE_PERIOD_REMINDER_SETTINGS, 'readwrite');
+      tx.objectStore(STORE_PERIOD_REMINDER_SETTINGS).put(settings);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('savePeriodReminderSettings aborted'));
+      });
+  },
+
+  getAllPeriodCycleEvents: async (): Promise<PeriodCycleEvent[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_CYCLE_EVENTS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_PERIOD_CYCLE_EVENTS, 'readonly');
+          const req = tx.objectStore(STORE_PERIOD_CYCLE_EVENTS).getAll();
+          req.onsuccess = () => resolve(((req.result || []) as PeriodCycleEvent[]).sort((a, b) => a.date.localeCompare(b.date)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  savePeriodCycleEvent: async (event: PeriodCycleEvent): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_CYCLE_EVENTS)) return;
+      const tx = db.transaction(STORE_PERIOD_CYCLE_EVENTS, 'readwrite');
+      tx.objectStore(STORE_PERIOD_CYCLE_EVENTS).put(event);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('savePeriodCycleEvent aborted'));
+      });
+  },
+
+  deletePeriodCycleEvent: async (id: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PERIOD_CYCLE_EVENTS)) return;
+      const tx = db.transaction(STORE_PERIOD_CYCLE_EVENTS, 'readwrite');
+      tx.objectStore(STORE_PERIOD_CYCLE_EVENTS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('deletePeriodCycleEvent aborted'));
+      });
   },
 
   saveUserProfile: async (profile: UserProfile): Promise<void> => {
@@ -4046,10 +4314,13 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, periodReminderSettings, periodCycleEvents, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, theaterQuizSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
+          getAllFromStore(STORE_CHAT_ALARMS),
+          getAllFromStore(STORE_PERIOD_REMINDER_SETTINGS),
+          getAllFromStore(STORE_PERIOD_CYCLE_EVENTS),
           getAllFromStore(STORE_THEMES),
           getAllFromStore(STORE_EMOJIS),
           getAllFromStore(STORE_EMOJI_CATEGORIES),
@@ -4081,6 +4352,7 @@ export const DB = {
           getAllFromStore(STORE_SONGS),
           getAllFromStore(STORE_QUIZZES),
           getAllFromStore(STORE_GUIDEBOOK),
+          getAllFromStore(STORE_THEATER_QUIZ_SESSIONS),
           getAllFromStore(STORE_SCHEDULED),
           getAllFromStore(STORE_LIFE_SIM),
           getAllFromStore(STORE_HANDBOOK),
@@ -4121,7 +4393,7 @@ export const DB = {
       const dollhouseRecord = bankData.find((d: any) => d.id === 'dollhouse_state');
 
       return {
-          characters, messages, privateChatArchives, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
+          characters, messages, privateChatArchives, chatAlarms, periodReminderSettings, periodCycleEvents, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
           bankTransactions: bankTx,
@@ -4136,6 +4408,7 @@ export const DB = {
           songs,
           quizSessions: quizzes,
           guidebookSessions,
+          theaterQuizSessions,
           scheduledMessages,
           lifeSimState: lifeSimStates[0] || null,
           handbooks,
@@ -4183,6 +4456,7 @@ export const DB = {
       
       const availableStores = [
           STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
+          STORE_CHAT_ALARMS, STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
           STORE_ASSETS, STORE_GALLERY, STORE_USER, STORE_DIARIES,
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
           STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS, STORE_SONGS,
@@ -4191,6 +4465,7 @@ export const DB = {
           STORE_TWITTER_PROFILE, STORE_TWITTER_ACCOUNTS, STORE_TWITTER_DM, STORE_TWITTER_SEARCH,
           STORE_QUIZZES,
           STORE_GUIDEBOOK,
+          STORE_THEATER_QUIZ_SESSIONS,
           STORE_SCHEDULED,
           STORE_LIFE_SIM,
           STORE_DAILY_SCHEDULE,
@@ -4242,6 +4517,9 @@ export const DB = {
           data.characters !== undefined || data.mediaAssets !== undefined,
           data.messages !== undefined,
           data.privateChatArchives !== undefined,
+          data.chatAlarms !== undefined,
+          data.periodReminderSettings !== undefined,
+          data.periodCycleEvents !== undefined,
           data.customThemes !== undefined,
           data.savedEmojis !== undefined,
           data.emojiCategories !== undefined,
@@ -4264,6 +4542,7 @@ export const DB = {
           data.songs !== undefined,
           data.quizSessions !== undefined,
           data.guidebookSessions !== undefined,
+          data.theaterQuizSessions !== undefined,
           data.scheduledMessages !== undefined,
           data.lifeSimState !== undefined,
           data.bankTransactions !== undefined,
@@ -4475,6 +4754,26 @@ export const DB = {
           data.privateChatArchives = undefined as any;
       }, data.privateChatArchives?.length || 0);
 
+      await runSection('聊天闹钟', data.chatAlarms !== undefined, async () => {
+          if (!hasStore(STORE_CHAT_ALARMS)) return;
+          const isPatchMode = !hasCharacterBackup;
+          if (!isPatchMode) {
+              await clearStore(STORE_CHAT_ALARMS);
+          }
+          await putItems(STORE_CHAT_ALARMS, data.chatAlarms || [], '聊天闹钟', false);
+          data.chatAlarms = undefined as any;
+      }, data.chatAlarms?.length || 0);
+
+      await runSection('经期提醒设置', data.periodReminderSettings !== undefined, async () => {
+          await clearAndAdd(STORE_PERIOD_REMINDER_SETTINGS, data.periodReminderSettings || [], '经期提醒设置', false);
+          data.periodReminderSettings = undefined as any;
+      }, data.periodReminderSettings?.length || 0);
+
+      await runSection('经期记录', data.periodCycleEvents !== undefined, async () => {
+          await clearAndAdd(STORE_PERIOD_CYCLE_EVENTS, data.periodCycleEvents || [], '经期记录', false);
+          data.periodCycleEvents = undefined as any;
+      }, data.periodCycleEvents?.length || 0);
+
       await runSection('聊天主题', data.customThemes !== undefined, async () => {
           await mergeStore(STORE_THEMES, data.customThemes, '聊天主题', true);
           data.customThemes = undefined as any;
@@ -4642,6 +4941,10 @@ export const DB = {
           await clearAndAdd(STORE_GUIDEBOOK, data.guidebookSessions, '攻略本', false);
           data.guidebookSessions = undefined as any;
       }, data.guidebookSessions?.length || 0);
+      await runSection('番外问卷', data.theaterQuizSessions !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_QUIZ_SESSIONS, data.theaterQuizSessions, '番外问卷', false);
+          data.theaterQuizSessions = undefined as any;
+      }, data.theaterQuizSessions?.length || 0);
       await runSection('定时消息', data.scheduledMessages !== undefined, async () => {
           await clearAndAdd(STORE_SCHEDULED, data.scheduledMessages || [], '定时消息', false);
           data.scheduledMessages = undefined as any;

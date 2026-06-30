@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, UserProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState, ScreenPeekCard } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, UserProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState, ScreenPeekCard, ChatAlarm, ChatAlarmChannel, ChatAlarmKind } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
 import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
@@ -51,6 +51,7 @@ import LifeRecapModal, { countUnseenCatchup, markLifeRecapSeen } from '../compon
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
+import { queueManualDeepLink, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -63,6 +64,17 @@ import { InnerVoiceEntry } from '../types';
 import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import { generateXunjiScreenlifeRun } from '../utils/xunji';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
+import { getNotifyPermission, requestNotifyPermission } from '../utils/browserNotify';
+import {
+    CHAT_ALARM_WEEKDAYS,
+    EVERYDAY_WEEKDAYS,
+    WORKDAY_WEEKDAYS,
+    alarmChannelLabel,
+    alarmKindLabel,
+    makeChatAlarm,
+    prepareAlarmForSave,
+    weekdayLabel,
+} from '../utils/chatAlarms';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 type InstantToolUiStatus = {
@@ -818,6 +830,11 @@ const Chat: React.FC = () => {
     // 离线自主生活·回看横幅：用户回来时若角色攒了未看过的离线事件，顶部提示「TA 经历了 N 件事」
     const [lifeRecapBanner, setLifeRecapBanner] = useState(0);
     const [showThinkingChainModal, setShowThinkingChainModal] = useState(false);
+    const [showAlarmModal, setShowAlarmModal] = useState(false);
+    const [chatAlarms, setChatAlarms] = useState<ChatAlarm[]>([]);
+    const [alarmDraft, setAlarmDraft] = useState<ChatAlarm | null>(null);
+    const [alarmSaving, setAlarmSaving] = useState(false);
+    const [alarmLoading, setAlarmLoading] = useState(false);
 
     // ── 语音通话（聊天内发起，角色按人设决定接不接）──
     const [voiceCallPhase, setVoiceCallPhase] = useState<'none' | 'dialing' | 'rejected'>('none');
@@ -902,6 +919,167 @@ const Chat: React.FC = () => {
         () => characters.filter(c => c.id !== activeCharacterId && parallelReplyTargetIds.has(c.id)),
         [characters, activeCharacterId, parallelReplyTargetIds],
     );
+
+    const makeAlarmDraftFor = useCallback((kind: ChatAlarmKind): ChatAlarm | null => {
+        if (!char) return null;
+        return makeChatAlarm({
+            charId: char.id,
+            kind,
+            label: kind === 'sleep' ? '睡觉督促' : kind === 'wake' ? '起床叫醒' : '提醒',
+            timeHHmm: kind === 'sleep' ? '23:30' : '07:30',
+            weekdays: EVERYDAY_WEEKDAYS,
+            channel: 'auto',
+        });
+    }, [char?.id]);
+
+    const notifyChatAlarmsUpdated = useCallback((charId: string) => {
+        window.dispatchEvent(new CustomEvent('chat-alarms-updated', { detail: { charId } }));
+    }, []);
+
+    const refreshChatAlarms = useCallback(async (charId = activeCharacterId) => {
+        if (!charId) {
+            setChatAlarms([]);
+            return [] as ChatAlarm[];
+        }
+        setAlarmLoading(true);
+        try {
+            const rows = await DB.getChatAlarmsByCharId(charId);
+            if (activeCharIdRef.current === charId) setChatAlarms(rows);
+            return rows;
+        } catch (e) {
+            console.warn('[ChatAlarm] load failed', e);
+            if (activeCharIdRef.current === charId) setChatAlarms([]);
+            return [] as ChatAlarm[];
+        } finally {
+            if (activeCharIdRef.current === charId) setAlarmLoading(false);
+        }
+    }, [activeCharacterId]);
+
+    const openAlarmManager = useCallback(() => {
+        if (!char) return;
+        setShowPanel('none');
+        setShowAlarmModal(true);
+        setAlarmDraft(prev => (prev?.charId === char.id ? prev : makeAlarmDraftFor('sleep')));
+        void refreshChatAlarms(char.id);
+    }, [char?.id, makeAlarmDraftFor, refreshChatAlarms]);
+
+    useManualDeepLink(AppID.Chat, useCallback((target) => {
+        if (!activeCharacterId || !characters.some(c => c.id === activeCharacterId)) {
+            queueManualDeepLink({
+                appId: AppID.GroupChat,
+                route: 'tab:contacts',
+                anchorId: 'manual-chathub-contacts',
+                payload: { tab: 'contacts' },
+            });
+            openApp(AppID.GroupChat);
+            return;
+        }
+        if (target.route === 'chat-settings') {
+            setModalType('chat-settings');
+            window.setTimeout(() => {
+                if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-chat-settings-root');
+            }, 260);
+        } else if (target.route === 'chat-alarm') {
+            openAlarmManager();
+            window.setTimeout(() => {
+                if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-chat-alarm-root');
+            }, 260);
+        }
+    }, [activeCharacterId, characters, openApp, openAlarmManager]), { enabled: activeApp === AppID.Chat });
+
+    useEffect(() => {
+        if (!showAlarmModal || !activeCharacterId) return;
+        setAlarmDraft(prev => (prev?.charId === activeCharacterId ? prev : makeAlarmDraftFor('sleep')));
+        void refreshChatAlarms(activeCharacterId);
+    }, [showAlarmModal, activeCharacterId, makeAlarmDraftFor, refreshChatAlarms]);
+
+    const updateAlarmDraft = (patch: Partial<ChatAlarm>) => {
+        setAlarmDraft(prev => prev ? { ...prev, ...patch, updatedAt: Date.now() } : prev);
+    };
+
+    const setAlarmDraftKind = (kind: ChatAlarmKind) => {
+        const fallback = makeAlarmDraftFor(kind);
+        if (!fallback) return;
+        setAlarmDraft(prev => {
+            if (!prev || prev.charId !== fallback.charId) return fallback;
+            return {
+                ...prev,
+                kind,
+                label: prev.label || fallback.label,
+                timeHHmm: kind === 'sleep' ? '23:30' : kind === 'wake' && prev.kind === 'sleep' ? '07:30' : prev.timeHHmm,
+                updatedAt: Date.now(),
+            };
+        });
+    };
+
+    const toggleAlarmDraftWeekday = (day: number) => {
+        setAlarmDraft(prev => {
+            if (!prev) return prev;
+            const set = new Set(prev.weekdays || EVERYDAY_WEEKDAYS);
+            if (set.has(day)) set.delete(day);
+            else set.add(day);
+            const weekdays = set.size ? Array.from(set).sort((a, b) => a - b) : [...EVERYDAY_WEEKDAYS];
+            return { ...prev, weekdays, updatedAt: Date.now() };
+        });
+    };
+
+    const saveAlarmDraft = async () => {
+        if (!char || !alarmDraft || alarmSaving) return;
+        setAlarmSaving(true);
+        try {
+            const saved = prepareAlarmForSave({
+                ...alarmDraft,
+                charId: char.id,
+                label: (alarmDraft.label || alarmKindLabel(alarmDraft.kind)).trim(),
+            });
+            await DB.saveChatAlarm(saved);
+            setAlarmDraft(saved);
+            await refreshChatAlarms(char.id);
+            notifyChatAlarmsUpdated(char.id);
+            const perm = getNotifyPermission();
+            if (perm === 'default') void requestNotifyPermission();
+            addToast(`${saved.label} 已设好`, 'success');
+        } catch (e: any) {
+            addToast(e?.message || '闹钟保存失败', 'error');
+        } finally {
+            setAlarmSaving(false);
+        }
+    };
+
+    const toggleChatAlarmEnabled = async (alarm: ChatAlarm) => {
+        try {
+            const saved = prepareAlarmForSave({ ...alarm, enabled: !alarm.enabled });
+            await DB.saveChatAlarm(saved);
+            await refreshChatAlarms(saved.charId);
+            notifyChatAlarmsUpdated(saved.charId);
+            addToast(saved.enabled ? '闹钟已开启' : '闹钟已暂停', saved.enabled ? 'success' : 'info');
+        } catch (e: any) {
+            addToast(e?.message || '闹钟更新失败', 'error');
+        }
+    };
+
+    const deleteChatAlarm = async (alarm: ChatAlarm) => {
+        try {
+            await DB.deleteChatAlarm(alarm.id);
+            await refreshChatAlarms(alarm.charId);
+            notifyChatAlarmsUpdated(alarm.charId);
+            if (alarmDraft?.id === alarm.id) setAlarmDraft(makeAlarmDraftFor(alarm.kind));
+            addToast('闹钟已删除', 'info');
+        } catch (e: any) {
+            addToast(e?.message || '闹钟删除失败', 'error');
+        }
+    };
+
+    const formatAlarmNextAt = (alarm: ChatAlarm) => {
+        if (!alarm.enabled || !alarm.nextAt) return '已暂停';
+        return new Date(alarm.nextAt).toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        });
+    };
 
     useEffect(() => {
         try { localStorage.setItem(PARALLEL_REPLY_ENABLED_KEY, parallelReplyEnabled ? 'true' : 'false'); } catch { /* ignore */ }
@@ -3220,6 +3398,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'category-options': setSelectedCategory(payload); setModalType('category-options'); break;
             case 'delete-category-req': setSelectedCategory(payload); setModalType('delete-category'); break;
             case 'proactive': setShowProactiveModal(true); break;
+            case 'alarm': openAlarmManager(); break;
             case 'life-recap': setShowPanel('none'); setShowLifeRecapModal(true); setLifeRecapBanner(0); break;
             case 'emotion': setModalType('schedule'); break; // 情绪已并入日程，打开同一 modal
             case 'schedule': setModalType('schedule'); break;
@@ -5738,6 +5917,209 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         />
                     </div>
                     <NoteStrip tone="danger">系统指令优先级最高，会覆盖角色设定和此前上下文，请确认后再发送。</NoteStrip>
+                </div>
+             </JournalSheet>
+
+             {/* 聊天闹钟：回形针 → 两个人的事 → 闹钟 */}
+             <JournalSheet
+                open={showAlarmModal}
+                title="聊天闹钟"
+                en="ALARM"
+                sub={char ? `让 ${displayCharName || char.name} 到点叫你` : '睡觉、起床和自定义提醒'}
+                tape="rose"
+                pattern="plain"
+                paper="lined"
+                tall
+                onClose={() => setShowAlarmModal(false)}
+                footer={<>
+                    <SealBtn kind="ghost" onClick={() => setShowAlarmModal(false)}>收好</SealBtn>
+                    <SealBtn kind="rose" onClick={() => { void saveAlarmDraft(); }} disabled={!alarmDraft || alarmSaving}>
+                        {alarmSaving ? '保存中...' : alarmDraft?.id && chatAlarms.some(a => a.id === alarmDraft.id) ? '保存修改' : '新增闹钟'}
+                    </SealBtn>
+                </>}
+             >
+                <div id="manual-chat-alarm-root" className="space-y-4">
+                    <NoteStrip>
+                        页面或 PWA 运行时会按点检查；浏览器完全关闭后不保证响铃。到点后会让角色在聊天里发一条适合语音化的提醒，APK 会同步排原生提醒。
+                    </NoteStrip>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        {([
+                            { kind: 'sleep' as ChatAlarmKind, label: '睡觉督促', time: '23:30' },
+                            { kind: 'wake' as ChatAlarmKind, label: '起床叫醒', time: '07:30' },
+                        ]).map(preset => (
+                            <button
+                                key={preset.kind}
+                                type="button"
+                                onClick={() => {
+                                    if (!char) return;
+                                    setAlarmDraft(makeChatAlarm({
+                                        charId: char.id,
+                                        kind: preset.kind,
+                                        label: preset.label,
+                                        timeHHmm: preset.time,
+                                        weekdays: EVERYDAY_WEEKDAYS,
+                                        channel: 'auto',
+                                    }));
+                                }}
+                                className="rounded-[18px] px-3 py-3 text-left active:scale-[0.98] transition-transform"
+                                style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK }}
+                            >
+                                <div className="text-[13px] font-black">{preset.label}</div>
+                                <div className="mt-1 text-[11px]" style={{ color: INK_SOFT }}>{preset.time} · 每天</div>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <div className="text-[12px] font-black" style={{ color: INK }}>已有闹钟</div>
+                            <button
+                                type="button"
+                                onClick={() => setAlarmDraft(makeAlarmDraftFor('custom'))}
+                                className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95"
+                                style={{ background: '#fff4f7', color: INK, border: '1px solid #eed6df' }}
+                            >
+                                自定义
+                            </button>
+                        </div>
+
+                        {alarmLoading ? (
+                            <ScrapNote center className="py-4">正在翻闹钟本...</ScrapNote>
+                        ) : chatAlarms.length === 0 ? (
+                            <ScrapNote center className="py-4">还没有闹钟。先用上面的睡觉/起床预设试一只。</ScrapNote>
+                        ) : (
+                            <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                                {chatAlarms.map(alarm => {
+                                    const selected = alarmDraft?.id === alarm.id;
+                                    return (
+                                        <div
+                                            key={alarm.id}
+                                            className="rounded-[18px] px-3 py-3"
+                                            style={{
+                                                background: selected ? '#fff4f7' : '#fffdfa',
+                                                border: `1px solid ${selected ? '#d8a5b7' : '#eed6df'}`,
+                                                color: INK,
+                                            }}
+                                        >
+                                            <div className="flex items-start gap-2">
+                                                <button type="button" onClick={() => setAlarmDraft(alarm)} className="flex-1 min-w-0 text-left">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="text-[16px] font-black tabular-nums">{alarm.timeHHmm}</span>
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: '#fff', color: INK_SOFT, border: '1px solid #eed6df' }}>
+                                                            {alarmKindLabel(alarm.kind)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-1 text-[12px] font-bold truncate">{alarm.label}</div>
+                                                    <div className="mt-0.5 text-[10.5px] leading-snug" style={{ color: INK_SOFT }}>
+                                                        {weekdayLabel(alarm.weekdays)} · {alarmChannelLabel(alarm.channel)} · {formatAlarmNextAt(alarm)}
+                                                    </div>
+                                                </button>
+                                                <div className="flex flex-col gap-1 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { void toggleChatAlarmEnabled(alarm); }}
+                                                        className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
+                                                        style={alarm.enabled ? { background: '#d8a5b7', color: '#fff' } : { background: '#fff', color: INK_SOFT, border: '1px solid #eed6df' }}
+                                                    >
+                                                        {alarm.enabled ? 'ON' : 'OFF'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { void deleteChatAlarm(alarm); }}
+                                                        className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
+                                                        style={{ background: '#fff5f7', color: '#d4536f', border: '1px solid #f1c6d1' }}
+                                                    >
+                                                        删除
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {alarmDraft && (
+                        <div className="space-y-3 rounded-[20px] px-3.5 py-3.5" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-[12px] font-black" style={{ color: INK }}>编辑闹钟</div>
+                                <button
+                                    type="button"
+                                    onClick={() => updateAlarmDraft({ enabled: !alarmDraft.enabled })}
+                                    className="px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95"
+                                    style={alarmDraft.enabled ? { background: '#d8a5b7', color: '#fff' } : { background: '#fff', color: INK_SOFT, border: '1px solid #eed6df' }}
+                                >
+                                    {alarmDraft.enabled ? '已开启' : '已暂停'}
+                                </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {(['sleep', 'wake', 'custom'] as ChatAlarmKind[]).map(kind => (
+                                    <ScrapChip key={kind} selected={alarmDraft.kind === kind} onClick={() => setAlarmDraftKind(kind)}>
+                                        {alarmKindLabel(kind)}
+                                    </ScrapChip>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-[1fr_8.5rem] gap-3">
+                                <LinedInput
+                                    value={alarmDraft.label}
+                                    onChange={e => updateAlarmDraft({ label: e.target.value })}
+                                    placeholder="闹钟名称"
+                                    maxLength={40}
+                                    className="font-bold"
+                                />
+                                <LinedInput
+                                    type="time"
+                                    value={alarmDraft.timeHHmm}
+                                    onChange={e => updateAlarmDraft({ timeHHmm: e.target.value })}
+                                    className="font-black tabular-nums"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex flex-wrap gap-2">
+                                    <ScrapChip selected={alarmDraft.weekdays.length === 7} onClick={() => updateAlarmDraft({ weekdays: [...EVERYDAY_WEEKDAYS] })}>每天</ScrapChip>
+                                    <ScrapChip
+                                        selected={alarmDraft.weekdays.length === 5 && WORKDAY_WEEKDAYS.every(d => alarmDraft.weekdays.includes(d))}
+                                        onClick={() => updateAlarmDraft({ weekdays: [...WORKDAY_WEEKDAYS] })}
+                                    >
+                                        工作日
+                                    </ScrapChip>
+                                </div>
+                                <div className="grid grid-cols-7 gap-1.5">
+                                    {CHAT_ALARM_WEEKDAYS.map(day => {
+                                        const selected = alarmDraft.weekdays.includes(day.value);
+                                        return (
+                                            <button
+                                                key={day.value}
+                                                type="button"
+                                                onClick={() => toggleAlarmDraftWeekday(day.value)}
+                                                className="h-9 rounded-full text-[11px] font-black active:scale-95"
+                                                style={selected ? { background: '#d8a5b7', color: '#fff' } : { background: '#fff', color: INK_SOFT, border: '1px solid #eed6df' }}
+                                            >
+                                                {day.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {(['auto', 'reminder', 'call'] as ChatAlarmChannel[]).map(channel => (
+                                    <ScrapChip key={channel} selected={alarmDraft.channel === channel} onClick={() => updateAlarmDraft({ channel })}>
+                                        {alarmChannelLabel(channel)}
+                                    </ScrapChip>
+                                ))}
+                            </div>
+
+                            <ScrapNote>
+                                自动模式下，起床优先走语音来电；睡觉和自定义提醒走语音提醒气泡。后台或不可见时，来电会退回通知和未接提示。
+                            </ScrapNote>
+                        </div>
+                    )}
                 </div>
              </JournalSheet>
 

@@ -2435,7 +2435,7 @@ async function rollAndExport() {
     if (typeof html2canvas === "undefined") {
       await new Promise((res, rej) => {
         const s = document.createElement("script");
-        s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+        s.src = "../vendor/html2canvas.min.js";
         s.onload = res; s.onerror = rej;
         document.head.appendChild(s);
       });
@@ -2497,7 +2497,7 @@ async function captureAndShow() {
   if (typeof html2canvas === "undefined") {
     await new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      s.src = "../vendor/html2canvas.min.js";
       s.onload = resolve; s.onerror = reject;
       document.head.appendChild(s);
     });

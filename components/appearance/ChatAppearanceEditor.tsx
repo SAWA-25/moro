@@ -12,6 +12,8 @@ type Props = {
     onResetAllChrome?: () => void;
     /** 打开气泡工坊全屏编辑器（原独立 tab 已并入本页） */
     onOpenBubbleWorkshop?: () => void;
+    /** 由拼贴册外层传入的聊天白框 CSS 编辑区。 */
+    chromeCssStudio?: React.ReactNode;
 };
 
 const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> = [
@@ -422,7 +424,7 @@ const InputAnimationSection: React.FC<{ theme: OSTheme; updateTheme: (u: Partial
     );
 };
 
-export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenBubbleWorkshop }) => {
+export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenBubbleWorkshop, chromeCssStudio }) => {
     const avatarShape = theme.chatAvatarShape || defaults.chatAvatarShape;
     const avatarSize = theme.chatAvatarSize || defaults.chatAvatarSize;
     const avatarMode = theme.chatAvatarMode || defaults.chatAvatarMode;
@@ -647,15 +649,15 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
             <section className={groupClass}>
                 <div className="mb-3">
-                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">白框 · 手写码</h2>
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">聊天白框 · 手写码</h2>
                     <p className="mt-1 text-[10px] leading-relaxed text-[#6b6b6b]">
-                        全局白框手写码在「外观设置 → 手写码」页里写（带取景框），会作用于所有角色；私聊内不再提供角色专属白框。
-                        要是旧角色码或全局码写坏了、聊天界面整崩，点下面一键全撕即可救回来。
+                        顶栏、输入栏和功能面板的 CSS 直接在这里写；气泡本体的 CSS 去「气泡裁剪台 → 手写码」写。
                     </p>
                 </div>
+                {chromeCssStudio}
                 <button
                     onClick={() => { if (window.confirm('确定把聊天白框手写码都撕掉？会清空全局码，并清理旧角色专属码（其它聊天外观不受影响）。')) onResetAllChrome?.(); }}
-                    className="w-full border-2 border-[#2b2933] border-dashed bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
+                    className="mt-3 w-full border-2 border-[#2b2933] border-dashed bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
                     一键全撕 · 救援
                 </button>
             </section>

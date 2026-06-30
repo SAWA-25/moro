@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import legacy from '@vitejs/plugin-legacy';
 import { execSync } from 'node:child_process';
 import { bakeVoiceMiddleware } from './server/bake-voice-middleware';
 
@@ -45,6 +46,10 @@ if (process.env.VITE_SHOW_BUILD_BADGE === '1') showBuildBadge = true;
 export default defineConfig({
   plugins: [
     react(),
+    legacy({
+      targets: ['Android >= 5'],
+      modernPolyfills: true,
+    }),
     {
       name: 'bake-voice-middleware',
       configureServer(server) {
@@ -93,8 +98,6 @@ export default defineConfig({
     assetsDir: 'assets',
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
-      // 关键修复：将这些包排除在打包之外，让浏览器通过 index.html 的 importmap 加载
-      external: ['pdfjs-dist', 'katex'],
       onwarn(warning, defaultHandler) {
         // 抑制动态导入与静态导入混合的无害警告
         if (warning.message?.includes('dynamic import will not move module into another chunk')) return;

@@ -22,11 +22,9 @@ import java.security.MessageDigest;
 import java.util.Locale;
 
 public class MainActivity extends BridgeActivity {
-    private static final String RELEASE_CERT_SHA256 = "c82f83def82b48108aad6bfe80e1243ae15fdd4c7d29481d6a5e17d57fb2e238";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        if (!isDebuggable() && !hasExpectedReleaseSignature()) {
+        if (!isDebuggable() && shouldEnforceReleaseSignature() && !hasExpectedReleaseSignature()) {
             finish();
             return;
         }
@@ -57,8 +55,20 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private boolean shouldEnforceReleaseSignature() {
+        return !expectedReleaseCertSha256().isEmpty();
+    }
+
+    private String expectedReleaseCertSha256() {
+        String expected = BuildConfig.MORO_RELEASE_CERT_SHA256;
+        return expected == null ? "" : expected.trim().toLowerCase(Locale.US);
+    }
+
     private boolean hasExpectedReleaseSignature() {
         try {
+            String expected = expectedReleaseCertSha256();
+            if (expected.isEmpty()) return true;
+
             PackageManager packageManager = getPackageManager();
             PackageInfo info;
             Signature[] signatures;
@@ -75,7 +85,7 @@ public class MainActivity extends BridgeActivity {
 
             if (signatures == null) return false;
             for (Signature signature : signatures) {
-                if (RELEASE_CERT_SHA256.equals(sha256(signature.toByteArray()))) {
+                if (expected.equals(sha256(signature.toByteArray()))) {
                     return true;
                 }
             }

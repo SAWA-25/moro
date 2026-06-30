@@ -30,6 +30,14 @@ import { substituteMacros, type MacroContext } from './macros';
 import { normalizeRegexScript } from './regex/engine';
 import { setPresetRegexScripts } from './regex/store';
 
+export function createPresetLocalId(prefix = 'preset'): string {
+    const webCrypto = typeof crypto !== 'undefined' ? crypto : undefined;
+    if (webCrypto && typeof webCrypto.randomUUID === 'function') {
+        return webCrypto.randomUUID();
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 // ---------------------------------------------------------------------------
 // 常量
 
@@ -108,7 +116,7 @@ const DEFAULT_ORDER = (): PresetPromptOrderEntry[] => [
 export function createDefaultPreset(name = 'Default'): TavernPreset {
     const now = Date.now();
     return {
-        id: crypto.randomUUID(),
+        id: createPresetLocalId('preset'),
         name,
         createdAt: now,
         updatedAt: now,
@@ -177,7 +185,7 @@ export function importTavernPreset(data: any, fallbackName: string): TavernPrese
     }
     const now = Date.now();
     const preset: TavernPreset = {
-        id: crypto.randomUUID(),
+        id: createPresetLocalId('preset'),
         name: (typeof data.name === 'string' && data.name.trim()) || fallbackName,
         createdAt: now,
         updatedAt: now,

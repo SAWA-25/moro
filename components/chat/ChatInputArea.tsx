@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
+import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
@@ -810,6 +810,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
                             <ActionStrip label="主动消息" hint="设置 TA 主动找你" dark={isDiscordStyle} active={isProactiveActive} onClick={() => onPanelAction('proactive')}>
                                 <EnvelopeOpen className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="闹钟" hint="睡觉督促 / 起床叫醒" dark={isDiscordStyle} onClick={() => onPanelAction('alarm')}>
+                                <Alarm className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             <ActionStrip label="TA 的日常" hint="看看 TA 自己的生活轨迹" dark={isDiscordStyle} onClick={() => onPanelAction('life-recap')}>

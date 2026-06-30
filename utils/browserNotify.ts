@@ -115,6 +115,18 @@ export interface LocalNotificationOptions {
   silent?: boolean;
 }
 
+async function getReadyServiceWorkerRegistration(timeoutMs = 1500): Promise<ServiceWorkerRegistration | null> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try {
+    return await Promise.race<ServiceWorkerRegistration | null>([
+      navigator.serviceWorker.ready,
+      new Promise<null>(resolve => window.setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 发一条本地系统通知。优先 SW registration.showNotification，回退到页面级 Notification。
  * 仅在 permission === 'granted' 时有效；其余情况静默返回 false。
@@ -150,8 +162,8 @@ export async function showLocalNotification(title: string, opts: LocalNotificati
     renotify: opts.tag ? (opts.renotify ?? true) : undefined,
   };
   try {
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
+    const reg = await getReadyServiceWorkerRegistration();
+    if (reg) {
       await reg.showNotification(title, notifOpts);
       return true;
     }

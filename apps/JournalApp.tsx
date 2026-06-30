@@ -15,8 +15,10 @@ import { resolveAuxApi } from '../utils/auxApi';
 
 // 拼贴手账重制：界面文案 / 布局 / 按键全部原创，功能、数据模型、LLM 契约、score_card 结构均不变。
 
-const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
+const TWEMOJI_BASE = `${import.meta.env.BASE_URL}vendor/twemoji/72x72`;
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
+const PAPER_FIBER_TEXTURE = 'radial-gradient(rgba(80,70,58,0.2) 0.7px, transparent 0.9px), radial-gradient(rgba(80,70,58,0.12) 0.5px, transparent 0.7px)';
+const CARDBOARD_TEXTURE = 'repeating-linear-gradient(12deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 12px), repeating-linear-gradient(92deg, rgba(0,0,0,0.08) 0 1px, transparent 1px 18px)';
 
 // --- Assets & Constants ---
 
@@ -747,7 +749,7 @@ ${charPart}
                 })}
 
                 {/* Paper Texture Overlay (Subtle) */}
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')] opacity-10 pointer-events-none z-0 mix-blend-multiply"></div>
+                <div className="absolute inset-0 opacity-10 pointer-events-none z-0 mix-blend-multiply" style={{ backgroundImage: PAPER_FIBER_TEXTURE, backgroundSize: '18px 18px, 29px 29px' }}></div>
             </div>
         );
     };
@@ -1011,7 +1013,7 @@ ${charPart}
 
     // --- WRITE MODE ---
     return (
-        <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: '#26241f', backgroundImage: "url('https://www.transparenttextures.com/patterns/cardboard-flat.png')" }}>
+        <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: '#26241f', backgroundImage: CARDBOARD_TEXTURE, backgroundSize: '28px 28px, 36px 36px' }}>
             {archiveResultModal}
 
             {/* Editor Header（书桌上方工具条） */}

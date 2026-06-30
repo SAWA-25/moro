@@ -1,28 +1,94 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+    BookmarkSimple,
+    CalendarCheck,
+    CalendarDots,
+    CaretRight,
+    ClockClockwise,
+    Heart,
+    Sparkle,
+} from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
+import { AppID } from '../types';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import ScheduleApp from './ScheduleApp';
 import { SpecialMomentsApp } from '../components/ValentineEvent';
 import AlmanacCalendar from './almanac/AlmanacCalendar';
 import CollectionHall from './almanac/CollectionHall';
 import WeddingSection from './almanac/WeddingSection';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, PaperClip, HAND_FONT } from './almanac/handbookKit';
+import {
+    InsButton,
+    InsCard,
+    InsHeader,
+    InsScroll,
+    InsShell,
+    Polaroid,
+    SectionLabel,
+    accent,
+    INK,
+    INK_SOFT,
+} from '../components/ui/insKit';
 
 /**
- * 岁时记 · 封面页（拼贴手账风）
+ * 岁时记 · 封面页
  * ------------------------------------------------------------
- * 一本贴满胶带和便签的本子。翻开能去三页：
- *   时光契约（ScheduleApp）  —— 要做的事 + 要数的日子
- *   特别时光（SpecialMomentsApp）—— 节日里一起留下的瞬间
- *   日历（AlmanacCalendar）   —— 这个月，你和角色都能往某天贴便签（新增）
- * 三页都通过 onExit 翻回这张封面，不直接关到桌面。各页玩法、数据、名字照旧。
+ * 合并入口：时光契约、共享月历、典藏馆、喜事、特别时光。
+ * 只负责导航和视觉壳，子页的数据与玩法保持原本独立。
  */
 
 const MONTHS_CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
 const WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
+type AlmanacSection = 'home' | 'schedule' | 'moments' | 'calendar' | 'collection' | 'wedding';
+
+const useMonthCells = (now: Date) => useMemo(() => {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const cells: Array<number | null> = [];
+    for (let i = 0; i < first; i++) cells.push(null);
+    for (let d = 1; d <= days; d++) cells.push(d);
+    while (cells.length < 35) cells.push(null);
+    return cells.slice(0, 35);
+}, [now]);
+
+const PolaroidBackdrop: React.FC<{ icon: React.ReactNode; tone: string; label: string }> = ({ icon, tone, label }) => (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+        <span
+            className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', color: tone, boxShadow: '0 10px 24px -18px rgba(38,38,38,0.36)' }}
+        >
+            {icon}
+        </span>
+        <span className="text-[8px] tracking-[0.24em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>
+            {label}
+        </span>
+    </div>
+);
 
 const AlmanacApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'schedule' | 'moments' | 'calendar' | 'collection' | 'wedding'>('home');
+    const [section, setSection] = useState<AlmanacSection>('home');
+    const now = useMemo(() => new Date(), []);
+    const today = now.getDate();
+    const monthCells = useMonthCells(now);
+    const a = accent('pink');
+
+    useManualDeepLink(AppID.Almanac, useCallback((target) => {
+        const route = target.route as AlmanacSection | undefined;
+        const knownRoutes: AlmanacSection[] = ['schedule', 'moments', 'calendar', 'collection', 'wedding'];
+        if (route && knownRoutes.includes(route)) {
+            setSection(route);
+            window.setTimeout(() => {
+                if (target.anchorId) scrollToManualAnchor(target.anchorId);
+            }, 160);
+            return;
+        }
+        setSection('home');
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-almanac-root');
+        }, 120);
+    }, []));
 
     if (section === 'schedule') return <ScheduleApp onExit={() => setSection('home')} />;
     if (section === 'moments') return <SpecialMomentsApp onExit={() => setSection('home')} />;
@@ -30,136 +96,194 @@ const AlmanacApp: React.FC = () => {
     if (section === 'collection') return <CollectionHall onExit={() => setSection('home')} />;
     if (section === 'wedding') return <WeddingSection onExit={() => setSection('home')} />;
 
-    const now = new Date();
+    const entries: Array<{
+        key: Exclude<AlmanacSection, 'home'>;
+        title: string;
+        en: string;
+        date: string;
+        icon: React.ReactNode;
+        tone: string;
+        anchor: string;
+        rotate: number;
+    }> = [
+        {
+            key: 'calendar',
+            title: '这个月',
+            en: 'calendar',
+            date: `${now.getMonth() + 1}/${today}`,
+            icon: <CalendarDots size={30} weight="bold" />,
+            tone: a.solid,
+            anchor: 'manual-almanac-calendar-card',
+            rotate: -1.5,
+        },
+        {
+            key: 'schedule',
+            title: '时光契约',
+            en: 'promise',
+            date: 'TODO',
+            icon: <CalendarCheck size={30} weight="bold" />,
+            tone: '#7fa8b3',
+            anchor: 'manual-almanac-schedule-card',
+            rotate: 1.2,
+        },
+        {
+            key: 'collection',
+            title: '典藏馆',
+            en: 'archive',
+            date: 'SAVE',
+            icon: <BookmarkSimple size={30} weight="bold" />,
+            tone: '#9b7ad8',
+            anchor: 'manual-almanac-collection-card',
+            rotate: 0.8,
+        },
+        {
+            key: 'wedding',
+            title: '喜事',
+            en: 'wedding',
+            date: 'LOVE',
+            icon: <Heart size={30} weight="fill" />,
+            tone: '#d76a96',
+            anchor: 'manual-almanac-wedding-card',
+            rotate: -0.9,
+        },
+        {
+            key: 'moments',
+            title: '特别时光',
+            en: 'moments',
+            date: 'MEMO',
+            icon: <Sparkle size={30} weight="fill" />,
+            tone: '#f29f6b',
+            anchor: 'manual-almanac-moments-card',
+            rotate: 1.4,
+        },
+    ];
 
     return (
-        <PaperPage kind="kraft" className="animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
-            <div className="h-full flex flex-col" style={{ color: '#4a3b2e' }}>
-                {/* 顶栏：回桌面 + 今天的小邮戳 */}
-                <div className="relative flex items-center justify-between px-4 pt-3 pb-1 shrink-0 z-10">
-                    <button
-                        onClick={closeApp}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-bold active:scale-95 transition-transform"
-                        style={{ background: '#fffdf7', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-1.5deg)', color: '#7a5c44' }}
+        <InsShell accent="pink" className="almanac-polaroid">
+            <InsHeader
+                title="岁时记"
+                en="ALMANAC"
+                onBack={closeApp}
+                accent="pink"
+                right={
+                    <span
+                        className="h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-black"
+                        style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', color: a.ink, boxShadow: '0 6px 16px -12px rgba(38,38,38,0.32)' }}
                     >
-                        ← 合上本子
-                    </button>
-                    <Postmark size={50} color="#7a8b5a" rotate={9}>
-                        {MONTHS_CN[now.getMonth()]}月{now.getDate()}
-                    </Postmark>
-                </div>
+                        <CalendarDots size={15} weight="bold" />
+                        {MONTHS_CN[now.getMonth()]}月{today}日
+                    </span>
+                }
+            />
 
-                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 z-10">
-                    {/* 封面招牌 */}
-                    <div className="relative mt-3 mb-7 select-none">
-                        <WashiTape className="-top-1 left-6" color="rgba(231,163,156,0.72)" rotate={-16} width={84} height={26} />
-                        <WashiTape className="-top-1 right-10" color="rgba(158,201,163,0.7)" rotate={14} width={70} height={24} />
-                        <div className="pt-6 pl-1" style={{ fontFamily: HAND_FONT }}>
-                            <div className="text-[11px] tracking-[0.4em]" style={{ color: '#a98e6f' }}>SEASONS · 私人手账</div>
-                            <div className="flex items-end gap-3 mt-1">
-                                <div className="text-[64px] leading-none font-black" style={{ color: '#5b4636', textShadow: '2px 2px 0 rgba(177,84,63,0.14)' }}>岁时记</div>
+            <InsScroll className="px-4 pb-8">
+                <section data-manual-anchor="manual-almanac-root" className="space-y-5">
+                    <InsCard className="p-4 overflow-visible" accent="pink">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                                <div className="text-[9px] tracking-[0.34em] uppercase" style={{ fontFamily: 'var(--font-label)', color: a.solid }}>
+                                    SEASONAL CAMERA ROLL
+                                </div>
+                                <h1 className="mt-1 text-[40px] leading-none font-black tracking-tight" style={{ color: INK }}>岁时记</h1>
+                                <p className="mt-2 text-[12px] leading-relaxed max-w-[13rem]" style={{ color: '#6f6974' }}>
+                                    把约定、月历、纪念日和节日回忆，排进同一卷时间相册。
+                                </p>
                             </div>
-                            <div className="text-[13px] mt-2 leading-relaxed" style={{ color: '#7a624c' }}>
-                                把要做的事、要数的日子，和节日里那几页，全贴进同一本里。
+                            <div className="relative shrink-0 w-[96px] bg-white rounded-[14px] p-2 pb-4 rotate-[2deg]" style={{ boxShadow: '0 18px 34px -22px rgba(38,38,38,0.42)' }}>
+                                <div className="text-center text-[8px] tracking-[0.22em] uppercase mb-1.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>
+                                    {now.getFullYear()}
+                                </div>
+                                <div className="grid grid-cols-7 gap-[2px]">
+                                    {monthCells.slice(0, 28).map((d, idx) => (
+                                        <span
+                                            key={`${d || 'e'}-${idx}`}
+                                            className="aspect-square rounded-[3px]"
+                                            style={{
+                                                background: d === today ? a.solid : d ? a.soft : '#f0ede8',
+                                                opacity: d ? 1 : 0.55,
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="absolute left-0 right-0 bottom-1 text-center text-[12px] font-bold" style={{ color: INK, fontFamily: 'var(--font-hand)' }}>
+                                    {MONTHS_CN[now.getMonth()]}月
+                                </div>
                             </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-7 gap-1">
+                            {WEEK_CN.map((w) => (
+                                <div key={w} className="text-center text-[9px] font-bold" style={{ color: INK_SOFT }}>{w}</div>
+                            ))}
+                            {monthCells.map((d, idx) => (
+                                <button
+                                    key={`${d || 'blank'}-${idx}`}
+                                    type="button"
+                                    onClick={d ? () => setSection('calendar') : undefined}
+                                    disabled={!d}
+                                    className="aspect-square rounded-[10px] text-[11px] font-black transition-transform active:scale-95 disabled:opacity-30"
+                                    style={d === today
+                                        ? { background: a.solid, color: '#fff', boxShadow: `0 10px 18px -12px ${a.solid}` }
+                                        : { background: d ? '#fff7fb' : '#f2eee8', color: d ? a.ink : 'transparent', border: '1px solid rgba(236,72,153,0.10)' }}
+                                    title={d ? `${d}日` : undefined}
+                                >
+                                    {d}
+                                </button>
+                            ))}
+                        </div>
+                    </InsCard>
+
+                    <div>
+                        <SectionLabel en="PHOTO ENTRIES" accent="pink" className="mb-3">相片入口</SectionLabel>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-5 pb-1">
+                            {entries.map((entry, idx) => (
+                                <div key={entry.key} data-manual-anchor={entry.anchor} className={idx === entries.length - 1 ? 'col-span-2 flex justify-center' : ''}>
+                                    <Polaroid
+                                        onClick={() => setSection(entry.key)}
+                                        caption={entry.title}
+                                        date={entry.date}
+                                        rotate={entry.rotate}
+                                        ratio={0.86}
+                                        develop
+                                        className={idx === entries.length - 1 ? 'w-[48%] min-w-[132px]' : 'w-full'}
+                                        style={{ maxWidth: 178 }}
+                                        fallback={<PolaroidBackdrop icon={entry.icon} tone={entry.tone} label={entry.en} />}
+                                    />
+                                </div>
+                            ))}
                         </div>
                     </div>
 
-                    {/* 三页入口 */}
-                    <div className="space-y-5">
-                        {/* 时光契约 */}
-                        <PaperNote rotate={-1.4} bg="#fbf6ea" className="px-5 py-5" onClick={() => setSection('schedule')}>
-                            <WashiTape className="-top-2 left-8" color="rgba(120,180,200,0.62)" rotate={-12} width={76} />
-                            <PaperClip className="-top-3 right-6" color="#8fa0ae" />
-                            <div className="flex items-center gap-3">
-                                <span className="text-[34px] leading-none">🧷</span>
-                                <div>
-                                    <TapeLabel color="#bcd6dd" textColor="#33606b">第 一 页</TapeLabel>
-                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#33606b' }}>时光契约</div>
-                                </div>
+                    <InsCard className="p-4 mb-2" accent="pink">
+                        <SectionLabel en="TODAY" accent="pink" className="mb-3">今天的时间签</SectionLabel>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="rounded-[16px] px-3 py-3" style={{ background: a.soft }}>
+                                <div className="text-[8px] tracking-[0.24em] uppercase" style={{ fontFamily: 'var(--font-label)', color: a.solid }}>date</div>
+                                <div className="mt-1 text-[15px] font-black" style={{ color: a.ink }}>{now.getMonth() + 1}/{today}</div>
                             </div>
-                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#6a5a48' }}>
-                                把要做的事钉成约定，让角色当监督人；再把在意的日子一天天数着倒计时。
+                            <div className="rounded-[16px] px-3 py-3" style={{ background: '#f3f7f6' }}>
+                                <div className="text-[8px] tracking-[0.24em] uppercase" style={{ fontFamily: 'var(--font-label)', color: '#7fa8b3' }}>week</div>
+                                <div className="mt-1 text-[15px] font-black" style={{ color: '#577782' }}>周{WEEK_CN[now.getDay()]}</div>
                             </div>
-                        </PaperNote>
-
-                        {/* 日历（新增）*/}
-                        <PaperNote rotate={1.2} bg="#f3f7ef" className="px-5 py-5" onClick={() => setSection('calendar')}>
-                            <WashiTape className="-top-2 right-8" color="rgba(231,196,120,0.66)" rotate={12} width={76} />
-                            <div className="absolute top-3 right-4">
-                                <Postmark size={40} color="#b1543f" rotate={-10}>NEW</Postmark>
+                            <div className="rounded-[16px] px-3 py-3" style={{ background: '#fff7ed' }}>
+                                <div className="text-[8px] tracking-[0.24em] uppercase" style={{ fontFamily: 'var(--font-label)', color: '#f29f6b' }}>roll</div>
+                                <div className="mt-1 text-[15px] font-black" style={{ color: '#9a5a24' }}>{entries.length}格</div>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-[34px] leading-none">🗓️</span>
-                                <div>
-                                    <TapeLabel color="#cfe3c6" textColor="#4a6b3c">第 二 页</TapeLabel>
-                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#4a6b3c' }}>这个月</div>
-                                </div>
-                            </div>
-                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#5d6a4d' }}>
-                                一整页真实月历。点哪天都能贴张便签；角色也会自己往某些日子贴上惦记的事。
-                            </div>
-                        </PaperNote>
-
-                        {/* 典藏馆（新增）*/}
-                        <PaperNote rotate={0.9} bg="#f6f0fa" className="px-5 py-5" onClick={() => setSection('collection')}>
-                            <WashiTape className="-top-2 left-9" color="rgba(200,155,224,0.62)" rotate={-11} width={76} />
-                            <div className="absolute top-3 right-4">
-                                <Postmark size={40} color="#9a6fbf" rotate={8}>NEW</Postmark>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-[34px] leading-none">🗃️</span>
-                                <div>
-                                    <TapeLabel color="#d9bfe3" textColor="#6a4b78">第 四 页</TapeLabel>
-                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#6a4b78' }}>典藏馆</div>
-                                </div>
-                            </div>
-                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#6d5a78' }}>
-                                谈心、同人、课业、剧目都收进这里珍藏；想分享时，把任意一份转发给某个角色看。
-                            </div>
-                        </PaperNote>
-
-                        {/* 喜事（婚姻筹备期，新增）*/}
-                        <PaperNote rotate={-1.1} bg="#fdf0f4" className="px-5 py-5" onClick={() => setSection('wedding')}>
-                            <WashiTape className="-top-2 right-9" color="rgba(231,150,180,0.66)" rotate={11} width={76} />
-                            <div className="absolute top-3 right-4">
-                                <Postmark size={40} color="#c2557a" rotate={-8}>NEW</Postmark>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-[34px] leading-none">💍</span>
-                                <div>
-                                    <TapeLabel color="#eec7d2" textColor="#a83a5e">第 五 页</TapeLabel>
-                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#a83a5e' }}>喜事</div>
-                                </div>
-                            </div>
-                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#8a6473' }}>
-                                求婚成功后的婚姻筹备期都收在这里：订婚日、商定的婚期、领证与婚礼，一步步记下来。
-                            </div>
-                        </PaperNote>
-
-                        {/* 特别时光 */}
-                        <PaperNote rotate={-0.8} bg="#fbf0f1" className="px-5 py-5" onClick={() => setSection('moments')}>
-                            <WashiTape className="-top-2 left-10" color="rgba(231,163,156,0.7)" rotate={-10} width={76} />
-                            <div className="flex items-center gap-3">
-                                <span className="text-[34px] leading-none">💌</span>
-                                <div>
-                                    <TapeLabel color="#eec7cb" textColor="#8a3b4c">第 三 页</TapeLabel>
-                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#8a3b4c' }}>特别时光</div>
-                                </div>
-                            </div>
-                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#7a5560' }}>
-                                情人节、白色情人节、520……那些节日里和角色一起留下的页面，随时翻回去看。
-                            </div>
-                        </PaperNote>
-                    </div>
-
-                    {/* 页脚手写小字 + 今天 */}
-                    <div className="text-center mt-8 text-[11px] select-none" style={{ color: '#a98e6f', fontFamily: HAND_FONT }}>
-                        {now.getFullYear()} 年 · 周{WEEK_CN[now.getDay()]} · 又翻开了这一页
-                    </div>
-                </div>
-            </div>
-        </PaperPage>
+                        </div>
+                        <InsButton
+                            variant="soft"
+                            accent="pink"
+                            className="w-full mt-4 py-3 text-[13px]"
+                            onClick={() => setSection('calendar')}
+                            icon={<ClockClockwise size={16} weight="bold" />}
+                        >
+                            翻到共享月历
+                            <CaretRight size={14} weight="bold" />
+                        </InsButton>
+                    </InsCard>
+                </section>
+            </InsScroll>
+        </InsShell>
     );
 };
 

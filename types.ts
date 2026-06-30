@@ -51,6 +51,7 @@ export enum AppID {
   VideoCall = 'video_call', // 视频通话 — 聊天里发起的视频通话：角色侧用通话立绘，用户侧可自选开/关摄像头（只开一下就关），翻转镜头
   Xunji = 'xunji', // 循迹 — 角色 Screenlife 演出 + 异地恋式监视/报备模拟，local-first 落库
   DesktopPet = 'desktop_pet', // 桌宠 — DyberPet 桌面宠物：喂食、摸摸、提醒和跨 App 悬浮
+  Health = 'health', // 健康 — 经期记录、预测与提醒
   Manual = 'manual', // 说明书 — 按 App 分类收纳用户可操作功能说明
 }
 
@@ -306,6 +307,9 @@ export interface OSTheme {
    *  moro-character-card / moro-app-tile / moro-dock / moro-status-bar / moro-lock-screen 等）做全局美化。
    *  在「主题 → 自定义 CSS」编辑，实时生效。 */
   globalCustomCss?: string;
+  /** 单 App 自定义 CSS：key = AppID。每个 App 外壳都有 .moro-app-shell / .moro-app-shell-<id> /
+   *  [data-moro-app="<id>"] 钩子，适合把某个 App 单独改成另一套皮肤。 */
+  appCustomCss?: Partial<Record<AppID, string>>;
   /** 桌面小组件自定义（key = widget id：clock / character / schedule / music / image / imgtl / imgtr / imgwide / text）。
    *  在「主题 → 桌面小组件」编辑：隐藏（删除）、改网格尺寸（横版/竖版/方形）、注入小组件自定义 CSS。 */
   desktopWidgetPrefs?: Record<string, DesktopWidgetPref>;
@@ -3162,6 +3166,12 @@ export interface GroupChatRecord {
     messages: Message[];
 }
 
+export interface GroupApiConfig {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+}
+
 export interface GroupProfile {
     id: string;
     name: string;
@@ -3189,6 +3199,10 @@ export interface GroupProfile {
     mutedAll?: boolean;
     /** 角色各自回复：开启后群聊每轮按成员分别调用 API，而不是一次导演调用统筹全场。 */
     replyIndividually?: boolean;
+    /** 本群专属 API：仅在“角色各自回复”模式下作为成员 API 的回退，不影响私聊或其他群。 */
+    groupApi?: GroupApiConfig;
+    /** 成员专属 API：charId → API 配置；仅在“角色各自回复”模式下覆盖本群默认 API。 */
+    memberApis?: Record<string, GroupApiConfig>;
     /** 让角色自动接话：用户发言后，额外续跑若干轮角色之间的自然对话。 */
     autoContinueEnabled?: boolean;
     /** 自动接话轮数。每轮会让群成员在用户旁观状态下继续接话一次。 */
@@ -4029,8 +4043,24 @@ export interface StudyChapter {
     content?: string; 
 }
 
+export type StudyCourseKind = 'standard' | 'language';
+export type StudyLanguageLevel = 'zero' | 'beginner' | 'intermediate' | 'advanced' | 'professional';
+export type StudyLanguageSource = 'built_in' | 'pdf';
+export type StudyLanguagePracticeFocus = 'comprehensive';
+
+export interface StudyLanguageConfig {
+    targetLanguage: string;
+    instructionLanguage: string;
+    level: StudyLanguageLevel;
+    goal: string;
+    source: StudyLanguageSource;
+    practiceFocus: StudyLanguagePracticeFocus;
+    customNotes?: string;
+}
+
 export interface StudyCourse {
     id: string;
+    kind?: StudyCourseKind;
     title: string;
     rawText: string; 
     chapters: StudyChapter[];
@@ -4039,6 +4069,7 @@ export interface StudyCourse {
     coverStyle: string; 
     totalProgress: number; 
     preference?: string; 
+    languageConfig?: StudyLanguageConfig;
 }
 
 export interface StudyTutorPreset {
@@ -4139,6 +4170,61 @@ export interface GameSession {
 }
 
 export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'forum_card' | 'chat_forward' | 'screen_peek_card' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
+
+export type ChatAlarmKind = 'sleep' | 'wake' | 'custom';
+export type ChatAlarmChannel = 'auto' | 'reminder' | 'call';
+
+/** 絮语·单聊闹钟：按角色保存的睡觉督促 / 起床叫醒 / 自定义提醒。 */
+export interface ChatAlarm {
+    id: string;
+    charId: string;
+    label: string;
+    kind: ChatAlarmKind;
+    /** 24 小时制 HH:mm。 */
+    timeHHmm: string;
+    /** JS Date.getDay() 口径：0=周日，1=周一 ... 6=周六。空数组视为每天。 */
+    weekdays: number[];
+    channel: ChatAlarmChannel;
+    enabled: boolean;
+    nextAt: number;
+    /** 防止同一个本地日期/时间重复触发，格式由 utils/chatAlarms.ts 生成。 */
+    lastFiredKey?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export type PeriodReminderVisibility = 'public' | 'private';
+export type PeriodReminderNotifyChannel = 'system' | 'character' | 'both';
+
+/** 健康·经期提醒：本地预测与提醒设置。只做生活提醒，不作为医疗判断。 */
+export interface PeriodReminderSettings {
+    id: string;
+    enabled: boolean;
+    /** 最近一次经期开始日，YYYY-MM-DD。为空时不排程提醒。 */
+    lastStartDate?: string;
+    cycleLength: number;
+    periodLength: number;
+    /** 相对预测开始日的提醒偏移，-2=提前两天，0=当天。 */
+    remindOffsets: number[];
+    /** 24 小时制 HH:mm。 */
+    timeHHmm: string;
+    visibility: PeriodReminderVisibility;
+    notifyChannel: PeriodReminderNotifyChannel;
+    charIds: string[];
+    nextAt: number;
+    lastFiredKey?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface PeriodCycleEvent {
+    id: string;
+    kind: 'start' | 'end';
+    date: string;
+    note?: string;
+    createdAt: number;
+    updatedAt: number;
+}
 
 /** 购物商城：一件礼物（内置目录条目）。 */
 export interface ShopItem {
@@ -4420,6 +4506,9 @@ export interface FullBackupData {
     groups?: GroupProfile[]; 
     messages?: Message[];
     privateChatArchives?: PrivateChatArchive[];
+    chatAlarms?: ChatAlarm[];
+    periodReminderSettings?: PeriodReminderSettings[];
+    periodCycleEvents?: PeriodCycleEvent[];
     customThemes?: ChatTheme[];
     savedEmojis?: Emoji[]; 
     emojiCategories?: EmojiCategory[]; 
@@ -4503,6 +4592,9 @@ export interface FullBackupData {
 
     // Guidebook (攻略本)
     guidebookSessions?: GuidebookSession[];
+
+    // Theater quiz side stories (折子戏·番外问卷)
+    theaterQuizSessions?: TheaterQuizSession[];
 
     // Chat delayed actions
     scheduledMessages?: {
@@ -5095,6 +5187,63 @@ export interface TruthDareSession {
   players: TruthDarePlayer[];
   spice: TruthDareSpice;    // 尺度
   rounds: TruthDareRound[];
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 折子戏·番外问卷：可保存/续做的问卷房间。
+// 每题保存 user 与一个或多个角色的答案，提交答案后进入题内评论区；只有主动点下一题才推进。
+// 📌 prompt 文案集中在 utils/theaterPrompts.ts（[贰] 番外 区段），生成逻辑在 utils/theaterExtra.ts。
+// ──────────────────────────────────────────────────────────────────
+export type TheaterQuizStatus = 'active' | 'finished';
+export type TheaterQuizItemState = 'answering' | 'commenting' | 'complete';
+export type TheaterQuizAnswerStatus = 'pending' | 'done' | 'failed';
+
+export interface TheaterQuizAnswer {
+  speakerId: string;       // 'user' 或 charId
+  speakerName: string;
+  isUser: boolean;
+  charId?: string;
+  avatar?: string;
+  text: string;
+  status: TheaterQuizAnswerStatus;
+  error?: string;
+  at: number;
+}
+
+export interface TheaterQuizComment {
+  id: string;
+  speakerId: string;       // 'user' 或 charId
+  speakerName: string;
+  isUser: boolean;
+  charId?: string;
+  avatar?: string;
+  text: string;
+  targetSpeakerId?: string;
+  at: number;
+}
+
+export interface TheaterQuizItem {
+  no: number;
+  question: string;
+  answers: Record<string, TheaterQuizAnswer>;
+  comments: TheaterQuizComment[];
+  state: TheaterQuizItemState;
+  at: number;
+  completedAt?: number;
+}
+
+export interface TheaterQuizSession {
+  id: string;
+  title: string;
+  topic: string;
+  status: TheaterQuizStatus;
+  participantIds: string[];
+  currentIndex: number;
+  total: number;
+  items: TheaterQuizItem[];
+  createdAt: number;
+  lastActiveAt: number;
+  finishedAt?: number;
 }
 
 // ──────────────────────────────────────────────────────────────────

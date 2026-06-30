@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, ChatAlarm, PeriodReminderSettings } from '../types';
 import { DB } from '../utils/db';
 import { createAutoBankTransaction } from '../utils/bankLedger';
 import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
@@ -48,6 +48,32 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
+import { showLocalNotification } from '../utils/browserNotify';
+import {
+  CHAT_ALARM_LOCK_MS,
+  CHAT_ALARM_NATIVE_WINDOW_DAYS,
+  alarmFireKey,
+  alarmNotificationBody,
+  alarmNotificationTitle,
+  buildChatAlarmHint,
+  computeNextAlarmAt,
+  markAlarmFired,
+  nativeNotificationIdForAlarm,
+  resolveAlarmChannel,
+  shouldSkipStaleAlarm,
+} from '../utils/chatAlarms';
+import {
+  PERIOD_REMINDER_LOCK_MS,
+  PERIOD_REMINDER_NATIVE_WINDOW_DAYS,
+  buildPeriodReminderHint,
+  computeNextPeriodReminderAt,
+  markPeriodReminderFired,
+  nativeNotificationIdForPeriodReminder,
+  periodFireKey,
+  periodReminderBody,
+  periodReminderTitle,
+  shouldSkipStalePeriodReminder,
+} from '../utils/periodReminders';
 import {
   DEFAULT_DESKTOP_WALLPAPER,
   DEFAULT_LOCK_SCREEN_WALLPAPER,
@@ -751,6 +777,33 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
   }, []);
 
+  useEffect(() => {
+      if (!Capacitor.isNativePlatform()) return;
+      let handle: { remove: () => Promise<void> } | null = null;
+      let cancelled = false;
+      LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+          const extra = (action.notification?.extra || {}) as any;
+          if (extra?.source === 'period-reminder' || extra?.type === 'period-reminder') {
+              const charId = extra.charId || extra.data?.charId;
+              if (charId) setActiveCharacterId(charId);
+              setActiveApp(AppID.Health);
+              return;
+          }
+          if (extra?.source !== 'chat-alarm' && extra?.type !== 'chat-alarm') return;
+          const charId = extra.charId || extra.data?.charId;
+          if (!charId) return;
+          setActiveApp(AppID.Chat);
+          setActiveCharacterId(charId);
+      }).then(h => {
+          if (cancelled) h.remove().catch(() => {});
+          else handle = h;
+      }).catch(() => {});
+      return () => {
+          cancelled = true;
+          handle?.remove().catch(() => {});
+      };
+  }, []);
+
   // --- Helper to inject custom font ---
   const applyCustomFont = (fontData: string | undefined) => {
       let style = document.getElementById('custom-font-style');
@@ -768,13 +821,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   font-display: swap;
               }
               :root {
-                  --app-font: 'CustomUserFont', 'Quicksand', sans-serif;
+                  --app-font: 'CustomUserFont', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
               }
           `;
       } else {
           style.textContent = `
               :root {
-                  --app-font: 'Quicksand', sans-serif;
+                  --app-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
               }
           `;
       }
@@ -1578,7 +1631,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let awayProactiveCount = 0;
 
       const handler = (e: Event) => {
-          const { charId, charName, body, bodies, count } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string; bodies?: string[]; count?: number };
+          const { charId, charName, body, bodies, count, source, notificationData, skipSystemNotify } = (e as CustomEvent).detail as {
+              charId: string;
+              charName: string;
+              body?: string;
+              bodies?: string[];
+              count?: number;
+              source?: string;
+              notificationData?: any;
+              skipSystemNotify?: boolean;
+          };
           // Only mark unread if user is NOT currently viewing this character's chat
           // Always bump timestamp so Chat reloads messages if currently open
           setLastMsgTimestamp(Date.now());
@@ -1593,7 +1655,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           // 正盯着该角色聊天页（可见）→ 消息已实时呈现，什么都不做。
           // 在该聊天页但切了后台、又没开「后台回复通知」→ 维持旧行为，不打扰。
-          if (isChattingWithThisChar && (isVisible || !allowBgReplyNotify)) return;
+          if (isChattingWithThisChar && (isVisible || !allowBgReplyNotify) && source !== 'chat-alarm') return;
 
           const preview = (body || `${charName} sent a proactive message`).replace(/\s+/g, ' ').trim() || `${charName} sent a proactive message`;
 
@@ -1611,12 +1673,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 系统通知 / 原生通知：
           //  - 不在该聊天页：保持原有行为（permission 允许就发，桌面端即使可见也露出）。
           //  - 在该聊天页但页面已切后台 + 开了后台回复通知：把回复送进系统通知栏。
-          void sendProactiveNativeNotification(charId, charName, preview);
+          if (!skipSystemNotify) {
+              if (source === 'chat-alarm') {
+                  void showLocalNotification(charName, {
+                      body: preview,
+                      tag: `chat-alarm-${notificationData?.alarmId || charId}`,
+                      data: { ...(notificationData || {}), type: 'chat-alarm', charId },
+                  });
+              } else {
+                  void sendProactiveNativeNotification(charId, charName, preview);
+              }
+          }
 
           // Web Notification —— 走 Service Worker 的 showNotification（和"测试推送"
           // 同一条链路）。页面级 `new Notification(...)` 在标签后台 / PWA / 移动端会
           // 静默失败，必须走 SW registration 才稳定。
-          if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
+          if (!skipSystemNotify && source !== 'chat-alarm' && !Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
               const char = characters.find(c => c.id === charId);
               navigator.serviceWorker.ready.then(reg => {
                   reg.showNotification(charName, {
@@ -1874,6 +1946,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setActiveCharacterId(charId);
       };
 
+      const periodReminderOpenHandler = (e: Event) => {
+          const { charId } = (e as CustomEvent).detail as { charId?: string; settingsId?: string };
+          if (charId) setActiveCharacterId(charId);
+          setActiveApp(AppID.Health);
+      };
+
       const onVisible = () => {
           if (document.visibilityState !== 'visible') return;
           if (awayActiveMsgCount > 0) {
@@ -1922,19 +2000,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       window.addEventListener('active-msg-received', handler);
       window.addEventListener('active-msg-progress', progressHandler);
       window.addEventListener('active-msg-open', openHandler);
+      window.addEventListener('period-reminder-open', periodReminderOpenHandler);
       window.addEventListener('emotion-updated', buffSyncHandler);
       document.addEventListener('visibilitychange', onVisible);
       return () => {
           window.removeEventListener('active-msg-received', handler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);
+          window.removeEventListener('period-reminder-open', periodReminderOpenHandler);
           window.removeEventListener('emotion-updated', buffSyncHandler);
           document.removeEventListener('visibilitychange', onVisible);
       };
   }, [sendProactiveNativeNotification]);
 
   const proactiveRunningRef = useRef(false);
-  const proactiveQueueRef = useRef<string[]>([]);
+  type ProactiveRunOptions = { customHint?: string; eventSource?: string; notificationData?: any; skipSystemNotify?: boolean };
+  const proactiveQueueRef = useRef<Array<{ charId: string; opts?: ProactiveRunOptions }>>([]);
   // Per-character innerState cache for proactive turns — mirrors useChatAI's
   // evolvedNarrative state so consecutive proactive triggers carry continuity.
   const proactiveInnerStateRef = useRef<Map<string, string>>(new Map());
@@ -1965,17 +2046,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (!isDataLoaded) return;
 
       const drainQueuedProactive = () => {
-          const nextQueuedCharId = proactiveQueueRef.current.shift();
-          if (nextQueuedCharId) {
-              void runProactive(nextQueuedCharId);
+          const nextQueued = proactiveQueueRef.current.shift();
+          if (nextQueued) {
+              void runProactive(nextQueued.charId, nextQueued.opts);
           }
       };
 
-      const runProactive = async (charId: string, opts?: { customHint?: string }) => {
+      const runProactive = async (charId: string, opts?: ProactiveRunOptions) => {
           const customHint = opts?.customHint;
           if (proactiveRunningRef.current) {
-              if (!proactiveQueueRef.current.includes(charId)) {
-                  proactiveQueueRef.current.push(charId);
+              if (customHint || !proactiveQueueRef.current.some(item => item.charId === charId && !item.opts?.customHint)) {
+                  proactiveQueueRef.current.push({ charId, opts });
               }
               return;
           }
@@ -2395,7 +2476,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   //    供灵动岛/锁屏逐条弹横幅；count = 本轮实际落库的气泡条数，
                   //    未读数按它累加（每个消息气泡算一条，而不是每轮事件算一条）
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                      detail: { charId, charName: char.name, body: preview, bodies: savedPreviewChunks.slice(0, 8), count: offset }
+                      detail: {
+                          charId,
+                          charName: char.name,
+                          body: preview,
+                          bodies: savedPreviewChunks.slice(0, 8),
+                          count: offset,
+                          source: opts?.eventSource,
+                          notificationData: opts?.notificationData,
+                          skipSystemNotify: !!opts?.skipSystemNotify,
+                      }
                   }));
               }
 
@@ -2436,6 +2526,322 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       ProactiveChat.onTrigger((charId: string) => {
           void runProactive(charId);
       });
+
+      const collectNativeAlarmOccurrences = (alarm: ChatAlarm, now: number): number[] => {
+          if (!alarm.enabled) return [];
+          const end = now + CHAT_ALARM_NATIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+          const hits: number[] = [];
+          let cursor = now;
+          for (let i = 0; i < 32; i += 1) {
+              const next = computeNextAlarmAt(alarm.timeHHmm, alarm.weekdays, cursor, true);
+              if (next > end || next <= 0) break;
+              hits.push(next);
+              cursor = next + 60_000;
+          }
+          return hits;
+      };
+
+      const collectNativePeriodOccurrences = (settings: PeriodReminderSettings, now: number): number[] => {
+          if (!settings.enabled) return [];
+          const end = now + PERIOD_REMINDER_NATIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+          const hits: number[] = [];
+          let cursor = now;
+          for (let i = 0; i < 32; i += 1) {
+              const next = computeNextPeriodReminderAt(settings, cursor, true);
+              if (next > end || next <= 0) break;
+              hits.push(next);
+              cursor = next + 60_000;
+          }
+          return hits;
+      };
+
+      const rescheduleNativeChatAlarms = async () => {
+          if (!Capacitor.isNativePlatform()) return;
+          try {
+              const perm = await LocalNotifications.checkPermissions();
+              const finalPerm = perm.display === 'granted' ? perm : await LocalNotifications.requestPermissions();
+              if (finalPerm.display !== 'granted') return;
+
+              const pending = await LocalNotifications.getPending().catch(() => ({ notifications: [] as any[] }));
+              const alarmPending = (pending.notifications || []).filter((n: any) => n?.extra?.source === 'chat-alarm' || n?.extra?.type === 'chat-alarm');
+              if (alarmPending.length) {
+                  await LocalNotifications.cancel({ notifications: alarmPending.map((n: any) => ({ id: n.id })) }).catch(() => {});
+              }
+
+              const now = Date.now();
+              const alarms = await DB.getAllChatAlarms();
+              const charById = new Map(charactersRef.current.map(c => [c.id, c]));
+              const notifications: any[] = [];
+              for (const alarm of alarms) {
+                  if (!alarm.enabled) continue;
+                  const char = charById.get(alarm.charId);
+                  if (!char) continue;
+                  for (const at of collectNativeAlarmOccurrences(alarm, now)) {
+                      notifications.push({
+                          id: nativeNotificationIdForAlarm(alarm.id, at),
+                          title: alarmNotificationTitle(char.name, alarm),
+                          body: alarmNotificationBody(alarm),
+                          schedule: { at: new Date(at), allowWhileIdle: true },
+                          smallIcon: 'ic_stat_icon_config_sample',
+                          extra: {
+                              source: 'chat-alarm',
+                              type: 'chat-alarm',
+                              charId: alarm.charId,
+                              alarmId: alarm.id,
+                              at,
+                          },
+                      });
+                      if (notifications.length >= 256) break;
+                  }
+                  if (notifications.length >= 256) break;
+              }
+              if (notifications.length) {
+                  await LocalNotifications.schedule({ notifications });
+              }
+          } catch (e) {
+              console.warn('[ChatAlarm] native schedule skipped', e);
+          }
+      };
+
+      const rescheduleNativePeriodReminders = async () => {
+          if (!Capacitor.isNativePlatform()) return;
+          try {
+              const perm = await LocalNotifications.checkPermissions();
+              const finalPerm = perm.display === 'granted' ? perm : await LocalNotifications.requestPermissions();
+              if (finalPerm.display !== 'granted') return;
+
+              const pending = await LocalNotifications.getPending().catch(() => ({ notifications: [] as any[] }));
+              const periodPending = (pending.notifications || []).filter((n: any) => n?.extra?.source === 'period-reminder' || n?.extra?.type === 'period-reminder');
+              if (periodPending.length) {
+                  await LocalNotifications.cancel({ notifications: periodPending.map((n: any) => ({ id: n.id })) }).catch(() => {});
+              }
+
+              const now = Date.now();
+              const all = await DB.getAllPeriodReminderSettings();
+              const notifications: any[] = [];
+              for (const settings of all) {
+                  if (!settings.enabled) continue;
+                  for (const at of collectNativePeriodOccurrences(settings, now)) {
+                      notifications.push({
+                          id: nativeNotificationIdForPeriodReminder(settings.id, at),
+                          title: periodReminderTitle(settings, at),
+                          body: periodReminderBody(settings, at),
+                          schedule: { at: new Date(at), allowWhileIdle: true },
+                          smallIcon: 'ic_stat_icon_config_sample',
+                          extra: {
+                              source: 'period-reminder',
+                              type: 'period-reminder',
+                              settingsId: settings.id,
+                              charId: settings.charIds?.[0],
+                              at,
+                          },
+                      });
+                      if (notifications.length >= 128) break;
+                  }
+                  if (notifications.length >= 128) break;
+              }
+              if (notifications.length) {
+                  await LocalNotifications.schedule({ notifications });
+              }
+          } catch (e) {
+              console.warn('[PeriodReminder] native schedule skipped', e);
+          }
+      };
+
+      const acquireChatAlarmLock = (alarm: ChatAlarm, fireKey: string, now: number): boolean => {
+          const key = `moro_chat_alarm_lock_${alarm.id}_${fireKey}`;
+          try {
+              const until = Number(localStorage.getItem(key) || '0');
+              if (until > now) return false;
+              localStorage.setItem(key, String(now + CHAT_ALARM_LOCK_MS));
+          } catch {
+              return true;
+          }
+          return true;
+      };
+
+      const acquirePeriodReminderLock = (settings: PeriodReminderSettings, fireKey: string, now: number): boolean => {
+          const key = `moro_period_reminder_lock_${settings.id}_${fireKey}`;
+          try {
+              const until = Number(localStorage.getItem(key) || '0');
+              if (until > now) return false;
+              localStorage.setItem(key, String(now + PERIOD_REMINDER_LOCK_MS));
+          } catch {
+              return true;
+          }
+          return true;
+      };
+
+      const showChatAlarmNotification = async (char: CharacterProfile, alarm: ChatAlarm) => {
+          if (Capacitor.isNativePlatform()) return;
+          await showLocalNotification(alarmNotificationTitle(char.name, alarm), {
+              body: alarmNotificationBody(alarm),
+              tag: `chat-alarm-${alarm.id}`,
+              data: {
+                  source: 'chat-alarm',
+                  type: 'chat-alarm',
+                  charId: alarm.charId,
+                  alarmId: alarm.id,
+              },
+          });
+      };
+
+      const showPeriodReminderNotification = async (settings: PeriodReminderSettings, now: number) => {
+          if (Capacitor.isNativePlatform()) return;
+          await showLocalNotification(periodReminderTitle(settings, settings.nextAt || now), {
+              body: periodReminderBody(settings, settings.nextAt || now),
+              tag: `period-reminder-${settings.id}`,
+              data: {
+                  source: 'period-reminder',
+                  type: 'period-reminder',
+                  settingsId: settings.id,
+                  charId: settings.charIds?.[0],
+              },
+          });
+      };
+
+      const checkChatAlarms = async () => {
+          try {
+              const now = Date.now();
+              const due = await DB.getDueChatAlarms(now);
+              if (!due.length) return;
+              const userName = userProfileRef.current?.name || '对方';
+              for (const alarm of due) {
+                  const fireKey = alarmFireKey(alarm, alarm.nextAt || now);
+                  if (!acquireChatAlarmLock(alarm, fireKey, now)) continue;
+
+                  if (alarm.lastFiredKey === fireKey || shouldSkipStaleAlarm(alarm, now)) {
+                      await DB.saveChatAlarm(markAlarmFired(alarm, now));
+                      continue;
+                  }
+
+                  const char = charactersRef.current.find(c => c.id === alarm.charId);
+                  if (!char) {
+                      await DB.saveChatAlarm(markAlarmFired(alarm, now));
+                      continue;
+                  }
+
+                  await showChatAlarmNotification(char, alarm);
+
+                  if (char.charBlock?.active || char.blacklisted) {
+                      await DB.saveChatAlarm(markAlarmFired(alarm, now));
+                      continue;
+                  }
+
+                  const channel = resolveAlarmChannel(alarm);
+                  const notificationData = { type: 'chat-alarm', source: 'chat-alarm', charId: alarm.charId, alarmId: alarm.id };
+
+                  if (channel === 'call') {
+                      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                          window.dispatchEvent(new CustomEvent('char-call-incoming', {
+                              detail: { charId: alarm.charId, charName: char.name, alarmId: alarm.id }
+                          }));
+                      } else {
+                          await DB.saveMessage({
+                              charId: alarm.charId,
+                              role: 'assistant',
+                              type: 'call_log',
+                              content: '闹钟来电未接',
+                              metadata: { callDirection: 'incoming', callOutcome: 'missed', chatAlarmId: alarm.id, excludeFromContext: true },
+                          } as any);
+                          window.dispatchEvent(new CustomEvent('proactive-message-sent', {
+                              detail: {
+                                  charId: alarm.charId,
+                                  charName: char.name,
+                                  body: '[语音通话] 闹钟来电未接',
+                                  count: 1,
+                                  source: 'chat-alarm',
+                                  notificationData,
+                                  skipSystemNotify: true,
+                              },
+                          }));
+                      }
+                  } else {
+                      await runProactive(alarm.charId, {
+                          customHint: buildChatAlarmHint({ alarm, char, userName, channel, nowMs: now }),
+                          eventSource: 'chat-alarm',
+                          notificationData,
+                          skipSystemNotify: true,
+                      });
+                  }
+
+                  await DB.saveChatAlarm(markAlarmFired(alarm, now));
+              }
+          } catch (e) {
+              console.warn('[ChatAlarm] check failed', e);
+          }
+      };
+
+      const checkPeriodReminders = async () => {
+          try {
+              const now = Date.now();
+              const due = await DB.getDuePeriodReminderSettings(now);
+              if (!due.length) return;
+              const userName = userProfileRef.current?.name || '对方';
+              for (const settings of due) {
+                  const fireKey = periodFireKey(settings, settings.nextAt || now);
+                  if (!acquirePeriodReminderLock(settings, fireKey, now)) continue;
+
+                  if (settings.lastFiredKey === fireKey || shouldSkipStalePeriodReminder(settings, now)) {
+                      await DB.savePeriodReminderSettings(markPeriodReminderFired(settings, now));
+                      continue;
+                  }
+
+                  const canTellChars = settings.visibility === 'public' && (settings.notifyChannel === 'character' || settings.notifyChannel === 'both');
+                  const charIds = Array.from(new Set(settings.charIds || []));
+                  const eligibleChars = canTellChars
+                      ? charIds
+                          .map(charId => charactersRef.current.find(c => c.id === charId))
+                          .filter((char): char is CharacterProfile => !!char && !char.charBlock?.active && !char.blacklisted)
+                      : [];
+                  const shouldShowSystem = settings.notifyChannel === 'system' || settings.notifyChannel === 'both' || !canTellChars || eligibleChars.length === 0;
+                  if (shouldShowSystem) {
+                      await showPeriodReminderNotification(settings, now);
+                  }
+
+                  if (canTellChars) {
+                      for (const char of eligibleChars) {
+                          await runProactive(char.id, {
+                              customHint: buildPeriodReminderHint({ settings, char, userName, nowMs: now }),
+                              eventSource: 'period-reminder',
+                              notificationData: { type: 'period-reminder', source: 'period-reminder', settingsId: settings.id, charId: char.id },
+                              skipSystemNotify: true,
+                          });
+                      }
+                  }
+
+                  await DB.savePeriodReminderSettings(markPeriodReminderFired(settings, now));
+              }
+          } catch (e) {
+              console.warn('[PeriodReminder] check failed', e);
+          }
+      };
+
+      const chatAlarmTimer = setInterval(() => { void checkChatAlarms(); }, 30_000);
+      const periodReminderTimer = setInterval(() => { void checkPeriodReminders(); }, 30_000);
+      const onChatAlarmsUpdated = () => {
+          void checkChatAlarms();
+          void rescheduleNativeChatAlarms();
+      };
+      const onPeriodRemindersUpdated = () => {
+          void checkPeriodReminders();
+          void rescheduleNativePeriodReminders();
+      };
+      const onAlarmVisibility = () => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+              void checkChatAlarms();
+              void rescheduleNativeChatAlarms();
+              void checkPeriodReminders();
+              void rescheduleNativePeriodReminders();
+          }
+      };
+      window.addEventListener('chat-alarms-updated', onChatAlarmsUpdated);
+      window.addEventListener('period-reminders-updated', onPeriodRemindersUpdated);
+      document.addEventListener('visibilitychange', onAlarmVisibility);
+      void checkChatAlarms();
+      void rescheduleNativeChatAlarms();
+      void checkPeriodReminders();
+      void rescheduleNativePeriodReminders();
 
       // ─── 外卖「角色收到货」反应 watcher ───
       // 给角色点的外卖到点（now>=etaAt）后：自动签收 + 让角色像真人收到外卖那样在聊天里反应。
@@ -2514,6 +2920,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Cleanup: detach proactive listeners when OSContext unmounts (unlikely but safe)
           ProactiveChat.onTrigger(() => {});
           VRScheduler.onTrigger(() => {});
+          clearInterval(chatAlarmTimer);
+          clearInterval(periodReminderTimer);
+          window.removeEventListener('chat-alarms-updated', onChatAlarmsUpdated);
+          window.removeEventListener('period-reminders-updated', onPeriodRemindersUpdated);
+          document.removeEventListener('visibilitychange', onAlarmVisibility);
           clearInterval(takeoutReactTimer);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps

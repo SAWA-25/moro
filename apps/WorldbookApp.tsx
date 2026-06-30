@@ -4,7 +4,7 @@
  * 一条 Worldbook 记录是一条世界书条目；category 分组是一整本世界书。
  * 这里只重构界面与信息层级，注入语义仍由 utils/worldbookRuntime.ts 统一处理。
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     BookOpen,
     CaretDown,
@@ -19,9 +19,10 @@ import {
     UploadSimple,
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import { Worldbook, WorldbookPosition } from '../types';
+import { AppID, Worldbook, WorldbookPosition } from '../types';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
 import { DEFAULT_WB_CATEGORY, type WorldbookGroupScope } from '../utils/worldbookRuntime';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import {
     Chip,
     HAIRLINE,
@@ -245,6 +246,7 @@ const WorldbookApp: React.FC = () => {
         setWorldbookGroupEnabled,
         worldbookGroupScopes,
         setWorldbookGroupScope,
+        activeApp,
     } = useOS();
 
     const [isEditing, setIsEditing] = useState(false);
@@ -452,6 +454,46 @@ const WorldbookApp: React.FC = () => {
         setIsEditing(true);
     };
 
+    const openManualWorldbookTarget = useCallback((anchorId?: string, route?: string) => {
+        const focusAnchor = anchorId || 'manual-worldbook-root';
+        const firstCategory = activeCategory || groupedEntries[0]?.[0] || null;
+        const firstBook = firstCategory ? groupedBooks[firstCategory]?.[0] : worldbooks[0];
+
+        if (route === 'entry-settings' || focusAnchor === 'manual-worldbook-position' || focusAnchor === 'manual-worldbook-entry-toggle') {
+            if (firstBook) {
+                const category = firstBook.category || DEFAULT_WB_CATEGORY;
+                setSelectedCategory(category);
+                setExpandedCategories(prev => prev.includes(category) ? prev : [...prev, category]);
+                if (focusAnchor === 'manual-worldbook-entry-toggle') {
+                    setIsEditing(false);
+                    setPreviewBookId(firstBook.id);
+                } else {
+                    openEdit(firstBook);
+                }
+                window.setTimeout(() => {
+                    if (!scrollToManualAnchor(focusAnchor)) scrollToManualAnchor('manual-worldbook-root');
+                }, focusAnchor === 'manual-worldbook-entry-toggle' ? 180 : 260);
+                return;
+            }
+            setIsEditing(false);
+            window.setTimeout(() => scrollToManualAnchor('manual-worldbook-root'), 120);
+            return;
+        }
+
+        if (firstCategory) {
+            setSelectedCategory(firstCategory);
+            setExpandedCategories(prev => prev.includes(firstCategory) ? prev : [...prev, firstCategory]);
+        }
+        setIsEditing(false);
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(focusAnchor)) scrollToManualAnchor('manual-worldbook-root');
+        }, 160);
+    }, [activeCategory, groupedBooks, groupedEntries, openEdit, worldbooks]);
+
+    useManualDeepLink(AppID.Worldbook, useCallback((target) => {
+        openManualWorldbookTarget(target.anchorId, target.route);
+    }, [openManualWorldbookTarget]), { enabled: activeApp === AppID.Worldbook });
+
     const handleSave = async () => {
         if (!tempTitle.trim()) {
             addToast('请填写条目标题', 'error');
@@ -592,6 +634,7 @@ const WorldbookApp: React.FC = () => {
         return (
             <div
                 key={book.id}
+                data-manual-anchor={index === 0 ? 'manual-worldbook-entry-toggle' : undefined}
                 onClick={() => setPreviewBookId(open ? null : book.id)}
                 className={`group relative overflow-hidden rounded-[8px] border transition-all press-soft ${disabled ? 'opacity-55' : ''}`}
                 style={{
@@ -666,6 +709,7 @@ const WorldbookApp: React.FC = () => {
         return (
             <section key={category} className="space-y-3">
                 <div
+                    data-manual-anchor="manual-worldbook-group-toggle"
                     className={`relative overflow-hidden rounded-[8px] border bg-white transition-opacity ${enabled ? '' : 'opacity-65'}`}
                     style={{
                         borderColor: expanded ? '#bfd6e3' : '#ededed',
@@ -729,7 +773,7 @@ const WorldbookApp: React.FC = () => {
 
                 {expanded && (
                     <div className="space-y-3 animate-fade-in">
-                        <div className="rounded-[8px] bg-white p-3" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
+                        <div data-manual-anchor="manual-worldbook-group-scope" className="rounded-[8px] bg-white p-3" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>整本策略</div>

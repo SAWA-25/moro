@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, GroupProfile, GroupChatRecord, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact } from '../types';
+import { AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import { ContextBuilder } from '../utils/context';
@@ -28,6 +28,7 @@ import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialChar
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -64,6 +65,7 @@ type GroupDirectorRunOptions = {
     isAutoRound?: boolean;
     suppressMemoryPalace?: boolean;
 };
+type GroupApiDraft = GroupApiConfig;
 type GroupDirectorPreparedContext = {
     group: GroupProfile;
     groupMembers: CharacterProfile[];
@@ -98,6 +100,35 @@ const parseGroupDirectorActions = (rawInput: unknown): GroupDirectorAction[] => 
         console.error('Director Parse Error', raw);
         return [];
     }
+};
+
+const emptyGroupApi = (): GroupApiDraft => ({ baseUrl: '', apiKey: '', model: '' });
+const normalizeGroupApiDraft = (api?: Partial<GroupApiConfig> | null): GroupApiDraft => ({
+    baseUrl: String(api?.baseUrl || ''),
+    apiKey: String(api?.apiKey || ''),
+    model: String(api?.model || ''),
+});
+const sanitizeGroupApi = (api?: Partial<GroupApiConfig> | null): GroupApiConfig | undefined => {
+    const baseUrl = String(api?.baseUrl || '').trim();
+    const apiKey = String(api?.apiKey || '').trim();
+    const model = String(api?.model || '').trim();
+    if (!baseUrl && !apiKey && !model) return undefined;
+    return { baseUrl, apiKey, model };
+};
+const isCompleteGroupApi = (api?: Partial<GroupApiConfig> | null): api is GroupApiConfig =>
+    !!api && !!String(api.baseUrl || '').trim() && !!String(api.apiKey || '').trim() && !!String(api.model || '').trim();
+const pruneGroupMemberApis = (
+    apis: Record<string, GroupApiDraft> | undefined,
+    memberIds: string[],
+): Record<string, GroupApiConfig> | undefined => {
+    const memberSet = new Set(memberIds);
+    const next: Record<string, GroupApiConfig> = {};
+    Object.entries(apis || {}).forEach(([charId, api]) => {
+        if (!memberSet.has(charId)) return;
+        const clean = sanitizeGroupApi(api);
+        if (clean) next[charId] = clean;
+    });
+    return Object.keys(next).length > 0 ? next : undefined;
 };
 const getGroupCallStateLabel = (state: GroupCallState): string => ({
     connecting: '接线中…',
@@ -1091,7 +1122,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread, activeApp } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -1133,6 +1164,8 @@ const ChatHub: React.FC = () => {
     const [tempReplyIndividually, setTempReplyIndividually] = useState(false);
     const [tempAutoContinueEnabled, setTempAutoContinueEnabled] = useState(false);
     const [tempAutoContinueRounds, setTempAutoContinueRounds] = useState(2);
+    const [tempGroupApi, setTempGroupApi] = useState<GroupApiDraft>({ baseUrl: '', apiKey: '', model: '' });
+    const [tempMemberApis, setTempMemberApis] = useState<Record<string, GroupApiDraft>>({});
     const [groupArchiveSearch, setGroupArchiveSearch] = useState('');
     const [renamingGroupRecordId, setRenamingGroupRecordId] = useState<string | null>(null);
     const [renamingGroupRecordTitle, setRenamingGroupRecordTitle] = useState('');
@@ -1299,6 +1332,12 @@ const ChatHub: React.FC = () => {
         setTempReplyIndividually(!!group.replyIndividually);
         setTempAutoContinueEnabled(!!group.autoContinueEnabled);
         setTempAutoContinueRounds(Math.max(1, Math.min(8, group.autoContinueRounds || 2)));
+        setTempGroupApi(normalizeGroupApiDraft(group.groupApi));
+        const memberApis: Record<string, GroupApiDraft> = {};
+        Object.entries(group.memberApis || {}).forEach(([charId, api]) => {
+            if (group.members?.includes(charId)) memberApis[charId] = normalizeGroupApiDraft(api);
+        });
+        setTempMemberApis(memberApis);
     };
 
     const openGroupSettings = (group = activeGroup) => {
@@ -1313,6 +1352,32 @@ const ChatHub: React.FC = () => {
             });
         }
     };
+
+    useManualDeepLink(AppID.GroupChat, useCallback((target) => {
+        const tab = typeof target.payload?.tab === 'string'
+            ? target.payload.tab
+            : String(target.route || '').replace(/^tab:/, '');
+        setView('list');
+        if (['chats', 'contacts', 'moments', 'couple'].includes(tab)) {
+            setHubTab(tab as typeof hubTab);
+        }
+        if (target.route === 'relationship-network') {
+            setHubTab('contacts');
+            setShowRelNet(true);
+        }
+        if (target.route === 'group-settings') {
+            const group = activeGroup || visibleGroups[0] || null;
+            if (group) {
+                setActiveGroup(group);
+                openGroupSettings(group);
+            } else {
+                setHubTab('contacts');
+            }
+        }
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-chathub-root');
+        }, 220);
+    }, [activeGroup, visibleGroups, hubTab]), { enabled: activeApp === AppID.GroupChat });
 
     const handleToggleAmbientSocial = () => {
         const enabled = !ambientSocialEnabled;
@@ -1704,6 +1769,53 @@ const ChatHub: React.FC = () => {
         const updated = await updateGroup(activeGroup.id, updates);
         if (updated) setActiveGroup(updated);
         return updated;
+    };
+
+    const saveGroupApiDraft = async (groupApiDraft = tempGroupApi, memberApisDraft = tempMemberApis) => {
+        if (!activeGroup) return null;
+        return applyGroupUpdate({
+            groupApi: sanitizeGroupApi(groupApiDraft),
+            memberApis: pruneGroupMemberApis(memberApisDraft, activeGroup.members),
+        });
+    };
+
+    const patchTempGroupApi = (field: keyof GroupApiDraft, value: string) => {
+        setTempGroupApi(prev => ({ ...prev, [field]: value }));
+    };
+
+    const patchTempMemberApi = (charId: string, field: keyof GroupApiDraft, value: string) => {
+        setTempMemberApis(prev => ({
+            ...prev,
+            [charId]: { ...emptyGroupApi(), ...(prev[charId] || {}), [field]: value },
+        }));
+    };
+
+    const copyMainApiToGroup = () => {
+        const next = normalizeGroupApiDraft(apiConfig);
+        setTempGroupApi(next);
+        void saveGroupApiDraft(next, tempMemberApis);
+        addToast('已复制文具盒主 API 到本群默认', 'success');
+    };
+
+    const clearGroupApi = () => {
+        const next = emptyGroupApi();
+        setTempGroupApi(next);
+        void saveGroupApiDraft(next, tempMemberApis);
+    };
+
+    const copyMainApiToMember = (charId: string) => {
+        const nextApi = normalizeGroupApiDraft(apiConfig);
+        const next = { ...tempMemberApis, [charId]: nextApi };
+        setTempMemberApis(next);
+        void saveGroupApiDraft(tempGroupApi, next);
+        addToast(`已复制主 API 给 ${displayNameOf(activeGroup, charId)}`, 'success');
+    };
+
+    const clearMemberApi = (charId: string) => {
+        const next = { ...tempMemberApis };
+        delete next[charId];
+        setTempMemberApis(next);
+        void saveGroupApiDraft(tempGroupApi, next);
     };
 
     /** 打开某个角色的设置界面（深链接到神经链接 App 的编辑页）；返回键回到聊天列表而非桌面 */
@@ -2208,6 +2320,8 @@ const ChatHub: React.FC = () => {
             specialCareMemberIds,
             specialCareNotify: tempSpecialCareNotify,
             replyIndividually: tempReplyIndividually,
+            groupApi: sanitizeGroupApi(tempGroupApi),
+            memberApis: pruneGroupMemberApis(tempMemberApis, activeGroup.members),
             autoContinueEnabled: tempAutoContinueEnabled,
             autoContinueRounds: Math.max(1, Math.min(8, tempAutoContinueRounds || 2)),
         };
@@ -3869,6 +3983,45 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         </button>
     );
 
+    const renderGroupApiFields = (
+        api: GroupApiDraft,
+        onPatch: (field: keyof GroupApiDraft, value: string) => void,
+        onSave: () => void,
+    ) => (
+        <div className="grid grid-cols-1 gap-2">
+            <ScrapInput
+                value={api.baseUrl}
+                onChange={e => onPatch('baseUrl', e.target.value)}
+                onBlur={onSave}
+                placeholder="Base URL，比如 https://api.example.com/v1"
+                className="font-mono text-[11px]"
+            />
+            <ScrapInput
+                type="password"
+                value={api.apiKey}
+                onChange={e => onPatch('apiKey', e.target.value)}
+                onBlur={onSave}
+                placeholder="API Key"
+                className="font-mono text-[11px]"
+                autoComplete="new-password"
+                spellCheck={false}
+            />
+            <ScrapInput
+                value={api.model}
+                onChange={e => onPatch('model', e.target.value)}
+                onBlur={onSave}
+                placeholder="Model，比如 gpt-4o-mini"
+                className="font-mono text-[11px]"
+                spellCheck={false}
+            />
+        </div>
+    );
+
+    const groupApiStatus = (api?: Partial<GroupApiConfig> | null): string => {
+        if (isCompleteGroupApi(api)) return api.model;
+        return sanitizeGroupApi(api) ? '未填完整' : '未设置';
+    };
+
     const kickGroupMemoryPalace = (groupForPalace: GroupProfile | null) => {
         if (!groupForPalace) return;
         // 读 ref 拿最新 characters，否则群里有成员在回复中途被用户关掉 palace
@@ -3908,11 +4061,19 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
     // --- Logic: AI Director (The Core Logic) ---
 
     const triggerDirector = async (currentMsgs: Message[], options: GroupDirectorRunOptions = {}) => {
-        if (!activeGroup || !apiConfig.apiKey) return;
+        if (!activeGroup) return;
         if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
         if (activeGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
-        if (!options.suppressMemoryPalace) setIsTyping(true);
         const directorMode: GroupDirectorMode = options.mode || (activeGroup.replyIndividually ? 'individual' : 'director');
+        const hasMainApi = isCompleteGroupApi(apiConfig);
+        const hasGroupApi = isCompleteGroupApi(activeGroup.groupApi);
+        const hasMemberApi = activeGroup.members.some(id => isCompleteGroupApi(activeGroup.memberApis?.[id]));
+        if (directorMode === 'director' && !hasMainApi) return;
+        if (directorMode === 'individual' && !hasMainApi && !hasGroupApi && !hasMemberApi) {
+            addToast('请先给文具盒、本群默认或群成员配置完整 API', 'error');
+            return;
+        }
+        if (!options.suppressMemoryPalace) setIsTyping(true);
         const remainingAutoRounds = typeof options.remainingAutoRounds === 'number'
             ? options.remainingAutoRounds
             : (options.allowAutoContinue !== true || !activeGroup.autoContinueEnabled
@@ -4234,18 +4395,28 @@ ${attachedImagesNote}
 ]
 `;
 
-            const callGroupCompletion = async (content: any, maxTokens: number, pass: string) => {
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const mainChatApi = sanitizeGroupApi(apiConfig);
+            const groupChatApi = isCompleteGroupApi(activeGroup.groupApi) ? activeGroup.groupApi : undefined;
+            const resolveMemberChatApi = (memberId: string): GroupApiConfig | undefined => {
+                const memberApi = activeGroup.memberApis?.[memberId];
+                if (isCompleteGroupApi(memberApi)) return memberApi;
+                if (groupChatApi) return groupChatApi;
+                return isCompleteGroupApi(mainChatApi) ? mainChatApi : undefined;
+            };
+
+            const callGroupCompletion = async (api: GroupApiConfig, content: any, maxTokens: number, pass: string) => {
+                const baseUrl = api.baseUrl.replace(/\/+$/, '');
+                const response = await fetch(`${baseUrl}/chat/completions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
                     body: JSON.stringify({
-                        model: apiConfig.model,
+                        model: api.model,
                         messages: [{ role: "user", content }],
                         temperature: 0.9,
                         max_tokens: maxTokens,
                     })
                 });
-                if (!response.ok) throw new Error(`${pass} Failed`);
+                if (!response.ok) throw new Error(`${pass} Failed (${baseUrl} · ${api.model})`);
                 return safeResponseJson(response);
             };
 
@@ -4257,7 +4428,8 @@ ${attachedImagesNote}
                 : text;
 
             const requestDirectorActions = async (): Promise<GroupDirectorAction[]> => {
-                const data = await callGroupCompletion(buildMessageContent(prompt), 8000, 'Director');
+                if (!isCompleteGroupApi(mainChatApi)) return [];
+                const data = await callGroupCompletion(mainChatApi, buildMessageContent(prompt), 8000, 'Director');
                 if (data.usage?.total_tokens) {
                     setLastTokenUsage(data.usage.total_tokens);
                     setTokenBreakdown({
@@ -4274,9 +4446,15 @@ ${attachedImagesNote}
             const requestIndividualActions = async (): Promise<GroupDirectorAction[]> => {
                 const collected: GroupDirectorAction[] = [];
                 let usage = { prompt: 0, completion: 0, total: 0 };
+                const skippedApiMembers: string[] = [];
                 const callableMembers = groupMembers.filter(member => !isMuted(activeGroup, member.id));
                 for (const member of callableMembers) {
                     const targetName = displayNameOf(activeGroup, member.id);
+                    const memberChatApi = resolveMemberChatApi(member.id);
+                    if (!memberChatApi) {
+                        skippedApiMembers.push(targetName);
+                        continue;
+                    }
                     const individualPrompt = `${prompt}
 
 ### 【角色各自回复模式】
@@ -4293,7 +4471,7 @@ ${attachedImagesNote}
 或者：
 []
 `;
-                    const data = await callGroupCompletion(buildMessageContent(individualPrompt), 1800, `Individual:${member.id}`);
+                    const data = await callGroupCompletion(memberChatApi, buildMessageContent(individualPrompt), 1800, `Individual:${member.id}`);
                     if (data.usage?.total_tokens) {
                         usage.prompt += data.usage.prompt_tokens || 0;
                         usage.completion += data.usage.completion_tokens || 0;
@@ -4305,6 +4483,9 @@ ${attachedImagesNote}
                         .slice(0, 1);
                     collected.push(...actionsForMember);
                     await new Promise(r => setTimeout(r, 120));
+                }
+                if (skippedApiMembers.length > 0) {
+                    addToast(`已跳过 ${skippedApiMembers.slice(0, 3).join('、')}：API 配置不完整`, 'error');
                 }
                 if (usage.total > 0) {
                     setLastTokenUsage(usage.total);
@@ -4725,8 +4906,9 @@ ${attachedImagesNote}
 
     if (view === 'list') {
         return (
-            <div className="relative h-full w-full bg-[#fafafa] moro-laiwang flex flex-col">
+            <div className="relative h-full w-full bg-[#fafafa] moro-laiwang flex flex-col" data-manual-anchor="manual-chathub-root">
                 {showRelNet && (
+                    <div data-manual-anchor="manual-chathub-relationship-network" className="absolute inset-0 z-50">
                     <RelationshipNetwork
                         characters={characters}
                         userName={userProfile.name}
@@ -4734,6 +4916,7 @@ ${attachedImagesNote}
                         onClose={() => setShowRelNet(false)}
                         onOpenChat={(id) => { setShowRelNet(false); openPrivateChat(id); }}
                     />
+                    </div>
                 )}
                 {/* safe-top spacer 透明 + backdrop-blur，下方容器/list bubbles 透出+模糊（跟 iOS 系统 status bar 一致），避免 header 白 bg 在刘海下铺一条突兀白带 */}
                 <div className="shrink-0 z-10 sticky top-0">
@@ -4851,7 +5034,7 @@ ${attachedImagesNote}
 
                 {/* ── 消息 tab：单聊 + 群聊混排 ── */}
                 {hubTab === 'chats' && (
-                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
+                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto" data-manual-anchor="manual-chathub-chats">
                         {convos.map((cv, i) => {
                             // 进入列表时逐行轻微淡入（错峰），多了也不至于拖太久
                             const enterDelay = `${Math.min(i, 14) * 32}ms`;
@@ -5010,7 +5193,7 @@ ${attachedImagesNote}
 
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
-                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
+                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto" data-manual-anchor="manual-chathub-contacts">
                         {visibleGroups.length > 0 && (
                             <div className="px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">群聊</div>
                         )}
@@ -5102,14 +5285,14 @@ ${attachedImagesNote}
 
                 {/* ── 朋友圈 tab：内嵌完整朋友圈（与独立 朋友圈 App 共用 MomentsFeed） ── */}
                 {hubTab === 'moments' && (
-                    <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-hidden" data-manual-anchor="manual-chathub-moments">
                         <MomentsFeed embedded backHandlerRef={momentsBackRef} />
                     </div>
                 )}
 
                 {/* ── 情侣空间 tab：参考 QQ 情侣空间（恋爱天数 / 亲密度 / 动态 / 纪念日 / 相册 / 约定 / 悄悄话） ── */}
                 {hubTab === 'couple' && (
-                    <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-hidden" data-manual-anchor="manual-chathub-couple">
                         <CoupleSpace />
                     </div>
                 )}
@@ -6321,6 +6504,58 @@ ${attachedImagesNote}
                                 >
                                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${tempReplyIndividually ? 'translate-x-5' : ''}`} style={{ background: '#fbf9f2', boxShadow: '0 1px 3px rgba(31,29,26,0.35)' }} />
                                 </button>
+                            </div>
+
+                            <div className={`space-y-3 ${tempReplyIndividually ? '' : 'opacity-60'}`}>
+                                <div className="p-3 space-y-2" style={{ background: 'rgba(255,253,247,0.72)', border: `1px solid ${INK_SOFT}33`, borderRadius: 14 }}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="text-[12px] font-black" style={{ color: INK }}>本群默认 API</div>
+                                            <ScrapNote className="mt-0.5">只在「角色各自回复」里生效；成员未单独设置时会用这里。</ScrapNote>
+                                        </div>
+                                        <span className="shrink-0 max-w-[104px] truncate px-2 py-1 rounded-full text-[9px] font-mono" style={{ color: INK_SOFT, background: '#fff', border: `1px solid ${INK_SOFT}33` }}>
+                                            {groupApiStatus(tempGroupApi)}
+                                        </span>
+                                    </div>
+                                    {renderGroupApiFields(
+                                        tempGroupApi,
+                                        patchTempGroupApi,
+                                        () => { void saveGroupApiDraft(); },
+                                    )}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <ScrapBtn variant="paper" full={false} className="text-[11px] py-2" onClick={copyMainApiToGroup} icon={<Copy size={14} weight="bold" />}>复制主 API</ScrapBtn>
+                                        <ScrapBtn variant="ghost" full={false} className="text-[11px] py-2" onClick={clearGroupApi} icon={<Eraser size={14} weight="bold" />}>清除本群默认</ScrapBtn>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <ScrapLabel en="MEMBER API">成员单独 API</ScrapLabel>
+                                    <ScrapNote>优先级：成员专属 API → 本群默认 API → 文具盒主 API。不填就自动回退下一层。</ScrapNote>
+                                    <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar pr-1">
+                                        {(activeGroup?.members || []).map(mid => {
+                                            const member = characters.find(c => c.id === mid);
+                                            const memberApi = tempMemberApis[mid] || emptyGroupApi();
+                                            return (
+                                                <div key={mid} className="p-3 space-y-2" style={{ background: '#fff', border: `1px solid ${INK_SOFT}26`, borderRadius: 14 }}>
+                                                    <div className="flex items-center gap-2">
+                                                        <img src={member?.avatar} className="w-8 h-8 object-cover rounded-full shrink-0" alt="" />
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[12px] font-black truncate" style={{ color: INK }}>{displayNameOf(activeGroup, mid)}</div>
+                                                            <div className="text-[9px] font-mono truncate" style={{ color: INK_SOFT }}>{groupApiStatus(memberApi)}</div>
+                                                        </div>
+                                                        <ScrapBtn variant="paper" full={false} className="text-[10px] py-1.5 px-2" onClick={() => copyMainApiToMember(mid)} icon={<Copy size={12} weight="bold" />}>复制</ScrapBtn>
+                                                        <ScrapBtn variant="ghost" full={false} className="text-[10px] py-1.5 px-2" onClick={() => clearMemberApi(mid)} icon={<Eraser size={12} weight="bold" />}>清除</ScrapBtn>
+                                                    </div>
+                                                    {renderGroupApiFields(
+                                                        memberApi,
+                                                        (field, value) => patchTempMemberApi(mid, field, value),
+                                                        () => { void saveGroupApiDraft(); },
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="flex items-center justify-between gap-3 py-1">

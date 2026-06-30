@@ -70,8 +70,9 @@ import { swReadSnapshot, swBuildMessages, swCallLLM, swCleanProactiveText, swMar
  *            顶部识别：无可见 client 时 SW 直接读 MoroProactiveSW 快照 + 调副 API 生成主动消息，
  *            落 inbox + 弹系统通知（关站/后台冻结也能发）；有可见 client 则照旧 postMessage 交主线程。
  *            本地 proactive 定时器同理（fireProactiveTrigger 无 client 时走 SW 生成）。
+ *  - 1.16.1: notificationclick 支持健康·经期提醒，点击打开健康 App，不再误走聊天入口。
  */
-const SW_VERSION = '1.16.0';
+const SW_VERSION = '1.16.1';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -725,6 +726,8 @@ async function saveIncomingActiveMessage(payload: any) {
 sw.addEventListener('notificationclick', (event: NotificationEvent) => {
   const payload = event.notification.data?.payload || event.notification.data || {};
   const charId = payload?.metadata?.charId || payload?.charId || '';
+  const isPeriodReminder = payload?.source === 'period-reminder' || payload?.type === 'period-reminder';
+  const periodReminderId = payload?.settingsId || payload?.periodReminderId || '';
   event.notification.close();
 
   event.waitUntil((async () => {
@@ -732,13 +735,23 @@ sw.addEventListener('notificationclick', (event: NotificationEvent) => {
     if (clients.length > 0) {
       const client = clients[0];
       await client.focus();
+      if (isPeriodReminder) {
+        client.postMessage({ type: 'period-reminder-open', charId, settingsId: periodReminderId });
+        return;
+      }
       client.postMessage({ type: 'active-msg-open', charId });
       return;
     }
 
     const openUrl = new URL(sw.registration.scope || sw.location.origin);
-    openUrl.searchParams.set('openApp', 'chat');
-    if (charId) openUrl.searchParams.set('activeMsgCharId', charId);
+    if (isPeriodReminder) {
+      openUrl.searchParams.set('openApp', 'health');
+      if (charId) openUrl.searchParams.set('periodCharId', charId);
+      if (periodReminderId) openUrl.searchParams.set('periodReminderId', periodReminderId);
+    } else {
+      openUrl.searchParams.set('openApp', 'chat');
+      if (charId) openUrl.searchParams.set('activeMsgCharId', charId);
+    }
     await sw.clients.openWindow(openUrl.toString());
   })());
 });

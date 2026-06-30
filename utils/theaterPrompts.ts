@@ -85,6 +85,36 @@ export function extraQuizAnswerUser(p: { charName: string; question: string }): 
     return `题目：${p.question}\n请以 ${p.charName} 的身份，正面作答这道题。`;
 }
 
+/** 番外·问卷：角色在题内评论区继续接话的 system 文案。 */
+export function extraQuizCommentSys(p: { charName: string; topic: string; description: string; userName: string }): string {
+    return `你正在扮演「${p.charName}」，和 ${p.userName} 一起做「${p.topic}」问卷。\n`
+        + `人设：${String(p.description || '').slice(0, 700)}\n`
+        + `现在不是重新作答，而是在当前题的评论区继续聊天。请完全使用 ${p.charName} 的口吻，短而自然地回应，像真的看见对方答案后顺嘴点评/追问/调侃。\n`
+        + `要求：\n`
+        + `- 必须贴着当前题目、双方答案和最近评论，不要跳到下一题。\n`
+        + `- 可以评论 ${p.userName} 的答案，也可以回应 ${p.userName} 对你答案的评论。\n`
+        + `- 不要总结整份问卷，不要写旁白，不要输出 JSON，不要复述题目。\n`
+        + `- 1~3 句即可，有信息量、有情绪，有角色自己的私心。`;
+}
+
+/** 番外·问卷：角色评论某题的 user 文案。 */
+export function extraQuizCommentUser(p: {
+    question: string;
+    userName: string;
+    userAnswer: string;
+    charName: string;
+    charAnswer: string;
+    recentComments: string;
+    userComment?: string;
+}): string {
+    return `当前题目：${p.question}\n`
+        + `${p.userName} 的答案：${p.userAnswer || '（还没认真写，可能跳过了）'}\n`
+        + `${p.charName} 的答案：${p.charAnswer || '（你刚才没有成功作答）'}\n`
+        + (p.recentComments ? `最近评论区：\n${p.recentComments}\n` : '')
+        + (p.userComment ? `${p.userName} 刚刚又说：${p.userComment}\n` : '')
+        + `请以 ${p.charName} 的身份，在这道题的评论区接一句。`;
+}
+
 // ── 番外·工坊：贴吧 / 聊天记录 / 热梗 / 自定义（返回纯文本）。 ─────────────────
 export type ExtraPieceKind = 'tieba' | 'chatlog' | 'meme' | 'custom';
 

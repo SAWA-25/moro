@@ -16,6 +16,7 @@ import { extractJson } from './safeApi';
 import { llmComplete } from './llmComplete';
 import {
     EXTRA_QUIZ_QUESTION_SYS, extraQuizQuestionUser, extraQuizAnswerSys, extraQuizAnswerUser,
+    extraQuizCommentSys, extraQuizCommentUser,
     extraPiecePrompt, extraFauxPrompt,
 } from './theaterPrompts';
 
@@ -83,6 +84,40 @@ export async function genCharAnswer(args: {
         { role: 'system', content: extraQuizAnswerSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
         { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question }) },
     ], { temperature: 0.9, maxTokens: 1200, continueRounds: 3, signal })) || '……（TA 没说话）';
+}
+
+/** 角色在问卷某题的评论区继续接话。 */
+export async function genCharComment(args: {
+    api: ResolvedApi;
+    char: CharacterProfile;
+    userProfile: UserProfile;
+    topic: string;
+    question: string;
+    userAnswer?: string;
+    charAnswer?: string;
+    recentComments?: { speakerName: string; text: string }[];
+    userComment?: string;
+    signal?: AbortSignal;
+}): Promise<string> {
+    const { api, char, userProfile, topic, question, userAnswer, charAnswer, recentComments, userComment, signal } = args;
+    const userName = (userProfile?.name || '').trim() || '对方';
+    const recent = (recentComments || []).slice(-8).map(c => `${c.speakerName}：${c.text}`).join('\n');
+    const raw = await chat(api, [
+        { role: 'system', content: extraQuizCommentSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
+        {
+            role: 'user',
+            content: extraQuizCommentUser({
+                question,
+                userName,
+                userAnswer: userAnswer || '',
+                charName: char.name,
+                charAnswer: charAnswer || '',
+                recentComments: recent,
+                userComment,
+            }),
+        },
+    ], { temperature: 0.9, maxTokens: 700, continueRounds: 1, signal });
+    return raw.replace(/^["'“”]+|["'“”]+$/g, '').trim() || '……我先记下这句。';
 }
 
 export type ExtraKind = 'tieba' | 'chatlog' | 'meme' | 'custom';

@@ -51,6 +51,7 @@ import {
   Question,
   XLogo,
   PawPrint,
+  FirstAidKit,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -104,6 +105,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Forum: ({ className }) => <ChatsCircle className={className} weight="bold" />,
   Twitter: ({ className }) => <XLogo className={className} weight="bold" />,
   DesktopPet: ({ className }) => <PawPrint className={className} weight="fill" />,
+  Health: ({ className }) => <FirstAidKit className={className} weight="bold" />,
   Manual: ({ className }) => <Question className={className} weight="bold" />,
 };
 
@@ -146,6 +148,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 「时光契约」(日程/心愿单/纪念日倒数) + 「特别时光」(节日记忆活动) 合并为「岁时记」：
   // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
+  { id: AppID.Health, name: '健康', icon: 'Health', color: 'pink' },
   { id: AppID.Takeout, name: '饭票', icon: 'Takeout', color: 'orange' },
   { id: AppID.Xunji, name: '循迹', icon: 'Xunji', color: 'cyan' },
   { id: AppID.Shop, name: '心意铺', icon: 'Shop', color: 'rose' },

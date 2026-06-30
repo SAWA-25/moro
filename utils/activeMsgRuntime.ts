@@ -626,6 +626,20 @@ const handleDeepLink = () => {
     currentUrl.searchParams.delete('activeMsgCharId');
     window.history.replaceState({}, '', currentUrl.toString());
   }
+
+  if (openApp === 'health') {
+    window.dispatchEvent(new CustomEvent('period-reminder-open', {
+      detail: {
+        charId: charId || currentUrl.searchParams.get('periodCharId') || undefined,
+        settingsId: currentUrl.searchParams.get('periodReminderId') || undefined,
+      },
+    }));
+    currentUrl.searchParams.delete('openApp');
+    currentUrl.searchParams.delete('activeMsgCharId');
+    currentUrl.searchParams.delete('periodCharId');
+    currentUrl.searchParams.delete('periodReminderId');
+    window.history.replaceState({}, '', currentUrl.toString());
+  }
 };
 
 export const ActiveMsgRuntime = {
@@ -689,6 +703,15 @@ export const ActiveMsgRuntime = {
             }));
             await runPendingToolCallsSafely();
           })();
+        }
+
+        if (type === 'period-reminder-open') {
+          window.dispatchEvent(new CustomEvent('period-reminder-open', {
+            detail: {
+              charId: event.data?.charId,
+              settingsId: event.data?.settingsId,
+            },
+          }));
         }
       });
     }

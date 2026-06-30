@@ -40,6 +40,7 @@ import {
     type ApkDownloadProgress,
     type NativeAppInfo,
 } from '../utils/appUpdates';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -250,9 +251,10 @@ const SectionCard: React.FC<{
     right?: React.ReactNode;
     hand?: string;
     rotate?: string;
+    manualAnchor?: string;
     children: React.ReactNode;
-}> = ({ tag, title, right, hand, children }) => (
-    <section className="relative bg-white rounded-[18px] p-4 pt-5" style={{ border: `1px solid ${CARD_BORDER}`, boxShadow: CARD_SHADOW }}>
+}> = ({ tag, title, right, hand, manualAnchor, children }) => (
+    <section data-manual-anchor={manualAnchor} className="relative bg-white rounded-[18px] p-4 pt-5" style={{ border: `1px solid ${CARD_BORDER}`, boxShadow: CARD_SHADOW }}>
         <Tape className="-top-2 left-6" />
         <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
@@ -345,6 +347,12 @@ const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ la
     </div>
 );
 
+const formatApkVersion = (versionName?: string, versionCode?: number | string) =>
+    `${versionName || 'unknown'}（${versionCode || 0}）`;
+
+const formatApkNoUpdateStatus = (result: AppUpdateCheckResult) =>
+    `当前已是最新版：本机 ${formatApkVersion(result.current.versionName, result.current.versionCode)} · 远端 ${formatApkVersion(result.latest.versionName, result.latest.versionCode)}`;
+
 /** 界面全屏开关（文具盒）：用 Fullscreen API 让整机网页铺满屏幕、藏起浏览器地址栏等 chrome。 */
 const FullscreenCard: React.FC<{ addToast: (m: string, t: 'info' | 'success' | 'error') => void }> = ({ addToast }) => {
     const isFullscreenNow = () => typeof document !== 'undefined' && !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
@@ -419,6 +427,7 @@ const Settings: React.FC = () => {
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
       openApp,
       theme, updateTheme,
+      activeApp,
   } = useOS();
   const nativeRuntime = isNativeNotificationRuntime();
   const settingsRootRef = useRef<HTMLDivElement>(null);
@@ -785,7 +794,7 @@ const Settings: React.FC = () => {
           setApkUpdateCheck(result);
           setApkUpdateStatus(result.updateAvailable
               ? `发现新版本 ${result.latest.versionName}（${result.latest.versionCode}）`
-              : `当前已是最新版：${result.current.versionName || 'unknown'}（${result.current.versionCode || 0}）`);
+              : formatApkNoUpdateStatus(result));
       } catch (e: any) {
           console.warn('[Settings] check app update failed', e);
           setApkUpdateCheck(null);
@@ -806,7 +815,7 @@ const Settings: React.FC = () => {
               setNativeAppInfo(result.current);
               setApkUpdateCheck(result);
               if (!result.updateAvailable) {
-                  setApkUpdateStatus(`当前已是最新版：${result.current.versionName || 'unknown'}（${result.current.versionCode || 0}）`);
+                  setApkUpdateStatus(formatApkNoUpdateStatus(result));
                   return;
               }
               latest = result.latest;
@@ -1374,6 +1383,18 @@ const Settings: React.FC = () => {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  useManualDeepLink(AppID.Settings, useCallback((target) => {
+      const route = String(target.route || '');
+      const groupId = route === 'group:backup' ? 'settings-backup'
+          : route === 'group:api' ? 'settings-api'
+          : route === 'group:live' ? 'settings-live'
+          : 'settings-basic';
+      jumpToSettingsGroup(groupId);
+      window.setTimeout(() => {
+          if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor(groupId);
+      }, 180);
+  }, []), { enabled: activeApp === AppID.Settings });
+
   return (
     <div ref={settingsRootRef} className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
       <style>{POLAROID_SCOPE_CSS}</style>
@@ -1420,7 +1441,7 @@ const Settings: React.FC = () => {
 
       <div ref={settingsScrollRef} className="settings-polaroid-scroll flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
 
-        <section className="relative overflow-hidden bg-white/92 border border-[#eee9df] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+        <section data-manual-anchor="manual-settings-root" className="relative overflow-hidden bg-white/92 border border-[#eee9df] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-8" />
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                 <div>
@@ -1445,10 +1466,11 @@ const Settings: React.FC = () => {
 
         <SettingsGroup id="settings-basic" eyebrow="01 / DEVICE" title="基础与安全" desc="控制界面显示、锁屏密码和本机数据导入导出。">
             {/* 界面全屏（沉浸式铺满屏幕） */}
-            <FullscreenCard addToast={addToast} />
-            <TopStatusBarCard hidden={!!theme.hideStatusBar} onChange={(hidden) => updateTheme({ hideStatusBar: hidden })} />
+            <div data-manual-anchor="manual-settings-fullscreen"><FullscreenCard addToast={addToast} /></div>
+            <div data-manual-anchor="manual-settings-statusbar"><TopStatusBarCard hidden={!!theme.hideStatusBar} onChange={(hidden) => updateTheme({ hideStatusBar: hidden })} /></div>
 
             <SectionCard
+                manualAnchor="manual-settings-update"
                 tag="UPDATE"
                 title="应用更新"
                 hand="检查并安装开发者发布的新版本。"
@@ -1521,7 +1543,7 @@ const Settings: React.FC = () => {
             </SectionCard>
 
             {/* 锁屏与密码 */}
-            <SectionCard tag="LOCK" title="锁屏与密码" hand="设置进入应用时的 4 位密码" rotate="rotate-[-0.5deg]">
+            <SectionCard manualAnchor="manual-settings-lock" tag="LOCK" title="锁屏与密码" hand="设置进入应用时的 4 位密码" rotate="rotate-[-0.5deg]">
             <div className="flex items-center justify-between mb-2 gap-3">
                 <div>
                     <div className="text-xs font-bold text-[#26242a]">锁屏密码</div>
@@ -1579,7 +1601,7 @@ const Settings: React.FC = () => {
 
         <SettingsGroup id="settings-backup" eyebrow="02 / BACKUP" title="备份与恢复" desc="本地 ZIP、云端备份和恢复操作集中在这里。">
             {/* 本地备份与恢复 */}
-            <SectionCard tag="LOCAL BACKUP" title="本地备份（ZIP）" hand="导出或导入本机数据" rotate="rotate-[0.4deg]">
+            <SectionCard manualAnchor="manual-settings-local-backup" tag="LOCAL BACKUP" title="本地备份（ZIP）" hand="导出或导入本机数据" rotate="rotate-[0.4deg]">
             <div className="mb-3">
                 <button onClick={() => handleExport('full')} className={`w-full py-4 text-xs font-black flex flex-col items-center gap-2 relative ${INK_BTN}`}>
                     <span className="absolute top-0 right-0 px-1.5 py-0.5 label-mono text-[8px] bg-white text-[#26242a]">FULL</span>
@@ -1623,7 +1645,7 @@ const Settings: React.FC = () => {
             </SectionCard>
 
             {/* 云端备份 */}
-            <SectionCard tag="CLOUD BACKUP" title="云端备份" hand="把备份保存到你自己的云端账号" rotate="rotate-[-0.4deg]">
+            <SectionCard manualAnchor="manual-settings-cloud-backup" tag="CLOUD BACKUP" title="云端备份" hand="把备份保存到你自己的云端账号" rotate="rotate-[-0.4deg]">
             {!cloudBackupConfig.enabled ? (
                 <div className="space-y-3 py-2">
                     <p className="text-[11px] text-[#26242a]/60 leading-relaxed text-center">
@@ -1753,6 +1775,7 @@ const Settings: React.FC = () => {
         <SettingsGroup id="settings-api" eyebrow="03 / API" title="模型与服务" desc="主 API 负责聊天回复；副 API 负责日程、总结、生活侧写等辅助任务。">
             {/* 主 API 配置 */}
             <SectionCard
+            manualAnchor="manual-settings-main-api"
             tag="CHAT API"
             title="主 API"
             hand="用于私聊、群聊、电话等核心对话生成。"
@@ -1928,6 +1951,7 @@ const Settings: React.FC = () => {
 
             {/* 副 API 配置 */}
             <SectionCard
+            manualAnchor="manual-settings-aux-api"
             tag="AUX API"
             title="副 API"
             hand="用于聊天以外的后台任务，可选择更快或更便宜的模型。"
@@ -1998,6 +2022,7 @@ const Settings: React.FC = () => {
             <button
             type="button"
             onClick={() => setShowApiCallLog(true)}
+            data-manual-anchor="manual-settings-api-log"
             className="relative w-full bg-white border border-[#ededed] rounded-[18px] press-soft p-4 pt-5 flex items-center gap-3 text-left"
             style={{ boxShadow: CARD_SHADOW }}
         >
@@ -2016,7 +2041,7 @@ const Settings: React.FC = () => {
             </button>
 
             {/* 其他 API — 非 LLM 类（语音、写歌等），不会跟随 API 预设切换 */}
-            <SectionCard tag="OTHER SERVICES" title="其他服务 API" hand="配置语音、写歌等非 LLM 服务。">
+            <SectionCard manualAnchor="manual-settings-other-services" tag="OTHER SERVICES" title="其他服务 API" hand="配置语音、写歌等非 LLM 服务。">
             <p className="text-[11px] text-[#26242a]/55 mb-4 leading-relaxed pl-1">
                 语音 / 写歌等非 LLM 类 API。这里的配置 <span className="font-bold text-[#26242a]">不会随 API 预设切换</span>，通常只需要配置一次。
             </p>
@@ -2145,6 +2170,7 @@ const Settings: React.FC = () => {
         <SettingsGroup id="settings-live" eyebrow="04 / LIVE" title="实时与通知" desc="外部数据源、系统通知和 Web Push 相关配置。">
             {/* 实时感知 */}
             <SectionCard
+            manualAnchor="manual-settings-realtime"
             tag="REALTIME"
             title="实时感知"
             hand="配置天气、新闻、时间与外部数据源"
@@ -2184,7 +2210,7 @@ const Settings: React.FC = () => {
             </SectionCard>
 
             {/* ───────── 系统通知 · 后台回复通知 ───────── */}
-            <section className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+            <section data-manual-anchor="manual-settings-notification" className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -2238,7 +2264,7 @@ const Settings: React.FC = () => {
             {/* VAPID 公私钥, 与 Proactive / Instant Push 共用一份 — 独立成块, 避免再被当成 */}
             {/* Instant Push 的子配置, 也避免两边 key 不一致互相抢同一个 pushManager 订阅. */}
             {/* vapidReadyTick: VAPID 弹窗关闭后 +1, 让本节点 re-render 重读 isPushVapidReady(). */}
-            <section data-vapid-tick={vapidReadyTick} className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+            <section data-manual-anchor="manual-settings-vapid" data-vapid-tick={vapidReadyTick} className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -2263,7 +2289,7 @@ const Settings: React.FC = () => {
 
             {/* ───────── 主动消息 Push 加速开关 ───────── */}
             {SHOW_PROACTIVE_PUSH_ACCEL_UI && ppAvailable && (
-            <section className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 pt-5 rotate-[0.5deg]">
+            <section data-manual-anchor="manual-settings-proactive-push" className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 pt-5 rotate-[0.5deg]">
             <Tape className="-top-2.5 left-6 rotate-[3deg]" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -2434,6 +2460,7 @@ const Settings: React.FC = () => {
 
             {/* ───────── Instant Push ───────── */}
             <SectionCard
+            manualAnchor="manual-settings-instant-push"
             tag="INSTANT"
             title="Instant Push"
             hand="配置 Worker 驱动的即时 Web Push 回复"

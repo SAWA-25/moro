@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, HAND_FONT } from './handbookKit';
+import { PaperPage, PaperNote, TapeLabel, HAND_FONT } from './handbookKit';
 import { CollectionItem } from '../../types';
 import { DB } from '../../utils/db';
 import {
@@ -91,7 +91,6 @@ const CollectionHall: React.FC<Props> = ({ onExit }) => {
 
                 {/* 标题 */}
                 <div className="px-5 pt-3 pb-2 shrink-0 relative">
-                    <WashiTape className="-top-1 left-8" color="rgba(200,155,224,0.6)" rotate={-12} width={70} />
                     <div style={{ fontFamily: HAND_FONT }}>
                         <div className="text-[11px] tracking-[0.35em]" style={{ color: '#a98e6f' }}>COLLECTION · 珍藏</div>
                         <div className="text-[34px] font-black leading-none mt-1" style={{ color: '#5b4636' }}>典藏馆</div>

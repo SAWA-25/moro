@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.js?url';
+import 'katex/dist/katex.min.css';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { StudyCourse, CharacterProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
+import { StudyCourse, CharacterProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote, StudyLanguageConfig, StudyLanguageLevel, StudyLanguageSource, StudyCourseKind } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -49,37 +51,13 @@ type KatexLike = {
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 let katexPromise: Promise<KatexLike> | null = null;
 
-const loadScript = (src: string): Promise<void> => new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[data-src=\"${src}\"]`) as HTMLScriptElement | null;
-    if (existing) {
-        if ((existing as any).dataset.loaded === 'true') {
-            resolve();
-            return;
-        }
-        existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error(`load failed: ${src}`)), { once: true });
-        return;
-    }
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.dataset.src = src;
-    script.onload = () => {
-        script.dataset.loaded = 'true';
-        resolve();
-    };
-    script.onerror = () => reject(new Error(`load failed: ${src}`));
-    document.head.appendChild(script);
-});
-
 const loadPdfJs = async (): Promise<PdfJsLike> => {
     if (!pdfjsPromise) {
-        pdfjsPromise = loadScript('https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js').then(() => {
-            const pdfjs = (window as any).pdfjsLib as PdfJsLike | undefined;
-            if (!pdfjs) throw new Error('pdfjs 加载失败');
+        pdfjsPromise = import('pdfjs-dist').then((mod) => {
+            const pdfjs = ((mod as any).default || mod) as PdfJsLike | undefined;
+            if (!pdfjs?.getDocument) throw new Error('pdfjs 加载失败');
             if (pdfjs?.GlobalWorkerOptions) {
-                pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+                pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
             }
             return pdfjs;
         });
@@ -89,9 +67,9 @@ const loadPdfJs = async (): Promise<PdfJsLike> => {
 
 const loadKatex = async (): Promise<KatexLike> => {
     if (!katexPromise) {
-        katexPromise = loadScript('https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js').then(() => {
-            const katex = (window as any).katex as KatexLike | undefined;
-            if (!katex) throw new Error('KaTeX 加载失败');
+        katexPromise = import('katex').then((mod) => {
+            const katex = ((mod as any).default || mod) as KatexLike | undefined;
+            if (!katex?.renderToString) throw new Error('KaTeX 加载失败');
             return katex;
         });
     }
@@ -108,6 +86,25 @@ const GRADIENTS = [
     'linear-gradient(135deg, #b9b2a3 0%, #8c8578 100%)',
     'linear-gradient(135deg, #33302a 0%, #1c1a16 100%)'
 ];
+
+const LANGUAGE_OPTIONS = ['日语', '韩语', '意大利语', '英语', '法语', '西班牙语', '德语'];
+const LANGUAGE_LEVEL_OPTIONS: Array<{ value: StudyLanguageLevel; label: string }> = [
+    { value: 'zero', label: '零基础' },
+    { value: 'beginner', label: '初级' },
+    { value: 'intermediate', label: '中级' },
+    { value: 'advanced', label: '进阶' },
+    { value: 'professional', label: '专业级' },
+];
+const LANGUAGE_GOAL_OPTIONS = ['旅行会话', '日常聊天', '考试备考', '阅读理解', '听说表达', '兴趣入门', '商务职场', '学术写作', '专业翻译', '行业术语'];
+const LANGUAGE_LEVEL_LABELS: Record<StudyLanguageLevel, string> = {
+    zero: '零基础',
+    beginner: '初级',
+    intermediate: '中级',
+    advanced: '进阶',
+    professional: '专业级',
+};
+const isProfessionalLanguage = (config?: StudyLanguageConfig) => config?.level === 'professional';
+const isLanguageCourse = (course: StudyCourse) => course.kind === 'language';
 
 // --- Renderer Component ---
 // Enhanced Markdown & Math Renderer
@@ -375,8 +372,17 @@ const StudyApp: React.FC = () => {
     const [processStatus, setProcessStatus] = useState('');
     const [showImportModal, setShowImportModal] = useState(false);
     const [importPreference, setImportPreference] = useState('');
-    const [tempPdfData, setTempPdfData] = useState<{name: string, text: string} | null>(null);
+    const [tempPdfData, setTempPdfData] = useState<{ name: string, text: string, languageSource?: StudyLanguageSource } | null>(null);
     const [katexRenderer, setKatexRenderer] = useState<KatexLike | null>(null);
+    const [bookshelfTab, setBookshelfTab] = useState<StudyCourseKind>('standard');
+    const [pendingPdfMode, setPendingPdfMode] = useState<StudyCourseKind>('standard');
+    const [showLanguageModal, setShowLanguageModal] = useState(false);
+    const [languageTarget, setLanguageTarget] = useState('日语');
+    const [languageCustomTarget, setLanguageCustomTarget] = useState('');
+    const [languageInstruction, setLanguageInstruction] = useState('中文');
+    const [languageLevel, setLanguageLevel] = useState<StudyLanguageLevel>('zero');
+    const [languageGoal, setLanguageGoal] = useState('日常聊天');
+    const [languageNotes, setLanguageNotes] = useState('');
 
     // Study-specific API config (overrides main apiConfig when set)
     const [studyApi, setStudyApi] = useState<Partial<APIConfig>>({});
@@ -533,6 +539,79 @@ const StudyApp: React.FC = () => {
         savePresets(tutorPresets.filter(p => p.id !== id));
     };
 
+    const resolveLanguageTarget = () => languageTarget === '自定义' ? languageCustomTarget.trim() : languageTarget;
+
+    const buildLanguageConfig = (source: StudyLanguageSource): StudyLanguageConfig | null => {
+        const targetLanguage = resolveLanguageTarget();
+        if (!targetLanguage) return null;
+        return {
+            targetLanguage,
+            instructionLanguage: languageInstruction.trim() || '中文',
+            level: languageLevel,
+            goal: languageGoal,
+            source,
+            practiceFocus: 'comprehensive',
+            customNotes: languageNotes.trim() || undefined,
+        };
+    };
+
+    const professionalLanguageGuidance = (config?: StudyLanguageConfig) => isProfessionalLanguage(config) ? `
+Professional-level requirements:
+- Aim for advanced/professional fluency, roughly C1-C2 or workplace/academic equivalent when applicable.
+- Teach register, tone, nuance, collocations, idioms, discourse markers, and domain terminology instead of only literal meaning.
+- Include high-stakes use cases: meetings, negotiation, presentations, reports, email, academic writing, translation choices, or field-specific phrasing when relevant.
+- Correct output at three levels: grammatical accuracy, naturalness, and professional polish.
+- When the user gives a field or industry in notes, prioritize that domain's terminology and conventions.
+` : '';
+
+    const buildLanguageSeedText = (config: StudyLanguageConfig, sourceText?: string) => {
+        const sourceLabel = config.source === 'pdf' ? '用户导入教材' : '内置路线';
+        return `语言学习课程设定
+目标语言: ${config.targetLanguage}
+讲解语言: ${config.instructionLanguage}
+水平: ${LANGUAGE_LEVEL_LABELS[config.level]}
+目标: ${config.goal}
+来源: ${sourceLabel}
+练习重点: 词汇、语法、翻译、情景对话、纠错综合练习
+用户备注: ${config.customNotes || '无'}
+${isProfessionalLanguage(config) ? '专业级要求: 强化语域、行业术语、正式写作、会议/汇报/邮件/翻译取舍、表达精修与自然度。' : ''}
+
+${sourceText ? `教材内容:
+${sourceText}` : `请围绕 ${config.targetLanguage} 的 ${LANGUAGE_LEVEL_LABELS[config.level]} 学习者设计一条可持续学习路线。每个单元都要包含高频词汇、核心语法/句型、短句替换、情景对话、常见错误和复习任务。`}`;
+    };
+
+    const getChapterSourceText = (course: StudyCourse, chapterIdx: number) => {
+        if (isLanguageCourse(course) && course.languageConfig?.source === 'built_in') {
+            return course.rawText;
+        }
+        const totalLen = course.rawText.length;
+        const chunkSize = Math.max(1, Math.floor(totalLen / Math.max(1, course.chapters.length)));
+        const start = chapterIdx * chunkSize;
+        return course.rawText.substring(start, start + chunkSize + 2000);
+    };
+
+    const openStandardPdfPicker = () => {
+        setPendingPdfMode('standard');
+        fileInputRef.current?.click();
+    };
+
+    const openLanguagePdfPicker = () => {
+        setPendingPdfMode('language');
+        setBookshelfTab('language');
+        fileInputRef.current?.click();
+    };
+
+    const openLanguageRouteBuilder = () => {
+        setBookshelfTab('language');
+        setTempPdfData(null);
+        setShowLanguageModal(true);
+    };
+
+    const closeLanguageModal = () => {
+        setShowLanguageModal(false);
+        if (tempPdfData?.languageSource) setTempPdfData(null);
+    };
+
     // --- PDF Processing ---
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -569,10 +648,17 @@ const StudyApp: React.FC = () => {
             }
 
             // Set temp data and open modal
-            setTempPdfData({ name: file.name.replace('.pdf', ''), text: fullText });
-            setImportPreference('');
+            const pdfData = { name: file.name.replace('.pdf', ''), text: fullText };
+            if (pendingPdfMode === 'language') {
+                setTempPdfData({ ...pdfData, languageSource: 'pdf' });
+                setBookshelfTab('language');
+                setShowLanguageModal(true);
+            } else {
+                setTempPdfData(pdfData);
+                setImportPreference('');
+                setShowImportModal(true);
+            }
             setIsProcessing(false);
-            setShowImportModal(true);
 
         } catch (e: any) {
             console.error(e);
@@ -602,13 +688,74 @@ const StudyApp: React.FC = () => {
         }
     };
 
-    const generateCurriculum = async (title: string, text: string, preference: string): Promise<StudyCourse> => {
+    const confirmLanguageCourse = async () => {
+        const source: StudyLanguageSource = tempPdfData?.languageSource === 'pdf' ? 'pdf' : 'built_in';
+        const languageConfig = buildLanguageConfig(source);
+        if (!languageConfig) {
+            addToast('先写清楚要学哪门语言', 'error');
+            return;
+        }
+
+        setShowLanguageModal(false);
+        setIsProcessing(true);
+        setProcessStatus(source === 'pdf' ? '助教正在把教材整理成语言课…' : '助教正在设计语言学习路线…');
+
+        try {
+            const title = source === 'pdf'
+                ? `${languageConfig.targetLanguage}教材 · ${tempPdfData?.name || languageConfig.goal}`
+                : `${languageConfig.targetLanguage}${LANGUAGE_LEVEL_LABELS[languageConfig.level]} · ${languageConfig.goal}`;
+            const seedText = buildLanguageSeedText(languageConfig, tempPdfData?.text);
+            const preference = [
+                `请用${languageConfig.instructionLanguage}讲解${languageConfig.targetLanguage}`,
+                `${LANGUAGE_LEVEL_LABELS[languageConfig.level]}水平`,
+                `学习目标：${languageConfig.goal}`,
+                languageConfig.customNotes,
+            ].filter(Boolean).join('；');
+            const newCourse = await generateCurriculum(title, seedText, preference, 'language', languageConfig);
+            await DB.saveCourse(newCourse);
+            await loadCourses();
+            setBookshelfTab('language');
+            addToast('语言课上架了', 'success');
+        } catch (e: any) {
+            addToast(`生成失败: ${e.message}`, 'error');
+        } finally {
+            setIsProcessing(false);
+            setTempPdfData(null);
+        }
+    };
+
+    const generateCurriculum = async (title: string, text: string, preference: string, kind: StudyCourseKind = 'standard', languageConfig?: StudyLanguageConfig): Promise<StudyCourse> => {
         if (!effectiveApi.apiKey) throw new Error('API Key missing');
 
         // Truncate text for outline generation if too long
         const contextText = text.substring(0, 30000); 
 
-        const prompt = `
+        const prompt = kind === 'language' && languageConfig ? `
+### Task: Create Language Course Outline
+Course Title: "${title}"
+Target Language: "${languageConfig.targetLanguage}"
+Instruction Language: "${languageConfig.instructionLanguage}"
+Learner Level: "${LANGUAGE_LEVEL_LABELS[languageConfig.level]}"
+Learning Goal: "${languageConfig.goal}"
+Source: "${languageConfig.source === 'pdf' ? 'Imported textbook/material' : 'Built-in route'}"
+User Notes: "${languageConfig.customNotes || 'None'}"
+${professionalLanguageGuidance(languageConfig)}
+Content Sample:
+${contextText.substring(0, 6000)}...
+
+Please create 5-8 learning units for this language course.
+Each unit must support practical language learning and include vocabulary, grammar/patterns, short useful sentences, scenario dialogue, culture/use context, and a review task.
+If imported material is provided, organize the units around that material first.
+${isProfessionalLanguage(languageConfig) ? 'For professional-level courses, units must progress from accurate comprehension to polished production: terminology, register control, professional writing/speaking, translation decisions, and field-specific scenarios.' : ''}
+
+### Output Format (Strict JSON)
+{
+  "chapters": [
+    { "title": "Unit 1: ...", "summary": "Vocabulary / grammar / dialogue / review focus...", "difficulty": "easy" },
+    ...
+  ]
+}
+` : `
 ### Task: Create Course Outline
 Document Title: "${title}"
 User Preference: "${preference || 'Standard'}"
@@ -657,7 +804,9 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
             createdAt: Date.now(),
             coverStyle: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
             totalProgress: 0,
-            preference: preference // Save preference
+            preference: preference, // Save preference
+            kind,
+            languageConfig
         };
     };
 
@@ -703,23 +852,31 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         setClassroomState('teaching');
         setCurrentText("正在准备教案...");
         
-        // Simple chunking strategy
-        const totalLen = course.rawText.length;
-        const chunkSize = Math.floor(totalLen / course.chapters.length);
-        const start = chapterIdx * chunkSize;
-        const chunkText = course.rawText.substring(start, start + chunkSize + 2000); // Overlap
+        const chunkText = getChapterSourceText(course, chapterIdx);
+        const languageConfig = course.languageConfig;
 
         const callApi = async (personaContext: string, isFallback: boolean = false) => {
-            const prompt = `${personaContext}
-
-### [Current Lesson Configuration]
-Topic: "${chapter.title}"
-Difficulty: ${chapter.difficulty}
-User Preference: "${course.preference || 'Standard'}"
-
-### [Source Material]
-${chunkText.substring(0, 8000)}
-
+            const taskBlock = isLanguageCourse(course) && languageConfig ? `
+### [Task: Language Lesson Generation]
+Teach this language unit to the user based on the Source Material above.
+- Target language: ${languageConfig.targetLanguage}
+- Explain in: ${languageConfig.instructionLanguage}
+- Learner level: ${LANGUAGE_LEVEL_LABELS[languageConfig.level]}
+- Goal: ${languageConfig.goal}
+- Practice focus: vocabulary, grammar, translation, scenario dialogue, and correction.
+- Use Markdown extensively, especially **bold** for new words and patterns.
+- Stay practical: include target-language examples, pronunciation/transcription hints where useful, natural translations, common mistakes, and better alternatives.
+- For Japanese, include kana/romaji where helpful. For Korean, include Hangul plus pronunciation guidance where helpful. For other languages, add simple pronunciation notes when useful.
+${professionalLanguageGuidance(languageConfig)}
+- Structure:
+  1. Warm in-character opening.
+  2. Key vocabulary or expressions.
+  3. Grammar / sentence pattern explained in ${languageConfig.instructionLanguage}.
+  4. Short scenario dialogue with translation.
+  5. Common mistakes and corrections.
+  6. Tiny practice task for the user.
+${isProfessionalLanguage(languageConfig) ? `  7. Professional polish: rewrite one plain sentence into a more formal/natural version, naming the register and why it works.` : ''}
+` : `
 ### [Task: Lecture Generation]
 Explain this chapter's key concepts to the user based strictly on the Source Material above.
 - **Formatting**: Use Markdown extensively.
@@ -732,6 +889,18 @@ Explain this chapter's key concepts to the user based strictly on the Source Mat
   2. Core: Explanation of concepts using analogies.
   3. Example: A concrete example or walkthrough.
   4. Summary: Quick recap.
+`;
+            const prompt = `${personaContext}
+
+### [Current Lesson Configuration]
+Topic: "${chapter.title}"
+Difficulty: ${chapter.difficulty}
+User Preference: "${course.preference || 'Standard'}"
+
+### [Source Material]
+${chunkText.substring(0, 8000)}
+
+${taskBlock}
 `;
             return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
@@ -764,6 +933,8 @@ You are now acting as a private tutor for ${userProfile.name}.
 - **Maintain Personality**: You MUST stay in character (as defined above). If you are tsundere, teach with a tsundere attitude. If you are shy, teach shyly. Don't become a robotic lecturer.
 - **Goal**: Explain the content clearly, but don't lose your "soul".
 - **Safety**: If the source material contains sensitive topics (biology, history, etc.), treat them academically and neutrally.
+${isLanguageCourse(course) && languageConfig ? `- **Language Tutor Mode**: You are tutoring ${userProfile.name} in ${languageConfig.targetLanguage}. Explain in ${languageConfig.instructionLanguage}, correct mistakes kindly, and give natural expressions instead of literal translation when needed.` : ''}
+${isLanguageCourse(course) && languageConfig ? professionalLanguageGuidance(languageConfig) : ''}
 `;
 
             let response = await callApi(baseContext);
@@ -836,10 +1007,8 @@ You are now acting as a private tutor for ${userProfile.name}.
         setCurrentText("让我想想...");
 
         try {
-            const totalLen = activeCourse.rawText.length;
-            const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
-            const start = activeCourse.currentChapterIndex * chunkSize;
-            const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+            const chunkText = getChapterSourceText(activeCourse, activeCourse.currentChapterIndex);
+            const languageConfig = activeCourse.languageConfig;
 
             // [MODIFIED]: Use Full Context for Q&A
             await injectMemoryPalace(selectedChar, undefined, question);
@@ -848,6 +1017,20 @@ You are now acting as a private tutor for ${userProfile.name}.
 ### [System: Study Mode Q&A]
 User is asking a question about the study material.
 - **Maintain Personality**: Answer in character.
+${isLanguageCourse(activeCourse) && languageConfig ? `- **Language Tutor Mode**: The user is learning ${languageConfig.targetLanguage}. They may ask grammar questions, paste a sentence, attempt a translation, or request correction. Explain in ${languageConfig.instructionLanguage}; give natural ${languageConfig.targetLanguage} alternatives, pronunciation/transcription hints when useful, and a short practice suggestion.` : ''}
+${isLanguageCourse(activeCourse) && languageConfig ? professionalLanguageGuidance(languageConfig) : ''}
+`;
+
+            const task = isLanguageCourse(activeCourse) && languageConfig ? `
+Answer as a language tutor for ${languageConfig.targetLanguage}.
+- If the user wrote a sentence or translation attempt, correct it first.
+- Explain why the correction is better in ${languageConfig.instructionLanguage}.
+- Give 1-3 natural alternatives when useful.
+${isProfessionalLanguage(languageConfig) ? `- For professional-level work, separate your correction into: accuracy, naturalness, register/professional polish, and optional domain terminology.` : ''}
+- Keep the answer encouraging and in character.
+- Use Markdown.
+` : `
+Answer the question based on the source material. Be helpful and encouraging (in character). Use Markdown.
 `;
 
             const prompt = `${baseContext}
@@ -858,7 +1041,7 @@ ${chunkText.substring(0, 8000)}
 "${question}"
 
 ### Task
-Answer the question based on the source material. Be helpful and encouraging (in character). Use Markdown.
+${task}
 `;
              const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
@@ -979,10 +1162,8 @@ Note: Use "我" (I) to refer to yourself.
         setQuizUserAnswers({});
 
         const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
-        const totalLen = activeCourse.rawText.length;
-        const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
-        const start = activeCourse.currentChapterIndex * chunkSize;
-        const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+        const chunkText = getChapterSourceText(activeCourse, activeCourse.currentChapterIndex);
+        const languageConfig = activeCourse.languageConfig;
 
         const typeLabels: Record<string, string> = {
             choice: '选择题 (4个选项，单选)',
@@ -991,7 +1172,54 @@ Note: Use "我" (I) to refer to yourself.
         };
         const selectedTypeStr = quizTypes.map(t => typeLabels[t]).join('、');
 
-        const prompt = `### Task: Generate Quiz Questions
+        const prompt = isLanguageCourse(activeCourse) && languageConfig ? `### Task: Generate Language Learning Quiz
+You are creating a language-learning quiz.
+
+**Target Language**: "${languageConfig.targetLanguage}"
+**Instruction Language**: "${languageConfig.instructionLanguage}"
+**Learner Level**: "${LANGUAGE_LEVEL_LABELS[languageConfig.level]}"
+**Goal**: "${languageConfig.goal}"
+**Chapter**: "${chapter.title}"
+**Source Material**:
+${chunkText.substring(0, 10000)}
+${professionalLanguageGuidance(languageConfig)}
+
+**Requirements**:
+- Generate exactly ${quizCount} questions total
+- Question types to include: ${selectedTypeStr}
+- Mix vocabulary meaning, grammar judgment, short translation, sentence completion, and scenario-expression correction
+- Keep all answers locally gradable with the existing UI:
+  - Choice questions: exactly 4 options labeled A/B/C/D
+  - True/false questions: answer should be "true" or "false"
+  - Fill-blank questions: use "___" in the stem; answer should be concise, ideally 1-5 words or one short phrase
+- For correction-style questions, make the correct answer a concise natural expression
+- Explanations should teach why the answer sounds natural or grammatically correct
+${isProfessionalLanguage(languageConfig) ? `- Include professional-level items: register selection, collocation, domain terminology, formal email/report phrasing, presentation/meeting language, and translation nuance. Keep answers short enough for local grading.` : ''}
+
+### Output Format (Strict JSON, no markdown wrapping)
+{
+  "questions": [
+    {
+      "type": "choice",
+      "stem": "Which option best means...",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "answer": "B",
+      "explanation": "Because..."
+    },
+    {
+      "type": "true_false",
+      "stem": "This sentence is natural: ...",
+      "answer": "true",
+      "explanation": "Because..."
+    },
+    {
+      "type": "fill_blank",
+      "stem": "Complete the sentence: ... ___ ...",
+      "answer": "...",
+      "explanation": "Because..."
+    }
+  ]
+}` : `### Task: Generate Quiz Questions
 You are creating a quiz based on the following study material.
 
 **Chapter**: "${chapter.title}"
@@ -1088,6 +1316,11 @@ ${chunkText.substring(0, 10000)}
         setQuizUserAnswers(prev => ({ ...prev, [questionId]: answer }));
     };
 
+    const findCourseForQuiz = (session: QuizSession | null) => {
+        if (!session) return null;
+        return courses.find(course => course.id === session.courseId) || (activeCourse?.id === session.courseId ? activeCourse : null);
+    };
+
     const submitQuiz = async () => {
         if (!quizSession || !selectedChar || !effectiveApi.apiKey) return;
         setQuizLoading('助教正在批改…');
@@ -1120,16 +1353,23 @@ ${chunkText.substring(0, 10000)}
 
         await injectMemoryPalace(selectedChar, undefined, quizSession.chapterTitle);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+        const quizCourse = findCourseForQuiz(quizSession);
+        const languageConfig = quizCourse?.languageConfig;
 
         const reviewPrompt = `${baseContext}
 
 ### [System: Quiz Review Mode]
 You just gave ${userProfile.name} a quiz on "${quizSession.chapterTitle}".
 They scored ${score}/${gradedQuestions.length} (${scorePercent}%).
+${quizCourse && isLanguageCourse(quizCourse) && languageConfig ? `
+This was a ${languageConfig.targetLanguage} language-learning quiz. Explain corrections in ${languageConfig.instructionLanguage}, point out natural phrasing, and add quick memory hooks for vocabulary/grammar mistakes.
+${professionalLanguageGuidance(languageConfig)}
+` : ''}
 
 **Your task**: Review their answers one by one. For each question:
 - If they got it RIGHT: give a brief, entertaining acknowledgment (can be surprised, sarcastic, or genuinely happy depending on your personality)
 - If they got it WRONG: analyze WHY they might have gotten it wrong. Did they confuse similar concepts? Did they not read carefully? Make it entertaining and memorable — the goal is to make them laugh while learning. Ask them rhetorically what went wrong.
+${quizCourse && isLanguageCourse(quizCourse) && isProfessionalLanguage(languageConfig) ? `- For professional-level mistakes, identify whether the issue is terminology, collocation, register, tone, translation fidelity, or professional polish.` : ''}
 - Stay in character throughout! A gentle character should be funny in a gentle way. A tsundere should be tsundere about it. A cool character should be cool about it.
 - The tone should be engaging and memorable — think "entertaining study buddy", not "cold grading machine"
 - Use their name naturally
@@ -1230,11 +1470,18 @@ ${resultsText}
 
         await injectMemoryPalace(selectedChar, undefined, userQ);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+        const quizCourse = findCourseForQuiz(quizSession);
+        const languageConfig = quizCourse?.languageConfig;
 
         const prompt = `${baseContext}
 
 ### [System: Quiz Follow-up Q&A]
 The user just did a quiz and wants to ask about a specific question they got ${question.isCorrect ? 'right' : 'wrong'}.
+${quizCourse && isLanguageCourse(quizCourse) && languageConfig ? `
+This is a ${languageConfig.targetLanguage} language-learning quiz. Explain in ${languageConfig.instructionLanguage}; if the user asks about wording, grammar, or translation, give natural alternatives and brief pronunciation/transcription help when useful.
+${professionalLanguageGuidance(languageConfig)}
+${isProfessionalLanguage(languageConfig) ? 'For professional-level follow-up, include register, audience, and where each alternative would be appropriate.' : ''}
+` : ''}
 
 **Question**: ${question.stem}
 ${question.options ? question.options.map(o => `  ${o}`).join('\n') : ''}
@@ -1596,6 +1843,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     }
 
     if (mode === 'bookshelf') {
+        const visibleCourses = courses.filter(course => bookshelfTab === 'language' ? isLanguageCourse(course) : !isLanguageCourse(course));
+
         return (
             <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ color: INK, background: PAGE_BG }}>
                 <PaperBackdrop corners={false} />
@@ -1629,30 +1878,77 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         </div>
                     </div>
 
-                    <SectionTag en="MY COURSES" className="mb-3">我的课本</SectionTag>
+                    <div className="mb-4 rounded-2xl p-1 flex gap-1" style={{ background: 'rgba(232,228,217,0.58)', border: '1px dashed rgba(150,144,132,0.45)' }}>
+                        {([
+                            ['standard', '普通课本'],
+                            ['language', '语言学习'],
+                        ] as const).map(([tab, label]) => (
+                            <button
+                                key={tab}
+                                onClick={() => setBookshelfTab(tab)}
+                                className="flex-1 py-2 rounded-xl text-xs font-black transition-all"
+                                style={bookshelfTab === tab ? { background: INK, color: PAPER, boxShadow: '0 8px 16px -12px rgba(31,29,26,0.7)' } : { color: INK_SOFT }}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <SectionTag en={bookshelfTab === 'language' ? 'LANGUAGE COURSES' : 'MY COURSES'} className="mb-3">
+                        {bookshelfTab === 'language' ? '语言学习' : '我的课本'}
+                    </SectionTag>
 
                     <div className="grid grid-cols-2 gap-4">
-                        <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform" style={{ border: '2px dashed rgba(150,144,132,0.7)', color: INK_SOFT, background: 'rgba(255,253,247,0.6)' }}>
-                            {isProcessing ? (
-                                <div className="text-center px-2">
-                                    <Spinner size={22} className="animate-spin mx-auto mb-2" style={{ color: INK }} />
-                                    <span className="text-[10px]">{processStatus}</span>
-                                </div>
-                            ) : (
-                                <>
-                                    <Plus size={26} weight="bold" />
-                                    <span className="text-xs font-bold">收一本 PDF</span>
-                                </>
-                            )}
-                        </button>
+                        {bookshelfTab === 'language' ? (
+                            <>
+                                <button onClick={openLanguageRouteBuilder} className="aspect-[3/4] rounded-r-xl rounded-l-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform px-3" style={{ border: '2px dashed rgba(150,144,132,0.7)', color: INK, background: 'rgba(255,253,247,0.72)' }}>
+                                    {isProcessing ? (
+                                        <div className="text-center px-2">
+                                            <Spinner size={22} className="animate-spin mx-auto mb-2" style={{ color: INK }} />
+                                            <span className="text-[10px]">{processStatus}</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <Plus size={26} weight="bold" />
+                                            <span className="text-xs font-bold">新建语言课</span>
+                                            <span className="text-[10px] text-center leading-relaxed" style={{ color: INK_SOFT }}>不用教材，按目标生成路线</span>
+                                        </>
+                                    )}
+                                </button>
+                                <button onClick={openLanguagePdfPicker} className="aspect-[3/4] rounded-r-xl rounded-l-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform px-3" style={{ border: '2px dashed rgba(150,144,132,0.7)', color: INK_SOFT, background: 'rgba(255,253,247,0.58)' }}>
+                                    <Notepad size={26} weight="bold" />
+                                    <span className="text-xs font-bold">导入教材</span>
+                                    <span className="text-[10px] text-center leading-relaxed">PDF 也能整理成语言课</span>
+                                </button>
+                            </>
+                        ) : (
+                            <button onClick={openStandardPdfPicker} className="aspect-[3/4] rounded-r-xl rounded-l-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform" style={{ border: '2px dashed rgba(150,144,132,0.7)', color: INK_SOFT, background: 'rgba(255,253,247,0.6)' }}>
+                                {isProcessing ? (
+                                    <div className="text-center px-2">
+                                        <Spinner size={22} className="animate-spin mx-auto mb-2" style={{ color: INK }} />
+                                        <span className="text-[10px]">{processStatus}</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <Plus size={26} weight="bold" />
+                                        <span className="text-xs font-bold">收一本 PDF</span>
+                                    </>
+                                )}
+                            </button>
+                        )}
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileSelect} disabled={isProcessing} />
 
-                        {courses.map(course => (
+                        {visibleCourses.map(course => (
                             <div key={course.id} onClick={() => startSession(course)} className="aspect-[3/4] rounded-r-xl rounded-l-sm relative group cursor-pointer overflow-hidden transition-transform active:scale-95" style={{ background: course.coverStyle, boxShadow: '0 14px 26px -14px rgba(31,29,26,0.6)' }}>
                                 <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/20"></div> {/* Spine */}
                                 <div className="absolute inset-0 opacity-[0.10] pointer-events-none" style={{ backgroundImage: HALFTONE, backgroundSize: '6px 6px' }} />
                                 <div className="p-4 flex flex-col h-full text-white relative z-10">
                                     <div className="flex-1 font-serif font-bold text-lg leading-tight line-clamp-3 drop-shadow-md">{course.title}</div>
+                                    {isLanguageCourse(course) && course.languageConfig && (
+                                        <div className="mb-2 text-[10px] font-bold opacity-90 leading-relaxed">
+                                            {course.languageConfig.targetLanguage} · {LANGUAGE_LEVEL_LABELS[course.languageConfig.level]} · {course.languageConfig.goal}
+                                        </div>
+                                    )}
                                     <div className="mt-2">
                                         <div className="text-[10px] font-bold opacity-85 mb-1">读到 {course.totalProgress}%</div>
                                         <div className="h-1 bg-white/30 rounded-full overflow-hidden">
@@ -1669,6 +1965,12 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             </div>
                         ))}
                     </div>
+
+                    {visibleCourses.length === 0 && (
+                        <div className="mt-6 text-center text-xs leading-relaxed" style={{ color: INK_SOFT }}>
+                            {bookshelfTab === 'language' ? '还没有语言课。可以先建一条学习路线，也可以导入教材让角色带着学。' : '书架还空着，先收一本 PDF 让助教备课。'}
+                        </div>
+                    )}
                 </div>
 
                 <PaperSheet open={showImportModal} title="新课本 · 备课偏好" tape="ink" onClose={() => setShowImportModal(false)}>
@@ -1699,6 +2001,77 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             />
                         </div>
                         <ScrapButton variant="ink" onClick={confirmImport} className="w-full py-3 text-[14px]">开始备课</ScrapButton>
+                    </div>
+                </PaperSheet>
+
+                <PaperSheet open={showLanguageModal} title={tempPdfData?.languageSource === 'pdf' ? '语言课 · 导入教材' : '语言课 · 新建路线'} tape="ink" onClose={closeLanguageModal}>
+                    <div className="space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
+                        {tempPdfData?.languageSource === 'pdf' && (
+                            <div className="text-xs rounded-xl p-3" style={{ color: INK_SOFT, background: 'rgba(232,228,217,0.45)', border: '1px dashed rgba(150,144,132,0.45)' }}>
+                                已收到教材: <span className="font-bold" style={{ color: INK }}>{tempPdfData.name}</span>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>目标语言</label>
+                            <div className="flex flex-wrap gap-2">
+                                {[...LANGUAGE_OPTIONS, '自定义'].map(lang => (
+                                    <button key={lang} onClick={() => setLanguageTarget(lang)} className="px-3 py-1.5 rounded-full text-xs font-bold transition-colors" style={chip(languageTarget === lang)}>
+                                        {lang}
+                                    </button>
+                                ))}
+                            </div>
+                            {languageTarget === '自定义' && (
+                                <input value={languageCustomTarget} onChange={e => setLanguageCustomTarget(e.target.value)} placeholder="写下想学的语言" className="w-full rounded-xl p-3 text-sm outline-none mt-2" style={paperInput} />
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>水平</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {LANGUAGE_LEVEL_OPTIONS.map(opt => (
+                                    <button key={opt.value} onClick={() => setLanguageLevel(opt.value)} className="py-2 rounded-xl text-xs font-bold transition-colors" style={chip(languageLevel === opt.value)}>
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>学习目标</label>
+                            <div className="flex flex-wrap gap-2">
+                                {LANGUAGE_GOAL_OPTIONS.map(goal => (
+                                    <button key={goal} onClick={() => setLanguageGoal(goal)} className="px-3 py-1.5 rounded-full text-xs font-bold transition-colors" style={chip(languageGoal === goal)}>
+                                        {goal}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                            <div>
+                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>讲解语言</label>
+                                <input value={languageInstruction} onChange={e => setLanguageInstruction(e.target.value)} placeholder="例如：中文" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>备注</label>
+                                <textarea
+                                    value={languageNotes}
+                                    onChange={e => setLanguageNotes(e.target.value)}
+                                    placeholder="例如：想多练日常寒暄、用动漫例句、准备 TOPIK..."
+                                    className="w-full h-24 rounded-xl p-3 text-sm outline-none resize-none"
+                                    style={paperInput}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="text-[10px] leading-relaxed rounded-xl p-3" style={{ color: INK_SOFT, background: 'rgba(255,253,247,0.62)', border: '1px dashed rgba(150,144,132,0.45)' }}>
+                            角色会用人设口吻辅导，课程会包含词汇、语法、短句、情景对话、常见错误和综合练习；专业级会强化语域、术语、正式写作、翻译取舍和表达润色。暂不做语音识别或发音播放。
+                        </div>
+
+                        <ScrapButton variant="ink" onClick={confirmLanguageCourse} disabled={isProcessing || !resolveLanguageTarget()} className="w-full py-3 text-[14px]">
+                            {tempPdfData?.languageSource === 'pdf' ? '整理成语言课' : '生成学习路线'}
+                        </ScrapButton>
                     </div>
                 </PaperSheet>
 

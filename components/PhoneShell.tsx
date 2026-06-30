@@ -104,6 +104,7 @@ const ForumApp = lazyApp(() => import('../apps/ForumApp'));
 const TwitterApp = lazyApp(() => import('../apps/TwitterApp'));
 const VideoCallApp = lazyApp(() => import('../apps/VideoCallApp'));
 const DesktopPetApp = lazyApp(() => import('../apps/DesktopPetApp'));
+const HealthApp = lazyApp(() => import('../apps/HealthApp'));
 const ManualApp = lazyApp(() => import('../apps/ManualApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
@@ -114,12 +115,12 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
-  XunjiApp, TwitterApp, DesktopPetApp, ManualApp,
+  XunjiApp, TwitterApp, DesktopPetApp, HealthApp, ManualApp,
 ];
 
 const NATIVE_APP_PRELOAD_ORDER: PreloadableLazy[] = [
   Chat, Character, ChatHub, SocialApp, RoomApp, XunjiApp, Settings, Appearance,
-  Gallery, PhoneApp, CallApp, MusicApp, TheaterApp, TakeoutApp, ManualApp,
+  Gallery, PhoneApp, CallApp, MusicApp, TheaterApp, TakeoutApp, HealthApp, ManualApp,
 ];
 
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
@@ -141,7 +142,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
   [AppID.Creative]: CreativeStudioApp, [AppID.Theater]: TheaterApp, [AppID.Almanac]: AlmanacApp,
   [AppID.Takeout]: TakeoutApp, [AppID.Xunji]: XunjiApp, [AppID.Shop]: ShopApp, [AppID.Harem]: HaremApp, [AppID.Forum]: ForumApp, [AppID.VideoCall]: VideoCallApp,
-  [AppID.Twitter]: TwitterApp, [AppID.DesktopPet]: DesktopPetApp, [AppID.Manual]: ManualApp,
+  [AppID.Twitter]: TwitterApp, [AppID.DesktopPet]: DesktopPetApp, [AppID.Health]: HealthApp, [AppID.Manual]: ManualApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -635,6 +636,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Twitter: return <TwitterApp />;
       case AppID.VideoCall: return <VideoCallApp />;
       case AppID.DesktopPet: return <DesktopPetApp />;
+      case AppID.Health: return <HealthApp />;
       case AppID.Manual: return <ManualApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
@@ -664,15 +666,19 @@ const PhoneShell: React.FC = () => {
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
   const shellHandlesSafeArea = !nativeRuntime && ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
+  const appCustomCssEntries = Object.entries(theme.appCustomCss || {}).filter(([, css]) => typeof css === 'string' && css.trim());
+  const hasUserShellCss = !!theme.globalCustomCss || appCustomCssEntries.length > 0;
 
   return (
     <div className={`relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none ${nativeRuntime ? 'moro-native-shell' : ''}`}>
        {/* 全局自定义 CSS（主题 → 自定义 CSS）：注入整机，作用于 .moro-* 钩子类与任意元素 */}
        {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
-       {/* 守护样式（注在用户 CSS 之后）：保证 Dock 与桌面 Palette 按钮永远可见可点 ——
+       {/* 单 App 自定义 CSS（拼贴册 → App 分区）：每个 App 外壳有 data-moro-app 与 moro-app-shell-* 钩子。 */}
+       {appCustomCssEntries.map(([id, css]) => <style key={`app-css-${id}`}>{css}</style>)}
+       {/* 守护样式（注在用户 CSS 之后）：保证 Dock、桌面 Palette 与聊天返回键永远可见可点 ——
            全局 CSS 写崩时用户仍能从 Palette 回到「主题 → 自定义 CSS」清空恢复。 */}
-       {theme.globalCustomCss && (
-         <style>{`.moro-dock,.moro-dock-icon,.moro-palette-btn{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}.moro-dock{display:flex!important;}`}</style>
+       {hasUserShellCss && (
+         <style>{`.moro-dock,.moro-dock-icon,.moro-palette-btn,.moro-chat-back{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}.moro-dock{display:flex!important;}`}</style>
        )}
        {/* Optimized Background Layer */}
        <div 
@@ -714,9 +720,11 @@ const PhoneShell: React.FC = () => {
                 <div
                   key={appId}
                   aria-hidden={!isActive}
+                  data-moro-app={appId}
+                  data-moro-active={isActive ? 'true' : 'false'}
                   className={nativeRuntime
-                    ? `absolute inset-0 w-full h-full transition-opacity duration-150 ${isActive ? 'z-10 opacity-100 pointer-events-auto' : 'z-0 opacity-0 pointer-events-none'}`
-                    : `absolute inset-0 w-full h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    ? `moro-app-shell moro-app-shell-${appId} absolute inset-0 w-full h-full transition-opacity duration-150 ${isActive ? 'z-10 opacity-100 pointer-events-auto' : 'z-0 opacity-0 pointer-events-none'}`
+                    : `moro-app-shell moro-app-shell-${appId} absolute inset-0 w-full h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                       isActive
                         ? 'z-10 opacity-100 pointer-events-auto translate-y-0 scale-100 blur-0'
                         : 'z-0 opacity-0 pointer-events-none translate-y-1 scale-[0.992] blur-[1px]'

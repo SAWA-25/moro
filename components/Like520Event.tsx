@@ -232,8 +232,6 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
 // ============================================================
 
 const LIKE520_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Noto+Serif+SC:wght@300;400;500;600;700&family=Cinzel:wght@400;500;600&display=swap');
-
 .l520-root {
   --ivory: #faf3e7;
   --cream: #f5ead4;
@@ -2352,15 +2350,7 @@ const LetterView: React.FC<{ text: string; onNext: () => void; onClose: () => vo
         if (saving) return;
         setSaving(true);
         try {
-            const h2c = (window as any).html2canvas;
-            const loadH2C = h2c ? Promise.resolve(h2c) : new Promise<any>((resolve, reject) => {
-                const s = document.createElement('script');
-                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                s.onload = () => resolve((window as any).html2canvas);
-                s.onerror = reject;
-                document.head.appendChild(s);
-            });
-            const html2canvas = await loadH2C;
+            const html2canvas = (await import('html2canvas')).default;
             // 等字体加载完再截图 —— 否则 'Cormorant Garamond' / 'Noto Serif SC'
             // 还没就绪时会退回系统 serif，header 颜色和字距看起来都不一样
             try { await (document as any).fonts?.ready; } catch { /* ignore */ }
@@ -2471,7 +2461,8 @@ const LetterView: React.FC<{ text: string; onNext: () => void; onClose: () => vo
  * 1200×780 左右的横版 520 DAY 装饰框（蕾丝 doily + 爱心/星星/小花），
  * 中间是空白的圆形 doily，让两个 chibi 居中靠下排进去。
  */
-const LIKE520_PHOTO_BG_URL = 'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/img/2.png';
+const LIKE520_ASSET_BASE = `${import.meta.env.BASE_URL}like520/assets`;
+const LIKE520_PHOTO_BG_URL = `${LIKE520_ASSET_BASE}/img/photo-bg.png`;
 
 async function composePuzzlePhoto(charChibiUrl: string, userChibiUrl: string): Promise<string> {
     const load = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
@@ -2771,25 +2762,25 @@ type BGMGroupKey = 'nieren' | 'yangcheng' | 'jieju' | 'letter';
  */
 const LIKE520_BGM_GROUPS: Record<BGMGroupKey, string[]> = {
     nieren: [
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/nieren/1.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/nieren/2.mp3',
+        `${LIKE520_ASSET_BASE}/bgm/nieren/1.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/nieren/2.mp3`,
     ],
     yangcheng: [
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/yangcheng/1.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/yangcheng/2.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/yangcheng/3.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/yangcheng/4.mp3',
+        `${LIKE520_ASSET_BASE}/bgm/yangcheng/1.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/yangcheng/2.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/yangcheng/3.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/yangcheng/4.mp3`,
     ],
     jieju: [
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/jiejuhezhao/1.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/jiejuhezhao/2.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/jiejuhezhao/3.mp3',
+        `${LIKE520_ASSET_BASE}/bgm/jiejuhezhao/1.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/jiejuhezhao/2.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/jiejuhezhao/3.mp3`,
     ],
     letter: [
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/letter/1.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/letter/2.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/letter/3.mp3',
-        'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/letter/4.mp3',
+        `${LIKE520_ASSET_BASE}/bgm/letter/1.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/letter/2.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/letter/3.mp3`,
+        `${LIKE520_ASSET_BASE}/bgm/letter/4.mp3`,
     ],
 };
 

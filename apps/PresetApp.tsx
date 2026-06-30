@@ -16,6 +16,7 @@ import {
     ORDER_CHAR_ID_SINGLE,
     PresetRuntime,
     createDefaultPreset,
+    createPresetLocalId,
     estimateTokens,
     exportTavernPreset,
     importTavernPreset,
@@ -553,7 +554,7 @@ const PresetApp: React.FC = () => {
         const name = window.prompt('复制为新预设', `${active.name} 副本`);
         if (name === null) return;
         const copy: TavernPreset = JSON.parse(JSON.stringify(active));
-        copy.id = crypto.randomUUID();
+        copy.id = createPresetLocalId('preset');
         copy.name = name.trim() || `${active.name} 副本`;
         copy.createdAt = Date.now();
         copy.updatedAt = Date.now();
@@ -669,7 +670,7 @@ const PresetApp: React.FC = () => {
 
     const handleNewPrompt = () => {
         if (!active) return;
-        const identifier = crypto.randomUUID();
+        const identifier = createPresetLocalId('prompt');
         mutateActive(d => {
             d.prompts.push({ identifier, name: '新提示词', role: 'system', content: '', system_prompt: false });
             for (const po of d.prompt_order) po.order.push({ identifier, enabled: true });

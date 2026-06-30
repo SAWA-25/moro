@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useOS, DEFAULT_WALLPAPER } from '../context/OSContext';
-import { OSTheme, DesktopDecoration, DesktopWidgetPref, AppearancePreset, Toast } from '../types';
+import { AppID, OSTheme, DesktopDecoration, DesktopWidgetPref, AppearancePreset, Toast } from '../types';
 import { INSTALLED_APPS, Icons } from '../constants';
 import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
@@ -13,6 +13,7 @@ import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
 // Touch-friendly long-press wrapper. `onContextMenu` alone misses iOS Safari /
 // Capacitor WebView, so we also wire pointer/touch timers to fire after ~550ms.
@@ -639,24 +640,335 @@ const ChromeMiniPreview: React.FC<{ chromeCss?: string }> = ({ chromeCss }) => (
     </div>
 );
 
+const copyTextToClipboard = async (text: string): Promise<boolean> => {
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // Fall through to legacy copy path.
+    }
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return ok;
+    } catch {
+        return false;
+    }
+};
+
+const cssPromptBaseRules = `请帮我给 Moro 虚拟手机写一段自定义 CSS。
+要求：
+1. 只输出 CSS 代码，不要解释、不要 Markdown 代码块。
+2. 优先使用我给你的选择器，不要写 html、body、* 这种会污染整页的选择器。
+3. 默认给关键覆盖项加 !important。
+4. 不要隐藏返回键、Dock、拼贴册入口、Palette 按钮，不要让用户无法退出或恢复。
+5. 视觉要完整：背景、卡片、按钮、输入框、文字颜色、边框、阴影/材质都照顾到。
+6. CSS 尽量适配手机窄屏，不要让文字溢出或互相遮挡。`;
+
+type CssPromptKind = 'beginner' | 'complete' | 'local' | 'fix' | 'style';
+
+type CssPromptTarget = {
+    target: string;
+    selectors: string[];
+    scopeNote?: string;
+    styleExamples?: string;
+    currentCss?: string;
+};
+
+const cssPromptKindText: Record<CssPromptKind, string> = {
+    beginner: `你要把我的一句自然语言愿望，翻译成可以直接粘进 Moro「拼贴册」的 CSS。
+如果我没有指定范围，就按下面目标区域写；不要问我 CSS 术语。`,
+    complete: `请做一次完整视觉改造：背景、卡片、按钮、输入框、文字、边框、阴影/材质、轻微动效都要统一。
+请让视觉像一套完整皮肤，不要只改一两个颜色。`,
+    local: `请只做局部微调，不要影响目标以外的区域。
+可以调整这个区域的背景、圆角、边框、阴影、间距、文字颜色和 hover/active 状态。`,
+    fix: `请帮我修复下面这段 CSS。重点检查：按钮/返回键/入口是否被遮住或隐藏、文字是否溢出、层级是否压住界面、页面是否无法滚动。
+修复后仍然只输出完整 CSS。`,
+    style: `请把我口语化的风格描述扩写成一套可用 CSS。
+风格可以有材质、边框、阴影、贴纸/玻璃/纸张/像素等细节，但不要牺牲可读性和可点击性。`,
+};
+
+const buildCssPrompt = (kind: CssPromptKind, target: CssPromptTarget) => {
+    const selectorText = target.selectors.join('\n');
+    const cssText = target.currentCss?.trim()
+        ? `\n\n我现在已有的 CSS（请在此基础上修复或改写）：\n${target.currentCss.trim()}`
+        : '';
+    return `${cssPromptBaseRules}
+
+提示词类型：${kind === 'beginner' ? '新手一句话' : kind === 'complete' ? '完整定制' : kind === 'local' ? '局部微调' : kind === 'fix' ? '修坏修复' : '风格扩写'}
+${cssPromptKindText[kind]}
+
+目标区域：
+${target.target}
+
+可用选择器：
+${selectorText}
+${target.scopeNote ? `\n范围说明：\n${target.scopeNote}` : ''}
+
+我想要的风格/问题：
+【在这里写：${target.styleExamples || '例如 奶油风、黑白手账、玻璃拟态、像素游戏、旧报纸拼贴，或描述哪里坏了'}】${cssText}`;
+};
+
+const GLOBAL_SELECTORS = [
+    '.moro-clock-card', '.moro-clock-time', '.moro-clock-greeting', '.moro-palette-btn',
+    '.moro-character-card', '.moro-app-tile', '.moro-app-label',
+    '.moro-dock', '.moro-dock-icon', '.moro-status-bar',
+    '.moro-widget-card', '.moro-lock-screen', '.moro-app-shell',
+];
+
+const CHAT_SELECTORS = [
+    '.moro-chat-root',
+    '.moro-chat-header', '.moro-chat-back', '.moro-chat-avatar', '.moro-chat-name', '.moro-chat-status',
+    '.moro-chat-buffs', '.moro-chat-buffs button', '.moro-chat-token', '.moro-chat-trigger',
+    '.moro-chat-inputbar', '.moro-chat-panel', '.moro-chat-panel button',
+];
+
+const buildGlobalCssPrompt = (kind: CssPromptKind = 'complete', currentCss?: string) => buildCssPrompt(kind, {
+    target: '改整台 Moro 虚拟手机的整体外观：桌面、Dock、状态栏、小组件、App 外壳。',
+    selectors: GLOBAL_SELECTORS,
+    styleExamples: '复古贴纸感、玻璃拟态、黑白报纸、赛博夜店、奶油手账',
+    currentCss,
+});
+
+const buildDesktopCssPrompt = (kind: CssPromptKind = 'complete', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改桌面页：桌面时钟/问候卡、聊天预览卡、App 图标、Dock、状态栏、小组件。',
+    selectors: [
+        '.moro-clock-card', '.moro-clock-time', '.moro-clock-greeting',
+        '.moro-character-card', '.moro-app-tile', '.moro-app-label',
+        '.moro-dock', '.moro-dock-icon', '.moro-status-bar',
+        '.moro-widget-card', '.moro-palette-btn',
+    ],
+    scopeNote: '不要隐藏 .moro-dock、.moro-palette-btn 或桌面 App 图标；用户需要靠它们回到拼贴册修复。',
+    styleExamples: '让桌面像奶油手账、黑白拼贴册、透明玻璃桌面、像素掌机首页',
+    currentCss,
+});
+
+const buildChatChromeCssPrompt = (kind: CssPromptKind = 'complete', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改聊天界面的白框外壳：顶栏、返回键、头像、状态、输入栏和功能面板。',
+    selectors: CHAT_SELECTORS,
+    scopeNote: '不要 display:none 掉 .moro-chat-back。气泡本体不要在这里写，气泡请去「气泡裁剪台」使用 .moro-bubble-user / .moro-bubble-ai。',
+    styleExamples: '微信极简、粉白软糖、黑金唱片、像素游戏、旧报纸拼贴',
+    currentCss,
+});
+
+const buildBeginnerCssPrompt = () => buildCssPrompt('beginner', {
+    target: 'Moro 拼贴册可自定义 CSS 的任意区域。如果我没说清楚范围，请优先写整机外观；如果我提到某个 App，请提醒我替换成对应 [data-moro-app="应用ID"]。',
+    selectors: [...GLOBAL_SELECTORS, ...CHAT_SELECTORS, '[data-moro-app="应用ID"]'],
+    styleExamples: '我想让整个手机像黑白手账，按钮像贴纸，背景像旧纸',
+});
+
+const buildAppCssPrompt = (appName: string, appId: AppID, kind: CssPromptKind = 'complete', currentCss?: string) => buildCssPrompt(kind, {
+    target: `只改 Moro 的「${appName}」这个 App，不影响其他 App。`,
+    selectors: [
+        `[data-moro-app="${appId}"]`,
+        `.moro-app-shell-${appId}`,
+        '.moro-app-shell',
+        '[data-moro-active="true"]',
+        `[data-moro-app="${appId}"] button`,
+        `[data-moro-app="${appId}"] input`,
+        `[data-moro-app="${appId}"] textarea`,
+    ],
+    scopeNote: `所有具体样式都尽量写在 [data-moro-app="${appId}"] 下面，例如 [data-moro-app="${appId}"] button { ... }。`,
+    styleExamples: '复古杂志、银行账本、唱片店、黑白剧场、透明玻璃控制台',
+    currentCss,
+});
+
+const buildWidgetCssPrompt = (label: string, id: string, kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
+    target: `只改桌面小组件「${label}」。`,
+    selectors: [`.moro-widget-${id}`, `.moro-widget-${id} *`, '.moro-widget-card'],
+    scopeNote: `优先把样式包在 .moro-widget-${id} 里，不要影响其他小组件。`,
+    styleExamples: '让它像拍立得、便签纸、玻璃小窗、像素小卡片',
+    currentCss,
+});
+
+const buildFloatingMenuCssPrompt = (kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改桌面悬浮快捷菜单：悬浮球、展开面板和里面的快捷按钮。',
+    selectors: ['.moro-floating-quick-menu', '.moro-floating-quick-menu-panel', '.moro-floating-quick-menu-button'],
+    scopeNote: '悬浮球不能被隐藏，也不能被移出屏幕到完全点不到的位置。',
+    styleExamples: '奶油圆球、玻璃小胶囊、黑白贴纸按钮、像素快捷菜单',
+    currentCss,
+});
+
+const buildOfflineModalCssPrompt = (kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改线下模式弹窗：背景遮罩、对话小窗、场景文字、角色/用户气泡和输入栏。',
+    selectors: ['.moro-offline-modal-backdrop', '.moro-offline-modal', '.moro-offline-modal-header', '.moro-offline-modal-entry', '.moro-offline-modal-scene', '.moro-offline-modal-char', '.moro-offline-modal-user', '.moro-offline-modal-inputbar'],
+    scopeNote: '不要让弹窗超出窄屏，也不要遮住必要的关闭/输入区域。',
+    styleExamples: '夜雨电影感、纸页剧本、暖黄卧室灯、透明玻璃对话窗',
+    currentCss,
+});
+
+const buildIslandCssPrompt = (kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改灵动岛通知胶囊和展开预览面板。',
+    selectors: ['.moro-dynamic-island', '.moro-dynamic-island-panel'],
+    scopeNote: '灵动岛在状态栏附近，注意不要盖住整屏内容，也不要把通知文字挤出胶囊。',
+    styleExamples: '黑胶囊、透明玻璃、电子像素、胶片通知条',
+    currentCss,
+});
+
+const buildLockCssPrompt = (kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
+    target: '只改锁屏：锁屏背景层、时间日期、通知卡、解锁提示和密码输入界面。',
+    selectors: ['.moro-lock-screen', '.moro-lock-clock', '.moro-lock-notif', '.moro-lock-passcode', '.moro-lock-passcode-panel', '.moro-lock-passcode-key'],
+    scopeNote: '不要隐藏解锁/取消/密码输入相关元素，避免用户无法进入手机。',
+    styleExamples: '黑白杂志锁屏、奶油便利贴、玻璃拟态、复古胶片相机屏',
+    currentCss,
+});
+
+const PromptCopyCard: React.FC<{
+    title: string;
+    desc: string;
+    prompt: string;
+    selectors?: string[];
+    addToast: (msg: string, type?: Toast['type']) => void;
+}> = ({ title, desc, prompt, selectors, addToast }) => {
+    const [copied, setCopied] = useState(false);
+    const onCopy = async () => {
+        const ok = await copyTextToClipboard(prompt);
+        setCopied(ok);
+        addToast(ok ? '提示词已复制，交给任意 AI 就能写 CSS' : '复制失败，请手动选中文本复制', ok ? 'success' : 'error');
+        if (ok) window.setTimeout(() => setCopied(false), 1400);
+    };
+    return (
+        <button
+            onClick={onCopy}
+            className="w-full text-left bg-[#f4f2ed] border-2 border-[#2b2933]/25 hover:border-[#2b2933] p-3.5 transition-all active:translate-x-[1px] active:translate-y-[1px]"
+        >
+            <div className="flex items-center gap-3">
+                <span className={`w-10 h-10 shrink-0 border-2 border-[#2b2933] flex items-center justify-center text-[11px] font-black label-mono ${copied ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
+                    {copied ? 'OK' : 'AI'}
+                </span>
+                <span className="min-w-0">
+                    <span className="block text-[13px] font-bold text-[#2b2933]">{title}</span>
+                    <span className="block text-[10px] text-[#6b6b6b] leading-snug mt-0.5">{desc}</span>
+                </span>
+            </div>
+            {selectors?.length ? (
+                <div className="mt-2 flex flex-wrap gap-1 pl-[52px]">
+                    {selectors.slice(0, 5).map(selector => (
+                        <code key={selector} className="text-[8px] bg-[#2b2933] text-[#fbfaf7] px-1.5 py-0.5">{selector}</code>
+                    ))}
+                    {selectors.length > 5 && <span className="text-[8px] font-bold text-[#8b8996]">+{selectors.length - 5}</span>}
+                </div>
+            ) : null}
+        </button>
+    );
+};
+
+const PromptCardGrid: React.FC<{
+    cards: Array<{ title: string; desc: string; prompt: string; selectors?: string[] }>;
+    addToast: (msg: string, type?: Toast['type']) => void;
+    className?: string;
+}> = ({ cards, addToast, className = '' }) => (
+    <div className={`grid gap-2 ${cards.length > 2 ? 'sm:grid-cols-2' : ''} ${className}`}>
+        {cards.map(card => (
+            <PromptCopyCard
+                key={card.title}
+                title={card.title}
+                desc={card.desc}
+                prompt={card.prompt}
+                selectors={card.selectors}
+                addToast={addToast}
+            />
+        ))}
+    </div>
+);
+
 // 「自定义 CSS」工作台：全局 CSS（整机）+ 聊天白框全局 CSS，都带小部位实时预览。
 const CustomCssStudio: React.FC<{
     theme: OSTheme;
     updateTheme: (u: Partial<OSTheme>) => void;
-    onResetAllChrome: () => void;
     addToast: (msg: string, type?: Toast['type']) => void;
-}> = ({ theme, updateTheme, onResetAllChrome, addToast }) => {
+}> = ({ theme, updateTheme, addToast }) => {
     const GLOBAL_HOOKS = [
         '.moro-clock-card', '.moro-clock-time', '.moro-clock-greeting', '.moro-palette-btn',
         '.moro-character-card', '.moro-app-tile', '.moro-app-label', '.moro-dock', '.moro-dock-icon',
-        '.moro-status-bar', '.moro-widget-card', '.moro-lock-screen', '.glass-card', '.glass-pill',
+        '.moro-status-bar', '.moro-widget-card', '.moro-lock-screen', '.moro-app-shell', '[data-moro-app="chat"]',
+        '.glass-card', '.glass-pill',
     ];
     const GLOBAL_EXAMPLE = `/* 例：把桌面时钟卡换成奶油黄、Dock 改半透明黑 */
 .moro-clock-card { background: #fff8e1 !important; }
 .moro-dock { background: rgba(20,20,28,0.55) !important; border-color: transparent !important; }
 .moro-dock-icon { background: rgba(255,255,255,0.12) !important; }`;
+    const TUTORIAL_EXAMPLE = `/* 只改某个 App：把音乐 App 变成唱片店 */
+[data-moro-app="music"] {
+  background: #151515 !important;
+  color: #f8f1df !important;
+}
+[data-moro-app="music"] button {
+  border-radius: 6px !important;
+}
+
+/* 聊天白框细节仍然用 moro-chat-* */
+.moro-chat-header {
+  background: #fffdfa !important;
+  border-bottom: 1px solid #ead7df !important;
+}
+.moro-chat-inputbar {
+  background: rgba(255,255,255,.82) !important;
+}`;
     return (
         <div className="space-y-5">
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">DIY 速查</h2>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
+                    想只改一个软件，优先去「App 分区」；想改整台手机，写在这里。选择器最稳的写法是先点名外壳：
+                    <code className="mx-1 bg-[#2b2933] text-[#fbfaf7] px-1">[data-moro-app="music"]</code>
+                    ，再往里面改按钮、卡片、标题等元素。
+                </p>
+                <textarea
+                    value={TUTORIAL_EXAMPLE}
+                    readOnly
+                    spellCheck={false}
+                    className="w-full h-56 bg-[#f4f2ed] text-[#2b2933] font-mono text-[10px] leading-relaxed p-3 resize-none outline-none border-2 border-dashed border-[#2b2933]/35"
+                />
+            </section>
+
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">提示词库 · 复制给 AI</h2>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
+                    不会写 CSS 也没关系：选一张最像你需求的提示词，告诉 AI 你想要的风格，再把生成的 CSS 粘回来。
+                </p>
+                <PromptCardGrid
+                    addToast={addToast}
+                    cards={[
+                        {
+                            title: '新手一句话',
+                            desc: '只填“我想要什么风格”，让 AI 自己写成 CSS。',
+                            prompt: buildBeginnerCssPrompt(),
+                            selectors: ['.moro-*', '[data-moro-app="应用ID"]'],
+                        },
+                        {
+                            title: '整机完整改造',
+                            desc: '桌面、Dock、状态栏、小组件一起换成一套完整皮肤。',
+                            prompt: buildGlobalCssPrompt('complete', theme.globalCustomCss),
+                            selectors: ['.moro-dock', '.moro-status-bar', '.moro-widget-card'],
+                        },
+                        {
+                            title: '风格扩写成 CSS',
+                            desc: '把“奶油风/黑白手账/玻璃拟态”等口语变成完整代码。',
+                            prompt: buildGlobalCssPrompt('style', theme.globalCustomCss),
+                            selectors: ['.moro-clock-card', '.moro-app-tile', '.moro-dock'],
+                        },
+                        {
+                            title: 'CSS 修坏修复',
+                            desc: '把现有整机 CSS 交给 AI 检查遮挡、溢出、入口消失等问题。',
+                            prompt: buildGlobalCssPrompt('fix', theme.globalCustomCss),
+                            selectors: ['.moro-dock', '.moro-palette-btn', '.moro-app-shell'],
+                        },
+                    ]}
+                />
+            </section>
+
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">整机手写码</h2>
                 <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
@@ -689,22 +1001,148 @@ const CustomCssStudio: React.FC<{
                 </div>
             </section>
 
+        </div>
+    );
+};
+
+const AppCssStudio: React.FC<{
+    theme: OSTheme;
+    updateTheme: (u: Partial<OSTheme>) => void;
+    addToast: (msg: string, type?: Toast['type']) => void;
+}> = ({ theme, updateTheme, addToast }) => {
+    const [openAppId, setOpenAppId] = useState<AppID>(AppID.Chat);
+    const appCss = theme.appCustomCss || {};
+    const setAppCss = (id: AppID, css: string) => {
+        const next = { ...appCss };
+        if (css.trim()) next[id] = css;
+        else delete next[id];
+        updateTheme({ appCustomCss: Object.keys(next).length ? next : undefined });
+    };
+    const fillExample = (id: AppID, name: string) => {
+        const code = `/* ${name} 专属皮肤：只影响这个 App */
+[data-moro-app="${id}"] {
+  background: #fbfaf7 !important;
+  color: #2b2933 !important;
+}
+
+[data-moro-app="${id}"] button {
+  border-radius: 8px !important;
+}
+
+[data-moro-app="${id}"] input,
+[data-moro-app="${id}"] textarea {
+  border-radius: 6px !important;
+}`;
+        setAppCss(id, code);
+        addToast(`${name} 的样张填好了`, 'success');
+    };
+    const activeCount = Object.values(appCss).filter(v => typeof v === 'string' && v.trim()).length;
+
+    return (
+        <div className="space-y-5">
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
-                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">聊天白框 · 手写码</h2>
-                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
-                    管所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。私聊内不再提供角色专属白框；旧角色码可用下方救援一并清掉。
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">每个 App 单独写码</h2>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed">
+                    每个软件外面都有一层固定壳：<code className="bg-[#2b2933] text-[#fbfaf7] px-1">.moro-app-shell</code>
+                    、<code className="bg-[#2b2933] text-[#fbfaf7] px-1">.moro-app-shell-应用ID</code>
+                    、<code className="bg-[#2b2933] text-[#fbfaf7] px-1">[data-moro-app="应用ID"]</code>。
+                    这里写的 CSS 会跟着外观存档走，当前已有 {activeCount} 个 App 写了专属码。
                 </p>
-                <div className="mb-3">
-                    <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-1.5">取景框（聊天白框）</div>
-                    <ChromeMiniPreview chromeCss={theme.chatChromeCustomCss} />
-                </div>
-                <ChromeCssEditor value={theme.chatChromeCustomCss || ''} onChange={(css) => updateTheme({ chatChromeCustomCss: css })} />
-                <button
-                    onClick={() => { if (window.confirm('确定把聊天白框手写码都撕掉？会清空全局码，并顺手清理旧角色专属码。')) onResetAllChrome(); }}
-                    className="mt-3 w-full border-2 border-dashed border-[#2b2933]/50 bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
-                    一键全撕 · 救援
-                </button>
             </section>
+
+            <section className="bg-[#fbfaf7] p-4 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1 no-scrollbar">
+                    {INSTALLED_APPS.map(app => {
+                        const Icon = Icons[app.icon];
+                        const hasCss = !!appCss[app.id]?.trim();
+                        const active = openAppId === app.id;
+                        return (
+                            <button
+                                key={app.id}
+                                onClick={() => setOpenAppId(app.id)}
+                                className={`min-h-[72px] border-2 p-2 text-left transition-all ${active ? 'border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] shadow-[2px_2px_0_rgba(43,41,51,0.22)]' : 'border-[#2b2933]/25 bg-[#f4f2ed] text-[#2b2933]'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className={`w-7 h-7 shrink-0 flex items-center justify-center ${active ? 'bg-[#fbfaf7] text-[#2b2933]' : 'bg-[#fbfaf7] text-[#2b2933]'} border border-[#2b2933]/30`}>
+                                        <Icon className="w-4 h-4" />
+                                    </span>
+                                    <span className="text-[11px] font-bold leading-tight truncate">{app.name}</span>
+                                </div>
+                                <div className={`mt-1 text-[8px] font-mono truncate ${active ? 'text-[#fbfaf7]/70' : 'text-[#8b8996]'}`}>{app.id}</div>
+                                {hasCss && <div className={`mt-1 inline-block px-1.5 py-0.5 text-[8px] font-bold ${active ? 'bg-[#fbfaf7] text-[#2b2933]' : 'bg-[#2b2933] text-[#fbfaf7]'}`}>已写码</div>}
+                            </button>
+                        );
+                    })}
+                </div>
+            </section>
+
+            {(() => {
+                const app = INSTALLED_APPS.find(a => a.id === openAppId) || INSTALLED_APPS[0];
+                const Icon = Icons[app.icon];
+                const selector = `[data-moro-app="${app.id}"]`;
+                return (
+                    <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="w-12 h-12 border-2 border-[#2b2933] bg-[#f4f2ed] flex items-center justify-center shrink-0">
+                                <Icon className="w-6 h-6 text-[#2b2933]" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h2 className="text-base font-bold font-display-italic text-[#2b2933]">{app.name}</h2>
+                                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mt-1">
+                                    推荐从 <code className="bg-[#2b2933] text-[#fbfaf7] px-1">{selector}</code> 开始写，避免影响别的 App。
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                            {[selector, `.moro-app-shell-${app.id}`, '.moro-app-shell', '[data-moro-active="true"]'].map(h => (
+                                <code key={h} className="text-[9px] bg-[#2b2933] text-[#fbfaf7] px-1.5 py-0.5">{h}</code>
+                            ))}
+                        </div>
+                        <div className="mb-3">
+                            <PromptCardGrid
+                                addToast={addToast}
+                                cards={[
+                                    {
+                                        title: `${app.name} · 完整定制`,
+                                        desc: `自动带上 ${selector}，把整个 App 做成一套皮肤。`,
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'complete', appCss[app.id]),
+                                        selectors: [selector, `.moro-app-shell-${app.id}`],
+                                    },
+                                    {
+                                        title: `${app.name} · 局部微调`,
+                                        desc: '只改按钮、输入框、卡片或标题，不影响其它 App。',
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'local', appCss[app.id]),
+                                        selectors: [`${selector} button`, `${selector} input`, `${selector} textarea`],
+                                    },
+                                    {
+                                        title: `${app.name} · 修坏修复`,
+                                        desc: '把当前 App CSS 交给 AI 检查遮挡、溢出、按钮消失。',
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'fix', appCss[app.id]),
+                                        selectors: [selector, '[data-moro-active="true"]'],
+                                    },
+                                ]}
+                            />
+                        </div>
+                        <textarea
+                            value={appCss[app.id] || ''}
+                            onChange={e => setAppCss(app.id, e.target.value)}
+                            spellCheck={false}
+                            placeholder={`${selector} {\n  background: #fbfaf7 !important;\n}\n\n${selector} button {\n  border-radius: 8px !important;\n}`}
+                            className="w-full h-64 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] leading-relaxed p-3.5 resize-none outline-none border-2 border-[#2b2933] focus:ring-2 focus:ring-[#2b2933]"
+                        />
+                        <div className="flex gap-2 mt-2">
+                            <button
+                                onClick={() => fillExample(app.id, app.name)}
+                                className="flex-1 py-2 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-[11px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform"
+                            >填这个 App 的样张</button>
+                            <button
+                                onClick={() => { setAppCss(app.id, ''); addToast(`${app.name} 专属码擦掉了`, 'success'); }}
+                                className="flex-1 py-2 border-2 border-dashed border-[#2b2933]/50 bg-[#f4f2ed] text-[#2b2933] text-[11px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform"
+                            >擦掉这个 App</button>
+                        </div>
+                    </section>
+                );
+            })()}
         </div>
     );
 };
@@ -783,7 +1221,7 @@ const SmallChip: React.FC<{ active: boolean; onClick: () => void; children: Reac
 const DesktopLockEditor: React.FC<{
     theme: OSTheme;
     updateTheme: (u: Partial<OSTheme>) => void;
-    addToast: (msg: string, type: Toast['type']) => void;
+    addToast: (msg: string, type?: Toast['type']) => void;
 }> = ({ theme, updateTheme, addToast }) => {
     const prefs = theme.desktopWidgetPrefs || {};
     const island = theme.dynamicIslandStyle || {};
@@ -861,6 +1299,24 @@ const DesktopLockEditor: React.FC<{
                     管每个零件的露出 / 收起、占格大小（横、竖、方随你改），还能给它写专属手写码。
                     位置直接在桌面长按拖动；零件里的贴图槽在「调色页」里设。
                 </p>
+                <PromptCardGrid
+                    className="mb-4"
+                    addToast={addToast}
+                    cards={[
+                        {
+                            title: '桌面完整改造',
+                            desc: '桌面、Dock、状态栏、图标、小组件一起给 AI 写。',
+                            prompt: buildDesktopCssPrompt('complete', theme.globalCustomCss),
+                            selectors: ['.moro-clock-card', '.moro-app-tile', '.moro-dock'],
+                        },
+                        {
+                            title: '桌面局部微调',
+                            desc: '只微调 Dock、状态栏、App 图标或桌面卡片。',
+                            prompt: buildDesktopCssPrompt('local', theme.globalCustomCss),
+                            selectors: ['.moro-status-bar', '.moro-app-label', '.moro-palette-btn'],
+                        },
+                    ]}
+                />
                 <div className="space-y-4">
                     {DESKTOP_WIDGET_DEFS.map(def => {
                         const p = prefs[def.id] || {};
@@ -914,6 +1370,25 @@ const DesktopLockEditor: React.FC<{
                                         >{cssOpenId === def.id ? '收起手写码' : '给它写码…'}</button>
                                         {cssOpenId === def.id && (
                                             <div className="mt-2">
+                                                <div className="mb-2">
+                                                    <PromptCardGrid
+                                                        addToast={addToast}
+                                                        cards={[
+                                                            {
+                                                                title: `${def.label} · 局部提示词`,
+                                                                desc: `只改这个桌面零件，会自动带 .moro-widget-${def.id}。`,
+                                                                prompt: buildWidgetCssPrompt(def.label, def.id, 'local', p.customCss),
+                                                                selectors: [`.moro-widget-${def.id}`, '.moro-widget-card'],
+                                                            },
+                                                            {
+                                                                title: `${def.label} · 修坏修复`,
+                                                                desc: '这个零件写崩、溢出或遮挡时复制它。',
+                                                                prompt: buildWidgetCssPrompt(def.label, def.id, 'fix', p.customCss),
+                                                                selectors: [`.moro-widget-${def.id}`],
+                                                            },
+                                                        ]}
+                                                    />
+                                                </div>
                                                 <textarea
                                                     value={p.customCss || ''}
                                                     onChange={e => setPref(def.id, { customCss: e.target.value })}
@@ -1013,6 +1488,24 @@ const DesktopLockEditor: React.FC<{
                     </div>
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（.moro-floating-quick-menu / .moro-floating-quick-menu-panel / .moro-floating-quick-menu-button）</div>
+                        <PromptCardGrid
+                            className="mb-2"
+                            addToast={addToast}
+                            cards={[
+                                {
+                                    title: '悬浮菜单提示词',
+                                    desc: '只改悬浮球、展开面板和快捷按钮。',
+                                    prompt: buildFloatingMenuCssPrompt('local', floating.customCss),
+                                    selectors: ['.moro-floating-quick-menu-button', '.moro-floating-quick-menu-panel'],
+                                },
+                                {
+                                    title: '悬浮菜单修坏',
+                                    desc: '悬浮球点不到、跑出屏幕、文字挤住时用。',
+                                    prompt: buildFloatingMenuCssPrompt('fix', floating.customCss),
+                                    selectors: ['.moro-floating-quick-menu'],
+                                },
+                            ]}
+                        />
                         <textarea
                             value={floating.customCss || ''}
                             onChange={e => setFloating({ customCss: e.target.value })}
@@ -1089,6 +1582,24 @@ const DesktopLockEditor: React.FC<{
                     </div>
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（.moro-offline-modal-*）</div>
+                        <PromptCardGrid
+                            className="mb-2"
+                            addToast={addToast}
+                            cards={[
+                                {
+                                    title: '线下弹窗提示词',
+                                    desc: '只改面对面弹窗、场景条、双方气泡和输入栏。',
+                                    prompt: buildOfflineModalCssPrompt('local', offline.customCss),
+                                    selectors: ['.moro-offline-modal', '.moro-offline-modal-char', '.moro-offline-modal-user'],
+                                },
+                                {
+                                    title: '弹窗修坏修复',
+                                    desc: '弹窗超屏、输入区被遮住、文字看不清时用。',
+                                    prompt: buildOfflineModalCssPrompt('fix', offline.customCss),
+                                    selectors: ['.moro-offline-modal-backdrop', '.moro-offline-modal-inputbar'],
+                                },
+                            ]}
+                        />
                         <textarea
                             value={offline.customCss || ''}
                             onChange={e => setOffline({ customCss: e.target.value })}
@@ -1177,6 +1688,24 @@ const DesktopLockEditor: React.FC<{
                     </div>
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（钩子类 .moro-dynamic-island）</div>
+                        <PromptCardGrid
+                            className="mb-2"
+                            addToast={addToast}
+                            cards={[
+                                {
+                                    title: '灵动岛提示词',
+                                    desc: '只改通知胶囊和展开预览面板。',
+                                    prompt: buildIslandCssPrompt('local', island.customCss),
+                                    selectors: ['.moro-dynamic-island', '.moro-dynamic-island-panel'],
+                                },
+                                {
+                                    title: '灵动岛风格扩写',
+                                    desc: '把黑胶囊、玻璃、像素等描述扩写成 CSS。',
+                                    prompt: buildIslandCssPrompt('style', island.customCss),
+                                    selectors: ['.moro-dynamic-island'],
+                                },
+                            ]}
+                        />
                         <textarea
                             value={island.customCss || ''}
                             onChange={e => setIsland({ customCss: e.target.value })}
@@ -1329,6 +1858,24 @@ const DesktopLockEditor: React.FC<{
                     </div>
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（钩子类 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif）</div>
+                        <PromptCardGrid
+                            className="mb-2"
+                            addToast={addToast}
+                            cards={[
+                                {
+                                    title: '锁屏提示词',
+                                    desc: '只改锁屏时间、通知卡、解锁提示和密码界面。',
+                                    prompt: buildLockCssPrompt('local', lock.customCss),
+                                    selectors: ['.moro-lock-screen', '.moro-lock-clock', '.moro-lock-notif'],
+                                },
+                                {
+                                    title: '锁屏修坏修复',
+                                    desc: '解锁按钮/密码界面异常、通知卡遮挡时用。',
+                                    prompt: buildLockCssPrompt('fix', lock.customCss),
+                                    selectors: ['.moro-lock-passcode', '.moro-lock-passcode-key'],
+                                },
+                            ]}
+                        />
                         <textarea
                             value={lock.customCss || ''}
                             onChange={e => setLock({ customCss: e.target.value })}
@@ -1436,7 +1983,7 @@ const TarotSkinEditor: React.FC<{
 };
 
 const Appearance: React.FC = () => {
-  const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter } = useOS();
+  const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter, activeApp } = useOS();
   // 一键还原聊天白框自定义 CSS：清掉全局 + 历史遗留的角色专属码。
   // 兼作救援：旧角色码或全局码把聊天界面整崩时，从这里一键全清即可恢复。
   const resetAllChromeCss = () => {
@@ -1447,7 +1994,8 @@ const Appearance: React.FC = () => {
     });
     addToast(n ? `撕掉了 ${n} 处白框手写码` : '没有要撕的白框手写码', n ? 'success' : 'info');
   };
-  const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'tarot'>('theme');
+  const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'apps' | 'tarot'>('theme');
+  type AppearanceTab = typeof activeTab;
   // 气泡工坊全屏编辑器：原独立 tab 已并入「聊天界面」页，从那里的入口卡打开
   const [showBubbleWorkshop, setShowBubbleWorkshop] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -1457,6 +2005,19 @@ const Appearance: React.FC = () => {
   const iconInputRef = useRef<HTMLInputElement>(null);
   const fontInputRef = useRef<HTMLInputElement>(null);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const tabScrollerRef = useRef<HTMLDivElement>(null);
+
+  useManualDeepLink(AppID.Appearance, useCallback((target) => {
+      const tab = typeof target.payload?.tab === 'string'
+          ? target.payload.tab
+          : String(target.route || '').replace(/^tab:/, '');
+      if (['theme', 'desktop', 'icons', 'presets', 'chat', 'css', 'apps', 'tarot'].includes(tab)) {
+          setActiveTab(tab as AppearanceTab);
+      }
+      window.setTimeout(() => {
+          if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-appearance-root');
+      }, 180);
+  }, []), { enabled: activeApp === AppID.Appearance });
   
   // Font State
   const [fontMode, setFontMode] = useState<'local' | 'web'>('local');
@@ -1639,15 +2200,28 @@ const Appearance: React.FC = () => {
       }
   };
 
+  const scrollTabs = (direction: -1 | 1) => {
+      tabScrollerRef.current?.scrollBy({ left: direction * 180, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+      const scroller = tabScrollerRef.current;
+      const target = scroller?.querySelector<HTMLButtonElement>(`[data-appearance-tab="${activeTab}"]`);
+      if (!scroller || !target) return;
+      const left = target.offsetLeft - (scroller.clientWidth - target.offsetWidth) / 2;
+      scroller.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }, [activeTab]);
+
   // 气泡工坊：全屏嵌入（编辑器需要整屏空间），返回键 / 保存退出回到「聊天界面」页
   if (showBubbleWorkshop) {
       return <ThemeMaker embedded onRequestClose={() => { setShowBubbleWorkshop(false); setActiveTab('chat'); }} />;
   }
 
-  const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'tarot'; label: string }[] = [
+  const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'apps' | 'tarot'; label: string }[] = [
       { id: 'theme', label: '调色页' },
       { id: 'desktop', label: '桌面页' },
       { id: 'chat', label: '对话页' },
+      { id: 'apps', label: 'App 分区' },
       { id: 'css', label: '手写码' },
       { id: 'icons', label: '图标贴' },
       { id: 'tarot', label: '牌面' },
@@ -1655,8 +2229,8 @@ const Appearance: React.FC = () => {
   ];
 
   return (
-    <div className="h-full w-full bg-[#f4f2ed] flex flex-col font-light">
-      <div className="h-20 bg-[#fbfaf7] flex items-end pb-3 px-4 border-b-2 border-[#2b2933] shrink-0 z-10 sticky top-0">
+    <div className="h-full w-full max-w-full overflow-x-hidden bg-[#f4f2ed] flex flex-col font-light" data-manual-anchor="manual-appearance-root">
+      <div className="h-20 max-w-full overflow-x-hidden bg-[#fbfaf7] flex items-end pb-3 px-4 border-b-2 border-[#2b2933] shrink-0 z-10 sticky top-0">
         <div className="flex items-center gap-3 w-full">
             <button onClick={closeApp} className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] flex items-center justify-center active:translate-x-[1px] active:translate-y-[1px] transition-transform shadow-[2px_2px_0_#2b2933]">
                 <span className="text-[#2b2933] text-lg leading-none -mt-0.5">‹</span>
@@ -1668,19 +2242,43 @@ const Appearance: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex border-b-2 border-[#2b2933] bg-[#fbfaf7] sticky top-0 z-20 overflow-x-auto no-scrollbar gap-1 px-2">
-          {TABS.map(tab => (
-              <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 px-3.5 py-2.5 text-xs font-bold label-mono transition-colors whitespace-nowrap -mb-[2px] border-2 ${activeTab === tab.id ? 'text-[#2b2933] border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7]' : 'text-[#8b8996] border-transparent'}`}
-              >{tab.label}</button>
-          ))}
+      <div className="max-w-full overflow-x-hidden flex items-stretch border-b-2 border-[#2b2933] bg-[#fbfaf7] sticky top-0 z-20">
+          <button
+              type="button"
+              onClick={() => scrollTabs(-1)}
+              className="shrink-0 w-9 border-r-2 border-[#2b2933] text-[#2b2933] bg-[#fbfaf7] font-black active:bg-[#2b2933] active:text-[#fbfaf7]"
+              aria-label="向左滑动页签"
+          >
+              ‹
+          </button>
+          <div
+              ref={tabScrollerRef}
+              className="min-w-0 flex-1 flex overflow-x-auto no-scrollbar gap-1 px-2 overscroll-x-contain"
+              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+          >
+              {TABS.map(tab => (
+                  <button
+                      key={tab.id}
+                      data-manual-anchor={`manual-appearance-${tab.id}`}
+                      data-appearance-tab={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`shrink-0 px-3.5 py-2.5 text-xs font-bold label-mono transition-colors whitespace-nowrap -mb-[2px] border-2 ${activeTab === tab.id ? 'text-[#2b2933] border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7]' : 'text-[#8b8996] border-transparent'}`}
+                  >{tab.label}</button>
+              ))}
+          </div>
+          <button
+              type="button"
+              onClick={() => scrollTabs(1)}
+              className="shrink-0 w-9 border-l-2 border-[#2b2933] text-[#2b2933] bg-[#fbfaf7] font-black active:bg-[#2b2933] active:text-[#fbfaf7]"
+              aria-label="向右滑动页签"
+          >
+              ›
+          </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-5 space-y-6 no-scrollbar">
         {activeTab === 'theme' ? (
-            <>
+            <div data-manual-anchor="manual-appearance-theme" className="space-y-6">
                 <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                     <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">取景框</h2>
                     <p className="text-[10px] text-[#6b6b6b] mb-3">壁纸 / 主色 / 字色 / 全局码 一改，这块小桌面立刻跟着变。</p>
@@ -2198,9 +2796,9 @@ const Appearance: React.FC = () => {
                     )}
                     <div className="text-[10px] text-[#8b8996] mt-3 px-1 font-hand text-sm">提示：贴纸叠在桌面第二页上，每张都能单独挪位置、调大小、转角度、改透明度。可以贴自己的图，也能用现成贴纸。</div>
                 </section>
-            </>
+            </div>
         ) : activeTab === 'icons' ? (
-            <div className="space-y-5">
+            <div data-manual-anchor="manual-appearance-icons" className="space-y-5">
                 <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                     <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-2">桌面图标风格</h2>
                     <p className="text-[10px] text-[#6b6b6b] mb-4">桌面图标、Dock 和拖拽手感统一在这里调。上面调风格，下面给单个 App 换图。</p>
@@ -2331,6 +2929,7 @@ const Appearance: React.FC = () => {
                 <input type="file" ref={iconInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleIconUpload(e.target.files[0])} />
             </div>
         ) : activeTab === 'presets' ? (
+            <div data-manual-anchor="manual-appearance-presets">
             <PresetManager
                 presets={appearancePresets}
                 onSave={saveAppearancePreset}
@@ -2343,14 +2942,73 @@ const Appearance: React.FC = () => {
                 addToast={addToast}
                 currentTheme={theme}
             />
+            </div>
         ) : activeTab === 'desktop' ? (
+            <div data-manual-anchor="manual-appearance-desktop">
             <DesktopLockEditor theme={theme} updateTheme={updateTheme} addToast={addToast} />
+            </div>
         ) : activeTab === 'chat' ? (
-            <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenBubbleWorkshop={() => setShowBubbleWorkshop(true)} />
+            <div data-manual-anchor="manual-appearance-chat">
+            <ModularChatAppearanceEditor
+                theme={theme}
+                updateTheme={updateTheme}
+                onResetAllChrome={resetAllChromeCss}
+                onOpenBubbleWorkshop={() => setShowBubbleWorkshop(true)}
+                chromeCssStudio={(
+                    <div className="space-y-3">
+                        <div>
+                            <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-1.5">取景框（聊天白框）</div>
+                            <ChromeMiniPreview chromeCss={theme.chatChromeCustomCss} />
+                        </div>
+                        <PromptCardGrid
+                            addToast={addToast}
+                            cards={[
+                                {
+                                    title: '白框完整改造',
+                                    desc: '顶栏、输入栏和功能面板一起定制。',
+                                    prompt: buildChatChromeCssPrompt('complete', theme.chatChromeCustomCss),
+                                    selectors: ['.moro-chat-header', '.moro-chat-inputbar', '.moro-chat-panel'],
+                                },
+                                {
+                                    title: '白框局部微调',
+                                    desc: '只改返回键、头像、状态、输入栏等某一块。',
+                                    prompt: buildChatChromeCssPrompt('local', theme.chatChromeCustomCss),
+                                    selectors: ['.moro-chat-back', '.moro-chat-avatar', '.moro-chat-trigger'],
+                                },
+                                {
+                                    title: '白框修坏修复',
+                                    desc: '返回键消失、输入栏遮挡、面板错位时用。',
+                                    prompt: buildChatChromeCssPrompt('fix', theme.chatChromeCustomCss),
+                                    selectors: ['.moro-chat-back', '.moro-chat-panel', '.moro-chat-inputbar'],
+                                },
+                                {
+                                    title: '白框风格扩写',
+                                    desc: '把奶白、玻璃、像素等描述扩写成白框 CSS。',
+                                    prompt: buildChatChromeCssPrompt('style', theme.chatChromeCustomCss),
+                                    selectors: ['.moro-chat-header', '.moro-chat-token', '.moro-chat-buffs'],
+                                },
+                            ]}
+                        />
+                        <ChromeCssEditor
+                            value={theme.chatChromeCustomCss || ''}
+                            onChange={(css) => updateTheme({ chatChromeCustomCss: css })}
+                        />
+                    </div>
+                )}
+            />
+            </div>
         ) : activeTab === 'css' ? (
-            <CustomCssStudio theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} addToast={addToast} />
+            <div data-manual-anchor="manual-appearance-css">
+            <CustomCssStudio theme={theme} updateTheme={updateTheme} addToast={addToast} />
+            </div>
+        ) : activeTab === 'apps' ? (
+            <div data-manual-anchor="manual-appearance-apps">
+            <AppCssStudio theme={theme} updateTheme={updateTheme} addToast={addToast} />
+            </div>
         ) : activeTab === 'tarot' ? (
+            <div data-manual-anchor="manual-appearance-tarot">
             <TarotSkinEditor theme={theme} updateTheme={updateTheme} addToast={addToast} />
+            </div>
         ) : null}
       </div>
     </div>

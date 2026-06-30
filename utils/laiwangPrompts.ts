@@ -678,6 +678,27 @@ export function takeoutReceivedHint(userName: string, storeName: string, items: 
     return `[系统提示（非${userName}发言）：${userName}之前在「${storeName}」给你点的那张饭票（${items}）刚刚送到你门口，你签收了。这是 ${userName} 特意惦记着你、隔着屏幕投喂的一份心意。请像真人收到对方专门点来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、拆开保温袋边吃边报实况说味道（"还冒热气""这家的料是真给得足""你怎么知道我就馋这口"）、或嗔怪 TA 又乱花钱。带上你自己的性格（嘴硬的就口是心非、心里却甜一下），一两句话就好，别像在汇报。]`;
 }
 
+/** 聊天闹钟到点：睡觉督促 / 起床叫醒 / 自定义提醒。 */
+export function chatAlarmHint(p: {
+    userName: string;
+    charName: string;
+    kind: 'sleep' | 'wake' | 'custom';
+    label: string;
+    timeHHmm: string;
+    channel: 'reminder' | 'call';
+    nowText: string;
+}): string {
+    const task = p.kind === 'wake'
+        ? `叫醒${p.userName}起床`
+        : p.kind === 'sleep'
+        ? `督促${p.userName}去睡觉`
+        : `提醒${p.userName}「${p.label}」`;
+    const voiceLine = p.channel === 'call'
+        ? `这次更像是你主动拨了个语音电话来叫 TA：如果系统把它显示成来电，你接通后的第一句话也要能直接拿来用。`
+        : `这次会显示成聊天里的闹钟提醒和语音条。`;
+    return `[系统提示（非${p.userName}发言）：现在是 ${p.nowText}，${p.userName}给你设置的「${p.label || '闹钟'}」到点了（设定时间 ${p.timeHHmm}）。你的任务是${task}。${voiceLine}请以「${p.charName}」第一人称，像真实亲近的人那样发一条很短的提醒：可以温柔、严厉、撒娇、吐槽、半哄半拽，完全按你的人设和你们关系来。不要说“系统提醒/闹钟触发/根据设置”。正文控制在 1-3 句，适合被读成语音；请在末尾附上一段同义但更适合播报的 \`<语音>...</语音>\`，语音内容不要超过 45 字。]`;
+}
+
 /** 用户回应「角色的求婚」后，给角色的反应 hint（accept / 婉拒）。 */
 export function proposalResultHint(userName: string, accepted: boolean): string {
     return accepted
@@ -803,4 +824,22 @@ ${recent || '（你们还没怎么聊过）'}
 
 只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释）：
 {"voice":"内心独白正文","mood":{"emoji":"🙂","label":"平静"},"affection":${currentAffection ?? 50},"decisive":false,"relationship":{"stage":"${curStage}","label":"${curLabel}"}}`;
+}
+export interface PeriodReminderHintParams {
+    userName: string;
+    charName: string;
+    predictedStartDate: string;
+    offset: number;
+    periodLength: number;
+    nowText: string;
+}
+
+/** 健康经期提醒到点：给被授权角色的临时提示。 */
+export function periodReminderHint(p: PeriodReminderHintParams): string {
+    const timing = p.offset < 0
+        ? `预计还有 ${Math.abs(p.offset)} 天左右开始`
+        : p.offset === 0
+        ? '预计今天可能开始'
+        : `预计现在是第 ${p.offset + 1} 天附近`;
+    return `[系统提示（非${p.userName}发言）：现在是 ${p.nowText}。${p.userName}在「健康」里授权你接收经期提醒；预测开始日是 ${p.predictedStartDate || '未确定'}，通常持续约 ${p.periodLength} 天，${timing}。请以「${p.charName}」第一人称，像亲近的人那样发一条很短、体贴、不冒犯的提醒。可以提醒对方照顾身体、准备用品、喝点热的、早点休息或记录状态，但不要诊断、不要夸张病情、不要公开隐私，也不要说“系统提醒/健康 App/根据设置”。正文 1-2 句，适合读成语音；末尾附一段同义但更适合播报的 \`<语音>...</语音>\`，语音内容不要超过 45 字。]`;
 }

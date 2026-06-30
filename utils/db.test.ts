@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { DB, openDB } from './db';
+import { makeChatAlarm, prepareAlarmForSave } from './chatAlarms';
+import { preparePeriodReminderSettings } from './periodReminders';
 import { createDefaultDesktopPetState } from './desktopPet';
-import type { CharacterProfile, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
+import type { CharacterProfile, ChatAlarm, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -220,5 +222,153 @@ describe('desktop pet store', () => {
       roleStates: { test_pet: { hp: 42, fv: 7, lastFedAt: 100 } },
       updatedAt: 456,
     });
+  });
+});
+
+describe('chat alarm store', () => {
+  const mkChar = (id = 'alarm-char'): CharacterProfile => ({
+    id,
+    name: 'Alarm Char',
+    avatar: '',
+    description: '',
+    systemPrompt: '',
+    memories: [],
+    contextLimit: 500,
+  } as CharacterProfile);
+
+  const mkAlarm = (charId = 'alarm-char', now = 1_788_000_000_000): ChatAlarm =>
+    prepareAlarmForSave(makeChatAlarm({
+      charId,
+      kind: 'wake',
+      label: '起床叫醒',
+      timeHHmm: '07:30',
+      weekdays: [1, 2, 3, 4, 5],
+      channel: 'auto',
+      now,
+    }), now);
+
+  it('saves, reads, queries due alarms, and deletes by id', async () => {
+    await DB.deleteDB();
+    const alarm = mkAlarm();
+
+    await DB.saveChatAlarm(alarm);
+    await expect(DB.getChatAlarmsByCharId(alarm.charId)).resolves.toEqual([alarm]);
+
+    const due = { ...alarm, nextAt: alarm.createdAt - 1000 };
+    await DB.saveChatAlarm(due);
+    await expect(DB.getDueChatAlarms(alarm.createdAt)).resolves.toEqual([due]);
+
+    await DB.deleteChatAlarm(alarm.id);
+    await expect(DB.getChatAlarmsByCharId(alarm.charId)).resolves.toEqual([]);
+  });
+
+  it('cascades alarms when deleting a character', async () => {
+    await DB.deleteDB();
+    const char = mkChar();
+    await DB.saveCharacter(char);
+    await DB.saveChatAlarm(mkAlarm(char.id));
+
+    await DB.deleteCharacter(char.id);
+
+    await expect(DB.getChatAlarmsByCharId(char.id)).resolves.toEqual([]);
+  });
+
+  it('exports and restores chat alarms in full backup data', async () => {
+    await DB.deleteDB();
+    const char = mkChar();
+    const alarm = mkAlarm(char.id);
+    await DB.saveCharacter(char);
+    await DB.saveChatAlarm(alarm);
+
+    const exported = await DB.exportFullData();
+    expect(exported.chatAlarms).toEqual([alarm]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      characters: [char],
+      messages: [],
+      chatAlarms: exported.chatAlarms || [],
+    } as FullBackupData);
+
+    await expect(DB.getChatAlarmsByCharId(char.id)).resolves.toEqual([alarm]);
+  });
+});
+
+describe('period reminder stores', () => {
+  const mkSettings = (now = 1_788_000_000_000): PeriodReminderSettings =>
+    preparePeriodReminderSettings({
+      id: 'period_reminder_main',
+      enabled: true,
+      lastStartDate: '2026-06-01',
+      cycleLength: 28,
+      periodLength: 5,
+      remindOffsets: [-2, 0],
+      timeHHmm: '09:00',
+      visibility: 'public',
+      notifyChannel: 'both',
+      charIds: ['period-char'],
+      createdAt: now,
+      updatedAt: now,
+    }, now);
+
+  const mkEvent = (id = 'period-start-1'): PeriodCycleEvent => ({
+    id,
+    kind: 'start',
+    date: '2026-06-01',
+    note: 'started',
+    createdAt: 1_788_000_000_000,
+    updatedAt: 1_788_000_000_000,
+  });
+
+  it('saves, reads, and queries due reminder settings', async () => {
+    await DB.deleteDB();
+    const settings = mkSettings();
+
+    await DB.savePeriodReminderSettings(settings);
+    await expect(DB.getPeriodReminderSettings(settings.id)).resolves.toEqual(settings);
+    await expect(DB.getAllPeriodReminderSettings()).resolves.toEqual([settings]);
+
+    const due = { ...settings, nextAt: settings.createdAt - 1000 };
+    await DB.savePeriodReminderSettings(due);
+    await expect(DB.getDuePeriodReminderSettings(settings.createdAt)).resolves.toEqual([due]);
+  });
+
+  it('saves, reads, and deletes cycle events', async () => {
+    await DB.deleteDB();
+    const event = mkEvent();
+
+    await DB.savePeriodCycleEvent(event);
+    await expect(DB.getAllPeriodCycleEvents()).resolves.toEqual([event]);
+
+    await DB.deletePeriodCycleEvent(event.id);
+    await expect(DB.getAllPeriodCycleEvents()).resolves.toEqual([]);
+  });
+
+  it('exports and restores period reminder settings and events', async () => {
+    await DB.deleteDB();
+    const settings = mkSettings();
+    const event = mkEvent();
+
+    await DB.savePeriodReminderSettings(settings);
+    await DB.savePeriodCycleEvent(event);
+
+    const exported = await DB.exportFullData();
+    expect(exported.periodReminderSettings).toEqual([settings]);
+    expect(exported.periodCycleEvents).toEqual([event]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      characters: [],
+      messages: [],
+      periodReminderSettings: exported.periodReminderSettings || [],
+      periodCycleEvents: exported.periodCycleEvents || [],
+    } as FullBackupData);
+
+    await expect(DB.getPeriodReminderSettings(settings.id)).resolves.toEqual(settings);
+    await expect(DB.getAllPeriodCycleEvents()).resolves.toEqual([event]);
   });
 });

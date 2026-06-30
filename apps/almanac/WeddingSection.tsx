@@ -1,6 +1,6 @@
 import React from 'react';
 import { useOS } from '../../context/OSContext';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT } from './handbookKit';
+import { PaperPage, PaperNote, TapeLabel, Postmark, HAND_FONT } from './handbookKit';
 import { MARRIAGE_STAGE_LABEL } from '../../utils/relationship';
 import type { MarriageMilestone } from '../../types';
 
@@ -41,7 +41,6 @@ const WeddingSection: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
                 <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 z-10">
                     <div className="relative mt-3 mb-6 select-none">
-                        <WashiTape className="-top-1 left-6" color="rgba(231,163,180,0.72)" rotate={-14} width={84} height={26} />
                         <div className="pt-6 pl-1" style={{ fontFamily: HAND_FONT }}>
                             <div className="text-[11px] tracking-[0.4em]" style={{ color: '#bb8a9c' }}>HAPPY · EVENT</div>
                             <div className="text-[52px] leading-none font-black mt-1" style={{ color: '#a83a5e', textShadow: '2px 2px 0 rgba(177,84,107,0.14)' }}>喜事</div>
@@ -68,7 +67,6 @@ const WeddingSection: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                                 });
                                 return (
                                     <PaperNote key={c.id} rotate={-0.8} bg="#fdf3f6" className="px-5 py-5">
-                                        <WashiTape className="-top-2 right-8" color="rgba(231,180,196,0.7)" rotate={12} width={76} />
                                         <div className="flex items-center gap-3">
                                             {c.avatar && <img src={c.avatar} alt={c.name} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow" />}
                                             <div className="min-w-0">

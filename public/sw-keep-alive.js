@@ -1384,7 +1384,7 @@ function swCleanProactiveText(raw) {
 }
 
 // worker/sw-keep-alive.ts
-var SW_VERSION = "1.16.0";
+var SW_VERSION = "1.16.1";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";
@@ -1877,18 +1877,30 @@ async function saveIncomingActiveMessage(payload) {
 sw.addEventListener("notificationclick", (event) => {
   const payload = event.notification.data?.payload || event.notification.data || {};
   const charId = payload?.metadata?.charId || payload?.charId || "";
+  const isPeriodReminder = payload?.source === "period-reminder" || payload?.type === "period-reminder";
+  const periodReminderId = payload?.settingsId || payload?.periodReminderId || "";
   event.notification.close();
   event.waitUntil((async () => {
     const clients = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
     if (clients.length > 0) {
       const client = clients[0];
       await client.focus();
+      if (isPeriodReminder) {
+        client.postMessage({ type: "period-reminder-open", charId, settingsId: periodReminderId });
+        return;
+      }
       client.postMessage({ type: "active-msg-open", charId });
       return;
     }
     const openUrl = new URL(sw.registration.scope || sw.location.origin);
-    openUrl.searchParams.set("openApp", "chat");
-    if (charId) openUrl.searchParams.set("activeMsgCharId", charId);
+    if (isPeriodReminder) {
+      openUrl.searchParams.set("openApp", "health");
+      if (charId) openUrl.searchParams.set("periodCharId", charId);
+      if (periodReminderId) openUrl.searchParams.set("periodReminderId", periodReminderId);
+    } else {
+      openUrl.searchParams.set("openApp", "chat");
+      if (charId) openUrl.searchParams.set("activeMsgCharId", charId);
+    }
     await sw.clients.openWindow(openUrl.toString());
   })());
 });

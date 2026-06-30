@@ -75,6 +75,8 @@ const AUTO_SUMMARY_THRESHOLD = 20;
 const KEEP_RECENT_AFTER_SUMMARY = 4;
 // AI 世界观生成的可选风格
 const WORLD_STYLES = ['高奇幻', '赛博朋克', '克苏鲁恐怖', '武侠江湖', '末世废土', '校园日常', '悬疑推理', '蒸汽朋克', '西部拓荒', '宫廷权谋'];
+const STARDUST_TEXTURE = 'radial-gradient(circle at 8px 8px, rgba(255,255,255,0.35) 1px, transparent 1.5px), radial-gradient(circle at 28px 22px, rgba(255,255,255,0.18) 1px, transparent 1.5px)';
+const CUBES_TEXTURE = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 1px, transparent 1px 10px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.1) 0 1px, transparent 1px 10px)';
 
 // 鲁棒解析 AI 世界观生成结果。
 // 兼容三种情况：① 期望的「标题：xxx === 正文」分隔格式；② 模型不听话仍吐 JSON
@@ -1080,7 +1082,7 @@ ${recentLog}
             <div className="h-full w-full bg-[#0a0a0a] flex flex-col font-sans relative overflow-hidden">
                 {/* Ambient Background */}
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-900/50 to-black z-0"></div>
-                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
+                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: STARDUST_TEXTURE, backgroundSize: '36px 36px' }}></div>
 
                 {/* Header */}
                 <div className="h-20 flex items-end justify-between px-6 pb-4 shrink-0 z-10">
@@ -1119,7 +1121,7 @@ ${recentLog}
                             >
                                 {/* Card Background */}
                                 <div className={`absolute inset-0 bg-gradient-to-br ${themeStyle.gradient} opacity-80 group-hover:opacity-100 transition-opacity`}></div>
-                                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+                                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: CUBES_TEXTURE, backgroundSize: '28px 28px' }}></div>
                                 
                                 <div className="relative z-10 flex flex-col gap-2">
                                     <div className="flex justify-between items-start">
@@ -1210,7 +1212,7 @@ ${recentLog}
             <div className="h-full w-full bg-[#0a0a0a] text-white flex flex-col font-sans relative overflow-hidden">
                 {/* Ambient Background */}
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/30 via-slate-900/40 to-black z-0"></div>
-                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
+                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: STARDUST_TEXTURE, backgroundSize: '36px 36px' }}></div>
 
                 {/* Header */}
                 <div className="h-20 flex items-end px-5 pb-4 shrink-0 z-10">

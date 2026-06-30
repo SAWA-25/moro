@@ -55,13 +55,6 @@ const envReleaseRepo = () => (import.meta.env.VITE_MORO_RELEASE_REPO || DEFAULT_
 const envReleaseApiUrl = () => (import.meta.env.VITE_MORO_RELEASE_API_URL || '').trim();
 const envGithubProxyUrl = () => (import.meta.env.VITE_MORO_GITHUB_PROXY_URL || DEFAULT_GITHUB_PROXY_URL).trim();
 
-const githubLatestDownloadUrl = (assetName: string): string | undefined => {
-  const owner = envReleaseOwner();
-  const repo = envReleaseRepo();
-  if (!owner || !repo) return undefined;
-  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/latest/download/${encodeURIComponent(assetName)}`;
-};
-
 export function hasConfiguredAppUpdateSource(): boolean {
   return !!envManifestUrl() || !!envReleaseApiUrl() || (!!envReleaseOwner() && !!envReleaseRepo());
 }
@@ -128,6 +121,11 @@ const addCacheBust = (url: string): string => {
   return `${url}${bust}_=${Date.now()}`;
 };
 
+const isDefaultGithubProxyUrl = (url: string): boolean => {
+  const proxy = envGithubProxyUrl();
+  return proxy === DEFAULT_GITHUB_PROXY_URL && url.startsWith(DEFAULT_GITHUB_PROXY_URL);
+};
+
 const fetchJsonNoStore = async (url: string, headers: Record<string, string> = {}): Promise<any> => {
   const requestUrl = addCacheBust(url);
   if (Capacitor.isNativePlatform()) {
@@ -142,18 +140,65 @@ const fetchJsonNoStore = async (url: string, headers: Record<string, string> = {
   return res.json();
 };
 
+const fetchGithubJsonViaProxyNoStore = async (url: string, headers: Record<string, string> = {}): Promise<any> => {
+  const requestUrl = addCacheBust(url);
+  const proxiedUrl = proxifyGithubUrl(requestUrl);
+  if (!proxiedUrl) throw new Error('GitHub 代理暂不可用');
+  const proxyHeaders = { ...headers, 'X-GitHub-Method': 'GET' };
+
+  if (Capacitor.isNativePlatform()) {
+    const res = await CapacitorHttp.request({ url: proxiedUrl, method: 'POST', headers: proxyHeaders });
+    if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+    if (typeof res.data === 'string') return JSON.parse(res.data.replace(/^\uFEFF/, ''));
+    return res.data;
+  }
+
+  const res = await fetch(proxiedUrl, { method: 'POST', cache: 'no-store', headers: proxyHeaders });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return JSON.parse((await res.text()).replace(/^\uFEFF/, ''));
+};
+
 const fetchGithubJsonNoStore = async (url: string, headers: Record<string, string> = {}): Promise<any> => {
   try {
     return await fetchJsonNoStore(url, headers);
   } catch (directError) {
-    const proxiedUrl = proxifyGithubUrl(url);
-    if (!proxiedUrl) throw directError;
     try {
-      return await fetchJsonNoStore(proxiedUrl, headers);
+      return await fetchGithubJsonViaProxyNoStore(url, headers);
     } catch {
       throw directError;
     }
   }
+};
+
+const versionFromReleaseTag = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/v?\d+(?:\.\d+){1,3}/i);
+  return match ? match[0].replace(/^v/i, '') : trimmed;
+};
+
+const versionCodeFromVersionName = (versionName: string): number => {
+  const match = versionName.match(/^1\.0\.(\d+)$/);
+  if (!match) return NaN;
+  const patch = Number(match[1]);
+  return Number.isFinite(patch) ? patch + 1 : NaN;
+};
+
+const inferReleaseVersionCode = (release: GitHubRelease, apkName?: string): number => {
+  const explicit = parseVersionCodeFromText(release.body, release.name, release.tag_name, apkName);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const versionName = versionFromReleaseTag(release.tag_name) || versionFromReleaseTag(release.name);
+  const fromVersionName = versionCodeFromVersionName(versionName);
+  return Number.isFinite(fromVersionName) && fromVersionName > 0 ? Math.floor(fromVersionName) : NaN;
+};
+
+const isDifferentReleaseManifest = (manifest: AppUpdateManifest, release: GitHubRelease): boolean => {
+  const releaseVersionName = versionFromReleaseTag(release.tag_name) || versionFromReleaseTag(release.name);
+  if (releaseVersionName && versionFromReleaseTag(manifest.versionName) !== releaseVersionName) return true;
+
+  const releaseVersionCode = inferReleaseVersionCode(release);
+  return Number.isFinite(releaseVersionCode) && releaseVersionCode > 0 && manifest.versionCode !== releaseVersionCode;
 };
 
 const parseAppUpdateManifest = (data: any, baseUrl: string, fallbackApkUrl?: string): AppUpdateManifest => {
@@ -194,7 +239,9 @@ const parseAppUpdateManifest = (data: any, baseUrl: string, fallbackApkUrl?: str
 
   const apkUrl = new URL(rawApkUrl, baseUrl).href;
   const explicitDomesticApkUrl = rawDomesticApkUrl ? new URL(rawDomesticApkUrl, baseUrl).href : '';
-  const domesticApkUrl = explicitDomesticApkUrl || proxifyGithubUrl(apkUrl);
+  const domesticApkUrl = explicitDomesticApkUrl && !isDefaultGithubProxyUrl(explicitDomesticApkUrl)
+    ? explicitDomesticApkUrl
+    : undefined;
   const sizeBytes = pickNumber(data?.sizeBytes, data?.size_bytes, android.sizeBytes, android.size_bytes);
   const sha256 = pickString(data?.sha256, data?.sha256sum, android.sha256, android.sha256sum).replace(/\s+/g, '').toLowerCase();
 
@@ -288,7 +335,15 @@ async function fetchGithubReleaseUpdateManifest(): Promise<AppUpdateManifest> {
   if (manifestAsset?.browser_download_url) {
     try {
       const data = await fetchGithubJsonNoStore(manifestAsset.browser_download_url);
-      return parseAppUpdateManifest(data, manifestAsset.browser_download_url, apk?.browser_download_url);
+      const manifest = parseAppUpdateManifest(data, manifestAsset.browser_download_url, apk?.browser_download_url);
+      if (!isDifferentReleaseManifest(manifest, release)) return manifest;
+      if (!apk?.browser_download_url) return manifest;
+      console.warn('[appUpdates] GitHub release manifest version did not match latest release; falling back to release metadata', {
+        manifestVersionName: manifest.versionName,
+        manifestVersionCode: manifest.versionCode,
+        releaseName: release.name,
+        releaseTag: release.tag_name,
+      });
     } catch (manifestError) {
       if (!apk?.browser_download_url) throw manifestError;
       console.warn('[appUpdates] GitHub release manifest asset failed; falling back to release metadata', manifestError);
@@ -297,16 +352,15 @@ async function fetchGithubReleaseUpdateManifest(): Promise<AppUpdateManifest> {
 
   if (!apk?.browser_download_url) throw new Error('更新包暂不可用');
 
-  const versionCode = parseVersionCodeFromText(release.body, release.name, release.tag_name, apk.name);
+  const versionCode = inferReleaseVersionCode(release, apk.name);
   if (!Number.isFinite(versionCode) || versionCode <= 0) {
     throw new Error('更新信息暂不可用');
   }
 
   return {
     versionCode,
-    versionName: pickString(release.name, release.tag_name, `v${versionCode}`),
+    versionName: versionFromReleaseTag(release.tag_name) || versionFromReleaseTag(release.name) || pickString(release.name, release.tag_name, `v${versionCode}`),
     apkUrl: apk.browser_download_url,
-    domesticApkUrl: proxifyGithubUrl(apk.browser_download_url),
     sha256: parseSha256Digest(apk.digest),
     sizeBytes: typeof apk.size === 'number' && apk.size > 0 ? apk.size : undefined,
     releaseNotes: normalizeNotes(release.body),
@@ -317,18 +371,6 @@ async function fetchGithubReleaseUpdateManifest(): Promise<AppUpdateManifest> {
 export async function fetchConfiguredAppUpdateManifest(): Promise<AppUpdateManifest> {
   const manifestUrl = envManifestUrl();
   if (manifestUrl) return fetchAppUpdateManifest(manifestUrl);
-
-  if (!envReleaseApiUrl()) {
-    const releaseManifestUrl = githubLatestDownloadUrl(GITHUB_RELEASE_MANIFEST_ASSET);
-    if (releaseManifestUrl) {
-      try {
-        return await fetchAppUpdateManifest(releaseManifestUrl, githubLatestDownloadUrl('moro.apk'));
-      } catch (manifestError) {
-        console.warn('[appUpdates] latest release manifest failed; falling back to GitHub API', manifestError);
-      }
-    }
-  }
-
   return fetchGithubReleaseUpdateManifest();
 }
 

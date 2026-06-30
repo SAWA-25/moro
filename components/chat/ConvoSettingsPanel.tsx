@@ -8,6 +8,7 @@ import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
 import { isScheduleFeatureOn } from '../../utils/scheduleGenerator';
 import { isAuxApiOn } from '../../utils/auxApi';
+import { scrollToManualAnchor, useManualDeepLink } from '../../utils/manualDeepLink';
 import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
 
 /**
@@ -133,10 +134,11 @@ const LineInput: React.FC<{ value: string; onChange: (v: string) => void; placeh
 const Page: React.FC<{
     no: string; title: string; en: string;
     tape?: string; pattern?: string; paper?: string;
+    manualAnchor?: string;
     children: React.ReactNode;
-}> = ({ title, en, children }) => {
+}> = ({ title, en, manualAnchor, children }) => {
     return (
-        <section className="relative rounded-[18px] bg-white" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
+        <section data-manual-anchor={manualAnchor} className="relative rounded-[18px] bg-white" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
             <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
                 <span className="text-[15px] font-bold leading-tight" style={{ color: PAPER_TONES.ink }}>{title}</span>
                 <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</span>
@@ -147,8 +149,8 @@ const Page: React.FC<{
 };
 
 /** 条目：花朵记号 + 标题 + 旁注小字，条目间用缝线分隔 */
-const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode }> = ({ mark = '✿', title, note, side, children }) => (
-    <div className="py-3 border-b last:border-b-0" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
+const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; manualAnchor?: string; children?: React.ReactNode }> = ({ mark = '✿', title, note, side, manualAnchor, children }) => (
+    <div data-manual-anchor={manualAnchor} className="py-3 border-b last:border-b-0" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
         <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -257,6 +259,13 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     // ── MiniMax 音色 ──
     const [voices, setVoices] = useState<MiniMaxVoiceItem[] | null>(null);
     const [voicesLoading, setVoicesLoading] = useState(false);
+
+    useManualDeepLink(AppID.Chat, (target) => {
+        if (target.route !== 'chat-settings') return;
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-chat-settings-root');
+        }, 160);
+    });
     const filteredPrivateArchives = useMemo(() => {
         const q = archiveSearch.trim().toLowerCase();
         if (!q) return privateChatArchives;
@@ -460,8 +469,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
             <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
 
                 {/* ═══ P.01 名字与名片 ═══ */}
-                <Page no="01" title="名字与名片" en="Name Tags" tape="rose" pattern="stripe" paper="lined">
-                    <Entry mark="♡" title="给 TA 起的小名" note="写在这里的名字会出现在聊天顶栏和会话列表里；TA 的本名不会被改动。">
+                <Page no="01" title="名字与名片" en="Name Tags" tape="rose" pattern="stripe" paper="lined" manualAnchor="manual-chat-settings-root">
+                    <Entry manualAnchor="manual-chat-remark-name" mark="♡" title="给 TA 起的小名" note="写在这里的名字会出现在聊天顶栏和会话列表里；TA 的本名不会被改动。">
                         <LineInput
                             value={cs.remarkName || ''}
                             onChange={v => updateConvo({ remarkName: v || undefined })}
@@ -469,7 +478,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="♡" title="TA 怎么称呼你" note="TA 根据你们的相处和剧情，自己决定怎么称呼你；聊天里 TA 可以主动改备注，这里统一展示当前称呼和改名记录。">
+                    <Entry manualAnchor="manual-chat-user-remark" mark="♡" title="TA 怎么称呼你" note="TA 根据你们的相处和剧情，自己决定怎么称呼你；聊天里 TA 可以主动改备注，这里统一展示当前称呼和改名记录。">
                         <div className="space-y-2">
                             <div
                                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-[14px] font-bold"
@@ -504,7 +513,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         </div>
                     </Entry>
 
-                    <Entry mark="♡" title="TA 的名片" note="角色主页上的微信号、地区和签名都由你来填（不再交给 AI 编），空着就不展示。">
+                    <Entry manualAnchor="manual-chat-profile-card" mark="♡" title="TA 的名片" note="角色主页上的微信号、地区和签名都由你来填（不再交给 AI 编），空着就不展示。">
                         <div className="space-y-2.5">
                             <LineInput
                                 tag="WECHAT ID"
@@ -576,6 +585,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 {/* ═══ P.03 记性 ═══ */}
                 <Page no="03" title="记性" en="Memory" tape="sky" pattern="plain" paper="grid">
                     <Entry
+                        manualAnchor="manual-chat-context-limit"
                         mark="✦"
                         title={`随身记忆 · ${unlimitedContext ? '不设上限' : `最近 ${contextLimit} 条`}`}
                         note="每次对话随身携带的最近消息条数；更早的往事交给记忆摘要和回忆标本馆补全。"
@@ -593,7 +603,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         </div>
                     </Entry>
 
-                    <Entry mark="✦" title="群里的事要不要带过来" note="单聊时把 TA 所在群聊的近期动静当作背景。选「都不带」的话，群里发生过什么这段单聊一概不知。">
+                    <Entry manualAnchor="manual-chat-group-memory" mark="✦" title="群里的事要不要带过来" note="单聊时把 TA 所在群聊的近期动静当作背景。选「都不带」的话，群里发生过什么这段单聊一概不知。">
                         <div className="flex flex-wrap gap-2">
                             <StickerChip seed="gm-all" active={gmMode === 'all'} onClick={() => updateConvo({ groupMemoryMode: 'all' })}>全都带上</StickerChip>
                             <StickerChip seed="gm-none" active={gmMode === 'none'} onClick={() => updateConvo({ groupMemoryMode: 'none' })}>都不带</StickerChip>
@@ -642,6 +652,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     </Entry>
 
                     <Entry
+                        manualAnchor="manual-chat-memo"
                         mark="✎" title="TA 的备忘录"
                         note="TA 手机备忘录里的待办 / 随手记 / 小心事。聊天时随身带着，TA 会记得自己写过的事；你也能帮 TA 记一条。"
                         side={<PinButton onClick={() => setMemoOpen(v => !v)}>{(char.memos || []).length} 条 · {memoOpen ? '收起' : '展开'}</PinButton>}
@@ -686,7 +697,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                 {/* ═══ P.04 说话的样子 ═══ */}
                 <Page no="04" title="说话的样子" en="Voice and Words" tape="mint" pattern="stripe" paper="lined">
-                    <Entry mark="❀" title="TA 打字的习惯" note="选择 TA 更常用的消息节奏；「按人设随意」会让长短和拆条都跟着角色当下状态自然变化。">
+                    <Entry manualAnchor="manual-chat-bubble-style" mark="❀" title="TA 打字的习惯" note="选择 TA 更常用的消息节奏；「按人设随意」会让长短和拆条都跟着角色当下状态自然变化。">
                         <div className="flex flex-wrap gap-2">
                             <StickerChip seed="bm-split" active={(cs.bubbleStyleMode || 'split') === 'split'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'split' })}>一句一句蹦</StickerChip>
                             <StickerChip seed="bm-whole" active={cs.bubbleStyleMode === 'whole'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'whole' })}>一大段说完</StickerChip>
@@ -701,12 +712,14 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-inner-voice"
                         mark="❀" title="偷听小心思"
                         note="「偷看心声」入口的总开关：能看到 TA 没说出口的内心话，这些不会被算进对话上下文。"
                         side={<CandyToggle on={cs.innerVoiceEnabled !== false} onToggle={() => updateConvo({ innerVoiceEnabled: cs.innerVoiceEnabled === false })} />}
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-translation"
                         mark="❀" title="双语对照"
                         note="打开后 AI 消息先以「气泡语言」显示，点「译」再换成目标语言。"
                         side={<CandyToggle on={translationEnabled} onToggle={onToggleTranslation} />}
@@ -745,7 +758,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         side={<CandyToggle on={!!cs.emojiAssociation} onToggle={() => updateConvo({ emojiAssociation: !cs.emojiAssociation })} />}
                     />
 
-                    <Entry mark="❀" title="表情包权限" note="选择哪些表情分类允许 TA 使用。划线表示这个分类暂时不可用。">
+                    <Entry manualAnchor="manual-chat-emoji-access" mark="❀" title="表情包权限" note="选择哪些表情分类允许 TA 使用。划线表示这个分类暂时不可用。">
                         <div className="flex flex-wrap gap-2">
                             {categories.length === 0 && <span className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>还没建过表情分类</span>}
                             {categories.map(cat => {
@@ -830,7 +843,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="☘" title="TA 的城市" note="给 TA 一座城：真实城市会接入真实天气，本地小吃/外卖也按真实情况来（查岗能看到 TA 点的真实外卖）；架空城市可挑个原型，按虚拟程度借用真实风物。">
+                    <Entry manualAnchor="manual-chat-city" mark="☘" title="TA 的城市" note="给 TA 一座城：真实城市会接入真实天气，本地小吃/外卖也按真实情况来（查岗能看到 TA 点的真实外卖）；架空城市可挑个原型，按虚拟程度借用真实风物。">
                         {(() => {
                             const city = char.cityConfig;
                             const mode = city?.mode;
@@ -882,7 +895,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         })()}
                     </Entry>
 
-                    <Entry mark="☘" title="TA 对时间的感知" note="分「实时感知」（明确告诉 TA 现在几点）和「时间流逝感知」（让 TA 知道两次聊天/没跟进的约定隔了多久）。线上线下可分开开关。">
+                    <Entry manualAnchor="manual-chat-time-sense" mark="☘" title="TA 对时间的感知" note="分「实时感知」（明确告诉 TA 现在几点）和「时间流逝感知」（让 TA 知道两次聊天/没跟进的约定隔了多久）。线上线下可分开开关。">
                         <div className="space-y-3 pt-1">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -923,6 +936,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     </Entry>
 
                     <Entry
+                        manualAnchor="manual-chat-schedule"
                         mark="☘" title="TA 的日程表"
                         note="TA 有自己的一天：作息时间线 + 意识流独白，会悄悄染进聊天的语气与情绪。"
                         side={<CandyToggle on={isScheduleFeatureOn(char)} onToggle={() => updateCharacter(char.id, { scheduleFeatureEnabled: !isScheduleFeatureOn(char) })} />}
@@ -950,12 +964,14 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-proactive"
                         mark="☘" title="TA 会突然打电话来"
                         note="TA 主动找你时，会按人设和剧情自己决定要不要直接拨语音电话（主动消息在聊天界面下方 + 号面板里开启）。来电可接可挂，没接到会留一条未接记录。"
                         side={<CandyToggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-takeout"
                         mark="☘" title="TA 会主动给你撕饭票"
                         note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默在「饭票」里替你点一单并代付，在聊天里生成一张能点开看的饭票小票。关掉则永远不会触发。"
                         side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
@@ -982,12 +998,14 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     </Entry>
 
                     <Entry
+                        manualAnchor="manual-chat-check-phone"
                         mark="☘" title="允许 TA 查岗"
                         note="TA 会不定期主动拿走你的手机翻一翻（屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人、锁住手机）。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢；被锁住时还可以向 TA 要口令。关着的话 TA 不会动你手机。"
                         side={<CandyToggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-auto-meet"
                         mark="☘" title="聊着聊着就见面"
                         note="对话发展到要见面的情境时，TA 会自己进入线下模式：弹出现场小窗记录情景，你能在窗里说话、行动。退出后这段情景会进上下文，TA 还会主动发消息收个尾。关着则不会触发。"
                         side={<CandyToggle on={!!cs.autoOffline} onToggle={() => updateConvo({ autoOffline: !cs.autoOffline })} />}
@@ -1008,7 +1026,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         side={<CandyToggle on={!!cs.allowCharAvatarFromUserImage} onToggle={() => updateConvo({ allowCharAvatarFromUserImage: !cs.allowCharAvatarFromUserImage })} />}
                     />
 
-                    <Entry mark="❅" title="聊天立绘" note="立绘会半透明地显示在聊天界面右下角；「生图底图」是 img2img / edits 用的参考图。">
+                    <Entry manualAnchor="manual-chat-photo-assets" mark="❅" title="聊天立绘" note="立绘会半透明地显示在聊天界面右下角；「生图底图」是 img2img / edits 用的参考图。">
                         <div className="grid grid-cols-3 gap-3">
                             <Polaroid label="本会话头像" aspect="aspect-square" value={cs.charAvatarOverride} hint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
                             <Polaroid label="立绘本体" aspect="aspect-square" value={cs.spriteImage} onChange={v => updateConvo({ spriteImage: v })} />
@@ -1042,6 +1060,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 {/* ═══ P.07 世界书挂载 ═══ */}
                 <Page no="07" title="世界书挂载" en="Worldbooks" tape="blue" pattern="star" paper="mint">
                     <Entry
+                        manualAnchor="manual-chat-worldbook"
                         mark="❃" title="已挂载分组"
                         note={`全局世界书所有角色可用；这里选择本会话专用的局部世界书，最多挂载 ${WB_BIND_LIMIT} 个。整本作用域与条目触发方式在「剪报夹」App 调整。`}
                         side={<PinButton onClick={clearMountedWorldbooks}>全部取下</PinButton>}
@@ -1113,7 +1132,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         </div>
                     </Entry>
 
-                    <Entry mark="✿" title="聊天背景" note="消息区壁纸、顶栏背景、输入栏背景和上下分隔条都在这里单独设置。">
+                    <Entry manualAnchor="manual-chat-wallpaper" mark="✿" title="聊天背景" note="消息区壁纸、顶栏背景、输入栏背景和上下分隔条都在这里单独设置。">
                         <div className="grid grid-cols-2 gap-3">
                             {/* 聊天壁纸：沿用 onBgUpload 管线，原画质收录 */}
                             <div>
@@ -1145,6 +1164,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 {/* ═══ P.09 外观设置 ═══ */}
                 <Page no="09" title="外观设置" en="Appearance" tape="silver" pattern="stripe" paper="plain">
                     <Entry
+                        manualAnchor="manual-chat-appearance"
                         mark="✄" title="全局聊天外观"
                         note="气泡、头像、顶栏、输入栏这些全局聊天样式，都在「外观」App 里设置。"
                         side={<PinButton onClick={() => openApp(AppID.Appearance)}>打开外观</PinButton>}
@@ -1172,6 +1192,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 {/* ═══ P.11 私聊档案 ═══ */}
                 <Page no="11" title="私聊档案" en="Private Chats" tape="blush" pattern="heart" paper="cream">
                     <Entry
+                        manualAnchor="manual-chat-archives"
                         mark="✉" title="当前角色的聊天文件"
                         note="像 SillyTavern 一样给同一个角色保留多份私聊：新建、打开、改名、置顶、导入、导出、删除。"
                         side={
@@ -1277,6 +1298,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 {/* ═══ P.12 数据管理 ═══ */}
                 <Page no="12" title="数据管理" en="Data" tape="blush" pattern="heart" paper="cream">
                     <Entry
+                        manualAnchor="manual-chat-data"
                         mark="❒" title="导出聊天记录"
                         note={`当前有 ${messagesCount} 条看得见的消息，可以导出为 JSON 文件。`}
                         side={<PinButton onClick={onExportChat}>导出 JSON</PinButton>}
