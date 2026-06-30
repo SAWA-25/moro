@@ -33,3 +33,6 @@ xiaohongshu-skills/
 
 # git worktrees
 .worktrees/
+
+# APK build outputs
+*.apk
