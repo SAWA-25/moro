@@ -3111,8 +3111,10 @@ export interface ConvoSettings {
     allowPhoneBrowse?: boolean;
     /** 自动线下：对话发展到见面情境时自动切换线下面对面模式（提示词注入） */
     autoOffline?: boolean;
-    /** 发消息方式：'split' 碎片短句（默认习惯）/ 'whole' 完整段落 / 'freeform' 按人设自由长短 */
+    /** 发消息生成形式：'split' 一句一句蹦（默认）/ 'whole' 一大段说完 / 'freeform' 旧版按人设随意（兼容旧数据，等同 split + personaDrivenMessageLength） */
     bubbleStyleMode?: 'split' | 'whole' | 'freeform';
+    /** 回复长短按人设随意：只决定本轮说多说少，不决定拆成几条消息 */
+    personaDrivenMessageLength?: boolean;
     /** 表情联想：允许角色在合适时机联想并发送表情包（提示词注入） */
     emojiAssociation?: boolean;
     /** 每轮对话生图：生图管线配置位（开启后每轮回复尝试配图，需生图 API） */

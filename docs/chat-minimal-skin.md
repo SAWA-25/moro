@@ -16,6 +16,7 @@
 | 日期分割「🤍 Today 22:28 💬」| `apps/Chat.tsx` 消息流时间分割线 | 已有爱心 + 对话气泡图标 |
 | 纯浅灰胶囊气泡·无描边无阴影 | `components/chat/MessageItem.tsx` 新增 `bubbleVariant: 'plain'` | 默认（`osTheme.chatBubbleStyle \|\| 'plain'`）|
 | 长句拆成多条短气泡 | `ConvoSettings.bubbleStyleMode='split'`（提示词 + `applyAssistantPostProcessing` 切块）| 已是默认 split |
+| AI 气泡逐条出现 | `apps/Chat.tsx` 的 `revealedAssistantIds` 队列按消息 ID 揭示，并在队列未空时保留“正在输入”三点 | 新来的 assistant 消息逐条弹出，历史消息直接显示 |
 | 昵称标签 + 时间戳在该组消息**上方** | `MessageItem.tsx`（`isPlainBubble` 时）| 随 plain 生效 |
 | 底部状态签名（输入栏上方居中小灰字）| `ConvoSettings.footerDecorText` | 用户自定义（每会话）|
 | 颜文字占位符 + 爱心发送键 | `components/chat/ChatInputArea.tsx`（占位符默认 `ʕ•ﻌ•ʔ 说点什么…`；空输入时发送键渲染实心 `Heart`）| 默认 |
@@ -28,6 +29,13 @@
   - 该组**第一条**消息上方渲染 `昵称标签 + 时间戳`（对方）/ `时间戳`（我方，右对齐）。
   - 组下方不再重复时间戳（仅保留发送 / 已读 ticks）。
 - 我方（user）头像每条消息都保留在右下（保住「点头像 → 帮我想想接下来说什么」入口）；`chatAvatarMode` 的“连续共用”只折叠对方连续消息。
+
+## 逐条出现的消息节奏（`apps/Chat.tsx`）
+
+- 新进入当前私聊的 assistant 消息不会一次性全部渲染，而是先进入 `revealedAssistantIds` 揭示队列；参考旧 HTML 皮肤的生成节奏，每条会先等约 1-5 秒随机“打字”时间，再按文本长度额外折算显示前等待。
+- 一条气泡显示后，下一条会再随机停顿约 0.9-2.4 秒才开始自己的打字等待；贴纸 / 卡片也会保留较短但明显的等待感。
+- 初次加载历史、切角色、跳转旧消息、选择模式时不会慢慢重放旧消息，所有已有 assistant 消息会直接标记为已揭示，避免翻记录被动画打扰。
+- 本地 SSE 仍用于更快拿到完整回复，但聊天页不再提前显示整段流式正文；真实落库气泡接管后逐条弹出，队列未显示完时底部继续显示正在输入三点。
 
 ## 想换回老样子 / 别的皮肤
 

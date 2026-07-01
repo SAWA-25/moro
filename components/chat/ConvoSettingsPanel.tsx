@@ -225,6 +225,21 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const updateConvo = (patch: Partial<ConvoSettings>) => {
         updateCharacter(char.id, { convoSettings: { ...char.convoSettings, ...patch } });
     };
+    const bubbleStyleMode = cs.bubbleStyleMode === 'whole' ? 'whole' : 'split';
+    const personaDrivenMessageLength = !!cs.personaDrivenMessageLength || cs.bubbleStyleMode === 'freeform';
+    const updateBubbleStyleMode = (mode: 'split' | 'whole') => {
+        const patch: Partial<ConvoSettings> = { bubbleStyleMode: mode };
+        if (cs.bubbleStyleMode === 'freeform' && cs.personaDrivenMessageLength === undefined) {
+            patch.personaDrivenMessageLength = true;
+        }
+        updateConvo(patch);
+    };
+    const togglePersonaDrivenMessageLength = () => {
+        updateConvo({
+            personaDrivenMessageLength: !personaDrivenMessageLength,
+            ...(cs.bubbleStyleMode === 'freeform' ? { bubbleStyleMode: 'split' as const } : {}),
+        });
+    };
     const defaultUserRemark = useMemo(() => {
         const name = (userProfile?.name || '').trim();
         return (name || '你').slice(0, 24);
@@ -697,13 +712,19 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                 {/* ═══ P.04 说话的样子 ═══ */}
                 <Page no="04" title="说话的样子" en="Voice and Words" tape="mint" pattern="stripe" paper="lined">
-                    <Entry manualAnchor="manual-chat-bubble-style" mark="❀" title="TA 打字的习惯" note="选择 TA 更常用的消息节奏；「按人设随意」会让长短和拆条都跟着角色当下状态自然变化。">
+                    <Entry manualAnchor="manual-chat-bubble-style" mark="❀" title="TA 打字的习惯" note="选择 TA 生成消息时更常用的形式：一句一句分条，或一大段说完。">
                         <div className="flex flex-wrap gap-2">
-                            <StickerChip seed="bm-split" active={(cs.bubbleStyleMode || 'split') === 'split'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'split' })}>一句一句蹦</StickerChip>
-                            <StickerChip seed="bm-whole" active={cs.bubbleStyleMode === 'whole'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'whole' })}>一大段说完</StickerChip>
-                            <StickerChip seed="bm-freeform" active={cs.bubbleStyleMode === 'freeform'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'freeform' })}>按人设随意</StickerChip>
+                            <StickerChip seed="bm-split" active={bubbleStyleMode === 'split'} candy="#bfe1cf" onClick={() => updateBubbleStyleMode('split')}>一句一句蹦</StickerChip>
+                            <StickerChip seed="bm-whole" active={bubbleStyleMode === 'whole'} candy="#bfe1cf" onClick={() => updateBubbleStyleMode('whole')}>一大段说完</StickerChip>
                         </div>
                     </Entry>
+
+                    <Entry
+                        manualAnchor="manual-chat-persona-message-length"
+                        mark="❀" title="按人设随意"
+                        note="打开后 TA 会按人设、情绪、关系和话题自己决定这一轮说长说短；它只管消息长短，不改变上面的消息生成形式。"
+                        side={<CandyToggle on={personaDrivenMessageLength} onToggle={togglePersonaDrivenMessageLength} />}
+                    />
 
                     <Entry
                         mark="❀" title="舞台旁白"

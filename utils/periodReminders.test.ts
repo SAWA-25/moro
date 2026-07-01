@@ -6,6 +6,8 @@ import {
   computeNextPeriodReminderAt,
   makeDefaultPeriodReminderSettings,
   markPeriodReminderFired,
+  normalizePeriodCycleLength,
+  normalizePeriodLength,
   normalizePeriodOffsets,
   periodFireKey,
   periodReminderBody,
@@ -53,6 +55,15 @@ describe('period reminder scheduling', () => {
     const custom = settings({ remindOffsets: [-7, -1, 0], timeHHmm: '08:30' });
     expect(computeNextPeriodReminderAt(custom, at(2026, 6, 21, 12, 0))).toBe(at(2026, 6, 22, 8, 30));
     expect(normalizePeriodOffsets([0, -7, -7, 2])).toEqual([-7, 0, 2]);
+  });
+
+  it('normalizes editable cycle and period lengths after blank input', () => {
+    expect(normalizePeriodCycleLength('')).toBe(28);
+    expect(normalizePeriodLength('')).toBe(5);
+    expect(normalizePeriodCycleLength('2')).toBe(15);
+    expect(normalizePeriodCycleLength('61')).toBe(60);
+    expect(normalizePeriodLength('0')).toBe(1);
+    expect(normalizePeriodLength('20')).toBe(14);
   });
 
   it('moves to the next reminder when today already passed', () => {

@@ -278,12 +278,14 @@ export const ContextBuilder = {
                 if (cs.autoOffline) {
                     lines.push(convoLines.autoOffline);
                 }
+                const personaDrivenMessageLength = !!cs.personaDrivenMessageLength || cs.bubbleStyleMode === 'freeform';
                 if (cs.bubbleStyleMode === 'whole') {
                     lines.push(convoLines.bubbleWhole);
-                } else if (cs.bubbleStyleMode === 'freeform') {
-                    lines.push(convoLines.bubbleFreeform);
-                } else if (cs.bubbleStyleMode === 'split') {
+                } else if (cs.bubbleStyleMode === 'split' || cs.bubbleStyleMode === 'freeform') {
                     lines.push(convoLines.bubbleSplit);
+                }
+                if (personaDrivenMessageLength) {
+                    lines.push(convoLines.messageLengthPersona);
                 }
                 if (cs.emojiAssociation) {
                     lines.push(convoLines.emojiAssociation);

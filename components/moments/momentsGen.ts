@@ -1,4 +1,4 @@
-import { APIConfig, CharacterProfile, SocialComment, SocialPost, UserProfile } from '../../types';
+import { AmbientSocialEntry, APIConfig, CharacterProfile, SocialComment, SocialPost, UserProfile } from '../../types';
 import { ContextBuilder } from '../../utils/context';
 import { DB } from '../../utils/db';
 import { safeResponseJson } from '../../utils/safeApi';
@@ -9,6 +9,7 @@ import {
     momentsReactionPrompt,
     momentsRefreshPrompt,
 } from '../../utils/laiwangPrompts';
+import { isAmbientSocialCharacter } from '../../utils/ambientSocial';
 import { displayableImages, newId, npcAvatar, postDisplayText } from './momentsUtils';
 
 // --- Robust JSON Parser（沿用旧 SocialApp 的容错解析） ---
@@ -83,9 +84,61 @@ export const resolveMomentCharacter = (characters: CharacterProfile[], charId: a
     return characters.find(c => getCharacterModelId(c) === id) || charByLocalId(characters, id);
 };
 
+const isLinkedAmbientEntry = (entry: AmbientSocialEntry): boolean => (
+    (entry.kind === 'contact' && !!entry.linkedCharId)
+    || (entry.kind === 'group' && !!entry.linkedGroupId)
+);
+
+const ambientEntryNames = (entry: AmbientSocialEntry): string[] => {
+    if (entry.kind === 'group') return [entry.name, ...entry.memberNames].map(n => n.trim()).filter(Boolean);
+    return [entry.name.trim()].filter(Boolean);
+};
+
+const hiddenAmbientNpcNames = (userProfile: UserProfile): Set<string> => {
+    const names = new Set<string>();
+    const hideConverted = userProfile.ambientSocialHideConverted !== false;
+    (userProfile.ambientSocial?.entries || [])
+        .filter(entry => userProfile.ambientSocialEnabled === false || entry.hidden || (hideConverted && isLinkedAmbientEntry(entry)))
+        .forEach(entry => ambientEntryNames(entry).forEach(name => names.add(name)));
+    return names;
+};
+
+export const getMomentVisibleCharacters = (
+    characters: CharacterProfile[],
+    userProfile: UserProfile,
+): CharacterProfile[] => {
+    if (userProfile.ambientSocialHideConverted === false) return characters;
+    const linkedCharIds = new Set<string>();
+    (userProfile.ambientSocial?.entries || []).forEach(entry => {
+        if (entry.kind === 'contact' && entry.linkedCharId) linkedCharIds.add(entry.linkedCharId);
+    });
+    return characters.filter(char => !isAmbientSocialCharacter(char) && !linkedCharIds.has(char.id));
+};
+
 /** 喂给 LLM 的帖子摘要（仅公开帖） */
-const feedDigest = (feed: SocialPost[], characters: CharacterProfile[], userName: string, limit = 8): string => {
-    const visible = feed.filter(p => p.visibility !== 'private').slice(0, limit);
+const feedDigest = (
+    feed: SocialPost[],
+    characters: CharacterProfile[],
+    userName: string,
+    allowNpc: boolean,
+    blockedNpcNames: Set<string>,
+    limit = 8,
+): string => {
+    const visibleCharIds = new Set(characters.map(c => c.id));
+    const visibleCharNames = new Set(characters.map(c => c.name));
+    const visible = feed
+        .filter(p => {
+            if (p.visibility === 'private') return false;
+            if (blockedNpcNames.has(p.authorName)) return false;
+            if (allowNpc) return true;
+            if (p.authorType === 'stranger') return false;
+            if (p.authorType === 'user' || p.authorName === userName) return true;
+            if (p.authorType === 'character') {
+                return !p.authorCharId || visibleCharIds.has(p.authorCharId) || visibleCharNames.has(p.authorName);
+            }
+            return visibleCharNames.has(p.authorName);
+        })
+        .slice(0, limit);
     if (visible.length === 0) return '(朋友圈暂时是空的)';
     return visible.map(p => {
         const who = p.authorType === 'user' ? `${p.authorName}(用户本人)` : p.authorName;
@@ -100,7 +153,6 @@ const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): s
         `名字: ${userProfile.name || '用户'}`,
         `简介: ${userProfile.bio || '（没写简介）'}`,
     ];
-    // 「用户社交圈」开关只控制絮语里是否自动出现背景联系人；朋友圈始终按用户社交设定生成。
     if (userProfile.patSuffix) lines.push(`拍一拍后缀: ${userProfile.patSuffix}`);
     if (userProfile.vrState?.enabled) {
         const state = [
@@ -110,8 +162,14 @@ const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): s
         if (state) lines.push(`页外状态: ${state}`);
     }
 
+    if (userProfile.ambientSocialEnabled === false) {
+        lines.push('用户社交圈已关闭：本轮禁止生成 NPC 动态、NPC 点赞或 NPC 评论；只允许正式角色按候选角色名单发动态和互动。');
+        return lines.join('\n');
+    }
+
+    const hideConverted = userProfile.ambientSocialHideConverted !== false;
     const ambient = (userProfile.ambientSocial?.entries || [])
-        .filter(e => !e.hidden)
+        .filter(e => !e.hidden && !(hideConverted && isLinkedAmbientEntry(e)))
         .slice(0, 12);
     if (ambient.length > 0) {
         lines.push('已建立的用户社交圈（朋友圈 NPC 优先从这里取，不要重复正式角色名）：');
@@ -127,15 +185,20 @@ const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): s
     }
 
     const knownNpcNames = Array.from(new Set(
-        feed.filter(p => p.authorType === 'stranger').map(p => p.authorName)
+        feed
+            .filter(p => p.authorType === 'stranger' && !hiddenAmbientNpcNames(userProfile).has(p.authorName))
+            .map(p => p.authorName)
     )).slice(0, 12);
     if (knownNpcNames.length > 0) lines.push(`已出现过的朋友圈 NPC（可沿用，保持连续性；不要无故换身份）：${knownNpcNames.join('、')}`);
     return lines.join('\n');
 };
 
 const userSocialNpcNames = (userProfile: UserProfile, feed: SocialPost[]): Set<string> | undefined => {
+    if (userProfile.ambientSocialEnabled === false) return new Set();
+    const blockedNames = hiddenAmbientNpcNames(userProfile);
+    const hideConverted = userProfile.ambientSocialHideConverted !== false;
     const ambient = (userProfile.ambientSocial?.entries || [])
-        .filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId));
+        .filter(e => !e.hidden && !(hideConverted && isLinkedAmbientEntry(e)));
     if (ambient.length === 0) return undefined;
     const names = new Set<string>();
     ambient.forEach(e => {
@@ -146,7 +209,9 @@ const userSocialNpcNames = (userProfile: UserProfile, feed: SocialPost[]): Set<s
             names.add(e.name);
         }
     });
-    feed.filter(p => p.authorType === 'stranger').forEach(p => names.add(p.authorName));
+    feed
+        .filter(p => p.authorType === 'stranger' && !blockedNames.has(p.authorName))
+        .forEach(p => names.add(p.authorName));
     return names;
 };
 
@@ -172,6 +237,7 @@ const parseMixedComments = (
     characters: CharacterProfile[],
     userName: string,
     allowedNpcNames?: Set<string>,
+    blockedNpcNames: Set<string> = new Set(),
 ): SocialComment[] => {
     const out: SocialComment[] = [];
     // replyToName 按"楼上同名评论"回链，模拟评论区的有来有回
@@ -193,7 +259,7 @@ const parseMixedComments = (
                 authorType: 'character',
                 authorCharId: commenter.id,
             };
-        } else if (npcName && npcName !== userName && (!allowedNpcNames || allowedNpcNames.has(npcName))) {
+        } else if (npcName && npcName !== userName && !blockedNpcNames.has(npcName) && (!allowedNpcNames || allowedNpcNames.has(npcName))) {
             comment = {
                 id: newId('cmt'),
                 authorName: npcName,
@@ -236,20 +302,24 @@ export const generateCharacterMoments = async (params: {
     feed: SocialPost[];
 }): Promise<SocialPost[]> => {
     const { apiConfig, characters, userProfile, feed } = params;
-    if (characters.length === 0) return [];
+    const momentCharacters = getMomentVisibleCharacters(characters, userProfile);
+    if (momentCharacters.length === 0) return [];
+    const allowNpc = userProfile.ambientSocialEnabled !== false;
 
-    const selected = pickRandom(characters, Math.min(4, characters.length));
+    const selected = pickRandom(momentCharacters, Math.min(4, momentCharacters.length));
     const blocks = await Promise.all(selected.map(c => buildCharBlock(c, userProfile)));
-    const roster = characters.map(c => `- ${formatCharacterWithId(c)} charId="${getCharacterModelId(c)}" 名字:"${c.name}"`).join('\n');
+    const roster = momentCharacters.map(c => `- ${formatCharacterWithId(c)} charId="${getCharacterModelId(c)}" 名字:"${c.name}"`).join('\n');
     const socialCircle = userSocialCircleDigest(userProfile, feed);
     const allowedNpcNames = userSocialNpcNames(userProfile, feed);
+    const blockedNpcNames = hiddenAmbientNpcNames(userProfile);
 
     const prompt = momentsRefreshPrompt({
         userName: userProfile.name,
+        allowNpc,
         socialCircle,
         candidateBlocks: blocks.join('\n\n'),
         roster,
-        feedDigest: feedDigest(feed, characters, userProfile.name),
+        feedDigest: feedDigest(feed, momentCharacters, userProfile.name, allowNpc, blockedNpcNames),
     });
 
     const json = await callLLM(apiConfig, prompt, 0.95, 16000, 'chat.moments.refresh');
@@ -261,7 +331,7 @@ export const generateCharacterMoments = async (params: {
         if (!content) return;
 
         // 作者归属：角色帖按 charId；NPC 帖按 npcName（禁止冒充用户）
-        const author = resolveMomentCharacter(characters, item?.charId);
+        const author = resolveMomentCharacter(momentCharacters, item?.charId);
         const npcName = String(item?.npcName || '').trim();
         let authorName: string;
         let authorAvatar: string;
@@ -273,6 +343,7 @@ export const generateCharacterMoments = async (params: {
             authorType = 'character';
             authorCharId = author.id;
         } else if (npcName && npcName !== userProfile.name && (!allowedNpcNames || allowedNpcNames.has(npcName))) {
+            if (blockedNpcNames.has(npcName)) return;
             authorName = npcName;
             authorAvatar = npcAvatar(npcName);
             authorType = 'stranger';
@@ -294,17 +365,17 @@ export const generateCharacterMoments = async (params: {
         }
 
         const charLikes = (Array.isArray(item?.likedByCharIds) ? item.likedByCharIds : [])
-            .map((id: any) => resolveMomentCharacter(characters, id))
+            .map((id: any) => resolveMomentCharacter(momentCharacters, id))
             .filter((c?: CharacterProfile): c is CharacterProfile => !!c && c.id !== authorCharId)
             .map((c: CharacterProfile) => ({ id: c.id, name: c.name }));
         const npcLikes = (Array.isArray(item?.likedByNpcNames) ? item.likedByNpcNames : [])
             .map((n: any) => String(n || '').trim())
-            .filter((n: string) => !!n && n !== userProfile.name && n !== authorName && (!allowedNpcNames || allowedNpcNames.has(n)))
+            .filter((n: string) => !!n && n !== userProfile.name && n !== authorName && !blockedNpcNames.has(n) && (!allowedNpcNames || allowedNpcNames.has(n)))
             .slice(0, 20)
             .map((n: string) => ({ id: `npc-${n}`, name: n }));
         const likedBy = [...charLikes, ...npcLikes];
 
-        const comments = parseMixedComments(item?.comments, characters, userProfile.name, allowedNpcNames);
+        const comments = parseMixedComments(item?.comments, momentCharacters, userProfile.name, allowedNpcNames, blockedNpcNames);
         const heat = String(item?.heat || 'normal').toLowerCase();
 
         posts.push({

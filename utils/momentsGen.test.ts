@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { APIConfig, CharacterProfile, UserProfile } from '../types';
 import { momentsRefreshPrompt } from './laiwangPrompts';
-import { generateCharacterMoments, resolveMomentCharacter } from '../components/moments/momentsGen';
+import { generateCharacterMoments, getMomentVisibleCharacters, resolveMomentCharacter } from '../components/moments/momentsGen';
 
 const apiConfig: APIConfig = {
     baseUrl: 'https://api.example.test/v1',
@@ -119,5 +119,113 @@ describe('generateCharacterMoments identity mapping', () => {
         expect(posts[0].comments.map(c => c.content)).toEqual(['省钱了。', '便利店那家确实一般']);
         expect(posts[0].comments[0].authorCharId).toBe('local-b');
         expect(posts[0].comments.some(c => c.authorName === 'User')).toBe(false);
+    });
+
+    it('does not materialize NPC content when the user social circle is disabled', async () => {
+        const closedUser = {
+            ...user,
+            ambientSocialEnabled: false,
+            ambientSocial: {
+                version: 1,
+                seededAt: 1,
+                entries: [{
+                    id: 'amb-nina',
+                    kind: 'contact',
+                    name: 'Nina',
+                    relation: 'friend',
+                    relationLabel: 'friend',
+                    avatar: '',
+                    note: 'old ambient friend',
+                    lastMessage: 'hi',
+                    lastAt: 1,
+                    createdAt: 1,
+                }],
+            },
+        } as UserProfile;
+        const payload = [
+            { authorKind: 'npc', npcName: 'Nina', content: 'hidden npc post' },
+            {
+                authorKind: 'character',
+                charId: 'model-a',
+                content: 'visible character post',
+                likedByNpcNames: ['Nina', 'Random Stranger'],
+                comments: [
+                    { npcName: 'Nina', content: 'hidden comment' },
+                    { npcName: 'Random Stranger', content: 'random comment' },
+                ],
+            },
+        ];
+        let requestBody: any = null;
+        vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+            requestBody = JSON.parse(String((init as RequestInit).body || '{}'));
+            return new Response(JSON.stringify({
+                choices: [{ message: { content: JSON.stringify(payload) } }],
+            }), { status: 200 });
+        }));
+
+        const posts = await generateCharacterMoments({
+            apiConfig,
+            characters: chars,
+            userProfile: closedUser,
+            feed: [],
+        });
+
+        expect(requestBody?.messages?.[0]?.content).toContain('禁止生成任何 NPC');
+        expect(posts).toHaveLength(1);
+        expect(posts[0].authorType).toBe('character');
+        expect(posts[0].likedBy).toEqual([]);
+        expect(posts[0].comments).toEqual([]);
+    });
+
+    it('filters connected ambient NPC characters when converted contacts are hidden', async () => {
+        const ambientChar = {
+            id: 'npc-char',
+            modelId: 'npc-model',
+            name: 'Nina',
+            avatar: 'nina.png',
+            description: '',
+            systemPrompt: 'ambient',
+            memories: [],
+            ambientSocialSource: { entryId: 'amb-nina' },
+        } as CharacterProfile;
+        const profile = {
+            ...user,
+            ambientSocialHideConverted: true,
+            ambientSocial: {
+                version: 1,
+                seededAt: 1,
+                entries: [{
+                    id: 'amb-nina',
+                    kind: 'contact',
+                    name: 'Nina',
+                    relation: 'friend',
+                    relationLabel: 'friend',
+                    avatar: '',
+                    note: 'ambient friend',
+                    lastMessage: 'hi',
+                    lastAt: 1,
+                    createdAt: 1,
+                    linkedCharId: 'npc-char',
+                }],
+            },
+        } as UserProfile;
+        const payload = [
+            { authorKind: 'character', charId: 'npc-model', content: 'hidden converted character post' },
+            { authorKind: 'character', charId: 'model-a', content: 'visible character post' },
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(payload) } }],
+        }), { status: 200 })));
+
+        expect(getMomentVisibleCharacters([...chars, ambientChar], profile).map(c => c.id)).toEqual(['local-a', 'local-b']);
+        const posts = await generateCharacterMoments({
+            apiConfig,
+            characters: [...chars, ambientChar],
+            userProfile: profile,
+            feed: [],
+        });
+
+        expect(posts).toHaveLength(1);
+        expect(posts[0].authorCharId).toBe('local-a');
     });
 });

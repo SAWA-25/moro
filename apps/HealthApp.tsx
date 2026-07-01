@@ -57,9 +57,17 @@ import {
   toHealthDateKey,
 } from '../utils/health';
 import {
+  PERIOD_CYCLE_LENGTH_DEFAULT,
+  PERIOD_CYCLE_LENGTH_MAX,
+  PERIOD_CYCLE_LENGTH_MIN,
+  PERIOD_LENGTH_DEFAULT,
+  PERIOD_LENGTH_MAX,
+  PERIOD_LENGTH_MIN,
   addDaysToDateKey,
   makeDefaultPeriodReminderSettings,
+  normalizePeriodCycleLength,
   normalizePeriodDate,
+  normalizePeriodLength,
   normalizePeriodOffsets,
   normalizePeriodTime,
   periodReminderBody,
@@ -70,6 +78,7 @@ import { getNotifyPermission, requestNotifyPermission, showLocalNotification, ty
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
 type ViewId = 'today' | 'calendar' | 'trends' | 'reminders' | 'privacy';
+type PeriodNumberField = 'cycleLength' | 'periodLength';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const todayKey = () => toHealthDateKey(new Date());
@@ -108,6 +117,31 @@ const legacyChannelLabel: Record<PeriodReminderNotifyChannel, string> = {
   system: '系统通知',
   character: '角色提醒',
   both: '两者都要',
+};
+
+const periodNumberLimits: Record<PeriodNumberField, {
+  min: number;
+  max: number;
+  normalize: (value: unknown) => number;
+}> = {
+  cycleLength: { min: PERIOD_CYCLE_LENGTH_MIN, max: PERIOD_CYCLE_LENGTH_MAX, normalize: normalizePeriodCycleLength },
+  periodLength: { min: PERIOD_LENGTH_MIN, max: PERIOD_LENGTH_MAX, normalize: normalizePeriodLength },
+};
+
+const periodNumberDraftFromSettings = (settings: Pick<PeriodReminderSettings, 'cycleLength' | 'periodLength'>) => ({
+  cycleLength: String(settings.cycleLength),
+  periodLength: String(settings.periodLength),
+});
+
+const sanitizePeriodNumberDraft = (value: string) => value.replace(/[^\d]/g, '').slice(0, 3);
+
+const validPeriodNumberDraft = (field: PeriodNumberField, raw: string): number | null => {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  const { min, max } = periodNumberLimits[field];
+  if (!Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  return rounded >= min && rounded <= max ? rounded : null;
 };
 
 const moduleIcon: Record<HealthModuleId, React.ReactNode> = {
@@ -166,6 +200,10 @@ const HealthApp: React.FC = () => {
   const [records, setRecords] = useState<HealthRecord[]>([]);
   const [reminders, setReminders] = useState<HealthReminder[]>([]);
   const [periodSettings, setPeriodSettings] = useState<PeriodReminderSettings>(() => makeDefaultPeriodReminderSettings());
+  const [periodNumberDraft, setPeriodNumberDraft] = useState(() => ({
+    cycleLength: String(PERIOD_CYCLE_LENGTH_DEFAULT),
+    periodLength: String(PERIOD_LENGTH_DEFAULT),
+  }));
   const [periodEvents, setPeriodEvents] = useState<PeriodCycleEvent[]>([]);
   const [trackers, setTrackers] = useState<Tracker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -283,6 +321,10 @@ const HealthApp: React.FC = () => {
   }, [load]);
 
   useEffect(() => {
+    setPeriodNumberDraft(periodNumberDraftFromSettings(periodSettings));
+  }, [periodSettings.cycleLength, periodSettings.periodLength]);
+
+  useEffect(() => {
     const refresh = () => setNotifyPerm(getNotifyPermission());
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
@@ -302,12 +344,42 @@ const HealthApp: React.FC = () => {
     setPeriodSettings(prev => preparePeriodReminderSettings({ ...prev, ...patch }, Date.now()));
   };
 
+  const patchPeriodNumberSetting = (field: PeriodNumberField, value: number) => {
+    patchPeriodSettings(field === 'cycleLength' ? { cycleLength: value } : { periodLength: value });
+  };
+
+  const normalizePeriodNumberDraft = (field: PeriodNumberField, settings = periodSettings) => {
+    const raw = periodNumberDraft[field].trim();
+    if (!raw) return settings[field];
+    return periodNumberLimits[field].normalize(raw);
+  };
+
+  const patchPeriodNumberDraft = (field: PeriodNumberField, rawValue: string) => {
+    const value = sanitizePeriodNumberDraft(rawValue);
+    setPeriodNumberDraft(prev => ({ ...prev, [field]: value }));
+    const validValue = validPeriodNumberDraft(field, value);
+    if (validValue !== null) {
+      patchPeriodNumberSetting(field, validValue);
+    }
+  };
+
+  const commitPeriodNumberDraft = (field: PeriodNumberField) => {
+    const value = normalizePeriodNumberDraft(field);
+    setPeriodNumberDraft(prev => ({ ...prev, [field]: String(value) }));
+    patchPeriodNumberSetting(field, value);
+  };
+
   const savePeriodSettings = async (next = periodSettings) => {
     setSaving(true);
     try {
-      const prepared = preparePeriodReminderSettings(next, Date.now());
+      const prepared = preparePeriodReminderSettings({
+        ...next,
+        cycleLength: normalizePeriodNumberDraft('cycleLength', next),
+        periodLength: normalizePeriodNumberDraft('periodLength', next),
+      }, Date.now());
       await DB.savePeriodReminderSettings(prepared);
       setPeriodSettings(prepared);
+      setPeriodNumberDraft(periodNumberDraftFromSettings(prepared));
       const privacy: HealthPrivacyMode = prepared.visibility === 'public'
         ? prepared.notifyChannel === 'character' ? 'reminder' : 'summary_reminder'
         : 'private';
@@ -902,8 +974,26 @@ const HealthApp: React.FC = () => {
       </div>
       <InputField label="最近一次开始日" type="date" value={periodSettings.lastStartDate || ''} onChange={value => patchPeriodSettings({ lastStartDate: value })} />
       <div className="grid grid-cols-2 gap-3">
-        <InputField label="周期天数" type="number" value={String(periodSettings.cycleLength)} onChange={value => patchPeriodSettings({ cycleLength: Number(value) })} />
-        <InputField label="经期天数" type="number" value={String(periodSettings.periodLength)} onChange={value => patchPeriodSettings({ periodLength: Number(value) })} />
+        <InputField
+          label="周期天数"
+          type="number"
+          value={periodNumberDraft.cycleLength}
+          min={PERIOD_CYCLE_LENGTH_MIN}
+          max={PERIOD_CYCLE_LENGTH_MAX}
+          inputMode="numeric"
+          onChange={value => patchPeriodNumberDraft('cycleLength', value)}
+          onBlur={() => commitPeriodNumberDraft('cycleLength')}
+        />
+        <InputField
+          label="经期天数"
+          type="number"
+          value={periodNumberDraft.periodLength}
+          min={PERIOD_LENGTH_MIN}
+          max={PERIOD_LENGTH_MAX}
+          inputMode="numeric"
+          onChange={value => patchPeriodNumberDraft('periodLength', value)}
+          onBlur={() => commitPeriodNumberDraft('periodLength')}
+        />
       </div>
       <InputField label="提醒时间" type="time" value={normalizePeriodTime(periodSettings.timeHHmm)} onChange={value => patchPeriodSettings({ timeHHmm: value })} />
       <div>
@@ -1046,14 +1136,28 @@ const RecordRow: React.FC<{ record: HealthRecord; onDelete?: () => void }> = ({ 
   </div>
 );
 
-const InputField: React.FC<{ label: string; value: string; type?: string; placeholder?: string; onChange: (value: string) => void }> = ({ label, value, type = 'text', placeholder, onChange }) => (
+const InputField: React.FC<{
+  label: string;
+  value: string;
+  type?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+}> = ({ label, value, type = 'text', placeholder, min, max, inputMode, onChange, onBlur }) => (
   <label className="block">
     <span className="text-[12px] font-bold text-[#6d8379]">{label}</span>
     <input
       type={type}
       value={value}
       placeholder={placeholder}
+      min={min}
+      max={max}
+      inputMode={inputMode}
       onChange={e => onChange(e.target.value)}
+      onBlur={onBlur}
       className="mt-1 w-full h-11 rounded-[8px] border border-[#d8e5de] px-3 text-[14px] font-bold bg-[#fbfdfc] outline-none"
     />
   </label>

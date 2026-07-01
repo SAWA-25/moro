@@ -6,18 +6,34 @@ export const PERIOD_REMINDER_GRACE_MS = 2 * 60 * 60 * 1000;
 export const PERIOD_REMINDER_LOCK_MS = 90_000;
 export const PERIOD_REMINDER_NATIVE_WINDOW_DAYS = 14;
 export const DEFAULT_PERIOD_REMIND_OFFSETS = [-2, 0];
+export const PERIOD_CYCLE_LENGTH_MIN = 15;
+export const PERIOD_CYCLE_LENGTH_MAX = 60;
+export const PERIOD_CYCLE_LENGTH_DEFAULT = 28;
+export const PERIOD_LENGTH_MIN = 1;
+export const PERIOD_LENGTH_MAX = 14;
+export const PERIOD_LENGTH_DEFAULT = 5;
 
 const HHMM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string' && value.trim() === '') return fallback;
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.round(n)));
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+export function normalizePeriodCycleLength(value: unknown): number {
+  return clampInt(value, PERIOD_CYCLE_LENGTH_MIN, PERIOD_CYCLE_LENGTH_MAX, PERIOD_CYCLE_LENGTH_DEFAULT);
+}
+
+export function normalizePeriodLength(value: unknown): number {
+  return clampInt(value, PERIOD_LENGTH_MIN, PERIOD_LENGTH_MAX, PERIOD_LENGTH_DEFAULT);
+}
 
 export function toLocalDateKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -76,7 +92,7 @@ export function dateKeyAtTime(dateKey: string, timeHHmm: string): number {
 export function predictNextPeriodStart(lastStartDate?: string, cycleLength = 28, fromMs = Date.now()): string {
   const last = normalizePeriodDate(lastStartDate);
   if (!last) return '';
-  const cycle = clampInt(cycleLength, 15, 60, 28);
+  const cycle = normalizePeriodCycleLength(cycleLength);
   let cursor = last;
   const fromDay = new Date(fromMs);
   fromDay.setHours(0, 0, 0, 0);
@@ -96,7 +112,7 @@ export function computeNextPeriodReminderAt(
   if (!settings.enabled) return 0;
   const last = normalizePeriodDate(settings.lastStartDate);
   if (!last) return 0;
-  const cycle = clampInt(settings.cycleLength, 15, 60, 28);
+  const cycle = normalizePeriodCycleLength(settings.cycleLength);
   const offsets = normalizePeriodOffsets(settings.remindOffsets);
   const timeHHmm = normalizePeriodTime(settings.timeHHmm);
   const cycleStarts: string[] = [];
@@ -130,8 +146,8 @@ export function makeDefaultPeriodReminderSettings(now = Date.now()): PeriodRemin
     id: PERIOD_REMINDER_ID,
     enabled: false,
     lastStartDate: '',
-    cycleLength: 28,
-    periodLength: 5,
+    cycleLength: PERIOD_CYCLE_LENGTH_DEFAULT,
+    periodLength: PERIOD_LENGTH_DEFAULT,
     remindOffsets: [...DEFAULT_PERIOD_REMIND_OFFSETS],
     timeHHmm: '09:00',
     visibility: 'private',
@@ -151,8 +167,8 @@ export function preparePeriodReminderSettings(settings: Partial<PeriodReminderSe
     id: merged.id || PERIOD_REMINDER_ID,
     enabled: Boolean(merged.enabled),
     lastStartDate: normalizePeriodDate(merged.lastStartDate) || '',
-    cycleLength: clampInt(merged.cycleLength, 15, 60, 28),
-    periodLength: clampInt(merged.periodLength, 1, 14, 5),
+    cycleLength: normalizePeriodCycleLength(merged.cycleLength),
+    periodLength: normalizePeriodLength(merged.periodLength),
     remindOffsets: normalizePeriodOffsets(merged.remindOffsets),
     timeHHmm: normalizePeriodTime(merged.timeHHmm),
     visibility: (merged.visibility === 'public' ? 'public' : 'private') as PeriodReminderVisibility,
@@ -183,7 +199,7 @@ export function markPeriodReminderFired(settings: PeriodReminderSettings, now = 
 export function periodReminderCycleStartFor(settings: PeriodReminderSettings, atMs: number): string {
   const last = normalizePeriodDate(settings.lastStartDate);
   if (!last) return '';
-  const cycle = clampInt(settings.cycleLength, 15, 60, 28);
+  const cycle = normalizePeriodCycleLength(settings.cycleLength);
   const offsets = normalizePeriodOffsets(settings.remindOffsets);
   const fireDay = toLocalDateKey(new Date(atMs));
   for (let i = -2; i < 80; i += 1) {

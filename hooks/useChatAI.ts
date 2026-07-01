@@ -388,7 +388,8 @@ export const useChatAI = ({
     const music = useMusic();
 
     const [isTyping, setIsTyping] = useState(false);
-    // 流式输出预览：本地 fetch 路径 SSE 增量正文（聊天页渲染成打字机气泡），空串 = 没在流式
+    // 本地 fetch 路径仍优先走 SSE，但不把完整正文提前预览；真实气泡会在落库后逐条揭示。
+    // 空串 = 聊天页显示普通"正在输入"指示器。
     const [streamingText, setStreamingText] = useState('');
     const [recallStatus, setRecallStatus] = useState<string>('');
     const [searchStatus, setSearchStatus] = useState<string>('');
@@ -879,8 +880,8 @@ export const useChatAI = ({
                 return;
             }
 
-            // ── 流式输出：本地 fetch 路径默认走 SSE 增量渲染（聊天页打字机预览气泡），
-            //    结束后照常走完整后处理管线（拆条落库）。工具调用（麦当劳小程序）与
+            // ── 流式输出：本地 fetch 路径默认走 SSE 累积完整回复；聊天页只显示"正在输入"，
+            //    结束后照常走完整后处理管线（拆条落库 + 前端逐条揭示）。工具调用（麦当劳小程序）与
             //    流式不兼容，仍走整包；流式失败时回退 safeFetchJson 保持旧行为。
             let data: any = null;
             let streamedOk = false;
@@ -891,14 +892,7 @@ export const useChatAI = ({
             });
             if (!payload.flags.mcdActive) {
                 try {
-                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody, meta: chatReplyMeta }, (acc) => {
-                        // 预览剥掉思考块（含未闭合的起始段），只展示会"说出口"的部分
-                        const visible = acc
-                            .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
-                            .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
-                            .trimStart();
-                        setStreamingText(visible);
-                    });
+                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody, meta: chatReplyMeta }, () => {});
                     streamedOk = true;
                 } catch (streamErr) {
                     console.warn('[Stream] 流式请求失败，回退非流式:', streamErr);
@@ -1047,7 +1041,7 @@ export const useChatAI = ({
                 commentAuthorNameCache: commentAuthorNameCacheRef.current,
                 commentParentIdCache: commentParentIdCacheRef.current,
             };
-            // 流式预览交棒给真实消息：skipTypingDelay 让拆条落库瞬间完成（用户已实时看完）
+            // SSE 已经等完整回复返回，拆条后的视觉节奏交给 Chat.tsx 的揭示队列控制。
             setStreamingText('');
             await applyAssistantPostProcessing(rawAiContent, {
                 char,

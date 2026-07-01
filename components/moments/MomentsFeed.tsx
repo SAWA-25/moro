@@ -7,7 +7,7 @@ import { processImage } from '../../utils/file';
 import Modal from '../os/Modal';
 import MomentCard from './MomentCard';
 import MomentPublish, { MomentPublishData } from './MomentPublish';
-import { generateCharacterMoments, generateCommentReplies, generateReactions, ReactionOp } from './momentsGen';
+import { generateCharacterMoments, generateCommentReplies, generateReactions, getMomentVisibleCharacters, ReactionOp } from './momentsGen';
 import { MOMENTS_COVER_KEY, newId } from './momentsUtils';
 import { resolveAuxApi } from '../../utils/auxApi';
 
@@ -45,6 +45,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
     /** 转发选项面板：转发到朋友圈 / 转发给某个角色 */
     const [repostChooser, setRepostChooser] = useState<SocialPost | null>(null);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const visibleMomentCharacters = getMomentVisibleCharacters(characters, userProfile);
 
     const coverInputRef = useRef<HTMLInputElement>(null);
     const postsRef = useRef<SocialPost[]>(posts);
@@ -214,7 +215,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         addToast('贴出去了', 'success');
 
         // 公开动态 → 异步角色反应轮
-        if (data.visibility === 'public' && genApi.apiKey && characters.length > 0) {
+        if (data.visibility === 'public' && genApi.apiKey && visibleMomentCharacters.length > 0) {
             triggerReactions(post);
         }
     };
@@ -223,7 +224,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         markReacting(post.id, true);
         try {
             const ops = await generateReactions({
-                apiConfig: genApi, characters, userProfile, post, feed: postsRef.current,
+                apiConfig: genApi, characters: visibleMomentCharacters, userProfile, post, feed: postsRef.current,
             });
             applyReactionOps(ops);
         } catch (e: any) {
@@ -267,12 +268,12 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         setCommentDraft(null);
 
         // 异步：角色回应用户的评论
-        if (updated.visibility !== 'private' && genApi.apiKey && characters.length > 0) {
+        if (updated.visibility !== 'private' && genApi.apiKey && visibleMomentCharacters.length > 0) {
             (async () => {
                 markReacting(updated.id, true);
                 try {
                     const replies = await generateCommentReplies({
-                        apiConfig: genApi, characters, userProfile, post: updated, userComment: comment,
+                        apiConfig: genApi, characters: visibleMomentCharacters, userProfile, post: updated, userComment: comment,
                     });
                     if (replies.length > 0) {
                         applyReactionOps(replies.map(r => ({ type: 'comment' as const, postId: updated.id, comment: r })));
@@ -336,7 +337,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         if (!repostChooser) return;
         const ok = await sendPostToChat(charId, repostChooser);
         setRepostChooser(null);
-        addToast(ok ? `已转发给 ${characters.find(c => c.id === charId)?.name || '角色'}` : '转发失败', ok ? 'success' : 'error');
+        addToast(ok ? `已转发给 ${visibleMomentCharacters.find(c => c.id === charId)?.name || '角色'}` : '转发失败', ok ? 'success' : 'error');
     };
 
     const handleShareToChat = async (charId: string) => {
@@ -493,7 +494,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
             {/* 发布页 */}
             {view === 'publish' && (
                 <MomentPublish
-                    characters={characters}
+                    characters={visibleMomentCharacters}
                     initialRepost={repostPrefill || undefined}
                     onCancel={() => { setView('feed'); setRepostPrefill(null); }}
                     onPublish={handlePublish}
@@ -510,11 +511,11 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                     转贴到「此刻」
                 </button>
                 <p className="text-[11px] text-slate-400 mb-2">或直接递给角色（对方会在聊天里收到这条动态）：</p>
-                {characters.length === 0 ? (
+                {visibleMomentCharacters.length === 0 ? (
                     <div className="text-center text-xs text-slate-300 py-6">还没有可转发的角色</div>
                 ) : (
                     <div className="grid grid-cols-4 gap-4 p-2">
-                        {characters.map(c => (
+                        {visibleMomentCharacters.map(c => (
                             <button key={c.id} onClick={() => handleRepostToChar(c.id)} className="flex flex-col items-center gap-2 group">
                                 <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 group-active:scale-90 transition-transform" />
                                 <span className="text-[10px] text-slate-600 truncate w-full text-center">{c.name}</span>
@@ -526,11 +527,11 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
 
             {/* 分享到聊天 */}
             <Modal isOpen={!!sharePost} title="分享到聊天" onClose={() => setSharePost(null)}>
-                {characters.length === 0 ? (
+                {visibleMomentCharacters.length === 0 ? (
                     <div className="text-center text-xs text-slate-300 py-6">还没有可分享的角色</div>
                 ) : (
                     <div className="grid grid-cols-4 gap-4 p-2">
-                        {characters.map(c => (
+                        {visibleMomentCharacters.map(c => (
                             <button key={c.id} onClick={() => handleShareToChat(c.id)} className="flex flex-col items-center gap-2 group">
                                 <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 group-active:scale-90 transition-transform" />
                                 <span className="text-[10px] text-slate-600 truncate w-full text-center">{c.name}</span>

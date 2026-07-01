@@ -69,6 +69,43 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-01-moments-respects-social-circle-switches',
+    date: '2026-07-01',
+    title: '关闭社交圈后此刻不会再冒出 NPC',
+    kind: 'fix',
+    summary: '絮语里的「此刻」现在会跟随用户社交圈和隐藏已接入 NPC 设置，不会在关闭后继续生成那些 NPC 的动态或互动。',
+    items: [
+      '关闭「用户社交圈」后，刷新此刻只会让可见的正式角色参与，不再生成社交圈 NPC 动态、点赞或评论。',
+      '开启「隐藏已接入 NPC 与群」后，已经从社交圈接入并被收起的 NPC 不会再作为此刻发帖、评论或转发对象出现。',
+      '这只影响之后新生成的此刻内容和可选对象，不会删除已经保存的动态记录。',
+    ],
+  },
+  {
+    id: '2026-07-01-health-period-number-editing',
+    date: '2026-07-01',
+    title: '健康经期天数可以正常重填',
+    kind: 'fix',
+    summary: '健康 App 里的周期天数和经期天数输入框修好了，手机上可以先删掉旧数字再重新输入。',
+    items: [
+      '编辑周期天数或经期天数时，不会再因为刚删到空白就立刻跳回限制值。',
+      '保存时仍会自动校验合理范围：周期天数保持在 15-60 天，经期天数保持在 1-14 天。',
+      '这只影响之后编辑健康提醒设置，不会删除已有健康记录或经期记录。',
+    ],
+  },
+  {
+    id: '2026-07-01-chat-messages-reveal-one-by-one',
+    date: '2026-07-01',
+    title: '聊天回复会一条条自然冒出来',
+    kind: 'improvement',
+    summary: '来往私聊里的 AI 回复现在会按气泡逐条出现，并把等待时间拉长成更明显的“正在一句一句打字”。',
+    items: [
+      '选择“TA 打字的习惯”里的“一句一句蹦”时，多条回复不会再同时挤出来，而是按顺序逐条显示。',
+      '每条回复出现前会先等一段随机打字时间，文字越长等待越久；一条出来后，还会再随机停顿一下才显示下一条。',
+      '后面还有未显示的回复时，聊天底部会继续显示正在输入的三个点，直到这一轮消息都出现。',
+      '这只是显示节奏变化，不会改写已有聊天记录、记忆或导出的消息内容。',
+    ],
+  },
+  {
     id: '2026-07-01-zzzzzzzzzzzzzzzzzzzzzzzzzz-read-notices-dont-repeat',
     date: '2026-07-01',
     title: '已读更新公告不再重复弹出',
@@ -416,15 +453,15 @@ export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
     ],
   },
   {
-    id: '2026-07-01-zzzzz-chat-freeform-typing-habit',
+    id: '2026-07-01-zzzzz-chat-persona-message-length',
     date: '2026-07-01',
-    title: '絮语单聊新增“按人设随意”打字习惯',
-    kind: 'feature',
-    summary: '角色聊天设置里的「TA 打字的习惯」新增一档更自然的模式：不固定短句或长段，让 TA 根据人设和当下情绪自己决定回复长短。',
+    title: '絮语单聊调整“按人设随意”入口',
+    kind: 'improvement',
+    summary: '「按人设随意」现在是「说话的样子」里的独立开关，只决定 TA 每轮回复说长说短；「TA 打字的习惯」继续专门控制一句一句蹦或一大段说完这类消息生成形式。',
     items: [
-      '入口在「絮语 → 进入某个角色单聊 → 右上角 ··· → 聊天设置 → 说话的样子 → TA 打字的习惯」。',
-      '新增「按人设随意」：TA 可以只回几个字，也可以认真说一大段；可以一条发完，也可以自然拆成几条。',
-      '这一档不会强制 TA 变短或变长，主要看角色性格、关系、心情和当前话题，适合想要更随性、更贴人设的聊天节奏。',
+      '入口仍在「絮语 → 进入某个角色单聊 → 右上角 ··· → 聊天设置 → 说话的样子」。',
+      '打开「按人设随意」后，TA 可以只回几个字，也可以认真多说一段，主要看角色性格、关系、心情和当前话题。',
+      '「TA 打字的习惯」只保留「一句一句蹦」和「一大段说完」：前者是分条生成消息，后者是一条完整消息；旧版选过“按人设随意”的会自动保留为新开关开启。',
     ],
   },
   {
@@ -1032,7 +1069,7 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
     ],
     beginnerSteps: [
       '刚开始只需要确认“随身记忆”和“TA 的城市”，其他开关可以先保持默认。',
-      '如果回复不像 TA，优先检查角色档案、人设、世界书和“TA 打字的习惯”，不要一次打开太多主动能力。',
+      '如果回复不像 TA，优先检查角色档案、人设、世界书、“按人设随意”和“TA 打字的习惯”，不要一次打开太多主动能力。',
       '如果聊天变慢或报上下文过长，先降低随身记忆条数，再把重要内容送进回忆标本馆。',
     ],
     commonQuestions: [
@@ -1153,14 +1190,25 @@ export const MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'chat-bubble-style',
             title: 'TA 打字的习惯',
-            description: '控制 TA 更常用的消息节奏。',
+            description: '控制 TA 生成消息时更常用的形式。',
             options: [
-              { label: '一句一句蹦', description: '更像即时聊天，长句会拆成短气泡。' },
-              { label: '一大段说完', description: '更像写完整段落。' },
-              { label: '按人设随意', description: '让长度和拆条跟随角色状态自然变化。' },
+              { label: '一句一句蹦', description: '分条生成消息，更像即时聊天。' },
+              { label: '一大段说完', description: '把这一轮回复组织成一条完整消息。' },
             ],
             path: ['单聊', '聊天设置', '04 说话的样子'],
             deepLink: chatSettingsLink('manual-chat-bubble-style'),
+          },
+          {
+            id: 'chat-persona-message-length',
+            title: '按人设随意',
+            description: '打开后，TA 每轮回复说长说短会跟着人设、情绪、关系和当前话题自然变化。',
+            defaultBehavior: '只影响消息长短，不影响“TA 打字的习惯”选择的一句一句蹦或一大段说完。',
+            options: [
+              { label: '关闭', description: '回复长短更受当前打字习惯和普通聊天规则约束。' },
+              { label: '开启', description: 'TA 可以只回几个字，也可以认真多说一段，重点是贴合角色当下状态。' },
+            ],
+            path: ['单聊', '聊天设置', '04 说话的样子'],
+            deepLink: chatSettingsLink('manual-chat-persona-message-length'),
           },
           {
             id: 'chat-translation',

@@ -89,12 +89,34 @@ type InstantToolUiStatus = {
 const PRIVATE_CHAT_ARCHIVE_EXPORT_TYPE = 'moro_private_chat_archive';
 const PARALLEL_REPLY_ENABLED_KEY = 'moro_parallel_reply_enabled_v1';
 const PARALLEL_REPLY_TARGETS_KEY = 'moro_parallel_reply_targets_v1';
+const ASSISTANT_REVEAL_FIRST_DELAY_MS = 1000;
+const ASSISTANT_REVEAL_TYPING_MIN_MS = 1000;
+const ASSISTANT_REVEAL_TYPING_MAX_MS = 5000;
+const ASSISTANT_REVEAL_BETWEEN_MIN_MS = 900;
+const ASSISTANT_REVEAL_BETWEEN_MAX_MS = 2400;
+const ASSISTANT_REVEAL_CHAR_MS = 45;
+const ASSISTANT_REVEAL_CHAR_MAX_MS = 3200;
 const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'forum_card', 'chat_forward',
     'screen_peek_card', 'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
     'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
     'relay_card', 'checkin_card', 'gift_card',
 ]);
+
+const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+
+const assistantRevealTypingMs = (msg: Message) => {
+    if (msg.type === 'emoji') return randomBetween(1200, 3000);
+    if (msg.type !== 'text') return randomBetween(1300, 3200);
+    const textLength = typeof msg.content === 'string' ? msg.content.trim().length : 0;
+    return randomBetween(ASSISTANT_REVEAL_TYPING_MIN_MS, ASSISTANT_REVEAL_TYPING_MAX_MS)
+        + Math.min(ASSISTANT_REVEAL_CHAR_MAX_MS, textLength * ASSISTANT_REVEAL_CHAR_MS);
+};
+
+const assistantRevealBetweenMs = () => randomBetween(
+    ASSISTANT_REVEAL_BETWEEN_MIN_MS,
+    ASSISTANT_REVEAL_BETWEEN_MAX_MS,
+);
 
 const clipForPreview = (text: string, limit = 160) => {
     const clean = (text || '').replace(/\s+/g, ' ').trim();
@@ -734,12 +756,14 @@ const Chat: React.FC = () => {
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const lastMsgIdRef = useRef<number | null>(null);
+    const lastRenderedMsgIdRef = useRef<number | null>(null);
     const scrollThrottleRef = useRef(0);
     const visibleCountRef = useRef(30);
     const activeCharIdRef = useRef(activeCharacterId);
     const charRef = useRef<typeof char>(null as any);
     const revealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
     const revealKnownIdsRef = useRef<Set<number>>(new Set());
+    const revealNextAtRef = useRef(0);
     const revealHydratedRef = useRef(false);
 
     // Reply Logic
@@ -1311,6 +1335,7 @@ ${parallelReplyPromptBody({
     const clearMessageRevealTimers = useCallback(() => {
         revealTimersRef.current.forEach(timer => clearTimeout(timer));
         revealTimersRef.current = [];
+        revealNextAtRef.current = 0;
     }, []);
 
     const markMessagePop = useCallback((msgId: number) => {
@@ -1335,6 +1360,7 @@ ${parallelReplyPromptBody({
     useEffect(() => {
         clearMessageRevealTimers();
         revealKnownIdsRef.current = new Set();
+        revealNextAtRef.current = 0;
         revealHydratedRef.current = false;
         setRevealedAssistantIds(new Set());
         setPoppingMessageIds(new Set());
@@ -1347,6 +1373,7 @@ ${parallelReplyPromptBody({
         if (!historyLoaded || windowedFocusMsgId !== null || selectionMode) {
             clearMessageRevealTimers();
             revealKnownIdsRef.current = currentIds;
+            revealNextAtRef.current = 0;
             revealHydratedRef.current = historyLoaded;
             setPoppingMessageIds(new Set());
             setRevealedAssistantIds(new Set(currentAssistantIds));
@@ -1355,6 +1382,7 @@ ${parallelReplyPromptBody({
 
         if (!revealHydratedRef.current) {
             revealKnownIdsRef.current = currentIds;
+            revealNextAtRef.current = 0;
             revealHydratedRef.current = true;
             setPoppingMessageIds(new Set());
             setRevealedAssistantIds(new Set(currentAssistantIds));
@@ -1381,8 +1409,14 @@ ${parallelReplyPromptBody({
 
         if (!freshAssistantMessages.length) return;
 
-        let delay = 140;
+        const now = Date.now();
+        let nextRevealAt = Math.max(
+            revealNextAtRef.current,
+            now + ASSISTANT_REVEAL_FIRST_DELAY_MS,
+        );
         freshAssistantMessages.forEach(msg => {
+            nextRevealAt += assistantRevealTypingMs(msg);
+            const delay = Math.max(0, nextRevealAt - Date.now());
             const timer = setTimeout(() => {
                 setRevealedAssistantIds(prev => {
                     if (prev.has(msg.id)) return prev;
@@ -1398,9 +1432,9 @@ ${parallelReplyPromptBody({
                 }
             }, delay);
             revealTimersRef.current.push(timer);
-            const textLength = typeof msg.content === 'string' ? msg.content.length : 0;
-            delay += Math.min(1250, 520 + Math.min(620, textLength * 7));
+            nextRevealAt += assistantRevealBetweenMs();
         });
+        revealNextAtRef.current = nextRevealAt;
     }, [messages, historyLoaded, windowedFocusMsgId, selectionMode, clearMessageRevealTimers, markMessagePop]);
 
     const greetingMacroCtx = { charName: char?.name || '角色', userName: (userProfile?.name || '').trim() || '用户' };
@@ -5212,6 +5246,27 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         return displayMessages.filter(m => m.role !== 'assistant' || revealedAssistantIds.has(m.id));
     }, [displayMessages, revealedAssistantIds, windowedFocusMsgId, selectionMode]);
 
+    const hasQueuedAssistantMessages = useMemo(() => {
+        if (windowedFocusMsgId !== null || selectionMode) return false;
+        return displayMessages.some(m => m.role === 'assistant' && !revealedAssistantIds.has(m.id));
+    }, [displayMessages, revealedAssistantIds, windowedFocusMsgId, selectionMode]);
+
+    useLayoutEffect(() => {
+        if (!scrollRef.current || selectionMode || windowedFocusMsgId !== null) return;
+        const currentLastId = renderMessages.length > 0 ? renderMessages[renderMessages.length - 1].id : null;
+        if (currentLastId === lastRenderedMsgIdRef.current) return;
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+        lastRenderedMsgIdRef.current = currentLastId;
+    }, [renderMessages, selectionMode, windowedFocusMsgId]);
+
+    useEffect(() => {
+        if (!hasQueuedAssistantMessages || !scrollRef.current || selectionMode || windowedFocusMsgId !== null) return;
+        const now = Date.now();
+        if (now - scrollThrottleRef.current <= 150) return;
+        scrollThrottleRef.current = now;
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    }, [hasQueuedAssistantMessages, renderMessages, selectionMode, windowedFocusMsgId]);
+
     const collapsedCount = Math.max(0, totalMsgCount - displayMessages.length);
 
     // 行动选择器入口：最后一条 user 消息的 id（点它的头像可生成「接下来说点啥」选项）。
@@ -6985,7 +7040,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     </div>
                 )}
 
-                {/* 流式输出预览：SSE 增量正文的打字机气泡，回复完成后由真实消息接管 */}
+                {/* 兼容保留：若外部路径写入 streamingText，这里仍可显示临时正文；本地聊天默认只显示三点并交给真实气泡逐条揭示。 */}
                 {streamingText && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
                         <img src={char.avatar} className={chatPendingAvatarClass} />
@@ -6998,7 +7053,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     </div>
                 )}
 
-                {(isTyping || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && !streamingText && (
+                {(isTyping || hasQueuedAssistantMessages || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && !streamingText && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
                         <img src={char.avatar} className={chatPendingAvatarClass} />
                         <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
