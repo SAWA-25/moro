@@ -1,7 +1,8 @@
 
 
 
-import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense, useRef } from 'react';
+import { BookOpenText, Megaphone, X } from '@phosphor-icons/react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
 import DynamicIsland from './os/DynamicIsland';
@@ -165,6 +166,12 @@ import BootSequence from './os/BootSequence';
 import DesktopPetOverlay from './desktopPet/DesktopPetOverlay';
 import { setAppPayloadWarmer } from './os/appPreload';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
+import { queueManualDeepLink } from '../utils/manualDeepLink';
+import {
+  getPendingManualUpdateNotice,
+  markManualUpdateNoticeSeen,
+} from '../utils/manualUpdateNotice';
+import type { ManualUpdateNotice } from '../apps/manual/manualData';
 
 /*
 // Internal Error Boundary Component
@@ -386,6 +393,97 @@ const ImportRecoveryPopup: React.FC<{
   );
 };
 
+const MANUAL_NOTICE_KIND_LABEL: Record<ManualUpdateNotice['kind'], string> = {
+  feature: '新功能',
+  fix: '修复',
+  improvement: '优化',
+  notice: '提醒',
+};
+
+const formatManualNoticeDate = (date: string) => {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' }).format(parsed);
+};
+
+const ManualUpdateNoticePopup: React.FC<{
+  notice: ManualUpdateNotice | null;
+  onClose: () => void;
+  onOpenManual: () => void;
+}> = ({ notice, onClose, onOpenManual }) => {
+  if (!notice) return null;
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] bg-[#fffdf8] border border-white/70 shadow-2xl animate-slide-up">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.14] pointer-events-none"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(35,33,29,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(35,33,29,0.05) 1px, transparent 1px)',
+            backgroundSize: '18px 18px',
+          }}
+        />
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 z-10 h-8 w-8 rounded-full bg-white/78 border border-black/10 flex items-center justify-center text-[#5c5143] active:scale-95 transition-transform"
+          aria-label="关闭更新公告"
+        >
+          <X size={15} weight="bold" />
+        </button>
+
+        <div className="relative px-6 pt-7 pb-4">
+          <div className="h-11 w-11 rounded-full bg-[#23211d] text-[#fffdf8] flex items-center justify-center shadow-[0_14px_28px_-18px_rgba(35,33,29,0.8)]">
+            <Megaphone size={21} weight="fill" />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-1 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black">
+              {MANUAL_NOTICE_KIND_LABEL[notice.kind]}
+            </span>
+            <span className="label-mono text-[9px] tracking-[0.18em] text-[#9a8c75]">
+              {formatManualNoticeDate(notice.date)}
+            </span>
+          </div>
+          <h2 className="mt-3 text-[20px] font-black leading-snug tracking-wide text-[#2f2a24]">
+            {notice.title}
+          </h2>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-[#5c5143]">
+            {notice.summary}
+          </p>
+
+          <div className="mt-4 max-h-[34vh] overflow-y-auto no-scrollbar space-y-2">
+            {notice.items.map((item, index) => (
+              <div key={`${notice.id}-${item}`} className="flex items-start gap-2.5 rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
+                  {index + 1}
+                </span>
+                <span className="text-[11.5px] leading-relaxed text-[#4d4439]">{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative px-6 pb-6 grid grid-cols-[1fr_1.15fr] gap-3">
+          <button
+            onClick={onClose}
+            className="py-3 rounded-2xl bg-[#f1eadf] text-[#5c5143] text-[13px] font-black active:scale-95 transition-transform"
+          >
+            知道了
+          </button>
+          <button
+            onClick={onOpenManual}
+            className="py-3 rounded-2xl bg-[#23211d] text-[#fffdf8] text-[13px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+          >
+            <BookOpenText size={15} weight="fill" />
+            查看公告
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // App 懒加载占位：关键是「延迟出现」。chunk 命中缓存/快速加载只需几十毫秒，这种时长用户
 // 本就无感——但 Suspense fallback 会立刻渲染，占位一闪反而把无感瞬切变成能被看见的打断
 // （loading spinner 闪烁反模式）。所以前 ~220ms 一律渲染空（无感），只有真的慢才柔和浮现。
@@ -434,10 +532,14 @@ const PhoneShell: React.FC = () => {
   const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   const nativeRuntime = isNativeAppRuntime();
+  const previousLockedRef = useRef(isLocked);
+  const manualNoticeSeenThisSessionRef = useRef<Set<string>>(new Set());
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
   // 已打开 App 保活栈：回桌面时只隐藏、不卸载，让正在生成的回复/番外/评论继续跑完。
   const [mountedApps, setMountedApps] = useState<AppID[]>(() => [AppID.Launcher]);
+  const [manualUpdateNotice, setManualUpdateNotice] = useState<ManualUpdateNotice | null>(null);
+  const [manualUpdateNoticeArmed, setManualUpdateNoticeArmed] = useState(false);
 
   useEffect(() => {
     setMountedApps(prev => prev.includes(activeApp) ? prev : [...prev, activeApp]);
@@ -520,6 +622,67 @@ const PhoneShell: React.FC = () => {
     if (!isDataLoaded) return;
     if (shouldShowWorkerUpdateReminder()) setShowWorkerUpdateReminder(true);
   }, [showDisclaimer, showImportRecoveryPrompt, showLike520Popup, isDataLoaded]);
+
+  useEffect(() => {
+    const wasLocked = previousLockedRef.current;
+    previousLockedRef.current = isLocked;
+    if (wasLocked && !isLocked) {
+      setManualUpdateNoticeArmed(true);
+    }
+  }, [isLocked]);
+
+  useEffect(() => {
+    if (!manualUpdateNoticeArmed || manualUpdateNotice) return;
+    if (
+      !isDataLoaded ||
+      isLocked ||
+      showDisclaimer ||
+      showImportRecoveryPrompt ||
+      showLike520Popup ||
+      showWorkerUpdateReminder
+    ) {
+      return;
+    }
+
+    const pending = getPendingManualUpdateNotice();
+    if (pending && !manualNoticeSeenThisSessionRef.current.has(pending.id)) {
+      setManualUpdateNotice(pending);
+    }
+    setManualUpdateNoticeArmed(false);
+  }, [
+    isDataLoaded,
+    isLocked,
+    manualUpdateNotice,
+    manualUpdateNoticeArmed,
+    showDisclaimer,
+    showImportRecoveryPrompt,
+    showLike520Popup,
+    showWorkerUpdateReminder,
+  ]);
+
+  const acknowledgeManualUpdateNotice = () => {
+    if (manualUpdateNotice) {
+      manualNoticeSeenThisSessionRef.current.add(manualUpdateNotice.id);
+      markManualUpdateNoticeSeen(manualUpdateNotice.id);
+    }
+    setManualUpdateNotice(null);
+    setManualUpdateNoticeArmed(true);
+  };
+
+  const openManualUpdateNotice = () => {
+    if (manualUpdateNotice) {
+      manualNoticeSeenThisSessionRef.current.add(manualUpdateNotice.id);
+      markManualUpdateNoticeSeen(manualUpdateNotice.id);
+    }
+    setManualUpdateNotice(null);
+    queueManualDeepLink({
+      appId: AppID.Manual,
+      route: 'updates',
+      anchorId: 'manual-updates-root',
+      payload: { page: 'updates' },
+    });
+    openApp(AppID.Manual);
+  };
 
   // Capacitor Native Handling
   useEffect(() => {
@@ -833,6 +996,14 @@ const PhoneShell: React.FC = () => {
        {!showDisclaimer && !showImportRecoveryPrompt && !showLike520Popup && showWorkerUpdateReminder && (
          <WorkerUpdateReminderController
            onClose={() => setShowWorkerUpdateReminder(false)}
+         />
+       )}
+
+       {!showDisclaimer && !showImportRecoveryPrompt && !showLike520Popup && !showWorkerUpdateReminder && manualUpdateNotice && (
+         <ManualUpdateNoticePopup
+           notice={manualUpdateNotice}
+           onClose={acknowledgeManualUpdateNotice}
+           onOpenManual={openManualUpdateNotice}
          />
        )}
     </div>

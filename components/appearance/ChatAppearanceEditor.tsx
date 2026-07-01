@@ -31,7 +31,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatAvatarShape: 'circle',
             chatAvatarSize: 'medium',
             chatAvatarMode: 'grouped',
-            chatBubbleStyle: 'modern',
+            chatBubbleStyle: 'plain',
             chatMessageSpacing: 'default',
             chatInputStyle: 'rounded',
             chatSendButtonStyle: 'circle',
@@ -170,7 +170,7 @@ const defaults = {
     chatAvatarShape: 'circle',
     chatAvatarSize: 'medium',
     chatAvatarMode: 'grouped',
-    chatBubbleStyle: 'modern',
+    chatBubbleStyle: 'plain',
     chatMessageSpacing: 'default',
     chatShowTimestamp: 'hover',
     chatHeaderStyle: 'default',
@@ -210,6 +210,7 @@ const choices = {
         { value: 'pixel', label: '像素窗' },
     ],
     bubble: [
+        { value: 'plain', label: '极简' },
         { value: 'modern', label: '现代' },
         { value: 'flat', label: '扁平' },
         { value: 'outline', label: '描边' },
@@ -332,6 +333,7 @@ const previewBubbleStyle = (bubble: string, isUser: boolean, theme: OSTheme): Re
     if (bubble === 'outline') return { ...base, background: 'transparent', color: isUser ? primary : '#475569', border: `2px solid ${isUser ? primary : '#cbd5e1'}` };
     if (bubble === 'shadow') return { ...base, boxShadow: '0 10px 20px rgba(15,23,42,0.12)' };
     if (bubble === 'flat') return { ...base, boxShadow: 'none' };
+    if (bubble === 'plain') return { ...base, background: isUser ? '#f1f1f3' : '#ffffff', color: '#2e2c36', border: 'none', boxShadow: 'none' };
     if (bubble === 'wechat') return { ...base, background: isUser ? '#95ec69' : '#ffffff', color: '#0f172a', boxShadow: 'none', border: '1px solid rgba(15,23,42,0.05)' };
     if (bubble === 'ios') return { ...base, background: isUser ? primary : 'rgba(255,255,255,0.86)', boxShadow: '0 8px 16px rgba(148,163,184,0.12)', border: '1px solid rgba(255,255,255,0.75)', backdropFilter: 'blur(12px)' };
     return { ...base, boxShadow: '0 6px 14px rgba(148,163,184,0.12)', border: '1px solid rgba(148,163,184,0.12)' };

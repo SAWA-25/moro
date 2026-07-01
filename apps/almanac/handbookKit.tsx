@@ -1,11 +1,11 @@
 import React from 'react';
 
 /**
- * 岁时记 · 视觉零件库 —— 已换肤为 Ins 风
+ * 岁时记 · 视觉零件库 —— Ins 风
  * ------------------------------------------------------------
  * 封面（AlmanacApp）、时光契约（ScheduleApp）、特别时光、实时日历、存钱罐（BankApp）
- * 共用同一套视觉语言。换肤后：干净暖白页 + 白卡 + 极柔投影 + 大圆角，保留极少量
- * 胶带 / 邮戳作装饰性格。导出名 / 签名保持不变，调用点无需改动。
+ * 共用同一套视觉语言。换肤后：干净暖白页 + 白卡 + 极柔投影 + 大圆角，
+ * 只保留少量邮戳、回形针这类轻装饰。导出名 / 签名保持不变，调用点无需改动。
  */
 
 /** 手写感字体栈 */
@@ -20,7 +20,7 @@ export const tinyRotate = (seed: string | number): number => {
     return ((h % 70) - 35) / 10;
 };
 
-/** 页底纹理（ins 化：极淡，干净暖白为主）。 */
+/** 页底纹理（Ins 化：极淡，干净暖白为主）。 */
 export const paperTexture = (
     kind: 'kraft' | 'grid' | 'sticky' = 'kraft',
 ): React.CSSProperties => {
@@ -53,22 +53,6 @@ export const PaperPage: React.FC<{
     </div>
 );
 
-/** 半透明胶带（装饰，软化版）。 */
-export const WashiTape: React.FC<{
-    className?: string;
-    color?: string;
-    rotate?: number;
-    width?: number;
-    height?: number;
-}> = ({ className = '', color = 'rgba(244,114,140,0.5)', rotate = -18, width = 60, height = 22 }) => (
-    <span aria-hidden className={`absolute pointer-events-none ${className}`}
-        style={{
-            width, height, transform: `rotate(${rotate}deg)`, borderRadius: 3,
-            background: `repeating-linear-gradient(135deg, ${color} 0 7px, rgba(255,255,255,0.35) 7px 14px)`,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        }} />
-);
-
 /** 票签：干净胶囊小标题。 */
 export const TapeLabel: React.FC<{
     children: React.ReactNode;
@@ -83,17 +67,15 @@ export const TapeLabel: React.FC<{
     </span>
 );
 
-/** 纸片 → ins 白卡（大圆角 + 极柔投影），可选微旋与角落胶带。 */
+/** 纸片 -> Ins 白卡（大圆角 + 极柔投影），可选微旋。 */
 export const PaperNote: React.FC<{
     children: React.ReactNode;
     className?: string;
     rotate?: number;
     bg?: string;
-    tape?: boolean;
-    tapeColor?: string;
     onClick?: () => void;
     style?: React.CSSProperties;
-}> = ({ children, className = '', rotate = 0, bg = '#ffffff', tape = false, tapeColor, onClick, style }) => (
+}> = ({ children, className = '', rotate = 0, bg = '#ffffff', onClick, style }) => (
     <div onClick={onClick}
         className={`relative ${onClick ? 'press-soft cursor-pointer' : ''} ${className}`}
         style={{
@@ -102,17 +84,11 @@ export const PaperNote: React.FC<{
             transform: rotate ? `rotate(${rotate}deg)` : undefined,
             ...style,
         }}>
-        {tape && (
-            <>
-                <WashiTape className="-top-2 -left-1" color={tapeColor} rotate={-24} width={44} />
-                <WashiTape className="-top-2 -right-1" color={tapeColor} rotate={20} width={44} />
-            </>
-        )}
         {children}
     </div>
 );
 
-/** 圆形邮戳/印章（装饰，软化版）。 */
+/** 圆形邮戳 / 印章（装饰，软化版）。 */
 export const Postmark: React.FC<{
     children: React.ReactNode;
     color?: string;

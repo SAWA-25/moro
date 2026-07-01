@@ -70,7 +70,7 @@ const CharCreatorDevApp: React.FC = () => {
     }, [parts]);
 
     return (
-        <div className="h-full w-full flex flex-col text-white" style={{ background: 'linear-gradient(180deg,#1a1f2e 0%,#10131c 100%)' }}>
+        <div className="h-full w-full flex flex-col text-white" data-manual-anchor="manual-char-creator-dev-root" style={{ background: 'linear-gradient(180deg,#1a1f2e 0%,#10131c 100%)' }}>
             <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0">
                 <button onClick={closeApp} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><ArrowLeft size={22} weight="bold" /></button>
                 <Wrench size={18} weight="fill" className="text-amber-300" />

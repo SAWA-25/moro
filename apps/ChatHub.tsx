@@ -13,7 +13,7 @@ import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, PhoneSlash, SpeakerHigh, UserPlus, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, MicrophoneSlash, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, PushPin } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, PhoneSlash, SpeakerHigh, UserPlus, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, MicrophoneSlash, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, PushPin, FloppyDisk } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
@@ -24,12 +24,13 @@ import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, build
 import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
-import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialCharacter, isAmbientSocialGroup, patchAmbientSocialEntry } from '../utils/ambientSocial';
+import { ambientSocialToCharacter, ensureAmbientSocialState, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter, isAmbientSocialGroup, patchAmbientSocialEntry } from '../utils/ambientSocial';
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import { stickerImageSrc } from '../utils/stickerImage';
+import { substituteMacros } from '../utils/macros';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -67,6 +68,7 @@ type GroupDirectorRunOptions = {
     suppressMemoryPalace?: boolean;
 };
 type GroupApiDraft = GroupApiConfig;
+type GroupApiModelTarget = { kind: 'group' } | { kind: 'member'; charId: string };
 type GroupDirectorPreparedContext = {
     group: GroupProfile;
     groupMembers: CharacterProfile[];
@@ -77,6 +79,12 @@ type GroupDirectorPreparedContext = {
     emojiContextStr: string;
 };
 type GroupDirectorAction = { charId: string; content: string };
+type GroupOpeningBubble = { charId: string; content: string };
+const normalizeGroupOpeningGreetings = (items?: string[]): string[] => (
+    (items || [])
+        .map(item => String(item || '').replace(/\r\n/g, '\n').trim().slice(0, 2000))
+        .filter(Boolean)
+);
 const parseGroupDirectorActions = (rawInput: unknown): GroupDirectorAction[] => {
     let raw = String(rawInput || '').replace(/```json/gi, '').replace(/```/g, '').trim();
     const firstBracket = raw.indexOf('[');
@@ -118,6 +126,30 @@ const sanitizeGroupApi = (api?: Partial<GroupApiConfig> | null): GroupApiConfig 
 };
 const isCompleteGroupApi = (api?: Partial<GroupApiConfig> | null): api is GroupApiConfig =>
     !!api && !!String(api.baseUrl || '').trim() && !!String(api.apiKey || '').trim() && !!String(api.model || '').trim();
+const normalizeApiModelList = (data: any): string[] => {
+    const list =
+        Array.isArray(data) ? data :
+        Array.isArray(data?.data) ? data.data :
+        Array.isArray(data?.models) ? data.models :
+        Array.isArray(data?.model_list) ? data.model_list :
+        [];
+    return Array.from(new Set(
+        list
+            .map((m: any) => typeof m === 'string' ? m : (m?.id ?? m?.name ?? m?.model))
+            .filter((m: any): m is string => typeof m === 'string' && !!m.trim())
+            .map((m: string) => m.trim())
+    ));
+};
+const extractApiErrorMessage = (data: any, fallback: string): string => {
+    const candidates = [
+        data?.error?.message,
+        typeof data?.error === 'string' ? data.error : undefined,
+        data?.message,
+        data?.detail,
+        data?.details,
+    ];
+    return candidates.find((v): v is string => typeof v === 'string' && !!v.trim()) || fallback;
+};
 const pruneGroupMemberApis = (
     apis: Record<string, GroupApiDraft> | undefined,
     memberIds: string[],
@@ -1123,7 +1155,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread, activeApp } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread, activeApp, availableModels, setAvailableModels } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -1167,6 +1199,11 @@ const ChatHub: React.FC = () => {
     const [tempAutoContinueRounds, setTempAutoContinueRounds] = useState(2);
     const [tempGroupApi, setTempGroupApi] = useState<GroupApiDraft>({ baseUrl: '', apiKey: '', model: '' });
     const [tempMemberApis, setTempMemberApis] = useState<Record<string, GroupApiDraft>>({});
+    const [tempOpeningGreetings, setTempOpeningGreetings] = useState<string[]>([]);
+    const [groupOpeningIdx, setGroupOpeningIdx] = useState(0);
+    const [groupApiModelTarget, setGroupApiModelTarget] = useState<GroupApiModelTarget | null>(null);
+    const [groupApiModelFilter, setGroupApiModelFilter] = useState('');
+    const [groupApiModelLoadingKey, setGroupApiModelLoadingKey] = useState<string | null>(null);
     const [groupArchiveSearch, setGroupArchiveSearch] = useState('');
     const [renamingGroupRecordId, setRenamingGroupRecordId] = useState<string | null>(null);
     const [renamingGroupRecordTitle, setRenamingGroupRecordTitle] = useState('');
@@ -1188,6 +1225,15 @@ const ChatHub: React.FC = () => {
     const [isTyping, setIsTyping] = useState(false);
     /** 群记忆宫殿"提取中"状态文本——非空时显示顶部胶囊状态条 */
     const [groupPalaceStatus, setGroupPalaceStatus] = useState<string>('');
+
+    const groupApiModelPickerView = useMemo(() => {
+        const q = groupApiModelFilter.trim().toLowerCase();
+        const source = availableModels;
+        return {
+            total: source.length,
+            filtered: q ? source.filter(model => model.toLowerCase().includes(q)) : source,
+        };
+    }, [availableModels, groupApiModelFilter]);
 
     // ref 出最新 characters，让 finally 里跑的群记忆宫殿能读到"用户刚关掉某个成员宫殿"
     // 的最新状态——闭包里的 characters 还是发消息那一刻捕获的旧值，会让关闭后还触发一次
@@ -1286,24 +1332,33 @@ const ChatHub: React.FC = () => {
     const [imgPreview, setImgPreview] = useState<string | null>(null);
     const [imgBusy, setImgBusy] = useState(false);
     const [sysCmd, setSysCmd] = useState('');
-    const ambientSocialLinkedGroupIds = useMemo(() => new Set(
-        (userProfile.ambientSocial?.entries || [])
-            .filter((entry): entry is Extract<AmbientSocialEntry, { kind: 'group' }> => entry.kind === 'group' && !!entry.linkedGroupId)
-            .map(entry => entry.linkedGroupId!)
-    ), [userProfile.ambientSocial]);
+    const ambientSocialLinkedCharacterIds = useMemo(
+        () => getAmbientSocialLinkedCharacterIds(userProfile.ambientSocial?.entries || []),
+        [userProfile.ambientSocial]
+    );
+    const ambientSocialLinkedGroupIds = useMemo(
+        () => getAmbientSocialLinkedGroupIds(userProfile.ambientSocial?.entries || []),
+        [userProfile.ambientSocial]
+    );
+    const isAmbientSocialCharacterForUser = useCallback((char: CharacterProfile | null | undefined): boolean => (
+        !!char && (isAmbientSocialCharacter(char) || ambientSocialLinkedCharacterIds.has(char.id))
+    ), [ambientSocialLinkedCharacterIds]);
     const isAmbientSocialGroupForUser = useCallback((group: GroupProfile | null | undefined): boolean => (
         !!group && (isAmbientSocialGroup(group) || ambientSocialLinkedGroupIds.has(group.id))
     ), [ambientSocialLinkedGroupIds]);
     const shouldKeepConvoWhenAmbientSocialOff = useCallback((cv: ConvoListItem): boolean => {
         if (cv.kind === 'ambient') return false;
         if (!ambientSocialHideConverted) return true;
-        if (cv.kind === 'char') return !isAmbientSocialCharacter(characters.find(c => c.id === cv.id));
+        if (cv.kind === 'char') return !isAmbientSocialCharacterForUser(characters.find(c => c.id === cv.id));
         if (cv.kind === 'group') return !isAmbientSocialGroupForUser(groups.find(g => g.id === cv.id));
         return true;
-    }, [ambientSocialHideConverted, characters, groups, isAmbientSocialGroupForUser]);
+    }, [ambientSocialHideConverted, characters, groups, isAmbientSocialCharacterForUser, isAmbientSocialGroupForUser]);
+    const visibleCharacters = useMemo(() => characters.filter(char => (
+        !ambientSocialHideConverted || !isAmbientSocialCharacterForUser(char)
+    )), [characters, ambientSocialHideConverted, isAmbientSocialCharacterForUser]);
     const visibleGroups = useMemo(() => groups.filter(group => (
-        isVisibleGroup(group) && (ambientSocialEnabled || !ambientSocialHideConverted || !isAmbientSocialGroupForUser(group))
-    )), [groups, ambientSocialEnabled, ambientSocialHideConverted, isAmbientSocialGroupForUser]);
+        isVisibleGroup(group) && (!ambientSocialHideConverted || !isAmbientSocialGroupForUser(group))
+    )), [groups, ambientSocialHideConverted, isAmbientSocialGroupForUser]);
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
     const convoRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1333,6 +1388,8 @@ const ChatHub: React.FC = () => {
         setTempReplyIndividually(!!group.replyIndividually);
         setTempAutoContinueEnabled(!!group.autoContinueEnabled);
         setTempAutoContinueRounds(Math.max(1, Math.min(8, group.autoContinueRounds || 2)));
+        setTempOpeningGreetings(normalizeGroupOpeningGreetings(group.openingGreetings));
+        setGroupOpeningIdx(0);
         setTempGroupApi(normalizeGroupApiDraft(group.groupApi));
         const memberApis: Record<string, GroupApiDraft> = {};
         Object.entries(group.memberApis || {}).forEach(([charId, api]) => {
@@ -1394,7 +1451,7 @@ const ChatHub: React.FC = () => {
         const next = !ambientSocialHideConverted;
         updateUserProfile({ ambientSocialHideConverted: next });
         setConvoRefreshTick(t => t + 1);
-        addToast(next ? '关闭社交圈时会隐藏已接入 NPC / 群聊' : '已接入 NPC / 群聊会保留在往来', 'success');
+        addToast(next ? '已隐藏已接入 NPC / 群聊' : '已接入 NPC / 群聊会显示在往来和名册', 'success');
     };
 
     // Load shared archive prompts from localStorage (same key as Chat app)
@@ -1750,6 +1807,72 @@ const ChatHub: React.FC = () => {
         return !!until && until > Date.now();
     };
 
+    const buildGroupOpeningBubbles = useCallback((raw: string, group: GroupProfile): GroupOpeningBubble[] => {
+        const fallbackId = group.members.find(id => characters.some(c => c.id === id)) || group.members[0] || 'system';
+        const normalizeName = (value: string) => value.replace(/\s+/g, '').toLowerCase();
+        const speakerByName = new Map<string, string>();
+        group.members.forEach(memberId => {
+            const member = characters.find(c => c.id === memberId);
+            [
+                displayNameOf(group, memberId),
+                member?.name,
+                group.memberNicknames?.[memberId],
+            ].forEach(name => {
+                const key = normalizeName(String(name || '').trim());
+                if (key) speakerByName.set(key, memberId);
+            });
+        });
+
+        const bubbles: GroupOpeningBubble[] = [];
+        let currentSpeakerId = fallbackId;
+        raw.replace(/\r\n/g, '\n').split('\n').forEach(line => {
+            const match = line.match(/^([^:：]{1,32})[:：]\s*(.*)$/);
+            const matchedSpeakerId = match ? speakerByName.get(normalizeName(match[1].trim())) : undefined;
+            if (matchedSpeakerId) {
+                currentSpeakerId = matchedSpeakerId;
+                bubbles.push({ charId: currentSpeakerId, content: match?.[2] || '' });
+                return;
+            }
+            if (bubbles.length === 0) {
+                bubbles.push({ charId: currentSpeakerId, content: line });
+                return;
+            }
+            bubbles[bubbles.length - 1].content += `${bubbles[bubbles.length - 1].content ? '\n' : ''}${line}`;
+        });
+
+        return bubbles
+            .map(bubble => {
+                const member = characters.find(c => c.id === bubble.charId);
+                const speakerName = member ? displayNameOf(group, member.id) : group.name;
+                const content = substituteMacros(
+                    bubble.content
+                        .replace(/{{group}}/gi, group.name)
+                        .replace(/<group>/gi, group.name),
+                    { charName: speakerName || group.name, userName: userProfile.name || '用户' },
+                ).trim();
+                return { ...bubble, content };
+            })
+            .filter(bubble => bubble.content);
+    }, [characters, userProfile.name]);
+
+    const groupOpeningOptions = useMemo(() => normalizeGroupOpeningGreetings(activeGroup?.openingGreetings), [activeGroup?.openingGreetings]);
+    const groupOpeningPickerActive = !!activeGroup
+        && view === 'chat'
+        && !activeGroup.dissolved
+        && totalMsgCount === 0
+        && messages.length === 0
+        && groupOpeningOptions.length > 0;
+    const groupOpeningPreviewBubbles = useMemo(() => {
+        if (!activeGroup || groupOpeningOptions.length === 0) return [] as GroupOpeningBubble[];
+        const chosen = groupOpeningOptions[Math.min(groupOpeningIdx, groupOpeningOptions.length - 1)] || '';
+        return buildGroupOpeningBubbles(chosen, activeGroup);
+    }, [activeGroup, buildGroupOpeningBubbles, groupOpeningIdx, groupOpeningOptions]);
+    const groupOpeningPickerRef = useRef({ active: false, idx: 0 });
+    groupOpeningPickerRef.current = { active: groupOpeningPickerActive, idx: groupOpeningIdx };
+    useEffect(() => {
+        if (groupOpeningIdx >= groupOpeningOptions.length && groupOpeningOptions.length > 0) setGroupOpeningIdx(0);
+    }, [groupOpeningIdx, groupOpeningOptions.length]);
+
     /** 往群里落一条系统通知（移除成员/改群名/改群名片/设头衔/禁言等），并刷新消息列表 */
     const postGroupNotice = async (groupId: string, text: string) => {
         await DB.saveMessage({
@@ -1764,6 +1887,41 @@ const ChatHub: React.FC = () => {
         }
     };
 
+    const commitGroupOpeningGreeting = async (): Promise<Message[]> => {
+        if (!activeGroup) return messages;
+        const { active, idx } = groupOpeningPickerRef.current;
+        if (!active) return messages;
+        const options = normalizeGroupOpeningGreetings(activeGroup.openingGreetings);
+        if (options.length === 0) return messages;
+        const greetingIndex = Math.min(idx, options.length - 1);
+        const bubbles = buildGroupOpeningBubbles(options[greetingIndex], activeGroup);
+        if (bubbles.length === 0) return messages;
+        const baseTs = Date.now();
+        for (let i = 0; i < bubbles.length; i++) {
+            const bubble = bubbles[i];
+            await DB.saveMessage({
+                charId: bubble.charId,
+                groupId: activeGroup.id,
+                role: bubble.charId === 'system' ? 'system' : 'assistant',
+                type: bubble.charId === 'system' ? 'system' : 'text',
+                content: bubble.content,
+                timestamp: baseTs + i,
+                metadata: {
+                    groupOpeningGreeting: true,
+                    greetingIndex,
+                    greetingPart: i,
+                    greetingParts: bubbles.length,
+                },
+            } as any);
+        }
+        const fresh = await DB.getGroupMessages(activeGroup.id);
+        setMessages(fresh);
+        setTotalMsgCount(fresh.length);
+        setVisibleCount(Math.max(30, Math.min(fresh.length, 200)));
+        setGroupOpeningIdx(0);
+        return fresh;
+    };
+
     /** 更新群并同步本地 activeGroup（updateGroup 只更新全局 groups state） */
     const applyGroupUpdate = async (updates: Partial<GroupProfile>): Promise<GroupProfile | null> => {
         if (!activeGroup) return null;
@@ -1772,12 +1930,106 @@ const ChatHub: React.FC = () => {
         return updated;
     };
 
+    const saveOpeningGreetingsDraft = async (draft = tempOpeningGreetings): Promise<GroupProfile | null> => {
+        const openingGreetings = normalizeGroupOpeningGreetings(draft);
+        setTempOpeningGreetings(openingGreetings);
+        setGroupOpeningIdx(0);
+        return applyGroupUpdate({ openingGreetings: openingGreetings.length > 0 ? openingGreetings : undefined });
+    };
+
     const saveGroupApiDraft = async (groupApiDraft = tempGroupApi, memberApisDraft = tempMemberApis) => {
         if (!activeGroup) return null;
         return applyGroupUpdate({
             groupApi: sanitizeGroupApi(groupApiDraft),
             memberApis: pruneGroupMemberApis(memberApisDraft, activeGroup.members),
         });
+    };
+
+    const groupApiModelTargetKey = (target: GroupApiModelTarget): string =>
+        target.kind === 'group' ? 'group' : `member:${target.charId}`;
+
+    const groupApiModelTargetLabel = (target: GroupApiModelTarget | null = groupApiModelTarget): string => {
+        if (!target) return '群聊 API';
+        return target.kind === 'group' ? '本群默认 API' : `${displayNameOf(activeGroup, target.charId)} 的 API`;
+    };
+
+    const groupApiDraftForTarget = (target: GroupApiModelTarget | null): GroupApiDraft => {
+        if (!target) return emptyGroupApi();
+        return target.kind === 'group'
+            ? tempGroupApi
+            : { ...emptyGroupApi(), ...(tempMemberApis[target.charId] || {}) };
+    };
+
+    const patchGroupApiModelForTarget = (target: GroupApiModelTarget, model: string) => {
+        if (target.kind === 'group') {
+            setTempGroupApi(prev => ({ ...prev, model }));
+            return;
+        }
+        setTempMemberApis(prev => ({
+            ...prev,
+            [target.charId]: { ...emptyGroupApi(), ...(prev[target.charId] || {}), model },
+        }));
+    };
+
+    const openGroupApiModelPicker = (target: GroupApiModelTarget) => {
+        setGroupApiModelTarget(target);
+        setGroupApiModelFilter('');
+    };
+
+    const selectGroupApiModel = (model: string) => {
+        if (!groupApiModelTarget) return;
+        patchGroupApiModelForTarget(groupApiModelTarget, model);
+        setGroupApiModelTarget(null);
+        setGroupApiModelFilter('');
+    };
+
+    const saveGroupApiTarget = async (target: GroupApiModelTarget) => {
+        const updated = await saveGroupApiDraft();
+        if (updated) addToast(`${groupApiModelTargetLabel(target)} 已保存`, 'success');
+    };
+
+    const fetchGroupApiModels = async (target: GroupApiModelTarget) => {
+        const draft = groupApiDraftForTarget(target);
+        if (!draft.baseUrl.trim()) {
+            addToast('请先填写 Base URL，再拉取模型', 'info');
+            return;
+        }
+        const loadingKey = groupApiModelTargetKey(target);
+        setGroupApiModelLoadingKey(loadingKey);
+        try {
+            const baseUrl = draft.baseUrl.trim().replace(/\/+$/, '');
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (draft.apiKey.trim()) headers.Authorization = `Bearer ${draft.apiKey.trim()}`;
+            const response = await fetch(`${baseUrl}/models`, {
+                method: 'GET',
+                headers,
+                __moroMeta: {
+                    appId: AppID.GroupChat,
+                    appName: '絮语',
+                    purpose: `拉取${groupApiModelTargetLabel(target)}模型列表`,
+                    apiRole: target.kind === 'group' ? 'group' : 'member',
+                },
+            } as RequestInit & { __moroMeta?: unknown });
+            const data = await safeResponseJson(response);
+            if (!response.ok) {
+                throw new Error(extractApiErrorMessage(data, `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`));
+            }
+            const models = normalizeApiModelList(data);
+            if (!models.length) {
+                addToast('模型列表格式不兼容，可先手动填写模型名', 'info');
+                return;
+            }
+            setAvailableModels(models);
+            try { localStorage.setItem('os_available_models', JSON.stringify(models)); } catch { /* ignore */ }
+            if (!models.includes(draft.model.trim())) patchGroupApiModelForTarget(target, models[0]);
+            setGroupApiModelTarget(target);
+            setGroupApiModelFilter('');
+            addToast(`已拉取 ${models.length} 个模型`, 'success');
+        } catch (error: any) {
+            addToast(`拉取模型失败：${error?.message || '请检查地址和密钥'}`, 'error');
+        } finally {
+            setGroupApiModelLoadingKey(null);
+        }
     };
 
     const patchTempGroupApi = (field: keyof GroupApiDraft, value: string) => {
@@ -1907,7 +2159,7 @@ const ChatHub: React.FC = () => {
                     group.memberNicknames?.[mid],
                     memberNameById.get(mid),
                     mid === 'user' ? (userProfile.name || '我') : characters.find(c => c.id === mid)?.name,
-                ].map(name => name?.trim()).filter(Boolean);
+                ].map(name => name?.trim()).filter((name): name is string => !!name);
                 return candidates.includes(normalizedSpeaker);
             })
             : undefined;
@@ -1934,14 +2186,26 @@ const ChatHub: React.FC = () => {
     };
 
     const openAmbientContact = async (entry: AmbientSocialContact) => {
-        if (entry.linkedCharId && characters.some(c => c.id === entry.linkedCharId)) {
-            await syncAmbientPrivatePreviewMessage(entry, entry.linkedCharId);
+        const ambientSocialSource = {
+            entryId: entry.id,
+            relation: entry.relation,
+            relationLabel: entry.relationLabel,
+        };
+        const linkedChar = entry.linkedCharId ? characters.find(c => c.id === entry.linkedCharId) : undefined;
+        if (linkedChar) {
+            if (!linkedChar.ambientSocialSource?.entryId) {
+                await updateCharacter(linkedChar.id, { ambientSocialSource } as Partial<CharacterProfile>);
+            }
+            await syncAmbientPrivatePreviewMessage(entry, linkedChar.id);
             saveAmbientSocialEntry(entry.id, { unread: 0 } as Partial<AmbientSocialEntry>);
-            openPrivateChat(entry.linkedCharId);
+            openPrivateChat(linkedChar.id);
             return;
         }
         const existing = characters.find(c => c.name === entry.name);
         const char = existing || ambientSocialToCharacter(entry, userProfile.name || '我');
+        if (existing && !existing.ambientSocialSource?.entryId) {
+            await updateCharacter(existing.id, { ambientSocialSource } as Partial<CharacterProfile>);
+        }
         if (!existing) await importCharacter(char);
         await syncAmbientPrivatePreviewMessage(entry, char.id);
         saveAmbientSocialEntry(entry.id, { linkedCharId: char.id, unread: 0 } as Partial<AmbientSocialEntry>);
@@ -2037,7 +2301,7 @@ const ChatHub: React.FC = () => {
             const LIFE_STATUS_FRESH_MS = 5 * 60 * 60 * 1000; // 5 小时
             const nowTs = Date.now();
             for (const c of characters) {
-                if (!ambientSocialEnabled && ambientSocialHideConverted && isAmbientSocialCharacter(c)) continue;
+                if (ambientSocialHideConverted && isAmbientSocialCharacterForUser(c)) continue;
                 const { messages: recentMsgs } = await DB.getRecentMessagesWithCount(c.id, 50);
                 const visibleMsgs = recentMsgs.filter(isConvoPreviewMessage);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
@@ -2099,7 +2363,7 @@ const ChatHub: React.FC = () => {
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
-    }, [view, visibleGroups, characters, ambientEntries, ambientSocialEnabled, ambientSocialHideConverted, hiddenConvoWindows, convoRefreshTick]);
+    }, [view, visibleGroups, characters, ambientEntries, ambientSocialEnabled, ambientSocialHideConverted, isAmbientSocialCharacterForUser, hiddenConvoWindows, convoRefreshTick]);
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
@@ -2325,7 +2589,9 @@ const ChatHub: React.FC = () => {
             memberApis: pruneGroupMemberApis(tempMemberApis, activeGroup.members),
             autoContinueEnabled: tempAutoContinueEnabled,
             autoContinueRounds: Math.max(1, Math.min(8, tempAutoContinueRounds || 2)),
+            openingGreetings: normalizeGroupOpeningGreetings(tempOpeningGreetings),
         };
+        if (!updates.openingGreetings?.length) updates.openingGreetings = undefined;
         if (!newMyNickname) delete updates.memberNicknames!['user'];
         const updatedGroup = await applyGroupUpdate(updates);
         if (!updatedGroup) return;
@@ -3199,6 +3465,14 @@ ${logText.substring(0, 10000)}
 
     const handleSendMessage = async (content: string, type: MessageType = 'text', metadata?: any) => {
         if (!activeGroup) return;
+        let openingCommittedMsgs = messages;
+        if (groupOpeningPickerRef.current.active) {
+            try {
+                openingCommittedMsgs = await commitGroupOpeningGreeting();
+            } catch (e) {
+                console.warn('[GroupOpening] 开场白落库失败:', e);
+            }
+        }
         
         const newMessage = {
             charId: 'user',
@@ -3223,8 +3497,21 @@ ${logText.substring(0, 10000)}
         setInput('');
 
         if (type === 'text' || type === 'voice' || type === 'image') {
-            void triggerDirector(updatedMsgs, { allowAutoContinue: true });
+            void triggerDirector(updatedMsgs.length ? updatedMsgs : openingCommittedMsgs, { allowAutoContinue: true });
         }
+    };
+
+    const triggerDirectorFromCurrent = async () => {
+        if (isTyping) return;
+        let currentMsgs = messages;
+        if (groupOpeningPickerRef.current.active) {
+            try {
+                currentMsgs = await commitGroupOpeningGreeting();
+            } catch (e) {
+                console.warn('[GroupOpening] 开场白落库失败:', e);
+            }
+        }
+        void triggerDirector(currentMsgs);
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3988,6 +4275,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         api: GroupApiDraft,
         onPatch: (field: keyof GroupApiDraft, value: string) => void,
         onSave: () => void,
+        modelTarget: GroupApiModelTarget,
     ) => (
         <div className="grid grid-cols-1 gap-2">
             <ScrapInput
@@ -4007,14 +4295,50 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                 autoComplete="new-password"
                 spellCheck={false}
             />
-            <ScrapInput
-                value={api.model}
-                onChange={e => onPatch('model', e.target.value)}
-                onBlur={onSave}
-                placeholder="Model，比如 gpt-4o-mini"
-                className="font-mono text-[11px]"
-                spellCheck={false}
-            />
+            <div className="grid grid-cols-[1fr_auto] gap-2 items-stretch">
+                <ScrapInput
+                    value={api.model}
+                    onChange={e => onPatch('model', e.target.value)}
+                    onBlur={onSave}
+                    placeholder="Model，比如 gpt-4o-mini"
+                    className="font-mono text-[11px] min-w-0"
+                    spellCheck={false}
+                />
+                <ScrapBtn
+                    variant="paper"
+                    full={false}
+                    className="text-[11px] px-3 py-2 shrink-0"
+                    onClick={() => openGroupApiModelPicker(modelTarget)}
+                    title="选择已拉取的模型，或手动输入模型名"
+                >
+                    选择
+                </ScrapBtn>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+                <ScrapBtn
+                    variant="paper"
+                    full={false}
+                    className="text-[11px] py-2"
+                    disabled={groupApiModelLoadingKey !== null}
+                    onClick={() => void fetchGroupApiModels(modelTarget)}
+                    icon={<MagnifyingGlass size={13} weight="bold" />}
+                >
+                    {groupApiModelLoadingKey === groupApiModelTargetKey(modelTarget)
+                        ? '拉取中…'
+                        : availableModels.length
+                            ? `拉取模型（${availableModels.length}）`
+                            : '拉取模型'}
+                </ScrapBtn>
+                <ScrapBtn
+                    variant="ink"
+                    full={false}
+                    className="text-[11px] py-2"
+                    onClick={() => void saveGroupApiTarget(modelTarget)}
+                    icon={<FloppyDisk size={13} weight="bold" />}
+                >
+                    保存 API
+                </ScrapBtn>
+            </div>
         </div>
     );
 
@@ -4911,7 +5235,7 @@ ${attachedImagesNote}
                 {showRelNet && (
                     <div data-manual-anchor="manual-chathub-relationship-network" className="absolute inset-0 z-50">
                     <RelationshipNetwork
-                        characters={characters}
+                        characters={visibleCharacters}
                         userName={userProfile.name}
                         userAvatar={userProfile.avatar}
                         onClose={() => setShowRelNet(false)}
@@ -4935,7 +5259,7 @@ ${attachedImagesNote}
                     </button>
                     <span className="font-bold text-[#262626] text-xl tracking-tight pl-2">{hubTab === 'chats' ? '往来' : hubTab === 'contacts' ? '名册' : hubTab === 'couple' ? '情侣空间' : '此刻'}</span>
                     <div className="flex-1"></div>
-                    {hubTab === 'contacts' && characters.length > 0 && (
+                    {hubTab === 'contacts' && visibleCharacters.length > 0 && (
                         <button onClick={() => setShowRelNet(true)} className="p-2 text-[#9c5e74] scrap-btn-paper transition-colors mr-1" title="关系网">
                             <ShareNetwork size={22} weight="duotone" />
                         </button>
@@ -5010,7 +5334,7 @@ ${attachedImagesNote}
                                             <Detective size={18} weight="bold" className="shrink-0" style={{ color: ambientSocialHideConverted ? '#9c5e74' : '#94a3b8' }} />
                                             <span className="flex-1 min-w-0">
                                                 <span className="block text-sm font-bold leading-tight truncate">隐藏已接入 NPC 与群</span>
-                                                <span className="block text-[10px] font-medium text-slate-400 leading-tight truncate">{ambientSocialHideConverted ? '关闭社交圈时一并收起' : '关闭社交圈后仍留在往来'}</span>
+                                                <span className="block text-[10px] font-medium text-slate-400 leading-tight truncate">{ambientSocialHideConverted ? '已接入 NPC 与群已收起' : '已接入 NPC 与群会显示'}</span>
                                             </span>
                                             <span
                                                 className="relative h-6 w-11 rounded-full border transition-colors shrink-0"
@@ -5232,10 +5556,10 @@ ${attachedImagesNote}
                                 </button>
                             </div>
                         ))}
-                        {characters.length > 0 && (
+                        {visibleCharacters.length > 0 && (
                             <div className="px-2 pt-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">角色</div>
                         )}
-                        {characters.map((c, i) => (
+                        {visibleCharacters.map((c, i) => (
                             <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i + visibleGroups.length, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
@@ -5261,7 +5585,7 @@ ${attachedImagesNote}
                                             <div
                                                 key={entry.id}
                                                 onClick={() => openAmbientEntry(entry)}
-                                                style={{ animationDelay: `${Math.min(characters.length + idx, 14) * 32}ms` }}
+                                                style={{ animationDelay: `${Math.min(visibleCharacters.length + idx, 14) * 32}ms` }}
                                                 className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in"
                                             >
                                                 <img src={entry.avatar} className={`w-12 h-12 ${isAmbientGroup ? 'rounded-2xl' : 'rounded-full'} object-cover border border-[#eed6df] shadow-sm shrink-0`} />
@@ -5278,7 +5602,7 @@ ${attachedImagesNote}
                                 </div>
                             </div>
                         )}
-                        {characters.length === 0 && visibleGroups.length === 0 && ambientEntries.length === 0 && (
+                        {visibleCharacters.length === 0 && visibleGroups.length === 0 && ambientEntries.length === 0 && (
                             <div className="text-center text-slate-400 text-xs py-10">名册里还没有角色或群聊</div>
                         )}
                     </div>
@@ -5339,7 +5663,7 @@ ${attachedImagesNote}
                         <div>
                             <ScrapLabel en="MEMBERS">把谁拉进来</ScrapLabel>
                             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
-                                {characters.map(c => (
+                                {visibleCharacters.map(c => (
                                     <ScrapPickTile key={c.id} src={c.avatar} label={c.name} selected={selectedMembers.has(c.id)} onClick={() => toggleMemberSelection(c.id)} />
                                 ))}
                             </div>
@@ -5398,7 +5722,7 @@ ${attachedImagesNote}
                     把你拉黑的角色 → 需先发送好友验证，由 TA 决定是否拉回 */}
                 <Modal isOpen={modalType === 'add-friend'} title="找谁说说话" en="ADD FRIEND · 翻翻名册" icon={<ScrapStamp><AddressBook size={16} weight="bold" /></ScrapStamp>} onClose={() => setModalType('none')}>
                     <div className="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar pr-1">
-                        {characters.map(c => {
+                        {visibleCharacters.map(c => {
                             const blockedByChar = !!c.charBlock?.active;
                             return (
                                 <ScrapRowBtn
@@ -5436,7 +5760,7 @@ ${attachedImagesNote}
                                 ))}
                             </>
                         )}
-                        {characters.length === 0 && ambientEntries.length === 0 && (
+                        {visibleCharacters.length === 0 && ambientEntries.length === 0 && (
                             <ScrapNote center className="py-8">名册还空着，先去「剪影集」捏一个人出来吧。</ScrapNote>
                         )}
                     </div>
@@ -5664,6 +5988,74 @@ ${attachedImagesNote}
                         </button>
                     </div>
                 )}
+                {groupOpeningPickerActive && !selectionMode && activeGroup && (
+                    <div className="px-1 mb-5 animate-fade-in">
+                        <div className="rounded-[22px] border border-white/80 bg-white/70 backdrop-blur-sm px-3 py-3 shadow-sm">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11px] font-black text-slate-500">群聊开场白</div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                        {groupOpeningOptions.length > 1 ? '左右切换，选一组作为这份群聊的开头。' : '这组开场会作为这份群聊的开头。'}
+                                    </div>
+                                </div>
+                                {groupOpeningOptions.length > 1 && (
+                                    <div className="flex items-center gap-1.5 bg-white/80 rounded-full px-2 py-1 border border-white shadow-sm shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setGroupOpeningIdx(i => (i - 1 + groupOpeningOptions.length) % groupOpeningOptions.length)}
+                                            className="p-1 rounded-full hover:bg-black/5 active:scale-90 transition-transform"
+                                            title="上一组开场白"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                                        </button>
+                                        <span className="text-[10px] font-bold text-slate-500 tabular-nums select-none">
+                                            {Math.min(groupOpeningIdx, groupOpeningOptions.length - 1) + 1} / {groupOpeningOptions.length}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setGroupOpeningIdx(i => (i + 1) % groupOpeningOptions.length)}
+                                            className="p-1 rounded-full hover:bg-black/5 active:scale-90 transition-transform"
+                                            title="下一组开场白"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-2.5">
+                                {groupOpeningPreviewBubbles.map((bubble, idx) => {
+                                    const member = characters.find(c => c.id === bubble.charId);
+                                    const name = member ? displayNameOf(activeGroup, member.id) : activeGroup.name;
+                                    return (
+                                        <div key={`${bubble.charId}-${idx}`} className="flex items-end gap-2.5">
+                                            <img src={member?.avatar || activeGroup.avatar} className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0" alt="" />
+                                            <div className="max-w-[82%] min-w-0">
+                                                <div className="text-[10px] text-slate-400 font-bold mb-1 px-1">{name}</div>
+                                                <div className="bg-white/95 border border-white rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                                                    {bubble.content}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="flex items-center gap-2 mt-3 flex-wrap pl-10">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            await commitGroupOpeningGreeting();
+                                        } catch (e: any) {
+                                            addToast(e?.message || '开场白保存失败', 'error');
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-full shadow-sm shadow-primary/30 active:scale-95 transition-transform"
+                                >以这组开场开始</button>
+                                <span className="text-[10px] text-slate-400">直接发消息也会先采用当前这组开场。</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {displayMessages.map((m, i) => {
                     const isUser = m.role === 'user';
                     const char = characters.find(c => c.id === m.charId);
@@ -5783,10 +6175,10 @@ ${attachedImagesNote}
                                         e.preventDefault();
                                         // 空输入回车 = 触发 AI 导演：发完消息后留空再按回车即可让成员们接话
                                         if (!input.trim()) {
-                                            if (!isTyping) triggerDirector(messages);
+                                            void triggerDirectorFromCurrent();
                                             return;
                                         }
-                                        handleSendMessage(input);
+                                        void handleSendMessage(input);
                                     }
                                 }}
                                 className="flex-1 min-w-0 bg-transparent px-3 py-3 text-[15px] outline-none resize-none max-h-28 text-[#2e2c36] placeholder:text-slate-400"
@@ -5806,10 +6198,10 @@ ${attachedImagesNote}
                         <button
                             onClick={() => {
                                 if (!input.trim()) {
-                                    if (!isTyping) triggerDirector(messages);
+                                    void triggerDirectorFromCurrent();
                                     return;
                                 }
-                                handleSendMessage(input);
+                                void handleSendMessage(input);
                             }}
                             className={input.trim()
                                 ? 'h-11 min-w-[72px] shrink-0 rounded-full bg-primary px-4 text-[11px] font-bold text-white shadow-lg active:scale-90 transition-transform'
@@ -6229,7 +6621,78 @@ ${attachedImagesNote}
                     })()}
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="03" title="公告与成员" en="Members">
+                <GroupSettingsPage no="03" title="开场白" en="Openers">
+                    <div>
+                        <ScrapLabel en="GROUP OPENERS">自定义开场白</ScrapLabel>
+                        <div className="space-y-3">
+                            {tempOpeningGreetings.map((greeting, idx) => (
+                                <div
+                                    key={idx}
+                                    className="p-3"
+                                    style={{ background: 'rgba(255,253,247,0.82)', border: '1px solid #eed6df', borderRadius: 16 }}
+                                >
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <div className="text-[11px] font-black" style={{ color: INK }}>开场 {idx + 1}</div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const next = tempOpeningGreetings.filter((_, i) => i !== idx);
+                                                setTempOpeningGreetings(next);
+                                                void saveOpeningGreetingsDraft(next);
+                                            }}
+                                            className="text-[10px] font-bold px-2 py-1 rounded-full active:scale-95 transition-transform"
+                                            style={{ background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f' }}
+                                        >
+                                            删除
+                                        </button>
+                                    </div>
+                                    <ScrapTextarea
+                                        value={greeting}
+                                        onChange={e => {
+                                            const next = [...tempOpeningGreetings];
+                                            next[idx] = e.target.value;
+                                            setTempOpeningGreetings(next);
+                                        }}
+                                        onBlur={() => void saveOpeningGreetingsDraft()}
+                                        rows={4}
+                                        maxLength={2000}
+                                        placeholder={`比如：\n${displayNameOf(activeGroup, activeGroup?.members?.[0] || '')}：今晚谁先开麦？\n${displayNameOf(activeGroup, activeGroup?.members?.[1] || '')}：我先说，我刚好有事要八。`}
+                                    />
+                                </div>
+                            ))}
+                            {tempOpeningGreetings.length === 0 && (
+                                <div className="rounded-[14px] px-3 py-5 text-center text-[11px]" style={{ background: '#fffdfa', border: '1px dashed #eadbe2', color: INK_SOFT }}>
+                                    还没有开场白。新建后，空群聊会先让你挑一组开场再开始。
+                                </div>
+                            )}
+                            <ScrapBtn
+                                variant="paper"
+                                full={false}
+                                className="text-[12px] py-2 px-3"
+                                onClick={() => {
+                                    const firstMember = activeGroup?.members?.[0] || '';
+                                    const secondMember = activeGroup?.members?.[1] || firstMember;
+                                    const firstName = displayNameOf(activeGroup, firstMember);
+                                    const secondName = displayNameOf(activeGroup, secondMember);
+                                    const next = [
+                                        ...tempOpeningGreetings,
+                                        `${firstName}：${userProfile.name || '你'}，刚好你也在。\n${secondName}：那就从这件事说起吧。`,
+                                    ];
+                                    setTempOpeningGreetings(next);
+                                    void saveOpeningGreetingsDraft(next);
+                                }}
+                                icon={<PencilSimpleLine size={14} weight="bold" />}
+                            >
+                                新增开场
+                            </ScrapBtn>
+                        </div>
+                        <ScrapNote className="mt-2">
+                            每条开场可写多行；用「成员名：内容」指定谁先说。支持 {'{{user}}'}、{'{{char}}'}、{'{{group}}'} 宏；没有写成员名前缀时默认由第一位群成员发出。
+                        </ScrapNote>
+                    </div>
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="04" title="公告与成员" en="Members">
                     {/* 群公告：群主/管理员可发布，所有成员可查看 */}
                     <div>
                         <ScrapLabel en="NOTICE">群里公告</ScrapLabel>
@@ -6297,7 +6760,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="04" title="角色之间的关系" en="Perspective">
+                <GroupSettingsPage no="05" title="角色之间的关系" en="Perspective">
                     {(() => {
                         const memberList = (activeGroup?.members || [])
                             .map(id => characters.find(ch => ch.id === id))
@@ -6431,7 +6894,7 @@ ${attachedImagesNote}
                     })()}
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="05" title="特别关心" en="Special Care">
+                <GroupSettingsPage no="06" title="特别关心" en="Special Care">
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <div className="flex items-center justify-between gap-3">
@@ -6478,7 +6941,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="06" title="背景与记忆" en="Background Memory">
+                <GroupSettingsPage no="07" title="背景与记忆" en="Background Memory">
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <ScrapLabel en="AI REPLIES">角色怎么接话</ScrapLabel>
@@ -6522,6 +6985,7 @@ ${attachedImagesNote}
                                         tempGroupApi,
                                         patchTempGroupApi,
                                         () => { void saveGroupApiDraft(); },
+                                        { kind: 'group' },
                                     )}
                                     <div className="grid grid-cols-2 gap-2">
                                         <ScrapBtn variant="paper" full={false} className="text-[11px] py-2" onClick={copyMainApiToGroup} icon={<Copy size={14} weight="bold" />}>复制主 API</ScrapBtn>
@@ -6551,6 +7015,7 @@ ${attachedImagesNote}
                                                         memberApi,
                                                         (field, value) => patchTempMemberApi(mid, field, value),
                                                         () => { void saveGroupApiDraft(); },
+                                                        { kind: 'member', charId: mid },
                                                     )}
                                                 </div>
                                             );
@@ -6652,7 +7117,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="07" title="数据管理" en="Data">
+                <GroupSettingsPage no="08" title="数据管理" en="Data">
                     {/* Memory & Context Management */}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
@@ -6706,6 +7171,96 @@ ${attachedImagesNote}
                 </div>
             )}
 
+            {groupApiModelTarget && (
+                <div className="fixed inset-0 z-[320] flex items-center justify-center p-5 animate-fade-in">
+                    <div className="absolute inset-0 bg-[#1c1a18]/42 backdrop-blur-[3px]" onClick={() => setGroupApiModelTarget(null)} />
+                    <div
+                        className="relative w-full max-w-[360px] max-h-[78vh] flex flex-col overflow-hidden animate-pop-in"
+                        style={{
+                            background: 'linear-gradient(180deg,#ffffff 0%,#fbfaf8 100%)',
+                            border: `1px solid ${INK_SOFT}44`,
+                            borderRadius: 24,
+                            boxShadow: '0 30px 70px -34px rgba(38,38,38,0.58), 0 1px 2px rgba(38,38,38,0.06)',
+                        }}
+                    >
+                        <div className="px-5 pt-6 pb-3 text-center shrink-0">
+                            <div className="text-[9px] tracking-[0.28em] uppercase mb-1" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>MODEL</div>
+                            <div className="text-[17px] font-black" style={{ color: INK }}>选择模型</div>
+                            <div className="text-[10px] mt-1 truncate" style={{ color: INK_SOFT }}>{groupApiModelTargetLabel()}</div>
+                        </div>
+                        {(() => {
+                            const target = groupApiModelTarget;
+                            const draft = groupApiDraftForTarget(target);
+                            const { filtered, total } = groupApiModelPickerView;
+                            return (
+                                <div className="px-5 pb-5 overflow-y-auto no-scrollbar space-y-3">
+                                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                                        <ScrapInput
+                                            value={draft.model}
+                                            onChange={e => patchGroupApiModelForTarget(target, e.target.value)}
+                                            placeholder="可手动输入模型名"
+                                            className="font-mono text-[11px] min-w-0"
+                                            spellCheck={false}
+                                        />
+                                        <ScrapBtn
+                                            variant="ink"
+                                            full={false}
+                                            className="text-[11px] px-4 py-2"
+                                            onClick={() => setGroupApiModelTarget(null)}
+                                        >
+                                            确定
+                                        </ScrapBtn>
+                                    </div>
+                                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                                        <ScrapInput
+                                            value={groupApiModelFilter}
+                                            onChange={e => setGroupApiModelFilter(e.target.value)}
+                                            placeholder={total ? `在 ${total} 个模型中搜索` : '还没有已拉取的模型'}
+                                            className="text-[11px] min-w-0"
+                                        />
+                                        <ScrapBtn
+                                            variant="paper"
+                                            full={false}
+                                            className="text-[11px] px-3 py-2"
+                                            disabled={groupApiModelLoadingKey !== null}
+                                            onClick={() => void fetchGroupApiModels(target)}
+                                        >
+                                            {groupApiModelLoadingKey === groupApiModelTargetKey(target) ? '拉取中…' : '拉取模型'}
+                                        </ScrapBtn>
+                                    </div>
+                                    <div className="max-h-[38vh] overflow-y-auto no-scrollbar space-y-2 pr-1">
+                                        {filtered.length > 0 ? filtered.map(model => {
+                                            const selected = model === draft.model;
+                                            return (
+                                                <button
+                                                    key={model}
+                                                    type="button"
+                                                    title={model}
+                                                    onClick={() => selectGroupApiModel(model)}
+                                                    className="w-full text-left px-4 py-3 rounded-[14px] text-[12px] font-mono flex items-start justify-between gap-2 transition-transform active:scale-[0.98]"
+                                                    style={selected
+                                                        ? { color: '#fff', background: INK, border: `1px solid ${INK_SOFT}55`, boxShadow: '0 8px 18px -14px rgba(122,90,114,0.45)' }
+                                                        : { color: INK, background: '#fffdfa', border: `1px solid ${INK_SOFT}33` }}
+                                                >
+                                                    <span className="break-all min-w-0 leading-relaxed">{model}</span>
+                                                    {selected && <span className="shrink-0 text-[10px] mt-0.5">✓</span>}
+                                                </button>
+                                            );
+                                        }) : (
+                                            <div className="text-center py-8 text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                                {total === 0
+                                                    ? '当前没有已拉取的模型；可以先点“拉取模型”，或直接在上方手动输入。'
+                                                    : `没有找到“${groupApiModelFilter}”`}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>
+            )}
+
             {/* Message Options Modal */}
             <Modal isOpen={modalType === 'message-options'} title="这条怎么处理" en="MESSAGE" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
                 <div className="space-y-2.5">
@@ -6741,8 +7296,8 @@ ${attachedImagesNote}
             {/* 转发选人：把选中的群消息转给某个角色的私聊 */}
             <Modal isOpen={modalType === 'forward-pick'} title="捎给谁" en="FORWARD" icon={<ScrapStamp><ShareNetwork size={16} weight="bold" /></ScrapStamp>} onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
-                    {characters.length === 0 && <ScrapNote center className="py-8">名册里还没人能捎。</ScrapNote>}
-                    {characters.map(c => (
+                    {visibleCharacters.length === 0 && <ScrapNote center className="py-8">名册里还没人能捎。</ScrapNote>}
+                    {visibleCharacters.map(c => (
                         <ScrapRowBtn key={c.id} avatar={c.avatar} onClick={() => handleForwardGroupMessage(c.id)} trailing={<span style={{ color: INK_SOFT }}>›</span>}>
                             {c.name}
                         </ScrapRowBtn>
@@ -7293,7 +7848,7 @@ ${attachedImagesNote}
             <Modal isOpen={modalType === 'add-member'} title="再拉个人进来" en="ADD MEMBER" icon={<ScrapStamp><UsersThree size={15} weight="bold" /></ScrapStamp>} onClose={() => setModalType('settings')}>
                 <div className="space-y-3">
                     {(() => {
-                        const candidates = characters.filter(c => !activeGroup?.members.includes(c.id));
+                        const candidates = visibleCharacters.filter(c => !activeGroup?.members.includes(c.id));
                         if (candidates.length === 0) return <ScrapNote center className="py-6">名册里的人都已经在群里了。</ScrapNote>;
                         return (
                             <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto no-scrollbar pr-1">

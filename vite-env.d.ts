@@ -23,3 +23,7 @@ declare module 'https://esm.sh/html2canvas@1.4.1' {
     const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
     export default html2canvas;
 }
+
+declare module 'katex' {
+    export function renderToString(latex: string, options?: any): string;
+}

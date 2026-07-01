@@ -275,7 +275,7 @@ export interface OSTheme {
   chatAvatarShape?: 'circle' | 'rounded' | 'square';
   chatAvatarSize?: 'small' | 'medium' | 'large';
   chatAvatarMode?: 'grouped' | 'every_message';
-  chatBubbleStyle?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios';
+  chatBubbleStyle?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios' | 'plain';
   chatMessageSpacing?: 'compact' | 'default' | 'spacious';
   chatShowTimestamp?: 'always' | 'hover' | 'never';
   chatHeaderStyle?: 'default' | 'minimal' | 'gradient' | 'wechat' | 'telegram' | 'discord' | 'pixel';
@@ -2580,7 +2580,7 @@ export interface CharacterProfile {
   /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。
    *  让角色创建/导入后无需先「添加好友」即可在往来直接出现并开聊。 */
   addedToChat?: boolean;
-  /** 由「用户社交圈」影子联系人转成的正式角色。社交圈关闭时，往来列表会隐藏这类 NPC。 */
+  /** 由「用户社交圈」影子联系人转成的正式角色。「隐藏已接入 NPC 与群」开启时，絮语列表会隐藏这类 NPC。 */
   ambientSocialSource?: {
       entryId: string;
       relation?: AmbientSocialRelation;
@@ -3207,6 +3207,11 @@ export interface GroupProfile {
     autoContinueEnabled?: boolean;
     /** 自动接话轮数。每轮会让群成员在用户旁观状态下继续接话一次。 */
     autoContinueRounds?: number;
+    /**
+     * 群聊自定义开场白。空群聊进入时显示选择器；一条开场白可写多行，
+     * 支持「成员名：内容」前缀拆成多个成员气泡。
+     */
+    openingGreetings?: string[];
     /** 群公告：群主/管理员发布，进入群聊时置顶展示，并注入群聊上下文让成员知晓。撤下时为 undefined。 */
     announcement?: GroupAnnouncement;
     /** 聊天列表置顶。 */
@@ -3215,7 +3220,7 @@ export interface GroupProfile {
     specialCareMemberIds?: string[];
     /** 特别关心是否开启消息提醒。undefined 视为开启。 */
     specialCareNotify?: boolean;
-    /** 由「用户社交圈」影子群聊转成的正式群。社交圈关闭时，往来列表会隐藏这类群。 */
+    /** 由「用户社交圈」影子群聊转成的正式群。「隐藏已接入 NPC 与群」开启时，絮语列表会隐藏这类群。 */
     ambientSocialSource?: {
         entryId: string;
         relation?: AmbientSocialRelation;
@@ -3345,7 +3350,7 @@ export interface UserProfile {
     vrState?: UserVRState;
     /** 絮语·是否开启用户社交圈：关闭后不再自动出现随机家人/同事/朋友/亲戚/群聊等背景会话。 */
     ambientSocialEnabled?: boolean;
-    /** 絮语·关闭用户社交圈时，是否一并隐藏已转成正式角色/群聊的社交圈 NPC。undefined 视为隐藏。 */
+    /** 絮语·是否隐藏已转成正式角色/群聊的社交圈 NPC。undefined 视为隐藏。 */
     ambientSocialHideConverted?: boolean;
     /** 絮语·用户完整社交关系：随机家人/同事/朋友/亲戚/群聊等背景会话，随剧情时间轻微生长。 */
     ambientSocial?: AmbientSocialState;

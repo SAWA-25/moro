@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BookOpenText,
@@ -6,6 +6,7 @@ import {
   ChatCircleText,
   GearSix,
   MagnifyingGlass,
+  Megaphone,
   SlidersHorizontal,
   Sparkle,
   Wrench,
@@ -13,15 +14,19 @@ import {
 } from '@phosphor-icons/react';
 import { Icons, INSTALLED_APPS } from '../constants';
 import { useOS } from '../context/OSContext';
-import { queueManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
+import { AppID } from '../types';
+import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
+import { queueManualDeepLink, useManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
 import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import {
   CATEGORY_ORDER,
+  getManualUpdateNotices,
   MANUAL_DESTINATIONS,
   MANUAL_ENTRIES,
   type ManualCategory,
   type ManualEntry,
   type ManualSetting,
+  type ManualUpdateNotice,
 } from './manual/manualData';
 
 const CATEGORY_META: Record<ManualCategory, { label: string; en: string; Icon: Icon }> = {
@@ -32,7 +37,20 @@ const CATEGORY_META: Record<ManualCategory, { label: string; en: string; Icon: I
   system: { label: '系统与工具', en: 'Tools', Icon: GearSix },
 };
 
+const UPDATE_KIND_META: Record<ManualUpdateNotice['kind'], { label: string; className: string }> = {
+  feature: { label: '新功能', className: 'bg-[#23211d] text-[#fffdf8]' },
+  fix: { label: '修复', className: 'bg-[#f7dede] text-[#8b2f3e]' },
+  improvement: { label: '优化', className: 'bg-[#dce8f7] text-[#2d557e]' },
+  notice: { label: '提醒', className: 'bg-[#efe3c6] text-[#7b5b1b]' },
+};
+
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, '');
+
+const formatNoticeDate = (date: string) => {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(parsed);
+};
 
 const settingSearchText = (setting: ManualSetting) => [
   setting.id,
@@ -44,6 +62,7 @@ const settingSearchText = (setting: ManualSetting) => [
 ].join(' ');
 
 const isNativeEntry = (entry: ManualEntry) => !!entry.nativeOnly;
+const isDevEntry = (entry: ManualEntry) => !!entry.devOnly;
 
 const entrySearchText = (entry: ManualEntry, nativeRuntime: boolean) => {
   const destination = MANUAL_DESTINATIONS[entry.app];
@@ -52,6 +71,8 @@ const entrySearchText = (entry: ManualEntry, nativeRuntime: boolean) => {
     entry.en,
     entry.summary,
     ...entry.features,
+    ...(entry.beginnerSteps || []),
+    ...(entry.commonQuestions || []).flatMap(item => [item.title, item.answer]),
     ...(entry.tips || []),
     ...(destination?.path || []),
     ...(destination?.details || []),
@@ -91,16 +112,95 @@ const SettingPath: React.FC<{ setting: ManualSetting }> = ({ setting }) => {
   );
 };
 
+const UpdateNoticeCard: React.FC<{ notice: ManualUpdateNotice; latest?: boolean }> = ({ notice, latest }) => {
+  const meta = UPDATE_KIND_META[notice.kind];
+  return (
+    <article
+      className={[
+        'relative overflow-hidden rounded-[20px] border px-4 py-4',
+        latest
+          ? 'bg-[#23211d] text-[#fffdf8] border-[#23211d] shadow-[0_18px_36px_-26px_rgba(35,33,29,0.8)]'
+          : 'bg-[#fffdf8] text-[#23211d] border-black/10 shadow-[0_12px_28px_-24px_rgba(35,33,29,0.45)]',
+      ].join(' ')}
+    >
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-[0.12] pointer-events-none"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(255,255,255,0.55) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.35) 1px, transparent 1px)',
+          backgroundSize: '18px 18px',
+        }}
+      />
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-2">
+          {latest && (
+            <span className="px-2.5 py-1 rounded-full bg-[#fffdf8] text-[#23211d] text-[10px] font-black">
+              最新
+            </span>
+          )}
+          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${latest ? 'bg-white/16 text-white' : meta.className}`}>
+            {meta.label}
+          </span>
+          <span className={`label-mono text-[9px] tracking-[0.18em] ${latest ? 'text-white/56' : 'text-[#9a8c75]'}`}>
+            {formatNoticeDate(notice.date)}
+          </span>
+        </div>
+        <h2 className={`mt-3 text-[20px] font-black leading-snug tracking-wide ${latest ? 'text-white' : 'text-[#2f2a24]'}`}>
+          {notice.title}
+        </h2>
+        <p className={`mt-2 text-[12.5px] leading-relaxed ${latest ? 'text-white/76' : 'text-[#5c5143]'}`}>
+          {notice.summary}
+        </p>
+        <div className="mt-3 space-y-2">
+          {notice.items.map((item, index) => (
+            <div
+              key={`${notice.id}-${item}`}
+              className={[
+                'flex items-start gap-2.5 rounded-[14px] border px-3 py-2.5',
+                latest ? 'bg-white/10 border-white/12' : 'bg-[#f7f1e6] border-black/[0.06]',
+              ].join(' ')}
+            >
+              <span
+                className={[
+                  'shrink-0 w-5 h-5 rounded-full label-mono text-[10px] font-bold flex items-center justify-center mt-0.5',
+                  latest ? 'bg-[#fffdf8] text-[#23211d]' : 'bg-[#23211d] text-[#fffdf8]',
+                ].join(' ')}
+              >
+                {index + 1}
+              </span>
+              <span className={`text-[11.5px] leading-relaxed ${latest ? 'text-white/78' : 'text-[#4d4439]'}`}>{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+};
+
 const ManualApp: React.FC = () => {
   const { closeApp, openApp } = useOS();
   const nativeRuntime = isNativeAppRuntime();
+  const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
   const [category, setCategory] = useState<'all' | ManualCategory>('all');
   const [query, setQuery] = useState('');
   const [activeApp, setActiveApp] = useState(MANUAL_ENTRIES[0]?.app || '');
+  const [page, setPage] = useState<'guide' | 'updates'>('guide');
+
+  useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
+
+  useManualDeepLink(AppID.Manual, useCallback((target) => {
+    if (target.route === 'updates' || target.payload?.page === 'updates') {
+      setPage('updates');
+    }
+  }, []));
 
   const visibleEntries = useMemo(
-    () => MANUAL_ENTRIES.filter(entry => nativeRuntime || !isNativeEntry(entry)),
-    [nativeRuntime],
+    () => MANUAL_ENTRIES.filter(entry =>
+      (nativeRuntime || !isNativeEntry(entry)) &&
+      (devDebugVisible || !isDevEntry(entry)),
+    ),
+    [devDebugVisible, nativeRuntime],
   );
 
   const filteredEntries = useMemo(() => {
@@ -122,6 +222,9 @@ const ManualApp: React.FC = () => {
     ? INSTALLED_APPS.find((app) => app.id === activeDestination.appId)
     : null;
   const ActiveAppIcon = activeAppConfig ? Icons[activeAppConfig.icon] : null;
+  const updateNotices = useMemo(() => getManualUpdateNotices(), []);
+  const latestNotice = updateNotices[0] || null;
+  const olderNotices = updateNotices.slice(1);
 
   const countByCategory = useMemo(() => {
     const counts: Record<ManualCategory, number> = {
@@ -147,6 +250,71 @@ const ManualApp: React.FC = () => {
     else openApp(activeDestination.appId);
   };
 
+  if (page === 'updates') {
+    return (
+      <div
+        className="absolute inset-0 flex flex-col animate-fade-in text-[#23211d]"
+        data-manual-anchor="manual-updates-root"
+        style={{
+          background:
+            'radial-gradient(circle at 16% 0%, rgba(236, 192, 111, 0.22), transparent 32%), radial-gradient(circle at 96% 10%, rgba(94, 151, 246, 0.12), transparent 30%), linear-gradient(180deg, #f8f4ea 0%, #efe7d6 100%)',
+          paddingTop: 'var(--safe-top)',
+        }}
+      >
+        <div className="shrink-0 px-4 pt-3 pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={() => setPage('guide')}
+              className="h-9 w-9 rounded-full bg-white/80 border border-black/10 shadow-sm flex items-center justify-center active:scale-95 transition-transform"
+              aria-label="返回说明书"
+            >
+              <ArrowLeft size={18} weight="bold" />
+            </button>
+            <div className="text-center min-w-0">
+              <div className="label-mono text-[9px] tracking-[0.32em] text-[#8d7f68]">MORO UPDATES</div>
+              <h1 className="text-[24px] leading-tight font-black tracking-wide">更新公告</h1>
+            </div>
+            <div className="h-9 w-9 rounded-full bg-[#23211d] text-white flex items-center justify-center shadow-sm">
+              <Megaphone size={18} weight="fill" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-5">
+          {updateNotices.length === 0 ? (
+            <div className="mt-4 rounded-[20px] bg-[#fffdf8] border border-black/10 px-4 py-8 text-center shadow-[0_14px_32px_-26px_rgba(35,33,29,0.45)]">
+              <div className="mx-auto h-11 w-11 rounded-full bg-[#23211d] text-[#fffdf8] flex items-center justify-center">
+                <Megaphone size={20} weight="fill" />
+              </div>
+              <div className="mt-3 text-[15px] font-black text-[#342f28]">还没有更新公告</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#7b705f]">
+                等下一次新增功能、修复问题或调整重要入口时，这里会开始记录。
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {latestNotice && <UpdateNoticeCard notice={latestNotice} latest />}
+
+              <div className="flex items-center gap-2 pt-1">
+                <span className="h-px flex-1 bg-black/10" />
+                <span className="label-mono text-[9px] tracking-[0.24em] text-[#9a8c75]">过往公告</span>
+                <span className="h-px flex-1 bg-black/10" />
+              </div>
+
+              {olderNotices.length > 0 ? (
+                olderNotices.map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)
+              ) : (
+                <div className="rounded-[18px] bg-white/72 border border-black/10 px-4 py-5 text-center text-[11.5px] leading-relaxed text-[#7b705f]">
+                  暂时只有这一条公告。之后的新功能和修复会继续往这里补。
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="absolute inset-0 flex flex-col animate-fade-in text-[#23211d]"
@@ -170,9 +338,13 @@ const ManualApp: React.FC = () => {
             <div className="label-mono text-[9px] tracking-[0.32em] text-[#8d7f68]">MORO GUIDE</div>
             <h1 className="text-[24px] leading-tight font-black tracking-wide">说明书</h1>
           </div>
-          <div className="h-9 w-9 rounded-full bg-[#23211d] text-white flex items-center justify-center shadow-sm">
-            <BookOpenText size={18} weight="fill" />
-          </div>
+          <button
+            onClick={() => setPage('updates')}
+            className="h-9 w-9 rounded-full bg-[#23211d] text-white flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+            aria-label="查看更新公告"
+          >
+            <Megaphone size={18} weight="fill" />
+          </button>
         </div>
 
         <div className="mt-4 rounded-[18px] bg-white/86 border border-black/10 shadow-[0_12px_32px_-24px_rgba(35,33,29,0.45)] px-3 py-3">
@@ -190,7 +362,7 @@ const ManualApp: React.FC = () => {
             {CATEGORY_ORDER.map((item) => {
               const selected = category === item;
               const label = item === 'all' ? '全部' : CATEGORY_META[item].label;
-              const count = item === 'all' ? MANUAL_ENTRIES.length : countByCategory[item];
+              const count = item === 'all' ? visibleEntries.length : countByCategory[item];
               const IconComp = item === 'all' ? BookOpenText : CATEGORY_META[item].Icon;
               return (
                 <button
@@ -304,6 +476,22 @@ const ManualApp: React.FC = () => {
                   </div>
                 )}
 
+                {activeEntry.beginnerSteps && activeEntry.beginnerSteps.length > 0 && (
+                  <div className="mt-5 rounded-[16px] bg-[#23211d] text-[#fffdf8] px-3.5 py-3">
+                    <div className="flex items-center gap-2 text-[11px] font-black">
+                      <Sparkle size={14} weight="bold" />
+                      新手先看
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {activeEntry.beginnerSteps.map((step, index) => (
+                        <p key={step} className="text-[11px] leading-relaxed text-white/78">
+                          <span className="font-black text-white">{index + 1}. </span>{step}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-5">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="h-px flex-1 bg-black/10" />
@@ -396,6 +584,24 @@ const ManualApp: React.FC = () => {
                       {activeDestination.details.map((detail) => (
                         <div key={detail} className="rounded-[15px] bg-white/75 border border-black/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-[#4d4439]">
                           {detail}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeEntry.commonQuestions && activeEntry.commonQuestions.length > 0 && (
+                  <div className="mt-5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="h-px flex-1 bg-black/10" />
+                      <span className="label-mono text-[9px] tracking-[0.24em] text-[#9a8c75]">常见困惑</span>
+                      <span className="h-px flex-1 bg-black/10" />
+                    </div>
+                    <div className="space-y-2">
+                      {activeEntry.commonQuestions.map((item) => (
+                        <div key={item.title} className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                          <div className="text-[12px] font-black text-[#3d362e]">{item.title}</div>
+                          <div className="mt-1 text-[11.5px] leading-relaxed text-[#5c5143]">{item.answer}</div>
                         </div>
                       ))}
                     </div>

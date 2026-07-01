@@ -1,4 +1,3 @@
-
 /**
  * ValentineEvent.tsx
  * 情人节特别推送模块 (2026.2.14)
@@ -22,12 +21,67 @@ import { Share } from '@capacitor/share';
 import { WhiteDaySession, isWhiteDayEventAvailable, WHITEDAY_RECORD_KEY } from './WhiteDayEvent';
 import { Like520Session, isLike520EventAvailable, isLike520Past, LIKE520_RECORD_KEY } from './Like520Event';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT, tinyRotate } from '../apps/almanac/handbookKit';
+import { PaperPage, PaperNote, TapeLabel, Postmark, HAND_FONT, tinyRotate } from '../apps/almanac/handbookKit';
 
 // 头像兜底：http/data/blob 链接或本地资源路径（如 Moro 的 /moro-avatars/calm.jpg）按图片渲染，
 // 其余（emoji）按文字渲染。只判 http/data 会把本地路径当成 emoji 文本 → 头像失效。
 const isImageAvatar = (a?: string): boolean =>
     !!a && (/^https?:\/\//i.test(a) || a.startsWith('data:') || a.startsWith('blob:') || a.startsWith('/'));
+
+const isMoroLocalAvatar = (a?: string): boolean =>
+    !!a && (a.startsWith('/moro-avatars/') || a.startsWith('moro-avatars/'));
+
+const MORO_LOCAL_AVATAR_STYLE: React.CSSProperties = {
+    transform: 'scale(2.2)',
+    transformOrigin: '50% 68%',
+};
+
+const getAvatarImageStyle = (avatar?: string): React.CSSProperties | undefined =>
+    isMoroLocalAvatar(avatar) ? MORO_LOCAL_AVATAR_STYLE : undefined;
+
+interface SpecialAvatarProps {
+    avatar?: string;
+    name?: string;
+    sizeClassName: string;
+    imageShellClassName: string;
+    fallbackClassName: string;
+    fallback: string;
+    imageShellStyle?: React.CSSProperties;
+    fallbackStyle?: React.CSSProperties;
+    lazy?: boolean;
+}
+
+const SpecialAvatar: React.FC<SpecialAvatarProps> = ({
+    avatar, name, sizeClassName, imageShellClassName, fallbackClassName, fallback,
+    imageShellStyle, fallbackStyle, lazy,
+}) => {
+    if (isImageAvatar(avatar)) {
+        return (
+            <span
+                className={`${sizeClassName} ${imageShellClassName} inline-flex shrink-0 overflow-hidden`}
+                style={imageShellStyle}
+            >
+                <img
+                    src={avatar}
+                    loading={lazy ? 'lazy' : undefined}
+                    decoding={lazy ? 'async' : undefined}
+                    alt={name || ''}
+                    className="w-full h-full object-cover"
+                    style={getAvatarImageStyle(avatar)}
+                />
+            </span>
+        );
+    }
+
+    return (
+        <span
+            className={`${sizeClassName} ${fallbackClassName} inline-flex shrink-0`}
+            style={fallbackStyle}
+        >
+            {avatar || fallback}
+        </span>
+    );
+};
 
 // localStorage keys
 const VALENTINE_DISMISSED_KEY = 'moro_valentine_2026_dismissed';
@@ -703,11 +757,14 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                                     onContextMenu={(e) => { e.preventDefault(); setDeleteTargetId(c.id); }}
                                     className="bg-white rounded-2xl p-4 shadow-sm border border-pink-100 active:scale-95 transition-transform flex flex-col items-center gap-3 hover:shadow-md hover:border-pink-200 relative"
                                 >
-                                    {isImageAvatar(c.avatar) ? (
-                                        <img src={c.avatar} className="w-16 h-16 rounded-full object-cover shadow-sm border-2 border-pink-100" alt={c.name} />
-                                    ) : (
-                                        <span className="w-16 h-16 rounded-full flex items-center justify-center text-4xl shadow-sm border-2 border-pink-100 bg-pink-50">{c.avatar || '🌸'}</span>
-                                    )}
+                                    <SpecialAvatar
+                                        avatar={c.avatar}
+                                        name={c.name}
+                                        sizeClassName="w-16 h-16"
+                                        imageShellClassName="rounded-full shadow-sm border-2 border-pink-100"
+                                        fallbackClassName="rounded-full items-center justify-center text-4xl shadow-sm border-2 border-pink-100 bg-pink-50"
+                                        fallback="🌸"
+                                    />
                                     <span className="font-bold text-slate-700 text-sm">{c.name}</span>
                                     {hasRecord && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-pink-400" />}
                                 </button>
@@ -758,9 +815,15 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                 <div className="flex flex-col items-center gap-6">
                     <div className="relative">
                         <div className="w-20 h-20 rounded-full border-2 border-pink-500/20 flex items-center justify-center">
-                            {char && (isImageAvatar(char.avatar)
-                                ? <img src={char.avatar} className="w-16 h-16 rounded-full object-cover" alt="" />
-                                : <span className="w-16 h-16 rounded-full flex items-center justify-center text-4xl bg-pink-500/10">{char.avatar || '🌸'}</span>)}
+                            {char && (
+                                <SpecialAvatar
+                                    avatar={char.avatar}
+                                    sizeClassName="w-16 h-16"
+                                    imageShellClassName="rounded-full"
+                                    fallbackClassName="rounded-full items-center justify-center text-4xl bg-pink-500/10"
+                                    fallback="🌸"
+                                />
+                            )}
                         </div>
                         <div className="absolute inset-0 w-20 h-20 rounded-full border-2 border-transparent border-t-pink-400 animate-spin" />
                     </div>
@@ -1142,8 +1205,6 @@ interface EventCardTheme {
     noteBg: string;
     /** 强调色（票签 / 印章 / hasRecord 圆点） */
     accent: string;
-    /** 胶带色（rgba） */
-    tape: string;
     /** 主文字色 */
     ink: string;
     /** 次要文字色 */
@@ -1184,9 +1245,6 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
     return (
         <div className="mb-6" style={{ contain: 'layout paint' }}>
             <PaperNote className="px-5 py-5" rotate={tinyRotate(recordKey)} bg={theme.noteBg}>
-                <WashiTape className="-top-2 left-8" color={theme.tape} rotate={-12} width={84} height={24} />
-                <WashiTape className="-top-2 right-8" color={theme.tape} rotate={12} width={70} height={22} />
-
                 {isPast && (
                     <div className="absolute top-3 right-3">
                         <Postmark size={42} color={theme.accent} rotate={-12}>往期</Postmark>
@@ -1228,11 +1286,16 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
                                             className="flex flex-col items-center gap-2 p-3 rounded-2xl active:scale-95 transition-transform relative"
                                             style={{ background: '#fff', boxShadow: isPending ? `0 0 0 2.5px ${theme.accent}` : '0 2px 6px rgba(96,66,40,0.12)' }}
                                         >
-                                            {isImageAvatar(c.avatar) ? (
-                                                <img src={c.avatar} loading="lazy" decoding="async" alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: '2px solid #f3ead7' }} />
-                                            ) : (
-                                                <span className="w-12 h-12 rounded-full flex items-center justify-center text-2xl" style={{ background: '#f3ead7', border: '2px solid #fff' }}>{c.avatar || '🌸'}</span>
-                                            )}
+                                            <SpecialAvatar
+                                                avatar={c.avatar}
+                                                sizeClassName="w-12 h-12"
+                                                imageShellClassName="rounded-full"
+                                                fallbackClassName="rounded-full items-center justify-center text-2xl"
+                                                fallback="🌸"
+                                                imageShellStyle={{ border: '2px solid #f3ead7' }}
+                                                fallbackStyle={{ background: '#f3ead7', border: '2px solid #fff' }}
+                                                lazy
+                                            />
                                             <span className="text-[11px] font-bold truncate w-full text-center" style={{ color: theme.ink }}>{c.name}</span>
                                             {hasRecord && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full" style={{ background: theme.accent }} />}
                                         </button>
@@ -1256,7 +1319,6 @@ const SpecialEventCard = React.memo(SpecialEventCardImpl);
 const THEME_LIKE520: EventCardTheme = {
     noteBg: '#fdeef0',
     accent: '#d96a82',
-    tape: 'rgba(231,163,180,0.66)',
     ink: '#7a3b4c',
     inkSoft: '#b07d8a',
 };
@@ -1264,7 +1326,6 @@ const THEME_LIKE520: EventCardTheme = {
 const THEME_WHITEDAY: EventCardTheme = {
     noteBg: '#fdf4e3',
     accent: '#c98a3f',
-    tape: 'rgba(231,196,120,0.7)',
     ink: '#6b4a2e',
     inkSoft: '#b08a5a',
 };
@@ -1272,7 +1333,6 @@ const THEME_WHITEDAY: EventCardTheme = {
 const THEME_VALENTINE: EventCardTheme = {
     noteBg: '#fbecef',
     accent: '#c8475f',
-    tape: 'rgba(231,140,156,0.66)',
     ink: '#7a2b3e',
     inkSoft: '#b06b78',
 };
@@ -1525,7 +1585,6 @@ const ConfirmDeleteModal: React.FC<{
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-fade-in">
         <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
         <div className="relative w-full max-w-xs animate-slide-up" style={{ background: '#fffdf7', borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(-0.8deg)' }}>
-            <WashiTape className="-top-2 left-1/2 -translate-x-1/2" color="rgba(200,71,95,0.55)" rotate={3} width={96} height={24} />
             <div className="p-6">
                 <div className="text-center mb-4">
                     <div className="text-3xl mb-2">✂️</div>

@@ -6,7 +6,7 @@ import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
+import { PaperPage, PaperNote, TapeLabel, Postmark, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
 
 /**
  * 岁时记 ·「时光契约」（拼贴手账风）
@@ -27,7 +27,6 @@ interface HbTheme {
     inkSoft: string;   // 次要文字
     accent: string;    // 强调（印章 / 今日 / 主按钮）
     noteBg: string;    // 纸片底
-    tape: string;      // 胶带色（rgba）
     tabTodo: string;   // 左 Tab 文案
     tabDays: string;   // 右 Tab 文案
     switchEmoji: string;
@@ -38,19 +37,19 @@ const THEMES: Record<ThemeId, HbTheme> = {
     kraft: {
         id: 'kraft', paper: 'kraft', name: '牛皮纸',
         ink: '#3a342c', inkSoft: '#8a8276', accent: '#2c2823',
-        noteBg: '#faf7f0', tape: 'rgba(120,116,108,0.5)',
+        noteBg: '#faf7f0',
         tabTodo: '要做的事', tabDays: '数着的日子', switchEmoji: '📜',
     },
     grid: {
         id: 'grid', paper: 'grid', name: '方格本',
         ink: '#33312c', inkSoft: '#857f74', accent: '#3a352e',
-        noteBg: '#fbfaf6', tape: 'rgba(150,146,138,0.5)',
+        noteBg: '#fbfaf6',
         tabTodo: '清单', tabDays: '倒数日', switchEmoji: '🟩',
     },
     sticky: {
         id: 'sticky', paper: 'sticky', name: '便利贴',
         ink: '#3a342c', inkSoft: '#908a7e', accent: '#1f1d1a',
-        noteBg: '#f7f4ec', tape: 'rgba(140,134,124,0.55)',
+        noteBg: '#f7f4ec',
         tabTodo: '便签事', tabDays: '惦记日', switchEmoji: '🟨',
     },
 };
@@ -391,7 +390,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     {/* 即将到来的日子 —— Hero */}
                     {upcomingAnni && (
                         <PaperNote className="mt-2 mb-6 px-5 py-5" rotate={-1} bg={theme.noteBg}>
-                            <WashiTape className="-top-2 right-8" color={theme.tape} rotate={12} width={82} />
                             <PaperClip className="-top-3 left-7" color="#b6a78c" />
                             <div className="flex items-start justify-between">
                                 <div>
@@ -439,7 +437,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     const isProcessing = processingTaskIds.has(task.id);
                                     return (
                                         <PaperNote key={task.id} className="px-4 py-4" rotate={tinyRotate(task.id)} bg={theme.noteBg}>
-                                            <WashiTape className="-top-2 left-6" color={theme.tape} rotate={-10} width={56} />
                                             <div className="flex items-center gap-3">
                                                 <div className="relative shrink-0">
                                                     {supervisor?.avatar?.startsWith('http') || supervisor?.avatar?.startsWith('data:')
@@ -541,8 +538,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={() => setShowTaskModal(false)}>
                     <div className="absolute inset-0 bg-black/45 animate-fade-in" />
                     <div className="relative w-full max-w-sm animate-slide-up" style={{ background: theme.noteBg, borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(-0.6deg)' }} onClick={e => e.stopPropagation()}>
-                        <WashiTape className="-top-2 left-10" color={theme.tape} rotate={-12} width={80} />
-                        <WashiTape className="-top-2 right-10" color={theme.tape} rotate={10} width={80} />
                         <div className="p-6">
                             <div className="text-[22px] font-black mb-1" style={{ fontFamily: HAND_FONT, color: theme.ink }}>钉一条新约定</div>
                             <div className="text-[11px] mb-4" style={{ color: theme.inkSoft }}>写下要做的事，挑一位角色来盯着你</div>
@@ -565,8 +560,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={() => setShowAnniModal(false)}>
                     <div className="absolute inset-0 bg-black/45 animate-fade-in" />
                     <div className="relative w-full max-w-sm animate-slide-up" style={{ background: theme.noteBg, borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(0.6deg)' }} onClick={e => e.stopPropagation()}>
-                        <WashiTape className="-top-2 left-10" color={theme.tape} rotate={-10} width={80} />
-                        <WashiTape className="-top-2 right-10" color={theme.tape} rotate={12} width={80} />
                         <div className="p-6">
                             <div className="text-[22px] font-black mb-1" style={{ fontFamily: HAND_FONT, color: theme.ink }}>贴一个要数的日子</div>
                             <div className="text-[11px] mb-4" style={{ color: theme.inkSoft }}>取个名、定个日期，再关联一位角色</div>

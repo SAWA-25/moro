@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AmbientSocialContact, CharacterProfile } from '../types';
-import { ambientSocialToCharacter, isAmbientSocialCharacter } from './ambientSocial';
+import type { AmbientSocialContact, AmbientSocialEntry, CharacterProfile } from '../types';
+import { ambientSocialToCharacter, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter } from './ambientSocial';
 import { createCharacterId, ensureCharacterModelId, formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 describe('character identity helpers', () => {
@@ -67,5 +67,43 @@ describe('character identity helpers', () => {
     } as CharacterProfile;
 
     expect(isAmbientSocialCharacter(legacy)).toBe(true);
+  });
+
+  it('tracks converted ambient social entries linked to existing formal records', () => {
+    const entries = [
+      {
+        id: 'ambient-contact',
+        kind: 'contact',
+        name: 'Existing Friend',
+        relation: 'friend',
+        relationLabel: 'friend',
+        avatar: '',
+        note: '',
+        lastMessage: '',
+        lastAt: 1,
+        linkedCharId: 'char-existing',
+        createdAt: 1,
+      },
+      {
+        id: 'ambient-group',
+        kind: 'group',
+        name: 'Existing Group',
+        relation: 'group',
+        relationLabel: 'group',
+        avatar: '',
+        note: '',
+        memberNames: ['A', 'B'],
+        lastMessage: '',
+        lastAt: 1,
+        linkedGroupId: 'group-existing',
+        createdAt: 1,
+      },
+    ] as AmbientSocialEntry[];
+
+    const existing = { id: 'char-existing', name: 'Existing Friend' } as CharacterProfile;
+
+    expect(isAmbientSocialCharacter(existing)).toBe(false);
+    expect(getAmbientSocialLinkedCharacterIds(entries).has(existing.id)).toBe(true);
+    expect(getAmbientSocialLinkedGroupIds(entries).has('group-existing')).toBe(true);
   });
 });

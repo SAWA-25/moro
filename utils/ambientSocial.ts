@@ -338,6 +338,22 @@ export function patchAmbientSocialEntry(
     };
 }
 
+export function getAmbientSocialLinkedCharacterIds(entries: AmbientSocialEntry[] = []): Set<string> {
+    return new Set(
+        entries
+            .filter((entry): entry is AmbientSocialContact => entry.kind === 'contact' && !!entry.linkedCharId)
+            .map(entry => entry.linkedCharId!)
+    );
+}
+
+export function getAmbientSocialLinkedGroupIds(entries: AmbientSocialEntry[] = []): Set<string> {
+    return new Set(
+        entries
+            .filter((entry): entry is AmbientSocialGroup => entry.kind === 'group' && !!entry.linkedGroupId)
+            .map(entry => entry.linkedGroupId!)
+    );
+}
+
 export function isAmbientSocialCharacter(char: CharacterProfile | null | undefined): boolean {
     if (!char) return false;
     if (char.ambientSocialSource?.entryId) return true;
