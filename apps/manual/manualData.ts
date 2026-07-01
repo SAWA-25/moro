@@ -69,6 +69,18 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-01-zzzzzzzzzzzzzzzzzzzzzzzzzz-read-notices-dont-repeat',
+    date: '2026-07-01',
+    title: '已读更新公告不再重复弹出',
+    kind: 'improvement',
+    summary: '更新公告弹窗继续保持一次性提醒：同一条公告读过后，之后再锁屏解锁也不会重复弹，只有新增公告才会再次提醒。',
+    items: [
+      '点“知道了”、右上角关闭、点遮罩关闭或点“查看公告”后，当前公告都会记为已读。',
+      '已读公告会保存在本机，下次进入锁屏再解锁时不会因为同一条内容再次弹窗。',
+      '之后如果 Moro 新增了公告 ID，新的公告仍会在解锁后提醒一次。',
+    ],
+  },
+  {
     id: '2026-07-01-api-fields-model-fetch-and-presets',
     date: '2026-07-01',
     title: '更多 API 填写处可以拉模型和存预设',

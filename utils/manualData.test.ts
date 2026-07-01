@@ -57,6 +57,16 @@ describe('manual update notices', () => {
     expect(getPendingManualUpdateNotices(storage).length).toBe(Math.max(0, MANUAL_UPDATE_NOTICES.length - 1));
   });
 
+  it('does not queue already-read notices again on later checks', () => {
+    const storage = fakeStorage();
+    for (const notice of getManualUpdateNotices()) {
+      markManualUpdateNoticeSeen(notice.id, storage);
+    }
+
+    expect(getPendingManualUpdateNotice(storage)).toBeNull();
+    expect(getPendingManualUpdateNotices(storage)).toEqual([]);
+  });
+
   it('keeps legacy single-id seen storage compatible', () => {
     const storage = fakeStorage();
     const latest = getLatestManualUpdateNotice();
