@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 .npm-cache
 dist
+dist-native
+dist-web
 dist-ssr
 *.local
 

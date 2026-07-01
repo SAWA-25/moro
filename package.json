@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "pnpm run build:workers && vite build",
     "preview": "vite preview",
+    "sync:native": "node scripts/sync-native.mjs",
     "cap:sync": "cap sync",
     "build:ios": "pnpm build && cap sync ios",
     "cap:android": "cap open android",
