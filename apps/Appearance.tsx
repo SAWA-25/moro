@@ -784,6 +784,159 @@ const buildAppCssPrompt = (appName: string, appId: AppID, kind: CssPromptKind = 
     currentCss,
 });
 
+type AppCssArea = {
+    id: string;
+    title: string;
+    desc: string;
+    selectors: (appId: AppID) => string[];
+    scopeNote?: string;
+    styleExamples: string;
+};
+
+const appScope = (appId: AppID) => `[data-moro-app="${appId}"]`;
+const appInScope = (appId: AppID, selector: string) => `${appScope(appId)} ${selector}`;
+const uniqueSelectors = (selectors: string[]) => Array.from(new Set(selectors));
+
+const APP_CSS_AREAS: AppCssArea[] = [
+    {
+        id: 'shell',
+        title: '整页外壳',
+        desc: '背景、整页底色、字体颜色和 App 总体氛围。',
+        selectors: (appId) => [
+            appScope(appId),
+            `.moro-app-shell-${appId}`,
+            `${appScope(appId)} > *`,
+        ],
+        scopeNote: '只改当前 App 的根外壳和第一层内容，不要把 position/fixed 写到整页根节点上，避免页面移出屏幕。',
+        styleExamples: '把整个软件改成黑白杂志、奶油手账、玻璃控制台、像素掌机界面',
+    },
+    {
+        id: 'topbar',
+        title: '顶栏标题区',
+        desc: '返回键、标题、右上角工具按钮、吸顶栏和页头。',
+        selectors: (appId) => [
+            appInScope(appId, 'header'),
+            appInScope(appId, '[class*="sticky"]'),
+            appInScope(appId, '[class*="top-"]'),
+            appInScope(appId, 'h1'),
+            appInScope(appId, 'h2'),
+            appInScope(appId, 'button[aria-label]'),
+        ],
+        scopeNote: '不要隐藏返回、关闭、保存、刷新这类安全按钮；顶栏可以改背景、边框、阴影、圆角和标题字体。',
+        styleExamples: '把顶栏做成拍立得相纸标题、透明玻璃导航、旧报纸铅字标题、像素游戏菜单',
+    },
+    {
+        id: 'scroll',
+        title: '滚动内容区',
+        desc: '页面主体、列表外层、长内容阅读区和滚动手感。',
+        selectors: (appId) => [
+            appInScope(appId, 'main'),
+            appInScope(appId, '[class*="overflow-y-auto"]'),
+            appInScope(appId, '[class*="overflow-auto"]'),
+            appInScope(appId, '[class*="no-scrollbar"]'),
+            appInScope(appId, '[class*="space-y-"]'),
+        ],
+        scopeNote: '不要写 overflow:hidden 到主体滚动区；可以调整 padding、背景纹理、滚动区间距和分隔感。',
+        styleExamples: '让长列表像手账页面、杂志内页、透明玻璃卷轴、复古终端输出区',
+    },
+    {
+        id: 'cards',
+        title: '卡片与列表',
+        desc: '内容卡、帖子、相册、课程、订单、歌单、记忆条目等重复块。',
+        selectors: (appId) => [
+            appInScope(appId, 'section'),
+            appInScope(appId, 'article'),
+            appInScope(appId, 'li'),
+            appInScope(appId, '[class*="rounded"]'),
+            appInScope(appId, '[class*="border"]'),
+            appInScope(appId, '[class*="shadow"]'),
+        ],
+        scopeNote: '优先改卡片背景、边框、圆角、阴影、间距和悬停态；不要把所有卡片设成透明到文字看不清。',
+        styleExamples: '卡片像便签纸、票据、拍立得、旧报纸剪报、黑胶唱片封套',
+    },
+    {
+        id: 'buttons',
+        title: '按钮与工具条',
+        desc: '主要按钮、图标按钮、标签切换、刷新/保存/删除等操作入口。',
+        selectors: (appId) => [
+            appInScope(appId, 'button'),
+            appInScope(appId, '[role="button"]'),
+            appInScope(appId, '[class*="active:"]'),
+            appInScope(appId, '[class*="hover:"]'),
+            appInScope(appId, 'a'),
+        ],
+        scopeNote: '按钮可以改材质、边框、阴影和按下反馈，但不要让文字和图标同色、不要禁用 pointer-events。',
+        styleExamples: '按钮像贴纸、复古印章、玻璃胶囊、像素方块、黑白报纸小标签',
+    },
+    {
+        id: 'forms',
+        title: '输入表单区',
+        desc: '搜索框、文本框、选择器、滑杆、开关和编辑框。',
+        selectors: (appId) => [
+            appInScope(appId, 'input'),
+            appInScope(appId, 'textarea'),
+            appInScope(appId, 'select'),
+            appInScope(appId, '[contenteditable="true"]'),
+            appInScope(appId, 'label'),
+        ],
+        scopeNote: '输入区必须保留可读文字、光标和焦点态；不要把输入框高度压到点不到。',
+        styleExamples: '输入框像手账横线纸、复古表格、透明玻璃搜索框、终端命令行',
+    },
+    {
+        id: 'bottomnav',
+        title: '底栏与导航',
+        desc: '底部 Tab、底部操作栏、固定导航和浮动提交栏。',
+        selectors: (appId) => [
+            appInScope(appId, 'nav'),
+            appInScope(appId, 'footer'),
+            appInScope(appId, '[class*="bottom-"]'),
+            appInScope(appId, '[class*="fixed"]'),
+            appInScope(appId, '[class*="absolute"]'),
+        ],
+        scopeNote: '底栏不要移出屏幕、不要盖住输入框；如果改 fixed/absolute 元素，要保留点击和滚动空间。',
+        styleExamples: '底栏像手机 Dock、纸胶带工具条、玻璃浮层、黑白像素菜单',
+    },
+    {
+        id: 'media',
+        title: '图片与媒体',
+        desc: '头像、封面、相册图、播放器封面、视频、画布和图标。',
+        selectors: (appId) => [
+            appInScope(appId, 'img'),
+            appInScope(appId, 'video'),
+            appInScope(appId, 'canvas'),
+            appInScope(appId, 'svg'),
+            appInScope(appId, '[class*="object-"]'),
+        ],
+        scopeNote: '媒体可以加边框、滤镜、圆角和相纸阴影；不要把 object-fit 改到图片严重变形，头像不要被裁掉五官。',
+        styleExamples: '图片像拍立得、胶片、黑白相纸、杂志封面、像素缩略图',
+    },
+    {
+        id: 'dialogs',
+        title: '弹窗抽屉',
+        desc: '确认框、详情弹层、底部抽屉、浮层菜单和遮罩。',
+        selectors: (appId) => [
+            appInScope(appId, '[role="dialog"]'),
+            appInScope(appId, '[aria-modal="true"]'),
+            appInScope(appId, '[class*="z-"]'),
+            appInScope(appId, '[class*="backdrop"]'),
+            appInScope(appId, '[class*="modal"]'),
+        ],
+        scopeNote: '弹窗要保留关闭、取消、确认按钮；不要把遮罩 z-index 写得盖住整个手机后无法点击。',
+        styleExamples: '弹窗像票据夹、玻璃抽屉、旧报纸剪贴、舞台提示框',
+    },
+];
+
+const buildAppAreaCssPrompt = (appName: string, appId: AppID, area: AppCssArea, currentCss?: string) => buildCssPrompt('local', {
+    target: `只改 Moro「${appName}」App 的「${area.title}」区域，不影响这个 App 的其它区域，也不影响其它 App。`,
+    selectors: uniqueSelectors([
+        appScope(appId),
+        ...area.selectors(appId),
+    ]),
+    scopeNote: `所有 CSS 都必须放在 ${appScope(appId)} 下面。${area.scopeNote || ''}`,
+    styleExamples: area.styleExamples,
+    currentCss,
+});
+
 const buildWidgetCssPrompt = (label: string, id: string, kind: CssPromptKind = 'local', currentCss?: string) => buildCssPrompt(kind, {
     target: `只改桌面小组件「${label}」。`,
     selectors: [`.moro-widget-${id}`, `.moro-widget-${id} *`, '.moro-widget-card'],
@@ -1080,6 +1233,7 @@ const AppCssStudio: React.FC<{
                 const app = INSTALLED_APPS.find(a => a.id === openAppId) || INSTALLED_APPS[0];
                 const Icon = Icons[app.icon];
                 const selector = `[data-moro-app="${app.id}"]`;
+                const activeAppCss = appCss[app.id] || '';
                 return (
                     <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                         <div className="flex items-start gap-3 mb-4">
@@ -1105,26 +1259,52 @@ const AppCssStudio: React.FC<{
                                     {
                                         title: `${app.name} · 完整定制`,
                                         desc: `自动带上 ${selector}，把整个 App 做成一套皮肤。`,
-                                        prompt: buildAppCssPrompt(app.name, app.id, 'complete', appCss[app.id]),
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'complete', activeAppCss),
                                         selectors: [selector, `.moro-app-shell-${app.id}`],
                                     },
                                     {
                                         title: `${app.name} · 局部微调`,
                                         desc: '只改按钮、输入框、卡片或标题，不影响其它 App。',
-                                        prompt: buildAppCssPrompt(app.name, app.id, 'local', appCss[app.id]),
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'local', activeAppCss),
                                         selectors: [`${selector} button`, `${selector} input`, `${selector} textarea`],
                                     },
                                     {
                                         title: `${app.name} · 修坏修复`,
                                         desc: '把当前 App CSS 交给 AI 检查遮挡、溢出、按钮消失。',
-                                        prompt: buildAppCssPrompt(app.name, app.id, 'fix', appCss[app.id]),
+                                        prompt: buildAppCssPrompt(app.name, app.id, 'fix', activeAppCss),
                                         selectors: [selector, '[data-moro-active="true"]'],
                                     },
                                 ]}
                             />
                         </div>
+                        <div className="mb-3 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/35 p-3.5">
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                                <div>
+                                    <div className="text-[12px] font-black text-[#2b2933] label-mono">可 CSS 区域地图</div>
+                                    <p className="text-[10px] text-[#6b6b6b] leading-snug mt-0.5">
+                                        想只改某一块，就复制对应区域提示词；AI 会自动带上当前 AppID：{app.id}
+                                    </p>
+                                </div>
+                                <span className="shrink-0 px-2 py-1 bg-[#2b2933] text-[#fbfaf7] text-[9px] font-black label-mono">
+                                    {APP_CSS_AREAS.length} 区
+                                </span>
+                            </div>
+                            <PromptCardGrid
+                                addToast={addToast}
+                                className="sm:grid-cols-2"
+                                cards={APP_CSS_AREAS.map(area => {
+                                    const selectors = uniqueSelectors([selector, ...area.selectors(app.id)]);
+                                    return {
+                                        title: `${app.name} · ${area.title}`,
+                                        desc: area.desc,
+                                        prompt: buildAppAreaCssPrompt(app.name, app.id, area, activeAppCss),
+                                        selectors,
+                                    };
+                                })}
+                            />
+                        </div>
                         <textarea
-                            value={appCss[app.id] || ''}
+                            value={activeAppCss}
                             onChange={e => setAppCss(app.id, e.target.value)}
                             spellCheck={false}
                             placeholder={`${selector} {\n  background: #fbfaf7 !important;\n}\n\n${selector} button {\n  border-radius: 8px !important;\n}`}

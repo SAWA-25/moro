@@ -462,6 +462,11 @@ const ManualUpdateNoticePopup: React.FC<{
               </div>
             ))}
           </div>
+
+          <div className="mt-3 flex items-center gap-2 rounded-[14px] bg-white/72 border border-black/[0.08] px-3 py-2.5 text-[#5c5143]">
+            <BookOpenText size={15} weight="fill" className="shrink-0 text-[#23211d]" />
+            <span className="text-[11.5px] leading-relaxed font-bold">Moro 有任何不明白的，请详细看说明书 App。</span>
+          </div>
         </div>
 
         <div className="relative px-6 pb-6 grid grid-cols-[1fr_1.15fr] gap-3">

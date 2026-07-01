@@ -1,7 +1,17 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
-import { CharacterProfile, GuidebookSession, GuidebookRound, GuidebookOption } from '../types';
+import {
+    CharacterProfile,
+    GuidebookSession,
+    GuidebookRound,
+    GuidebookOption,
+    GuidebookRules,
+    GuidebookPlayStyle,
+    GuidebookDifficulty,
+    GuidebookPacing,
+    GuidebookScoreVisibility,
+} from '../types';
 import { extractJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -83,6 +93,94 @@ const fmtDate = (ts: number) => {
     const d = new Date(ts);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 };
+
+const DEFAULT_RULES: GuidebookRules = {
+    playStyle: 'classic',
+    difficulty: 'normal',
+    pacing: 'rising',
+    scoreVisibility: 'shown',
+    goal: '',
+};
+
+const PLAY_STYLE_META: Record<GuidebookPlayStyle, { label: string; desc: string }> = {
+    classic: { label: '经典恋爱', desc: '心动、误会、试探和结局感' },
+    slowburn: { label: '慢热日常', desc: '细水长流，靠小事推进' },
+    comedy: { label: '喜剧整活', desc: '翻车、吐槽和轻松爆梗' },
+    dramatic: { label: '剧情拉扯', desc: '强转折、高张力、名场面' },
+    mindgame: { label: '心理博弈', desc: '猜心、反套路和读档感' },
+};
+
+const DIFFICULTY_META: Record<GuidebookDifficulty, { label: string; desc: string }> = {
+    soft: { label: '柔和', desc: '少陷阱，更容易甜' },
+    normal: { label: '标准', desc: '有奖有罚，正常博弈' },
+    hard: { label: '高难', desc: '反差选项更多' },
+};
+
+const PACING_META: Record<GuidebookPacing, { label: string; desc: string }> = {
+    slice: { label: '日常铺垫', desc: '轻场景，慢升温' },
+    rising: { label: '递进三幕', desc: '开端、转折、收束' },
+    climax: { label: '开局高能', desc: '直接进事件中心' },
+};
+
+const SCORE_VISIBILITY_META: Record<GuidebookScoreVisibility, { label: string; desc: string }> = {
+    shown: { label: '明牌复盘', desc: '回合里显示每个分数' },
+    mystery: { label: '暗牌心跳', desc: '只揭晓选择结果' },
+};
+
+function normalizeRules(rules?: Partial<GuidebookRules>): GuidebookRules {
+    const playStyle = rules?.playStyle && PLAY_STYLE_META[rules.playStyle] ? rules.playStyle : DEFAULT_RULES.playStyle;
+    const difficulty = rules?.difficulty && DIFFICULTY_META[rules.difficulty] ? rules.difficulty : DEFAULT_RULES.difficulty;
+    const pacing = rules?.pacing && PACING_META[rules.pacing] ? rules.pacing : DEFAULT_RULES.pacing;
+    const scoreVisibility = rules?.scoreVisibility && SCORE_VISIBILITY_META[rules.scoreVisibility] ? rules.scoreVisibility : DEFAULT_RULES.scoreVisibility;
+    return {
+        playStyle,
+        difficulty,
+        pacing,
+        scoreVisibility,
+        goal: rules?.goal || '',
+    };
+}
+
+function getScoreSpread(options?: GuidebookOption[]) {
+    const scores = (options || []).map(o => Number(o.affinity)).filter(Number.isFinite);
+    if (scores.length === 0) return 0;
+    return Math.max(...scores) - Math.min(...scores);
+}
+
+function getSessionStats(session: GuidebookSession | null | undefined) {
+    const rounds = session?.rounds || [];
+    const totalDelta = session ? session.currentAffinity - session.initialAffinity : 0;
+    const positiveRounds = rounds.filter(r => r.affinityAfter - r.affinityBefore > 0).length;
+    const negativeRounds = rounds.filter(r => r.affinityAfter - r.affinityBefore < 0).length;
+    const bestRound = rounds.reduce<GuidebookRound | null>((best, r) => {
+        if (!best) return r;
+        return (r.affinityAfter - r.affinityBefore) > (best.affinityAfter - best.affinityBefore) ? r : best;
+    }, null);
+    const worstRound = rounds.reduce<GuidebookRound | null>((worst, r) => {
+        if (!worst) return r;
+        return (r.affinityAfter - r.affinityBefore) < (worst.affinityAfter - worst.affinityBefore) ? r : worst;
+    }, null);
+    const avgSpread = rounds.length
+        ? Math.round(rounds.reduce((sum, r) => {
+            return sum + getScoreSpread(r.options);
+        }, 0) / rounds.length)
+        : 0;
+    return { totalDelta, positiveRounds, negativeRounds, bestRound, worstRound, avgSpread };
+}
+
+function getRoundDelta(round?: GuidebookRound | null) {
+    return round ? round.affinityAfter - round.affinityBefore : 0;
+}
+
+function formatScore(value: number, hidden: boolean) {
+    if (hidden) return '??';
+    return `${value >= 0 ? '+' : ''}${value}`;
+}
+
+function scoreTextClass(value: number, hidden = false) {
+    if (hidden) return 'text-gray-400';
+    return value >= 0 ? 'text-emerald-500' : 'text-red-400';
+}
 
 // --- Long Press Hook ---
 function useLongPress(callback: () => void, ms = 500) {
@@ -261,11 +359,13 @@ const RoundDisplay: React.FC<{
     isLatest: boolean;
     onLongPress?: () => void;
     isReplay?: boolean;
-}> = ({ round, charName, isLatest, onLongPress, isReplay }) => {
+    scoreVisibility?: GuidebookScoreVisibility;
+}> = ({ round, charName, isLatest, onLongPress, isReplay, scoreVisibility = 'shown' }) => {
     const chosen = round.options[round.charChoice];
     const affinityDiff = round.affinityAfter - round.affinityBefore;
     const longPressHandlers = useLongPress(() => onLongPress?.(), 500);
     const [expanded, setExpanded] = useState(false);
+    const hideUnchosenScores = scoreVisibility === 'mystery';
 
     return (
         <div
@@ -310,8 +410,8 @@ const RoundDisplay: React.FC<{
                             <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full font-bold shrink-0" style={{ background: '#b8909a' }}>
                                 <ArrowLeft size={10} className="inline" /> {charName}
                             </span>
-                            <span className={`text-[10px] font-mono font-bold shrink-0 ${(chosen?.affinity || 0) >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                                {(chosen?.affinity || 0) >= 0 ? '+' : ''}{chosen?.affinity}
+                            <span className={`text-[10px] font-mono font-bold shrink-0 ${scoreTextClass(chosen?.affinity || 0)}`}>
+                                {formatScore(chosen?.affinity || 0, false)}
                             </span>
                         </div>
                         {/* Brief reaction */}
@@ -347,12 +447,36 @@ const RoundDisplay: React.FC<{
                                             <ArrowLeft size={10} className="inline" /> {charName}
                                         </span>
                                     )}
-                                    <span className={`text-[10px] font-mono font-bold shrink-0 ${opt.affinity >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                                        {opt.affinity >= 0 ? '+' : ''}{opt.affinity}
-                                    </span>
+                                    {(() => {
+                                        const hiddenScore = hideUnchosenScores && i !== round.charChoice;
+                                        return (
+                                            <span className={`text-[10px] font-mono font-bold shrink-0 ${scoreTextClass(opt.affinity, hiddenScore)}`}>
+                                                {formatScore(opt.affinity, hiddenScore)}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>
+
+                        {(round.prediction || round.tacticTag) && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(200,185,190,0.22)' }}>
+                                    <div className="text-[9px] font-bold mb-0.5" style={{ color: '#9b8a8e' }}>战术标签</div>
+                                    <div className="text-xs font-bold" style={{ color: '#5a4a50' }}>{round.tacticTag || '未标记'}</div>
+                                </div>
+                                <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(200,185,190,0.22)' }}>
+                                    <div className="text-[9px] font-bold mb-0.5" style={{ color: '#9b8a8e' }}>风险差</div>
+                                    <div className="text-xs font-bold" style={{ color: '#5a4a50' }}>{round.scoreSpread ?? getScoreSpread(round.options)}</div>
+                                </div>
+                                {round.prediction && (
+                                    <div className="col-span-2 rounded-lg px-2.5 py-2" style={{ background: 'rgba(230,225,238,0.45)', border: '1px solid rgba(185,175,200,0.22)' }}>
+                                        <div className="text-[9px] font-bold mb-0.5" style={{ color: '#8a80a0' }}>选择前预判</div>
+                                        <div className="text-[11px] leading-relaxed" style={{ color: '#6a6080' }}>{round.prediction}</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Inner Thought (now includes prediction) */}
                         <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(230,225,238,0.5)', border: '1px solid rgba(185,175,200,0.25)' }}>
@@ -539,6 +663,7 @@ const SessionCard: React.FC<{
     onLongPress: () => void;
 }> = ({ session, char, onTap, onLongPress }) => {
     const diff = session.currentAffinity - session.initialAffinity;
+    const rules = normalizeRules(session.rules);
     const longPressHandlers = useLongPress(onLongPress, 500);
     const tappedRef = useRef(false);
 
@@ -572,6 +697,13 @@ const SessionCard: React.FC<{
                                 {session.status === 'ended' ? '已结算' : '进行中'}
                             </span>
                         </div>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                            {[PLAY_STYLE_META[rules.playStyle].label, DIFFICULTY_META[rules.difficulty].label, SCORE_VISIBILITY_META[rules.scoreVisibility].label].map(label => (
+                                <span key={label} className="text-[8px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: 'rgba(255,255,255,0.55)', color: '#9b8a8e', border: '1px solid rgba(200,185,190,0.2)' }}>
+                                    {label}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                     <div className="text-right shrink-0">
                         <div className={`text-lg font-black ${diff > 0 ? 'text-emerald-500' : diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>
@@ -582,6 +714,70 @@ const SessionCard: React.FC<{
                         </div>
                     </div>
                 </div>
+            </div>
+        </Card>
+    );
+};
+
+const GuidebookArchivePanel: React.FC<{
+    session: GuidebookSession;
+    charName: string;
+}> = ({ session, charName }) => {
+    const rules = normalizeRules(session.rules);
+    const stats = getSessionStats(session);
+    const bestDelta = getRoundDelta(stats.bestRound);
+    const worstDelta = getRoundDelta(stats.worstRound);
+
+    return (
+        <Card className="p-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+                <div>
+                    <div className="text-[10px] font-bold tracking-wider" style={{ color: '#9b8a8e' }}>攻略档案</div>
+                    <div className="text-sm font-black" style={{ color: '#5a4a50' }}>{PLAY_STYLE_META[rules.playStyle].label} · {PACING_META[rules.pacing].label}</div>
+                </div>
+                <div className={`px-2.5 py-1 rounded-full text-xs font-black ${stats.totalDelta >= 0 ? 'text-emerald-500' : 'text-red-400'}`} style={{ background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(200,185,190,0.25)' }}>
+                    {stats.totalDelta >= 0 ? '+' : ''}{stats.totalDelta}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5">
+                {[
+                    { label: '难度', value: DIFFICULTY_META[rules.difficulty].label },
+                    { label: '分数', value: SCORE_VISIBILITY_META[rules.scoreVisibility].label },
+                    { label: '加分局', value: `${stats.positiveRounds}` },
+                    { label: '风险差', value: `${stats.avgSpread}` },
+                ].map(item => (
+                    <div key={item.label} className="rounded-xl px-2 py-2 text-center" style={{ background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(200,185,190,0.2)' }}>
+                        <div className="text-[8px] font-bold mb-0.5" style={{ color: '#b09aa0' }}>{item.label}</div>
+                        <div className="text-[11px] font-black truncate" style={{ color: '#5a4a50' }}>{item.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            {rules.goal && (
+                <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(245,238,235,0.55)', border: '1px dashed rgba(200,185,190,0.35)' }}>
+                    <div className="text-[9px] font-bold mb-0.5" style={{ color: '#9b8a8e' }}>本局目标</div>
+                    <div className="text-xs leading-relaxed" style={{ color: '#5a4a50' }}>{rules.goal}</div>
+                </div>
+            )}
+
+            {session.rounds.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(235,248,240,0.55)', border: '1px solid rgba(150,205,170,0.25)' }}>
+                        <div className="text-[9px] font-bold mb-0.5 text-emerald-600">最佳回合</div>
+                        <div className="text-xs font-bold text-emerald-600">第 {stats.bestRound?.roundNumber || '?'} 回合 · {bestDelta >= 0 ? '+' : ''}{bestDelta}</div>
+                        <div className="text-[10px] mt-1 line-clamp-2" style={{ color: '#54705e' }}>{stats.bestRound?.tacticTag || stats.bestRound?.charInsight || '还没有明显高光'}</div>
+                    </div>
+                    <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(250,238,238,0.55)', border: '1px solid rgba(210,160,160,0.25)' }}>
+                        <div className="text-[9px] font-bold mb-0.5 text-red-400">翻车回合</div>
+                        <div className="text-xs font-bold text-red-400">第 {stats.worstRound?.roundNumber || '?'} 回合 · {worstDelta >= 0 ? '+' : ''}{worstDelta}</div>
+                        <div className="text-[10px] mt-1 line-clamp-2" style={{ color: '#7a5a5e' }}>{stats.worstRound?.tacticTag || stats.worstRound?.charInsight || '目前还挺稳'}</div>
+                    </div>
+                </div>
+            )}
+
+            <div className="text-[10px] leading-relaxed" style={{ color: '#9b8a8e' }}>
+                {charName} 会按这份规则继续判断选项；长按某回合可回档重跑。
             </div>
         </Card>
     );
@@ -607,6 +803,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [initialAffinity, setInitialAffinity] = useState(50);
     const [maxRounds, setMaxRounds] = useState(5);
     const [scenarioHint, setScenarioHint] = useState('');
+    const [playStyle, setPlayStyle] = useState<GuidebookPlayStyle>(DEFAULT_RULES.playStyle);
+    const [difficulty, setDifficulty] = useState<GuidebookDifficulty>(DEFAULT_RULES.difficulty);
+    const [pacing, setPacing] = useState<GuidebookPacing>(DEFAULT_RULES.pacing);
+    const [scoreVisibility, setScoreVisibility] = useState<GuidebookScoreVisibility>(DEFAULT_RULES.scoreVisibility);
+    const [guideGoal, setGuideGoal] = useState('');
 
     // Tutorial modal
     const [showTutorial, setShowTutorial] = useState(false);
@@ -690,6 +891,13 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const contextLimit = char.contextLimit || 500;
         const recentMsgs = await fetchRecentMessages(selectedCharId, contextLimit);
         setCachedRecentMsgs(recentMsgs);
+        const rules = normalizeRules({
+            playStyle,
+            difficulty,
+            pacing,
+            scoreVisibility,
+            goal: guideGoal.trim(),
+        });
 
         const newSession: GuidebookSession = {
             id: genId(),
@@ -700,6 +908,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             currentRound: 0,
             mode: 'manual' as const,
             scenarioHint: scenarioHint || undefined,
+            rules,
             rounds: [],
             status: 'opening',
             createdAt: Date.now(),
@@ -709,7 +918,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             await injectMemoryPalace(char, undefined, scenarioHint || undefined);
-            const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights);
+            const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights, rules);
             const raw = await callAPI(auxApi, prompt);
             let data = extractJson(raw);
 
@@ -782,7 +991,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             const prompt = buildOptionAssistPrompt(
                 selectedChar, userProfile, session.currentAffinity,
                 session.currentRound + 1, session.rounds, session.scenarioHint || '',
-                cachedRecentMsgs, wc, nextDirectionHint || undefined
+                cachedRecentMsgs, wc, nextDirectionHint || undefined, normalizeRules(session.rules)
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
@@ -830,6 +1039,9 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             options,
             gmNarration: String(data.gm_narration || ''),
             charInnerThought: String(data.inner_thought || ''),
+            prediction: String(data.prediction || data.predict || '').trim() || undefined,
+            tacticTag: String(data.tactic_tag || data.tacticTag || '').trim() || undefined,
+            scoreSpread: Math.max(...options.map(o => o.affinity)) - Math.min(...options.map(o => o.affinity)),
             charChoice: choiceIdx,
             charReaction: String(data.reaction || ''),
             charExploration: data.exploration ? String(data.exploration) : undefined,
@@ -880,7 +1092,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             const prompt = buildRoundPrompt(
                 selectedChar, userProfile, session.currentAffinity,
                 roundNum, session.maxRounds, options, session.rounds, session.scenarioHint || '',
-                cachedRecentMsgs, wc, nextDirectionHint || undefined, roundScenario || undefined
+                cachedRecentMsgs, wc, nextDirectionHint || undefined, roundScenario || undefined, normalizeRules(session.rules)
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
@@ -956,7 +1168,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             const prompt = buildEndCardPrompt(
                 selectedChar, userProfile,
                 session.initialAffinity, session.currentAffinity, session.rounds,
-                cachedRecentMsgs
+                cachedRecentMsgs, normalizeRules(session.rules)
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
@@ -1259,10 +1471,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 {[
                                     { icon: <Sparkle size={14} weight="fill" />, title: '基本概念', desc: '你是出题人，角色是答题者。每回合你设计三个行为选项（含好感度分值），AI角色会根据自己的性格选一个——你需要猜到她会选哪个！' },
                                     { icon: <Heart size={14} weight="fill" />, title: '好感度系统', desc: '每个选项对应一个分值（可以是负数）。角色选择后，分值累加到当前好感度。结局好坏取决于最终好感度。' },
+                                    { icon: <Cards size={14} weight="fill" />, title: '玩法规则', desc: '开局可选择经典恋爱、慢热日常、喜剧整活、剧情拉扯或心理博弈，还能调整难度、节奏和分数显示方式。' },
                                     { icon: <FlowerLotus size={14} weight="fill" />, title: 'AI 一键填入', desc: '不知道出什么题？点"AI 一键填入"，AI会根据当前剧情自动帮你生成三个选项和分值，你可以直接用或者修改。' },
                                     { icon: <Star size={14} weight="fill" />, title: '点击选项快速编辑', desc: '游戏过程中，点击任意选项（A/B/C）可以在弹出框里快速编辑内容和分值，手机党友好！' },
                                     { icon: <DiamondsFour size={14} weight="fill" />, title: '幻想场景', desc: '开始时可以设定一个场景背景（比如异世界冒险、校园日常），AI会据此生成开场白并保持世界观一致。' },
-                                    { icon: <Cards size={14} weight="fill" />, title: '结算卡片', desc: '游戏结束后生成结算卡，包含角色的真实评语和本局高光时刻，还可以发送到聊天。' },
+                                    { icon: <Diamond size={14} weight="fill" />, title: '攻略档案', desc: '局内和回放会记录最佳回合、翻车回合、风险差和角色发现，方便复盘或回档重跑。' },
                                 ].map((item, i) => (
                                     <div key={i} className="flex gap-3">
                                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5" style={{ background: 'rgba(244,143,177,0.15)', color: '#f48fb1' }}>{item.icon}</div>
@@ -1437,6 +1650,85 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             </div>
                         </div>
 
+                        {/* Play Rules */}
+                        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(245,238,235,0.7)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(200,180,175,0.25)' }}>
+                            <div className="p-3.5 space-y-3">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" style={{ background: 'linear-gradient(135deg, #c7a0b0, #a98ba5)', color: 'white' }}><Cards size={12} weight="fill" /></div>
+                                    <span className="text-xs font-bold" style={{ color: '#8b6f6f' }}>玩法规则</span>
+                                    <span className="text-[9px] ml-0.5" style={{ color: 'rgba(160,130,130,0.4)' }}>会影响AI叙事和选项</span>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="text-[9px] font-bold" style={{ color: 'rgba(140,110,115,0.55)' }}>攻略风格</div>
+                                    <div className="grid grid-cols-5 gap-1">
+                                        {(Object.keys(PLAY_STYLE_META) as GuidebookPlayStyle[]).map(key => (
+                                            <button key={key} onClick={() => setPlayStyle(key)}
+                                                className="min-h-[42px] rounded-xl px-1 py-1.5 active:scale-95 transition-transform"
+                                                style={playStyle === key ? {
+                                                    background: 'linear-gradient(135deg, #c9a0a0, #a98ba5)',
+                                                    color: 'white',
+                                                    boxShadow: '0 2px 6px rgba(180,130,145,0.18)',
+                                                } : {
+                                                    background: 'rgba(255,255,255,0.5)',
+                                                    color: 'rgba(120,100,105,0.65)',
+                                                    border: '1px solid rgba(200,180,175,0.2)',
+                                                }}>
+                                                <span className="block text-[10px] font-bold leading-tight">{PLAY_STYLE_META[key].label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="text-[9px] leading-relaxed" style={{ color: 'rgba(160,130,130,0.5)' }}>{PLAY_STYLE_META[playStyle].desc}</div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1.5">
+                                        <div className="text-[9px] font-bold" style={{ color: 'rgba(140,110,115,0.55)' }}>难度</div>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            {(Object.keys(DIFFICULTY_META) as GuidebookDifficulty[]).map(key => (
+                                                <button key={key} onClick={() => setDifficulty(key)}
+                                                    className="rounded-xl px-1 py-2 text-[10px] font-bold active:scale-95 transition-transform"
+                                                    style={difficulty === key ? { background: '#b88a8a', color: 'white' } : { background: 'rgba(255,255,255,0.5)', color: 'rgba(120,100,105,0.65)', border: '1px solid rgba(200,180,175,0.2)' }}>
+                                                    {DIFFICULTY_META[key].label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <div className="text-[9px] font-bold" style={{ color: 'rgba(140,110,115,0.55)' }}>分数</div>
+                                        <div className="grid grid-cols-2 gap-1">
+                                            {(Object.keys(SCORE_VISIBILITY_META) as GuidebookScoreVisibility[]).map(key => (
+                                                <button key={key} onClick={() => setScoreVisibility(key)}
+                                                    className="rounded-xl px-1 py-2 text-[10px] font-bold active:scale-95 transition-transform"
+                                                    style={scoreVisibility === key ? { background: '#a98ba5', color: 'white' } : { background: 'rgba(255,255,255,0.5)', color: 'rgba(120,100,105,0.65)', border: '1px solid rgba(200,180,175,0.2)' }}>
+                                                    {SCORE_VISIBILITY_META[key].label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="text-[9px] font-bold" style={{ color: 'rgba(140,110,115,0.55)' }}>剧情节奏</div>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {(Object.keys(PACING_META) as GuidebookPacing[]).map(key => (
+                                            <button key={key} onClick={() => setPacing(key)}
+                                                className="rounded-xl px-1 py-2 text-[10px] font-bold active:scale-95 transition-transform"
+                                                style={pacing === key ? { background: '#b89aaa', color: 'white' } : { background: 'rgba(255,255,255,0.5)', color: 'rgba(120,100,105,0.65)', border: '1px solid rgba(200,180,175,0.2)' }}>
+                                                {PACING_META[key].label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <input type="text" value={guideGoal} onChange={e => setGuideGoal(e.target.value)}
+                                    placeholder="本局目标/主题 (选填): 想确认TA在不在意仪式感、想走甜一点..."
+                                    className="w-full rounded-xl px-3 py-2.5 text-xs focus:outline-none placeholder-stone-300"
+                                    style={{ color: '#6b5555', background: 'rgba(255,255,255,0.5)', border: '1px dashed rgba(200,180,175,0.25)' }}
+                                />
+                            </div>
+                        </div>
+
                         {/* Fantasy Scenario / World Setting */}
                         <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(245,238,235,0.7)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(200,180,175,0.25)' }}>
                             <div className="p-3.5 space-y-2.5">
@@ -1573,6 +1865,10 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </div>
                 )}
 
+                {session && (
+                    <GuidebookArchivePanel session={session} charName={charName} />
+                )}
+
                 {/* Rounds */}
                 {session?.rounds.map((round, i) => (
                     <RoundDisplay
@@ -1581,6 +1877,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         charName={charName}
                         isLatest={i === session.rounds.length - 1}
                         isReplay={isReplay}
+                        scoreVisibility={normalizeRules(session.rules).scoreVisibility}
                         onLongPress={isReplay ? undefined : () => setContextMenuRound(i)}
                     />
                 ))}
@@ -1600,6 +1897,14 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 <span className="shrink-0" style={{ color: '#b8909a' }}><CaretRight size={12} weight="bold" /></span><span>{h}</span>
                             </div>
                         ))}
+                        {session.endCard.charNewInsight && (
+                            <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(215,230,248,0.55), rgba(200,220,245,0.45))', border: '1px solid rgba(150,185,225,0.35)' }}>
+                                <div className="text-[10px] font-bold mb-1 flex items-center gap-1" style={{ color: '#4a6a92' }}>
+                                    <Diamond size={12} weight="fill" /> 这局游戏让我发现的你
+                                </div>
+                                <div className="text-sm leading-relaxed italic" style={{ color: '#2a4a68' }}>{session.endCard.charNewInsight}</div>
+                            </div>
+                        )}
                         {session.endCard.charSummary && (
                             <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.5), rgba(235,228,238,0.4))', border: '1px solid rgba(200,185,190,0.2)' }}>
                                 <div className="text-[10px] font-bold mb-1 flex items-center gap-1" style={{ color: '#9b7a7e' }}>

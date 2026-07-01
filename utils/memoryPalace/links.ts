@@ -10,6 +10,7 @@ import type { MemoryNode, MemoryLink, LinkType } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { MemoryLinkDB } from './db';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 import { getEmotionVA, emotionDistance } from './emotionSpace';
 
@@ -94,7 +95,7 @@ strength 范围 0.3-0.8。没有关联返回 []。只输出 JSON。`;
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', purpose: '记忆关联' }
+            2, 0, makeApiUsageMeta('memoryPalace.links', { apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

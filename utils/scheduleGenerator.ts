@@ -4,6 +4,7 @@ import { ContextBuilder } from './context';
 import { DB } from './db';
 import { safeResponseJson } from './safeApi';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 /**
  * Attempt to repair truncated JSON from LLM output.
@@ -363,8 +364,13 @@ export async function generateDailyScheduleForChar(
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.85,
                 max_tokens: 8000
-            })
-        });
+            }),
+            __moroMeta: makeApiUsageMeta('almanac.scheduleGenerate', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'aux',
+            }),
+        } as RequestInit & { __moroMeta?: unknown });
 
         if (!response.ok) {
             console.error('[Schedule] API error:', response.status);
@@ -551,7 +557,12 @@ ${chatBlock}
                 temperature: 0.5,
                 max_tokens: 4000,
             }),
-        });
+            __moroMeta: makeApiUsageMeta('almanac.scheduleReconcile', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'aux',
+            }),
+        } as RequestInit & { __moroMeta?: unknown });
         if (!response.ok) {
             console.error('[Schedule/Reconcile] API error:', response.status);
             return null;
@@ -681,8 +692,13 @@ ${chatSummary}
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.85,
                 max_tokens: 500
-            })
-        });
+            }),
+            __moroMeta: makeApiUsageMeta('almanac.flowNarrative', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'aux',
+            }),
+        } as RequestInit & { __moroMeta?: unknown });
 
         if (!response.ok) {
             console.error('[Schedule/Evolve] API error:', response.status);

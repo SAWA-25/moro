@@ -21,6 +21,7 @@
 import { CharacterProfile, UserProfile, Message } from '../types';
 import { safeFetchJson } from './safeApi';
 import { recenterSystem } from './laiwangPrompts';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export interface RecenterApiConfig {
     baseUrl: string;
@@ -91,7 +92,11 @@ export async function runRecenter(
                     stream: false,
                 }),
             },
-            2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '回神自我校准' },
+            2, 0, makeApiUsageMeta('chat.recenter', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'main',
+            }),
         );
 
         let content = (data.choices?.[0]?.message?.content || '').trim();

@@ -4,6 +4,7 @@ import {
     drawTarot, drawLenormand, castLiuyao, castMeihua, deriveMeihua,
     hexagramFromLines, TAROT_SPREADS, LENORMAND_SPREADS, nowToMeihuaTime,
 } from './engines';
+import { tarotLocalInsight, lenormandLocalInsight, liuyaoLocalInsight, meihuaLocalInsight } from './insights';
 
 describe('占卜静态数据', () => {
     it('塔罗 78 张，index 0~77 连续无缺', () => {
@@ -27,6 +28,14 @@ describe('占卜静态数据', () => {
 });
 
 describe('塔罗 / 雷诺曼抽牌', () => {
+    it('扩展牌阵定义与位置数量一致', () => {
+        expect(TAROT_SPREADS.map(s => s.key)).toEqual(expect.arrayContaining(['mirror', 'choice', 'week']));
+        expect(LENORMAND_SPREADS.map(s => s.key)).toEqual(expect.arrayContaining(['five', 'cross', 'seven']));
+        [...TAROT_SPREADS, ...LENORMAND_SPREADS].forEach(spread => {
+            expect(spread.positions).toHaveLength(spread.count);
+        });
+    });
+
     it('按牌阵抽 N 张且不重复', () => {
         const spread = TAROT_SPREADS.find(s => s.key === 'celtic')!;
         const draws = drawTarot(spread);
@@ -49,7 +58,11 @@ describe('六爻金钱卦', () => {
         for (let i = 0; i < 30; i++) {
             const r = castLiuyao();
             expect(r.lines).toHaveLength(6);
-            r.lines.forEach(l => expect([6, 7, 8, 9]).toContain(l.value));
+            r.lines.forEach(l => {
+                expect([6, 7, 8, 9]).toContain(l.value);
+                expect(l.coins).toHaveLength(3);
+                expect(l.coins.reduce((sum, c) => sum + c, 0)).toBe(l.value);
+            });
             expect(r.primary).not.toBeNull();
             if (r.movingPositions.length > 0) expect(r.changed).not.toBeNull();
             else expect(r.changed).toBeNull();
@@ -101,5 +114,26 @@ describe('梅花易数', () => {
         expect(r.lowerNum).toBeLessThanOrEqual(8);
         expect(r.movingYao).toBeGreaterThanOrEqual(1);
         expect(r.movingYao).toBeLessThanOrEqual(6);
+    });
+});
+
+describe('本地速读', () => {
+    it('塔罗速读给出提要和追问建议', () => {
+        const spread = TAROT_SPREADS.find(s => s.key === 'mirror')!;
+        const insight = tarotLocalInsight(drawTarot(spread));
+        expect(insight.items.length).toBeGreaterThan(0);
+        expect(insight.prompts.length).toBeGreaterThan(0);
+    });
+
+    it('雷诺曼速读给出中心线索', () => {
+        const spread = LENORMAND_SPREADS.find(s => s.key === 'cross')!;
+        const insight = lenormandLocalInsight(drawLenormand(spread));
+        expect(insight.title).toBeTruthy();
+        expect(insight.prompts.length).toBeGreaterThan(0);
+    });
+
+    it('六爻和梅花速读可生成本地提示', () => {
+        expect(liuyaoLocalInsight(castLiuyao()).items.join('\n')).toContain('铜钱轨迹');
+        expect(meihuaLocalInsight(castMeihua({ method: 'number', numbers: { n1: 12, n2: 5 } })).items.join('\n')).toContain('体卦');
     });
 });

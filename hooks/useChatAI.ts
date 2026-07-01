@@ -34,6 +34,7 @@ import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { applyEmotionEvalRaw } from '../utils/emotionApply';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { budgetChatMessages, isAuxContextBudgetEnabled } from '../utils/contextBudget';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 
 // ─── 情绪评估（副API，fire & forget）───
 
@@ -327,7 +328,13 @@ export async function evaluateEmotionBackground(
                 temperature: 0.85,
                 stream: false
             })
-        }, 2, 0, { appName: '消息', charId: charData.id, charName: charData.name, purpose: '情绪评估' });
+        }, 2, 0, makeApiUsageMeta('chat.postProcess.emotionEval', {
+            charId: charData.id,
+            charName: charData.name,
+            apiRole: 'aux',
+            apiBinding: '情绪评估',
+            isBackgroundTask: true,
+        }));
 
         const raw = data.choices?.[0]?.message?.content || '';
         return await applyEmotionEvalRaw(raw, charData);
@@ -877,9 +884,14 @@ export const useChatAI = ({
             //    流式不兼容，仍走整包；流式失败时回退 safeFetchJson 保持旧行为。
             let data: any = null;
             let streamedOk = false;
+            const chatReplyMeta = makeApiUsageMeta('chat.privateReply', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'main',
+            });
             if (!payload.flags.mcdActive) {
                 try {
-                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody }, (acc) => {
+                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody, meta: chatReplyMeta }, (acc) => {
                         // 预览剥掉思考块（含未闭合的起始段），只展示会"说出口"的部分
                         const visible = acc
                             .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
@@ -897,7 +909,7 @@ export const useChatAI = ({
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify(baseReqBody)
-                }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '聊天回复' });
+                }, 2, 0, chatReplyMeta);
             }
             apiResponded = true;
             console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms${streamedOk ? ' (streamed)' : ''}`);
@@ -999,7 +1011,12 @@ export const useChatAI = ({
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                         method: 'POST', headers,
                         body: JSON.stringify(followBody)
-                    });
+                    }, 2, 0, makeApiUsageMeta('chat.privateReply', {
+                        charId: char.id,
+                        charName: char.name,
+                        apiRole: 'main',
+                        apiBinding: '麦当劳点餐工具续写',
+                    }));
                     updateTokenUsage(data, historyMsgCount, `mcd-propose-${it + 1}`);
                     // 第二轮跳过 (我们已经禁用了 tools)
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;

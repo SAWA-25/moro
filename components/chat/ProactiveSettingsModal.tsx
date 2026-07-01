@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import JournalSheet, { SealBtn, CandyToggle, StickerChip, LinedInput, NoteStrip } from './JournalSheet';
+import JournalSheet, { SealBtn, CandyToggle, StickerChip, NoteStrip } from './JournalSheet';
 import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile } from '../../types';
 import { getNotifyPermission, requestNotifyPermission, detectBrowser, isNativeNotificationRuntime, isRecommendedForWebNotify, type NotifyPermission } from '../../utils/browserNotify';
+import LlmApiConfigFields from '../settings/LlmApiConfigFields';
 
 interface ProactiveSettingsModalProps {
     isOpen: boolean;
@@ -198,26 +199,19 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
 
                             {showApiSection && (
                                 <div className="space-y-3 rounded-[8px] p-3 mt-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
-                                    <LinedInput
-                                        tag="BASE URL"
-                                        type="text"
-                                        value={secUrl}
-                                        onChange={e => setSecUrl(e.target.value)}
-                                        placeholder="https://api.example.com/v1"
-                                    />
-                                    <LinedInput
-                                        tag="KEY"
-                                        type="password"
-                                        value={secKey}
-                                        onChange={e => setSecKey(e.target.value)}
-                                        placeholder="sk-..."
-                                    />
-                                    <LinedInput
-                                        tag="MODEL"
-                                        type="text"
-                                        value={secModel}
-                                        onChange={e => setSecModel(e.target.value)}
-                                        placeholder="gpt-4o-mini"
+                                    <LlmApiConfigFields
+                                        value={{ baseUrl: secUrl, apiKey: secKey, model: secModel }}
+                                        onChange={next => {
+                                            setSecUrl(next.baseUrl);
+                                            setSecKey(next.apiKey);
+                                            setSecModel(next.model);
+                                        }}
+                                        savePresetDefaultName={`${char.name} 主动消息 API`}
+                                        modelFetchFeatureId="chat.proactiveApi.fetchModels"
+                                        compact
+                                        inputClassName="w-full px-3 py-2 text-[13px] outline-none placeholder:text-slate-400 rounded-[16px] bg-white border border-[#eed6df] font-mono"
+                                        buttonClassName="rounded-full border border-[#eed6df] bg-white px-3 py-2 text-[11px] font-bold text-[#5a3140] active:scale-95 transition-transform disabled:opacity-50"
+                                        primaryButtonClassName="rounded-full bg-[#d8a5b7] px-3 py-2 text-[11px] font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
                                     />
                                 </div>
                             )}

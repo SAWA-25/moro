@@ -13,6 +13,7 @@
 
 import { CharacterProfile, UserProfile, DateScene, DateWorldline, DateMessage } from '../types';
 import { safeFetchJson, extractJson } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export interface DateApiConfig { baseUrl: string; apiKey: string; model: string }
 
@@ -135,7 +136,11 @@ export async function runDateTurn(
                     stream: false,
                 }),
             },
-            2, 0, { appName: '街角', charId: char.id, charName: char.name, purpose: '约会世界引擎' },
+            2, 0, makeApiUsageMeta('date.worldEngine', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'aux',
+            }),
         );
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = extractJson(raw);
@@ -180,7 +185,11 @@ ${prior}
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
                 body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 600, stream: false }),
             },
-            2, 0, { appName: '街角', charId: char.id, charName: char.name, purpose: '约会总结' },
+            2, 0, makeApiUsageMeta('date.summary', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'aux',
+            }),
         );
         const txt = (data.choices?.[0]?.message?.content || '').trim();
         return txt.length >= 10 ? txt : null;

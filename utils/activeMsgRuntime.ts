@@ -628,16 +628,18 @@ const handleDeepLink = () => {
   }
 
   if (openApp === 'health') {
-    window.dispatchEvent(new CustomEvent('period-reminder-open', {
+    window.dispatchEvent(new CustomEvent('health-reminder-open', {
       detail: {
         charId: charId || currentUrl.searchParams.get('periodCharId') || undefined,
         settingsId: currentUrl.searchParams.get('periodReminderId') || undefined,
+        reminderId: currentUrl.searchParams.get('healthReminderId') || undefined,
       },
     }));
     currentUrl.searchParams.delete('openApp');
     currentUrl.searchParams.delete('activeMsgCharId');
     currentUrl.searchParams.delete('periodCharId');
     currentUrl.searchParams.delete('periodReminderId');
+    currentUrl.searchParams.delete('healthReminderId');
     window.history.replaceState({}, '', currentUrl.toString());
   }
 };
@@ -705,11 +707,12 @@ export const ActiveMsgRuntime = {
           })();
         }
 
-        if (type === 'period-reminder-open') {
-          window.dispatchEvent(new CustomEvent('period-reminder-open', {
+        if (type === 'period-reminder-open' || type === 'health-reminder-open') {
+          window.dispatchEvent(new CustomEvent('health-reminder-open', {
             detail: {
               charId: event.data?.charId,
               settingsId: event.data?.settingsId,
+              reminderId: event.data?.reminderId,
             },
           }));
         }

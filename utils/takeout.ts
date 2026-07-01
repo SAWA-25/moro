@@ -19,6 +19,7 @@ import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
 import { safeResponseJson, extractContent, safeFetchJson, extractJson } from './safeApi';
 import { takeoutReceivedHint } from './laiwangPrompts';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -400,7 +401,7 @@ ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧�
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
             body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 16000, stream: false }),
         },
-        2, 0, { appName: '外卖', purpose: 'AI 生成店铺' },
+        2, 0, makeApiUsageMeta('takeout.generate', { apiRole: 'aux', apiBinding: '生成店铺' }),
     );
     const raw = extractContent(data) || data?.choices?.[0]?.message?.content || '';
     const parsed = extractJson(raw);
@@ -943,7 +944,7 @@ export async function generateStoreReviewsAI(
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
                 body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 1600, stream: false }),
             },
-            2, 0, { appName: '外卖', purpose: 'AI 生成食评' },
+            2, 0, makeApiUsageMeta('takeout.generate', { apiRole: 'aux', apiBinding: '生成食评' }),
         );
         const raw = data?.choices?.[0]?.message?.content || '';
         const parsed = extractJson(raw);

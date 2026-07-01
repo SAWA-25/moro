@@ -5,7 +5,7 @@ import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { MARRIAGE_STAGE_LABEL } from './relationship';
 import { buildCoupleSpacePromptBlock } from './coupleSpace';
-import { relationshipBlock, coreText, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
+import { relationshipBlock, coreText, characterDialogueGuidance, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
 import { readTwitterContextSummary } from './twitterFeed';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
@@ -39,7 +39,7 @@ function buildRelationshipPromptBlock(char: CharacterProfile, userName: string):
 export const renderMesExampleBlock = (mesExample?: string): string => {
     const text = (mesExample || '').trim();
     if (!text) return '';
-    return `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的参考示例，<START> 表示一段新示例的开始。它们不是真实发生过的对话，不要当成共同记忆引用，只用来把握语气与措辞。）\n${text}\n\n`;
+    return `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的样张，<START> 表示一段新示例的开始。只学习其中的语气、节奏、称呼、停顿、措辞和情绪走向；它们不是真实发生过的历史，不要当成共同记忆引用，也不要机械照抄原句。）\n${text}\n\n`;
 };
 
 const characterIdentityRule = (char: CharacterProfile): string => {
@@ -192,6 +192,7 @@ export const ContextBuilder = {
         }
         context += `- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。这个ID只用于内部区分身份，日常对话里不要主动念给用户听。\n`;
         context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        context += characterDialogueGuidance(user.name);
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知
         // 像情绪底色一样影响角色的行为和感受，注入在角色设定紧下方

@@ -41,6 +41,7 @@ import {
     type NativeAppInfo,
 } from '../utils/appUpdates';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -1001,12 +1002,7 @@ const Settings: React.FC = () => {
         const response = await fetch(`${baseUrl}/models`, {
             method: 'GET',
             headers,
-            __moroMeta: {
-                appId: AppID.Settings,
-                appName: '文具盒',
-                purpose: target === 'aux' ? '拉取副 API 模型列表' : '拉取主 API 模型列表',
-                apiRole: target,
-            },
+            __moroMeta: makeApiUsageMeta(target === 'aux' ? 'settings.auxApi.fetchModels' : 'settings.mainApi.fetchModels', { apiRole: target }),
         } as RequestInit & { __moroMeta?: unknown });
         const data = await safeResponseJson(response);
         if (!response.ok) {
@@ -1021,7 +1017,8 @@ const Settings: React.FC = () => {
                 setAvailableModels(models);
             }
             if (models.length > 0 && !models.includes(currentModel)) setModel(models[0]);
-            setStatus(`已拉取 ${models.length} 个模型`);
+            setStatus('');
+            addToast(`已拉取 ${models.length} 个模型，请保存${target === 'aux' ? '副 API' : '主 API'}`, 'success');
             openModelPicker(target);
         } else {
             setStatus('模型列表格式不兼容');
@@ -1909,12 +1906,7 @@ const Settings: React.FC = () => {
                                     max_tokens: 5,
                                     stream: localStream,
                                 }),
-                                __moroMeta: {
-                                    appId: AppID.Settings,
-                                    appName: '文具盒',
-                                    purpose: '主 API 连接测试',
-                                    apiRole: 'main',
-                                },
+                                __moroMeta: makeApiUsageMeta('settings.mainApi.testConnection', { apiRole: 'main' }),
                             } as RequestInit & { __moroMeta?: unknown });
                             if (res.ok) {
                                 // 走 safeResponseJson —— 它能透明把 SSE 流响应拼成普通 chat/completion 结构
@@ -2020,7 +2012,7 @@ const Settings: React.FC = () => {
             </div>
             </SectionCard>
 
-            {/* API 调用记录入口 */}
+            {/* API 后台流水入口 */}
             <button
             type="button"
             onClick={() => setShowApiCallLog(true)}
@@ -2035,9 +2027,9 @@ const Settings: React.FC = () => {
                 </svg>
             </div>
             <div className="flex-1 min-w-0">
-                <div className="label-mono text-[9px] text-[#8a918d]">API LOG</div>
-                <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">API 调用记录</h2>
-                <p className="text-[11px] text-[#69716d] mt-0.5">最近 5 天：时间、接口、应用、角色、用途。</p>
+                <div className="label-mono text-[9px] text-[#8a918d]">API LEDGER</div>
+                <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">API 后台流水</h2>
+                <p className="text-[11px] text-[#69716d] mt-0.5">最近 5 天：按 App 和具体功能查看消耗。</p>
             </div>
             <span className="text-[#8a918d] text-sm shrink-0">→</span>
             </button>
@@ -2835,7 +2827,7 @@ const Settings: React.FC = () => {
         })()}
       </PaperSheet>
 
-      {/* 接线流水页面 */}
+      {/* API 后台流水页面 */}
       <ApiCallLogModal isOpen={showApiCallLog} onClose={() => setShowApiCallLog(false)} />
 
       {/* API 预设命名 */}

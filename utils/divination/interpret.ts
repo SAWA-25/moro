@@ -29,7 +29,7 @@ export function lenormandToText(spreadName: string, draws: DrawnLenormand[]): st
 }
 
 export function liuyaoToText(r: LiuyaoResult): string {
-    const lines = r.lines.map((l, i) => `  ${i + 1}爻：${l.label}`).reverse().join('\n');
+    const lines = r.lines.map((l, i) => `  ${i + 1}爻：${l.label}（${l.coins.map(c => c === 3 ? '字' : '背').join('')}）`).reverse().join('\n');
     const moving = r.movingPositions.length ? `动爻：第 ${r.movingPositions.join('、')} 爻` : '无动爻（静卦）';
     return `【六爻 · 金钱卦】\n本卦：${r.primary?.name || '—'}\n` +
         (r.changed ? `变卦：${r.changed.name}\n` : '') +

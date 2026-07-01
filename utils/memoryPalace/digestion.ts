@@ -18,6 +18,7 @@ import { fulfillAnticipation, disappointAnticipation } from './anticipation';
 import { formCognitions } from './cognition';
 import { vectorizeAndStore } from './vectorStore';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 
 /** 从 localStorage 读取远程向量配置（与 pipeline.ts 同一份来源） */
@@ -271,7 +272,7 @@ ${material.recentContext.map(n => `- (${n.room}, ${n.mood}): ${n.content}`).join
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', purpose: '记忆消化' }
+            2, 0, makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
@@ -787,7 +788,7 @@ ${memoryContext}
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', charName, purpose: '人格审视' }
+            2, 0, makeApiUsageMeta('memoryPalace.personality', { charName, apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

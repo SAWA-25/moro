@@ -6,7 +6,7 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
-> 说明书同步约定：新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，必须同步更新 `apps/ManualApp.tsx` 里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`。内容写给普通用户看，讲清楚入口、用途、常用设置和注意事项；不要把开发维护步骤写进说明书 App。
+> 更新公告同步约定：任何代码、文案、配置、数据、测试、构建脚本或文档改动，都必须在 `apps/manual/manualData.ts` 的 `MANUAL_UPDATE_NOTICES` 追加/更新一条面向普通用户的更新公告；同一次改动可合并成一条公告，但不能漏记。公告只写用户能理解的变化、影响和注意事项，不写开发步骤、commit 号或内部实现细节。新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，还必须同步更新同文件里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`，讲清楚入口、用途、常用设置和注意事项。
 
 > 角色内置 ID / 身份锚约定：`CharacterProfile.modelId` 是给模型看的稳定身份锚，`id` 仍是 IndexedDB、消息、群成员等本地外键。凡是创建角色、导入角色、生成角色、把影子联系人转成正式角色、批量恢复/迁移角色列表，写入 state 或 `DB.saveCharacter` 前都必须走 `ensureCharacterModelId` / `normalizeCharacterDefaults`；内置角色要显式写 `modelId`。单张角色卡导出不要带 `id` / `modelId`，单卡导入要生成新的本地锚；完整备份恢复可保留原锚但要补缺。任何给 LLM 的角色列表、群成员花名册、社交 feed 作者列表必须用 `formatCharacterWithId` / `getCharacterModelId` 展示身份锚；模型返回的 `charId` 若来自这个锚，落库前必须映射回本地 `id`。相关入口先看 `utils/characterIdentity.ts`、`utils/impression.ts`、`utils/db.ts` 和 `context/OSContext.tsx`。
 

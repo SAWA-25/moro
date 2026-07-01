@@ -64,6 +64,7 @@ import { InnerVoiceEntry } from '../types';
 import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import { generateXunjiScreenlifeRun } from '../utils/xunji';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { getNotifyPermission, requestNotifyPermission } from '../utils/browserNotify';
 import {
     CHAT_ALARM_WEEKDAYS,
@@ -1194,14 +1195,11 @@ ${parallelReplyPromptBody({
                         max_tokens: 800,
                         stream: false,
                     }),
-                }, 1, 45000, {
-                    appId: AppID.Chat,
-                    appName: '絮语',
+                }, 1, 45000, makeApiUsageMeta('chat.parallelReply', {
                     charId: target.id,
                     charName: target.name,
-                    purpose: '并发回复',
                     apiRole: isAuxApiOn(auxApiConfig) ? 'aux' : 'main',
-                });
+                }));
                 const cleaned = ChatParser.sanitize((extractContent(data) || '').trim());
                 if (!ChatParser.hasDisplayContent(cleaned)) return 'empty';
                 const chunks = ChatParser.chunkTextByBubbleMode(cleaned, target.convoSettings?.bubbleStyleMode)
@@ -4421,6 +4419,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 DB.deleteExchangeDiaryBooksByCharId(char.id),
                 DB.deleteTalkSessionsByCharId(char.id),
                 DB.deleteGuidebookSessionsByCharId(char.id),
+                DB.deleteTheaterReflectionSessionsByCharId(char.id),
                 DB.deleteCollectionItemsByCharId(char.id),
                 DB.removeLifeSimCharacterContext(char.id),
                 DB.clearXhsActivities(char.id),

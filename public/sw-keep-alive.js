@@ -1878,25 +1878,28 @@ sw.addEventListener("notificationclick", (event) => {
   const payload = event.notification.data?.payload || event.notification.data || {};
   const charId = payload?.metadata?.charId || payload?.charId || "";
   const isPeriodReminder = payload?.source === "period-reminder" || payload?.type === "period-reminder";
+  const isHealthReminder = payload?.source === "health-reminder" || payload?.type === "health-reminder";
   const periodReminderId = payload?.settingsId || payload?.periodReminderId || "";
+  const healthReminderId = payload?.reminderId || payload?.healthReminderId || "";
   event.notification.close();
   event.waitUntil((async () => {
     const clients = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
     if (clients.length > 0) {
       const client = clients[0];
       await client.focus();
-      if (isPeriodReminder) {
-        client.postMessage({ type: "period-reminder-open", charId, settingsId: periodReminderId });
+      if (isPeriodReminder || isHealthReminder) {
+        client.postMessage({ type: "health-reminder-open", charId, settingsId: periodReminderId, reminderId: healthReminderId });
         return;
       }
       client.postMessage({ type: "active-msg-open", charId });
       return;
     }
     const openUrl = new URL(sw.registration.scope || sw.location.origin);
-    if (isPeriodReminder) {
+    if (isPeriodReminder || isHealthReminder) {
       openUrl.searchParams.set("openApp", "health");
       if (charId) openUrl.searchParams.set("periodCharId", charId);
       if (periodReminderId) openUrl.searchParams.set("periodReminderId", periodReminderId);
+      if (healthReminderId) openUrl.searchParams.set("healthReminderId", healthReminderId);
     } else {
       openUrl.searchParams.set("openApp", "chat");
       if (charId) openUrl.searchParams.set("activeMsgCharId", charId);

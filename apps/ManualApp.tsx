@@ -288,7 +288,7 @@ const ManualApp: React.FC = () => {
               </div>
               <div className="mt-3 text-[15px] font-black text-[#342f28]">还没有更新公告</div>
               <p className="mt-1 text-[12px] leading-relaxed text-[#7b705f]">
-                等下一次新增功能、修复问题或调整重要入口时，这里会开始记录。
+                等下一次功能、修复、文案、配置、数据或文档改动时，这里会开始记录。
               </p>
             </div>
           ) : (
@@ -305,7 +305,7 @@ const ManualApp: React.FC = () => {
                 olderNotices.map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)
               ) : (
                 <div className="rounded-[18px] bg-white/72 border border-black/10 px-4 py-5 text-center text-[11.5px] leading-relaxed text-[#7b705f]">
-                  暂时只有这一条公告。之后的新功能和修复会继续往这里补。
+                  暂时只有这一条公告。之后的每次改动都会继续往这里补。
                 </div>
               )}
             </div>

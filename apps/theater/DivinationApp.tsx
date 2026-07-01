@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../../context/OSContext';
-import { Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, Cards } from '@phosphor-icons/react';
+import { Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, Cards, Lightbulb, MagicWand } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { DB } from '../../utils/db';
 import { WorldbookRuntime } from '../../utils/worldbookRuntime';
@@ -12,6 +12,9 @@ import {
 import {
     interpretReading, tarotToText, lenormandToText, liuyaoToText, meihuaToText, type DivinationKind, type ReadingTurn,
 } from '../../utils/divination/interpret';
+import {
+    tarotLocalInsight, lenormandLocalInsight, liuyaoLocalInsight, meihuaLocalInsight, type LocalReadingInsight,
+} from '../../utils/divination/insights';
 import { TarotSpreadView, LenormandSpreadView } from '../../components/theater/divination/TarotCard';
 import { LiuyaoView, MeihuaView } from '../../components/theater/divination/HexagramView';
 import CardDeckManager from '../../components/theater/divination/CardDeckManager';
@@ -41,6 +44,46 @@ const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.85)', 
 
 // 默认牌背图（放在 public/ 根，部署后按此路径取；该图在主支上）。取不到时回退到 CSS 黑白牌背。
 const DEFAULT_CARD_BACK = '/A6581845961B07B58DA1E1E88DA367F3.jpg';
+
+const QUESTION_PRESETS = [
+    { label: '关系走向', text: '这段关系接下来最需要看清什么？' },
+    { label: 'TA 的心意', text: 'TA 现在对我的真实心意和顾虑分别是什么？' },
+    { label: '选择建议', text: '如果我在两个选择之间犹豫，现在更该看重什么？' },
+    { label: '近期变化', text: '接下来一周最容易发生的变化是什么？' },
+    { label: '阻碍来源', text: '这件事目前最大的阻碍在哪里，我能先处理哪一部分？' },
+    { label: '行动一步', text: '我今天可以做的最小一步是什么？' },
+];
+
+const InsightPanel: React.FC<{ insight: LocalReadingInsight; onPickPrompt: (text: string) => void }> = ({ insight, onPickPrompt }) => (
+    <div className="rounded-[14px] p-3 space-y-2.5" style={{ background: 'rgba(246,243,236,0.08)', border: '1px solid rgba(246,243,236,0.14)' }}>
+        <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
+                <Lightbulb size={15} weight="fill" />
+            </span>
+            <div className="min-w-0">
+                <div className="text-[9px] tracking-[0.28em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.42)' }}>LOCAL READING</div>
+                <div className="text-[13px] font-black truncate" style={{ color: '#f3ecdf' }}>{insight.title}</div>
+            </div>
+        </div>
+        <div className="space-y-1.5">
+            {insight.items.map((item, i) => (
+                <div key={i} className="flex gap-2 text-[12px] leading-relaxed" style={{ color: 'rgba(246,243,236,0.72)' }}>
+                    <span className="mt-[0.45em] w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(246,243,236,0.38)' }} />
+                    <span>{item}</span>
+                </div>
+            ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5 pt-1">
+            {insight.prompts.map(p => (
+                <button key={p} onClick={() => onPickPrompt(p)}
+                    className="px-2.5 py-1 rounded-full text-[10.5px] font-bold active:scale-95"
+                    style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf', border: '1px solid rgba(246,243,236,0.12)' }}>
+                    {p}
+                </button>
+            ))}
+        </div>
+    </div>
+);
 
 const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast, theme } = useOS();
@@ -89,6 +132,18 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
 
     const resetResult = () => { setTarotDraws(null); setLenoDraws(null); setLiuyao(null); setMeihua(null); setHasResult(false); setConvo([]); setAskInput(''); setPickPhase(false); };
 
+    const fillQuestion = (text: string) => {
+        setQuestion(text);
+        setAskInput(prev => (convo.length ? text : prev));
+    };
+
+    const randomMeihuaNumbers = () => {
+        const buf = new Uint32Array(2);
+        crypto.getRandomValues(buf);
+        setN1(String((buf[0] % 999) + 1));
+        setN2(String((buf[1] % 999) + 1));
+    };
+
     /** 塔罗 / 雷诺曼：进入洗牌+抽牌挑选；六爻 / 梅花：直接起卦出结果。 */
     const startDivine = () => {
         resetResult();
@@ -122,6 +177,20 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         return '';
     };
 
+    const currentInsight = (): LocalReadingInsight | null => {
+        if (tarotDraws) return tarotLocalInsight(tarotDraws);
+        if (lenoDraws) return lenormandLocalInsight(lenoDraws);
+        if (liuyao) return liuyaoLocalInsight(liuyao);
+        if (meihua) return meihuaLocalInsight(meihua);
+        return null;
+    };
+
+    const insightToText = (v: LocalReadingInsight | null): string => {
+        if (!v) return '';
+        const prompts = v.prompts.length ? `\n可继续追问：${v.prompts.join(' / ')}` : '';
+        return `【本地速读 · ${v.title}】\n${v.items.map(item => `- ${item}`).join('\n')}${prompts}`;
+    };
+
     /**
      * 解牌 / 继续追问统一入口：
      *  - 无入参 = 首次解牌（角色给完整解读）；
@@ -152,7 +221,10 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const exportToChat = async () => {
         if (!char) { addToast('先选一个角色才能发到 TA 的聊天', 'info'); return; }
         const lines = convo.map(m => m.role === 'char' ? `— ${char.name}：${m.text}` : `— ${userName}：${m.text}`);
-        const body = `【占卜${question ? `·${question}` : ''}】\n${currentReadingText()}` + (lines.length ? `\n\n${lines.join('\n\n')}` : '');
+        const local = insightToText(currentInsight());
+        const body = `【占卜${question ? `·${question}` : ''}】\n${currentReadingText()}`
+            + (local ? `\n\n${local}` : '')
+            + (lines.length ? `\n\n${lines.join('\n\n')}` : '');
         try {
             await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: body, timestamp: Date.now() });
             addToast(`已发到与 ${char.name} 的聊天`, 'success');
@@ -173,6 +245,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
 
     const activeMode = MODES.find(m => m.kind === mode)!;
     const deckImported = mode === 'tarot' ? Object.keys(tarotImgs).length : mode === 'lenormand' ? Object.keys(lenoImgs).length : -1;
+    const insight = hasResult ? currentInsight() : null;
 
     // 牌阵 / 起卦 切换胶囊
     const chip = (on: boolean): React.CSSProperties => on
@@ -221,6 +294,16 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                 <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="想占问什么？（如：这段关系的走向 / 这个决定）"
                     className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={paperInput} />
 
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    {QUESTION_PRESETS.map(p => (
+                        <button key={p.label} onClick={() => fillQuestion(p.text)}
+                            className="shrink-0 px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 inline-flex items-center gap-1"
+                            style={{ background: 'rgba(255,253,247,0.78)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.55)' }}>
+                            <MagicWand size={12} weight="bold" /> {p.label}
+                        </button>
+                    ))}
+                </div>
+
                 {/* 各模式参数 */}
                 {mode === 'tarot' && (
                     <div className="space-y-2">
@@ -258,9 +341,12 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                             ))}
                         </div>
                         {meihuaMethod === 'number' && (
-                            <div className="flex gap-2">
-                                <input value={n1} onChange={e => setN1(e.target.value)} inputMode="numeric" placeholder="第一个数" className="flex-1 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
-                                <input value={n2} onChange={e => setN2(e.target.value)} inputMode="numeric" placeholder="第二个数" className="flex-1 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
+                            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                                <input value={n1} onChange={e => setN1(e.target.value)} inputMode="numeric" placeholder="第一个数" className="min-w-0 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
+                                <input value={n2} onChange={e => setN2(e.target.value)} inputMode="numeric" placeholder="第二个数" className="min-w-0 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
+                                <button onClick={randomMeihuaNumbers} className="px-3 rounded-xl text-[11px] font-bold inline-flex items-center gap-1 active:scale-95" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>
+                                    <Sparkle size={13} weight="fill" /> 随机
+                                </button>
                             </div>
                         )}
                     </div>
@@ -284,6 +370,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                         {lenoDraws && <LenormandSpreadView draws={lenoDraws} images={lenoImgs} skin={skin} cardBack={skin?.cardBack || DEFAULT_CARD_BACK} />}
                         {liuyao && <LiuyaoView r={liuyao} />}
                         {meihua && <MeihuaView r={meihua} />}
+                        {insight && <InsightPanel insight={insight} onPickPrompt={(text) => { if (convo.length) setAskInput(text); else setQuestion(text); }} />}
 
                         <div className="border-t pt-3 space-y-2.5" style={{ borderColor: 'rgba(246,243,236,0.14)' }}>
                             {convo.length === 0 ? (
@@ -331,7 +418,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                                 <button onClick={() => startDivine()} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重抽/重起">
                                     <ArrowClockwise size={15} weight="bold" /> 重抽
                                 </button>
-                                <button onClick={() => void exportToChat()} disabled={convo.length === 0} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 disabled:opacity-40 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
+                                <button onClick={() => void exportToChat()} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
                                     <PaperPlaneTilt size={15} weight="bold" /> 发到与 {char?.name || 'TA'} 的聊天
                                 </button>
                             </div>

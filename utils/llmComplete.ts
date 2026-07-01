@@ -14,6 +14,7 @@
  */
 
 import type { ResolvedApi } from './auxApi';
+import type { ApiCallMeta } from './apiCallLog';
 import { safeResponseJson, extractContent } from './safeApi';
 
 export interface ChatMsg { role: string; content: string }
@@ -24,6 +25,8 @@ export interface CompleteOptions {
     signal?: AbortSignal;
     /** 回复因长度被截断（finish_reason='length'）时自动「接着写」的最大续写轮数。默认 0（不续写）。 */
     continueRounds?: number;
+    /** API 后台流水标注。 */
+    meta?: ApiCallMeta;
 }
 
 /** 去思维链：成对 <think>…</think>，以及被 max_tokens 截断、没收尾的残缺 <think>…（到结尾）。 */
@@ -65,7 +68,8 @@ async function callOnce(
             stream: false,
         }),
         signal: opts.signal,
-    });
+        ...(opts.meta ? { __moroMeta: opts.meta } : {}),
+    } as RequestInit & { __moroMeta?: unknown });
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await safeResponseJson(res);
     const finishReason: string | null = data?.choices?.[0]?.finish_reason ?? null;

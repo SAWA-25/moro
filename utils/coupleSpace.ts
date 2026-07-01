@@ -26,6 +26,7 @@ import {
   coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
 } from './laiwangPrompts';
 import { llmComplete, type ChatMsg } from './llmComplete';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export interface CoupleApi {
   baseUrl: string;
@@ -340,14 +341,14 @@ const REASONING_HEADROOM_TOKENS = 2000;
  *
  * 仍保持「失败全吞返回空串」契约：调用方拿到空串后用模板兜底，绝不阻塞 UI。
  */
-async function callCoupleLLM(api: CoupleApi, messages: ChatMsg[], maxTokens: number): Promise<string> {
+async function callCoupleLLM(api: CoupleApi, messages: ChatMsg[], maxTokens: number, featureId: string): Promise<string> {
   if (!(api.baseUrl || '').trim() || !api.model) return '';
   try {
     return await llmComplete(
       { baseUrl: api.baseUrl, apiKey: api.apiKey || '', model: api.model },
       messages,
       // 答案很短，但要给推理模型的思维链留足 headroom，否则正文被思维链挤没（见上）。
-      { maxTokens: maxTokens + REASONING_HEADROOM_TOKENS, temperature: 0.95 },
+      { maxTokens: maxTokens + REASONING_HEADROOM_TOKENS, temperature: 0.95, meta: makeApiUsageMeta(featureId, { apiRole: 'aux' }) },
     );
   } catch (e) {
     console.warn('[CoupleSpace] LLM call error', e);
@@ -407,7 +408,7 @@ export async function generateCharCoupleComment(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleCommentUserPrompt(userName, what, moment.mood ? `（心情：${moment.mood}）` : '') },
-  ], 120);
+  ], 120, 'chat.coupleSpace.comment');
   return cleanLine(out, 60, [char.name, userName]);
 }
 
@@ -422,7 +423,7 @@ export async function generateCharWhisperReply(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleWhisperUserPrompt(userName, whisper) },
-  ], 160);
+  ], 160, 'chat.coupleSpace.whisper');
   return cleanLine(out, 100, [char.name, userName]);
 }
 
@@ -437,7 +438,7 @@ export async function generateCharQuestionAnswer(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleQuestionUserPrompt(userName, question) },
-  ], 200);
+  ], 200, 'chat.coupleSpace.question');
   return cleanParagraph(out, 120, [char.name, userName]);
 }
 
@@ -475,7 +476,7 @@ export async function generateCharCompatAnswers(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleCompatPrompt(questions) },
-  ], 120);
+  ], 120, 'chat.coupleSpace.compat');
   if (!out) return null;
   try {
     const m = out.match(/\[[\s\S]*\]/);
@@ -512,7 +513,7 @@ export async function generateCharInteractionNote(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleInteractionUserPrompt(userName, label) },
-  ], 100);
+  ], 100, 'chat.coupleSpace.interaction');
   return cleanLine(out, 50, [char.name, userName]);
 }
 
@@ -558,7 +559,7 @@ export async function generateCharInnerVoice(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleInnerVoiceUserPrompt(userName, moment.author === 'user', describeMoment(moment)) },
-  ], 240);
+  ], 240, 'chat.coupleSpace.innerVoice');
   return cleanParagraph(out, 120, [char.name, userName]);
 }
 
@@ -607,7 +608,7 @@ export async function generateCharMoment(opts: {
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleMomentUserPrompt(userName, ctx) },
-  ], 240);
+  ], 240, 'chat.coupleSpace.moment');
   if (!out) return null;
   // 尝试解析 JSON；失败则把整段当正文
   try {

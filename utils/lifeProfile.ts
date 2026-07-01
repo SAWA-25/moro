@@ -11,6 +11,7 @@
 
 import { CharacterProfile, UserProfile, MemoryFragment } from '../types';
 import { safeFetchJson } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export interface LifeProfileApiConfig {
     baseUrl: string;
@@ -99,7 +100,7 @@ ${styleHint}
                     stream: false,
                 }),
             },
-            2, 0, { appName: '登场人物', charId: char.id, charName: char.name, purpose: '生活侧写' },
+            2, 0, makeApiUsageMeta('character.lifeProfile', { apiRole: 'aux', charId: char.id, charName: char.name }),
         );
         let content = (data.choices?.[0]?.message?.content || '').trim();
         content = content.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```$/i, '').trim();

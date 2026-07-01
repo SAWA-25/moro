@@ -18,6 +18,7 @@ import {
     ArrowsClockwise, Trash, GearSix, Plus, PencilSimpleLine, ChatCircleText,
     Eye, Spinner,
 } from '@phosphor-icons/react';
+import LlmApiConfigFields from '../components/settings/LlmApiConfigFields';
 
 // ── 黑白拼贴手账·通用样式片（呼应折子戏 / 心意铺 / 茶话亭）────────────────
 /** 米白纸卡 */
@@ -2082,13 +2083,24 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <div>
                             <SectionTag en="DEDICATED API" className="mb-3">专用 API（留空＝用全局）</SectionTag>
                             <div className="space-y-2">
-                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
-                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
-                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称 (e.g. gpt-4o)" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
-                                <div className="flex gap-2">
-                                    <ScrapButton variant="ink" onClick={saveStudyApi} className="flex-1 py-2.5 text-xs">记下</ScrapButton>
-                                    <ScrapButton variant="paper" onClick={clearStudyApi} className="py-2.5 px-4 text-xs">清空</ScrapButton>
-                                </div>
+                                <LlmApiConfigFields
+                                    value={{ baseUrl: localStudyUrl, apiKey: localStudyKey, model: localStudyModel }}
+                                    onChange={next => {
+                                        setLocalStudyUrl(next.baseUrl);
+                                        setLocalStudyKey(next.apiKey);
+                                        setLocalStudyModel(next.model);
+                                    }}
+                                    onSaveConfig={saveStudyApi}
+                                    onClearConfig={clearStudyApi}
+                                    saveConfigLabel="记下"
+                                    clearConfigLabel="清空"
+                                    savePresetDefaultName="学习社专用 API"
+                                    modelFetchFeatureId="study.dedicatedApi.fetchModels"
+                                    compact
+                                    inputClassName="w-full rounded-xl p-3 text-sm outline-none font-mono bg-[rgba(255,253,247,0.92)] text-[#1f1d1a] border border-[rgba(176,170,158,0.7)]"
+                                    buttonClassName="rounded-xl border border-[rgba(176,170,158,0.7)] bg-[rgba(255,253,247,0.92)] px-3 py-2.5 text-xs font-bold text-[#6b655a] active:scale-95 transition-transform disabled:opacity-50"
+                                    primaryButtonClassName="rounded-xl bg-[#1f1d1a] px-3 py-2.5 text-xs font-bold text-[#fbf9f2] active:scale-95 transition-transform disabled:opacity-50"
+                                />
                                 {(studyApi.baseUrl || studyApi.model) && (
                                     <div className="text-[10px] rounded-lg p-2" style={{ color: INK, background: 'rgba(232,228,217,0.6)' }}>
                                         正在用专用 API: {studyApi.model || effectiveApi.model}

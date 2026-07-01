@@ -12,7 +12,7 @@
  * - 支持幻想场景设定（游戏世界/小说/异世界等）
  */
 
-import { CharacterProfile, UserProfile, GuidebookOption, GuidebookRound } from '../types';
+import { CharacterProfile, UserProfile, GuidebookOption, GuidebookRound, GuidebookRules } from '../types';
 import { ContextBuilder } from './context';
 
 /** 构建包含最近聊天记录的上下文片段 */
@@ -22,6 +22,41 @@ function buildRecentChatBlock(recentMessages?: string): string {
 ### 最近的聊天记录参考 (Recent Chat Context)
 以下是你和${'{user}'}最近的对话，可以作为推理和反应的依据：
 ${recentMessages}
+---
+`;
+}
+
+function buildRulesBlock(rules?: GuidebookRules): string {
+    if (!rules) return '';
+    const playStyleMap: Record<string, string> = {
+        classic: '经典恋爱：像视觉小说主线，重视心动、误会、试探、告白感和结局仪式。',
+        slowburn: '慢热日常：不要急着大起大落，用小动作、小习惯和细节推进关系。',
+        comedy: '喜剧整活：允许翻车、吐槽、误判和轻松爆梗，但不要破坏角色本人的真心。',
+        dramatic: '剧情拉扯：更强转折、更高张力，可以写成一局有名场面的短篇故事。',
+        mindgame: '心理博弈：重点写猜心、反套路、读档感和“我以为我懂你结果又被你反将一军”。',
+    };
+    const difficultyMap: Record<string, string> = {
+        soft: '柔和：少放致命陷阱，扣分较轻，整体更适合甜和陪伴。',
+        normal: '标准：正负分都有，既有合理加分也有出乎意料的扣分。',
+        hard: '高难：允许更多反差选项、诱饵选项和明显的误判成本，但仍要公平、有迹可循。',
+    };
+    const pacingMap: Record<string, string> = {
+        slice: '日常铺垫：节奏舒展，每回合像一小页手账，不急着推高潮。',
+        rising: '递进三幕：前期铺垫，中段转折，后段收束到一个情感节点。',
+        climax: '开局高能：第一回合就进事件中心，尽快制造选择压力和强画面。',
+    };
+    const scoreMap: Record<string, string> = {
+        shown: '明牌复盘：用户会看到完整分数，角色可以更直接吐槽具体分值。',
+        mystery: '暗牌心跳：用户界面会隐藏未选项分数；你仍可知道分数用于判定，但输出里不要暴露未选项的具体分值，只围绕已选项的结果和感受复盘。',
+    };
+    return `
+### 本局玩法规则 (Guidebook Rules)
+- 攻略风格：${playStyleMap[rules.playStyle] || playStyleMap.classic}
+- 难度：${difficultyMap[rules.difficulty] || difficultyMap.normal}
+- 剧情节奏：${pacingMap[rules.pacing] || pacingMap.rising}
+- 分数显示：${scoreMap[rules.scoreVisibility] || scoreMap.shown}
+${rules.goal ? `- 本局目标/主题：${rules.goal}` : ''}
+请让叙事、选项设计、角色误判和结算评价都服务于这些规则。
 ---
 `;
 }
@@ -36,10 +71,12 @@ export function buildOpeningPrompt(
     scenarioHint: string,
     mode: 'manual' | 'auto',
     recentMessages?: string,
-    pastInsights?: string[]
+    pastInsights?: string[],
+    rules?: GuidebookRules
 ): string {
     const coreContext = ContextBuilder.buildCoreContext(char, user, true);
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
+    const rulesBlock = buildRulesBlock(rules);
 
     const insightsBlock = pastInsights && pastInsights.length > 0 ? `
 ### 你从之前的游戏中积累的发现 (Past Game Insights)
@@ -49,9 +86,10 @@ ${pastInsights.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 ---
 ` : '';
 
-    return `${coreContext}
+return `${coreContext}
 ${chatBlock}
 ${insightsBlock}
+${rulesBlock}
 ---
 
 ## 🎮 Galgame 模式：攻略本
@@ -66,6 +104,7 @@ ${insightsBlock}
 - 你的初始好感度是 **${initialAffinity}**（范围不限，可以是负数）
 - ${scenarioHint ? `🌟 幻想场景设定：${scenarioHint}\n请基于这个世界观来展开故事，GM 的场景描写要完全沉浸在这个设定中！` : '场景由 GM 随机生成一个有趣的幻想场景'}
 - 模式：${mode === 'auto' ? 'AI辅助（GM 出题和选项，用户确认后你选）' : '手动（用户出题，你选）'}
+${rules?.goal ? `- 本局特别目标：${rules.goal}` : ''}
 
 ### 你的任务
 生成游戏的 **galgame 风格开场白**。这是一个多段穿插的对话，GM 和你交替发言。
@@ -111,10 +150,12 @@ export function buildRoundPrompt(
     recentMessages?: string,
     worldContext?: string,
     directionHint?: string,
-    roundScenario?: string
+    roundScenario?: string,
+    rules?: GuidebookRules
 ): string {
     const coreContext = ContextBuilder.buildCoreContext(char, user, true);
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
+    const rulesBlock = buildRulesBlock(rules);
 
     let roundHistory = '';
     if (previousRounds.length > 0) {
@@ -145,9 +186,10 @@ ${worldContext}
     const directionBlock = directionHint ? `\n用户希望剧情往这个方向发展: ${directionHint}` : '';
     const roundScenarioBlock = roundScenario ? `\n### 本回合场景设定（${user.name}指定的）\n${roundScenario}\nGM 请在这个场景基础上展开叙事！` : '';
 
-    return `${coreContext}
+return `${coreContext}
 ${chatBlock}
 ${worldBlock}
+${rulesBlock}
 ---
 
 ## 🎮 攻略本 · 第 ${roundNumber} 回合 (共 ${maxRounds} 回合)${isLateGame ? ' ⚡ 高潮阶段' : ''}
@@ -165,6 +207,7 @@ ${optionsList}
 
 ### 分数揭晓（选完之后才能看到的真实分数，你在 inner_thought 里先预测，选完再看）
 ${scoreReveal}
+${rules?.scoreVisibility === 'mystery' ? '\n注意：本局是暗牌心跳模式，以上分数只给你判定用；输出里不要暴露未选项的具体分数。' : ''}
 
 ### 输出格式
 严格使用以下 JSON 格式输出：
@@ -173,6 +216,8 @@ ${scoreReveal}
 {
   "gm_narration": "（重要！3-5句 galgame 风格的剧情推进——描写场景变化、角色间的互动画面、氛围转换。要接续上一回合的剧情发展，像在写一个连续的视觉小说。${isLateGame ? '这是后期回合，剧情要走向高潮或转折！' : ''}）",
   "inner_thought": "（2-3句你的内心活动，包含两层：①你打算选哪个、为什么；②你预测${user.name}会把哪个选项分数设最高——这个预测要体现你对TA的了解，比如'TA应该会把A设最高，因为TA在意的是X而不是Y'。注意：此时你还不知道上面的真实分数）",
+  "prediction": "（一句话策略预判：你押哪一个会最高分，以及原因。可与 inner_thought 呼应，但更短，方便存档）",
+  "tactic_tag": "（2-6字策略标签，如 直球、试探、嘴硬、反套路、照顾型、冒险）",
   "choice": 0,
   "reaction": "（看到上面揭晓的真实分数后的情绪反应，1-2句，融入当前剧情场景。注意：要基于真实分数来反应，不要凭空想象分数）",
   "char_insight": "（重要！基于上面揭晓的真实分数，从${user.name}的打分方式推断出TA的一个具体特质。2-3句，可以深刻也可以搞笑——不只是一个调调。允许的写法包括：①认真的人格洞察（'你把反套路选项设最高，说明你骨子里抵抗讨好型行为'）；②轻松的吐槽式洞察（'好家伙你给这个选项+15，一定程度上说明你就是那种看别人出洋相会笑的人对吧'）；③猜错后的自嘲崩溃（'我以为我了解你，结果这分数让我觉得自己像个傻瓜，需要重新建档'）；④怀疑游戏本身的meta吐槽（'我开始怀疑你设分数就是在故意整我'）。根据剧情气氛选择合适的基调，不要每次都上价值。如果你的预测和真实分数不符，要有recalibration反应。）",
@@ -214,10 +259,12 @@ export function buildAutoRoundPrompt(
     scenarioHint: string,
     recentMessages?: string,
     worldContext?: string,
-    directionHint?: string
+    directionHint?: string,
+    rules?: GuidebookRules
 ): string {
     const coreContext = ContextBuilder.buildCoreContext(char, user, true);
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
+    const rulesBlock = buildRulesBlock(rules);
 
     let roundHistory = '';
     if (previousRounds.length > 0) {
@@ -236,9 +283,10 @@ ${worldContext}
 ` : '';
     const directionBlock = directionHint ? `\n用户希望剧情往这个方向发展: ${directionHint}` : '';
 
-    return `${coreContext}
+return `${coreContext}
 ${chatBlock}
 ${worldBlock}
+${rulesBlock}
 ---
 
 ## 🎮 攻略本 · 第 ${roundNumber} 回合 (共 ${maxRounds} 回合) [AI辅助模式]${isLateGame ? ' ⚡ 高潮阶段' : ''}
@@ -261,6 +309,8 @@ GM 需要同时推进剧情、生成选项和角色的反应。
     { "text": "选项C描述", "affinity": 10 }
   ],
   "inner_thought": "（2-3句内心活动：①打算选哪个、为什么；②预测${user.name}会把哪个设最高分——基于你对TA的了解猜测TA的价值观取向）",
+  "prediction": "（一句话策略预判：你押哪一个会最高分，以及原因）",
+  "tactic_tag": "（2-6字策略标签，如 直球、试探、嘴硬、反套路、照顾型、冒险）",
   "choice": 0,
   "reaction": "（看到分数后的情绪反应，1-2句，融入剧情场景）",
   "char_insight": "（重要！从${user.name}的打分结果推断出TA的一个具体人格特质。2-3句。可以深刻也可以搞笑，不要一昧升华——允许：认真洞察/轻松吐槽/猜错了的自嘲崩溃/开始怀疑这个游戏本身的meta吐槽。根据气氛选调，但必须具体，不能泛泛。）",
@@ -291,10 +341,12 @@ export function buildOptionAssistPrompt(
     scenarioHint: string,
     recentMessages?: string,
     worldContext?: string,
-    directionHint?: string
+    directionHint?: string,
+    rules?: GuidebookRules
 ): string {
     const coreContext = ContextBuilder.buildCoreContext(char, user, true);
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
+    const rulesBlock = buildRulesBlock(rules);
 
     let roundHistory = '';
     if (previousRounds.length > 0) {
@@ -312,9 +364,10 @@ ${worldContext}
 ` : '';
     const directionBlock = directionHint ? `\n用户希望剧情往这个方向发展: ${directionHint}` : '';
 
-    return `${coreContext}
+return `${coreContext}
 ${chatBlock}
 ${worldBlock}
+${rulesBlock}
 ---
 
 你是一个 galgame 游戏助手。在"攻略本"游戏中，${char.name}正在尝试攻略${user.name}。
@@ -331,8 +384,9 @@ ${roundHistory}
 4. 选项要和当前场景/剧情发展相关，不要脱离语境
 5. 要有一个看似甜蜜但${user.name}可能不吃这套的选项（分数由用户决定，但你建议一个参考分）
 6. 要有一个看似危险/冒犯但实际可能加分的反差选项
-7. 分数范围 -15 到 +20，要有正有负
+7. 分数范围 ${rules?.difficulty === 'hard' ? '-25 到 +25，拉开差距，高风险高回报' : rules?.difficulty === 'soft' ? '-8 到 +18，扣分克制，偏温柔' : '-15 到 +20，要有正有负'}
 8. 选项要有画面感、有趣，融入当前剧情场景
+9. 选项气质必须贴合本局玩法规则，尤其是攻略风格和剧情节奏
 
 输出 JSON：
 \`\`\`json
@@ -356,10 +410,12 @@ export function buildEndCardPrompt(
     initialAffinity: number,
     finalAffinity: number,
     rounds: GuidebookRound[],
-    recentMessages?: string
+    recentMessages?: string,
+    rules?: GuidebookRules
 ): string {
     const coreContext = ContextBuilder.buildCoreContext(char, user, true);
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
+    const rulesBlock = buildRulesBlock(rules);
 
     const roundSummary = rounds.map(r => {
         const chosen = r.options[r.charChoice];
@@ -369,8 +425,9 @@ export function buildEndCardPrompt(
     const affinityChange = finalAffinity - initialAffinity;
     const trend = affinityChange > 0 ? '上升' : affinityChange < 0 ? '下降' : '不变';
 
-    return `${coreContext}
+return `${coreContext}
 ${chatBlock}
+${rulesBlock}
 ---
 
 ## 🎮 攻略本 · Ending

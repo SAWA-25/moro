@@ -1,7 +1,7 @@
-
-import React, { useState, useEffect } from 'react';
-import { CharacterProfile, ApiPreset, APIConfig, CharacterBuff } from '../../types';
+import React, { useEffect, useState } from 'react';
+import { APIConfig, ApiPreset, CharacterBuff, CharacterProfile } from '../../types';
 import { isScheduleFeatureOn } from '../../utils/scheduleGenerator';
+import LlmApiConfigFields from '../settings/LlmApiConfigFields';
 
 interface EmotionSettingsPanelProps {
     char: CharacterProfile;
@@ -24,39 +24,20 @@ const INTENSITY_DOTS = (n: number | undefined | null) => {
 };
 
 const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
-    char, apiPresets, addApiPreset, onSave, onClearBuffs
+    char, onSave, onClearBuffs
 }) => {
     const [url, setUrl] = useState('');
     const [key, setKey] = useState('');
     const [model, setModel] = useState('');
-    const [showSavePreset, setShowSavePreset] = useState(false);
-    const [newPresetName, setNewPresetName] = useState('');
     const [dirty, setDirty] = useState(false);
 
-    // Sync form state from character
     useEffect(() => {
         const s = char.emotionConfig;
         setUrl(s?.api?.baseUrl ?? '');
         setKey(s?.api?.apiKey ?? '');
         setModel(s?.api?.model ?? '');
-        setShowSavePreset(false);
-        setNewPresetName('');
         setDirty(false);
     }, [char.id]);
-
-    const loadPreset = (preset: ApiPreset) => {
-        setUrl(preset.config.baseUrl);
-        setKey(preset.config.apiKey);
-        setModel(preset.config.model);
-        setDirty(true);
-    };
-
-    const handleSavePreset = () => {
-        if (!newPresetName.trim()) return;
-        addApiPreset(newPresetName.trim(), { baseUrl: url, apiKey: key, model });
-        setNewPresetName('');
-        setShowSavePreset(false);
-    };
 
     const handleSave = () => {
         const api = url ? { baseUrl: url, apiKey: key, model } : undefined;
@@ -89,102 +70,27 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                 </div>
             )}
 
-            {/* Preset chips */}
-            {apiPresets.length > 0 && (
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">我的预设</label>
-                    <div className="flex gap-2 flex-wrap">
-                        {apiPresets.map(preset => (
-                            <button
-                                key={preset.id}
-                                onClick={() => loadPreset(preset)}
-                                className="flex items-center bg-white border border-[#eed6df] rounded-lg px-3 py-1 shadow-sm text-xs font-medium text-[#5a3140] hover:bg-[#fff4f7] active:scale-95 transition-all"
-                            >
-                                {preset.name}
-                                <span className="ml-1.5 text-slate-300">{preset.config.model}</span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* API fields */}
             <div className="space-y-3">
-                <div className="flex items-center justify-between mb-0.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">副 API 配置</label>
-                    <button
-                        onClick={() => setShowSavePreset(!showSavePreset)}
-                        className="text-[10px] bg-[#fff4f7] text-[#5a3140] border border-[#eed6df] px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
-                    >
-                        保存为预设
-                    </button>
-                </div>
-
-                {showSavePreset && (
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={newPresetName}
-                            onChange={e => setNewPresetName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleSavePreset()}
-                            placeholder="预设名称..."
-                            className="flex-1 bg-[#fffdfa] border border-[#eed6df] rounded-xl px-3 py-2 text-sm focus:bg-white transition-all"
-                            autoFocus
-                        />
-                        <button
-                            onClick={handleSavePreset}
-                            className="px-4 py-2 bg-[#d8a5b7] text-[#fffdfa] text-sm font-bold rounded-xl active:scale-95 transition-transform"
-                        >
-                            保存
-                        </button>
-                    </div>
-                )}
-
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
-                    <input
-                        type="text"
-                        value={url}
-                        onChange={e => { setUrl(e.target.value); setDirty(true); }}
-                        placeholder="留空 = 使用主 API"
-                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
-                    />
-                </div>
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
-                    <input
-                        type="password"
-                        value={key}
-                        onChange={e => { setKey(e.target.value); setDirty(true); }}
-                        placeholder="sk-..."
-                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
-                    />
-                </div>
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Model</label>
-                    <input
-                        type="text"
-                        value={model}
-                        onChange={e => { setModel(e.target.value); setDirty(true); }}
-                        placeholder="claude-haiku-4-5 / gpt-4o-mini / ..."
-                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
-                    />
-                </div>
-
-                <button
-                    onClick={handleSave}
-                    disabled={!dirty}
-                    className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all ${
-                        dirty
-                            ? 'bg-[#d8a5b7] text-[#fffdfa] shadow-sm active:scale-95'
-                            : 'bg-[#fff4f7] text-[#a892a3] cursor-not-allowed'
-                    }`}
-                >
-                    {dirty ? '保存副 API 配置' : '✓ 已保存'}
-                </button>
+                <LlmApiConfigFields
+                    label="副 API 配置"
+                    value={{ baseUrl: url, apiKey: key, model }}
+                    onChange={next => {
+                        setUrl(next.baseUrl);
+                        setKey(next.apiKey);
+                        setModel(next.model);
+                        setDirty(true);
+                    }}
+                    onSaveConfig={handleSave}
+                    saveConfigLabel={dirty ? '保存副 API 配置' : '✓ 已保存'}
+                    savePresetDefaultName={`${char.name} 情绪 API`}
+                    urlPlaceholder="留空 = 使用主 API"
+                    modelPlaceholder="claude-haiku-4-5 / gpt-4o-mini / ..."
+                    inputClassName="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                    buttonClassName="rounded-full bg-[#fff4f7] text-[#5a3140] border border-[#eed6df] px-3 py-2 text-xs font-bold shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                    primaryButtonClassName="rounded-xl bg-[#d8a5b7] text-[#fffdfa] px-3 py-2 text-xs font-bold shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                />
             </div>
 
-            {/* Current buffs */}
             {buffs.length > 0 ? (
                 <div>
                     <div className="flex items-center justify-between mb-2">

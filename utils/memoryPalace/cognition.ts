@@ -20,6 +20,7 @@
 import type { MemoryNode, ScoredMemory } from './types';
 import { MemoryNodeDB, MemoryLinkDB } from './db';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 
 // ─── 工作记忆快照（短期） ─────────────────────────────────
 
@@ -321,7 +322,7 @@ ${lines}
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', charName, purpose: '认知提炼' },
+            2, 0, makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux', charName }),
         );
         const reply = (data.choices?.[0]?.message?.content || '').trim();
         // 取第一行非空、剥引号

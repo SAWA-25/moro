@@ -27,6 +27,7 @@ import type { LightLLMConfig } from './pipeline';
 import { vectorizeAndStore } from './vectorStore';
 import { bulkSetArchived } from './supabaseVector';
 import { safeFetchJson, extractJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 
 const VALID_ROOMS: MemoryRoom[] = [
     'living_room', 'bedroom', 'study', 'user_room',
@@ -192,7 +193,7 @@ async function callCompressionLLM(
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', purpose: '事件压缩' }
+            2, 0, makeApiUsageMeta('memoryPalace.eventBoxCompression', { apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

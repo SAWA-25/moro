@@ -16,7 +16,8 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
-import { CharacterProfile } from '../types';
+import { APIConfig, CharacterProfile } from '../types';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -230,7 +231,7 @@ const WhiteDayPopup: React.FC<WhiteDayPopupProps> = ({ onView, onDismiss, onChec
 // API 配置内联组件（白色情人节版）
 // ============================================================
 const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ onDone, onBack }) => {
-    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels } = useOS();
+    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels, apiPresets, addApiPreset } = useOS();
 
     const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
     const [localKey, setLocalKey] = useState(apiConfig.apiKey);
@@ -238,6 +239,27 @@ const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = (
     const [isLoadingModels, setIsLoadingModels] = useState(false);
     const [statusMsg, setStatusMsg] = useState('');
     const [showModelList, setShowModelList] = useState(false);
+
+    const loadPreset = (preset: typeof apiPresets[0]) => {
+        setLocalUrl(preset.config.baseUrl);
+        setLocalKey(preset.config.apiKey);
+        setLocalModel(preset.config.model);
+        addToast(`已加载预设: ${preset.name}`, 'info');
+    };
+
+    const handleSavePreset = () => {
+        if (!localUrl.trim() || !localModel.trim()) {
+            setStatusMsg('保存预设需要 URL 和模型名');
+            return;
+        }
+        addApiPreset('白色情人节活动 API', {
+            baseUrl: localUrl.trim(),
+            apiKey: localKey.trim(),
+            model: localModel.trim(),
+        } as APIConfig);
+        setStatusMsg('已保存为预设');
+        addToast('已保存 API 预设', 'success');
+    };
 
     const handleSave = () => {
         updateApiConfig({ baseUrl: localUrl, apiKey: localKey, model: localModel });
@@ -254,13 +276,14 @@ const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = (
             const baseUrl = localUrl.replace(/\/+$/, '');
             const response = await fetch(`${baseUrl}/models`, {
                 method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
+                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' },
+                __moroMeta: makeApiUsageMeta('special.whiteDayApi.fetchModels', { apiRole: 'main', apiBinding: '白色情人节活动 API' }),
+            } as RequestInit & { __moroMeta?: unknown });
             if (!response.ok) throw new Error(`Status ${response.status}`);
             const data = await safeResponseJson(response);
             const list = data.data || data.models || [];
             if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
+                const models = list.map((m: any) => m.id || m).filter((m: any): m is string => typeof m === 'string' && !!m.trim());
                 setAvailableModels(models);
                 if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
                 setStatusMsg(`获取到 ${models.length} 个模型`);
@@ -284,6 +307,23 @@ const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = (
                 </div>
 
                 <div className="px-6 py-4 space-y-4 overflow-y-auto no-scrollbar flex-1">
+                    {apiPresets.length > 0 && (
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">我的预设</label>
+                            <div className="flex gap-2 flex-wrap">
+                                {apiPresets.map(preset => (
+                                    <button
+                                        key={preset.id}
+                                        onClick={() => loadPreset(preset)}
+                                        className="text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm hover:text-primary hover:border-primary/30 active:scale-95 transition-all"
+                                    >
+                                        {preset.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
                         <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
@@ -312,6 +352,9 @@ const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = (
 
                     <button onClick={handleSave} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-primary/20 bg-primary active:scale-95 transition-all">
                         {statusMsg || '保存配置'}
+                    </button>
+                    <button onClick={handleSavePreset} className="w-full py-2.5 rounded-2xl font-bold text-primary bg-primary/10 border border-primary/20 active:scale-95 transition-all text-sm">
+                        保存为预设
                     </button>
                 </div>
 

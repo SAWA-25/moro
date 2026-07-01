@@ -10,6 +10,7 @@ import type { DigestResult } from './memoryPalace/digestion';
 import { PixelLayoutDB } from '../apps/pixelHome/pixelHomeDb';
 import { ROOM_META, ALL_ROOMS } from '../apps/pixelHome/roomTemplates';
 import { safeFetchJson } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 interface LLMConfig {
   baseUrl: string;
@@ -109,7 +110,7 @@ ${JSON.stringify(layoutSummary, null, 2)}
           max_tokens: 800,
         }),
       },
-      2, 0, { appName: '栖居志', purpose: '房间布置' },
+      2, 0, makeApiUsageMeta('room.decoration', { charId, charName, apiRole: 'aux' }),
     );
 
     const reply = data.choices?.[0]?.message?.content || '';

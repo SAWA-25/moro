@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, GameSummary } from '../types';
+import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, GameSummary, TrpgActionCheck } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { extractContent, extractJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -12,6 +12,16 @@ import {
     trpgRecapPrompt, trpgArchiveSummaryPrompt,
 } from '../utils/theaterPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import {
+    actionCheckHint,
+    applyTrpgStateUpdates,
+    checkResultToText,
+    createExpandedDefaults,
+    normalizeTrpgSession,
+    rollNarrativeCheck,
+    summarizeCampaignState,
+    TRPG_ATTRIBUTE_LABELS,
+} from '../utils/theaterTrpg';
 import Modal from '../components/os/Modal';
 import { Planet, RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
 
@@ -228,6 +238,9 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     // 新游戏玩法设置
     const [newDiceDisabled, setNewDiceDisabled] = useState(false);            // 关闭骰子（默认每次直接成功）
     const [newArchiveMode, setNewArchiveMode] = useState<'auto' | 'manual'>('auto');
+    const [newCampaignMode, setNewCampaignMode] = useState<'classic' | 'expanded'>('expanded');
+    const [newCampaignDifficulty, setNewCampaignDifficulty] = useState<'story' | 'normal' | 'hard'>('normal');
+    const [newGrowthSpeed, setNewGrowthSpeed] = useState<'slow' | 'standard' | 'fast'>('standard');
     const [showArchiveHelp, setShowArchiveHelp] = useState(false);            // 归档模式问号说明
 
     // Play State
@@ -241,6 +254,7 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
     const [isForwarding, setIsForwarding] = useState(false);
     const [lastRoll, setLastRoll] = useState<number | null>(null); // 最近一次自动骰点结果（瞬时展示）
+    const [lastCheckText, setLastCheckText] = useState<string>('');
     const [lastTokenUsage, setLastTokenUsage] = useState<{prompt?: number, completion?: number, total: number} | null>(null);
     const [totalTokensUsed, setTotalTokensUsed] = useState(0);
     
@@ -259,6 +273,7 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [isArchiving, setIsArchiving] = useState(false);
     const [showTools, setShowTools] = useState(false); // Default hidden
     const [showParty, setShowParty] = useState(true);  // Default visible
+    const [showCampaignPanel, setShowCampaignPanel] = useState(true);
     const [uiSettings, setUiSettings] = useState<{fontSize: number, color: string}>({ fontSize: 14, color: '' });
 
     // SAN Lock: Sync from activeGame on load
@@ -551,13 +566,40 @@ ${recentLog}
                 suggestedActions: res?.suggested_actions || [],
                 diceDisabled: newDiceDisabled,
                 archiveMode: newArchiveMode,
+                campaignMode: newCampaignMode,
+                campaignDifficulty: newCampaignDifficulty,
+                growthSpeed: newGrowthSpeed,
                 createdAt: Date.now(),
                 lastPlayedAt: Date.now()
             };
+            let gameToSave: GameSession = newGame;
+            if (newCampaignMode === 'expanded') {
+                const expandedBase: GameSession = {
+                    ...newGame,
+                    ...createExpandedDefaults(newGame, userProfile, players),
+                };
+                const seeded = applyTrpgStateUpdates(expandedBase, {
+                    scene: res?.scene,
+                    chapter: {
+                        ...(res?.chapter || {}),
+                        title: res?.chapter?.title || res?.chapterTitle || expandedBase.chapter?.title,
+                        goal: res?.chapter?.goal || res?.mainQuest || expandedBase.chapter?.goal,
+                    },
+                    questUpdates: res?.questUpdates,
+                    clueUpdates: res?.clueUpdates,
+                    npcUpdates: res?.npcUpdates,
+                    threatUpdates: res?.threatUpdates,
+                    encounterUpdates: res?.encounterUpdates,
+                    sheetUpdates: res?.sheetUpdates,
+                    worldClock: res?.worldClock,
+                    milestone: res?.milestone,
+                });
+                gameToSave = seeded;
+            }
 
-            await DB.saveGame(newGame);
-            setGames(prev => [newGame, ...prev]);
-            setActiveGame(newGame);
+            await DB.saveGame(gameToSave);
+            setGames(prev => [gameToSave, ...prev]);
+            setActiveGame(gameToSave);
             setView('play');
             
             // Reset form
@@ -566,6 +608,9 @@ ${recentLog}
             setWorldIdea('');
             setNewDiceDisabled(false);
             setNewArchiveMode('auto');
+            setNewCampaignMode('expanded');
+            setNewCampaignDifficulty('normal');
+            setNewGrowthSpeed('standard');
             setSelectedPlayers(new Set());
 
         } catch (e: any) {
@@ -598,21 +643,46 @@ ${recentLog}
     };
 
     // --- Gameplay Logic ---
-    const handleAction = async (actionText: string, isReroll: boolean = false) => {
+    const handleAction = async (actionText: string, isReroll: boolean = false, actionCheck?: TrpgActionCheck) => {
         if (!activeGame || !auxApi.apiKey) return;
 
-        let contextLogs = activeGame.logs;
-        let updatedGame = activeGame;
+        const baseGame = normalizeTrpgSession(activeGame, userProfile, characters);
+        let contextLogs = baseGame.logs;
+        let updatedGame = baseGame;
         let currentRoll: number | null = null;
+        let currentCheckText = '';
+        let currentDiceRoll: GameLog['diceRoll'] | undefined;
 
         if (!isReroll) {
             const isSystemAction = actionText.startsWith('[System');
             // [优化] 每个玩家行动默认自动骰一颗 D20（不再需要主动点骰子）。
             // 系统消息不骰点；用户在设置里关闭骰子时也不骰点。
-            if (!isSystemAction && actionText.trim() && !activeGame.diceDisabled) {
-                currentRoll = rollD20();
+            if (!isSystemAction && actionText.trim() && !baseGame.diceDisabled) {
+                const userSheet = baseGame.partySheets?.find(s => s.isUser || s.ownerId === 'user');
+                if (baseGame.campaignMode === 'expanded' && actionCheck && userSheet) {
+                    const checkResult = rollNarrativeCheck({ sheet: userSheet, check: actionCheck });
+                    currentRoll = checkResult.chosenRoll;
+                    currentCheckText = checkResultToText(checkResult);
+                    currentDiceRoll = {
+                        result: checkResult.chosenRoll,
+                        max: 20,
+                        check: checkResult.label,
+                        success: checkResult.success,
+                        total: checkResult.total,
+                        dc: checkResult.dc,
+                        attribute: checkResult.attribute,
+                        skill: checkResult.skill,
+                        mode: checkResult.mode,
+                    };
+                    setLastCheckText(currentCheckText);
+                    addToast(currentCheckText, checkResult.success ? 'success' : 'info');
+                } else {
+                    currentRoll = rollD20();
+                    currentDiceRoll = { result: currentRoll, max: 20 };
+                    setLastCheckText('');
+                    addToast(`D20 = ${currentRoll} · ${rollFlavor(currentRoll)}`, 'info');
+                }
                 setLastRoll(currentRoll);
-                addToast(`D20 = ${currentRoll} · ${rollFlavor(currentRoll)}`, 'info');
             }
 
             // Standard Action: Append user log
@@ -622,11 +692,11 @@ ${recentLog}
                 speakerName: userProfile.name,
                 content: actionText,
                 timestamp: Date.now(),
-                diceRoll: currentRoll ? { result: currentRoll, max: 20 } : undefined
+                diceRoll: currentDiceRoll
             };
 
-            const updatedLogs = [...activeGame.logs, userLog];
-            updatedGame = { ...activeGame, logs: updatedLogs, lastPlayedAt: Date.now(), suggestedActions: [] }; // Clear options while thinking
+            const updatedLogs = [...baseGame.logs, userLog];
+            updatedGame = { ...baseGame, logs: updatedLogs, lastPlayedAt: Date.now(), suggestedActions: [] }; // Clear options while thinking
             setActiveGame(updatedGame);
             await DB.saveGame(updatedGame);
             contextLogs = updatedLogs;
@@ -639,12 +709,12 @@ ${recentLog}
 
         try {
             // 2. Build Context WITH RELATIONSHIP SYNC
-            const players = characters.filter(c => activeGame.playerCharIds.includes(c.id));
+            const players = characters.filter(c => baseGame.playerCharIds.includes(c.id));
             const playerContext = await buildSyncContext(players);
 
             // 3. Build Status Warning（低血/低 SAN 氛围警告 + 归零 Bad Ending 触发；文案在 theaterPrompts）
-            const statusWarning = trpgStatusWarning(activeGame.status.health, activeGame.status.sanity);
-            const gameOverTrigger = trpgGameOverTrigger(activeGame.status.health, activeGame.status.sanity);
+            const statusWarning = trpgStatusWarning(baseGame.status.health, baseGame.status.sanity);
+            const gameOverTrigger = trpgGameOverTrigger(baseGame.status.health, baseGame.status.sanity);
 
             // [优化] 历史记录：已归档的旧剧情用「前情提要」总结代替，未归档日志保留原文，
             //   并把每条玩家行动的骰点结果一并喂给 GM 用于判定（之前 GM 根本看不到骰点）。
@@ -653,27 +723,28 @@ ${recentLog}
                 const dice = l.diceRoll ? ` 〔D20=${l.diceRoll.result}/${rollFlavor(l.diceRoll.result)}〕` : '';
                 return `[${who}]${dice}: ${l.content}`;
             };
-            const summaries = activeGame.summaries || [];
+            const summaries = baseGame.summaries || [];
             const recapBlock = summaries.length > 0
                 ? `### 前情提要 (Story So Far)\n${summaries.map((s, i) => `【第${i + 1}段】${s.content}`).join('\n\n')}\n\n`
                 : '';
             const activeLogText = contextLogs.filter(l => !l.archived).map(serializeLog).join('\n');
+            const campaignState = summarizeCampaignState(updatedGame);
 
             // 当前这步行动的判定提示：开了骰子按 D20 裁定；关了骰子默认直接成功（文案在 theaterPrompts）
             const rollInstruction = trpgRollInstruction({
                 currentRoll: currentRoll ?? undefined,
                 rollFlavor: currentRoll ? rollFlavor(currentRoll) : undefined,
-                diceDisabled: activeGame.diceDisabled,
+                diceDisabled: baseGame.diceDisabled,
             });
 
             const prompt = trpgGameLoopPrompt({
-                title: activeGame.title,
-                worldSetting: activeGame.worldSetting,
-                location: activeGame.status.location,
-                health: activeGame.status.health,
-                sanity: activeGame.status.sanity,
-                gold: activeGame.status.gold,
-                inventory: activeGame.status.inventory,
+                title: baseGame.title,
+                worldSetting: baseGame.worldSetting,
+                location: baseGame.status.location,
+                health: baseGame.status.health,
+                sanity: baseGame.status.sanity,
+                gold: baseGame.status.gold,
+                inventory: baseGame.status.inventory,
                 statusWarning,
                 gameOverTrigger,
                 userName: userProfile.name,
@@ -682,6 +753,8 @@ ${recentLog}
                 recapBlock,
                 activeLogText,
                 rollInstruction,
+                campaignState,
+                checkResult: currentCheckText,
             });
 
             const data = await fetchGameAPI(prompt);
@@ -738,12 +811,26 @@ ${recentLog}
                 });
             }
 
-            const finalGame = {
+            const finalGameBase: GameSession = {
                 ...updatedGame,
                 logs: [...contextLogs, ...newLogs],
                 status: newStatus,
                 suggestedActions: res?.suggested_actions || []
             };
+            const finalGame = res && updatedGame.campaignMode === 'expanded'
+                ? applyTrpgStateUpdates(finalGameBase, {
+                    scene: res.scene,
+                    chapter: res.chapter,
+                    questUpdates: res.questUpdates,
+                    clueUpdates: res.clueUpdates,
+                    npcUpdates: res.npcUpdates,
+                    threatUpdates: res.threatUpdates,
+                    encounterUpdates: res.encounterUpdates,
+                    sheetUpdates: res.sheetUpdates,
+                    worldClock: res.worldClock,
+                    milestone: res.milestone,
+                }, { sanityLocked })
+                : finalGameBase;
             
             setActiveGame(finalGame);
             await DB.saveGame(finalGame);
@@ -812,7 +899,8 @@ ${recentLog}
             if (game.archiveMode === 'auto') {
                 const now = new Date();
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                const cardLine = `和【${playerNames}】一起玩《${game.title}》TRPG，${summaryText}`;
+                const campaignDigest = summarizeCampaignState(updated);
+                const cardLine = `和【${playerNames}】一起玩《${game.title}》TRPG，${summaryText}${campaignDigest ? `。战役进度：${campaignDigest.replace(/\n+/g, ' ').slice(0, 220)}` : ''}`;
                 for (const p of players) {
                     const mem = {
                         id: `mem-${Date.now()}-${Math.random()}`,
@@ -825,7 +913,7 @@ ${recentLog}
                         charId: p.id,
                         role: 'system',
                         type: 'text',
-                        content: `[TRPG 进度卡: 你正和${playerNames}玩《${game.title}》。${summaryText}]`
+                        content: `[TRPG 进度卡: 你正和${playerNames}玩《${game.title}》。${summaryText}${campaignDigest ? `\n${campaignDigest}` : ''}]`
                     });
                 }
                 addToast('已自动总结并归档（已同步到角色聊天）', 'success');
@@ -891,7 +979,7 @@ ${recentLog}
             timestamp: Date.now()
         };
 
-        const resetGame: GameSession = {
+        let resetGame: GameSession = {
             ...activeGame,
             logs: [initialLog],
             // 漏清 summaries 会让旧前情提要继续显示在「已归档剧情」并被注入下一轮 GM prompt → 串档。一并清掉 UI 展开状态。
@@ -906,6 +994,15 @@ ${recentLog}
             suggestedActions: [],
             lastPlayedAt: Date.now()
         };
+        if (activeGame.campaignMode === 'expanded') {
+            resetGame = {
+                ...resetGame,
+                ...createExpandedDefaults(resetGame, userProfile, characters.filter(c => activeGame.playerCharIds.includes(c.id))),
+                campaignMode: 'expanded',
+                campaignDifficulty: activeGame.campaignDifficulty,
+                growthSpeed: activeGame.growthSpeed,
+            };
+        }
 
         await DB.saveGame(resetGame);
         setActiveGame(resetGame);
@@ -931,7 +1028,8 @@ ${recentLog}
             const players = characters.filter(c => activeGame.playerCharIds.includes(c.id));
             const playerNames = players.map(p => p.name).join('、');
             // Increase log context for summary
-            const logText = activeGame.logs.slice(-30).map(l => `${l.role}: ${l.content}`).join('\n');
+            const campaignDigest = summarizeCampaignState(activeGame);
+            const logText = `${activeGame.logs.slice(-30).map(l => `${l.role}: ${l.content}`).join('\n')}${campaignDigest ? `\n\n${campaignDigest}` : ''}`;
             
             const prompt = trpgArchiveSummaryPrompt({ title: activeGame.title, logText });
 
@@ -940,7 +1038,7 @@ ${recentLog}
             summary = summary.replace(/[。\.]$/, ''); // Remove trailing dot
 
             // Format: 【角色名们】和【用户名】一起玩了xxx，发生了xxxx
-            const memoryContent = `【${playerNames}】和【${userProfile.name}】一起玩了《${activeGame.title}》，发生了${summary}`;
+            const memoryContent = `【${playerNames}】和【${userProfile.name}】一起玩了《${activeGame.title}》，发生了${summary}${campaignDigest ? `。战役进度：${campaignDigest.replace(/\n+/g, ' ').slice(0, 260)}` : ''}`;
             
             // Format: YYYY-MM-DD
             const now = new Date();
@@ -1006,6 +1104,7 @@ ${recentLog}
         setIsForwarding(true);
         try {
             const players = characters.filter(c => activeGame.playerCharIds.includes(c.id));
+            const campaignDigest = summarizeCampaignState(activeGame);
             // 按剧情原顺序取选中的日志（排除纯系统占位）
             const selected = activeGame.logs.filter(l => selectedLogIds.has(l.id) && l.role !== 'system');
             const excerpt = selected.map(l => ({
@@ -1020,13 +1119,14 @@ ${recentLog}
                 partyNames: players.map(p => p.name),
                 excerpt,
                 count: excerpt.length,
+                campaignDigest,
             };
             for (const p of players) {
                 await DB.saveMessage({
                     charId: p.id,
                     role: 'user',
                     type: 'trpg_card',
-                    content: `[TRPG游戏片段]《${activeGame.title}》`,
+                    content: `[TRPG游戏片段]《${activeGame.title}》${campaignDigest ? `\n${campaignDigest}` : ''}`,
                     metadata: { trpg },
                 });
             }
@@ -1062,7 +1162,7 @@ ${recentLog}
     };
     const handleCardOpen = (g: GameSession) => {
         if (longPressFired.current) { longPressFired.current = false; return; } // 长按已触发删除，忽略点击
-        setActiveGame(g);
+        setActiveGame(normalizeTrpgSession(g, userProfile, characters));
         setView('play');
     };
 
@@ -1290,6 +1390,45 @@ ${recentLog}
                     <div>
                         <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2">玩法设置</label>
                         <div className="rounded-2xl border border-white/10 bg-white/5 divide-y divide-white/10">
+                            <div className="p-4">
+                                <div className="text-sm font-medium mb-2">战役结构</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        onClick={() => setNewCampaignMode('expanded')}
+                                        className={`rounded-xl p-2.5 text-left border transition-all active:scale-95 ${newCampaignMode === 'expanded' ? 'border-purple-400 bg-purple-500/15' : 'border-white/10 bg-white/5'}`}
+                                    >
+                                        <div className="text-xs font-bold">战役扩展</div>
+                                        <div className="text-[9px] text-white/40 mt-0.5 leading-snug">任务、线索、NPC、角色卡、危机条和里程碑</div>
+                                    </button>
+                                    <button
+                                        onClick={() => setNewCampaignMode('classic')}
+                                        className={`rounded-xl p-2.5 text-left border transition-all active:scale-95 ${newCampaignMode === 'classic' ? 'border-purple-400 bg-purple-500/15' : 'border-white/10 bg-white/5'}`}
+                                    >
+                                        <div className="text-xs font-bold">经典跑团</div>
+                                        <div className="text-[9px] text-white/40 mt-0.5 leading-snug">沿用旧版自由叙事、HP/SAN/物品</div>
+                                    </button>
+                                </div>
+                                {newCampaignMode === 'expanded' && (
+                                    <div className="grid grid-cols-2 gap-2 mt-3">
+                                        <div>
+                                            <div className="text-[9px] text-white/35 mb-1">难度</div>
+                                            <div className="grid grid-cols-3 gap-1">
+                                                {(['story', 'normal', 'hard'] as const).map(v => (
+                                                    <button key={v} onClick={() => setNewCampaignDifficulty(v)} className={`rounded-lg py-1.5 text-[10px] border ${newCampaignDifficulty === v ? 'bg-purple-500/25 border-purple-300 text-white' : 'bg-white/5 border-white/10 text-white/45'}`}>{v}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[9px] text-white/35 mb-1">成长</div>
+                                            <div className="grid grid-cols-3 gap-1">
+                                                {(['slow', 'standard', 'fast'] as const).map(v => (
+                                                    <button key={v} onClick={() => setNewGrowthSpeed(v)} className={`rounded-lg py-1.5 text-[10px] border ${newGrowthSpeed === v ? 'bg-purple-500/25 border-purple-300 text-white' : 'bg-white/5 border-white/10 text-white/45'}`}>{v}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             {/* 骰子开关 */}
                             <div className="flex items-center justify-between p-4">
                                 <div className="flex flex-col">
@@ -1467,6 +1606,61 @@ ${recentLog}
                     </div>
                 )}
             </div>
+
+            {activeGame.campaignMode === 'expanded' && (
+                <div className={`border-b ${theme.border} bg-black/15 backdrop-blur-sm z-10 shrink-0`}>
+                    <button
+                        onClick={() => setShowCampaignPanel(v => !v)}
+                        className="w-full px-4 py-2 flex items-center justify-between text-left active:scale-[0.99] transition-transform"
+                    >
+                        <div className="min-w-0">
+                            <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">Campaign Board</div>
+                            <div className="text-xs font-bold truncate">
+                                第{activeGame.chapter?.no || 1}幕 · {activeGame.chapter?.title || '未命名章节'}
+                                {activeGame.worldClock ? ` · 第${activeGame.worldClock.day}日 ${activeGame.worldClock.phase}` : ''}
+                            </div>
+                        </div>
+                        <div className="text-[10px] opacity-50">{showCampaignPanel ? '收起' : '展开'}</div>
+                    </button>
+                    {showCampaignPanel && (
+                        <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[10px] leading-snug animate-fade-in">
+                            <div className={`rounded-lg border ${theme.border} ${theme.cardBg} p-2`}>
+                                <div className="font-bold opacity-70 mb-1">任务</div>
+                                {(activeGame.quests || []).filter(q => q.status === 'active').slice(0, 3).map(q => <div key={q.id} className="opacity-80">· {q.title}</div>)}
+                                {!(activeGame.quests || []).some(q => q.status === 'active') && <div className="opacity-40">暂无 active 任务</div>}
+                            </div>
+                            <div className={`rounded-lg border ${theme.border} ${theme.cardBg} p-2`}>
+                                <div className="font-bold opacity-70 mb-1">线索</div>
+                                {(activeGame.clues || []).slice(-3).map(c => <div key={c.id} className="opacity-80 truncate">· {c.title}</div>)}
+                                {(activeGame.clues || []).length === 0 && <div className="opacity-40">暂无线索</div>}
+                            </div>
+                            <div className={`rounded-lg border ${theme.border} ${theme.cardBg} p-2`}>
+                                <div className="font-bold opacity-70 mb-1">NPC</div>
+                                {(activeGame.npcs || []).slice(-3).map(n => <div key={n.id} className="opacity-80 truncate">· {n.name}{n.attitude ? ` / ${n.attitude}` : ''}</div>)}
+                                {(activeGame.npcs || []).length === 0 && <div className="opacity-40">暂无 NPC</div>}
+                            </div>
+                            <div className={`rounded-lg border ${theme.border} ${theme.cardBg} p-2`}>
+                                <div className="font-bold opacity-70 mb-1">危机</div>
+                                {(activeGame.threats || []).filter(t => t.status === 'active').slice(0, 3).map(t => <div key={t.id} className="opacity-80">· {t.title} {t.progress}/{t.max}</div>)}
+                                {!(activeGame.threats || []).some(t => t.status === 'active') && <div className="opacity-40">暂无危机</div>}
+                            </div>
+                            <div className={`rounded-lg border ${theme.border} ${theme.cardBg} p-2 col-span-2`}>
+                                <div className="font-bold opacity-70 mb-1">角色卡</div>
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                                    {(activeGame.partySheets || []).map(s => (
+                                        <div key={s.ownerId} className="min-w-[128px] rounded border border-white/10 bg-black/15 p-2">
+                                            <div className="font-bold truncate">{s.name}{s.role ? ` / ${s.role}` : ''}</div>
+                                            <div className="opacity-60">HP{s.hp} SAN{s.sanity} XP{s.xp} 羁绊{s.bond}</div>
+                                            <div className="opacity-50 truncate">{s.skills.join('、') || '暂无技能'}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {lastCheckText && <div className="mt-2 opacity-70 font-mono">{lastCheckText}</div>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Stage / Log Area */}
             <div 
@@ -1661,11 +1855,12 @@ ${recentLog}
                             return (
                                 <button 
                                     key={idx} 
-                                    onClick={() => handleAction(opt.label)}
+                                    onClick={() => handleAction(opt.label, false, opt.check)}
                                     className={`flex-1 min-w-[100px] text-[10px] p-2 rounded-lg border ${styleClass} hover:opacity-80 active:scale-95 transition-all text-left leading-tight shadow-sm`}
                                 >
                                     <span className="block font-bold opacity-70 uppercase text-[8px] mb-0.5 tracking-wider">{opt.type}</span>
                                     {opt.label}
+                                    {opt.check && <span className="block mt-1 opacity-60 font-mono">{actionCheckHint(opt.check)}</span>}
                                 </button>
                             );
                         })}
@@ -1679,8 +1874,14 @@ ${recentLog}
                             <DiceFive size={16} weight="fill" /> {activeGame.diceDisabled ? '骰子已关' : '自动骰点'}
                             {!activeGame.diceDisabled && lastRoll !== null && <span className="font-mono font-bold no-underline">上次 {lastRoll}</span>}
                         </span>
-                        {['调查', '攻击', '交涉', '潜行', '逃跑'].map(action => (
-                            <button key={action} disabled={isTyping} onClick={() => handleAction(action)} className={`flex-1 px-3 py-2 rounded border ${theme.border} hover:bg-white/10 text-xs font-bold transition-colors active:scale-95 disabled:opacity-40`}>{action}</button>
+                        {[
+                            { label: '调查', check: { attribute: 'mind' as const, skill: '调查', dc: 12 } },
+                            { label: '攻击', check: { attribute: 'body' as const, skill: '强行突破', dc: 13 } },
+                            { label: '交涉', check: { attribute: 'heart' as const, skill: '交涉', dc: 12 } },
+                            { label: '潜行', check: { attribute: 'craft' as const, skill: '潜行', dc: 13 } },
+                            { label: '逃跑', check: { attribute: 'luck' as const, dc: 12 } },
+                        ].map(action => (
+                            <button key={action.label} disabled={isTyping} onClick={() => handleAction(action.label, false, action.check)} className={`flex-1 px-3 py-2 rounded border ${theme.border} hover:bg-white/10 text-xs font-bold transition-colors active:scale-95 disabled:opacity-40`}>{action.label}</button>
                         ))}
                     </div>
                 )}

@@ -50,12 +50,18 @@ export const TAROT_SPREADS: SpreadDef[] = [
     { key: 'one', name: '单张指引', count: 1, positions: ['核心指引'] },
     { key: 'three', name: '三张牌', count: 3, positions: ['过去', '现在', '未来'] },
     { key: 'situation', name: '圣三角', count: 3, positions: ['现状', '阻碍', '建议'] },
+    { key: 'mirror', name: '关系镜像', count: 5, positions: ['我眼中的自己', '我眼中的 TA', 'TA 眼中的我', '关系核心', '下一步'] },
+    { key: 'choice', name: '双路抉择', count: 5, positions: ['核心处境', '选择 A', 'A 的代价', '选择 B', 'B 的代价'] },
+    { key: 'week', name: '七日流向', count: 7, positions: ['第 1 日', '第 2 日', '第 3 日', '第 4 日', '第 5 日', '第 6 日', '第 7 日'] },
     { key: 'celtic', name: '凯尔特十字', count: 10, positions: ['现状', '阻碍/助力', '潜意识根基', '过去', '可能的未来', '近期', '自我态度', '外在环境', '希望与恐惧', '最终结果'] },
 ];
 
 export const LENORMAND_SPREADS: SpreadDef[] = [
     { key: 'one', name: '单张', count: 1, positions: ['核心'] },
     { key: 'three', name: '三张串读', count: 3, positions: ['主题', '发展', '结果'] },
+    { key: 'five', name: '五张线列', count: 5, positions: ['起因', '现状', '核心', '发展', '落点'] },
+    { key: 'cross', name: '小十字', count: 5, positions: ['中心', '上方影响', '下方根基', '过去', '未来'] },
+    { key: 'seven', name: '七张线列', count: 7, positions: ['线索 1', '线索 2', '线索 3', '核心', '线索 5', '线索 6', '线索 7'] },
     { key: 'nine', name: '九宫格', count: 9, positions: ['1', '2', '3', '4', '中心', '6', '7', '8', '9'] },
 ];
 
@@ -118,6 +124,8 @@ export function lenormandFromPicks(spread: SpreadDef, picks: LenormandCardDef[])
 
 /** 一爻的状态：值 6/7/8/9 = 老阴/少阳/少阴/老阳。 */
 export interface YaoLine {
+    /** 三枚铜钱结果：2=背/阴，3=字/阳 */
+    coins: [2 | 3, 2 | 3, 2 | 3];
     /** 6 老阴, 7 少阳, 8 少阴, 9 老阳 */
     value: 6 | 7 | 8 | 9;
     /** 本爻是否为阳 */
@@ -135,7 +143,7 @@ function lineFromCoins(coins: [number, number, number]): YaoLine {
     const value = sum as 6 | 7 | 8 | 9;
     const yang = value === 7 || value === 9;
     const moving = value === 6 || value === 9;
-    return { value, yang, moving, label: YAO_LABEL[value] };
+    return { coins: coins as [2 | 3, 2 | 3, 2 | 3], value, yang, moving, label: YAO_LABEL[value] };
 }
 
 /** 由六爻（自下而上）求卦。lines[0]=初爻。 */
@@ -160,7 +168,8 @@ export interface LiuyaoResult {
 export function castLiuyao(): LiuyaoResult {
     const lines: YaoLine[] = [];
     for (let i = 0; i < 6; i++) {
-        const coins: [number, number, number] = [2 + randInt(2), 2 + randInt(2), 2 + randInt(2)] as any;
+        const coin = (): 2 | 3 => (2 + randInt(2)) as 2 | 3;
+        const coins: [2 | 3, 2 | 3, 2 | 3] = [coin(), coin(), coin()];
         lines.push(lineFromCoins(coins));
     }
     const primaryBits = lines.map(l => l.yang);

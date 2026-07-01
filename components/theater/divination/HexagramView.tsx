@@ -6,7 +6,7 @@ import type { LiuyaoResult, MeihuaResult, YaoLine } from '../../../utils/divinat
  * 阳爻 ▅▅▅▅▅（实），阴爻 ▅▅ ▅▅（断），动爻高亮 + 标「○/×」。
  */
 
-const YaoBar: React.FC<{ yang: boolean; moving?: boolean; idx: number }> = ({ yang, moving, idx }) => (
+const YaoBar: React.FC<{ yang: boolean; moving?: boolean; idx: number; coins?: YaoLine['coins'] }> = ({ yang, moving, idx, coins }) => (
     <div className="flex items-center gap-2">
         <span className="text-[8px] text-white/35 w-8 text-right font-mono">{['初', '二', '三', '四', '五', '上'][idx]}爻</span>
         <div className="flex items-center gap-1.5 w-28">
@@ -19,15 +19,16 @@ const YaoBar: React.FC<{ yang: boolean; moving?: boolean; idx: number }> = ({ ya
                 </>
             )}
         </div>
+        {coins && <span className="text-[9px] text-white/35 font-mono w-12">{coins.map(c => c === 3 ? '字' : '背').join('')}</span>}
         {moving && <span className="text-[9px] text-amber-300 font-bold">{yang ? '○ 动' : '× 动'}</span>}
     </div>
 );
 
 /** 自上而下渲染六爻（传入自下而上的 yang 数组 + 动爻位 1~6）。 */
-const Lines: React.FC<{ yang: boolean[]; movingPositions: number[] }> = ({ yang, movingPositions }) => (
+const Lines: React.FC<{ yang: boolean[]; movingPositions: number[]; coins?: YaoLine['coins'][] }> = ({ yang, movingPositions, coins }) => (
     <div className="flex flex-col gap-1.5">
         {yang.map((_, i) => 5 - i).map(i => (
-            <YaoBar key={i} idx={i} yang={yang[i]} moving={movingPositions.includes(i + 1)} />
+            <YaoBar key={i} idx={i} yang={yang[i]} moving={movingPositions.includes(i + 1)} coins={coins?.[i]} />
         ))}
     </div>
 );
@@ -39,7 +40,7 @@ export const LiuyaoView: React.FC<{ r: LiuyaoResult }> = ({ r }) => {
             <div className="flex items-start justify-between gap-4">
                 <div className="space-y-2">
                     <div className="text-[10px] text-amber-200/70 font-mono">本卦</div>
-                    <Lines yang={yang} movingPositions={r.movingPositions} />
+                    <Lines yang={yang} movingPositions={r.movingPositions} coins={r.lines.map(l => l.coins)} />
                 </div>
                 <div className="flex-1 text-right space-y-1">
                     <div className="text-lg font-black text-white">{r.primary?.name || '—'}</div>

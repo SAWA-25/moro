@@ -9,6 +9,7 @@ import type { Message } from '../../types';
 import type { MemoryNode, MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 import { formatMessageForPrompt } from '../messageFormat';
 
@@ -443,7 +444,7 @@ quote 尽量逐字摘对话原文（别改写），方便日后回看对账；as
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', purpose: '记忆提取' }
+            2, 0, makeApiUsageMeta('memoryPalace.extraction', { apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

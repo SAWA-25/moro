@@ -3,31 +3,41 @@ import { useOS } from '../../context/OSContext';
 import {
     Sparkle, ListChecks, ChatsCircle, Fire, NotePencil, ArrowClockwise, PaperPlaneTilt,
     WechatLogo, Camera, Megaphone, ImagesSquare, Scroll, Trash, ClockCounterClockwise,
-    UsersThree, User, ChatTeardropText, CheckCircle, Play,
+    UsersThree, User, ChatTeardropText, CheckCircle, Play, MicrophoneStage, Presentation,
+    Notebook, EnvelopeOpen, NewspaperClipping, CalendarDots, FileMagnifyingGlass, ClipboardText,
 } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { DB } from '../../utils/db';
 import {
-    inferQuestionCount, genNextQuestion, genCharAnswer, genCharComment, genExtraPiece, genFauxPiece,
+    inferQuestionCount, genNextQuestion, genCharAnswer, genCharComment, genQuizHostNote, genCharPeerReview, genQuizResult,
+    normalizeTheaterQuizSession, DEFAULT_THEATER_QUIZ_SETTINGS,
+    genExtraPiece, genFauxPiece, formatFauxExport,
     type ExtraKind, type FauxKind, type FauxResult,
+    type ExtraWorkshopTone, type ExtraWorkshopLength, type ExtraWorkshopPov,
 } from '../../utils/theaterExtra';
 import {
-    bankQuizNames, getBankQuestions, isBankQuiz,
+    bankQuizNames, bankQuizNamesByTag, bankQuizTags, getBankQuestions, isBankQuiz, quizBankMeta,
     instructionsForKind, pickInstruction, EXTRA_INSTRUCTIONS, type ExtraBankKind,
 } from '../../utils/theaterExtraBank';
-import { WeChatScreenshot, MomentsCard, XhsCard, ForumThread } from '../../components/theater/faux/FauxRenderers';
+import {
+    WeChatScreenshot, MomentsCard, XhsCard, ForumThread,
+    WeiboHotCard, QzoneCard, DoubanThread, CampusWallCard,
+    MemoScreen, ScheduleScreen, ReceiptScreen, BrowserResults,
+} from '../../components/theater/faux/FauxRenderers';
 import {
     PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard, Stamp,
     SectionTag, PaperDialog, INK, INK_SOFT,
 } from '../ui/insScrapKit';
 import type {
-    CharacterProfile, TheaterQuizAnswer, TheaterQuizComment, TheaterQuizItem, TheaterQuizSession,
+    CharacterProfile, TheaterFauxPiece, TheaterQuizAnswer, TheaterQuizComment, TheaterQuizItem, TheaterQuizSession,
+    FauxWeChat, FauxMoments, FauxXhs, FauxForum,
+    FauxWeibo, FauxQzone, FauxDouban, FauxCampus, FauxMemo, FauxSchedule, FauxReceipt, FauxBrowser,
 } from '../../types';
 
 /**
  * 折子戏·番外（贰）：选一个角色一起做「番外」。
  *  - 问卷番外：可保存/续做的问卷房间，支持单角色或多角色，角色答、用户答、题内评论区继续聊；
- *  - 番外工坊 / 仿真图文：围绕角色一次性生成贴吧帖 / 聊天记录 / 热梗 / 微信朋友圈等主题番外。
+ *  - 番外工坊 / 仿真图文：围绕角色一次性生成贴吧帖 / 聊天记录 / 热梗 / 采访稿 / 日记 / 微信朋友圈 / 微博热搜 / QQ 空间 / 豆瓣小组等主题番外。
  * 黑白拼贴手账皮肤（仿真图文渲染保留原样，模拟真 App 观感）。
  */
 
@@ -35,28 +45,70 @@ interface Props { onExit: () => void; }
 
 type Mode = 'home' | 'quiz' | 'piece' | 'faux';
 type QuizPlayMode = 'single' | 'multi';
-type ExportKind = 'summary' | 'full';
+type ExportKind = 'summary' | 'full' | 'result';
+type FauxGroup = 'social' | 'platform' | 'phone';
 
 const QUIZ_USER_ID = 'user';
 
-// 题库里的问卷名排在前（带「题库」标），再接默认示例；去重。
-const QUIZ_PRESETS = [...new Set([
-    ...bankQuizNames(),
-    '恋爱相性100问', 'MBTI 测试问卷', '性癖测试问卷50问', '价值观问卷', '无厘头问卷50题', '灵魂拷问36问',
-])];
+const QUIZ_FALLBACK_PRESETS = ['亲密边界30问', '暧昧拉扯36问', '价值观问卷', '无厘头问卷50题'];
+const QUIZ_TAG_ALL = '全部';
 
-const FAUX_TABS: { kind: FauxKind; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
-    { kind: 'wechat', label: '微信聊天', icon: <WechatLogo size={18} weight="fill" />, hint: '仿“捡手机”看到的、极真实接地气的 user×char 微信聊天记录', ph: '聊天关键词（如：深夜报备 / 吵架冷战 / 出差想你）' },
-    { kind: 'moments', label: '朋友圈', icon: <Camera size={18} weight="bold" />, hint: '一条仿微信朋友圈，配图 + 点赞 + 评论，藏点两人的暗流', ph: '想发什么内容？（留空＝深扒两人近况）' },
-    { kind: 'xhs', label: '小红书', icon: <ImagesSquare size={18} weight="bold" />, hint: '图文并茂的小红书笔记，标题党 + 话题 + 评论', ph: '笔记主题（如：深扒我对象 / 和 TA 的100件小事）' },
-    { kind: 'forum', label: '匿名论坛', icon: <Megaphone size={18} weight="bold" />, hint: '匿名帖 + 多层跟帖吃瓜，深扒 char×user 的八卦', ph: '想开什么帖？（留空＝关于 TA 的瓜）' },
+const FAUX_GROUPS: { id: FauxGroup; label: string; en: string }[] = [
+    { id: 'social', label: '社交截图', en: 'SOCIAL' },
+    { id: 'platform', label: '内容平台', en: 'PLATFORM' },
+    { id: 'phone', label: '手机证据', en: 'PHONE' },
+];
+
+const FAUX_TABS: { kind: FauxKind; group: FauxGroup; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
+    { kind: 'wechat', group: 'social', label: '微信聊天', icon: <WechatLogo size={18} weight="fill" />, hint: '仿“捡手机”看到的、极真实接地气的 user×char 微信聊天记录', ph: '聊天关键词（如：深夜报备 / 吵架冷战 / 出差想你）' },
+    { kind: 'moments', group: 'social', label: '朋友圈', icon: <Camera size={18} weight="bold" />, hint: '一条仿微信朋友圈，配图 + 点赞 + 评论，藏点两人的暗流', ph: '想发什么内容？（留空＝深扒两人近况）' },
+    { kind: 'qzone', group: 'social', label: 'QQ空间', icon: <Sparkle size={18} weight="bold" />, hint: '怀旧空间动态，访客、点赞和评论里藏着心事', ph: '空间动态主题（如：TA 半夜发了一条看似普通的说说）' },
+    { kind: 'campus', group: 'social', label: '校园墙', icon: <Megaphone size={18} weight="bold" />, hint: '匿名投稿 + 校园评论区，适合偶遇、表白墙和围观', ph: '校园墙主题（如：投稿偶遇 TA 和我在教学楼门口）' },
+    { kind: 'xhs', group: 'platform', label: '小红书', icon: <ImagesSquare size={18} weight="bold" />, hint: '图文并茂的小红书笔记，标题党 + 话题 + 评论', ph: '笔记主题（如：深扒我对象 / 和 TA 的100件小事）' },
+    { kind: 'forum', group: 'platform', label: '匿名论坛', icon: <Megaphone size={18} weight="bold" />, hint: '匿名帖 + 多层跟帖吃瓜，深扒 char×user 的八卦', ph: '想开什么帖？（留空＝关于 TA 的瓜）' },
+    { kind: 'weibo', group: 'platform', label: '微博热搜', icon: <Fire size={18} weight="bold" />, hint: '热搜话题 + 微博正文 + 热评，适合公开吃瓜和事件发酵', ph: '热搜主题（如：TA 和我被路人拍到 / 某个名场面冲上热搜）' },
+    { kind: 'douban', group: 'platform', label: '豆瓣小组', icon: <ChatsCircle size={18} weight="bold" />, hint: '克制的小组讨论，网友慢慢分析关系细节', ph: '小组帖子主题（如：大家帮我分析 TA 是不是在意我）' },
+    { kind: 'memo', group: 'phone', label: '备忘录', icon: <Notebook size={18} weight="bold" />, hint: '手机备忘录截图，像私下写给自己的清单、草稿或证据', ph: '备忘录主题（如：TA 记下了关于我的几件小事）' },
+    { kind: 'schedule', group: 'phone', label: '日程表', icon: <CalendarDots size={18} weight="bold" />, hint: '一天的日程或待办，时间安排里藏着关系线索', ph: '日程主题（如：TA 的某一天安排里全是和我有关的事）' },
+    { kind: 'receipt', group: 'phone', label: '订单小票', icon: <ClipboardText size={18} weight="bold" />, hint: '订单、小票或外卖记录，像从手机里扒出的生活证据', ph: '订单主题（如：TA 偷偷给我点了一单很会的小东西）' },
+    { kind: 'browser', group: 'phone', label: '搜索页', icon: <FileMagnifyingGlass size={18} weight="bold" />, hint: '浏览器搜索页，搜索词和结果暴露了没说出口的问题', ph: '搜索主题（如：TA 搜过“怎么自然地说想你”）' },
 ];
 
 const PIECE_TABS: { kind: ExtraKind; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
     { kind: 'tieba', label: '贴吧帖', icon: <ChatsCircle size={18} weight="bold" />, hint: '以 TA 为话题的求助/讨论帖 + 网友回复', ph: '想发什么帖？（如：求助 TA 最近好奇怪 / 这角色到底什么来头）' },
     { kind: 'chatlog', label: '聊天记录', icon: <NotePencil size={18} weight="bold" />, hint: '围绕 TA 的一段群聊/对话截图文字稿', ph: '聊天背景（如：群里突然聊到 TA / 闺蜜八卦）' },
     { kind: 'meme', label: '热梗', icon: <Fire size={18} weight="bold" />, hint: '把 TA 套进当下流行梗里', ph: '想玩哪方面的梗？（留空＝TA 的性格名场面）' },
+    { kind: 'interview', label: '采访稿', icon: <MicrophoneStage size={18} weight="bold" />, hint: '主持人追问 + 角色回答，适合访谈、拷问和人物专访', ph: '采访主题（如：谈谈你和我的关系 / 最近最不想承认的事）' },
+    { kind: 'barrage', label: '弹幕实况', icon: <Presentation size={18} weight="bold" />, hint: '把名场面剪成直播/综艺片段，弹幕和后期字幕一起刷屏', ph: '实况主题（如：TA 被拍到偷偷吃醋 / 约会名场面）' },
+    { kind: 'diary', label: '私密日记', icon: <Notebook size={18} weight="bold" />, hint: '像 TA 真正写给自己的日记或备忘录，琐碎、隐秘、有私心', ph: '日记主题（如：今天又被你看穿了 / 不该心软的）' },
+    { kind: 'letter', label: '未寄信', icon: <EnvelopeOpen size={18} weight="bold" />, hint: '一封没发出去的信、邮件草稿或语音转文字', ph: '写给谁、因为什么没寄出？（留空＝写给你）' },
+    { kind: 'tabloid', label: '小报', icon: <NewspaperClipping size={18} weight="bold" />, hint: '八卦小报 / 营销号图文，标题抓人、评论区热闹', ph: '想爆什么料？（如：路人拍到 TA 的反常细节）' },
+    { kind: 'timeline', label: '时间线', icon: <CalendarDots size={18} weight="bold" />, hint: '把关系、事件或误会整理成节点年表，越看越有暗线', ph: '时间线主题（如：我们怎么一步步走到现在）' },
+    { kind: 'script', label: '脚本', icon: <ClipboardText size={18} weight="bold" />, hint: '影视分镜式名场面，场景、动作、台词和停顿都写出来', ph: '想拍哪段名场面？（如：雨夜摊牌 / 电梯里没说出口）' },
+    { kind: 'casefile', label: '档案', icon: <FileMagnifyingGlass size={18} weight="bold" />, hint: '一本正经的观察报告 / 研究档案，严肃格式里藏不住情绪', ph: '档案主题（如：TA 在我面前异常反应观察报告）' },
     { kind: 'custom', label: '自定义', icon: <Sparkle size={18} weight="bold" />, hint: '你说要什么番外，就写什么', ph: '描述你想要的番外…' },
+];
+
+const PIECE_TONE_OPTIONS: { id: ExtraWorkshopTone; label: string }[] = [
+    { id: 'faithful', label: '原味' },
+    { id: 'sweet', label: '甜' },
+    { id: 'funny', label: '整活' },
+    { id: 'angsty', label: '酸涩' },
+    { id: 'suspense', label: '悬疑' },
+];
+
+const PIECE_LENGTH_OPTIONS: { id: ExtraWorkshopLength; label: string }[] = [
+    { id: 'short', label: '短' },
+    { id: 'medium', label: '标准' },
+    { id: 'long', label: '长篇' },
+];
+
+const PIECE_POV_OPTIONS: { id: ExtraWorkshopPov; label: string }[] = [
+    { id: 'auto', label: '自动' },
+    { id: 'char', label: 'TA' },
+    { id: 'user', label: '我' },
+    { id: 'third', label: '第三' },
+    { id: 'outsider', label: '旁观' },
 ];
 
 const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.85)', color: '#3a362f', border: '1px solid rgba(176,170,158,0.7)' };
@@ -133,6 +185,23 @@ const InstructionRow: React.FC<{ kind: ExtraBankKind; onPick: (s: string) => voi
 
 const genId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const shortDate = (ts: number) => new Date(ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const tabForFauxKind = (kind: FauxKind) => FAUX_TABS.find(t => t.kind === kind) || FAUX_TABS[0];
+
+const renderFauxPreview = (kind: FauxKind, data: TheaterFauxPiece['data'], avatars: { charAvatar?: string; userAvatar?: string }) => {
+    if (!data) return null;
+    if (kind === 'wechat') return <WeChatScreenshot data={data as FauxWeChat} charAvatar={avatars.charAvatar} userAvatar={avatars.userAvatar} />;
+    if (kind === 'moments') return <MomentsCard data={data as FauxMoments} avatar={avatars.charAvatar} />;
+    if (kind === 'xhs') return <XhsCard data={data as FauxXhs} />;
+    if (kind === 'forum') return <ForumThread data={data as FauxForum} />;
+    if (kind === 'weibo') return <WeiboHotCard data={data as FauxWeibo} />;
+    if (kind === 'qzone') return <QzoneCard data={data as FauxQzone} />;
+    if (kind === 'douban') return <DoubanThread data={data as FauxDouban} />;
+    if (kind === 'campus') return <CampusWallCard data={data as FauxCampus} />;
+    if (kind === 'memo') return <MemoScreen data={data as FauxMemo} />;
+    if (kind === 'schedule') return <ScheduleScreen data={data as FauxSchedule} />;
+    if (kind === 'receipt') return <ReceiptScreen data={data as FauxReceipt} />;
+    return <BrowserResults data={data as FauxBrowser} />;
+};
 
 const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast } = useOS();
@@ -150,6 +219,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
 
     const [quizPlayMode, setQuizPlayMode] = useState<QuizPlayMode>('single');
     const [quizParticipantIds, setQuizParticipantIds] = useState<Set<string>>(new Set());
+    const [quizTag, setQuizTag] = useState(QUIZ_TAG_ALL);
     const [quizHistory, setQuizHistory] = useState<TheaterQuizSession[]>([]);
     const [quizSession, setQuizSession] = useState<TheaterQuizSession | null>(null);
     const quizSessionRef = useRef<TheaterQuizSession | null>(null);
@@ -160,22 +230,40 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
 
     const [pieceKind, setPieceKind] = useState<ExtraKind>('tieba');
     const [piecePrompt, setPiecePrompt] = useState('');
+    const [pieceTone, setPieceTone] = useState<ExtraWorkshopTone>('faithful');
+    const [pieceLength, setPieceLength] = useState<ExtraWorkshopLength>('medium');
+    const [piecePov, setPiecePov] = useState<ExtraWorkshopPov>('auto');
     const [piece, setPiece] = useState('');
 
     const [fauxKind, setFauxKind] = useState<FauxKind>('wechat');
     const [fauxKeyword, setFauxKeyword] = useState('');
     const [fauxResult, setFauxResult] = useState<FauxResult | null>(null);
+    const [fauxHistory, setFauxHistory] = useState<TheaterFauxPiece[]>([]);
+    const [fauxActivePiece, setFauxActivePiece] = useState<TheaterFauxPiece | null>(null);
 
     useEffect(() => { quizSessionRef.current = quizSession; }, [quizSession]);
 
     const refreshQuizHistory = async () => {
         const list = await DB.getAllTheaterQuizSessions().catch(() => []);
-        setQuizHistory(list);
+        setQuizHistory(list.map(normalizeTheaterQuizSession));
+    };
+
+    const refreshFauxHistory = async () => {
+        const list = await DB.getAllTheaterFauxPieces().catch(() => []);
+        setFauxHistory(list);
     };
 
     useEffect(() => {
         if (mode === 'quiz') void refreshQuizHistory();
     }, [mode]);
+
+    useEffect(() => {
+        if (mode === 'faux') void refreshFauxHistory();
+    }, [mode]);
+
+    const quizTags = useMemo(() => [QUIZ_TAG_ALL, ...bankQuizTags()], []);
+    const quizPresets = useMemo(() => [...new Set([...bankQuizNamesByTag(quizTag), ...QUIZ_FALLBACK_PRESETS])], [quizTag]);
+    const selectedQuizMeta = useMemo(() => topic.trim() && isBankQuiz(topic) ? quizBankMeta(topic) : null, [topic]);
 
     const participantChars = useMemo(
         () => characters.filter(c => quizParticipantIds.has(c.id)),
@@ -188,7 +276,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const touchSession = (s: TheaterQuizSession): TheaterQuizSession => ({ ...s, lastActiveAt: Date.now() });
 
     const commitQuizSession = async (next: TheaterQuizSession) => {
-        const touched = touchSession(next);
+        const touched = normalizeTheaterQuizSession(touchSession(next));
         quizSessionRef.current = touched;
         setQuizSession(touched);
         setQuizHistory(prev => [touched, ...prev.filter(s => s.id !== touched.id)].sort((a, b) => b.lastActiveAt - a.lastActiveAt));
@@ -199,7 +287,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const updateQuizSession = (updater: (s: TheaterQuizSession) => TheaterQuizSession): TheaterQuizSession | null => {
         const base = quizSessionRef.current;
         if (!base) return null;
-        const next = touchSession(updater(base));
+        const next = normalizeTheaterQuizSession(touchSession(updater(base)));
         quizSessionRef.current = next;
         setQuizSession(next);
         setQuizHistory(prev => [next, ...prev.filter(s => s.id !== next.id)].sort((a, b) => b.lastActiveAt - a.lastActiveAt));
@@ -313,6 +401,21 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         const bank = getBankQuestions(base.topic);
         const q = await genNextQuestion({ api, topic: base.topic, index: itemIndex, total: base.total, asked, bankQuestions: bank ?? undefined });
         const item = makeQuestionItem(q, itemIndex + 1, charsForItem);
+        if (base.settings?.hostEnabled) {
+            try {
+                item.hostNote = await genQuizHostNote({
+                    api,
+                    topic: base.topic,
+                    index: itemIndex,
+                    total: base.total,
+                    question: q,
+                    participantNames: [userName, ...charsForItem.map(c => c.name)],
+                    previousQuestion: asked[asked.length - 1],
+                });
+            } catch {
+                item.hostNote = itemIndex === 0 ? '主持人把第一张题卡推到桌中央，笑着等大家先露馅。' : '主持人轻轻敲了敲题卡，示意下一轮开始。';
+            }
+        }
         const next: TheaterQuizSession = {
             ...base,
             currentIndex: itemIndex,
@@ -345,6 +448,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
             currentIndex: 0,
             total: n,
             items: [],
+            settings: { ...DEFAULT_THEATER_QUIZ_SETTINGS },
             createdAt: now,
             lastActiveAt: now,
         };
@@ -368,10 +472,11 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     };
 
     const resumeQuiz = (s: TheaterQuizSession) => {
-        quizSessionRef.current = s;
-        setQuizSession(s);
+        const normalized = normalizeTheaterQuizSession(s);
+        quizSessionRef.current = normalized;
+        setQuizSession(normalized);
         setQuizInput('');
-        setExportTargetId(s.participantIds[0] || '');
+        setExportTargetId(normalized.participantIds[0] || '');
     };
 
     const deleteQuiz = async (id: string) => {
@@ -470,6 +575,82 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         }
     };
 
+    const generatePeerReview = async (speakerId: string, targetId: string, itemIndexArg?: number) => {
+        const s = quizSessionRef.current;
+        const itemIndex = itemIndexArg ?? s?.currentIndex ?? 0;
+        const item = s?.items[itemIndex];
+        const speaker = characters.find(x => x.id === speakerId);
+        if (!s || !item || !speaker || !s.settings?.peerReviewEnabled) return;
+        const targetName = targetId === QUIZ_USER_ID
+            ? userName
+            : characters.find(x => x.id === targetId)?.name || item.answers[targetId]?.speakerName || '对方';
+        const targetAnswer = targetId === QUIZ_USER_ID ? userAnswerFor(item) : charAnswerFor(item, targetId);
+        addCommentBusy(speakerId);
+        try {
+            const latestSession = quizSessionRef.current;
+            const latestItem = latestSession?.items[itemIndex] || item;
+            const text = await genCharPeerReview({
+                api,
+                char: speaker,
+                userProfile,
+                topic: latestSession?.topic || s.topic,
+                question: latestItem.question,
+                speakerAnswer: charAnswerFor(latestItem, speakerId),
+                targetName,
+                targetAnswer,
+                recentComments: latestItem.comments.map(cm => ({ speakerName: cm.speakerName, text: cm.text })),
+            });
+            const comment: TheaterQuizComment = {
+                id: genId('tqc'),
+                speakerId: speaker.id,
+                speakerName: speaker.name,
+                isUser: false,
+                charId: speaker.id,
+                avatar: speaker.avatar,
+                text,
+                targetSpeakerId: targetId,
+                at: Date.now(),
+            };
+            updateQuizSession(cur => appendComment(cur, itemIndex, comment));
+        } catch (e: any) {
+            addToast(`${speaker.name} 互评失败：${e?.message || e}`, 'error');
+        } finally {
+            removeCommentBusy(speakerId);
+        }
+    };
+
+    const generateAllPeerReviews = async () => {
+        const s = quizSessionRef.current;
+        const item = s?.items[s.currentIndex];
+        if (!s || !item || busy || commentBusyIds.size > 0) return;
+        const chars = sessionChars(s);
+        if (!chars.length) return;
+        await Promise.all(chars.map((c, i) => {
+            const others = [QUIZ_USER_ID, ...chars.filter(x => x.id !== c.id).map(x => x.id)];
+            const targetId = others[i % others.length] || QUIZ_USER_ID;
+            return generatePeerReview(c.id, targetId, s.currentIndex);
+        }));
+    };
+
+    const generateResultForSession = async (sessionArg?: TheaterQuizSession) => {
+        const s = sessionArg || quizSessionRef.current;
+        if (!s || !s.settings?.resultEnabled || !apiReady) return null;
+        setBusy(true);
+        setBusyLabel('正在生成画像报告…');
+        try {
+            const participantNamesById = Object.fromEntries(sessionChars(s).map(c => [c.id, c.name]));
+            const result = await genQuizResult({ api, session: s, participantNamesById, userProfile });
+            const next = await commitQuizSession({ ...s, result });
+            return next.result || result;
+        } catch (e: any) {
+            addToast('画像报告生成失败，可稍后重试：' + (e?.message || e), 'error');
+            return null;
+        } finally {
+            setBusy(false);
+            setBusyLabel('');
+        }
+    };
+
     const submitUserAnswer = async (raw: string) => {
         const text = raw.trim();
         const s = quizSessionRef.current;
@@ -534,8 +715,9 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         };
 
         if (s.currentIndex + 1 >= s.total) {
-            await commitQuizSession({ ...marked, status: 'finished', finishedAt: Date.now() });
+            const finished = await commitQuizSession({ ...marked, status: 'finished', finishedAt: Date.now() });
             addToast('这份问卷做完啦', 'success');
+            void generateResultForSession(finished);
             return;
         }
 
@@ -561,15 +743,37 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const finishQuizNow = async () => {
         const s = quizSessionRef.current;
         if (!s) return;
-        await commitQuizSession({ ...s, status: 'finished', finishedAt: Date.now() });
+        const finished = await commitQuizSession({ ...s, status: 'finished', finishedAt: Date.now() });
         addToast('已标记完成', 'success');
+        void generateResultForSession(finished);
     };
 
     const formatQuizExport = (s: TheaterQuizSession, kind: ExportKind) => {
         const charsById = new Map(characters.map(c => [c.id, c]));
+        const resultLines = () => {
+            if (!s.result) return ['（还没有画像报告）'];
+            const r = s.result;
+            return [
+                `${r.title} · ${r.totalScore}/100`,
+                r.summary,
+                '',
+                '维度：',
+                ...r.dimensions.map(d => `  · ${d.label} ${d.score}/100：${d.summary}`),
+                '',
+                '亮点：',
+                ...r.highlights.map(x => `  · ${x}`),
+                '磨合点：',
+                ...r.frictions.map(x => `  · ${x}`),
+                '建议：',
+                ...r.suggestions.map(x => `  · ${x}`),
+            ];
+        };
+        if (kind === 'result') return [`【番外·${s.topic}】画像报告`, '', ...resultLines()].join('\n').trim();
         const lines = [`【番外·${s.topic}】${kind === 'full' ? '完整问卷对话' : '问卷摘要'}`, ''];
+        if (s.result) lines.push(...resultLines(), '');
         s.items.forEach((it, i) => {
             lines.push(`${i + 1}. ${it.question}`);
+            if (kind === 'full' && it.hostNote) lines.push(`  · 主持：${it.hostNote}`);
             lines.push(`  · ${userName}：${it.answers[QUIZ_USER_ID]?.text || '—'}`);
             s.participantIds.forEach(id => {
                 const name = charsById.get(id)?.name || it.answers[id]?.speakerName || '角色';
@@ -599,23 +803,73 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         }
     };
 
-    const runFaux = async () => {
-        if (!char) { addToast('先选一个角色', 'info'); return; }
+    const makeFauxPiece = (out: FauxResult, targetChar: CharacterProfile, keyword: string | undefined, kind: FauxKind): TheaterFauxPiece => {
+        const now = Date.now();
+        return {
+            id: genId('tf'),
+            kind,
+            charId: targetChar.id,
+            charName: targetChar.name,
+            keyword: keyword?.trim() || undefined,
+            data: out.data,
+            fallbackText: out.fallbackText,
+            createdAt: now,
+            updatedAt: now,
+        };
+    };
+
+    const runFaux = async (override?: { kind?: FauxKind; keyword?: string; charId?: string }) => {
+        const targetKind = override?.kind || fauxKind;
+        const targetKeyword = override?.keyword ?? fauxKeyword;
+        const targetChar = characters.find(c => c.id === (override?.charId || pickCharId));
+        if (!targetChar) { addToast('先选一个角色', 'info'); return; }
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
-        setBusy(true); setFauxResult(null);
+        setFauxKind(targetKind);
+        setFauxKeyword(targetKeyword || '');
+        setPickCharId(targetChar.id);
+        setBusy(true); setFauxResult(null); setFauxActivePiece(null);
         try {
-            const out = await genFauxPiece({ api, kind: fauxKind, char, userProfile, keyword: fauxKeyword.trim() || undefined });
+            const out = await genFauxPiece({ api, kind: targetKind, char: targetChar, userProfile, keyword: targetKeyword.trim() || undefined });
+            const piece = makeFauxPiece(out, targetChar, targetKeyword, targetKind);
+            await DB.saveTheaterFauxPiece(piece);
             setFauxResult(out);
+            setFauxActivePiece(piece);
+            setFauxHistory(prev => [piece, ...prev.filter(x => x.id !== piece.id)].sort((a, b) => b.createdAt - a.createdAt));
         } catch (e: any) { addToast('生成失败：' + (e?.message || e), 'error'); } finally { setBusy(false); }
     };
 
-    const exportFauxToChat = async () => {
-        if (!char || !fauxResult) return;
-        const tab = FAUX_TABS.find(t => t.kind === fauxKind);
-        const summary = fauxResult.data ? JSON.stringify(fauxResult.data, null, 2) : fauxResult.fallbackText;
+    const openFauxPiece = (piece: TheaterFauxPiece) => {
+        setFauxKind(piece.kind);
+        setFauxKeyword(piece.keyword || '');
+        setPickCharId(piece.charId);
+        setFauxResult({ kind: piece.kind, data: piece.data, fallbackText: piece.fallbackText });
+        setFauxActivePiece(piece);
+    };
+
+    const deleteFauxPiece = async (id: string) => {
         try {
-            await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `【番外·${tab?.label || ''}】\n${summary}`, timestamp: Date.now() });
-            addToast(`已发到与 ${char.name} 的聊天`, 'success');
+            await DB.deleteTheaterFauxPiece(id);
+            setFauxHistory(prev => prev.filter(p => p.id !== id));
+            if (fauxActivePiece?.id === id) {
+                setFauxActivePiece(null);
+                setFauxResult(null);
+            }
+            addToast('已删除这张仿真图文', 'success');
+        } catch { addToast('删除失败', 'error'); }
+    };
+
+    const rerunFauxFrom = async (piece: TheaterFauxPiece) => {
+        await runFaux({ kind: piece.kind, keyword: piece.keyword || '', charId: piece.charId });
+    };
+
+    const exportFauxToChat = async (piece = fauxActivePiece) => {
+        const targetPiece = piece || (fauxResult && char ? makeFauxPiece(fauxResult, char, fauxKeyword, fauxKind) : null);
+        if (!targetPiece) return;
+        const target = characters.find(c => c.id === targetPiece.charId);
+        if (!target) { addToast('没有可发送的目标角色', 'error'); return; }
+        try {
+            await DB.saveMessage({ charId: target.id, role: 'system', type: 'text', content: formatFauxExport(targetPiece), timestamp: Date.now() });
+            addToast(`已发到与 ${target.name} 的聊天`, 'success');
         } catch { addToast('发送失败', 'error'); }
     };
 
@@ -624,7 +878,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
         setBusy(true); setPiece('');
         try {
-            const out = await genExtraPiece({ api, kind: pieceKind, char, userProfile, prompt: piecePrompt.trim() || undefined });
+            const out = await genExtraPiece({
+                api,
+                kind: pieceKind,
+                char,
+                userProfile,
+                prompt: piecePrompt.trim() || undefined,
+                options: { tone: pieceTone, length: pieceLength, pov: piecePov },
+            });
             setPiece(out);
         } catch (e: any) { addToast('生成失败：' + (e?.message || e), 'error'); } finally { setBusy(false); }
     };
@@ -662,15 +923,36 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                             </button>
                         </div>
                         <QuizParticipantPicker characters={characters} selectedIds={quizParticipantIds} playMode={quizPlayMode} onToggle={toggleQuizParticipant} />
-                        <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="如：恋爱相性100问 / 性癖测试50问 / MBTI"
+                        <PaperCard className="p-3 text-[11px] leading-relaxed" style={{ color: '#5f594f' }}>
+                            默认访谈测试：主持人会转场，角色可互评追问，完成后生成娱乐向画像报告。
+                        </PaperCard>
+                        <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="如：恋爱相性甜蜜问 / 亲密边界30问 / 无厘头问卷50题"
                             className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={paperInput} />
+                        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                            {quizTags.map(tag => (
+                                <button key={tag} onClick={() => setQuizTag(tag)} className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95" style={tabStyle(quizTag === tag)}>
+                                    {tag}
+                                </button>
+                            ))}
+                        </div>
                         <div className="flex flex-wrap gap-1.5">
-                            {QUIZ_PRESETS.map(p => (
+                            {quizPresets.map(p => (
                                 <button key={p} onClick={() => setTopic(p)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 inline-flex items-center gap-1" style={tabStyle(false)}>
                                     {p}{isBankQuiz(p) && <span className="text-[8px] px-1 rounded-[3px]" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>题库</span>}
                                 </button>
                             ))}
                         </div>
+                        {selectedQuizMeta && (
+                            <PaperCard tilt={0.25} className="p-3 space-y-1.5">
+                                <div className="text-[12px] font-black" style={{ color: INK }}>{selectedQuizMeta.title}</div>
+                                <div className="text-[11px] leading-relaxed" style={{ color: '#6b6558' }}>{selectedQuizMeta.description}</div>
+                                <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                    <span className="px-2 py-0.5 rounded-full" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>{selectedQuizMeta.questionCount} 题</span>
+                                    <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>推荐 {selectedQuizMeta.recommendedParticipants}</span>
+                                    {selectedQuizMeta.tags.map(tag => <span key={tag} className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(31,29,26,0.08)', color: INK_SOFT }}>{tag}</span>)}
+                                </div>
+                            </PaperCard>
+                        )}
                         <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={!canStart} onClick={() => void startQuiz()} icon={<Play size={15} weight="fill" />}>
                             {busy ? busyLabel || '准备中…' : `开始答题${selectedCount ? ` · ${selectedCount} 位` : ''}`}
                         </ScrapButton>
@@ -724,6 +1006,11 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
 
                 {item && (
                     <>
+                        {item.hostNote && (
+                            <PaperCard tilt={0.35} tape="sage" className="p-3 text-[12px] leading-relaxed" style={{ color: '#4f4a42' }}>
+                                <span className="font-black">主持：</span>{item.hostNote}
+                            </PaperCard>
+                        )}
                         <PaperCard tilt={-0.4} className="p-4">
                             <div className="text-[10px] tracking-[0.2em] mb-1.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>Q{item.no} · {quizSession.topic}</div>
                             <div className="text-[15px] font-black leading-relaxed" style={{ color: INK }}>{item.question}</div>
@@ -759,9 +1046,19 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                                             {pending ? '思考中…' : (ans?.text || '……')}
                                         </div>
                                         {userAnswered && (
-                                            <button onClick={() => void generateCommentForChar(c.id)} disabled={commentBusyIds.has(c.id) || busy} className="mt-2 text-[11px] font-black active:scale-95 disabled:opacity-45 inline-flex items-center gap-1" style={{ color: i % 2 ? INK : 'rgba(246,243,236,0.78)' }}>
-                                                <ChatTeardropText size={13} weight="bold" />{commentBusyIds.has(c.id) ? '正在接话…' : '让 TA 再说一句'}
-                                            </button>
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                <button onClick={() => void generateCommentForChar(c.id)} disabled={commentBusyIds.has(c.id) || busy} className="text-[11px] font-black active:scale-95 disabled:opacity-45 inline-flex items-center gap-1" style={{ color: i % 2 ? INK : 'rgba(246,243,236,0.78)' }}>
+                                                    <ChatTeardropText size={13} weight="bold" />{commentBusyIds.has(c.id) ? '接话中…' : '回应我'}
+                                                </button>
+                                                {quizSession.settings?.peerReviewEnabled && currentChars.length > 1 && (
+                                                    <button onClick={() => {
+                                                        const target = currentChars.find(x => x.id !== c.id);
+                                                        if (target) void generatePeerReview(c.id, target.id);
+                                                    }} disabled={commentBusyIds.has(c.id) || busy} className="text-[11px] font-black active:scale-95 disabled:opacity-45 inline-flex items-center gap-1" style={{ color: i % 2 ? INK : 'rgba(246,243,236,0.78)' }}>
+                                                        <UsersThree size={13} weight="bold" />回应 TA
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 );
@@ -780,7 +1077,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         </PaperCard>
 
                         <div className="space-y-2">
-                            <SectionTag en="COMMENTS">本题评论区</SectionTag>
+                            <div className="flex items-center justify-between">
+                                <SectionTag en="COMMENTS">本题评论区</SectionTag>
+                                {userAnswered && quizSession.settings?.peerReviewEnabled && currentChars.length > 1 && (
+                                    <button onClick={() => void generateAllPeerReviews()} disabled={busy || commentBusyIds.size > 0} className="text-[11px] font-black active:scale-95 disabled:opacity-40" style={{ color: INK }}>
+                                        全员互评一轮
+                                    </button>
+                                )}
+                            </div>
                             {item.comments.length === 0 ? (
                                 <PaperCard className="p-3 text-[12px]" style={{ color: INK_SOFT }}>
                                     {userAnswered ? '角色正在想怎么评论，或者你可以先追一句。' : '提交你的答案后，评论区会打开。'}
@@ -831,6 +1135,42 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                                 <Sparkle size={30} weight="fill" className="mx-auto" style={{ color: INK }} />
                                 <div className="text-lg font-black" style={{ color: INK }}>做完啦！</div>
                                 <div className="text-[12px]" style={{ color: '#6b6558' }}>《{quizSession.topic}》已保存。可以回看、导出，也可以回问卷册再开一份。</div>
+                                {quizSession.result ? (
+                                    <div className="text-left rounded-xl p-3 space-y-2" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.62)' }}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="text-[13px] font-black" style={{ color: INK }}>{quizSession.result.title}</div>
+                                                <div className="text-[11px] leading-relaxed mt-1" style={{ color: '#6b6558' }}>{quizSession.result.summary}</div>
+                                            </div>
+                                            <div className="shrink-0 text-[22px] font-black tabular-nums" style={{ color: INK }}>{quizSession.result.totalScore}</div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {quizSession.result.dimensions.map(d => (
+                                                <div key={d.key} className="rounded-lg p-2" style={{ background: 'rgba(31,29,26,0.06)' }}>
+                                                    <div className="flex justify-between gap-2 text-[11px] font-black" style={{ color: INK }}>
+                                                        <span>{d.label}</span><span>{d.score}</span>
+                                                    </div>
+                                                    <div className="text-[10.5px] leading-relaxed mt-0.5" style={{ color: INK_SOFT }}>{d.summary}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="text-[11px] leading-relaxed" style={{ color: '#5f594f' }}>
+                                            <span className="font-black">亮点：</span>{quizSession.result.highlights.slice(0, 3).join('；')}
+                                        </div>
+                                        <div className="text-[11px] leading-relaxed" style={{ color: '#5f594f' }}>
+                                            <span className="font-black">建议：</span>{quizSession.result.suggestions.slice(0, 3).join('；')}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <ScrapButton variant="paper" className="w-full py-2.5 text-sm" disabled={busy || !apiReady} onClick={() => void generateResultForSession()} icon={<ArrowClockwise size={15} weight="bold" />}>
+                                        {busy ? '生成画像中…' : '生成画像报告'}
+                                    </ScrapButton>
+                                )}
+                                {quizSession.result && (
+                                    <ScrapButton variant="paper" className="w-full py-2.5 text-sm" disabled={busy || !apiReady} onClick={() => void generateResultForSession()} icon={<ArrowClockwise size={15} weight="bold" />}>
+                                        重新生成画像
+                                    </ScrapButton>
+                                )}
                                 <ScrapButton variant="ink" className="w-full py-2.5 text-sm" onClick={() => setExportOpen(true)} icon={<PaperPlaneTilt size={16} weight="bold" />}>发到聊天</ScrapButton>
                             </PaperCard>
                         )}
@@ -851,6 +1191,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                     actions={(
                         <>
                             <ScrapButton variant="paper" className="flex-1 py-2 text-[12px]" onClick={() => void exportQuizToChat('summary')}>简洁摘要</ScrapButton>
+                            <ScrapButton variant="paper" className="flex-1 py-2 text-[12px]" onClick={() => void exportQuizToChat('result')}>画像报告</ScrapButton>
                             <ScrapButton variant="ink" className="flex-1 py-2 text-[12px]" onClick={() => void exportQuizToChat('full')}>完整对话</ScrapButton>
                         </>
                     )}
@@ -871,33 +1212,55 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     // ============ 仿真图文番外 ============
     if (mode === 'faux') {
         const tab = FAUX_TABS.find(t => t.kind === fauxKind)!;
-        const d = fauxResult?.data;
+        const previewKind = fauxActivePiece?.kind || fauxKind;
+        const previewData = fauxActivePiece?.data ?? fauxResult?.data ?? null;
+        const previewFallback = fauxActivePiece?.fallbackText ?? fauxResult?.fallbackText ?? '';
+        const previewChar = characters.find(c => c.id === fauxActivePiece?.charId) || char;
         return (
-            <Page title="仿真图文" en="FAUX SCREENS" onBack={() => { setFauxResult(null); setMode('home'); }}>
+            <Page title="仿真图文" en="FAUX SCREENS" onBack={() => { setFauxResult(null); setFauxActivePiece(null); setMode('home'); }}>
                 <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
-                <div className="grid grid-cols-4 gap-2">
-                    {FAUX_TABS.map(t => (
-                        <button key={t.kind} onClick={() => { setFauxKind(t.kind); setFauxResult(null); }} className="flex flex-col items-center gap-1 py-2.5 rounded-2xl transition-all active:scale-95" style={tabStyle(fauxKind === t.kind)}>
-                            {t.icon}<span className="text-[10px] font-bold">{t.label}</span>
-                        </button>
+
+                <div className="space-y-3">
+                    {FAUX_GROUPS.map(group => (
+                        <div key={group.id} className="space-y-2">
+                            <SectionTag en={group.en}>{group.label}</SectionTag>
+                            <div className="grid grid-cols-4 gap-2">
+                                {FAUX_TABS.filter(t => t.group === group.id).map(t => (
+                                    <button
+                                        key={t.kind}
+                                        onClick={() => { setFauxKind(t.kind); setFauxResult(null); setFauxActivePiece(null); }}
+                                        className="min-h-[66px] flex flex-col items-center justify-center gap-1 py-2 rounded-2xl transition-all active:scale-95"
+                                        style={tabStyle(fauxKind === t.kind)}
+                                    >
+                                        {t.icon}<span className="text-[10px] font-bold leading-tight text-center">{t.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </div>
+
                 <div className="text-[11px] px-1" style={{ color: '#6b6558' }}>{tab.hint}</div>
                 <textarea value={fauxKeyword} onChange={e => setFauxKeyword(e.target.value)} placeholder={tab.ph}
                     rows={2} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
                 <InstructionRow kind={fauxKind} onPick={setFauxKeyword} />
                 <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={busy} onClick={() => void runFaux()}>{busy ? '生成中…' : '生成仿真图文'}</ScrapButton>
 
-                {fauxResult && (
+                {(fauxResult || fauxActivePiece) && (
                     <div className="space-y-3">
-                        {d && fauxKind === 'wechat' && <WeChatScreenshot data={d} charAvatar={char?.avatar} userAvatar={userProfile?.avatar} />}
-                        {d && fauxKind === 'moments' && <MomentsCard data={d} avatar={char?.avatar} />}
-                        {d && fauxKind === 'xhs' && <XhsCard data={d} />}
-                        {d && fauxKind === 'forum' && <ForumThread data={d} />}
-                        {!d && (
+                        <div className="flex items-center justify-between px-1">
+                            <SectionTag en="PREVIEW">当前预览</SectionTag>
+                            {fauxActivePiece && (
+                                <div className="text-[10px] font-bold" style={{ color: INK_SOFT }}>
+                                    {tabForFauxKind(fauxActivePiece.kind).label} · {shortDate(fauxActivePiece.createdAt)}
+                                </div>
+                            )}
+                        </div>
+                        {renderFauxPreview(previewKind, previewData, { charAvatar: previewChar?.avatar, userAvatar: userProfile?.avatar })}
+                        {!previewData && (
                             <PaperCard className="p-4 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: '#3a362f' }}>
                                 <div className="text-[10px] mb-1.5" style={{ color: INK_SOFT }}>（这次没解析成结构化，先看文字稿）</div>
-                                {fauxResult.fallbackText}
+                                {previewFallback}
                             </PaperCard>
                         )}
                         <div className="text-center text-[10px]" style={{ color: INK_SOFT }}>长按 / 用手机系统截屏即可保存这张图</div>
@@ -907,6 +1270,43 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         </div>
                     </div>
                 )}
+
+                <PaperCard tilt={0.35} className="p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <SectionTag en="HISTORY">最近生成</SectionTag>
+                        <button onClick={() => void refreshFauxHistory()} className="text-[11px] font-black active:scale-95" style={{ color: INK }}>刷新</button>
+                    </div>
+                    {fauxHistory.length === 0 ? (
+                        <div className="text-[12px] leading-relaxed" style={{ color: INK_SOFT }}>
+                            生成后的仿真图文会自动保存在这里，可回看、再生成或发送到对应角色聊天。
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {fauxHistory.slice(0, 20).map(piece => {
+                                const itemTab = tabForFauxKind(piece.kind);
+                                return (
+                                    <div key={piece.id} className="rounded-xl p-2.5 space-y-2" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                        <button onClick={() => openFauxPiece(piece)} className="w-full text-left active:scale-[0.99]">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="text-[12px] font-black truncate" style={{ color: INK }}>{itemTab.label} · {piece.charName}</div>
+                                                    <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>{piece.keyword || '无关键词'} · {shortDate(piece.createdAt)}</div>
+                                                </div>
+                                                <span className="shrink-0">{itemTab.icon}</span>
+                                            </div>
+                                        </button>
+                                        <div className="grid grid-cols-4 gap-1.5">
+                                            <ScrapButton variant="paper" className="py-1.5 text-[10px]" onClick={() => openFauxPiece(piece)}>打开</ScrapButton>
+                                            <ScrapButton variant="paper" className="py-1.5 text-[10px]" disabled={busy || !apiReady} onClick={() => void rerunFauxFrom(piece)} icon={<ArrowClockwise size={12} weight="bold" />}>再生成</ScrapButton>
+                                            <ScrapButton variant="paper" className="py-1.5 text-[10px]" onClick={() => void exportFauxToChat(piece)} icon={<PaperPlaneTilt size={12} weight="bold" />}>发送</ScrapButton>
+                                            <ScrapButton variant="paper" className="py-1.5 text-[10px]" onClick={() => void deleteFauxPiece(piece.id)} icon={<Trash size={12} weight="bold" />}>删除</ScrapButton>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </PaperCard>
             </Page>
         );
     }
@@ -919,14 +1319,41 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                 <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
                 <div className="grid grid-cols-4 gap-2">
                     {PIECE_TABS.map(t => (
-                        <button key={t.kind} onClick={() => { setPieceKind(t.kind); setPiece(''); }} className="flex flex-col items-center gap-1 py-2.5 rounded-2xl transition-all active:scale-95" style={tabStyle(pieceKind === t.kind)}>
-                            {t.icon}<span className="text-[10px] font-bold">{t.label}</span>
+                        <button key={t.kind} onClick={() => { setPieceKind(t.kind); setPiece(''); }} className="min-h-[66px] flex flex-col items-center justify-center gap-1 py-2 rounded-2xl transition-all active:scale-95" style={tabStyle(pieceKind === t.kind)}>
+                            {t.icon}<span className="text-[10px] font-bold leading-tight text-center">{t.label}</span>
                         </button>
                     ))}
                 </div>
                 <div className="text-[11px] px-1" style={{ color: '#6b6558' }}>{tab.hint}</div>
+                <PaperCard tilt={0.25} className="p-3 space-y-2">
+                    <SectionTag en="TONE">工坊调味</SectionTag>
+                    <div className="space-y-1.5">
+                        <div className="text-[10px] font-black" style={{ color: INK_SOFT }}>风格</div>
+                        <div className="grid grid-cols-5 gap-1.5">
+                            {PIECE_TONE_OPTIONS.map(o => (
+                                <button key={o.id} onClick={() => setPieceTone(o.id)} className="rounded-lg px-1 py-1.5 text-[10px] font-black active:scale-95" style={tabStyle(pieceTone === o.id)}>{o.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <div className="text-[10px] font-black" style={{ color: INK_SOFT }}>篇幅</div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {PIECE_LENGTH_OPTIONS.map(o => (
+                                <button key={o.id} onClick={() => setPieceLength(o.id)} className="rounded-lg px-1 py-1.5 text-[10px] font-black active:scale-95" style={tabStyle(pieceLength === o.id)}>{o.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <div className="text-[10px] font-black" style={{ color: INK_SOFT }}>视角</div>
+                        <div className="grid grid-cols-5 gap-1.5">
+                            {PIECE_POV_OPTIONS.map(o => (
+                                <button key={o.id} onClick={() => setPiecePov(o.id)} className="rounded-lg px-1 py-1.5 text-[10px] font-black active:scale-95" style={tabStyle(piecePov === o.id)}>{o.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                </PaperCard>
                 <textarea value={piecePrompt} onChange={e => setPiecePrompt(e.target.value)} placeholder={tab.ph}
-                    rows={2} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
+                    rows={pieceKind === 'custom' ? 5 : 3} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
                 <InstructionRow kind={pieceKind} onPick={setPiecePrompt} />
                 <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={busy} onClick={() => void runPiece()}>{busy ? '生成中…' : '生成番外'}</ScrapButton>
                 {piece && (
@@ -945,8 +1372,8 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     // ============ 番外首页 ============
     const ENTRIES: { mode: Mode; name: string; en: string; desc: string; Icon: React.FC<any> }[] = [
         { mode: 'quiz', name: '问卷番外', en: 'THE QUIZ', desc: '单人或多人一起做问卷。角色先答，你提交答案后进入本题评论区，不点下一题就一直留在这里继续聊；历史可续做、可导出。', Icon: ListChecks },
-        { mode: 'piece', name: '番外工坊', en: 'THE WORKSHOP', desc: '求助贴吧帖、群聊天记录、把 TA 套进热梗…围绕角色一键生成一段主题番外，可发回聊天。', Icon: ChatsCircle },
-        { mode: 'faux', name: '仿真图文', en: 'FAUX SCREENS', desc: '仿“捡手机”的微信聊天、朋友圈、小红书、匿名论坛吃瓜帖——图文并茂深扒你和 TA，截屏即存。', Icon: ImagesSquare },
+        { mode: 'piece', name: '番外工坊', en: 'THE WORKSHOP', desc: '贴吧帖、群聊、热梗、采访、日记、未寄信、时间线、脚本和档案都能搓，还能调篇幅、视角和风格。', Icon: ChatsCircle },
+        { mode: 'faux', name: '仿真图文', en: 'FAUX SCREENS', desc: '微信聊天、朋友圈、微博热搜、QQ 空间、备忘录、日程表、订单小票和搜索页都能仿真生成，历史可回看、再生成、发聊天。', Icon: ImagesSquare },
     ];
     return (
         <PaperShell>

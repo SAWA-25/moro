@@ -34,11 +34,12 @@ export const SOURCE_LABEL: Record<CollectionSourceType, string> = {
     quiz: '自习室 · 测验',
     guidebook: '攻略本',
     game: 'TRPG',
+    reflection: '对影',
     chat: '聊天',
 };
 
 const COVER: Record<CollectionSourceType, string> = {
-    talk: '🫂', novel: '📖', song: '🎵', course: '📚', quiz: '📝', guidebook: '💗', game: '🎲', chat: '💬',
+    talk: '🫂', novel: '📖', song: '🎵', course: '📚', quiz: '📝', guidebook: '💗', game: '🎲', reflection: '🌙', chat: '💬',
 };
 
 const clip = (s: string | undefined, n = 60): string => {
@@ -48,7 +49,7 @@ const clip = (s: string | undefined, n = 60): string => {
 
 /** 汇总所有来源里「值得收录」的内容，按时间倒序。nameOf 把 charId 转成显示名。 */
 export async function listCollectibles(nameOf: (id: string) => string): Promise<CollectibleCandidate[]> {
-    const [talks, novels, songs, courses, quizzes, guides, games] = await Promise.all([
+    const [talks, novels, songs, courses, quizzes, guides, games, reflections] = await Promise.all([
         DB.getAllTalkSessions().catch(() => []),
         DB.getAllNovels().catch(() => []),
         DB.getAllSongs().catch(() => []),
@@ -56,6 +57,7 @@ export async function listCollectibles(nameOf: (id: string) => string): Promise<
         DB.getAllQuizzes().catch(() => []),
         DB.getAllGuidebookSessions().catch(() => []),
         DB.getAllGames().catch(() => []),
+        DB.getAllTheaterReflectionSessions().catch(() => []),
     ]);
     const out: CollectibleCandidate[] = [];
 
@@ -125,6 +127,16 @@ export async function listCollectibles(nameOf: (id: string) => string): Promise<
             charIds: g.playerCharIds || [], cover: COVER.game, at: g.lastPlayedAt || g.createdAt,
         });
     }
+    for (const r of reflections) {
+        if (!r.initialScene?.lines?.length) continue;
+        const firstLine = r.initialScene.lines.find(l => l.who !== 'narration')?.text || r.initialScene.lines[0]?.text;
+        out.push({
+            sourceType: 'reflection', sourceId: r.id, title: `对影 · ${r.title || r.initialScene.title || nameOf(r.charId)}`,
+            subtitle: `折子戏 · ${nameOf(r.charId) || r.charName} · ${r.nodes?.past?.when || '从前'} / ${r.nodes?.now?.when || '此刻'}`,
+            excerpt: clip(firstLine || r.subtitle || r.initialScene.subtitle),
+            charIds: [r.charId], cover: COVER.reflection, at: r.updatedAt || r.createdAt,
+        });
+    }
 
     return out.sort((a, b) => b.at - a.at);
 }
@@ -152,7 +164,11 @@ export function buildForwardText(item: CollectionItem, _userName: string, involv
         `［我翻出一份收藏，想给你看看］`,
         `${item.cover || '📎'}《${item.title}》（${label}）`,
     ];
-    if (who) lines.push(item.sourceType === 'talk' ? `这是我和 ${who} 的谈心记录。` : `这是我和 ${who} 一起留下的。`);
+    if (who) {
+        if (item.sourceType === 'talk') lines.push(`这是我和 ${who} 的谈心记录。`);
+        else if (item.sourceType === 'reflection') lines.push(`这是我给 ${who} 做的一段对影，让不同时间里的 TA 照了个面。`);
+        else lines.push(`这是我和 ${who} 一起留下的。`);
+    }
     if (item.excerpt) lines.push(`节选：${item.excerpt}`);
     lines.push(`（看完跟我聊聊你的感觉呀。）`);
     return lines.join('\n');

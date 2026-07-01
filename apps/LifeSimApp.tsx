@@ -26,6 +26,7 @@ import { buildFallbackLifeSimSessionSummary, buildLifeSimSessionSummaryPrompt } 
 import { getLifeSimToneEmoji } from '../utils/lifeSimTone';
 // Offline simulation removed — random events didn't match the theme
 import { extractJson, safeFetchJson } from '../utils/safeApi';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
@@ -101,7 +102,7 @@ async function callCharAI(
                         response_format: { type: 'json_object' },
                     }),
                 },
-                2, 0, { appName: '街角', purpose: '剧情生成' }
+                2, 0, makeApiUsageMeta('date.scene', { apiRole: 'aux', apiBinding: '街角剧情生成' })
             );
             return data?.choices?.[0]?.message?.content?.trim() || '';
         } catch (e: any) {

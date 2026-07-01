@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ApiPreset, APIConfig, CharacterProfile } from '../../types';
 import { CheckCircle, Circle, FloppyDisk, X } from '@phosphor-icons/react';
+import LlmApiConfigFields from '../../components/settings/LlmApiConfigFields';
 
 type LifeSimApiDraft = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>;
 
@@ -43,17 +44,6 @@ const LifeSimSettingsPanel: React.FC<{
         });
     }, [independentApiConfig, useIndependentApiConfig]);
 
-    const patchDraft = (updates: Partial<LifeSimApiDraft>) => setDraft(prev => ({ ...prev, ...updates }));
-
-    const handleLoadPreset = (preset: ApiPreset) => {
-        setDraft({
-            baseUrl: preset.config.baseUrl || '',
-            apiKey: preset.config.apiKey || '',
-            model: preset.config.model || '',
-        });
-        setUseIndependentApi(true);
-    };
-
     const handleSaveAndClose = async () => {
         if (isSaving) return;
         setIsSaving(true);
@@ -66,13 +56,6 @@ const LifeSimSettingsPanel: React.FC<{
         } finally {
             setIsSaving(false);
         }
-    };
-
-    const fieldStyle: React.CSSProperties = {
-        width: '100%', background: '#fbfaf7', border: '1px solid rgba(236,233,226,0.95)',
-        outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: -3,
-        borderRadius: 10, padding: '9px 11px', fontSize: 11, fontFamily: 'var(--font-label)',
-        color: '#2b2933',
     };
 
     return (
@@ -167,36 +150,18 @@ const LifeSimSettingsPanel: React.FC<{
                     </div>
 
                     {useIndependentApi && (
-                        <>
-                            {apiPresets.length > 0 && (
-                                <div style={{ marginBottom: 10 }}>
-                                    <div className="label-mono" style={{ fontSize: 8.5, color: '#a79c8e', marginBottom: 6 }}>presets</div>
-                                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                                        {apiPresets.map(preset => (
-                                            <button key={preset.id} onClick={() => handleLoadPreset(preset)}
-                                                className="scrap-btn-paper font-hand" style={{ padding: '4px 12px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                                {preset.name} · {preset.config.model}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="label-mono" style={{ fontSize: 8.5, color: '#a79c8e', marginBottom: 5, display: 'block' }}>URL</label>
-                                    <input type="text" value={draft.baseUrl} onChange={event => patchDraft({ baseUrl: event.target.value })} placeholder="https://..." style={fieldStyle} />
-                                </div>
-                                <div>
-                                    <label className="label-mono" style={{ fontSize: 8.5, color: '#a79c8e', marginBottom: 5, display: 'block' }}>API KEY</label>
-                                    <input type="password" value={draft.apiKey} onChange={event => patchDraft({ apiKey: event.target.value })} placeholder="sk-..." style={fieldStyle} />
-                                </div>
-                                <div>
-                                    <label className="label-mono" style={{ fontSize: 8.5, color: '#a79c8e', marginBottom: 5, display: 'block' }}>MODEL</label>
-                                    <input type="text" value={draft.model} onChange={event => patchDraft({ model: event.target.value })} placeholder="gemini-2.0-flash / gemini-2.5-flash-lite / ..." style={fieldStyle} />
-                                </div>
-                            </div>
-                        </>
+                        <LlmApiConfigFields
+                            value={draft}
+                            onChange={setDraft}
+                            onSaveConfig={handleSaveAndClose}
+                            saveConfigLabel={isSaving ? '保存中...' : '保存街角 API'}
+                            savePresetDefaultName="街角独立 API"
+                            modelFetchFeatureId="date.independentApi.fetchModels"
+                            compact
+                            inputClassName="w-full rounded-[10px] border border-[#ece9e2] bg-[#fbfaf7] px-3 py-2.5 text-[11px] font-mono text-[#2b2933] outline outline-1 outline-offset-[-3px] outline-[#a7a29766]"
+                            buttonClassName="scrap-btn-paper font-hand rounded-[10px] px-3 py-2 text-[12px] font-bold disabled:opacity-50"
+                            primaryButtonClassName="scrap-btn font-hand rounded-[10px] px-3 py-2 text-[12px] font-bold disabled:opacity-50"
+                        />
                     )}
                 </div>
 

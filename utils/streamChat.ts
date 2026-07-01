@@ -11,6 +11,7 @@
  */
 
 import { flattenContent } from './llmReasoning';
+import type { ApiCallMeta } from './apiCallLog';
 
 export interface StreamChatResult {
     choices: Array<{ message: { content: string; reasoning_content?: string }; finish_reason?: string }>;
@@ -21,14 +22,15 @@ export interface StreamChatResult {
 
 export async function streamChatCompletion(
     url: string,
-    init: { headers: Record<string, string>; body: any },
+    init: { headers: Record<string, string>; body: any; meta?: ApiCallMeta },
     onDelta: (accumulated: string) => void,
 ): Promise<StreamChatResult> {
     const response = await fetch(url, {
         method: 'POST',
         headers: init.headers,
         body: JSON.stringify({ ...init.body, stream: true, stream_options: { include_usage: true } }),
-    });
+        ...(init.meta ? { __moroMeta: init.meta } : {}),
+    } as RequestInit & { __moroMeta?: unknown });
 
     if (!response.ok) {
         const text = await response.text().catch(() => '');

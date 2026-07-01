@@ -12,6 +12,7 @@ import type { Message } from '../../types';
 import type { MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 
 /** 群记忆草稿——尚未指派 charId（一份记忆稍后会复制给每个成员持久化） */
@@ -154,7 +155,7 @@ ${buildGroupRulesBlock(groupName, memberNames, userLabel)}
                     stream: false,
                 }),
             },
-            2, 0, { appName: '回忆标本馆', purpose: '群记忆提取' }
+            2, 0, makeApiUsageMeta('memoryPalace.groupExtraction', { apiRole: 'aux' })
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

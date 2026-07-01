@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { DB, openDB } from './db';
 import { makeChatAlarm, prepareAlarmForSave } from './chatAlarms';
 import { preparePeriodReminderSettings } from './periodReminders';
+import { makeHealthPlan, makeHealthRecord, normalizeHealthReminder, prepareHealthModuleSettings, summarizeHealthDay } from './health';
 import { createDefaultDesktopPetState } from './desktopPet';
-import type { CharacterProfile, ChatAlarm, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
+import type { CharacterProfile, ChatAlarm, CollectionItem, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage, TheaterFauxPiece, TheaterReflectionSession } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -296,6 +297,141 @@ describe('chat alarm store', () => {
   });
 });
 
+describe('theater faux piece store', () => {
+  const mkPiece = (id: string, createdAt: number, kind: TheaterFauxPiece['kind'] = 'memo'): TheaterFauxPiece => ({
+    id,
+    kind,
+    charId: 'faux-char',
+    charName: 'Faux Char',
+    keyword: '深夜',
+    data: kind === 'memo'
+      ? { title: '备忘录', updatedAt: '刚刚', lines: ['第一行', '第二行'] }
+      : { topic: '#热搜#', rank: '热搜第1', posts: [], hotComments: [] },
+    fallbackText: '',
+    createdAt,
+    updatedAt: createdAt,
+  });
+
+  it('saves, reads by newest first, and deletes faux pieces', async () => {
+    await DB.deleteDB();
+    const oldPiece = mkPiece('tf-old', 100);
+    const newPiece = mkPiece('tf-new', 200, 'weibo');
+
+    await DB.saveTheaterFauxPiece(oldPiece);
+    await DB.saveTheaterFauxPiece(newPiece);
+
+    await expect(DB.getAllTheaterFauxPieces()).resolves.toEqual([newPiece, oldPiece]);
+
+    await DB.deleteTheaterFauxPiece(newPiece.id);
+    await expect(DB.getAllTheaterFauxPieces()).resolves.toEqual([oldPiece]);
+  });
+
+  it('exports and restores faux piece history in full backup data', async () => {
+    await DB.deleteDB();
+    const oldPiece = mkPiece('tf-old', 100);
+    const newPiece = mkPiece('tf-new', 200, 'weibo');
+
+    await DB.saveTheaterFauxPiece(oldPiece);
+    await DB.saveTheaterFauxPiece(newPiece);
+
+    const exported = await DB.exportFullData();
+    expect(exported.theaterFauxPieces).toHaveLength(2);
+    expect(exported.theaterFauxPieces).toEqual(expect.arrayContaining([oldPiece, newPiece]));
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      characters: [],
+      messages: [],
+      theaterFauxPieces: exported.theaterFauxPieces || [],
+    } as FullBackupData);
+
+    await expect(DB.getAllTheaterFauxPieces()).resolves.toEqual([newPiece, oldPiece]);
+  });
+});
+
+describe('reflection and collection stores', () => {
+  const mkReflection = (): TheaterReflectionSession => ({
+    id: 'reflection-test',
+    charId: 'faux-char',
+    charName: 'Faux Char',
+    userName: '你',
+    title: '雨中照面',
+    subtitle: '月光也认得旧伞',
+    nodes: {
+      past: {
+        id: 'r-past',
+        ts: 100,
+        era: 'before',
+        title: '旧站台',
+        scene: '旧站台。',
+        source: 'generated',
+        when: '相遇前约 1 个月',
+      },
+      now: {
+        id: 'r-now',
+        ts: 200,
+        era: 'after',
+        title: '新雨夜',
+        scene: '新雨夜。',
+        source: 'lifeEvent',
+        when: '相遇之后不久',
+      },
+    },
+    options: { mode: 'moonlight', tone: 'restrained', length: 'standard' },
+    initialScene: { title: '雨中照面', lines: [{ who: 'past', text: '我以为车会来。' }] },
+    continuationLines: [],
+    createdAt: 100,
+    updatedAt: 200,
+  });
+
+  it('saves, reads, deletes, and full-backup restores reflection sessions and collection references', async () => {
+    await DB.deleteDB();
+    const reflection = mkReflection();
+    const collectionItem: CollectionItem = {
+      id: 'reflection:reflection-test',
+      sourceType: 'reflection',
+      sourceId: reflection.id,
+      title: '对影 · 雨中照面',
+      subtitle: '折子戏 · Faux Char',
+      excerpt: '我以为车会来。',
+      charIds: [reflection.charId],
+      cover: '🌙',
+      collectedAt: 300,
+    };
+
+    await DB.saveTheaterReflectionSession(reflection);
+    await DB.saveCollectionItem(collectionItem);
+
+    await expect(DB.getTheaterReflectionSession(reflection.id)).resolves.toEqual(reflection);
+    await expect(DB.getTheaterReflectionSessionsByCharId(reflection.charId)).resolves.toEqual([reflection]);
+    await expect(DB.getCollectionItems()).resolves.toEqual([collectionItem]);
+
+    const exported = await DB.exportFullData();
+    expect(exported.theaterReflectionSessions).toEqual([reflection]);
+    expect(exported.collectionItems).toEqual([collectionItem]);
+
+    await DB.deleteTheaterReflectionSessionsByCharId(reflection.charId);
+    await DB.deleteCollectionItemsByCharId(reflection.charId);
+    await expect(DB.getTheaterReflectionSessionsByCharId(reflection.charId)).resolves.toEqual([]);
+    await expect(DB.getCollectionItems()).resolves.toEqual([]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      characters: [],
+      messages: [],
+      theaterReflectionSessions: exported.theaterReflectionSessions || [],
+      collectionItems: exported.collectionItems || [],
+    } as FullBackupData);
+
+    await expect(DB.getTheaterReflectionSession(reflection.id)).resolves.toEqual(reflection);
+    await expect(DB.getCollectionItems()).resolves.toEqual([collectionItem]);
+  });
+});
+
 describe('period reminder stores', () => {
   const mkSettings = (now = 1_788_000_000_000): PeriodReminderSettings =>
     preparePeriodReminderSettings({
@@ -370,5 +506,84 @@ describe('period reminder stores', () => {
 
     await expect(DB.getPeriodReminderSettings(settings.id)).resolves.toEqual(settings);
     await expect(DB.getAllPeriodCycleEvents()).resolves.toEqual([event]);
+  });
+});
+
+describe('health center stores', () => {
+  it('saves, reads, and queries health records by date and module', async () => {
+    await DB.deleteDB();
+    const settings = prepareHealthModuleSettings({ id: 'hydration', privacy: 'summary_reminder', charIds: ['char-1'] }, 1_788_000_000_000);
+    const water = makeHealthRecord({ moduleId: 'hydration', date: '2026-07-01', value: 350, unit: 'ml' }, 1_788_000_000_000);
+    const mood = makeHealthRecord({ moduleId: 'mood', date: '2026-07-01', label: '平静' }, 1_788_000_001_000);
+
+    await DB.saveHealthModuleSettings(settings);
+    await DB.saveHealthRecord(water);
+    await DB.saveHealthRecord(mood);
+
+    await expect(DB.getAllHealthModuleSettings()).resolves.toEqual([settings]);
+    await expect(DB.getHealthRecordsByDate('2026-07-01')).resolves.toEqual([water, mood]);
+    await expect(DB.getHealthRecordsByModule('hydration')).resolves.toEqual([water]);
+    await expect(DB.getHealthRecordsByModuleDate('hydration', '2026-07-01')).resolves.toEqual([water]);
+
+    await DB.deleteHealthRecord(water.id);
+    await expect(DB.getHealthRecordsByModule('hydration')).resolves.toEqual([]);
+  });
+
+  it('saves and queries due health reminders', async () => {
+    await DB.deleteDB();
+    const now = 1_788_000_000_000;
+    const reminder = normalizeHealthReminder({
+      moduleId: 'medication',
+      title: '晚药',
+      timeHHmm: '09:00',
+      frequency: 'daily',
+      nextAt: now - 1000,
+    }, now);
+    const due = { ...reminder, nextAt: now - 1000 };
+
+    await DB.saveHealthReminder(due);
+    await expect(DB.getAllHealthReminders()).resolves.toEqual([due]);
+    await expect(DB.getDueHealthReminders(now)).resolves.toEqual([due]);
+  });
+
+  it('exports and restores health center data', async () => {
+    await DB.deleteDB();
+    const settings = prepareHealthModuleSettings({ id: 'sleep', privacy: 'summary' }, 1_788_000_000_000);
+    const record = makeHealthRecord({ moduleId: 'sleep', date: '2026-07-01', value: 7.5, unit: '小时' }, 1_788_000_000_000);
+    const reminder = normalizeHealthReminder({ moduleId: 'sleep', title: '准备睡觉', timeHHmm: '23:00' }, 1_788_000_000_000);
+    const plan = makeHealthPlan({ moduleId: 'sleep', target: 7.5, unit: '小时' }, 1_788_000_000_000);
+    const summary = summarizeHealthDay([record], '2026-07-01', 1_788_000_000_000);
+
+    await DB.saveHealthModuleSettings(settings);
+    await DB.saveHealthRecord(record);
+    await DB.saveHealthReminder(reminder);
+    await DB.saveHealthPlan(plan);
+    await DB.saveHealthSummary(summary);
+
+    const exported = await DB.exportFullData();
+    expect(exported.healthModuleSettings).toEqual([settings]);
+    expect(exported.healthRecords).toEqual([record]);
+    expect(exported.healthReminders).toEqual([reminder]);
+    expect(exported.healthPlans).toEqual([plan]);
+    expect(exported.healthSummaries).toEqual([summary]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      characters: [],
+      messages: [],
+      healthModuleSettings: exported.healthModuleSettings || [],
+      healthRecords: exported.healthRecords || [],
+      healthReminders: exported.healthReminders || [],
+      healthPlans: exported.healthPlans || [],
+      healthSummaries: exported.healthSummaries || [],
+    } as FullBackupData);
+
+    await expect(DB.getAllHealthModuleSettings()).resolves.toEqual([settings]);
+    await expect(DB.getAllHealthRecords()).resolves.toEqual([record]);
+    await expect(DB.getAllHealthReminders()).resolves.toEqual([reminder]);
+    await expect(DB.getAllHealthPlans()).resolves.toEqual([plan]);
+    await expect(DB.getAllHealthSummaries()).resolves.toEqual([summary]);
   });
 });

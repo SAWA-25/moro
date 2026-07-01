@@ -14,6 +14,7 @@ import { useOS } from '../../context/OSContext';
 import { AppID, CharacterProfile } from '../../types';
 import { safeFetchJson } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import {
     X, ArrowClockwise, Crosshair, Footprints, MapPin, Sparkle,
     PaperPlaneRight, UserPlus, BookOpen, ChatCircleDots, Eye, Storefront,
@@ -195,7 +196,7 @@ async function roamChatAI(api: Api, system: string, history: RoamMsg[]): Promise
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
                 body: JSON.stringify({ model: api.model, messages, temperature: 0.9, max_tokens: 600, stream: false }),
             },
-            2, 30000, { appName: '街角·漫游', purpose: '街头对话' },
+            2, 30000, makeApiUsageMeta('date.reply', { apiRole: 'aux', apiBinding: '街角漫游街头对话' }),
         );
         const txt = data?.choices?.[0]?.message?.content?.trim();
         return txt ? txt.replace(/^\[.*?\]\s*/, '').slice(0, 500) : null;
@@ -352,7 +353,7 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             const data = await safeFetchJson(
                 `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
                 { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` }, body: JSON.stringify({ model: api.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperature: 0.95, max_tokens: 600, stream: false }) },
-                2, 30000, { appName: '街角·漫游', purpose: '世界观 NPC 生成' },
+                2, 30000, makeApiUsageMeta('date.worldEngine', { apiRole: 'aux', apiBinding: '街角漫游世界观 NPC 生成' }),
             );
             const raw: string = data?.choices?.[0]?.message?.content || '';
             let obj: any = null;

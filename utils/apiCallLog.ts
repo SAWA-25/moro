@@ -1,5 +1,5 @@
 /**
- * 全局 API 调用记录（给 设置 → API 调用记录 页面用）。
+ * 全局 API 后台流水（给 文具盒 → API 后台流水 页面用）。
  *
  * 设计：项目里 LLM 调用分两类——走 `utils/safeApi.ts` 的 `safeFetchJson` 的，和
  * 各 App 自己写的裸 `fetch`（TRPG / 自习室 / 群聊 / 日记…）。为了一个都不漏，记录点
@@ -17,8 +17,13 @@
  * 吞掉，绝不影响主请求链路。
  */
 
+import { getApiUsageFeature, hydrateApiUsageMeta } from './apiUsageCatalog';
+import type { ApiRole } from './apiUsageCatalog';
+
 /** 调用方可补充的语义信息（哪个 App / 角色 / 用途）。能填多少填多少。 */
 export interface ApiCallMeta {
+    /** 统一登记表里的稳定功能 ID，如 settings.mainApi.testConnection。 */
+    featureId?: string;
     /** AppID 字符串，如 'chat' / 'lifesim'，可空 */
     appId?: string;
     /** App 显示名，如 '消息' / '记忆宫殿'，列表里直接展示这个 */
@@ -30,7 +35,15 @@ export interface ApiCallMeta {
     /** 具体用途，如 '聊天回复' / '情绪评估' / '记忆提取'，可空 */
     purpose?: string;
     /** 调用的是主 API / 副 API / 自定义接口；调用点知道时可显式传入。 */
-    apiRole?: 'main' | 'aux' | 'custom';
+    apiRole?: ApiRole | string;
+    /** 具体绑定来源，如 群聊默认 API / 成员专属 API / 页外独立 API。 */
+    apiBinding?: string;
+    /** 是否属于后台 / 辅助任务。 */
+    isBackgroundTask?: boolean;
+    /** 展示字段：功能名、动作名、入口路径。 */
+    featureName?: string;
+    actionName?: string;
+    entryPath?: string[];
 }
 
 /** 落库的一条记录。 */
@@ -51,7 +64,7 @@ export interface ApiCallLogEntry extends ApiCallMeta {
     method?: string;
     endpoint?: string;
     /** 主 API / 副 API / 自定义接口。 */
-    apiRole?: 'main' | 'aux' | 'custom';
+    apiRole?: ApiRole;
     /** 从发起 fetch 到收到响应/失败的耗时。 */
     durationMs?: number;
     /** 记录信息的来源：显式 meta、当前界面兜底、自动推断。 */
@@ -182,8 +195,13 @@ function readJsonLocalStorage(key: string): any | null {
     }
 }
 
-function resolveApiRole(baseUrl: string, model: string, explicit?: ApiCallMeta['apiRole']): ApiCallMeta['apiRole'] {
-    if (explicit) return explicit;
+function explicitApiRole(role?: ApiCallMeta['apiRole']): ApiRole | undefined {
+    return role === 'main' || role === 'aux' || role === 'custom' ? role : undefined;
+}
+
+function resolveApiRole(baseUrl: string, model: string, explicit?: ApiCallMeta['apiRole']): ApiRole {
+    const explicitRole = explicitApiRole(explicit);
+    if (explicitRole) return explicitRole;
     const normBase = stripTrailingSlash(baseUrl);
     const same = (cfg: any) => cfg && stripTrailingSlash(cfg.baseUrl || '') === normBase
         && (!model || !cfg.model || cfg.model === model);
@@ -342,9 +360,13 @@ export function recordApiCall(input: {
             : hasMeta(ambientMeta)
                 ? 'ambient'
                 : 'inferred';
-        const meta = hasMeta(input.meta) ? input.meta! : ambientMeta;
-        const purpose = inferPurpose({ endpoint, body: input.body, appName: meta.appName, explicitPurpose: meta.purpose });
-        const appName = inferAppName(purpose, meta.appName);
+        const rawMeta = hasMeta(input.meta) ? input.meta! : ambientMeta;
+        const meta = hydrateApiUsageMeta(rawMeta);
+        const feature = getApiUsageFeature(meta.featureId);
+        const purpose = feature
+            ? `${feature.featureName} · ${feature.actionName}`
+            : inferPurpose({ endpoint, body: input.body, appName: meta.appName, explicitPurpose: meta.purpose });
+        const appName = feature?.appName || inferAppName(purpose, meta.appName);
         const usage = extractUsage(input.response);
         const entry: ApiCallLogEntry = {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -371,6 +393,12 @@ export function recordApiCall(input: {
             charId: meta.charId,
             charName: meta.charName,
             purpose,
+            featureId: feature?.featureId || meta.featureId,
+            featureName: feature?.featureName || meta.featureName,
+            actionName: feature?.actionName || meta.actionName,
+            entryPath: feature?.entryPath || meta.entryPath,
+            apiBinding: meta.apiBinding,
+            isBackgroundTask: meta.isBackgroundTask,
         };
         // 动态 import 避开 safeApi ↔ db 的潜在加载顺序问题；写库失败静默吞掉。
         import('./db')

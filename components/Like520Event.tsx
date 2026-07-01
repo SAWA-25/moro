@@ -11,8 +11,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, SpecialMomentRecord } from '../types';
+import { APIConfig, CharacterProfile, SpecialMomentRecord } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     runLike520CallA,
     runLike520CallB,
@@ -3510,7 +3511,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
 
 // 520 弹窗内嵌的 API 配置面板 —— 配完直接传送进活动，不再绕去设置 App
 const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ onDone, onBack }) => {
-    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels, apiPresets } = useOS();
+    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels, apiPresets, addApiPreset } = useOS();
 
     const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
     const [localKey, setLocalKey] = useState(apiConfig.apiKey);
@@ -3538,6 +3539,21 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
         setTimeout(() => setStatusMsg(''), 2000);
     };
 
+    const handleSavePreset = () => {
+        if (!localUrl.trim() || !localModel.trim()) {
+            setStatusMsg('保存预设需要 URL 和模型名');
+            return;
+        }
+        addApiPreset('520 活动 API', {
+            baseUrl: localUrl.trim(),
+            apiKey: localKey.trim(),
+            model: localModel.trim(),
+            stream: localStream,
+        } as APIConfig);
+        setStatusMsg('已保存为预设');
+        addToast('已保存 API 预设', 'success');
+    };
+
     const fetchModels = async () => {
         if (!localUrl) { setStatusMsg('请先填写 URL'); return; }
         setIsLoadingModels(true);
@@ -3546,13 +3562,14 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
             const baseUrl = localUrl.replace(/\/+$/, '');
             const response = await fetch(`${baseUrl}/models`, {
                 method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
+                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' },
+                __moroMeta: makeApiUsageMeta('special.like520Api.fetchModels', { apiRole: 'main', apiBinding: '520 活动 API' }),
+            } as RequestInit & { __moroMeta?: unknown });
             if (!response.ok) throw new Error(`Status ${response.status}`);
             const data = await safeResponseJson(response);
             const list = data.data || data.models || [];
             if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
+                const models = list.map((m: any) => m.id || m).filter((m: any): m is string => typeof m === 'string' && !!m.trim());
                 setAvailableModels(models);
                 if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
                 setStatusMsg(`获取到 ${models.length} 个模型`);
@@ -3658,6 +3675,10 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
 
                     <button onClick={handleSave} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-pink-200 bg-gradient-to-r from-[#FFB6C8] to-[#F18AAA] active:scale-95 transition-all">
                         {statusMsg || '保存配置'}
+                    </button>
+
+                    <button onClick={handleSavePreset} className="w-full py-2.5 rounded-2xl font-bold text-pink-500 bg-pink-50 border border-pink-200 active:scale-95 transition-all text-sm">
+                        保存为预设
                     </button>
 
                     <button

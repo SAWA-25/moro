@@ -26,6 +26,7 @@
  *  [6] 行动建议（"帮我想想接下来说啥"候选生成）          → userActionSuggest.ts
  *  [6b] 并发回复（多角色内部并发回复其它私聊）            → apps/Chat.tsx
  *  [6c] 视频聊天（文字/摄像头状态下的通话回应）           → apps/VideoCallApp.tsx
+ *  [6d] 此刻熟人动态（刷新动态 / 角色互动 / 评论回复）    → components/moments/momentsGen.ts
  *  [7b] 循迹联动（Screenlife / 监视 / 报备进入絮语上下文） → xunji.ts
  * ============================================================================
  */
@@ -497,6 +498,18 @@ export const coreText = {
     memoryEmpty: `(暂无特定记忆，凭你对彼此的感觉、顺着当前对话自然互动即可，不要硬编一段不存在的"共同往事"。)`,
 };
 
+/** 角色设定如何转成自然对话的常驻引导。 */
+export function characterDialogueGuidance(userName: string): string {
+    return `### 角色设定的自然对话方式 (Natural Character Dialogue)\n`
+        + `请把上面的核心设定、世界观、生活侧写、记忆和对话示例，消化成你当下的反应方式，而不是逐条复述给${userName}听。\n`
+        + `- 先回应眼前这句话：从${userName}刚说的内容、你此刻的情绪、你们当前关系和最近气氛出发，再自然带出设定里的口吻、习惯、边界和偏好。\n`
+        + `- 设定要长在细节里：称呼、停顿、嘴硬、犹豫、转移话题、护短、吐槽、关心人的方式、对某些事的在意或抗拒，都比直接解释"我是怎样的人"更像真人。\n`
+        + `- 不要把聊天写成角色说明书、总结陈词、心理分析报告或 AI 助手回复。少用"作为..."、"根据我的设定..."、"我会始终..."这类自我声明。\n`
+        + `- 允许不完美：你可以短暂沉默、没接住、误会、吃醋、烦躁、嘴笨、临时想起自己的事，或者因为当下状态而没有给出最体面的回应。真实的人不会每轮都完美提供情绪价值。\n`
+        + `- 保持自己的生活和边界：你不是围着${userName}运行的服务。可以有正在做的事、外部关系、独处需求、拒绝或保留；亲近也不等于无底线迎合。\n`
+        + `- 对话示例只用来学习说话节奏、词汇习惯、称呼、停顿和情绪走向。它们不是实际发生过的历史，不要当作共同记忆引用，也不要机械套用原句。\n\n`;
+}
+
 /** 生活侧写（Life Profile）块的引导句。 */
 export function lifeProfileIntro(userName: string): string {
     return `这是你这个人的底子——你的日子、习惯、在意的事、和${userName}相处的样子。它不是要你逐条复述，而是让你更稳地"像你自己"：`;
@@ -587,6 +600,145 @@ ${p.recent || '（刚接通，还没聊几句）'}
 - 20-100 字，像视频通话里的即时回应，可以短句。`;
 }
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [6d] 此刻熟人动态 (Moments Feed)                                          ║
+// ║   「絮语」底栏此刻：刷新熟人动态、角色互动、评论回复的一次性 LLM 文案。    ║
+// ║   用在：components/moments/momentsGen.ts                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface MomentsRefreshPromptParams {
+    userName: string;
+    socialCircle: string;
+    candidateBlocks: string;
+    roster: string;
+    feedDigest: string;
+}
+
+/** 此刻刷新一轮：生成角色/NPC 熟人动态。 */
+export function momentsRefreshPrompt(p: MomentsRefreshPromptParams): string {
+    return `### 任务: 模拟「此刻」熟人动态（刷新一轮）
+这是 ${p.userName} 的熟人圈，不是公域广场、热搜广场或营销号评论区。请生成一批新的熟人动态，宁可少而真，也不要为了热闹硬凑。
+
+A. **角色动态** —— 下面列出的候选角色严格按人设决定发不发：高冷、社恐、忙碌、不爱发圈的人这一轮可以一条都不发；爱分享的人也只在真的有表达欲时发 1 条，少数特别活跃的人最多 2 条。内容要像真实生活里随手写下的片段：一句吐槽、一点小得意、没头没尾的感慨、刚发生的小事、轻微的关系暗流。允许短、允许含糊、允许留白，不要写成散文结尾或情绪价值宣言。
+
+B. **NPC 动态** —— 只能来自 ${p.userName} 的用户社交设定：联系人、群聊成员、已出现过的朋友圈 NPC。生成 0~3 条；没有设定支撑时少生成或不生成。NPC 的昵称、关系和内容都必须能从社交设定里看出来源，不能硬造爸妈、闺蜜、同事、同学。
+
+### 用户社交设定（NPC 关系网只能从这里展开）
+${p.socialCircle}
+
+### 本轮候选发动态的角色
+${p.candidateBlocks}
+
+### 全部角色名单（评论/点赞可用）
+${p.roster}
+
+### 现有动态（可选择转发其中某条，转发时填 repostOfPostId）
+${p.feedDigest}
+
+### 自然度规则
+1. 动态是纯文字，**禁止**编造任何图片 URL 或描述"[图片]"占位。
+2. location 可选：只有真的像会顺手带位置时才写，大多数动态不带。
+3. 转发(repostOfPostId)是低频行为：整轮最多 1 条，且必须用上面列出的真实 postId；转发时 content 写一句自然转发语。
+4. 评论和点赞按真实熟人圈浮动：普通日常可以 0~3 条评论、几个人点赞；有梗/有事/关系牵动时可以 4~8 条评论；只有确实爆笑、劲爆或很打动人的内容才给更多互动。不要给每条动态都塞满评论。
+5. heat 按内容判断："normal"（普通日常）/ "hot"（小范围热闹）/ "viral"（熟人圈爆了）。viral 要少见，只给真正足够有传播性的内容。
+6. 评论要短、口语化、带个人关系感，可以有人只点赞不说话，也可以有人错过。允许评论区有停顿、有冷场、有只接半句的真实感。
+7. **绝对禁止**以用户 "${p.userName}" 的身份发动态、点赞或评论。
+8. 禁止上帝视角，角色不知道自己是 AI，NPC 是普通人。
+9. 不要使用固定模板、通用占位名、本地兜底感关系、营销号热评、强行撒糖或硬拔高总结。
+
+### 输出格式 (JSON Array)
+[
+  {
+    "authorKind": "character 或 npc",
+    "charId": "角色帖必填：发布者 charId",
+    "npcName": "NPC 帖必填：NPC 的微信昵称",
+    "npcRelation": "NPC 帖可选：与用户的关系（必须来自用户社交设定）",
+    "content": "动态文字内容",
+    "location": "可选，所在位置",
+    "repostOfPostId": "可选，转发的原帖 postId",
+    "heat": "normal|hot|viral",
+    "likedByCharIds": ["点赞角色的 charId"],
+    "likedByNpcNames": ["点赞的 NPC 昵称"],
+    "comments": [
+      { "charId": "角色评论填 charId", "content": "评论内容", "replyToName": "可选，回复楼上谁" },
+      { "npcName": "NPC 评论填昵称", "content": "评论内容" }
+    ]
+  }
+]`;
+}
+
+export interface MomentsReactionPromptParams {
+    userName: string;
+    postId: string;
+    reactorBlocks: string;
+    targetDigest: string;
+    mentionNote: string;
+}
+
+/** 用户发公开动态后：生成角色自然互动。 */
+export function momentsReactionPrompt(p: MomentsReactionPromptParams): string {
+    return `### 任务: 模拟「此刻」熟人互动
+用户 "${p.userName}" 刚发了一条新动态（下方第一条 postId="${p.postId}"）。请根据角色人设和关系，生成他们自然会做的互动。
+
+### 参与互动的角色
+${p.reactorBlocks}
+
+### 动态（第一条是用户刚发的新动态，其余可顺手互动）
+${p.targetDigest}
+
+### 规则
+1. ${p.mentionNote}
+2. 互动不需要人人到场：有人秒赞，有人只看不说，有人认真评论，也有人完全错过。除被提醒角色外，没有反应就不要输出。
+3. 总量按真实气氛浮动，通常 0~5 个操作；内容确实牵动关系、好笑或值得起哄时可以更多，但不要为了显得热闹硬塞。
+4. action 取值: "like" | "comment" | "repost"。comment 必须填 content；repost 必须填 content（转发语），转发是低频行为（最多 1 条）。
+5. 回复已有评论时，在 comment 操作里填 replyToCommentId（必须用上面列出的真实 commentId）。
+6. 角色之间也可以互相点赞/评论其它 postId，但用户的新动态仍是主目标。
+7. **绝对禁止**以用户 "${p.userName}" 的身份做任何操作。
+8. 评论要像朋友圈短评：短、具体、贴人设，可以接梗、吐槽、心疼、阴阳怪气或只说半句；不要长篇大论，不要标准客服式安慰，不要编造图片。
+
+### 输出格式 (JSON Array)
+[
+  { "charId": "角色 charId", "postId": "目标 postId", "action": "like|comment|repost", "content": "评论或转发语", "replyToCommentId": "可选" }
+]`;
+}
+
+export interface MomentsCommentReplyPromptParams {
+    userName: string;
+    authorLine: string;
+    postText: string;
+    repostLine: string;
+    commentsText: string;
+    userComment: string;
+    replyContext: string;
+    candidateBlocks: string;
+}
+
+/** 用户评论/回复后：生成相关角色是否接话。 */
+export function momentsCommentReplyPrompt(p: MomentsCommentReplyPromptParams): string {
+    return `### 任务: 回应用户的「此刻」评论
+**动态作者**: ${p.authorLine}
+**动态内容**: "${p.postText}"${p.repostLine}
+**已有评论**:
+${p.commentsText}
+**用户 "${p.userName}" 刚发的评论**: "${p.userComment}"
+${p.replyContext}
+
+### 候选回应角色
+${p.candidateBlocks}
+
+### 规则
+1. 生成 0~2 条对用户这条评论的回复。只有动态作者、被用户点到的人、或真的想接这句话的人才回复；没必要回就输出空数组。
+2. 回复要扣住用户评论和原动态，像熟人评论区里顺手接的一句短话：可以轻轻接梗、补一句解释、回怼、心虚、岔开或只回半句。
+3. 不要把每条评论都处理成深情告白、情绪价值长文或总结陈词；不要为了显得礼貌而人人回应。
+4. **绝对禁止**以用户 "${p.userName}" 的身份回复。
+5. 只能用候选角色的 charId。
+
+### 输出格式 (JSON Array)
+[
+  { "charId": "角色 charId", "content": "回复内容" }
+]`;
+}
+
 /**
  * 会话设定（Conversation Settings）里逐条可开关的行。
  * 每条对应聊天设置面板的一个开关；改这里的措辞即改注入私聊的提示。
@@ -603,7 +755,7 @@ export const convoLines = {
     proactiveLookup: `- 主动查询：开启。你开口前会先留意当前时间、天气、热点等实时信息，把它们自然融进话题。`,
     allowPhoneBrowse: `- 查岗：被允许。你可以拿过TA的手机翻看（系统会进入"查岗"画面），翻完后你会主动跟TA聊起你看到的东西；若人设合适，也可以替TA操作或锁住手机。`,
     charAvatarCandidate: (userName: string) => `- 自主换头像：当${userName}刚发来一张图片，并且你觉得那张图很适合作为你自己的头像（头像稿、合照裁切、符合你气质的图、或 TA 明确说想给你当头像）时，你可以自主把它换成你的头像。做法：在回复最后单独输出一行 \`[[SET_CHAR_AVATAR_FROM_LAST_IMAGE: 一句话理由]]\`。普通随手照片、表情包、风景图不要乱用，也不要频繁触发；这是你自己的头像，不是${userName}的头像。`,
-    momentsAutoPost: `- 朋友圈习惯：你有空时会随手发此刻记录生活，聊天中可以提到你刚发/想发的此刻。`,
+    momentsAutoPost: `- 朋友圈习惯：你偶尔会在「此刻」发一点生活痕迹，但只在真的有表达欲、发生了值得顺手记下的小事，或聊天自然聊到时才提起。不要把每段对话都导向发动态，也不要为了完成任务感而硬说“我刚发了此刻”。`,
     proactiveTakeoutOrder: (userName: string) => `- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${userName}说饿了或没空做饭、加班晚归、生病没胃口…），你可以默默替 ${userName} 在「饭票」里点一份吃的并代付——挑的东西要贴合此刻的天气、时辰和 TA 的状态（冷天来碗热汤面，嘴馋来份炸物，难受就清淡好克化的）。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗加蛋的热汤牛肉面]]\`），系统会生成饭票小票并通知 ${userName}。前面正常说你给 TA 点了什么、为什么想到点这个。别频繁、别刻意，像真的会照顾人那样偶尔为之。`,
 };
 
@@ -842,4 +994,31 @@ export function periodReminderHint(p: PeriodReminderHintParams): string {
         ? '预计今天可能开始'
         : `预计现在是第 ${p.offset + 1} 天附近`;
     return `[系统提示（非${p.userName}发言）：现在是 ${p.nowText}。${p.userName}在「健康」里授权你接收经期提醒；预测开始日是 ${p.predictedStartDate || '未确定'}，通常持续约 ${p.periodLength} 天，${timing}。请以「${p.charName}」第一人称，像亲近的人那样发一条很短、体贴、不冒犯的提醒。可以提醒对方照顾身体、准备用品、喝点热的、早点休息或记录状态，但不要诊断、不要夸张病情、不要公开隐私，也不要说“系统提醒/健康 App/根据设置”。正文 1-2 句，适合读成语音；末尾附一段同义但更适合播报的 \`<语音>...</语音>\`，语音内容不要超过 45 字。]`;
+}
+
+export interface HealthCompanionHintParams {
+    userName: string;
+    charName: string;
+    moduleLabel: string;
+    title: string;
+    body: string;
+    kind: string;
+    nowText: string;
+}
+
+/** 健康中心通用提醒：只做陪伴与生活提醒，不做医疗判断。 */
+export function healthCompanionHint(p: HealthCompanionHintParams): string {
+    return `[系统提示（非${p.userName}发言）：现在是 ${p.nowText}。${p.userName}在「健康」里授权你接收「${p.moduleLabel}」提醒；提醒标题是「${p.title}」，说明是「${p.body}」，类型是 ${p.kind}。请以「${p.charName}」第一人称，像亲近的人那样发一条很短、温柔、不过界的生活提醒或打卡鼓励。可以关心对方、提醒记录、陪对方完成小目标，但不要诊断、不要给治疗方案、不要夸张病情、不要公开隐私，也不要说“系统提醒/健康 App/根据设置”。正文 1-2 句，适合读成语音；末尾附一段同义但更适合播报的 \`<语音>...</语音>\`，语音内容不要超过 45 字。]`;
+}
+
+export interface HealthSummaryCompanionHintParams {
+    userName: string;
+    charName: string;
+    summaryText: string;
+    nowText: string;
+}
+
+/** 健康中心授权摘要：给角色温柔复盘，禁止诊断式结论。 */
+export function healthSummaryCompanionHint(p: HealthSummaryCompanionHintParams): string {
+    return `[系统提示（非${p.userName}发言）：现在是 ${p.nowText}。${p.userName}在「健康」里授权你看到一段生活健康摘要：${p.summaryText}。请以「${p.charName}」第一人称，做一段很短的温柔复盘或鼓励，只能围绕生活照顾、休息、喝水、记录和完成小目标说话；不要诊断、不要治疗建议、不要恐吓、不要把隐私说给第三人，也不要说“我看到健康数据”。正文 1-2 句。]`;
 }

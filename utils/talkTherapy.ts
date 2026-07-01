@@ -8,16 +8,16 @@
  * 📌 prompt 文案集中在 utils/theaterPrompts.ts（[肆] 谈心 区段），改文案去那里。
  */
 
-import { CharacterProfile, UserProfile, TalkTurn } from '../types';
+import { CharacterProfile, UserProfile, TalkMode, TalkTurn } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { ContextBuilder } from './context';
 import { safeResponseJson, extractContent } from './safeApi';
-import { talkSystemPrompt, talkOpeningUser, talkReplyUser } from './theaterPrompts';
+import { talkSystemPrompt, talkOpeningUser, talkReplyUser, talkInsightUser } from './theaterPrompts';
 
-const talkSystem = (char: CharacterProfile, userProfile: UserProfile, mood?: string): string => {
+const talkSystem = (char: CharacterProfile, userProfile: UserProfile, mood?: string, mode?: TalkMode, intention?: string): string => {
     const core = ContextBuilder.buildCoreContext(char, userProfile, true);
     const userName = (userProfile.name || '').trim() || '对方';
-    return talkSystemPrompt({ core, charName: char.name, userName, mood });
+    return talkSystemPrompt({ core, charName: char.name, userName, mood, mode, intention });
 };
 
 const callLLM = async (api: ResolvedApi, system: string, user: string): Promise<string> => {
@@ -44,20 +44,39 @@ const transcript = (turns: TalkTurn[], charName: string, userName: string): stri
 
 /** 谈心开场：角色温柔地把这个空间打开（接住此刻的心情，邀请 user 慢慢说）。 */
 export const generateTalkOpening = async (
-    char: CharacterProfile, userProfile: UserProfile, api: ResolvedApi, mood?: string,
+    char: CharacterProfile, userProfile: UserProfile, api: ResolvedApi, mood?: string, mode?: TalkMode, intention?: string,
 ): Promise<string> => {
     const userName = (userProfile.name || '').trim() || '对方';
-    const user = talkOpeningUser({ userName, charName: char.name, mood });
-    return callLLM(api, talkSystem(char, userProfile, mood), user);
+    const user = talkOpeningUser({ userName, charName: char.name, mood, mode, intention });
+    return callLLM(api, talkSystem(char, userProfile, mood, mode, intention), user);
 };
 
 /** 谈心推进：根据已有对话与 user 这次说的话，生成角色温柔的回应。 */
 export const generateTalkReply = async (
     char: CharacterProfile, userProfile: UserProfile, api: ResolvedApi,
-    turns: TalkTurn[], userInput: string, mood?: string,
+    turns: TalkTurn[], userInput: string, mood?: string, mode?: TalkMode, intention?: string,
 ): Promise<string> => {
     const userName = (userProfile.name || '').trim() || '对方';
     const hist = transcript(turns, char.name, userName);
     const user = talkReplyUser({ hist, userName, charName: char.name, userInput });
-    return callLLM(api, talkSystem(char, userProfile, mood), user);
+    return callLLM(api, talkSystem(char, userProfile, mood, mode, intention), user);
+};
+
+/** 谈心安放卡：把当前记录收束成一张可收藏的小结。 */
+export const generateTalkInsight = async (
+    char: CharacterProfile, userProfile: UserProfile, api: ResolvedApi,
+    turns: TalkTurn[], mood?: string, mode?: TalkMode, intention?: string,
+): Promise<{ title: string; body: string }> => {
+    const userName = (userProfile.name || '').trim() || '对方';
+    const hist = transcript(turns, char.name, userName);
+    const raw = await callLLM(
+        api,
+        talkSystem(char, userProfile, mood, mode, intention),
+        talkInsightUser({ hist, userName, charName: char.name, mood, mode }),
+    );
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const titleLine = lines[0]?.replace(/^标题[:：]\s*/, '').trim();
+    const title = (titleLine || '把这一刻收好').slice(0, 18);
+    const body = (lines[0]?.startsWith('标题') ? lines.slice(1) : lines).join('\n').trim() || raw.trim();
+    return { title, body };
 };

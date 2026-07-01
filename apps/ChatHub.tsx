@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact } from '../types';
+import { APIConfig, AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import { ContextBuilder } from '../utils/context';
@@ -31,6 +31,7 @@ import { llmComplete } from '../utils/llmComplete';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import { stickerImageSrc } from '../utils/stickerImage';
 import { substituteMacros } from '../utils/macros';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -1155,7 +1156,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread, activeApp, availableModels, setAvailableModels } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread, activeApp, availableModels, setAvailableModels, apiPresets, addApiPreset } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -1971,6 +1972,43 @@ const ChatHub: React.FC = () => {
         }));
     };
 
+    const patchGroupApiForTarget = (target: GroupApiModelTarget, api: GroupApiDraft) => {
+        const next = normalizeGroupApiDraft(api);
+        if (target.kind === 'group') {
+            setTempGroupApi(next);
+            return;
+        }
+        setTempMemberApis(prev => ({
+            ...prev,
+            [target.charId]: next,
+        }));
+    };
+
+    const loadApiPresetToGroupTarget = (target: GroupApiModelTarget, preset: typeof apiPresets[0]) => {
+        patchGroupApiForTarget(target, {
+            baseUrl: preset.config.baseUrl || '',
+            apiKey: preset.config.apiKey || '',
+            model: preset.config.model || '',
+        });
+        addToast(`已载入「${preset.name}」`, 'success');
+    };
+
+    const saveGroupApiPreset = (target: GroupApiModelTarget) => {
+        const draft = groupApiDraftForTarget(target);
+        const baseUrl = draft.baseUrl.trim();
+        const model = draft.model.trim();
+        if (!baseUrl || !model) {
+            addToast('保存预设需要 Base URL 和模型名', 'info');
+            return;
+        }
+        addApiPreset(groupApiModelTargetLabel(target), {
+            baseUrl,
+            apiKey: draft.apiKey.trim(),
+            model,
+        } as APIConfig);
+        addToast(`${groupApiModelTargetLabel(target)} 已保存为预设`, 'success');
+    };
+
     const openGroupApiModelPicker = (target: GroupApiModelTarget) => {
         setGroupApiModelTarget(target);
         setGroupApiModelFilter('');
@@ -2003,12 +2041,10 @@ const ChatHub: React.FC = () => {
             const response = await fetch(`${baseUrl}/models`, {
                 method: 'GET',
                 headers,
-                __moroMeta: {
-                    appId: AppID.GroupChat,
-                    appName: '絮语',
-                    purpose: `拉取${groupApiModelTargetLabel(target)}模型列表`,
-                    apiRole: target.kind === 'group' ? 'group' : 'member',
-                },
+                __moroMeta: makeApiUsageMeta('chat.groupReply', {
+                    apiRole: 'custom',
+                    apiBinding: target.kind === 'group' ? '群聊默认 API' : '成员专属 API',
+                }),
             } as RequestInit & { __moroMeta?: unknown });
             const data = await safeResponseJson(response);
             if (!response.ok) {
@@ -4024,7 +4060,8 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                 max_tokens: 1800,
                 stream: false,
             }),
-        });
+            __moroMeta: makeApiUsageMeta('chat.groupReply', { apiRole: 'main', apiBinding: '群语音文字回复' }),
+        } as RequestInit & { __moroMeta?: unknown });
         if (!response.ok) throw new Error(`文本接口调用失败（HTTP ${response.status}）`);
         const data = await safeResponseJson(response);
         if (data.usage?.total_tokens) {
@@ -4314,6 +4351,24 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                     选择
                 </ScrapBtn>
             </div>
+            {apiPresets.length > 0 && (
+                <div className="space-y-1">
+                    <div className="text-[9px] uppercase tracking-[0.18em]" style={{ color: INK_SOFT }}>已保存预设</div>
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                        {apiPresets.map(preset => (
+                            <ScrapBtn
+                                key={preset.id}
+                                variant="paper"
+                                full={false}
+                                className="text-[10px] px-3 py-1.5 shrink-0 max-w-[12rem] truncate"
+                                onClick={() => loadApiPresetToGroupTarget(modelTarget, preset)}
+                            >
+                                {preset.name}{preset.config.model ? ` · ${preset.config.model}` : ''}
+                            </ScrapBtn>
+                        ))}
+                    </div>
+                </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
                 <ScrapBtn
                     variant="paper"
@@ -4339,6 +4394,14 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                     保存 API
                 </ScrapBtn>
             </div>
+            <ScrapBtn
+                variant="paper"
+                full={false}
+                className="text-[11px] py-2"
+                onClick={() => saveGroupApiPreset(modelTarget)}
+            >
+                保存为预设
+            </ScrapBtn>
         </div>
     );
 
@@ -4739,8 +4802,9 @@ ${attachedImagesNote}
                         messages: [{ role: "user", content }],
                         temperature: 0.9,
                         max_tokens: maxTokens,
-                    })
-                });
+                    }),
+                    __moroMeta: makeApiUsageMeta('chat.groupReply', { apiRole: 'custom', apiBinding: pass }),
+                } as RequestInit & { __moroMeta?: unknown });
                 if (!response.ok) throw new Error(`${pass} Failed (${baseUrl} · ${api.model})`);
                 return safeResponseJson(response);
             };

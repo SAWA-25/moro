@@ -3444,6 +3444,74 @@ export interface FauxForum {
     op: { floor: string; text: string };
     replies: { floor: string; text: string }[];
 }
+export type TheaterFauxKind = 'wechat' | 'moments' | 'xhs' | 'forum' | 'weibo' | 'qzone' | 'douban' | 'campus' | 'memo' | 'schedule' | 'receipt' | 'browser';
+/** 仿微博热搜 / 微博吃瓜页 */
+export interface FauxWeibo {
+    topic: string;
+    rank?: string;
+    posts: { author: string; text: string; time?: string; likes?: number; reposts?: number; comments?: number }[];
+    hotComments?: { name: string; text: string; likes?: number }[];
+}
+/** 仿 QQ 空间动态 */
+export interface FauxQzone {
+    owner: string;
+    text: string;
+    images?: number;
+    time: string;
+    mood?: string;
+    visitors?: string[];
+    likes: string[];
+    comments: { name: string; text: string }[];
+}
+/** 仿豆瓣小组讨论 */
+export interface FauxDouban {
+    group: string;
+    title: string;
+    author: string;
+    text: string;
+    replies: { name: string; text: string; time?: string; likes?: number }[];
+}
+/** 仿校园墙投稿 */
+export interface FauxCampus {
+    school: string;
+    wallName: string;
+    title?: string;
+    text: string;
+    images?: number;
+    likes: number;
+    comments: { name: string; text: string }[];
+}
+/** 仿手机备忘录 */
+export interface FauxMemo {
+    title: string;
+    updatedAt: string;
+    lines: string[];
+}
+/** 仿手机日程表 */
+export interface FauxSchedule {
+    title: string;
+    date: string;
+    items: { time: string; title: string; place?: string; note?: string; done?: boolean }[];
+}
+/** 仿订单 / 小票 */
+export interface FauxReceipt {
+    shopName: string;
+    orderNo: string;
+    status: string;
+    items: { name: string; count?: number; price?: number }[];
+    total: number;
+    timeline: { time: string; text: string }[];
+}
+/** 仿浏览器搜索页 */
+export interface FauxBrowser {
+    query: string;
+    summary: string;
+    results: { title: string; snippet: string; url?: string }[];
+}
+export type FauxScreenData =
+    | FauxWeChat | FauxMoments | FauxXhs | FauxForum
+    | FauxWeibo | FauxQzone | FauxDouban | FauxCampus
+    | FauxMemo | FauxSchedule | FauxReceipt | FauxBrowser;
 
 export interface GalleryImage {
     id: string;
@@ -4119,9 +4187,21 @@ export interface QuizSession {
 
 export type GameTheme = 'fantasy' | 'cyber' | 'horror' | 'modern';
 
+export type TrpgCampaignMode = 'classic' | 'expanded';
+export type TrpgAttribute = 'body' | 'mind' | 'heart' | 'craft' | 'luck';
+export type TrpgCheckMode = 'normal' | 'advantage' | 'disadvantage';
+
+export interface TrpgActionCheck {
+    attribute: TrpgAttribute;
+    skill?: string;
+    dc?: number;
+    mode?: TrpgCheckMode;
+}
+
 export interface GameActionOption {
     label: string;
     type: 'neutral' | 'chaotic' | 'evil';
+    check?: TrpgActionCheck;
 }
 
 export interface GameLog {
@@ -4135,6 +4215,11 @@ export interface GameLog {
         max: number;
         check?: string;
         success?: boolean;
+        total?: number;
+        dc?: number;
+        attribute?: TrpgAttribute;
+        skill?: string;
+        mode?: TrpgCheckMode;
     };
     // 自动总结后，被归档折叠的日志会标记为 archived（不删除，UI 灰显折叠）
     archived?: boolean;
@@ -4146,6 +4231,91 @@ export interface GameSummary {
     content: string;       // 小说式总结（起因/经过/结果 + 人物关系变化）
     logCount: number;      // 本段总结覆盖了多少条日志
     logIds?: string[];     // 本段总结覆盖的日志 id（用于把原文与总结对应展示）
+    createdAt: number;
+}
+
+export interface TrpgChapter {
+    no: number;
+    title: string;
+    summary?: string;
+    goal?: string;
+    status?: 'active' | 'completed';
+}
+
+export interface TrpgQuest {
+    id: string;
+    title: string;
+    status: 'active' | 'completed' | 'failed';
+    summary?: string;
+    steps?: string[];
+    updatedAt: number;
+}
+
+export interface TrpgClue {
+    id: string;
+    title: string;
+    detail: string;
+    source?: string;
+    tags?: string[];
+    discoveredAt: number;
+}
+
+export interface TrpgNpc {
+    id: string;
+    name: string;
+    role?: string;
+    attitude?: string;
+    location?: string;
+    notes?: string;
+    updatedAt: number;
+}
+
+export interface TrpgPartySheet {
+    ownerId: string;
+    name: string;
+    isUser?: boolean;
+    role?: string;
+    attributes: Record<TrpgAttribute, number>;
+    skills: string[];
+    hp: number;
+    sanity: number;
+    xp: number;
+    bond: number;
+    inventory: string[];
+    notes?: string[];
+    updatedAt: number;
+}
+
+export interface TrpgThreat {
+    id: string;
+    title: string;
+    danger: 'low' | 'medium' | 'high' | 'dire';
+    progress: number;
+    max: number;
+    status: 'active' | 'resolved' | 'failed';
+    note?: string;
+    updatedAt: number;
+}
+
+export interface TrpgEncounter {
+    id: string;
+    title: string;
+    status: 'active' | 'resolved' | 'failed';
+    threatIds?: string[];
+    summary?: string;
+    updatedAt: number;
+}
+
+export interface TrpgWorldClock {
+    day: number;
+    phase: string;
+    ticks: number;
+}
+
+export interface TrpgMilestone {
+    id: string;
+    title: string;
+    reward?: string;
     createdAt: number;
 }
 
@@ -4164,6 +4334,18 @@ export interface GameSession {
         inventory: string[];
     };
     sanityLocked?: boolean;
+    campaignMode?: TrpgCampaignMode;
+    campaignDifficulty?: 'story' | 'normal' | 'hard';
+    growthSpeed?: 'slow' | 'standard' | 'fast';
+    chapter?: TrpgChapter;
+    quests?: TrpgQuest[];
+    clues?: TrpgClue[];
+    npcs?: TrpgNpc[];
+    partySheets?: TrpgPartySheet[];
+    threats?: TrpgThreat[];
+    encounters?: TrpgEncounter[];
+    worldClock?: TrpgWorldClock;
+    milestones?: TrpgMilestone[];
     diceDisabled?: boolean;      // 关闭骰子：行动不再自动骰 D20，默认直接成功
     // 归档模式：'auto' 满20条自动总结并送进角色 chatapp；'manual' 自动总结但不送，仅手动归档时送。
     // 旧存档无此字段，按 'manual' 处理（不污染旧角色的聊天上下文）。
@@ -4227,6 +4409,96 @@ export interface PeriodCycleEvent {
     kind: 'start' | 'end';
     date: string;
     note?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export type HealthModuleId = 'period' | 'sleep' | 'hydration' | 'medication' | 'symptom' | 'mood' | 'movement';
+export type HealthPrivacyMode = 'private' | 'summary' | 'reminder' | 'summary_reminder';
+export type HealthReminderChannel = 'system' | 'character' | 'both';
+export type HealthReminderFrequency = 'once' | 'daily' | 'weekdays' | 'custom';
+export type HealthRecordSource = 'manual' | 'period_migration' | 'tracker_sync' | 'reminder';
+export type HealthReminderKind = 'period' | 'hydration' | 'medication' | 'sleep' | 'symptom' | 'mood' | 'movement' | 'summary';
+export type HealthPlanCadence = 'daily' | 'weekly';
+export type HealthSummaryRange = 'day' | 'week';
+
+export interface HealthGoalSettings {
+    target?: number;
+    unit?: string;
+    cadence?: HealthPlanCadence;
+}
+
+export interface HealthModuleSettings {
+    id: HealthModuleId;
+    enabled: boolean;
+    privacy: HealthPrivacyMode;
+    charIds: string[];
+    reminderChannel: HealthReminderChannel;
+    goals?: HealthGoalSettings;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface HealthRecord {
+    id: string;
+    moduleId: HealthModuleId;
+    date: string;
+    timeHHmm?: string;
+    value?: number;
+    unit?: string;
+    label?: string;
+    tags: string[];
+    note?: string;
+    source: HealthRecordSource;
+    metadata?: Record<string, any>;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface HealthReminder {
+    id: string;
+    moduleId: HealthModuleId;
+    kind: HealthReminderKind;
+    title: string;
+    body?: string;
+    enabled: boolean;
+    timeHHmm: string;
+    frequency: HealthReminderFrequency;
+    weekdays?: number[];
+    date?: string;
+    privacy: HealthPrivacyMode;
+    channel: HealthReminderChannel;
+    charIds: string[];
+    nextAt: number;
+    lastFiredKey?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface HealthPlan {
+    id: string;
+    moduleId: HealthModuleId;
+    title: string;
+    target: number;
+    unit: string;
+    cadence: HealthPlanCadence;
+    enabled: boolean;
+    charIds: string[];
+    privacy: HealthPrivacyMode;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface HealthSummary {
+    id: string;
+    range: HealthSummaryRange;
+    startDate: string;
+    endDate: string;
+    moduleIds: HealthModuleId[];
+    text: string;
+    metrics: Record<string, any>;
+    privacy: HealthPrivacyMode;
+    charIds: string[];
     createdAt: number;
     updatedAt: number;
 }
@@ -4514,6 +4786,11 @@ export interface FullBackupData {
     chatAlarms?: ChatAlarm[];
     periodReminderSettings?: PeriodReminderSettings[];
     periodCycleEvents?: PeriodCycleEvent[];
+    healthModuleSettings?: HealthModuleSettings[];
+    healthRecords?: HealthRecord[];
+    healthReminders?: HealthReminder[];
+    healthPlans?: HealthPlan[];
+    healthSummaries?: HealthSummary[];
     customThemes?: ChatTheme[];
     savedEmojis?: Emoji[]; 
     emojiCategories?: EmojiCategory[]; 
@@ -4600,6 +4877,15 @@ export interface FullBackupData {
 
     // Theater quiz side stories (折子戏·番外问卷)
     theaterQuizSessions?: TheaterQuizSession[];
+
+    // Theater faux screenshots (折子戏·仿真图文历史)
+    theaterFauxPieces?: TheaterFauxPiece[];
+
+    // Theater reflections (折子戏·对影册)
+    theaterReflectionSessions?: TheaterReflectionSession[];
+
+    // Almanac collection hall references (岁时记·典藏馆收录引用)
+    collectionItems?: CollectionItem[];
 
     // Chat delayed actions
     scheduledMessages?: {
@@ -4698,6 +4984,19 @@ export interface CloudBackupFile {
 }
 
 // --- GUIDEBOOK (攻略本) APP TYPES ---
+export type GuidebookPlayStyle = 'classic' | 'slowburn' | 'comedy' | 'dramatic' | 'mindgame';
+export type GuidebookDifficulty = 'soft' | 'normal' | 'hard';
+export type GuidebookPacing = 'slice' | 'rising' | 'climax';
+export type GuidebookScoreVisibility = 'shown' | 'mystery';
+
+export interface GuidebookRules {
+    playStyle: GuidebookPlayStyle;
+    difficulty: GuidebookDifficulty;
+    pacing: GuidebookPacing;
+    scoreVisibility: GuidebookScoreVisibility;
+    goal?: string;
+}
+
 export interface GuidebookOption {
     text: string;
     affinity: number;
@@ -4714,6 +5013,9 @@ export interface GuidebookRound {
     charReaction: string;
     charExploration?: string;
     charInsight?: string;      // what user's scoring reveals about their personality
+    prediction?: string;       // char's guess about user scoring / best option
+    tacticTag?: string;        // short strategy label for archive/replay
+    scoreSpread?: number;      // max(option.affinity) - min(option.affinity)
     affinityBefore: number;
     affinityAfter: number;
     timestamp: number;
@@ -4737,6 +5039,7 @@ export interface GuidebookSession {
     currentRound: number;
     mode: 'manual' | 'auto';
     scenarioHint?: string;
+    rules?: GuidebookRules;
     recentMessageCount?: number;
     rounds: GuidebookRound[];
     openingSequence?: string;
@@ -5096,14 +5399,81 @@ export interface TalkTurn {
   text: string;
   at: number;
 }
+export type TalkMode = 'hold' | 'untangle' | 'courage' | 'celebrate' | 'letter';
+export interface TalkInsight {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number;
+}
 export interface TalkSession {
   id: string;
   charId: string;
   title: string;          // 取自首句或主题，列表展示用
   mood?: string;          // 谈心当下选的心情 / 主题标签
+  mode?: TalkMode;        // 谈心方式：陪伴 / 梳理 / 鼓劲 / 分享开心事 / 写一封信
+  intention?: string;     // 用户开场前写下的想被如何陪伴
+  insights?: TalkInsight[]; // 阶段性安放卡 / 小结
   turns: TalkTurn[];
   createdAt: number;
   lastActiveAt: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 折子戏·对影（柒）：同一个人在不同时间里的两个自己相逢。
+// 生成结果默认只留在折子戏；用户主动发到聊天 / 收进典藏馆后才进入其它出口。
+// ──────────────────────────────────────────────────────────────────
+export type TheaterReflectionMode = 'moonlight' | 'letter' | 'crossroad' | 'reconcile';
+export type TheaterReflectionTone = 'restrained' | 'tender' | 'aching' | 'relieved';
+export type TheaterReflectionLength = 'short' | 'standard' | 'long';
+
+export interface TheaterReflectionOptions {
+  mode: TheaterReflectionMode;
+  tone: TheaterReflectionTone;
+  length: TheaterReflectionLength;
+  userSeed?: string;
+}
+
+export interface TheaterReflectionNodeSnapshot {
+  id: string;
+  ts: number;
+  era: 'before' | 'meeting' | 'after';
+  title: string;
+  scene: string;
+  mood?: string;
+  place?: string;
+  source?: 'generated' | 'firstMet' | 'lifeEvent';
+  when: string;
+}
+
+export interface TheaterReflectionLine {
+  who: 'past' | 'now' | 'narration' | 'user';
+  text: string;
+  at?: number;
+}
+
+export interface TheaterReflectionScene {
+  title: string;
+  subtitle?: string;
+  lines: TheaterReflectionLine[];
+}
+
+export interface TheaterReflectionSession {
+  id: string;
+  charId: string;
+  charName: string;
+  userName: string;
+  title: string;
+  subtitle?: string;
+  nodes: {
+    past: TheaterReflectionNodeSnapshot;
+    now: TheaterReflectionNodeSnapshot;
+  };
+  options: TheaterReflectionOptions;
+  initialScene: TheaterReflectionScene;
+  continuationLines: TheaterReflectionLine[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -5202,6 +5572,35 @@ export interface TruthDareSession {
 export type TheaterQuizStatus = 'active' | 'finished';
 export type TheaterQuizItemState = 'answering' | 'commenting' | 'complete';
 export type TheaterQuizAnswerStatus = 'pending' | 'done' | 'failed';
+export type TheaterQuizFlow = 'classic' | 'interview_test';
+export type TheaterQuizContentScale = 'mixed';
+
+export interface TheaterQuizSettings {
+  flow: TheaterQuizFlow;
+  hostEnabled: boolean;
+  peerReviewEnabled: boolean;
+  resultEnabled: boolean;
+  contentScale: TheaterQuizContentScale;
+}
+
+export interface TheaterQuizResultDimension {
+  key: string;
+  label: string;
+  score: number;
+  summary: string;
+}
+
+export interface TheaterQuizResult {
+  generatedAt: number;
+  title: string;
+  summary: string;
+  totalScore: number;
+  dimensions: TheaterQuizResultDimension[];
+  highlights: string[];
+  frictions: string[];
+  suggestions: string[];
+  fallbackText?: string;
+}
 
 export interface TheaterQuizAnswer {
   speakerId: string;       // 'user' 或 charId
@@ -5230,6 +5629,7 @@ export interface TheaterQuizComment {
 export interface TheaterQuizItem {
   no: number;
   question: string;
+  hostNote?: string;
   answers: Record<string, TheaterQuizAnswer>;
   comments: TheaterQuizComment[];
   state: TheaterQuizItemState;
@@ -5246,16 +5646,30 @@ export interface TheaterQuizSession {
   currentIndex: number;
   total: number;
   items: TheaterQuizItem[];
+  settings?: TheaterQuizSettings;
+  result?: TheaterQuizResult;
   createdAt: number;
   lastActiveAt: number;
   finishedAt?: number;
+}
+
+export interface TheaterFauxPiece {
+  id: string;
+  kind: TheaterFauxKind;
+  charId: string;
+  charName: string;
+  keyword?: string;
+  data: FauxScreenData | null;
+  fallbackText: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ──────────────────────────────────────────────────────────────────
 // 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 折子戏」里完成的内容收进来，
 // 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
 // ──────────────────────────────────────────────────────────────────
-export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game' | 'chat';
+export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game' | 'reflection' | 'chat';
 export interface CollectionItem {
   id: string;                 // = `${sourceType}:${sourceId}`，天然去重
   sourceType: CollectionSourceType;

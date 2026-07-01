@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, ChatAlarm, PeriodReminderSettings } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, ChatAlarm, PeriodReminderSettings, HealthReminder } from '../types';
 import { DB } from '../utils/db';
 import { createAutoBankTransaction } from '../utils/bankLedger';
 import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
@@ -22,6 +22,7 @@ import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { ChatParser } from '../utils/chatParser';
 import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
 import { createCharacterId, ensureCharacterModelId } from '../utils/characterIdentity';
@@ -74,6 +75,24 @@ import {
   periodReminderTitle,
   shouldSkipStalePeriodReminder,
 } from '../utils/periodReminders';
+import {
+  HEALTH_REMINDER_LOCK_MS,
+  HEALTH_MODULE_LABEL,
+  HEALTH_REMINDERS_UPDATED_EVENT,
+  HEALTH_SUMMARY_REQUEST_EVENT,
+  buildHealthCompanionHint,
+  buildHealthSummaryCompanionHint,
+  collectNativeHealthOccurrences,
+  healthPrivacyAllowsSummary,
+  healthPrivacyAllowsReminder,
+  healthReminderBody,
+  healthReminderFireKey,
+  healthReminderTitle,
+  markHealthReminderFired,
+  nativeNotificationIdForHealthReminder,
+  shouldSkipStaleHealthReminder,
+  toHealthDateKey,
+} from '../utils/health';
 import {
   DEFAULT_DESKTOP_WALLPAPER,
   DEFAULT_LOCK_SCREEN_WALLPAPER,
@@ -783,7 +802,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let cancelled = false;
       LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
           const extra = (action.notification?.extra || {}) as any;
-          if (extra?.source === 'period-reminder' || extra?.type === 'period-reminder') {
+          if (extra?.source === 'period-reminder' || extra?.type === 'period-reminder' || extra?.source === 'health-reminder' || extra?.type === 'health-reminder') {
               const charId = extra.charId || extra.data?.charId;
               if (charId) setActiveCharacterId(charId);
               setActiveApp(AppID.Health);
@@ -833,7 +852,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
   };
 
-  // --- API 调用记录的环境兜底：当前在哪个 App、当前角色是谁 ---
+  // --- API 后台流水的环境兜底：当前在哪个 App、当前角色是谁 ---
   // 裸 fetch 调用点无法传 meta，全局拦截器记录时用这份兜底标出 App / 角色。
   useEffect(() => {
       const appName = INSTALLED_APPS.find(a => a.id === activeApp)?.name;
@@ -915,7 +934,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const durationMs = Math.round(nowMs() - startedAt);
               const trackedApi = isTrackedApiUrl(urlStr);
 
-              // 「API 调用记录」统一记录入口：聊天补全与模型列表都在这里记录。
+              // 「API 后台流水」统一记录入口：聊天补全与模型列表都在这里记录。
               if (trackedApi) {
                   const recordFromText = (text?: string) => {
                       const parsed = text ? parseJsonIfPossible(text) : undefined;
@@ -1946,8 +1965,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setActiveCharacterId(charId);
       };
 
-      const periodReminderOpenHandler = (e: Event) => {
-          const { charId } = (e as CustomEvent).detail as { charId?: string; settingsId?: string };
+      const healthReminderOpenHandler = (e: Event) => {
+          const { charId } = (e as CustomEvent).detail as { charId?: string; settingsId?: string; reminderId?: string };
           if (charId) setActiveCharacterId(charId);
           setActiveApp(AppID.Health);
       };
@@ -2000,14 +2019,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       window.addEventListener('active-msg-received', handler);
       window.addEventListener('active-msg-progress', progressHandler);
       window.addEventListener('active-msg-open', openHandler);
-      window.addEventListener('period-reminder-open', periodReminderOpenHandler);
+      window.addEventListener('period-reminder-open', healthReminderOpenHandler);
+      window.addEventListener('health-reminder-open', healthReminderOpenHandler);
       window.addEventListener('emotion-updated', buffSyncHandler);
       document.addEventListener('visibilitychange', onVisible);
       return () => {
           window.removeEventListener('active-msg-received', handler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);
-          window.removeEventListener('period-reminder-open', periodReminderOpenHandler);
+          window.removeEventListener('period-reminder-open', healthReminderOpenHandler);
+          window.removeEventListener('health-reminder-open', healthReminderOpenHandler);
           window.removeEventListener('emotion-updated', buffSyncHandler);
           document.removeEventListener('visibilitychange', onVisible);
       };
@@ -2233,7 +2254,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                   method: 'POST', headers,
                   body: JSON.stringify(reqBody)
-              }, 2, 0, { appName: '消息', charId, charName: char.name, purpose: '主动消息' });
+              }, 2, 0, makeApiUsageMeta('chat.proactiveReply', {
+                  charId,
+                  charName: char.name,
+                  apiRole: 'main',
+              }));
 
               // 5. Process & save response
               let aiContent = flattenContent(data.choices?.[0]?.message?.content);
@@ -2555,6 +2580,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return hits;
       };
 
+      const collectNativeGenericHealthOccurrences = (reminder: HealthReminder, now: number): number[] => {
+          return collectNativeHealthOccurrences(reminder, now);
+      };
+
       const rescheduleNativeChatAlarms = async () => {
           if (!Capacitor.isNativePlatform()) return;
           try {
@@ -2648,6 +2677,54 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
+      const rescheduleNativeHealthReminders = async () => {
+          if (!Capacitor.isNativePlatform()) return;
+          try {
+              const perm = await LocalNotifications.checkPermissions();
+              const finalPerm = perm.display === 'granted' ? perm : await LocalNotifications.requestPermissions();
+              if (finalPerm.display !== 'granted') return;
+
+              const pending = await LocalNotifications.getPending().catch(() => ({ notifications: [] as any[] }));
+              const healthPending = (pending.notifications || []).filter((n: any) => n?.extra?.source === 'health-reminder' || n?.extra?.type === 'health-reminder');
+              if (healthPending.length) {
+                  await LocalNotifications.cancel({ notifications: healthPending.map((n: any) => ({ id: n.id })) }).catch(() => {});
+              }
+
+              const now = Date.now();
+              const all = await DB.getAllHealthReminders();
+              const notifications: any[] = [];
+              for (const reminder of all) {
+                  if (!reminder.enabled) continue;
+                  const shouldScheduleSystem = reminder.channel === 'system' || reminder.channel === 'both' || !healthPrivacyAllowsReminder(reminder.privacy);
+                  if (!shouldScheduleSystem) continue;
+                  for (const at of collectNativeGenericHealthOccurrences(reminder, now)) {
+                      notifications.push({
+                          id: nativeNotificationIdForHealthReminder(reminder.id, at),
+                          title: healthReminderTitle(reminder),
+                          body: healthReminderBody(reminder),
+                          schedule: { at: new Date(at), allowWhileIdle: true },
+                          smallIcon: 'ic_stat_icon_config_sample',
+                          extra: {
+                              source: 'health-reminder',
+                              type: 'health-reminder',
+                              reminderId: reminder.id,
+                              moduleId: reminder.moduleId,
+                              charId: reminder.charIds?.[0],
+                              at,
+                          },
+                      });
+                      if (notifications.length >= 128) break;
+                  }
+                  if (notifications.length >= 128) break;
+              }
+              if (notifications.length) {
+                  await LocalNotifications.schedule({ notifications });
+              }
+          } catch (e) {
+              console.warn('[HealthReminder] native schedule skipped', e);
+          }
+      };
+
       const acquireChatAlarmLock = (alarm: ChatAlarm, fireKey: string, now: number): boolean => {
           const key = `moro_chat_alarm_lock_${alarm.id}_${fireKey}`;
           try {
@@ -2666,6 +2743,18 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const until = Number(localStorage.getItem(key) || '0');
               if (until > now) return false;
               localStorage.setItem(key, String(now + PERIOD_REMINDER_LOCK_MS));
+          } catch {
+              return true;
+          }
+          return true;
+      };
+
+      const acquireHealthReminderLock = (reminder: HealthReminder, fireKey: string, now: number): boolean => {
+          const key = `moro_health_reminder_lock_${reminder.id}_${fireKey}`;
+          try {
+              const until = Number(localStorage.getItem(key) || '0');
+              if (until > now) return false;
+              localStorage.setItem(key, String(now + HEALTH_REMINDER_LOCK_MS));
           } catch {
               return true;
           }
@@ -2696,6 +2785,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   type: 'period-reminder',
                   settingsId: settings.id,
                   charId: settings.charIds?.[0],
+              },
+          });
+      };
+
+      const showHealthReminderNotification = async (reminder: HealthReminder) => {
+          if (Capacitor.isNativePlatform()) return;
+          await showLocalNotification(healthReminderTitle(reminder), {
+              body: healthReminderBody(reminder),
+              tag: `health-reminder-${reminder.id}`,
+              data: {
+                  source: 'health-reminder',
+                  type: 'health-reminder',
+                  reminderId: reminder.id,
+                  moduleId: reminder.moduleId,
+                  charId: reminder.charIds?.[0],
               },
           });
       };
@@ -2817,8 +2921,54 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
+      const checkHealthReminders = async () => {
+          try {
+              const now = Date.now();
+              const due = await DB.getDueHealthReminders(now);
+              if (!due.length) return;
+              const userName = userProfileRef.current?.name || '对方';
+              for (const reminder of due) {
+                  const fireKey = healthReminderFireKey(reminder, reminder.nextAt || now);
+                  if (!acquireHealthReminderLock(reminder, fireKey, now)) continue;
+
+                  if (reminder.lastFiredKey === fireKey || shouldSkipStaleHealthReminder(reminder, now)) {
+                      await DB.saveHealthReminder(markHealthReminderFired(reminder, now));
+                      continue;
+                  }
+
+                  const canTellChars = healthPrivacyAllowsReminder(reminder.privacy) && (reminder.channel === 'character' || reminder.channel === 'both');
+                  const charIds = Array.from(new Set(reminder.charIds || []));
+                  const eligibleChars = canTellChars
+                      ? charIds
+                          .map(charId => charactersRef.current.find(c => c.id === charId))
+                          .filter((char): char is CharacterProfile => !!char && !char.charBlock?.active && !char.blacklisted)
+                      : [];
+                  const shouldShowSystem = reminder.channel === 'system' || reminder.channel === 'both' || !canTellChars || eligibleChars.length === 0;
+                  if (shouldShowSystem) {
+                      await showHealthReminderNotification(reminder);
+                  }
+
+                  if (canTellChars) {
+                      for (const char of eligibleChars) {
+                          await runProactive(char.id, {
+                              customHint: buildHealthCompanionHint({ reminder, char, userName, nowMs: now }),
+                              eventSource: 'health-reminder',
+                              notificationData: { type: 'health-reminder', source: 'health-reminder', reminderId: reminder.id, moduleId: reminder.moduleId, charId: char.id },
+                              skipSystemNotify: true,
+                          });
+                      }
+                  }
+
+                  await DB.saveHealthReminder(markHealthReminderFired(reminder, now));
+              }
+          } catch (e) {
+              console.warn('[HealthReminder] check failed', e);
+          }
+      };
+
       const chatAlarmTimer = setInterval(() => { void checkChatAlarms(); }, 30_000);
       const periodReminderTimer = setInterval(() => { void checkPeriodReminders(); }, 30_000);
+      const healthReminderTimer = setInterval(() => { void checkHealthReminders(); }, 30_000);
       const onChatAlarmsUpdated = () => {
           void checkChatAlarms();
           void rescheduleNativeChatAlarms();
@@ -2827,21 +2977,78 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           void checkPeriodReminders();
           void rescheduleNativePeriodReminders();
       };
+      const onHealthRemindersUpdated = () => {
+          void checkHealthReminders();
+          void rescheduleNativeHealthReminders();
+      };
+      const onHealthSummaryRequest = (e: Event) => {
+          const detail = (e as CustomEvent).detail as { date?: string; charId?: string };
+          void (async () => {
+              try {
+                  const date = detail?.date || toHealthDateKey(new Date());
+                  const [settings, records] = await Promise.all([
+                      DB.getAllHealthModuleSettings().catch(() => []),
+                      DB.getHealthRecordsByDate(date).catch(() => []),
+                  ]);
+                  const summaryModules = settings.filter(s => s.enabled && healthPrivacyAllowsSummary(s.privacy) && s.charIds.length > 0);
+                  const allowedModuleIds = new Set(summaryModules.map(s => s.id));
+                  const visibleRecords = records.filter(record => allowedModuleIds.has(record.moduleId));
+                  if (!visibleRecords.length) return;
+                  const byChar = new Map<string, string[]>();
+                  summaryModules.forEach(setting => {
+                      setting.charIds.forEach(charId => {
+                          if (detail?.charId && detail.charId !== charId) return;
+                          const moduleLines = visibleRecords
+                              .filter(record => record.moduleId === setting.id)
+                              .map(record => `${record.label || record.tags?.[0] || record.moduleId}${record.value !== undefined ? ` ${record.value}${record.unit || ''}` : ''}`)
+                              .slice(0, 4);
+                          if (!moduleLines.length) return;
+                          const prev = byChar.get(charId) || [];
+                          byChar.set(charId, [...prev, `${HEALTH_MODULE_LABEL[setting.id]}：${moduleLines.join('、')}`]);
+                      });
+                  });
+                  const userName = userProfileRef.current?.name || '对方';
+                  for (const [charId, lines] of byChar) {
+                      const char = charactersRef.current.find(c => c.id === charId);
+                      if (!char || char.charBlock?.active || char.blacklisted) continue;
+                      await runProactive(char.id, {
+                          customHint: buildHealthSummaryCompanionHint({
+                              summaryText: `${date}：${lines.join('；')}`,
+                              char,
+                              userName,
+                              nowMs: Date.now(),
+                          }),
+                          eventSource: 'health-summary',
+                          notificationData: { type: 'health-summary', source: 'health-summary', charId: char.id },
+                          skipSystemNotify: true,
+                      });
+                  }
+              } catch (err) {
+                  console.warn('[HealthSummary] request failed', err);
+              }
+          })();
+      };
       const onAlarmVisibility = () => {
           if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
               void checkChatAlarms();
               void rescheduleNativeChatAlarms();
               void checkPeriodReminders();
               void rescheduleNativePeriodReminders();
+              void checkHealthReminders();
+              void rescheduleNativeHealthReminders();
           }
       };
       window.addEventListener('chat-alarms-updated', onChatAlarmsUpdated);
       window.addEventListener('period-reminders-updated', onPeriodRemindersUpdated);
+      window.addEventListener(HEALTH_REMINDERS_UPDATED_EVENT, onHealthRemindersUpdated);
+      window.addEventListener(HEALTH_SUMMARY_REQUEST_EVENT, onHealthSummaryRequest);
       document.addEventListener('visibilitychange', onAlarmVisibility);
       void checkChatAlarms();
       void rescheduleNativeChatAlarms();
       void checkPeriodReminders();
       void rescheduleNativePeriodReminders();
+      void checkHealthReminders();
+      void rescheduleNativeHealthReminders();
 
       // ─── 外卖「角色收到货」反应 watcher ───
       // 给角色点的外卖到点（now>=etaAt）后：自动签收 + 让角色像真人收到外卖那样在聊天里反应。
@@ -2922,8 +3129,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           VRScheduler.onTrigger(() => {});
           clearInterval(chatAlarmTimer);
           clearInterval(periodReminderTimer);
+          clearInterval(healthReminderTimer);
           window.removeEventListener('chat-alarms-updated', onChatAlarmsUpdated);
           window.removeEventListener('period-reminders-updated', onPeriodRemindersUpdated);
+          window.removeEventListener(HEALTH_REMINDERS_UPDATED_EVENT, onHealthRemindersUpdated);
+          window.removeEventListener(HEALTH_SUMMARY_REQUEST_EVENT, onHealthSummaryRequest);
           document.removeEventListener('visibilitychange', onAlarmVisibility);
           clearInterval(takeoutReactTimer);
       };

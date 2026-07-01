@@ -22,6 +22,7 @@ import {
 import { DB } from '../db';
 import { buildChatRequestPayload } from '../chatRequestPayload';
 import { safeFetchJson } from '../safeApi';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { processNewMessages } from '../memoryPalace/pipeline';
 import { resolveMemoryPalaceAuxConfigsFromStorage } from '../memoryPalace/auxConfig';
 import { loadMusicCfgStandalone } from '../../context/MusicContext';
@@ -304,7 +305,12 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                     messages: [{ role: 'system', content: systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: roomTurn }],
                     temperature: 0.9, stream: false,
                 }),
-            }, 2, 0, { appName: '页外', charId: char.id, charName: char.name, purpose: '自由活动' });
+            }, 2, 0, makeApiUsageMeta('vrWorld.session', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: 'custom',
+                apiBinding: '页外独立 API',
+            }));
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: true, ms: Date.now() - callStart });
         } catch (e: any) {
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: false, ms: Date.now() - callStart, error: (e?.message || String(e)).slice(0, 160) });

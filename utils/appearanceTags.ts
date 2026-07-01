@@ -9,6 +9,7 @@
 
 import { CharacterProfile } from '../types';
 import { safeFetchJson } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export interface AppearanceApiConfig {
     baseUrl: string;
@@ -94,7 +95,7 @@ ${source || '（资料不多，凭名字与常识给出合理且中性的外貌�
                     stream: false,
                 }),
             },
-            2, 0, { appName: '登场人物', charId: char.id, charName: char.name, purpose: '外貌Tag' },
+            2, 0, makeApiUsageMeta('character.appearanceTags', { apiRole: 'aux', charId: char.id, charName: char.name }),
         );
         const content = normalizeTags(data.choices?.[0]?.message?.content || '');
         return content.length >= 3 ? content : null;

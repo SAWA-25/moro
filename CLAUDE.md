@@ -6,7 +6,7 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
-> 说明书同步约定：新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，必须同步更新 `apps/ManualApp.tsx` 里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`。内容写给普通用户看，讲清楚入口、用途、常用设置和注意事项；不要把开发维护步骤写进说明书 App。
+> 更新公告同步约定：任何代码、文案、配置、数据、测试、构建脚本或文档改动，都必须在 `apps/manual/manualData.ts` 的 `MANUAL_UPDATE_NOTICES` 追加/更新一条面向普通用户的更新公告；同一次改动可合并成一条公告，但不能漏记。公告只写用户能理解的变化、影响和注意事项，不写开发步骤、commit 号或内部实现细节。新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，还必须同步更新同文件里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`，讲清楚入口、用途、常用设置和注意事项。
 
 ## 文档地图
 

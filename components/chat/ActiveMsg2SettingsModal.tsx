@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Modal, { ScrapBtn } from './ScrapModal';
 import { APIConfig, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../../types';
 import { ActiveMsgClient, getDefaultActiveMsgFirstSendTime } from '../../utils/activeMsgClient';
+import LlmApiConfigFields from '../settings/LlmApiConfigFields';
 
 interface ActiveMsg2SettingsModalProps {
   isOpen: boolean;
@@ -296,9 +297,20 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
 
               {useSecondaryApi ? (
                 <div className="space-y-3 bg-slate-50 rounded-2xl p-3">
-                  <input value={secUrl} onChange={(event) => setSecUrl(event.target.value)} placeholder="API URL" className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200" />
-                  <input type="password" value={secKey} onChange={(event) => setSecKey(event.target.value)} placeholder="API Key" className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200" />
-                  <input value={secModel} onChange={(event) => setSecModel(event.target.value)} placeholder="Model" className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200" />
+                  <LlmApiConfigFields
+                    value={{ baseUrl: secUrl, apiKey: secKey, model: secModel }}
+                    onChange={next => {
+                      setSecUrl(next.baseUrl);
+                      setSecKey(next.apiKey);
+                      setSecModel(next.model);
+                    }}
+                    savePresetDefaultName={`${char.name} 主动消息 2.0 API`}
+                    modelFetchFeatureId="chat.activeMsg2Api.fetchModels"
+                    compact
+                    inputClassName="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 font-mono"
+                    buttonClassName="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 active:scale-95 transition-transform disabled:opacity-50"
+                    primaryButtonClassName="rounded-xl bg-[#d8a5b7] px-3 py-2 text-xs font-bold text-white active:scale-95 transition-transform disabled:opacity-50"
+                  />
                 </div>
               ) : null}
             </div>
