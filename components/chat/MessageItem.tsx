@@ -932,7 +932,7 @@ const MessageItem = React.memo(({
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const avatarSizePx = avatarSize === 'small' ? 28 : avatarSize === 'large' ? 48 : 36;
-    const shouldShowAvatar = isUser || avatarMode === 'every_message' || isLastInGroup;
+    const shouldShowAvatar = true;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 }); // Track touch start position
     // 左滑引用：swipeX 为气泡跟手左移量（负值），swipeActive 表示已锁定为水平滑动手势
@@ -961,7 +961,7 @@ const MessageItem = React.memo(({
     };
 
     const styleConfig = isUser ? activeTheme.user : activeTheme.ai;
-    // 极简「此刻」皮肤：纯浅灰胶囊气泡、无描边无阴影；昵称标签 + 时间戳移到该组消息上方；隐藏对方逐条头像
+    // 极简「此刻」皮肤：纯浅灰胶囊气泡、无描边无阴影；昵称标签 + 时间戳移到该组消息上方。
     const isPlainBubble = bubbleVariant === 'plain';
     const [showVoiceText, setShowVoiceText] = useState(false);
 
@@ -1485,8 +1485,8 @@ const MessageItem = React.memo(({
                     );
                 })()}
 
-                {/* Avatar - Absolute Positioned（极简皮肤：对方不逐条显示头像，改用上方昵称标签） */}
-                {!isUser && !isPlainBubble && (
+                {/* Avatar - Absolute Positioned */}
+                {!isUser && (
                     <div
                         className={`absolute bottom-[1.25rem] ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'z-10 cursor-pointer' : 'z-0'} ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}
                         onClick={handleAvatarClick}
@@ -1513,24 +1513,13 @@ const MessageItem = React.memo(({
                     Added explicit margins to clear absolute avatars.
                 */}
                 <div
-                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? (isPlainBubble ? 'ml-1' : 'ml-12') : 'mr-12'}`}
+                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? 'ml-12' : 'mr-12'}`}
                     style={canSwipeReply ? { transform: `translateX(${swipeX}px)`, transition: swipeActive.current ? 'none' : 'transform 0.22s cubic-bezier(0.22,1,0.36,1)' } : undefined}
                     {...interactionProps}
                 >
-                    {/* 极简皮肤：该组消息上方的「头像 + 昵称标签 + 时间戳」（对方）/「时间戳」（我方）。
-                        对方头像可点：进角色资料 / 心声（onAvatarClick），双击戳一戳（onAvatarPoke）。
-                        身份（头像+昵称）只要是该组首条就显示，不受「隐藏时间戳」影响。 */}
-                    {isPlainBubble && isFirstInGroup && (!isUser || showTimestamp !== 'never') && (
+                    {/* 极简皮肤：每条对方消息都带昵称，和逐条头像保持一致；我方时间仍按组首条显示。 */}
+                    {isPlainBubble && ((!isUser) || (isUser && isFirstInGroup && showTimestamp !== 'never')) && (
                         <div className="flex items-center gap-1.5 mb-1 px-0.5">
-                            {!isUser && (
-                                <img
-                                    src={charAvatar}
-                                    onClick={handleAvatarClick}
-                                    className={`moro-msg-avatar w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-black/5 ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
-                                    alt=""
-                                    draggable={false}
-                                />
-                            )}
                             {!isUser && <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{charName}</span>}
                             {showTimestamp !== 'never' && <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>}
                         </div>

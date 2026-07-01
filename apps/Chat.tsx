@@ -568,6 +568,13 @@ const privateChatPreview = (text: string, max = 44) => {
     return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
 };
 
+const isChatTimelineMessage = (m: Message): boolean => {
+    return !m.groupId
+        && m.metadata?.source !== 'date'
+        && m.metadata?.source !== 'call'
+        && !m.metadata?.proactiveHint;
+};
+
 const asMessageType = (raw: any): MessageType => {
     return KNOWN_MESSAGE_TYPES.has(raw) ? raw as MessageType : 'text';
 };
@@ -1862,21 +1869,19 @@ ${parallelReplyPromptBody({
         if (!activeCharacterId) return;
 
         const charIdAtStart = activeCharacterId;
-        // 只用倒序游标取「最近 N 条」（含少量缓冲，抵消 date/call 消息被过滤后条数变少），
+        // 只用倒序游标取「最近 N 条」聊天界面真实可显示的气泡。
         // 不再 getAll 全量反序列化 —— 图片多/消息多的账号原本要把整段历史（含内联图片）一次性读进
-        // 内存才显示 30 条，首次打开会卡好几秒。totalCount 走 index.count，不反序列化、极廉价。
-        const fetchLimit = requestedVisibleCount >= 100000 ? requestedVisibleCount : requestedVisibleCount + 16;
+        // 内存才显示 30 条，首次打开会卡好几秒。内部提示 / 日程 / 通话记录不参与界面计数。
+        const fetchLimit = requestedVisibleCount;
         const applyResult = (recent: Message[], totalCount: number) => {
             // 不在视觉层过滤 hideBeforeMessageId —— 用户能往上滚回看，
             // 上下文截断仅作用于发给 LLM 的 prompt（在 chatPrompts.ts 里处理）。
-            const chatScopeMsgs = recent
-                .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call');
             setTotalMsgCount(totalCount);
-            setMessages(chatScopeMsgs.slice(-requestedVisibleCount));
+            setMessages(recent.slice(-requestedVisibleCount));
             setHistoryLoaded(true);
         };
         try {
-            const { messages: recent, totalCount } = await DB.getRecentMessagesWithCount(activeCharacterId, fetchLimit);
+            const { messages: recent, totalCount } = await DB.getRecentMessagesWithCount(activeCharacterId, fetchLimit, isChatTimelineMessage);
             // Guard against stale async results: if the user switched characters
             // while the DB query was in flight, discard this result.
             if (activeCharIdRef.current !== charIdAtStart) return;
@@ -1887,7 +1892,7 @@ ${parallelReplyPromptBody({
             await new Promise(r => setTimeout(r, 200));
             if (activeCharIdRef.current !== charIdAtStart) return;
             try {
-                const { messages: recent, totalCount } = await DB.getRecentMessagesWithCount(activeCharacterId, fetchLimit);
+                const { messages: recent, totalCount } = await DB.getRecentMessagesWithCount(activeCharacterId, fetchLimit, isChatTimelineMessage);
                 if (activeCharIdRef.current !== charIdAtStart) return;
                 applyResult(recent, totalCount);
             } catch { /* give up silently */ }
@@ -5226,9 +5231,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             });
             return out === m.content ? m : { ...m, content: out };
         });
-        const base = messages
-            .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
-            .filter(m => !m.metadata?.proactiveHint);
+        const base = messages.filter(isChatTimelineMessage);
         if (windowedFocusMsgId !== null) {
             const idx = base.findIndex(m => m.id === windowedFocusMsgId);
             if (idx >= 0) {
@@ -6842,7 +6845,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             visibleCountRef.current = nextVisibleCount;
                             setVisibleCount(nextVisibleCount);
                             await reloadMessages(nextVisibleCount);
-                        }} className="px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">加载历史消息 ({collapsedCount})</button>
+                        }} className="px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">加载历史消息</button>
                     </div>
                 )}
 

@@ -257,10 +257,6 @@ const choices = {
         { value: 'medium', label: '中' },
         { value: 'large', label: '大' },
     ],
-    avatarMode: [
-        { value: 'grouped', label: '对方连续', desc: '对方一串消息共用头像，我方每条保留' },
-        { value: 'every_message', label: '双方每条', desc: '双方每条消息都带头像' },
-    ],
     spacing: [
         { value: 'compact', label: '紧凑' },
         { value: 'default', label: '默认' },
@@ -429,7 +425,6 @@ const InputAnimationSection: React.FC<{ theme: OSTheme; updateTheme: (u: Partial
 export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenBubbleWorkshop, chromeCssStudio }) => {
     const avatarShape = theme.chatAvatarShape || defaults.chatAvatarShape;
     const avatarSize = theme.chatAvatarSize || defaults.chatAvatarSize;
-    const avatarMode = theme.chatAvatarMode || defaults.chatAvatarMode;
     const bubbleStyle = theme.chatBubbleStyle || defaults.chatBubbleStyle;
     const messageSpacing = theme.chatMessageSpacing || defaults.chatMessageSpacing;
     const showTimestamp = theme.chatShowTimestamp || defaults.chatShowTimestamp;
@@ -542,7 +537,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                         {previewMessages.map((message, index) => {
                             const isUser = message.role === 'user';
                             const nextRole = index < previewMessages.length - 1 ? previewMessages[index + 1].role : null;
-                            const shouldShowAvatar = isUser || avatarMode === 'every_message' || nextRole !== message.role;
+                            const shouldShowAvatar = true;
                             const avatarTone = isUser ? 'bg-primary/25' : 'bg-pink-200';
                             return (
                                 <div key={message.id} className={`flex items-end gap-2 ${isUser ? 'justify-end' : ''}`}>
@@ -615,9 +610,6 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 </div>
                 <div className="mt-4">
                     <ChoiceGroup title="头像尺寸" items={choices.avatarSize} value={avatarSize} onPick={(value) => updateTheme({ chatAvatarSize: value as OSTheme['chatAvatarSize'] })} />
-                </div>
-                <div className="mt-4">
-                    <ChoiceGroup title="头像出现频率" items={choices.avatarMode} value={avatarMode} onPick={(value) => updateTheme({ chatAvatarMode: value as OSTheme['chatAvatarMode'] })} />
                 </div>
                 <div className="mt-4">
                     <ChoiceGroup title="消息密度" items={choices.spacing} value={messageSpacing} onPick={(value) => updateTheme({ chatMessageSpacing: value as OSTheme['chatMessageSpacing'] })} />

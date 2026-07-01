@@ -102,6 +102,35 @@ describe('DB.deleteDB', () => {
   });
 });
 
+describe('chat timeline recent messages', () => {
+  it('can count and load only messages visible in the private chat timeline', async () => {
+    await DB.deleteDB();
+    const charId = 'timeline-char';
+    const visible = (m: any) =>
+      !m.groupId
+      && m.metadata?.source !== 'date'
+      && m.metadata?.source !== 'call'
+      && !m.metadata?.proactiveHint;
+
+    await DB.saveMessage({ charId, role: 'user', type: 'text', content: 'old 1', timestamp: 1 });
+    await DB.saveMessage({ charId, role: 'system', type: 'text', content: 'schedule', timestamp: 2, metadata: { source: 'date' } });
+    await DB.saveMessage({ charId, role: 'assistant', type: 'text', content: 'old 2', timestamp: 3 });
+    await DB.saveMessage({ charId, role: 'user', type: 'text', content: 'hidden hint', timestamp: 4, metadata: { proactiveHint: true, hidden: true } as any });
+    await DB.saveMessage({ charId, role: 'assistant', type: 'text', content: 'old 3', timestamp: 5 });
+    await DB.saveMessage({ charId, role: 'system', type: 'text', content: 'call', timestamp: 6, metadata: { source: 'call' } });
+    await DB.saveMessage({ charId, role: 'user', type: 'text', content: 'new 4', timestamp: 7 });
+
+    const result = await DB.getRecentMessagesWithCount(charId, 3, visible);
+
+    expect(result.totalCount).toBeGreaterThan(result.messages.length);
+    expect(result.messages.map(m => m.content)).toEqual(['old 2', 'old 3', 'new 4']);
+
+    const fullResult = await DB.getRecentMessagesWithCount(charId, 30, visible);
+    expect(fullResult.totalCount).toBe(4);
+    expect(fullResult.messages.map(m => m.content)).toEqual(['old 1', 'old 2', 'old 3', 'new 4']);
+  });
+});
+
 // blocked-then-unblocked 连接泄漏: onblocked 先 reject, 但底层 open request 还活着 ——
 // 占用方关闭后 onsuccess 仍会触发。修复前那条迟到的连接没人持有也没缓存, 开着会 block
 // 后续升级/删库; 修复后 settled 守卫让它被 close。这里复现整条链路, 用「事后 deleteDatabase

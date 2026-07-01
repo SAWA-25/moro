@@ -1146,12 +1146,48 @@ export const DB = {
   },
 
   // Same as getRecentMessagesByCharId but also returns the total count (for UI display)
-  getRecentMessagesWithCount: async (charId: string, limit: number): Promise<{ messages: Message[], totalCount: number }> => {
+  getRecentMessagesWithCount: async (
+    charId: string,
+    limit: number,
+    filter?: (message: Message) => boolean,
+  ): Promise<{ messages: Message[], totalCount: number }> => {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_MESSAGES, 'readonly');
       const store = transaction.objectStore(STORE_MESSAGES);
       const index = store.index('charId');
+      if (filter) {
+          const countReq = index.count(IDBKeyRange.only(charId));
+          countReq.onsuccess = () => {
+              const rawCount = countReq.result;
+              if (limit <= 0) {
+                  resolve({ messages: [], totalCount: rawCount });
+                  return;
+              }
+              const collected: Message[] = [];
+              const target = limit + 1;
+              const cursorReq = index.openCursor(IDBKeyRange.only(charId), 'prev');
+              cursorReq.onsuccess = () => {
+                  const cursor = cursorReq.result;
+                  if (!cursor) {
+                      resolve({ messages: collected.slice(0, limit).reverse(), totalCount: collected.length });
+                      return;
+                  }
+                  const m = cursor.value as Message;
+                  if (!m.groupId && filter(m)) {
+                      collected.push(m);
+                      if (collected.length >= target) {
+                          resolve({ messages: collected.slice(0, limit).reverse(), totalCount: rawCount });
+                          return;
+                      }
+                  }
+                  cursor.continue();
+              };
+              cursorReq.onerror = () => reject(cursorReq.error);
+          };
+          countReq.onerror = () => reject(countReq.error);
+          return;
+      }
       const countReq = index.count(IDBKeyRange.only(charId));
       countReq.onsuccess = () => {
           const totalCount = countReq.result;

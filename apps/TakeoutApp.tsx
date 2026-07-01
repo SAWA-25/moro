@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     MagnifyingGlass, Star, Minus, Plus, Receipt, MapPin, ArrowClockwise, CheckCircle, Bicycle,
     Warning, Sparkle, ShieldWarning, SealCheck, HandCoins, Coins, PushPin, Shuffle, CookingPot,
@@ -13,7 +13,7 @@ import {
     generateStores, generateStoresAI, liveTakeoutStatus, STATUS_LABEL, etaText, newRider, PACK_FEE,
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
-    consumeTakeoutIntent, notifyTakeoutUpdated,
+    consumeTakeoutIntent, notifyTakeoutUpdated, TAKEOUT_UPDATED_EVENT,
     generateStoreReviews, generateStoreReviewsAI, reviewQuickTags, generateReviewReplies,
     getPinnedStores, togglePinnedStore, type StoreNpcReview,
     sortStores, filterStores, storePromoDiscount, parseStorePromo, bestRedpacket, TAKEOUT_REDPACKETS,
@@ -242,8 +242,22 @@ const TakeoutApp: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeStore?.id]);
 
-    const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
-    useEffect(() => { void reloadOrders(); }, []);
+    const reloadOrders = useCallback(async () => {
+        setOrders(await DB.getTakeoutOrders().catch(() => []));
+    }, []);
+    useEffect(() => { void reloadOrders(); }, [reloadOrders]);
+    useEffect(() => {
+        const onUpdated = () => void reloadOrders();
+        window.addEventListener(TAKEOUT_UPDATED_EVENT, onUpdated);
+        const timer = window.setInterval(onUpdated, 10000);
+        return () => {
+            window.removeEventListener(TAKEOUT_UPDATED_EVENT, onUpdated);
+            window.clearInterval(timer);
+        };
+    }, [reloadOrders]);
+    useEffect(() => {
+        if (view === 'orders' || view === 'detail') void reloadOrders();
+    }, [view, reloadOrders]);
     useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, []);
     useEffect(() => {
         const intent = consumeTakeoutIntent();
