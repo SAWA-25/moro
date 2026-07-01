@@ -59,16 +59,28 @@ interface ApiConfig {
 }
 
 /**
- * 日程 / 情绪 buff 总开关判定。
+ * 日程总开关判定。
  * - 显式为 true / false 时直接使用。
  * - undefined 时走向后兼容：老用户若已选了 scheduleStyle，视为开启；否则默认关闭。
- * 任何副 API 调用、情绪评估、日程注入之前都应先过此闸门。
+ * 任何日程生成 / 协调 / 注入之前都应先过此闸门。
  */
 export function isScheduleFeatureOn(char: Pick<CharacterProfile, 'scheduleFeatureEnabled' | 'scheduleStyle'> | null | undefined): boolean {
     if (!char) return false;
     if (char.scheduleFeatureEnabled === true) return true;
     if (char.scheduleFeatureEnabled === false) return false;
     return !!char.scheduleStyle;
+}
+
+/**
+ * 心情 buff 开关判定。
+ * 作息是前置条件：旧版「作息与心情」关闭时不会突然多跑情绪分析。
+ * emotionConfig.enabled 则作为新增的独立 buff 开关；undefined 按旧行为视为开启。
+ */
+export function isEmotionBuffFeatureOn(
+    char: Pick<CharacterProfile, 'scheduleFeatureEnabled' | 'scheduleStyle' | 'emotionConfig'> | null | undefined
+): boolean {
+    if (!char || !isScheduleFeatureOn(char)) return false;
+    return char.emotionConfig?.enabled !== false;
 }
 
 /**

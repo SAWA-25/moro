@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { APIConfig, ApiPreset, CharacterBuff, CharacterProfile } from '../../types';
-import { isScheduleFeatureOn } from '../../utils/scheduleGenerator';
+import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
 import LlmApiConfigFields from '../settings/LlmApiConfigFields';
 
 interface EmotionSettingsPanelProps {
@@ -41,14 +41,12 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
 
     const handleSave = () => {
         const api = url ? { baseUrl: url, apiKey: key, model } : undefined;
-        // 与日程强制同步：日程/情绪总开关开启时情绪必跑。
-        // 注意 scheduleFeatureEnabled=true 时即使还没选 scheduleStyle，也应保持情绪开启。
-        onSave({ enabled: isScheduleFeatureOn(char), api });
+        onSave({ enabled: char.emotionConfig?.enabled !== false, api });
         setDirty(false);
     };
 
     const buffs: CharacterBuff[] = char.activeBuffs || [];
-    const scheduleOn = isScheduleFeatureOn(char);
+    const buffOn = isEmotionBuffFeatureOn(char);
 
     return (
         <div className="space-y-4 pt-4 border-t border-[#eed6df]">
@@ -56,7 +54,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                 <div className="text-xs font-bold text-[#5a3140] mb-1">情绪 / 意识流 API</div>
                 <div className="text-[11px] text-[#8b6d79] leading-relaxed space-y-1">
                     <p>
-                        原版情绪 buff 就在这里。与日程<b>强制同步</b>：日程开 → 自动启用；日程关 → 一起停。
+                        原版情绪 buff 就在这里。上方「心情 buff」开关决定是否分析、注入和显示。
                     </p>
                     <p className="text-[#8b5b6b] bg-[#fff4f7] border border-[#eed6df] rounded-lg px-2 py-1.5">
                         下方不填 = 自动用主 API。想细腻点就填个 <b>Claude 系列</b>模型。
@@ -64,9 +62,9 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                 </div>
             </div>
 
-            {!scheduleOn && (
+            {!buffOn && (
                 <div className="text-[11px] text-[#a892a3] bg-[#fffdfa] border border-[#eed6df] rounded-lg px-3 py-2">
-                    尚未选择日程风格。选择「生活系」或「意识系」后，情绪/意识流会自动启用。
+                    心情 buff 已关闭。重新打开后，之后的新聊天才会继续更新状态。
                 </div>
             )}
 
@@ -115,7 +113,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                         ))}
                     </div>
                 </div>
-            ) : scheduleOn ? (
+            ) : buffOn ? (
                 <div className="text-xs text-slate-400 text-center py-2">
                     暂无情绪状态 — 发几条消息后会自动生成
                 </div>

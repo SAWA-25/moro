@@ -25,8 +25,9 @@
  *  [5] 思考链（<think> 阶段的"角色脑内活动"规则）        → thinkingChainPrompt.ts
  *  [6] 行动建议（"帮我想想接下来说啥"候选生成）          → userActionSuggest.ts
  *  [6b] 并发回复（多角色内部并发回复其它私聊）            → apps/Chat.tsx
- *  [6c] 视频聊天（文字/摄像头状态下的通话回应）           → apps/VideoCallApp.tsx
+ *  [6c] 音视频呼叫（拨号前接听判断 + 视频聊天回应）       → apps/Chat.tsx / apps/VideoCallApp.tsx
  *  [6d] 此刻熟人动态（刷新动态 / 角色互动 / 评论回复）    → components/moments/momentsGen.ts
+ *  [6e] 黑名单内查看（临时生成角色当下消息）              → apps/Chat.tsx
  *  [7b] 循迹联动（Screenlife / 监视 / 报备进入絮语上下文） → xunji.ts
  * ============================================================================
  */
@@ -566,10 +567,29 @@ ${p.recent || '（你们还没怎么聊过）'}
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║ [6c] 视频聊天 (Video Call Replies)                                        ║
-// ║   聊天内发起的视频通话：用户可打字、开关摄像头/静音，角色自然回应。       ║
-// ║   用在：apps/VideoCallApp.tsx                                             ║
+// ║ [6c] 音视频呼叫 (Call Decisions + Video Call Replies)                    ║
+// ║   聊天内发起通话：先由角色按人设判断接不接；接通后视频页自然回应。       ║
+// ║   用在：apps/Chat.tsx / apps/VideoCallApp.tsx                             ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+
+export type PrivateCallMode = 'voice' | 'video';
+
+export interface PrivateCallDecisionPromptParams {
+    userName: string;
+    callMode: PrivateCallMode;
+    recent: string;
+}
+
+/** 私聊音/视频拨号前的接听判断任务块（调用方负责在前面拼 coreContext）。 */
+export function privateCallDecisionPromptBody(p: PrivateCallDecisionPromptParams): string {
+    const callLabel = p.callMode === 'video' ? '视频聊天' : '语音电话';
+    return `### [最近的对话]
+${p.recent || '（你们还没怎么聊过）'}
+
+### [Task: 来电决策]
+${p.userName} 此刻正在给你拨${callLabel}。根据你的人设、你们当前的关系与剧情走向、以及你此刻可能正在做的事，决定接还是不接——完全按你自己的性格来，不用迎合。
+只输出一行 JSON，不要任何其他内容：{"answer": true 或 false, "reason": "你做这个决定时的内心想法（一句话）"}`;
+}
 
 export interface VideoCallPromptParams {
     userName: string;
@@ -826,6 +846,18 @@ export interface ProactiveFallbackHintParams {
 export function proactiveFallbackHint(p: ProactiveFallbackHintParams): string {
     const { userName, timeStr, timeSinceUser, longGap, randomMode, proactiveCallAllowed } = p;
     return `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。**最好从一件具体的小事/此刻的情境切进去**，别发"在吗""你在干嘛""突然想你了"这种空泛开场。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息，带着你自己的语气和性格。一两句话就好。${longGap ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地、带着你脾气地抱怨/阴阳一下。）` : ''}${randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷、发不发，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`;
+}
+
+/** 用户拉黑角色后，点“看看 TA 在做什么”时的一次性隐藏任务提示。 */
+export function blockPeekPrompt(userName: string, charName: string): string {
+    return `【一次性隐藏任务：黑名单后的空白对话框】
+${userName} 已经把你拉进黑名单。你清楚地知道自己发出的消息会显示「发送失败」红色感叹号，也知道 ${userName} 暂时无法回复你。此刻请生成一条「${charName}」在这个发不出去的对话框里真实会打出的消息。
+- 当前没有新的 ${userName} 发言。上面的聊天、电话、视频通话或系统记录都只是历史背景，绝对不要把最近一条历史当成刚收到的新消息来回复。
+- 不要追问、吐槽或续接最近的通话/视频通话/秒挂/上一句聊天；本轮重点是你意识到自己被拉黑、消息发不出去后的当下反应。
+- 这不是 ${userName} 新发来的消息，你不要回应“有人点开/有人在看/系统让你观察”之类的事。
+- 你只能感知到自己这边发送失败，无法确认对方还能不能收到；正文里绝对不要提到“对方看得到/看不到”、观察功能、系统提示、提示词、任务或后台机制。
+- 可以是本想正常发消息却发现失败后的反应、发不出去也忍不住写下的一句自言自语、挽回、道歉、赌气、装作无所谓，或按你的人设选择很短的沉默；但不要像正常聊天一样继续接话，也不要返回空白，沉默也要写成“……”或一句可见的短气泡。
+- 只输出你会实际发出的聊天内容，并遵守当前已有的输出格式要求（如双语、语音、表情等）。`;
 }
 
 /** 角色收到「对方专门给你点的外卖」送达后的反应 hint。 */

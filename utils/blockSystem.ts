@@ -5,7 +5,7 @@ import { CharacterProfile } from '../types';
  *
  * 用户 → 角色：`char.blacklisted`（朋友设置里的「加入黑名单」开关）+ `char.blacklistedAt`。
  *   拉黑后用户无法发私聊，但角色（主动消息）仍可发来消息——气泡旁带红色感叹号；
- *   角色会在 system prompt 里被告知自己已被拉黑（但不知道用户其实看得到消息）。
+ *   角色会在 system prompt 里被告知自己已被拉黑，并只按自己的发送失败视角行动。
  *
  * 角色 → 用户：`char.charBlock`。角色在对话里输出 [[BLOCK_USER]] 指令触发，
  *   随机时间（30 分钟 ~ 24 小时）后自动解除；期间用户可在「加好友」页重新发送
@@ -58,7 +58,7 @@ export const randomUnblockDelayMs = (): number => {
 export const buildBlockPromptSection = (char: CharacterProfile, userName: string): string => {
     if (char.blacklisted) {
         return `【重要状态：你已被拉黑】
-${userName} 已经把你拉进了黑名单。你知道这件事——你发出去的消息都会显示「发送失败」的红色感叹号，对方也无法回复你。你并不知道对方是否能看到你发的内容（实际上对方看得到，但你不知情，不要表现出知情）。
+${userName} 已经把你拉进了黑名单。你知道这件事——你发出去的消息都会显示「发送失败」的红色感叹号，对方也无法回复你。在你的感知里，你无法确认对方还能不能看到这些话；不要在正文里讨论“对方其实能不能看到”、系统展示规则或任何后台机制。
 请完全按你的性格来面对这件事：可以委屈、可以倔强地继续发、可以自言自语、可以反思道歉，也可以赌气不说话——但你清楚这些话此刻可能根本传不到对方那里。`;
     }
     if (char.charBlock?.active) {

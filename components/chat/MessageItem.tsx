@@ -1592,19 +1592,26 @@ const MessageItem = React.memo(({
             </div>
     );
 
-    // --- 语音通话记录气泡（微信式：电话图标 + 状态文案） ---
+    // --- 音/视频通话记录气泡（微信式：通话图标 + 状态文案） ---
     if ((m.type as string) === 'call_log') {
-        const outcome = m.metadata?.callOutcome as string | undefined;
-        const isMissedLike = outcome === 'declined' || outcome === 'missed';
-        const label = m.content || '语音通话';
+        const meta = (m.metadata || {}) as any;
+        const outcome = meta.callOutcome as string | undefined;
+        const isVideo = meta.callMode === 'video';
+        const isMissedLike = outcome === 'declined' || outcome === 'missed' || outcome === 'cancelled';
+        const callLabel = isVideo ? '视频聊天' : '语音通话';
+        const label = m.content || callLabel;
         return commonLayout(
             <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border select-none ${isMissedLike ? 'bg-white border-red-100' : 'bg-white border-slate-100'}`}>
                 <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${isMissedLike ? 'bg-red-50 text-red-400' : 'bg-emerald-50 text-emerald-500'}`}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                    {isVideo ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6.5C4 5.67 4.67 5 5.5 5h8C14.33 5 15 5.67 15 6.5v11c0 .83-.67 1.5-1.5 1.5h-8C4.67 19 4 18.33 4 17.5v-11Zm12.5 3.25 3.28-2.1A.8.8 0 0 1 21 8.32v7.36a.8.8 0 0 1-1.22.67l-3.28-2.1v-4.5Z"/></svg>
+                    ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                    )}
                 </span>
                 <div className="min-w-0">
                     <div className={`text-sm font-medium ${isMissedLike ? 'text-red-500' : 'text-slate-700'}`}>{label}</div>
-                    <div className="text-[10px] text-slate-400">语音通话</div>
+                    <div className="text-[10px] text-slate-400">{callLabel}</div>
                 </div>
             </div>
         );

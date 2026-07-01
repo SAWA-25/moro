@@ -16,7 +16,7 @@ import { Icons, INSTALLED_APPS } from '../constants';
 import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
 import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
-import { queueManualDeepLink, useManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
+import { queueManualDeepLink, scrollToManualAnchor, useManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
 import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import {
   CATEGORY_ORDER,
@@ -96,6 +96,95 @@ const visibleSectionsOf = (entry: ManualEntry, nativeRuntime: boolean) =>
       settings: section.settings.filter(setting => nativeRuntime || !setting.nativeOnly),
     }))
     .filter(section => section.settings.length > 0);
+
+type ManualSearchHit = {
+  anchorId: string;
+  label: string;
+  context: string;
+};
+
+const manualGuideAnchor = (...parts: Array<string | number>) =>
+  ['manual-guide', ...parts]
+    .map(part => String(part).trim().replace(/\s+/g, '-'))
+    .join('-');
+
+const entryAnchor = (entry: ManualEntry) => manualGuideAnchor('entry', entry.app);
+const destinationAnchor = (entry: ManualEntry) => manualGuideAnchor('destination', entry.app);
+const beginnerAnchor = (entry: ManualEntry) => manualGuideAnchor('beginner', entry.app);
+const featureAnchor = (entry: ManualEntry, index: number) => manualGuideAnchor('feature', entry.app, index);
+const sectionAnchor = (entry: ManualEntry, sectionId: string) => manualGuideAnchor('section', entry.app, sectionId);
+const settingAnchor = (entry: ManualEntry, settingId: string) => manualGuideAnchor('setting', entry.app, settingId);
+const questionAnchor = (entry: ManualEntry, index: number) => manualGuideAnchor('question', entry.app, index);
+const tipsAnchor = (entry: ManualEntry) => manualGuideAnchor('tips', entry.app);
+
+const textMatches = (normalizedQuery: string, parts: Array<string | undefined>) =>
+  normalize(parts.filter(Boolean).join(' ')).includes(normalizedQuery);
+
+const getEntrySearchHit = (entry: ManualEntry, query: string, nativeRuntime: boolean): ManualSearchHit | null => {
+  const q = normalize(query);
+  if (!q) return null;
+
+  if (textMatches(q, [entry.app, entry.en])) {
+    return { anchorId: entryAnchor(entry), label: `${entry.app} 总览`, context: 'App 条目' };
+  }
+
+  const visibleSections = visibleSectionsOf(entry, nativeRuntime);
+  for (const section of visibleSections) {
+    if (textMatches(q, [section.title, section.description || ''])) {
+      return { anchorId: sectionAnchor(entry, section.id), label: section.title, context: '设置分组' };
+    }
+    for (const setting of section.settings) {
+      if (textMatches(q, [setting.title])) {
+        return { anchorId: settingAnchor(entry, setting.id), label: setting.title, context: section.title };
+      }
+    }
+  }
+
+  for (const [index, item] of (entry.commonQuestions || []).entries()) {
+    if (textMatches(q, [item.title])) {
+      return { anchorId: questionAnchor(entry, index), label: item.title, context: '常见困惑' };
+    }
+  }
+
+  for (const [index, feature] of entry.features.entries()) {
+    if (textMatches(q, [feature])) {
+      return { anchorId: featureAnchor(entry, index), label: `第 ${index + 1} 条功能`, context: '功能说明' };
+    }
+  }
+
+  if (textMatches(q, entry.beginnerSteps || [])) {
+    return { anchorId: beginnerAnchor(entry), label: '新手先看', context: '入门步骤' };
+  }
+
+  const destination = MANUAL_DESTINATIONS[entry.app];
+  if (destination && textMatches(q, [...destination.path, ...destination.details, destination.jumpText])) {
+    return { anchorId: destinationAnchor(entry), label: '进入路径', context: '入口说明' };
+  }
+
+  for (const section of visibleSections) {
+    for (const setting of section.settings) {
+      if (textMatches(q, [settingSearchText(setting)])) {
+        return { anchorId: settingAnchor(entry, setting.id), label: setting.title, context: section.title };
+      }
+    }
+  }
+
+  for (const [index, item] of (entry.commonQuestions || []).entries()) {
+    if (textMatches(q, [item.answer])) {
+      return { anchorId: questionAnchor(entry, index), label: item.title, context: '常见困惑' };
+    }
+  }
+
+  if (textMatches(q, entry.tips || [])) {
+    return { anchorId: tipsAnchor(entry), label: '使用提示', context: '提示' };
+  }
+
+  if (textMatches(q, [entry.summary, CATEGORY_META[entry.category].label])) {
+    return { anchorId: entryAnchor(entry), label: `${entry.app} 总览`, context: 'App 条目' };
+  }
+
+  return { anchorId: entryAnchor(entry), label: `${entry.app} 总览`, context: '相关条目' };
+};
 
 const SettingPath: React.FC<{ setting: ManualSetting }> = ({ setting }) => {
   const path = setting.path || [];
@@ -186,6 +275,7 @@ const ManualApp: React.FC = () => {
   const [query, setQuery] = useState('');
   const [activeApp, setActiveApp] = useState(MANUAL_ENTRIES[0]?.app || '');
   const [page, setPage] = useState<'guide' | 'updates'>('guide');
+  const [manualSearchTarget, setManualSearchTarget] = useState<{ app: string; anchorId: string; nonce: number } | null>(null);
 
   useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
 
@@ -217,6 +307,19 @@ const ManualApp: React.FC = () => {
     return filteredEntries.find((entry) => entry.app === activeApp) || filteredEntries[0];
   }, [activeApp, filteredEntries]);
 
+  const searchHits = useMemo(() => {
+    const q = query.trim();
+    const hits = new Map<string, ManualSearchHit>();
+    if (!q) return hits;
+    visibleEntries.forEach((entry) => {
+      const hit = getEntrySearchHit(entry, q, nativeRuntime);
+      if (hit) hits.set(entry.app, hit);
+    });
+    return hits;
+  }, [nativeRuntime, query, visibleEntries]);
+
+  const activeSearchHit = activeEntry ? searchHits.get(activeEntry.app) || null : null;
+
   const activeDestination = activeEntry ? MANUAL_DESTINATIONS[activeEntry.app] : null;
   const activeAppConfig = activeDestination
     ? INSTALLED_APPS.find((app) => app.id === activeDestination.appId)
@@ -243,6 +346,30 @@ const ManualApp: React.FC = () => {
     queueManualDeepLink(target);
     openApp(target.appId);
   };
+
+  const selectEntry = (entry: ManualEntry) => {
+    setActiveApp(entry.app);
+    const hit = searchHits.get(entry.app);
+    if (query.trim() && hit) {
+      setManualSearchTarget({ app: entry.app, anchorId: hit.anchorId, nonce: Date.now() });
+    }
+  };
+
+  useEffect(() => {
+    if (page !== 'guide' || !manualSearchTarget || activeEntry?.app !== manualSearchTarget.app) return;
+    const timeout = window.setTimeout(() => {
+      scrollToManualAnchor(manualSearchTarget.anchorId);
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [activeEntry?.app, manualSearchTarget, page]);
+
+  useEffect(() => {
+    if (page !== 'guide' || !query.trim() || !activeSearchHit) return;
+    const timeout = window.setTimeout(() => {
+      scrollToManualAnchor(activeSearchHit.anchorId);
+    }, 260);
+    return () => window.clearTimeout(timeout);
+  }, [activeEntry?.app, activeSearchHit, page, query]);
 
   const openDestination = () => {
     if (!activeDestination) return;
@@ -395,10 +522,11 @@ const ManualApp: React.FC = () => {
             const meta = CATEGORY_META[entry.category];
             const selected = activeEntry?.app === entry.app;
             const settings = settingCountOf(entry, nativeRuntime);
+            const hit = searchHits.get(entry.app);
             return (
               <button
                 key={entry.app}
-                onClick={() => setActiveApp(entry.app)}
+                onClick={() => selectEntry(entry)}
                 className="w-full text-left rounded-[16px] border px-3 py-3 active:scale-[0.98] transition-transform"
                 style={{
                   background: selected ? '#23211d' : 'rgba(255,253,248,0.84)',
@@ -410,6 +538,17 @@ const ManualApp: React.FC = () => {
                 <div className="text-[13px] font-black leading-snug">{entry.app}</div>
                 <div className="label-mono text-[8px] mt-1 opacity-55 truncate">{entry.en}</div>
                 <div className="text-[9px] mt-2 opacity-70 truncate">{meta.label}{settings ? ` · ${settings} 项设置` : ''}</div>
+                {query.trim() && hit && (
+                  <div
+                    className="mt-2 rounded-[10px] px-2 py-1 text-[9px] leading-snug font-bold"
+                    style={{
+                      background: selected ? 'rgba(255,253,248,0.13)' : '#f7f1e6',
+                      color: selected ? 'rgba(255,253,248,0.78)' : '#7b705f',
+                    }}
+                  >
+                    命中：{hit.label}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -417,7 +556,10 @@ const ManualApp: React.FC = () => {
 
         <div className="min-h-0 overflow-y-auto no-scrollbar">
           {activeEntry && (
-            <article className="relative overflow-hidden rounded-[22px] bg-[#fffdf8] border border-black/10 shadow-[0_18px_42px_-30px_rgba(35,33,29,0.55)]">
+            <article
+              className="relative overflow-hidden rounded-[22px] bg-[#fffdf8] border border-black/10 shadow-[0_18px_42px_-30px_rgba(35,33,29,0.55)]"
+              data-manual-anchor={entryAnchor(activeEntry)}
+            >
               <div
                 aria-hidden
                 className="absolute inset-0 opacity-[0.18] pointer-events-none"
@@ -459,7 +601,10 @@ const ManualApp: React.FC = () => {
                 </p>
 
                 {activeDestination && (
-                  <div className="mt-4 rounded-[16px] bg-[#f7f1e6] border border-black/[0.06] px-3.5 py-3">
+                  <div
+                    className="mt-4 rounded-[16px] bg-[#f7f1e6] border border-black/[0.06] px-3.5 py-3"
+                    data-manual-anchor={destinationAnchor(activeEntry)}
+                  >
                     <div className="label-mono text-[9px] tracking-[0.22em] text-[#9a8c75]">进入路径</div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {activeDestination.path.map((step, index) => (
@@ -477,7 +622,10 @@ const ManualApp: React.FC = () => {
                 )}
 
                 {activeEntry.beginnerSteps && activeEntry.beginnerSteps.length > 0 && (
-                  <div className="mt-5 rounded-[16px] bg-[#23211d] text-[#fffdf8] px-3.5 py-3">
+                  <div
+                    className="mt-5 rounded-[16px] bg-[#23211d] text-[#fffdf8] px-3.5 py-3"
+                    data-manual-anchor={beginnerAnchor(activeEntry)}
+                  >
                     <div className="flex items-center gap-2 text-[11px] font-black">
                       <Sparkle size={14} weight="bold" />
                       新手先看
@@ -500,7 +648,11 @@ const ManualApp: React.FC = () => {
                   </div>
                   <div className="space-y-2.5">
                     {activeEntry.features.map((feature, index) => (
-                      <div key={feature} className="flex items-start gap-2.5 rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                      <div
+                        key={feature}
+                        className="flex items-start gap-2.5 rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5"
+                        data-manual-anchor={featureAnchor(activeEntry, index)}
+                      >
                         <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
                           {index + 1}
                         </span>
@@ -522,7 +674,11 @@ const ManualApp: React.FC = () => {
                     </div>
                     <div className="space-y-3">
                       {visibleSectionsOf(activeEntry, nativeRuntime).map(section => (
-                        <section key={section.id} className="rounded-[18px] bg-white/80 border border-black/[0.06] px-3 py-3">
+                        <section
+                          key={section.id}
+                          className="rounded-[18px] bg-white/80 border border-black/[0.06] px-3 py-3"
+                          data-manual-anchor={sectionAnchor(activeEntry, section.id)}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div>
                               <h3 className="text-[13px] font-black text-[#342f28]">{section.title}</h3>
@@ -532,7 +688,11 @@ const ManualApp: React.FC = () => {
                           </div>
                           <div className="mt-2.5 space-y-2.5">
                             {section.settings.map(setting => (
-                              <div key={setting.id} className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-3">
+                              <div
+                                key={setting.id}
+                                className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-3"
+                                data-manual-anchor={settingAnchor(activeEntry, setting.id)}
+                              >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
                                     <h4 className="text-[12.5px] font-black text-[#3d362e] leading-snug">{setting.title}</h4>
@@ -598,8 +758,12 @@ const ManualApp: React.FC = () => {
                       <span className="h-px flex-1 bg-black/10" />
                     </div>
                     <div className="space-y-2">
-                      {activeEntry.commonQuestions.map((item) => (
-                        <div key={item.title} className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                      {activeEntry.commonQuestions.map((item, index) => (
+                        <div
+                          key={item.title}
+                          className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5"
+                          data-manual-anchor={questionAnchor(activeEntry, index)}
+                        >
                           <div className="text-[12px] font-black text-[#3d362e]">{item.title}</div>
                           <div className="mt-1 text-[11.5px] leading-relaxed text-[#5c5143]">{item.answer}</div>
                         </div>
@@ -609,7 +773,10 @@ const ManualApp: React.FC = () => {
                 )}
 
                 {activeEntry.tips && activeEntry.tips.length > 0 && (
-                  <div className="mt-5 rounded-[16px] bg-[#23211d] text-[#fffdf8] px-3.5 py-3">
+                  <div
+                    className="mt-5 rounded-[16px] bg-[#23211d] text-[#fffdf8] px-3.5 py-3"
+                    data-manual-anchor={tipsAnchor(activeEntry)}
+                  >
                     <div className="flex items-center gap-2 text-[11px] font-black">
                       <Wrench size={14} weight="bold" />
                       使用提示

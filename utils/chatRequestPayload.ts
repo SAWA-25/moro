@@ -180,8 +180,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         realtimeConfig, innerState,
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap,
     } = input;
-    const contextHistoryMsgs = historyMsgs.filter(m => !m.metadata?.excludeFromContext);
-    const recentMsgsHint = (input.recentMsgsHint ?? contextHistoryMsgs).filter(m => !m.metadata?.excludeFromContext);
+    const contextHistoryMsgs = historyMsgs.filter(m => !m.metadata?.excludeFromContext && !m.metadata?.blockPeek);
+    const recentMsgsHint = (input.recentMsgsHint ?? contextHistoryMsgs).filter(m => !m.metadata?.excludeFromContext && !m.metadata?.blockPeek);
 
     if (isPromptBuildSkipped()) {
         const { apiMessages } = ChatPrompts.buildMessageHistory(contextHistoryMsgs, contextLimit, char, userProfile, emojis);

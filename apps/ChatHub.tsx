@@ -20,6 +20,7 @@ import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import GroupOfflineModeModal from '../components/chat/GroupOfflineModeModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
+import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, buildGroupRedPacketMetadata, isPasswordRedPacketPhraseAccepted } from '../utils/redPacket';
 import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
@@ -246,6 +247,10 @@ type ConvoListItem = {
     specialCareCount?: number;
     /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
     lifeStatus?: { activity: string; mood?: string };
+};
+type PendingUnblockAppeal = {
+    charId: string;
+    message: Message;
 };
 
 const isVisibleGroup = (group?: GroupProfile | null): group is GroupProfile => !!group && !group.dissolved;
@@ -1263,6 +1268,10 @@ const ChatHub: React.FC = () => {
     const [showRelNet, setShowRelNet] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
     const [verifyCharId, setVerifyCharId] = useState<string | null>(null);
+    const [pendingUnblockAppeals, setPendingUnblockAppeals] = useState<PendingUnblockAppeal[]>([]);
+    const [unblockAppealTarget, setUnblockAppealTarget] = useState<PendingUnblockAppeal | null>(null);
+    const [unblockAppealReply, setUnblockAppealReply] = useState('');
+    const [unblockAppealBusy, setUnblockAppealBusy] = useState<'accept' | 'reject' | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [editContent, setEditContent] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -1360,6 +1369,46 @@ const ChatHub: React.FC = () => {
     const visibleGroups = useMemo(() => groups.filter(group => (
         isVisibleGroup(group) && (!ambientSocialHideConverted || !isAmbientSocialGroupForUser(group))
     )), [groups, ambientSocialHideConverted, isAmbientSocialGroupForUser]);
+    const pendingUnblockAppealByCharId = useMemo(() => {
+        const map = new Map<string, PendingUnblockAppeal>();
+        pendingUnblockAppeals.forEach(item => map.set(item.charId, item));
+        return map;
+    }, [pendingUnblockAppeals]);
+    const newFriendCharacters = useMemo(() => (
+        visibleCharacters.filter(c => !!c.charBlock?.active || !!c.blacklisted || pendingUnblockAppealByCharId.has(c.id))
+    ), [visibleCharacters, pendingUnblockAppealByCharId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const candidates = visibleCharacters.filter(c => !!c.blacklisted && !!c.unblockAppeal?.awaiting);
+        if (candidates.length === 0) {
+            setPendingUnblockAppeals([]);
+            setUnblockAppealTarget(null);
+            return;
+        }
+        void (async () => {
+            const next: PendingUnblockAppeal[] = [];
+            for (const c of candidates) {
+                try {
+                    const allMessages = await DB.getMessagesByCharId(c.id, true);
+                    const msg = [...allMessages]
+                        .sort((a, b) => (b.timestamp - a.timestamp) || (b.id - a.id))
+                        .find(m => m.metadata?.unblockAppeal?.status === 'pending');
+                    if (msg) next.push({ charId: c.id, message: msg });
+                } catch (err) {
+                    console.warn('[ChatHub] load pending unblock appeal failed', c.id, err);
+                }
+            }
+            next.sort((a, b) => b.message.timestamp - a.message.timestamp);
+            if (cancelled) return;
+            setPendingUnblockAppeals(next);
+            setUnblockAppealTarget(prev => {
+                if (!prev) return prev;
+                return next.find(item => item.message.id === prev.message.id) || null;
+            });
+        })();
+        return () => { cancelled = true; };
+    }, [visibleCharacters, convoRefreshTick]);
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
     const convoRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2420,6 +2469,115 @@ const ChatHub: React.FC = () => {
                 const t = typeof m.content === 'string' ? m.content : '';
                 return /^(data:|https?:\/\/)/i.test(t.trim()) ? '[一份附件]' : t.slice(0, 40);
             }
+        }
+    };
+
+    const closeUnblockAppealModal = () => {
+        if (unblockAppealBusy) return;
+        setUnblockAppealTarget(null);
+        setUnblockAppealReply('');
+    };
+
+    const handleManualUnblockFromContacts = async (char: CharacterProfile) => {
+        await updateCharacter(char.id, {
+            blacklisted: false,
+            blacklistedAt: undefined,
+            unblockAppeal: { active: false, awaiting: false, nextAt: 0, rejectedCount: 0 },
+        });
+        setConvoRefreshTick(t => t + 1);
+        addToast(`已将 ${char.name} 移出黑名单`, 'success');
+    };
+
+    const handleUnblockAppealDecision = async (decision: 'accept' | 'reject') => {
+        if (!unblockAppealTarget || unblockAppealBusy) return;
+        const char = charactersRef.current.find(c => c.id === unblockAppealTarget.charId);
+        if (!char) {
+            addToast('这条验证申请对应的角色不存在了', 'error');
+            setUnblockAppealTarget(null);
+            return;
+        }
+        const replyText = unblockAppealReply.trim().slice(0, 500);
+        const now = Date.now();
+        setUnblockAppealBusy(decision);
+        try {
+            await DB.updateMessageMetadata(unblockAppealTarget.message.id, (prev: any) => ({
+                ...(prev || {}),
+                unblockAppeal: {
+                    ...(prev?.unblockAppeal || {}),
+                    status: decision === 'accept' ? 'accepted' : 'rejected',
+                    userReply: replyText || undefined,
+                    handledAt: now,
+                    handledFrom: 'contacts',
+                },
+            }));
+
+            if (replyText) {
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'user',
+                    type: 'text',
+                    content: `[验证留言] ${replyText}`,
+                    timestamp: now + 1,
+                    metadata: {
+                        unblockAppealReply: {
+                            appealMessageId: unblockAppealTarget.message.id,
+                            decision,
+                        },
+                    },
+                });
+            }
+
+            if (decision === 'accept') {
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'system',
+                    type: 'text',
+                    content: `你同意了「${char.name}」的解除拉黑申请${replyText ? '，并回复了验证留言' : ''}，你们可以继续聊天了`,
+                    timestamp: now + (replyText ? 2 : 1),
+                });
+                await updateCharacter(char.id, {
+                    blacklisted: false,
+                    blacklistedAt: undefined,
+                    addedToChat: true,
+                    unblockAppeal: {
+                        active: false,
+                        awaiting: false,
+                        nextAt: 0,
+                        rejectedCount: char.unblockAppeal?.rejectedCount || 0,
+                    },
+                });
+                clearUnread(char.id);
+                addToast(`已通过 ${char.name} 的解除拉黑申请`, 'success');
+            } else {
+                const rejectedCount = (char.unblockAppeal?.rejectedCount || unblockAppealTarget.message.metadata?.unblockAppeal?.rejectedCount || 0) + 1;
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'system',
+                    type: 'text',
+                    content: `你拒绝了「${char.name}」的解除拉黑申请${replyText ? '，并留下了一条验证回复' : ''}`,
+                    timestamp: now + (replyText ? 2 : 1),
+                });
+                await updateCharacter(char.id, {
+                    unblockAppeal: {
+                        active: true,
+                        awaiting: false,
+                        rejectedCount,
+                        nextAt: Date.now() + nextAppealDelayMs(rejectedCount),
+                    },
+                });
+                clearUnread(char.id);
+                addToast('已回复。对方可能过会儿还会再来申请', 'info');
+            }
+
+            setPendingUnblockAppeals(prev => prev.filter(item => item.message.id !== unblockAppealTarget.message.id));
+            setUnblockAppealTarget(null);
+            setUnblockAppealReply('');
+            setConvoRefreshTick(t => t + 1);
+        } catch (err: any) {
+            console.warn('[ChatHub] resolve unblock appeal failed', err);
+            addToast(`处理验证申请失败：${err?.message || err}`, 'error');
+        } finally {
+            setUnblockAppealBusy(null);
         }
     };
 
@@ -5583,8 +5741,68 @@ ${attachedImagesNote}
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto" data-manual-anchor="manual-chathub-contacts">
+                        {newFriendCharacters.length > 0 && (
+                            <div className="space-y-2">
+                                <div className="px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">新的朋友</div>
+                                {newFriendCharacters.map((c, i) => {
+                                    const appeal = pendingUnblockAppealByCharId.get(c.id);
+                                    const blockedByChar = !!c.charBlock?.active;
+                                    const awaitingUnblockAppeal = !!c.blacklisted && !!c.unblockAppeal?.awaiting && !appeal;
+                                    const displayName = c.convoSettings?.remarkName?.trim() || c.name;
+                                    const subtitle = appeal
+                                        ? `验证消息：${previewOf(appeal.message)}`
+                                        : awaitingUnblockAppeal
+                                            ? '正在读取 TA 递来的验证消息…'
+                                            : blockedByChar
+                                            ? 'TA 把你拉黑了，递一条好友验证看看。'
+                                            : '你已将 TA 加入黑名单。';
+                                    const badge = appeal ? '回复' : awaitingUnblockAppeal ? '稍等' : blockedByChar ? '验证' : '解除';
+                                    const openRequest = () => {
+                                        if (appeal) {
+                                            setUnblockAppealTarget(appeal);
+                                            setUnblockAppealReply('');
+                                            return;
+                                        }
+                                        if (awaitingUnblockAppeal) {
+                                            addToast('正在读取验证消息，稍等一下', 'info');
+                                            return;
+                                        }
+                                        if (blockedByChar) {
+                                            setVerifyCharId(c.id);
+                                            return;
+                                        }
+                                        void handleManualUnblockFromContacts(c);
+                                    };
+                                    return (
+                                        <div
+                                            key={`new-friend-${c.id}`}
+                                            onClick={openRequest}
+                                            style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }}
+                                            className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#fff4f7] anim-row-in"
+                                        >
+                                            <div className="relative shrink-0">
+                                                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className={`w-12 h-12 rounded-full object-cover border shadow-sm ${c.blacklisted ? 'border-rose-100 grayscale-[0.25]' : 'border-slate-100'}`} />
+                                                <span className="absolute -right-1 -bottom-1 w-5 h-5 rounded-full bg-white border border-[#eed6df] flex items-center justify-center text-[#9c5e74] shadow-sm">
+                                                    <EnvelopeOpen size={11} weight="bold" />
+                                                </span>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-slate-700 truncate text-sm">{displayName}</span>
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] font-black shrink-0">
+                                                        {appeal ? '申请解除拉黑' : awaitingUnblockAppeal ? '验证待处理' : blockedByChar ? '把你拉黑了' : '黑名单'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-400 mt-0.5 truncate">{subtitle}</div>
+                                            </div>
+                                            <span className="text-[10px] px-2.5 py-1 rounded-full font-black shrink-0 bg-[#9c5e74] text-white">{badge}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                         {visibleGroups.length > 0 && (
-                            <div className="px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">群聊</div>
+                            <div className={`px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70 ${newFriendCharacters.length > 0 ? 'pt-2' : ''}`}>群聊</div>
                         )}
                         {visibleGroups.map((g, i) => (
                             <div key={`contact-group-${g.id}`} onClick={() => openGroupChat(g)} style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }} className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${g.dissolved ? 'opacity-70' : ''}`}>
@@ -5829,6 +6047,63 @@ ${attachedImagesNote}
                         )}
                     </div>
                 </Modal>
+
+                {/* 角色被你拉黑后递来的解除拉黑验证：名册「新的朋友」里处理，像微信好友验证一样可回留言 */}
+                {unblockAppealTarget && (() => {
+                    const c = characters.find(ch => ch.id === unblockAppealTarget.charId);
+                    if (!c) return null;
+                    const displayName = c.convoSettings?.remarkName?.trim() || c.name;
+                    return (
+                        <Modal
+                            isOpen
+                            title="解除拉黑申请"
+                            en="NEW FRIENDS · VERIFY"
+                            icon={<ScrapStamp><EnvelopeOpen size={15} weight="bold" /></ScrapStamp>}
+                            onClose={closeUnblockAppealModal}
+                            footer={
+                                <>
+                                    <ScrapBtn variant="paper" onClick={closeUnblockAppealModal} disabled={!!unblockAppealBusy}>稍后</ScrapBtn>
+                                    <ScrapBtn variant="danger" onClick={() => void handleUnblockAppealDecision('reject')} disabled={!!unblockAppealBusy}>
+                                        {unblockAppealBusy === 'reject' ? '处理中' : '拒绝'}
+                                    </ScrapBtn>
+                                    <ScrapBtn onClick={() => void handleUnblockAppealDecision('accept')} disabled={!!unblockAppealBusy}>
+                                        {unblockAppealBusy === 'accept' ? '放回中' : '同意'}
+                                    </ScrapBtn>
+                                </>
+                            }
+                        >
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3">
+                                    <img src={c.convoSettings?.charAvatarOverride || c.avatar} alt={displayName} className="w-11 h-11 rounded-xl object-cover shrink-0" />
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-black truncate" style={{ color: INK }}>{displayName}</div>
+                                        <div className="text-[11px] font-bold" style={{ color: INK_SOFT }}>申请从黑名单里回来 · {formatConvoTime(unblockAppealTarget.message.timestamp)}</div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <ScrapLabel en="VERIFY">验证消息</ScrapLabel>
+                                    <div className="p-3.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words" style={{ background: 'rgba(255,253,247,0.9)', border: `1px solid ${INK_SOFT}55`, borderRadius: 16, color: '#4f4850' }}>
+                                        {unblockAppealTarget.message.content}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <ScrapLabel en="REPLY">留言</ScrapLabel>
+                                    <ScrapTextarea
+                                        value={unblockAppealReply}
+                                        onChange={e => setUnblockAppealReply(e.target.value)}
+                                        maxLength={500}
+                                        disabled={!!unblockAppealBusy}
+                                        placeholder={`回 ${displayName} 一句…（可留空）`}
+                                        className="h-24"
+                                    />
+                                    <ScrapNote>同意会解除黑名单；拒绝会保留黑名单，TA 之后还可能再递验证。</ScrapNote>
+                                </div>
+                            </div>
+                        </Modal>
+                    );
+                })()}
 
                 {/* 好友验证（被角色拉黑后重新申请） */}
                 {verifyCharId && (() => {

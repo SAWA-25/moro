@@ -6,7 +6,7 @@ import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
-import { isScheduleFeatureOn } from '../../utils/scheduleGenerator';
+import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../../utils/scheduleGenerator';
 import { isAuxApiOn } from '../../utils/auxApi';
 import { scrollToManualAnchor, useManualDeepLink } from '../../utils/manualDeepLink';
 import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
@@ -224,6 +224,21 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const cs: ConvoSettings = char.convoSettings || {};
     const updateConvo = (patch: Partial<ConvoSettings>) => {
         updateCharacter(char.id, { convoSettings: { ...char.convoSettings, ...patch } });
+    };
+    const toggleEmotionBuffFeature = () => {
+        const nextEnabled = !isEmotionBuffFeatureOn(char);
+        updateCharacter(char.id, {
+            emotionConfig: { ...(char.emotionConfig || {}), enabled: nextEnabled },
+            ...(nextEnabled ? {} : { activeBuffs: [], buffInjection: '' }),
+        });
+        addToast(nextEnabled ? '心情 buff 已开启' : '心情 buff 已关闭', nextEnabled ? 'success' : 'info');
+    };
+    const toggleScheduleFeature = () => {
+        const nextEnabled = !isScheduleFeatureOn(char);
+        updateCharacter(char.id, {
+            scheduleFeatureEnabled: nextEnabled,
+            ...(nextEnabled ? {} : { activeBuffs: [], buffInjection: '' }),
+        });
     };
     const bubbleStyleMode = cs.bubbleStyleMode === 'whole' ? 'whole' : 'split';
     const personaDrivenMessageLength = !!cs.personaDrivenMessageLength || cs.bubbleStyleMode === 'freeform';
@@ -959,8 +974,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     <Entry
                         manualAnchor="manual-chat-schedule"
                         mark="☘" title="TA 的日程表"
-                        note="TA 有自己的一天：作息时间线 + 意识流独白，会悄悄染进聊天的语气与情绪。"
-                        side={<CandyToggle on={isScheduleFeatureOn(char)} onToggle={() => updateCharacter(char.id, { scheduleFeatureEnabled: !isScheduleFeatureOn(char) })} />}
+                        note="TA 有自己的一天：作息时间线和聊天里的约定会染进语气；心情 buff 可单独开关。"
+                        side={<CandyToggle on={isScheduleFeatureOn(char)} onToggle={toggleScheduleFeature} />}
                     >
                         {isScheduleFeatureOn(char) && (
                             <div className="space-y-2">
@@ -974,6 +989,13 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                         ? '已接副 API：聊到约定/变更（“晚上八点一起看电影”“今天不去公司了”…）时，TA 会主动把日程调过来。'
                                         : '想让 TA 照着聊天主动调整日程？去「文具盒 → 副线盒（副 API）」开启副 API。'}
                                 </p>
+                                <div className="flex items-start justify-between gap-3 rounded-[12px] px-3 py-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                                    <div className="min-w-0">
+                                        <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>心情 buff</div>
+                                        <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>关掉后不再分析、不显示顶部 buff，也不会把旧 buff 注入下一轮聊天。</p>
+                                    </div>
+                                    <CandyToggle candy="#bfa3dd" on={isEmotionBuffFeatureOn(char)} onToggle={toggleEmotionBuffFeature} />
+                                </div>
                             </div>
                         )}
                     </Entry>

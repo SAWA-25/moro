@@ -18,10 +18,19 @@ import type { PostProcessMusicHooks } from '../utils/applyAssistantPostProcessin
 /* ───────────── 类型 ───────────── */
 export type MusicQuality = 'standard' | 'higher' | 'exhigh' | 'lossless' | 'hires';
 
+export interface QQMusicAccount {
+  uin: string;
+  nickname: string;
+  avatarUrl?: string;
+  cookie: string;
+  connectedAt: number;
+}
+
 export interface MusicCfg {
   workerUrl: string;
   cookie: string;
   quality: MusicQuality;
+  qqMusic?: QQMusicAccount | null;
 }
 
 export interface Song {
@@ -32,6 +41,12 @@ export interface Song {
   albumPic: string;
   duration: number;
   fee: number;
+  /** Remote source. Missing means legacy NetEase song. */
+  source?: 'netease' | 'qq' | 'local' | 'user' | 'discovered';
+  /** QQ Music songmid used for vkey/lyric requests. */
+  qqSongMid?: string;
+  /** QQ Music media_mid used for file names when it differs from songmid. */
+  qqMediaMid?: string;
   // ── Local-source extensions (used for AI-generated songs from 写歌 App) ──
   /** True for songs not from netease — play them via blob from IndexedDB. */
   local?: boolean;
@@ -88,6 +103,7 @@ export const MUSIC_DEFAULT_CFG: MusicCfg = {
   workerUrl: DEFAULT_WORKER,
   cookie: '',
   quality: 'exhigh',
+  qqMusic: null,
 };
 
 /* ───────────── 工具 ───────────── */
@@ -279,6 +295,82 @@ export const musicApi = {
   logout(cfg: MusicCfg) {
     return musicApi.call(cfg, '/logout', {});
   },
+  async qqCall(cfg: MusicCfg, path: string, body: any = {}) {
+    const account = cfg.qqMusic;
+    const call = async (base: string) => {
+      const url = `${base.replace(/\/+$/, '')}/qqmusic${path.startsWith('/') ? path : '/' + path}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cookie: account?.cookie || '',
+          uin: account?.uin || '',
+          ...body,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.status === 'error') {
+        throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+      }
+      return j;
+    };
+    try {
+      return await call(cfg.workerUrl);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (typeof window !== 'undefined' && /Use GET|Use POST|not found|unknown|unallowed/i.test(msg)) {
+        return call(window.location.origin);
+      }
+      throw e;
+    }
+  },
+  qqProfile(cfg: MusicCfg) {
+    return musicApi.qqCall(cfg, '/profile', {});
+  },
+  qqUserPlaylist(cfg: MusicCfg) {
+    return musicApi.qqCall(cfg, '/user/playlist', {});
+  },
+  qqPlaylistDetail(cfg: MusicCfg, id: string | number) {
+    return musicApi.qqCall(cfg, '/playlist/detail', { id });
+  },
+  qqSongUrl(cfg: MusicCfg, songmid: string, mediaMid?: string) {
+    return musicApi.qqCall(cfg, '/song/url', { songmid, mediaMid });
+  },
+  qqLyric(cfg: MusicCfg, songmid: string) {
+    return musicApi.qqCall(cfg, '/lyric', { songmid });
+  },
+  async qqLoginQrCreate(cfg: MusicCfg) {
+    return musicApi.qqLoginCall(cfg, '/qr/create', {});
+  },
+  async qqLoginQrCheck(cfg: MusicCfg, ticket: string) {
+    return musicApi.qqLoginCall(cfg, '/qr/check', { ticket });
+  },
+  async qqLoginCall(cfg: MusicCfg, path: string, body: any = {}) {
+    const call = async (base: string) => {
+      const url = `${base.replace(/\/+$/, '')}/qqmusic/login${path}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.status === 'error') {
+        throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+      }
+      return j;
+    };
+    try {
+      return await call(cfg.workerUrl);
+    } catch (e: any) {
+      // 线上旧 Worker 没有 /qqmusic/login/* 时会落到搜索代理，返回 Use GET。
+      // 开发期/同源部署可直接走当前站点的同源 worker route。
+      const msg = String(e?.message || '');
+      if (typeof window !== 'undefined' && /Use GET|not found|unknown/i.test(msg)) {
+        return call(window.location.origin);
+      }
+      throw e;
+    }
+  },
 };
 
 /* ───────────── Context 定义 ───────────── */
@@ -351,7 +443,11 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setCfg = useCallback((next: MusicCfg) => {
     setCfgState(prev => {
       // cookie / workerUrl 变了 → 上一个账号的缓存全部失效，避免看到旧账号数据
-      if (prev.cookie !== next.cookie || prev.workerUrl !== next.workerUrl) {
+      if (
+        prev.cookie !== next.cookie
+        || prev.workerUrl !== next.workerUrl
+        || prev.qqMusic?.cookie !== next.qqMusic?.cookie
+      ) {
         _clearAllCache();
       }
       return next;
@@ -467,6 +563,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const liked = !!current && (
     current.local
       ? localAlbumSongs.some(s => s.id === current.id)
+      : current.source === 'qq'
+        ? false
       : likedSet.has(current.id)
   );
   const toggleLike = useCallback(async () => {
@@ -481,6 +579,10 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addLocalSong(current);
         toast('已加入「一起写的歌」', 'success');
       }
+      return;
+    }
+    if (current.source === 'qq') {
+      toast('QQ 音乐歌曲暂不支持在这里收藏', 'info');
       return;
     }
     // ── 网易云歌 ──
@@ -661,6 +763,42 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               title: song.name,
               artist: song.artists,
               album: song.album,
+            });
+          } catch {}
+        }
+        setLoadingSong(false);
+        return;
+      }
+
+      if (song.source === 'qq') {
+        const songmid = song.qqSongMid || String(song.id);
+        const [urlRes, lyricRes] = await Promise.all([
+          musicApi.qqSongUrl(cfgRef.current, songmid, song.qqMediaMid),
+          musicApi.qqLyric(cfgRef.current, songmid).catch(() => null),
+        ]);
+        const url: string | null = urlRes?.data?.url || urlRes?.url || null;
+        if (!url) {
+          toast(urlRes?.message || urlRes?.error || 'QQ 音乐暂无播放地址', 'error');
+          setLoadingSong(false);
+          return;
+        }
+        const a = audioRef.current!;
+        a.src = url.replace(/^http:\/\//i, 'https://');
+        a.play().catch(() => {});
+        const lrc = lyricRes?.data?.lyric || lyricRes?.lyric || '';
+        const trans = lyricRes?.data?.trans || lyricRes?.trans || '';
+        setLyric(parseLyric(lrc));
+        setTlyric(parseLyric(trans));
+        if ('mediaSession' in navigator) {
+          try {
+            (navigator as any).mediaSession.metadata = new (window as any).MediaMetadata({
+              title: song.name,
+              artist: song.artists,
+              album: song.album,
+              artwork: song.albumPic ? [
+                { src: song.albumPic, sizes: '300x300', type: 'image/jpeg' },
+                { src: song.albumPic, sizes: '512x512', type: 'image/jpeg' },
+              ] : [],
             });
           } catch {}
         }

@@ -836,8 +836,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <Wind className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
-                            {/* 情绪按钮已并入作息 — 情绪/意识流与日程强制同步，配置面板在日程 Modal 下方 */}
-                            <ActionStrip label="今日作息" hint="TA 的日程与心情" dark={isDiscordStyle} onClick={() => onPanelAction('schedule')}>
+                            {/* 心情 buff 开关和配置放在今日作息弹层里。 */}
+                            <ActionStrip label="今日作息" hint="TA 的日程与心情 buff" dark={isDiscordStyle} onClick={() => onPanelAction('schedule')}>
                                 <CalendarCheck className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 

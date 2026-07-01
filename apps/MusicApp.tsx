@@ -16,7 +16,7 @@ import { Gear, User as UserIcon, Crosshair, Play as PlayIcon, Pause as PauseIcon
 import {
   C, Sparkle, CrossStar, MizuHeader, SearchBar, SongRow, MiniPlayer,
   VinylDisc, GlassProgress, PlayControls, BokehBg,
-  MetaChip, SubActions,
+  MetaChip, SubActions, isMusicAvatarImage,
 } from './music/MusicUI';
 import NeteaseProfilePage from './music/NeteaseProfilePage';
 import CharVisitPage from './music/CharVisitPage';
@@ -717,7 +717,7 @@ const MusicApp: React.FC = () => {
               className="shrink-0 mt-3 w-full max-w-sm flex items-center gap-2 px-3 py-2 rounded-2xl text-left transition-all active:scale-[0.98] shizuku-glass"
               style={{ boxShadow: `0 2px 12px ${C.glow}15` }}
             >
-              {latestCharReview.avatar && (latestCharReview.avatar.startsWith('http') || latestCharReview.avatar.startsWith('data:'))
+              {isMusicAvatarImage(latestCharReview.avatar)
                 ? <img src={latestCharReview.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" style={{ border: `1.5px solid ${C.sakura}66` }} />
                 : <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] shrink-0" style={{ background: `linear-gradient(135deg, ${C.sakura}, ${C.lavender})` }}>{latestCharReview.name.slice(0, 1)}</span>}
               <div className="flex-1 min-w-0">
@@ -804,6 +804,34 @@ const MusicApp: React.FC = () => {
             </div>
             <div className="text-[9px] mt-1.5 italic" style={{ color: C.faint }}>lossless / hires 需要黑胶 SVIP</div>
           </div>
+          <div className="rounded-2xl p-3.5 shizuku-glass" style={{ boxShadow: `0 2px 16px ${C.glow}08` }}>
+            <div className="text-[10px] mb-2 tracking-wider flex items-center gap-1.5" style={{ color: C.muted }}>
+              <Sparkle size={6} color={C.sakura} delay={1.2} /> QQ 音乐连接
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0"
+                style={{ background: cfg.qqMusic ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : C.glass, color: cfg.qqMusic ? 'white' : C.muted }}>
+                QQ
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs truncate" style={{ color: C.text }}>
+                  {cfg.qqMusic ? cfg.qqMusic.nickname : '未连接'}
+                </div>
+                <div className="text-[9px] truncate" style={{ color: C.faint }}>
+                  {cfg.qqMusic ? `账号 ${cfg.qqMusic.uin}` : '到「我的」页面扫码连接 QQ 音乐'}
+                </div>
+              </div>
+              {cfg.qqMusic && (
+                <button
+                  onClick={() => setDraft({ qqMusic: null })}
+                  className="px-2.5 py-1.5 rounded-full text-[10px] shizuku-glass"
+                  style={{ color: C.faint }}
+                >
+                  断开
+                </button>
+              )}
+            </div>
+          </div>
           <div className="space-y-3 pt-1">
             <button
               onClick={async () => {
@@ -844,9 +872,9 @@ const MusicApp: React.FC = () => {
   const renderListenTogether = () => {
     const char = listenChar;
     if (!char) return null;
-    const charIsImg = !!char.avatar && (char.avatar.startsWith('http') || char.avatar.startsWith('data:'));
+    const charIsImg = isMusicAvatarImage(char.avatar);
     const userAva = userProfile?.avatar;
-    const userIsImg = !!userAva && (userAva.startsWith('http') || userAva.startsWith('data:'));
+    const userIsImg = isMusicAvatarImage(userAva);
     const actionLabel = (a?: ListenAction): string | null => {
       if (!a || a.kind === 'none') return null;
       return a.kind === 'change_song' ? '🎵 换了首歌'
@@ -1193,7 +1221,7 @@ const MusicApp: React.FC = () => {
               <div className="overflow-y-auto shizuku-scrollbar" style={{ maxHeight: '46vh' }}>
                 <div className="grid grid-cols-4 gap-3 pb-1">
                   {characters.map(c => {
-                    const isImg = !!c.avatar && (c.avatar.startsWith('http') || c.avatar.startsWith('data:'));
+                    const isImg = isMusicAvatarImage(c.avatar);
                     const joined = listeningTogetherWith.includes(c.id);
                     return (
                       <button key={c.id} onClick={() => shareAndListen(c.id)}

@@ -23,7 +23,7 @@ import {
 import { resolveAuxApi } from '../../utils/auxApi';
 import { computeCurrentListening } from '../../utils/charMusicSchedule';
 import { DB } from '../../utils/db';
-import { C, Sparkle, MizuHeader, BokehBg, MiniPlayer } from './MusicUI';
+import { C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage } from './MusicUI';
 import { ArrowLeft, MusicNote, Heart, Plus, MagnifyingGlass } from '@phosphor-icons/react';
 
 interface Props {
@@ -256,7 +256,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
           style={{ boxShadow: `0 10px 40px ${C.glow}15` }}>
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
-              {char.avatar && char.avatar.startsWith('data:') || char.avatar?.startsWith('http') ? (
+              {isMusicAvatarImage(char.avatar) ? (
                 <img src={char.avatar} alt="" className="w-16 h-16 rounded-2xl object-cover"
                   style={{ border: `2px solid ${C.glow}60`, boxShadow: `0 4px 20px ${C.glow}30` }} />
               ) : (

@@ -124,6 +124,8 @@ interface ChatModalsProps {
     // Schedule master toggle
     isScheduleFeatureEnabled?: boolean;
     onToggleScheduleFeature?: () => void;
+    isEmotionBuffFeatureEnabled?: boolean;
+    onToggleEmotionBuffFeature?: () => void;
     // Memory Palace force vectorize
     isMemoryPalaceEnabled?: boolean;
     isVectorizing?: boolean;
@@ -163,7 +165,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onGenerateVoice, voiceAvailable,
     scheduleData, isScheduleGenerating, onScheduleEdit, onScheduleDelete, onScheduleReroll, onScheduleCoverChange,
     onScheduleStyleChange,
-    isScheduleFeatureEnabled, onToggleScheduleFeature,
+    isScheduleFeatureEnabled, onToggleScheduleFeature, isEmotionBuffFeatureEnabled, onToggleEmotionBuffFeature,
     isMemoryPalaceEnabled, isVectorizing, onForceVectorize,
     apiPresets, onAddApiPreset, onSaveEmotion, onClearBuffs,
 }) => {
@@ -1001,21 +1003,38 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 onClose={() => setModalType('none')}
             >
                 <div>
-                    {/* 总开关：关闭时不调副 API、不生成日程、不注入情绪 buff */}
+                    {/* 作息开关：关闭时不调副 API、不生成日程 */}
                     {onToggleScheduleFeature && (
                         <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#eed6df' }}>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
                                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#d8a5b7' }} aria-hidden />
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>作息与心情</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>作息日程</span>
                                 </div>
                                 <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
                                     {isScheduleFeatureEnabled
-                                        ? '开着：会请副 API 排出 TA 今天的日程，聊天时顺带掂量心情 buff。'
-                                        : '关着：不请副 API、不排日程，也不会往对话里塞心情 buff。'}
+                                        ? '开着：会请副 API 排出 TA 今天的日程，聊天时参考当前时段和日程锚点。'
+                                        : '关着：不请副 API 排日程，聊天也不再注入当天作息。'}
                                 </p>
                             </div>
                             <CandyToggle on={!!isScheduleFeatureEnabled} onToggle={onToggleScheduleFeature} candy="#d8a5b7" />
+                        </div>
+                    )}
+
+                    {isScheduleFeatureEnabled && onToggleEmotionBuffFeature && (
+                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#eed6df' }}>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#bfa3dd' }} aria-hidden />
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>心情 buff</span>
+                                </div>
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
+                                    {isEmotionBuffFeatureEnabled
+                                        ? '开着：聊天后会掂量 TA 的心情 buff，顶部贴片和下一轮语气都会参考。'
+                                        : '关着：不分析、不显示、不往对话里塞心情 buff；日程仍照常。'}
+                                </p>
+                            </div>
+                            <CandyToggle on={!!isEmotionBuffFeatureEnabled} onToggle={onToggleEmotionBuffFeature} candy="#bfa3dd" />
                         </div>
                     )}
 
@@ -1080,8 +1099,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 点一条可以改 · 按住不放是删掉
                             </p>
 
-                            {/* 情绪 / 意识流 API — 与日程强制同步 */}
-                            {activeCharacter && apiPresets && onAddApiPreset && onSaveEmotion && onClearBuffs && (
+                            {/* 情绪 / 意识流 API */}
+                            {isEmotionBuffFeatureEnabled && activeCharacter && apiPresets && onAddApiPreset && onSaveEmotion && onClearBuffs && (
                                 <EmotionSettingsPanel
                                     char={activeCharacter}
                                     apiPresets={apiPresets}

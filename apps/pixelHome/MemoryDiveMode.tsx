@@ -21,6 +21,7 @@ import type {
 import { BUFF_META } from './memoryDiveTypes';
 import { ROOM_META } from './roomTemplates';
 import { ContextBuilder } from '../../utils/context';
+import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
 import {
   planRoomVisit,
   generateIntroDialogues, generateOutroDialogues,
@@ -603,7 +604,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     // 后台向角色发射情绪（若启用了 emotionConfig）——角色不记得发生了什么，
     // 但潜意识里会留一层情绪底色，与 chat app 的 buff 系统共用同一套机制
     // 情绪 API 未单独配置时回退到主 apiConfig（与记忆宫殿副 API 完全独立）
-    if (charProfile.emotionConfig?.enabled) {
+    if (isEmotionBuffFeatureOn(charProfile)) {
       const emotionApi = (charProfile.emotionConfig.api?.baseUrl)
         ? charProfile.emotionConfig.api
         : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };

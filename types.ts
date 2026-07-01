@@ -2715,6 +2715,7 @@ export interface CharacterProfile {
    *  挂在角色上（每个角色一份），由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文。 */
   coupleSpace?: CoupleSpace;
   emotionConfig?: {
+    /** 心情 buff 独立开关；作息开启时，false 会停止情绪评估、注入和顶栏 buff 展示。 */
     enabled: boolean;
     api?: {
       baseUrl: string;
@@ -2785,9 +2786,9 @@ export interface CharacterProfile {
   scheduleStyle?: 'lifestyle' | 'mindful';
 
   /**
-   * 日程 / 情绪 Buff 总开关。
-   * - true：启用日程生成、意识流、情绪 buff 评估与注入（消耗副 API）。
-   * - false：完全关闭，不调副 API，不注入情绪，不生成日程。
+   * 作息日程总开关。
+   * - true：启用日程生成、意识流基础和聊天里的日程协调（消耗副 API）。
+   * - false：关闭日程生成 / 协调 / 注入；聊天后的心情 buff 评估也随作息前置闸门停下。
    * - undefined：向后兼容——若 scheduleStyle 已设（老用户已隐式选风格）视为开启；否则默认关闭。
    */
   scheduleFeatureEnabled?: boolean;

@@ -18,7 +18,7 @@ import {
   loadUserComments, addUserComment, addReplyToUserComment, removeUserComment,
   isCommentLiked, toggleCommentLike, fmtCommentTime, fmtLikeCount,
 } from '../../utils/musicComments';
-import { C, Sparkle, MizuHeader, BokehBg } from './MusicUI';
+import { C, Sparkle, MizuHeader, BokehBg, isMusicAvatarImage } from './MusicUI';
 import { Heart, PaperPlaneRight, ChatCircleText, MusicNote, Trash, PenNib } from '@phosphor-icons/react';
 
 interface Props {
@@ -29,7 +29,7 @@ interface Props {
 const Avatar: React.FC<{ avatar?: string; name: string; size?: number; ring?: string }> = ({
   avatar, name, size = 34, ring = C.faint,
 }) => {
-  const isImg = !!avatar && (avatar.startsWith('http') || avatar.startsWith('data:'));
+  const isImg = isMusicAvatarImage(avatar);
   if (isImg) {
     return <img src={avatar} alt="" className="rounded-full object-cover shrink-0"
       style={{ width: size, height: size, border: `1.5px solid ${ring}66` }} />;

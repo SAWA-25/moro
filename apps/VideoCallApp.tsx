@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate, PaperPlaneRight, Minus } from '@phosphor-icons/react';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
@@ -73,7 +73,7 @@ const VideoCallApp: React.FC = () => {
 
     const hasVoiceOutput = !!(char?.voiceProfile?.voiceId || char?.voiceProfile?.timberWeights?.length) && !!resolveMiniMaxApiKey(apiConfig);
 
-    const playReplyVoice = async (reply: string) => {
+    const playReplyVoice = useCallback(async (reply: string) => {
         if (!char || !hasVoiceOutput || endedRef.current) return;
         try {
             const audio = await synthesizeSpeechDetailed(cleanTextForTts(reply), char, apiConfig);
@@ -84,10 +84,10 @@ const VideoCallApp: React.FC = () => {
         } catch {
             addToast('语音没生成出来，先用文字聊吧', 'info');
         }
-    };
+    }, [addToast, apiConfig, char, hasVoiceOutput]);
 
-    const requestCharReply = async (params: { userText?: string; eventLabel?: string; fallback: string; cameraOn?: boolean }) => {
-        if (!char || replying || endedRef.current || suspendedRef.current) return;
+    const requestCharReply = useCallback(async (params: { userText?: string; eventLabel?: string; fallback: string; cameraOn?: boolean }): Promise<boolean> => {
+        if (!char || replying || endedRef.current || suspendedRef.current) return false;
         const nextCameraOn = params.cameraOn ?? camOn;
         const text = params.userText?.trim();
         const userLine = text ? { id: `u-${Date.now()}`, role: 'user' as const, text, timestamp: Date.now() } : null;
@@ -95,9 +95,9 @@ const VideoCallApp: React.FC = () => {
         setReplying(true);
         try {
             if (!apiConfig.baseUrl || !apiConfig.apiKey) {
-                if (endedRef.current || suspendedRef.current) return;
+                if (endedRef.current || suspendedRef.current) return false;
                 setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: params.fallback, timestamp: Date.now() }]);
-                return;
+                return true;
             }
             const recentLines = [...chatLinesRef.current, ...(userLine ? [userLine] : [])];
             const recent = recentLines
@@ -128,15 +128,17 @@ ${videoCallPromptBody({
             if (!response.ok) throw new Error(`API ${response.status}`);
             const data = await safeResponseJson(response);
             const reply = (extractContent(data) || '').trim() || params.fallback;
-            if (endedRef.current || suspendedRef.current) return;
+            if (endedRef.current || suspendedRef.current) return false;
             setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: reply, timestamp: Date.now() }]);
             void playReplyVoice(reply);
+            return true;
         } catch (err: any) {
             if (!endedRef.current) addToast(`视频聊天回复失败：${err?.message || '未知错误'}`, 'error');
+            return !!userLine;
         } finally {
             if (!endedRef.current) setReplying(false);
         }
-    };
+    }, [apiConfig, camOn, char, hasVoiceOutput, micOn, playReplyVoice, replying, userProfile]);
 
     const stopCam = (notify = true) => {
         streamRef.current?.getTracks().forEach(t => t.stop());
@@ -251,6 +253,23 @@ ${videoCallPromptBody({
                 },
             });
 
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'user',
+                type: 'call_log',
+                content: `视频通话已结束 · ${fmt(durationSec)}`,
+                timestamp: endedAt,
+                metadata: {
+                    callDirection: 'outgoing',
+                    callOutcome: 'ended',
+                    callMode: 'video',
+                    durationSec,
+                    turnCount: userTurns,
+                    callSessionId: sessionId,
+                    msgStatus: 'sent',
+                },
+            } as any);
+
             await DB.savePhoneCallLog({
                 id: `pcl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 charId: char.id,
@@ -271,12 +290,15 @@ ${videoCallPromptBody({
         }
     };
     const hangUp = () => { void finishVideoCall(); };
-    const sendText = async () => {
+    const sendText = useCallback(async () => {
         const text = textInput.trim();
         if (!char || !text || replying) return;
         setTextInput('');
-        void requestCharReply({ userText: text, fallback: '嗯，我在听。' });
-    };
+        const accepted = await requestCharReply({ userText: text, fallback: '嗯，我在听。' });
+        if (!accepted && !endedRef.current && !suspendedRef.current) {
+            setTextInput(prev => prev ? prev : text);
+        }
+    }, [char, replying, textInput, requestCharReply]);
 
     const charImg = char?.convoSettings?.callSprites?.['默认']
         || char?.convoSettings?.spriteImage

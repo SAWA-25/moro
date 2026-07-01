@@ -328,6 +328,8 @@ export interface PostProcessCtx {
      * "打字延迟"（chunk.length*50ms），消息瞬间逐条入库，避免二次等待。
      */
     skipTypingDelay?: boolean;
+    /** Special one-shot generations can opt into a visible fallback instead of silently doing nothing. */
+    emptyReplyFallback?: string;
 }
 
 // ─── 主入口 ─────────────────────────────────────────────────────────────────
@@ -357,6 +359,7 @@ export async function applyAssistantPostProcessing(
         directives,
         reasoningContent: pushReasoningContent,
         skipTypingDelay,
+        emptyReplyFallback,
     } = ctx;
     const { baseUrl, headers, effectiveApi } = api;
     const {
@@ -615,7 +618,8 @@ export async function applyAssistantPostProcessing(
 
     // 把一段文本 (parseAndExecuteActions / HTML 之外的部分) 渲染成气泡并落库 —— 双语 / 表情 / 引用 / 分段
     // 与原 inline 末尾逻辑一致。抽出来是为了让"执行功能前的本轮正文 A"能在二轮前先展示, 二轮结果 B 复用同一套。
-    const renderAndPersist = async (rawContent: string, firstThinkingChain: string | null): Promise<void> => {
+    const renderAndPersist = async (rawContent: string, firstThinkingChain: string | null): Promise<number> => {
+        let savedCount = 0;
         let firstMeta: any = firstThinkingChain ? { thinkingChain: firstThinkingChain } : null;
         const takeMeta = (base: any): any => {
             const merged = firstMeta ? { ...(base || {}), ...firstMeta } : base;
@@ -688,7 +692,7 @@ export async function applyAssistantPostProcessing(
 
         let content = ChatParser.sanitize(protectedContent, { keepCitations: true });
         content = content.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '').trim();
-        if (!content) return;
+        if (!content) return 0;
 
         const hasTranslationTags = /<翻译>\s*<原文>[\s\S]*?<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/.test(content);
         let globalMsgIndex = 0;
@@ -719,6 +723,7 @@ export async function applyAssistantPostProcessing(
                             const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                             await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
                             await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                            savedCount++;
                             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                             globalMsgIndex++;
                         }
@@ -734,6 +739,7 @@ export async function applyAssistantPostProcessing(
                     const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                     await new Promise(r => setTimeout(r, Math.min(Math.max(biContent.length * 30, 400), 2000)));
                     await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                    savedCount++;
                     setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                     globalMsgIndex++;
                 }
@@ -752,6 +758,7 @@ export async function applyAssistantPostProcessing(
                         const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                         await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
                         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                        savedCount++;
                         setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                         globalMsgIndex++;
                     }
@@ -763,6 +770,7 @@ export async function applyAssistantPostProcessing(
                 if (foundEmoji) {
                     await new Promise(r => setTimeout(r, Math.random() * 500 + 300));
                     await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any);
+                    savedCount++;
                     setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                 }
             }
@@ -778,6 +786,7 @@ export async function applyAssistantPostProcessing(
                     if (foundEmoji) {
                         await new Promise(r => setTimeout(r, Math.random() * 500 + 300));
                         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any);
+                        savedCount++;
                         setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                     }
                 } else {
@@ -801,6 +810,7 @@ export async function applyAssistantPostProcessing(
                         if (resolved.rich) {
                             if (resolved.text) {
                                 await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: resolved.text, metadata: takeMeta(mcdInheritMeta) } as any);
+                                savedCount++;
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
                             }
@@ -821,6 +831,7 @@ export async function applyAssistantPostProcessing(
                             const cleanChunk = ChatParser.sanitize(chunk);
                             if (cleanChunk) {
                                 await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                                savedCount++;
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
                             }
@@ -829,6 +840,7 @@ export async function applyAssistantPostProcessing(
                 }
             }
         }
+        return savedCount;
     };
 
     // 「执行功能前的本轮正文 A」: 在二轮重生开始前先把 A 渲染成气泡, 这样用户看到的顺序是
@@ -839,10 +851,11 @@ export async function applyAssistantPostProcessing(
         ? extractThinkingChainFromCompletion(initialData, pushReasoningContent)
         : null;
     let leadInRendered = false;
+    let visibleAssistantSavedCount = 0;
     const renderLeadIn = async (raw: string): Promise<void> => {
         if (leadInRendered) return;
         leadInRendered = true;
-        await renderAndPersist(
+        visibleAssistantSavedCount += await renderAndPersist(
             raw.replace(/\[\[READ_NOTE:[\s\S]*?\]\]/g, '').replace(/\[\[XHS_[A-Z_]+(?::[\s\S]*?)?\]\]/g, ''),
             round1ThinkingChain,
         );
@@ -1942,7 +1955,18 @@ export async function applyAssistantPostProcessing(
     aiContent = aiContent.replace(/\[\[XHS_POST:.*?\]\]/gs, '').trim();
 
     // ─── Step 3: ChatParser.parseAndExecuteActions ───
+    const actionVisibleBeforeIds = emptyReplyFallback?.trim()
+        ? new Set((await DB.getRecentMessagesByCharId(char.id, 20))
+            .filter(m => m.role === 'assistant')
+            .map(m => m.id))
+        : null;
     aiContent = await ChatParser.parseAndExecuteActions(aiContent, char.id, char.name, addToast, musicHooks);
+    if (actionVisibleBeforeIds) {
+        const actionVisibleAfter = await DB.getRecentMessagesByCharId(char.id, 20);
+        visibleAssistantSavedCount += actionVisibleAfter
+            .filter(m => m.role === 'assistant' && !actionVisibleBeforeIds.has(m.id))
+            .length;
+    }
 
     // ─── Step 4: thinking chain 抽取 (本轮末尾展示用) ───
     // 跑过二轮 (data !== initialData) → 取二轮 data 的 reasoning; 没跑二轮 → 取一轮 (round1ThinkingChain,
@@ -1975,6 +1999,7 @@ export async function applyAssistantPostProcessing(
                         ...(mcdInheritMeta || {}),
                     }),
                 } as any);
+                visibleAssistantSavedCount++;
                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                 await new Promise(r => setTimeout(r, 300));
             } catch (e) {
@@ -1989,16 +2014,26 @@ export async function applyAssistantPostProcessing(
     // - 有重生指令但没真正发起二轮 (data 不变: 未配置/无结果/无日志/已激活/二轮异常 等): A 已展示, 跳过避免重复。
     // - 没有重生 (普通回复 / instant push): leadInRendered 必为 false, 正常展示本轮唯一回复。
     if (leadInRendered && data === initialData) {
-        setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+        if (visibleAssistantSavedCount === 0 && emptyReplyFallback?.trim()) {
+            visibleAssistantSavedCount += await renderAndPersist(emptyReplyFallback.trim(), pendingThinkingChain);
+        } else {
+            setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+        }
     } else {
         const sanitizedBody = ChatParser.sanitize(aiContent, { keepCitations: true })
             .replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '')
             .trim();
         if (sanitizedBody) {
-            await renderAndPersist(aiContent, pendingThinkingChain);
+            const savedCount = await renderAndPersist(aiContent, pendingThinkingChain);
+            visibleAssistantSavedCount += savedCount;
+            if (savedCount === 0 && emptyReplyFallback?.trim()) {
+                visibleAssistantSavedCount += await renderAndPersist(emptyReplyFallback.trim(), pendingThinkingChain);
+            }
+        } else if (emptyReplyFallback?.trim()) {
+            visibleAssistantSavedCount += await renderAndPersist(emptyReplyFallback.trim(), pendingThinkingChain);
         } else if (!leadInRendered && (data !== initialData || recallMatch || searchMatch || readDiaryMatch || fsReadDiaryMatch)) {
             // 跑过二轮却吐空, 且本轮还没展示过任何内容 → 至少补一句, 避免整轮静默。
-            await renderAndPersist('嗯...', pendingThinkingChain);
+            visibleAssistantSavedCount += await renderAndPersist('嗯...', pendingThinkingChain);
         } else {
             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
         }

@@ -1,5 +1,6 @@
 import { DB } from './db';
 import type { CharacterProfile, CharacterBuff } from '../types';
+import { isEmotionBuffFeatureOn } from './scheduleGenerator';
 
 // 情绪评估结果「解析 + 落 buff」的共用实现.
 //
@@ -69,6 +70,16 @@ export async function applyEmotionEvalRaw(
     charData: CharacterProfile,
 ): Promise<string | null> {
     try {
+        let latestChar = charData;
+        try {
+            const chars = await DB.getAllCharacters();
+            latestChar = chars.find(c => c.id === charData.id) || charData;
+        } catch { /* use caller snapshot if DB read fails */ }
+
+        if (!isEmotionBuffFeatureOn(latestChar)) {
+            console.log('🎭 [Emotion] Buff switch is off, skipping emotion update');
+            return null;
+        }
         const raw = rawText || '';
         const jsonMatch = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\})/);
         if (!jsonMatch) {
@@ -101,7 +112,7 @@ export async function applyEmotionEvalRaw(
 
         const sanitizedBuffs = sanitizeBuffs(result.buffs);
         const updated: CharacterProfile = {
-            ...charData,
+            ...latestChar,
             activeBuffs: sanitizedBuffs,
             buffInjection: result.injection || '',
         };
@@ -110,7 +121,7 @@ export async function applyEmotionEvalRaw(
         // detail 直接带上 buffs + buffInjection: 监听方 (Chat) 可直接落 OSContext, 不必重读 DB
         // —— 避开 saveCharacter 未等事务提交 / instant flush 下 DB 重读偶发拿旧值的竞态.
         window.dispatchEvent(new CustomEvent('emotion-updated', {
-            detail: { charId: charData.id, buffs: sanitizedBuffs, buffInjection: result.injection || '' },
+            detail: { charId: latestChar.id, buffs: sanitizedBuffs, buffInjection: result.injection || '' },
         }));
         console.log('🎭 [Emotion] Updated buffs:', sanitizedBuffs.map((b) => b.label).join(', ') || 'none');
         if (innerStateOut) console.log(`🌊 [InnerState] ${charData.name}: ${innerStateOut}`);

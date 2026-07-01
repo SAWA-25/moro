@@ -31,6 +31,23 @@ export const C = {
   danger:   '#3a352f',
 } as const;
 
+const AVATAR_IMAGE_EXT_RE = /\.(?:apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
+
+export const isMusicAvatarImage = (avatar?: string): boolean => {
+  const value = avatar?.trim();
+  if (!value) return false;
+  return (
+    value.startsWith('http://') ||
+    value.startsWith('https://') ||
+    value.startsWith('data:') ||
+    value.startsWith('blob:') ||
+    value.startsWith('/') ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    AVATAR_IMAGE_EXT_RE.test(value)
+  );
+};
+
 /* ══════════ 全局 CSS 动画 (注入一次) ══════════ */
 const STYLE_ID = '__shizuku_anims';
 const injectStyles = () => {
@@ -200,14 +217,14 @@ export const SongRow: React.FC<{
   </button>
 );
 
-/* ══════════ 小头像 — 处理 emoji / URL / data: 三种 avatar ══════════ */
+/* ══════════ 小头像 — 处理 emoji / 图片路径 / data: 三种 avatar ══════════ */
 const TinyAvatar: React.FC<{
   avatar?: string;
   name: string;
   size?: number;
   ring?: string;
 }> = ({ avatar, name, size = 28, ring = C.sakura }) => {
-  const isImg = !!avatar && (avatar.startsWith('http') || avatar.startsWith('data:'));
+  const isImg = isMusicAvatarImage(avatar);
   const style: React.CSSProperties = {
     width: size,
     height: size,

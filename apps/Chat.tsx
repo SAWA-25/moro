@@ -8,9 +8,9 @@ import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState,
 import ProposalOverlay from '../components/chat/ProposalOverlay';
 import { processImage } from '../utils/file';
 import { safeFetchJson, safeResponseJson, extractContent } from '../utils/safeApi';
-import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
+import { generateDailyScheduleForChar, isEmotionBuffFeatureOn, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody } from '../utils/laiwangPrompts';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, type PrivateCallMode } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { formatMessageWithTime } from '../utils/messageFormat';
@@ -572,7 +572,9 @@ const isChatTimelineMessage = (m: Message): boolean => {
     return !m.groupId
         && m.metadata?.source !== 'date'
         && m.metadata?.source !== 'call'
-        && !m.metadata?.proactiveHint;
+        && !m.metadata?.proactiveHint
+        && !m.metadata?.hidden
+        && !m.metadata?.blockPeek;
 };
 
 const asMessageType = (raw: any): MessageType => {
@@ -581,7 +583,7 @@ const asMessageType = (raw: any): MessageType => {
 
 const toPrivateChatMessages = (source: Message[], charId: string): PrivateChatArchiveMessage[] => {
     return (source || [])
-        .filter(m => !m.groupId && m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
+        .filter(m => !m.groupId && m.metadata?.source !== 'date' && m.metadata?.source !== 'call' && !m.metadata?.blockPeek)
         .map(m => ({
             originalId: m.id,
             charId,
@@ -868,8 +870,9 @@ const Chat: React.FC = () => {
     const [alarmSaving, setAlarmSaving] = useState(false);
     const [alarmLoading, setAlarmLoading] = useState(false);
 
-    // ── 语音通话（聊天内发起，角色按人设决定接不接）──
-    const [voiceCallPhase, setVoiceCallPhase] = useState<'none' | 'dialing' | 'rejected'>('none');
+    // ── 音/视频通话（聊天内发起，角色按人设决定接不接）──
+    const [privateCallPhase, setPrivateCallPhase] = useState<'none' | 'dialing' | 'rejected'>('none');
+    const [privateCallMode, setPrivateCallMode] = useState<PrivateCallMode>('voice');
     const voiceCallCancelRef = useRef(false);
 
     // ── 系统命令 modal：用户以系统身份下达最高优先级指令 ──
@@ -2112,7 +2115,7 @@ ${parallelReplyPromptBody({
         if (modalType === 'history-manager' && activeCharacterId) {
             DB.getMessagesByCharId(activeCharacterId, true).then(allMsgs => {
                 const filtered = allMsgs
-                    .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call');
+                    .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call' && !m.metadata?.blockPeek);
                 setAllHistoryMessages(filtered);
             });
         }
@@ -2403,20 +2406,16 @@ ${parallelReplyPromptBody({
         void handleSendText(text.trim(), 'text', { phoneConfront: true });
     };
 
-    // ── 拉黑模式「看看 TA 在做什么」：用户仍无法私聊，但落一条引导 system 消息后
-    //    触发角色生成此刻的动态（发现被拉黑的反应 / 把对话框当备忘录 / 试图挽回等，按人设）──
-    const handlePeekBlockedChar = async () => {
-        if (!char || isTyping) return;
+    // ── 拉黑模式「看看 TA 在做什么」：用户仍无法私聊；用一次性隐藏提示触发角色
+    //    生成此刻的动态，不把后台说明落进可见聊天流或通知横幅。──
+    const handlePeekBlockedChar = () => {
+        if (!char || isTyping || !char.blacklisted) return;
         setShowUserBlockNotice(false);
-        await DB.saveMessage({
-            charId: char.id,
-            role: 'system',
-            type: 'text',
-            content: `[拉黑观察] ${userProfile.name} 在拉黑「${char.name}」期间悄悄点开了对话框，想看看 TA 在做什么。请以「${char.name}」的身份生成 TA 此刻发出的消息：可能 TA 本想正常发消息却发现自己被拉黑、可能把这个发不出去的对话框当成备忘录/树洞自言自语、可能在尝试挽回、也可能赌气或装作无所谓——完全按 TA 的人设来。TA 并不知道 ${userProfile.name} 看得到这些。`,
-            metadata: { blockPeek: true },
-        } as any);
-        await reloadMessages(visibleCountRef.current);
-        triggerAI(messages);
+        void triggerAI(messages, undefined, undefined, {
+            ephemeralSystemPrompt: blockPeekPrompt(userProfile.name || '用户', char.name),
+            emptyReplyFallback: '……还是发不出去。',
+            suppressNotificationEvent: true,
+        });
     };
 
     // ── 收款流程：角色发来的转账 / 红包，点开卡片 → 弹窗让用户选择是否收下 ──
@@ -2872,8 +2871,8 @@ ${recent || '（你们相处了很久）'}
         await reloadMessages(visibleCountRef.current);
     };
 
-    // ── 语音通话：用户主动拨打 → 角色按人设 + 当前剧情决定接不接 → 接通则跳转电话 App ──
-    const startVoiceCall = async () => {
+    // ── 音/视频通话：用户主动拨打 → 角色按人设 + 当前剧情决定接不接 → 接通则跳转对应通话页 ──
+    const startPrivateCall = async (mode: PrivateCallMode) => {
         if (!char) return;
         if (char.blacklisted || char.charBlock?.active) {
             addToast(char.charBlock?.active ? '你已被对方拉黑，无法拨打' : '你已将对方拉黑，无法拨打', 'error');
@@ -2884,19 +2883,19 @@ ${recent || '（你们相处了很久）'}
         if (!callApi.baseUrl || !callApi.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setShowPanel('none');
         voiceCallCancelRef.current = false;
-        setVoiceCallPhase('dialing');
+        setPrivateCallMode(mode);
+        setPrivateCallPhase('dialing');
         try {
             const context = ContextBuilder.buildCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
             const prompt = `${context}
 
-### [最近的对话]
-${recent || '（你们还没怎么聊过）'}
-
-### [Task: 来电决策]
-${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你们当前的关系与剧情走向、以及你此刻可能正在做的事，决定接还是不接——完全按你自己的性格来，不用迎合。
-只输出一行 JSON，不要任何其他内容：{"answer": true 或 false, "reason": "你做这个决定时的内心想法（一句话）"}`;
+${privateCallDecisionPromptBody({
+                userName: userProfile.name || '用户',
+                callMode: mode,
+                recent,
+            })}`;
             // 决策请求与最短响铃时间并行：让"正在呼叫"至少停留一会儿，更像真的在拨号
             const minRing = new Promise(r => setTimeout(r, 2500));
             const response = await fetch(`${callApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -2924,49 +2923,57 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 }
             } catch { /* 解析失败按接听处理 */ }
             if (answer) {
-                setVoiceCallPhase('none');
-                // 电话 App 拨号握手键：CallApp 挂载时读取并直接选中该角色接通
-                try { sessionStorage.setItem('moro_phone_dial_char_id', char.id); } catch { /* ignore */ }
-                openApp(AppID.Call);
+                setPrivateCallPhase('none');
+                if (mode === 'voice') {
+                    // 电话 App 拨号握手键：CallApp 挂载时读取并直接选中该角色接通
+                    try { sessionStorage.setItem('moro_phone_dial_char_id', char.id); } catch { /* ignore */ }
+                    openApp(AppID.Call);
+                } else {
+                    openApp(AppID.VideoCall);
+                }
             } else {
+                const label = mode === 'video' ? '视频聊天' : '语音通话';
                 await DB.saveMessage({
                     charId: char.id,
                     role: 'user',
                     type: 'call_log',
                     content: '对方未接听',
-                    metadata: { callDirection: 'outgoing', callOutcome: 'declined', declineReason: reason, msgStatus: 'sent' },
+                    metadata: { callDirection: 'outgoing', callOutcome: 'declined', callMode: mode, declineReason: reason, msgStatus: 'sent' },
                 } as any);
-                // 让角色按人设决定要不要为没接电话发消息解释（也可以只回一句很短的，或语气敷衍——都按人设）
+                // 让角色按人设决定要不要为没接通话发消息解释（也可以只回一句很短的，或语气敷衍——都按人设）
                 await DB.saveMessage({
                     charId: char.id,
                     role: 'system',
                     type: 'text',
-                    content: `[语音通话] ${userProfile.name} 刚刚给「${char.name}」拨了语音电话，但「${char.name}」没有接（TA 当时的内心想法：${reason || '现在不太方便接'}）。请以「${char.name}」的身份决定接下来的反应：可以发消息解释为什么没接、可以含糊带过、可以发一句很短的话、也可以表现得若无其事——完全按 TA 的人设和此刻的心情来。`,
+                    content: `[${label}] ${userProfile.name} 刚刚给「${char.name}」拨了${label}，但「${char.name}」没有接（TA 当时的内心想法：${reason || '现在不太方便接'}）。请以「${char.name}」的身份决定接下来的反应：可以发消息解释为什么没接、可以含糊带过、可以发一句很短的话、也可以表现得若无其事——完全按 TA 的人设和此刻的心情来。`,
                     metadata: { proactiveHint: true, hidden: true },
                 } as any);
-                setVoiceCallPhase('rejected');
+                setPrivateCallPhase('rejected');
                 await reloadMessages(visibleCountRef.current);
-                setTimeout(() => setVoiceCallPhase('none'), 2000);
+                setTimeout(() => setPrivateCallPhase('none'), 2000);
                 setTimeout(() => { triggerAI(messages); }, 600);
             }
         } catch (e: any) {
             if (!voiceCallCancelRef.current) {
-                setVoiceCallPhase('none');
+                setPrivateCallPhase('none');
                 addToast(`呼叫失败：${e?.message || '未知错误'}`, 'error');
             }
         }
     };
 
-    const cancelVoiceCall = async () => {
+    const startVoiceCall = () => startPrivateCall('voice');
+    const startVideoCall = () => startPrivateCall('video');
+
+    const cancelPrivateCall = async () => {
         voiceCallCancelRef.current = true;
-        setVoiceCallPhase('none');
+        setPrivateCallPhase('none');
         if (!char) return;
         await DB.saveMessage({
             charId: char.id,
             role: 'user',
             type: 'call_log',
             content: '已取消',
-            metadata: { callDirection: 'outgoing', callOutcome: 'cancelled', msgStatus: 'sent' },
+            metadata: { callDirection: 'outgoing', callOutcome: 'cancelled', callMode: privateCallMode, msgStatus: 'sent' },
         } as any);
         await reloadMessages(visibleCountRef.current);
     };
@@ -3473,10 +3480,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
             case 'voice-call': void startVoiceCall(); break;
-            case 'video-call':
-                setShowPanel('none');
-                openApp(AppID.VideoCall);
-                break;
+            case 'video-call': void startVideoCall(); break;
             case 'parallel-reply':
                 setShowPanel('none');
                 setShowParallelReplyModal(true);
@@ -3892,12 +3896,9 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
     const handleScheduleStyleChange = async (style: 'lifestyle' | 'mindful') => {
         if (!char) return;
-        // 与情绪/意识流强制同步：启用日程时自动启用情绪感知
-        const prevEmotion = char.emotionConfig;
-        const nextEmotion = { ...(prevEmotion || {}), enabled: true };
-        updateCharacter(char.id, { scheduleStyle: style, emotionConfig: nextEmotion });
+        updateCharacter(char.id, { scheduleStyle: style });
         // Force regenerate with new style — use updated char object
-        const updatedChar = { ...char, scheduleStyle: style, emotionConfig: nextEmotion };
+        const updatedChar = { ...char, scheduleStyle: style };
         if (!isScheduleFeatureOn(updatedChar)) return;
         setIsScheduleGenerating(true);
         try {
@@ -3910,20 +3911,14 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         }
     };
 
-    // 日程 / 情绪 buff 总开关
-    // 关闭：清空前台 scheduleData，同时清空可能已缓存的 buff 注入（防止继续污染下一轮 prompt）
+    // 作息日程总开关
+    // 关闭：清空前台 scheduleData，同时清空旧 buff 注入（旧版作息与心情是一体开关）
     // 打开：若还没生成今日日程，立即生成一次
     const handleToggleScheduleFeature = async () => {
         if (!char) return;
         const nextEnabled = !isScheduleFeatureOn(char);
         const patch: any = { scheduleFeatureEnabled: nextEnabled };
-        if (nextEnabled) {
-            // 与 handleScheduleStyleChange 对齐：开日程 = 同步开情绪/意识流。
-            // 旧逻辑下，新角色的 emotionConfig 从未初始化（undefined），
-            // 仅切总开关而不点风格时，emotionConfig?.enabled 始终落 false，
-            // 副 API 闸门 (isScheduleFeatureOn && emotionConfig?.enabled) 永远过不去。
-            patch.emotionConfig = { ...(char.emotionConfig || {}), enabled: true };
-        } else {
+        if (!nextEnabled) {
             // 关闭时顺手把 buff 注入清空，避免上一轮残留继续注入
             patch.buffInjection = '';
             patch.activeBuffs = [];
@@ -3931,10 +3926,10 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         updateCharacter(char.id, patch);
         if (!nextEnabled) {
             setScheduleData(null);
-            addToast('日程与情绪已关闭', 'info');
+            addToast('作息日程已关闭', 'info');
             return;
         }
-        addToast('日程与情绪已开启', 'success');
+        addToast('作息日程已开启', 'success');
         // 打开后立刻尝试生成（若今日未生成且已选风格）
         const updatedChar = { ...char, ...patch };
         if (updatedChar.scheduleStyle) {
@@ -3946,6 +3941,20 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 generateDailySchedule(updatedChar, false);
             }
         }
+    };
+
+    const handleToggleEmotionBuffFeature = () => {
+        if (!char) return;
+        const nextEnabled = !isEmotionBuffFeatureOn(char);
+        const patch: Partial<CharacterProfile> = {
+            emotionConfig: { ...(char.emotionConfig || {}), enabled: nextEnabled },
+        };
+        if (!nextEnabled) {
+            patch.activeBuffs = [];
+            patch.buffInjection = '';
+        }
+        updateCharacter(char.id, patch);
+        addToast(nextEnabled ? '心情 buff 已开启' : '心情 buff 已关闭', nextEnabled ? 'success' : 'info');
     };
 
     // --- Modal Handlers ---
@@ -5596,8 +5605,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                  </div>
              )}
 
-             {/* 语音通话拨号中覆盖层：呼叫 → 角色决策 → 接通跳电话 App / 未接听 */}
-             {voiceCallPhase !== 'none' && char && (
+             {/* 音/视频通话拨号中覆盖层：呼叫 → 角色决策 → 接通跳对应通话页 / 未接听 */}
+             {privateCallPhase !== 'none' && char && (
                 <div
                     className="fixed inset-0 z-[120] flex flex-col items-center justify-center animate-fade-in"
                     style={{
@@ -5606,11 +5615,13 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         backgroundSize: '18px 18px',
                     }}
                 >
-                    <div className="text-[9px] font-bold tracking-[0.4em] uppercase mb-8 select-none" style={{ ...MONO_STACK, color: voiceCallPhase === 'dialing' ? '#d18ba0' : '#b3a3ad' }}>
-                        {voiceCallPhase === 'dialing' ? '☎ Calling — Hold On' : '☎ No Answer Today'}
+                    <div className="text-[9px] font-bold tracking-[0.4em] uppercase mb-8 select-none" style={{ ...MONO_STACK, color: privateCallPhase === 'dialing' ? '#d18ba0' : '#b3a3ad' }}>
+                        {privateCallPhase === 'dialing'
+                            ? (privateCallMode === 'video' ? '▣ Video Calling — Hold On' : '☎ Calling — Hold On')
+                            : '☎ No Answer Today'}
                     </div>
                     <div className="relative mb-7">
-                        {voiceCallPhase === 'dialing' && (
+                        {privateCallPhase === 'dialing' && (
                             <>
                                 <span className="absolute -inset-3 rounded-[18px] border-2 animate-ping" style={{ borderColor: 'rgba(216,165,183,0.45)' }} />
                                 <span className="absolute -inset-6 rounded-[22px] border animate-ping" style={{ borderColor: 'rgba(216,165,183,0.28)', animationDelay: '0.4s' }} />
@@ -5621,17 +5632,19 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         <div className="relative bg-white p-2 pb-7 rounded-[8px]" style={{ border: '1px solid #eed6df', boxShadow: '0 12px 28px -18px rgba(122,90,114,0.38)' }}>
                             <img src={char.avatar} className="relative w-24 h-24 object-cover" alt={char.name} />
                             <span className="absolute bottom-1.5 left-0 right-0 text-center text-[9px] select-none" style={{ ...MONO_STACK, color: '#a892a3' }}>
-                                {voiceCallPhase === 'dialing' ? 'ring ring…' : 'missed'}
+                                {privateCallPhase === 'dialing' ? (privateCallMode === 'video' ? 'video ring…' : 'ring ring…') : 'missed'}
                             </span>
                         </div>
                     </div>
                     <div className="text-xl font-bold mb-1.5" style={{ ...SERIF_STACK, color: '#3d2f3d' }}>{char.name}</div>
                     <div className="text-[13px] mb-12" style={{ color: '#7a5a72' }}>
-                        {voiceCallPhase === 'dialing' ? '铃声已经响过去了，等 TA 把听筒拿起来…' : '这回 TA 没接到，晚点再拨一次吧'}
+                        {privateCallPhase === 'dialing'
+                            ? (privateCallMode === 'video' ? '视频邀请已经递过去了，等 TA 点接通…' : '铃声已经响过去了，等 TA 把听筒拿起来…')
+                            : '这回 TA 没接到，晚点再拨一次吧'}
                     </div>
-                    {voiceCallPhase === 'dialing' && (
+                    {privateCallPhase === 'dialing' && (
                         <button
-                            onClick={() => { void cancelVoiceCall(); }}
+                            onClick={() => { void cancelPrivateCall(); }}
                             className="w-16 h-16 rounded-full flex items-center justify-center active:translate-y-[2px] active:shadow-none transition-all"
                             style={{ background: '#d8a5b7', color: '#fffdfa', border: '1.5px solid #c98ba0', boxShadow: '0 12px 24px -16px rgba(122,90,114,0.55)' }}
                             aria-label="挂断这通呼叫"
@@ -6504,6 +6517,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onScheduleStyleChange={handleScheduleStyleChange}
                 isScheduleFeatureEnabled={isScheduleFeatureOn(char)}
                 onToggleScheduleFeature={handleToggleScheduleFeature}
+                isEmotionBuffFeatureEnabled={isEmotionBuffFeatureOn(char)}
+                onToggleEmotionBuffFeature={handleToggleEmotionBuffFeature}
                 isMemoryPalaceEnabled={!!char.memoryPalaceEnabled}
                 isVectorizing={isVectorizing}
                 onForceVectorize={handleForceVectorize}
@@ -6557,7 +6572,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 headerDensity={osTheme.chatHeaderDensity}
                 statusStyle={osTheme.chatStatusStyle || 'dot'}
                 chromeStyle={osTheme.chatChromeStyle}
-                hideBuffs={osTheme.chatHideHeaderBuffs}
+                hideBuffs={osTheme.chatHideHeaderBuffs || !isEmotionBuffFeatureOn(char)}
                 decorText={convo?.headerDecorText}
              />
 
@@ -7339,7 +7354,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             )}
 
-            {/* 情绪设置已嵌入日程 Modal（与日程强制同步开/关），不再单独渲染 */}
+            {/* 情绪设置已嵌入日程 Modal，心情 buff 可在其中单独开/关。 */}
 
             {/* 🍔 麦当劳小程序 - MCP 数据流按钮驱动, 协同聊天走主 pipeline (完整人设/记忆/日程) */}
             <McdMiniApp
@@ -7432,8 +7447,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     char={char}
                     onBack={() => setShowCharProfile(false)}
                     onSendMessage={() => setShowCharProfile(false)}
-                    onVoiceCall={() => { setShowCharProfile(false); openApp(AppID.Call); }}
-                    onVideoCall={() => { setShowCharProfile(false); openApp(AppID.VideoCall); }}
+                    onVoiceCall={() => { setShowCharProfile(false); void startVoiceCall(); }}
+                    onVideoCall={() => { setShowCharProfile(false); void startVideoCall(); }}
                     onOpenSettings={() => {
                         setShowCharProfile(false);
                         try {
@@ -7463,8 +7478,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             <div className="w-10 h-10 mx-auto mb-3 rounded-full text-xl font-black flex items-center justify-center" style={{ background: INK, color: '#f6f3ec', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 10px)' }}>!</div>
                             <div className="text-[16px] font-black" style={{ color: INK }}>已拉黑 {char.name}</div>
                             <div className="text-[13px] mt-2 leading-relaxed" style={{ color: INK_SOFT }}>
-                                你把 TA 加进了黑名单，暂时聊不了。TA 发来的消息照样显示，气泡旁会带个感叹号。
-                                想解除就去「角色资料 → 朋友设置」。
+                                你把 TA 加进了黑名单，暂时聊不了。想继续对话，可以先解除拉黑。
                             </div>
                         </div>
                         <button

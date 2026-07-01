@@ -54,7 +54,7 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'html_card': return '[HTML卡片]';
         case 'news_card': return '[新闻卡片]';
         case 'trpg_card': return `[TRPG游戏片段${meta.trpg?.gameTitle ? '：《' + meta.trpg.gameTitle + '》' : ''}]`;
-        case 'call_log': return '[语音通话记录]';
+        case 'call_log': return meta.callMode === 'video' ? '[视频聊天记录]' : '[语音通话记录]';
         case 'gift_card': return `[礼物：${meta.gift?.emoji || ''}${meta.gift?.name || ''}${meta.gift?.note ? '，赠言「' + String(meta.gift.note).slice(0, 30) + '」' : ''}]`;
         default: {
             const c = typeof m.content === 'string' ? m.content : '';
@@ -795,6 +795,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         // Filter Logic
         let effectiveHistory = messages
             .filter(m => !m.metadata?.excludeFromContext)
+            .filter(m => !m.metadata?.blockPeek)
             .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
         // Memory Palace: 过滤已被记忆宫殿处理过的消息（由向量记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
@@ -1059,10 +1060,12 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     content = `${timeStr} ${normalizeMessageContent(m, char?.name || '你', userProfile?.name || '用户')}`;
                 }
                 else if ((m.type as string) === 'call_log') {
-                    // 语音通话记录（拨打/未接/拒接/取消），让角色"记得"这通电话发生过
+                    // 音/视频通话记录（拨打/未接/拒接/取消/结束），让角色"记得"这通通话发生过
                     const meta: any = m.metadata || {};
                     const uName = userProfile?.name || '用户';
-                    const dir = meta.callDirection === 'incoming' ? `你给${uName}打了语音电话` : `${uName}给你打了语音电话`;
+                    const callLabel = meta.callMode === 'video' ? '视频聊天' : '语音电话';
+                    const recordLabel = meta.callMode === 'video' ? '视频聊天记录' : '语音通话记录';
+                    const dir = meta.callDirection === 'incoming' ? `你给${uName}拨了${callLabel}` : `${uName}给你拨了${callLabel}`;
                     let outcomeText: string;
                     if (meta.callOutcome === 'declined') {
                         outcomeText = meta.callDirection === 'incoming'
@@ -1072,10 +1075,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                         outcomeText = meta.callDirection === 'incoming' ? `${uName}没有接到` : '你没有接到';
                     } else if (meta.callOutcome === 'cancelled') {
                         outcomeText = '还没接通就取消了';
+                    } else if (meta.callOutcome === 'ended') {
+                        const duration = Number(meta.durationSec || 0);
+                        outcomeText = duration > 0 ? `已结束，持续约${Math.max(1, Math.round(duration / 60))}分钟` : '已结束';
                     } else {
                         outcomeText = '已接通';
                     }
-                    content = `${timeStr} [语音通话记录: ${dir}，${outcomeText}]`;
+                    content = `${timeStr} [${recordLabel}: ${dir}，${outcomeText}]`;
                 }
                 else if (m.role === 'system' && m.metadata?.systemCommand) {
                     // 系统命令：用户以系统身份下达的最高优先级指令。

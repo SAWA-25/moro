@@ -838,6 +838,611 @@ function buildCacheKey(action, body, cookieBucket) {
   );
 }
 
+// ========== QQ 音乐二维码登录 ==========
+// QQ 登录链路需要保持 qrsig / pt_login_sig 等临时 cookie。Worker 不依赖 KV，
+// 把短期登录态编码成 ticket 交给前端轮询时带回。
+const QQ_MUSIC_LOGIN = {
+  // QQ 音乐网页登录的 y.qq.com 回跳在服务端轮询里会被 ptlogin 返回 403。
+  // 这里用 QQ 通用网页扫码拿同一个 QQ 账号态，再保存给 QQ 音乐后续接口使用。
+  appid: "549000912",
+  daid: "5",
+  qrDaid: "5",
+  style: "40",
+  sUrl: "http://qun.qzone.qq.com/group",
+};
+
+const QQ_LOGIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+function splitSetCookie(header) {
+  if (!header) return [];
+  if (Array.isArray(header)) return header;
+  return String(header).split(/,(?=\s*[^;,=\s]+=[^;,]*)/g).map(s => s.trim()).filter(Boolean);
+}
+
+function mergeSetCookies(jar, setCookieHeader) {
+  const next = { ...(jar || {}) };
+  for (const line of splitSetCookie(setCookieHeader)) {
+    const first = line.split(';')[0] || '';
+    const eq = first.indexOf('=');
+    if (eq <= 0) continue;
+    const k = first.slice(0, eq).trim();
+    const v = first.slice(eq + 1).trim();
+    if (k && v) next[k] = v;
+  }
+  return next;
+}
+
+function cookieHeader(jar) {
+  return Object.entries(jar || {})
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+function hash33(s) {
+  let e = 0;
+  const txt = String(s || '');
+  for (let i = 0; i < txt.length; i++) e += (e << 5) + txt.charCodeAt(i);
+  return e & 2147483647;
+}
+
+function base64UrlEncodeJson(obj) {
+  const json = JSON.stringify(obj);
+  let bin = '';
+  for (const b of new TextEncoder().encode(json)) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlDecodeJson(ticket) {
+  const b64 = String(ticket || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+  const bin = atob(padded);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function extractQQLoginVersion(html) {
+  const ptuiVersion = String(html || '').match(/ptui_version:encodeURIComponent\("(\d+)"\)/)?.[1] || "20021917";
+  const jsVersion = String(html || '').match(/monorepo\/([^/"']+)/)?.[1] || "";
+  return { ptuiVersion, jsVersion };
+}
+
+function parsePtuiCallback(raw) {
+  const text = String(raw || '').trim();
+  const m = text.match(/^ptuiCB\(([\s\S]*)\);?$/);
+  if (!m) return { code: '', message: text };
+  const vals = [];
+  const re = /'([^']*)'/g;
+  let item;
+  while ((item = re.exec(m[1]))) vals.push(item[1]);
+  return {
+    code: vals[0] || '',
+    subCode: vals[1] || '',
+    url: vals[2] || '',
+    message: vals[4] || '',
+    nickname: vals[5] || vals[11] || '',
+    raw: text,
+  };
+}
+
+function decodeMaybeGarbledChinese(s) {
+  const txt = String(s || '');
+  if (!/[Ãå]/.test(txt)) return txt;
+  try {
+    const bytes = Uint8Array.from([...txt].map(ch => ch.charCodeAt(0) & 0xff));
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return txt;
+  }
+}
+
+function qqLoginHeaders(jar = {}, extra = {}) {
+  return {
+    "Accept": "*/*",
+    "User-Agent": QQ_LOGIN_UA,
+    "Referer": "https://xui.ptlogin2.qq.com/cgi-bin/xlogin",
+    ...(cookieHeader(jar) ? { "Cookie": cookieHeader(jar) } : {}),
+    ...extra,
+  };
+}
+
+function parseCookieHeaderToJar(raw) {
+  const jar = {};
+  for (const part of String(raw || '').split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const k = trimmed.slice(0, eq).trim();
+    const v = trimmed.slice(eq + 1).trim();
+    if (k) jar[k] = v;
+  }
+  return jar;
+}
+
+function normalizeQQUin(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const withoutPrefix = raw.replace(/^o(?=\d+$)/i, '');
+  const digits = withoutPrefix.replace(/\D/g, '');
+  return digits || withoutPrefix;
+}
+
+function qqJarFromBody(body = {}) {
+  const jar = parseCookieHeaderToJar(body.cookie || '');
+  const uin = normalizeQQUin(body.uin || jar.uin || jar.ptui_loginuin || jar.luin || jar.wxuin || '');
+  if (uin) jar.uin = uin;
+  return jar;
+}
+
+function qqMusicHeaders(jar = {}, extra = {}) {
+  return {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": QQ_LOGIN_UA,
+    "Referer": "https://y.qq.com/",
+    "Origin": "https://y.qq.com",
+    ...(cookieHeader(jar) ? { "Cookie": cookieHeader(jar) } : {}),
+    ...extra,
+  };
+}
+
+function parseMaybeJson(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  const jsonp = raw.match(/^[\w$]+\(([\s\S]*)\);?$/);
+  return JSON.parse(jsonp ? jsonp[1] : raw);
+}
+
+async function qqFetchJson(url, { data = {}, jar = {}, method = "GET", headers = {} } = {}) {
+  const target = new URL(url);
+  let body;
+  const init = {
+    method,
+    headers: qqMusicHeaders(jar, headers),
+  };
+  if (method.toUpperCase() === "GET") {
+    for (const [k, v] of Object.entries(data || {})) {
+      if (v == null) continue;
+      target.searchParams.set(k, String(v));
+    }
+  } else {
+    body = new URLSearchParams();
+    for (const [k, v] of Object.entries(data || {})) {
+      if (v == null) continue;
+      body.set(k, String(v));
+    }
+    init.body = body.toString();
+    init.headers = {
+      ...init.headers,
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    };
+  }
+  const res = await fetch(target.toString(), init);
+  const text = await res.text().catch(() => '');
+  if (!res.ok) throw new Error(`QQ 音乐接口失败 (${res.status})`);
+  try {
+    return parseMaybeJson(text);
+  } catch {
+    throw new Error("QQ 音乐返回了无法解析的数据");
+  }
+}
+
+function decodeBase64Utf8(raw) {
+  if (!raw) return '';
+  try {
+    const bin = atob(String(raw));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function qqAlbumPic(albummid) {
+  const mid = String(albummid || '').trim();
+  return mid ? `https://y.qq.com/music/photo_new/T002R300x300M000${mid}.jpg?max_age=2592000` : '';
+}
+
+function normalizeQQSong(raw) {
+  const s = raw?.songinfo || raw || {};
+  const file = s.file || {};
+  const songmid = String(s.songmid || s.song_mid || s.mid || s.strMediaMid || file.media_mid || '').trim();
+  const mediaMid = String(s.strMediaMid || s.media_mid || file.media_mid || songmid || '').trim();
+  const singers = Array.isArray(s.singer)
+    ? s.singer.map(v => v?.name).filter(Boolean).join(' / ')
+    : (s.singername || s.singerName || '');
+  const albumMid = s.albummid || s.album_mid || s.album?.pmid || s.album?.mid || '';
+  const rawDuration = Number(s.interval || s.duration || s.songinterval || 0);
+  const duration = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
+  return {
+    id: -Math.max(1, hash33(`qq:${songmid || s.songid || s.id || s.songname || s.name}`)),
+    name: s.songname || s.name || s.title || '',
+    artists: singers,
+    album: s.albumname || s.album?.name || '',
+    albumPic: s.albumurl || s.pic || qqAlbumPic(albumMid),
+    duration,
+    fee: s.pay?.pay_play ? 1 : 0,
+    source: "qq",
+    qqSongMid: songmid,
+    qqMediaMid: mediaMid,
+    rawSongId: s.songid || s.id || null,
+  };
+}
+
+function normalizeQQPlaylist(item, subscribed = false) {
+  const id = String(item?.tid || item?.disstid || item?.dissid || '').trim();
+  if (!id || id === '0') return null;
+  return {
+    id,
+    name: item.diss_name || item.dissname || item.name || '',
+    coverImgUrl: item.diss_cover || item.logo || item.cover || '',
+    trackCount: Number(item.song_cnt || item.songnum || item.song_count || 0),
+    subscribed,
+    creatorNickname: item.nick || item.nickname || item.creator?.nickname || '',
+    source: "qq",
+  };
+}
+
+async function fetchQQCreatedPlaylists(jar, uin) {
+  return qqFetchJson("https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss", {
+    jar,
+    headers: { "Referer": "https://y.qq.com/portal/profile.html" },
+    data: {
+      hostUin: 0,
+      hostuin: uin,
+      sin: 0,
+      size: 200,
+      g_tk: 5381,
+      loginUin: 0,
+      format: "json",
+      inCharset: "utf8",
+      outCharset: "utf-8",
+      notice: 0,
+      platform: "yqq.json",
+      needNewCode: 0,
+    },
+  });
+}
+
+async function fetchQQCollectedPlaylists(jar, uin) {
+  return qqFetchJson("https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg", {
+    jar,
+    headers: { "Referer": "https://y.qq.com/portal/profile.html" },
+    data: {
+      ct: 20,
+      cid: 205360956,
+      userid: uin,
+      reqtype: 3,
+      sin: 0,
+      ein: 99,
+      g_tk: 5381,
+      format: "json",
+      inCharset: "utf8",
+      outCharset: "utf-8",
+    },
+  });
+}
+
+async function qqProfileFromSonglists(jar, uin) {
+  const created = await fetchQQCreatedPlaylists(jar, uin);
+  const disslist = created?.data?.disslist || [];
+  const visible = disslist.map(v => normalizeQQPlaylist(v, false)).filter(Boolean);
+  const firstCover = visible.find(v => v.coverImgUrl)?.coverImgUrl || '';
+  return {
+    profile: {
+      userId: uin,
+      nickname: created?.data?.hostname || `QQ ${uin}`,
+      avatarUrl: /^\d+$/.test(String(uin)) ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=100` : '',
+      signature: '',
+      backgroundUrl: firstCover,
+      vipType: 0,
+      follows: 0,
+      followeds: 0,
+      playlistCount: Number(created?.data?.totoal || visible.length || 0),
+    },
+    created,
+    playlists: visible,
+  };
+}
+
+async function handleQQMusicApi(pathname, body) {
+  const jar = qqJarFromBody(body);
+  const uin = normalizeQQUin(body.uin || jar.uin || jar.ptui_loginuin || jar.luin || '');
+  if (
+    !uin
+    && pathname !== "/qqmusic/playlist/detail"
+    && pathname !== "/qqmusic/song/url"
+    && pathname !== "/qqmusic/lyric"
+  ) {
+    return { status: "error", message: "缺少 QQ 音乐账号，请先扫码登录" };
+  }
+
+  if (pathname === "/qqmusic/profile") {
+    const data = await qqProfileFromSonglists(jar, uin);
+    return { status: "success", profile: data.profile };
+  }
+
+  if (pathname === "/qqmusic/user/playlist") {
+    const data = await qqProfileFromSonglists(jar, uin);
+    let collected = [];
+    try {
+      const fav = await fetchQQCollectedPlaylists(jar, uin);
+      collected = (fav?.data?.cdlist || []).map(v => normalizeQQPlaylist(v, true)).filter(Boolean);
+    } catch {}
+    const seen = new Set();
+    const playlist = [...data.playlists, ...collected].filter(pl => {
+      if (!pl?.id || seen.has(pl.id)) return false;
+      seen.add(pl.id);
+      return true;
+    });
+    return { status: "success", profile: data.profile, playlist };
+  }
+
+  if (pathname === "/qqmusic/playlist/detail") {
+    const id = String(body.id || '').trim();
+    if (!id) return { status: "error", message: "缺少 QQ 音乐歌单 ID" };
+    const detail = await qqFetchJson("https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg", {
+      jar,
+      headers: { "Referer": `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(id)}` },
+      data: {
+        type: 1,
+        json: 1,
+        utf8: 1,
+        onlysong: 0,
+        nosign: 1,
+        disstid: id,
+        g_tk: 5381,
+        loginUin: uin || 0,
+        hostUin: 0,
+        format: "json",
+        inCharset: "GB2312",
+        outCharset: "utf-8",
+        notice: 0,
+        platform: "yqq",
+        needNewCode: 0,
+      },
+    });
+    const cd = detail?.cdlist?.[0] || {};
+    const songs = (cd.songlist || []).map(normalizeQQSong).filter(s => s.qqSongMid);
+    return {
+      status: "success",
+      playlist: {
+        id: String(cd.disstid || id),
+        name: cd.dissname || '',
+        coverImgUrl: cd.logo || '',
+        trackCount: Number(cd.songnum || songs.length || 0),
+        subscribed: !cd.owndir,
+        creatorNickname: cd.nickname || cd.nick || '',
+        source: "qq",
+      },
+      songs,
+      rawCode: detail?.code,
+    };
+  }
+
+  if (pathname === "/qqmusic/song/url") {
+    const songmid = String(body.songmid || '').trim();
+    const mediaMid = String(body.mediaMid || songmid).trim();
+    if (!songmid) return { status: "error", message: "缺少 QQ 音乐 songmid" };
+    const key = jar.qqmusic_key || jar.qm_keyst || jar.p_skey || '';
+    const types = [
+      { s: "M800", e: ".mp3" },
+      { s: "M500", e: ".mp3" },
+      { s: "C400", e: ".m4a" },
+    ];
+    for (const type of types) {
+      const file = `${type.s}${songmid}${mediaMid}${type.e}`;
+      const guid = String(Math.floor(Math.random() * 10000000));
+      const payload = {
+        req_0: {
+          module: "vkey.GetVkeyServer",
+          method: "CgiGetVkey",
+          param: {
+            filename: [file],
+            guid,
+            songmid: [songmid],
+            songtype: [0],
+            uin: uin || "0",
+            loginflag: 1,
+            platform: "20",
+          },
+        },
+        comm: {
+          uin: uin || 0,
+          format: "json",
+          ct: 19,
+          cv: 0,
+          authst: key,
+        },
+      };
+      const result = await qqFetchJson("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+        jar,
+        data: {
+          "-": "getplaysongvkey",
+          g_tk: 5381,
+          loginUin: uin || 0,
+          hostUin: 0,
+          format: "json",
+          inCharset: "utf8",
+          outCharset: "utf-8",
+          notice: 0,
+          platform: "yqq.json",
+          needNewCode: 0,
+          data: JSON.stringify(payload),
+        },
+      });
+      const info = result?.req_0?.data;
+      const purl = info?.midurlinfo?.[0]?.purl || '';
+      if (purl) {
+        const sip = Array.isArray(info.sip) ? info.sip : [];
+        const domain = sip.find(v => String(v).startsWith("https://")) || sip.find(v => !String(v).startsWith("http://ws")) || sip[0] || "https://dl.stream.qqmusic.qq.com/";
+        return { status: "success", data: { url: `${domain}${purl}`, type: `${type.s}${type.e}` } };
+      }
+    }
+    return { status: "error", message: "QQ 音乐暂无可播放地址，可能需要会员或歌曲受限" };
+  }
+
+  if (pathname === "/qqmusic/lyric") {
+    const songmid = String(body.songmid || '').trim();
+    if (!songmid) return { status: "error", message: "缺少 QQ 音乐 songmid" };
+    const result = await qqFetchJson("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg", {
+      jar,
+      headers: { "Referer": "https://y.qq.com" },
+      data: {
+        songmid,
+        pcachetime: Date.now(),
+        g_tk: 5381,
+        loginUin: uin || 0,
+        hostUin: 0,
+        format: "json",
+        inCharset: "utf8",
+        outCharset: "utf-8",
+        notice: 0,
+        platform: "yqq",
+        needNewCode: 0,
+      },
+    });
+    return {
+      status: "success",
+      data: {
+        lyric: decodeBase64Utf8(result.lyric),
+        trans: decodeBase64Utf8(result.trans),
+      },
+    };
+  }
+
+  return { status: "error", message: "Unknown QQ Music endpoint" };
+}
+
+async function fetchQQProfile(jar) {
+  const uin = jar.uin || jar.ptui_loginuin || jar.luin || '';
+  if (!uin) return null;
+  const profileUrl = `https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg?loginUin=${encodeURIComponent(uin)}&hostUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq.json`;
+  try {
+    const res = await fetch(profileUrl, {
+      headers: {
+        ...qqLoginHeaders(jar),
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://y.qq.com/",
+        "Origin": "https://y.qq.com",
+      },
+    });
+    const data = await res.json().catch(() => null);
+    const creator = data?.data?.creator || data?.creator || {};
+    return {
+      uin: String(creator.uin || uin),
+      nickname: creator.nick || creator.nickname || creator.name || '',
+      avatarUrl: creator.headpic || creator.avatar || creator.pic || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function createQQMusicQrTicket() {
+  let jar = {};
+  const loginUrl = new URL("https://xui.ptlogin2.qq.com/cgi-bin/xlogin");
+  loginUrl.searchParams.set("appid", QQ_MUSIC_LOGIN.appid);
+  loginUrl.searchParams.set("daid", QQ_MUSIC_LOGIN.daid);
+  loginUrl.searchParams.set("style", QQ_MUSIC_LOGIN.style);
+  loginUrl.searchParams.set("s_url", QQ_MUSIC_LOGIN.sUrl);
+  loginUrl.searchParams.set("pt_no_auth", "1");
+  loginUrl.searchParams.set("low_login", "1");
+  loginUrl.searchParams.set("target", "self");
+
+  const loginRes = await fetch(loginUrl.toString(), { headers: qqLoginHeaders(jar) });
+  jar = mergeSetCookies(jar, loginRes.headers.get("Set-Cookie"));
+  const loginHtml = await loginRes.text().catch(() => '');
+  const { ptuiVersion, jsVersion } = extractQQLoginVersion(loginHtml);
+
+  const qrUrl = new URL("https://ssl.ptlogin2.qq.com/ptqrshow");
+  qrUrl.searchParams.set("appid", QQ_MUSIC_LOGIN.appid);
+  qrUrl.searchParams.set("e", "2");
+  qrUrl.searchParams.set("l", "M");
+  qrUrl.searchParams.set("s", "3");
+  qrUrl.searchParams.set("d", "72");
+  qrUrl.searchParams.set("v", "4");
+  qrUrl.searchParams.set("t", String(Math.random()));
+  qrUrl.searchParams.set("daid", QQ_MUSIC_LOGIN.qrDaid);
+  qrUrl.searchParams.set("pt_3rd_aid", "0");
+
+  const qrRes = await fetch(qrUrl.toString(), { headers: qqLoginHeaders(jar) });
+  jar = mergeSetCookies(jar, qrRes.headers.get("Set-Cookie"));
+  if (!qrRes.ok) {
+    throw new Error(`QQ 二维码生成失败 (${qrRes.status})`);
+  }
+  const buf = await qrRes.arrayBuffer();
+  let bin = '';
+  for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
+  const qrImg = `data:${qrRes.headers.get("Content-Type") || "image/png"};base64,${btoa(bin)}`;
+
+  if (!jar.qrsig) throw new Error("QQ 二维码缺少 qrsig");
+  const ticket = base64UrlEncodeJson({
+    jar,
+    ptuiVersion,
+    jsVersion,
+    createdAt: Date.now(),
+  });
+  return { ticket, qrImg };
+}
+
+async function checkQQMusicQrTicket(ticket) {
+  const state = base64UrlDecodeJson(ticket);
+  if (!state?.jar?.qrsig) throw new Error("QQ 音乐 ticket 已损坏");
+  if (Date.now() - Number(state.createdAt || 0) > 10 * 60 * 1000) {
+    return { status: "expired", message: "二维码已超过 10 分钟，请刷新" };
+  }
+
+  let jar = state.jar;
+  const loginSig = jar.pt_login_sig || "";
+  const checkUrl = new URL("https://ssl.ptlogin2.qq.com/ptqrlogin");
+  checkUrl.searchParams.set("u1", QQ_MUSIC_LOGIN.sUrl);
+  checkUrl.searchParams.set("ptqrtoken", String(hash33(jar.qrsig)));
+  checkUrl.searchParams.set("ptredirect", "0");
+  checkUrl.searchParams.set("h", "1");
+  checkUrl.searchParams.set("t", "1");
+  checkUrl.searchParams.set("g", "1");
+  checkUrl.searchParams.set("from_ui", "1");
+  checkUrl.searchParams.set("ptlang", "2052");
+  checkUrl.searchParams.set("action", `0-0-${Date.now()}`);
+  checkUrl.searchParams.set("js_ver", state.ptuiVersion || "20021917");
+  checkUrl.searchParams.set("js_type", "1");
+  checkUrl.searchParams.set("login_sig", loginSig);
+  checkUrl.searchParams.set("pt_uistyle", QQ_MUSIC_LOGIN.style);
+  checkUrl.searchParams.set("aid", QQ_MUSIC_LOGIN.appid);
+  checkUrl.searchParams.set("daid", QQ_MUSIC_LOGIN.daid);
+  if (state.jsVersion) checkUrl.searchParams.set("pt_js_version", state.jsVersion);
+
+  const res = await fetch(checkUrl.toString(), { headers: qqLoginHeaders(jar) });
+  jar = mergeSetCookies(jar, res.headers.get("Set-Cookie"));
+  const text = await res.text().catch(() => '');
+  const parsed = parsePtuiCallback(text);
+  const msg = decodeMaybeGarbledChinese(parsed.message || text);
+
+  if (!res.ok) {
+    return { status: "error", message: msg || `QQ 音乐登录检查失败 (${res.status})` };
+  }
+  if (parsed.code === "66") return { status: "waiting", message: "二维码未失效，等待扫码" };
+  if (parsed.code === "67") return { status: "scanned", message: "已扫码，请在手机上确认" };
+  if (parsed.code === "65") return { status: "expired", message: "二维码已失效，请刷新" };
+  if (parsed.code === "0") {
+    const profile = await fetchQQProfile(jar);
+    const uin = normalizeQQUin(profile?.uin || jar.uin || jar.ptui_loginuin || '');
+    return {
+      status: "success",
+      account: {
+        uin: String(uin),
+        nickname: profile?.nickname || parsed.nickname || (uin ? `QQ ${uin}` : "QQ 音乐用户"),
+        avatarUrl: profile?.avatarUrl || (uin ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=100` : ''),
+        cookie: cookieHeader(jar),
+      },
+    };
+  }
+  return { status: "error", message: msg || `QQ 音乐登录返回 ${parsed.code || "未知状态"}` };
+}
+
 // ========== 多上游 fetch 带失败转移 ==========
 // 从 NETEASE_UPSTREAMS 随机打乱, 依次尝试, 任何一个成功(HTTP 2xx + code!=-460)就返回。
 // 自动屏蔽被网易风控的上游 (HTTP 200 但 body 里 code=-460 / -7 = 被限流)。
@@ -2706,6 +3311,51 @@ export default {
         });
       } catch (e) {
         return jsonResponse({ error: 'Replicate upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
+    // ========== QQ 音乐扫码登录 ==========
+    if (url.pathname.startsWith('/qqmusic/login/')) {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: "Method not allowed. Use POST." }, { status: 405, origin });
+      }
+      try {
+        const body = await request.json().catch(() => ({}));
+        if (url.pathname === '/qqmusic/login/qr/create') {
+          const qr = await createQQMusicQrTicket();
+          return jsonResponse({ status: "waiting", ...qr }, { origin });
+        }
+        if (url.pathname === '/qqmusic/login/qr/check') {
+          if (!body.ticket) {
+            return jsonResponse({ status: "error", message: "缺少 QQ 音乐登录 ticket" }, { status: 400, origin });
+          }
+          const result = await checkQQMusicQrTicket(body.ticket);
+          return jsonResponse(result, { origin });
+        }
+        return jsonResponse({ error: "Unknown QQ Music login endpoint" }, { status: 404, origin });
+      } catch (e) {
+        return jsonResponse({
+          status: "error",
+          message: e && e.message ? e.message : String(e),
+        }, { status: 500, origin });
+      }
+    }
+
+    // ========== QQ 音乐账号数据 / 歌单 / 播放代理 ==========
+    if (url.pathname.startsWith('/qqmusic/')) {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: "Method not allowed. Use POST." }, { status: 405, origin });
+      }
+      try {
+        const body = await request.json().catch(() => ({}));
+        const result = await handleQQMusicApi(url.pathname, body);
+        const status = result?.status === "error" ? 400 : 200;
+        return jsonResponse(result, { status, origin });
+      } catch (e) {
+        return jsonResponse({
+          status: "error",
+          message: e && e.message ? e.message : String(e),
+        }, { status: 500, origin });
       }
     }
 

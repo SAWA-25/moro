@@ -26,7 +26,7 @@ import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
 import { createCharacterId, ensureCharacterModelId } from '../utils/characterIdentity';
-import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
+import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import { refreshPresetRegexCache } from '../utils/presets';
@@ -2199,7 +2199,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const categories = await DB.getEmojiCategories();
 
               // 上一轮缓存的意识流独白 —— 主路径用 React state，主动消息这里用 ref Map
-              const cachedInnerState = proactiveInnerStateRef.current.get(charId) || undefined;
+              const emotionBuffOn = isEmotionBuffFeatureOn(char);
+              if (!emotionBuffOn) proactiveInnerStateRef.current.delete(charId);
+              const cachedInnerState = emotionBuffOn ? (proactiveInnerStateRef.current.get(charId) || undefined) : undefined;
 
               const payload = await buildChatRequestPayload({
                   char, userProfile: currentUserProfile!, groups: currentGroups,
@@ -2222,10 +2224,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
               // 3c. 情绪评估 fire-and-forget — 与主 API 并行，沿用 useChatAI 的 API 选择逻辑：
               //     角色专属情绪 API > 主 apiConfig（与记忆宫殿副 API 完全独立）
-              if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled) {
+              if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffOn) {
                   // 后台情绪评估走辅助任务通道：角色自带情绪 API 优先，否则副 API（回落主 API）
-                  const emotionApi = (char.emotionConfig.api?.baseUrl)
-                      ? char.emotionConfig.api
+                  const configuredEmotionApi = char.emotionConfig?.api;
+                  const emotionApi = (configuredEmotionApi?.baseUrl)
+                      ? configuredEmotionApi
                       : resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current);
                   if (emotionApi.baseUrl && currentUserProfile) {
                       evaluateEmotionBackground(char, currentUserProfile, systemPrompt, apiMessages, emotionApi)
@@ -3482,14 +3485,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // 情绪 API 同步到所有角色：API 字段（baseUrl/apiKey/model）所有角色共用，
-  // 各角色自身的 enabled 标志保持不变。
+  // 各角色自身的心情 buff enabled 标志保持不变。
   // 注意：与文具盒全局副 API 独立；情绪 API 是角色情绪感知的专用覆盖项。
   const syncEmotionApiToAllCharacters = (api: { baseUrl: string; apiKey: string; model: string } | undefined) => {
     setCharacters(prev => {
       const updated = prev.map(c => {
         const prevEmotion = c.emotionConfig;
         const nextEmotion = {
-          enabled: !!prevEmotion?.enabled,
+          enabled: prevEmotion?.enabled !== false,
           ...(api && api.baseUrl ? { api: { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } } : {}),
         };
         const next = { ...c, emotionConfig: nextEmotion };
@@ -3510,9 +3513,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const savePresets = (presets: ApiPreset[]) => { setApiPresets(presets); localStorage.setItem('os_api_presets', JSON.stringify(presets)); };
   const addCharacter = async () => {
     const name = 'New Character';
-    // 默认开启 emotionConfig.enabled，让"开日程 = 开情绪"这条隐含约定对新角色也成立。
-    // 真正的闸门是 (isScheduleFeatureOn && emotionConfig.enabled)，schedule 没开
-    // 时副 API 不会触发，所以这里默认 true 安全。
+    // 默认开启心情 buff 独立开关；真正触发还要过 isEmotionBuffFeatureOn，
+    // 作息没开时不会额外跑聊天后的情绪分析。
     // 注意：memoryPalaceEnabled 不在这里默认开 —— 那是用户在记忆宫殿 App 显式 opt-in
     // 的功能，自动开会替用户决策。
     const newCharId = createCharacterId('char');

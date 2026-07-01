@@ -17,6 +17,7 @@ import { fetchRemoteByRoom } from '../../utils/memoryPalace/supabaseVector';
 import { ROOM_SLOTS, ROOM_META } from './roomTemplates';
 import { safeFetchJson, extractContent, extractJson } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
 import type {
   DiveMode, DiveLLMRequest, DiveLLMResponse, DiveChoice,
   DiveDialogue, DiveBuffValues, DiveBuff, DiveResult, BuffType,
@@ -1000,7 +1001,7 @@ function sanitizeDiveBuffs(raw: any): CharacterBuff[] {
  */
 export async function emitDiveEmotion(params: EmitDiveEmotionParams): Promise<void> {
   try {
-    if (!params.charProfile.emotionConfig?.enabled) return;
+    if (!isEmotionBuffFeatureOn(params.charProfile)) return;
     if (!params.api?.baseUrl) return;
 
     const prompt = buildDiveEmotionPrompt(params);
@@ -1066,15 +1067,21 @@ export async function emitDiveEmotion(params: EmitDiveEmotionParams): Promise<vo
     }
 
     const sanitized = sanitizeDiveBuffs(result.buffs);
+    let latestChar = params.charProfile;
+    try {
+      const chars = await DB.getAllCharacters();
+      latestChar = chars.find(c => c.id === params.charProfile.id) || params.charProfile;
+    } catch { /* use caller snapshot if DB read fails */ }
+    if (!isEmotionBuffFeatureOn(latestChar)) return;
 
     const updated: CharacterProfile = {
-      ...params.charProfile,
+      ...latestChar,
       activeBuffs: sanitized,
       buffInjection: result.injection || '',
     };
     await DB.saveCharacter(updated);
     window.dispatchEvent(new CustomEvent('emotion-updated', {
-      detail: { charId: params.charProfile.id, buffs: sanitized, source: 'memory-dive' },
+      detail: { charId: latestChar.id, buffs: sanitized, buffInjection: result.injection || '', source: 'memory-dive' },
     }));
     console.log('🌀 [DiveEmotion] 情绪已发射:', sanitized.map(b => b.label).join(', ') || '(空)');
   } catch (e: any) {

@@ -1,7 +1,7 @@
 
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
 import { buildCityPromptBlock } from './charCity';
-import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
+import { getFlowNarrativeKey, isEmotionBuffFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { MARRIAGE_STAGE_LABEL } from './relationship';
 import { buildCoupleSpacePromptBlock } from './coupleSpace';
@@ -413,7 +413,7 @@ export const ContextBuilder = {
         // 6. 情绪底色 Buff (Emotion Buff Injection)
         // 放在角色设定之后，使所有调用 ContextBuilder 的 App 都能感知情绪状态
         // 总开关关闭时完全跳过，防止残留 buff 继续污染 prompt
-        if (isScheduleFeatureOn(char) && char.emotionConfig?.enabled && char.buffInjection) {
+        if (isEmotionBuffFeatureOn(char) && char.buffInjection) {
             context += `${char.buffInjection}\n\n`;
             console.log(`🎭 [Context] Buff injected for ${char.name}:\n`, char.buffInjection);
             console.log(`🎭 [Context] Active buffs:`, JSON.stringify(char.activeBuffs || [], null, 2));

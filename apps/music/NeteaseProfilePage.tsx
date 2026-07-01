@@ -7,18 +7,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOS } from '../../context/OSContext';
 import { useMusic, musicApi, toHttps, Song } from '../../context/MusicContext';
 import {
-  C, Sparkle, MizuHeader, BokehBg, MiniPlayer,
+  C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage,
 } from './MusicUI';
 import { MagnifyingGlass, Gear, User as UserIcon } from '@phosphor-icons/react';
 import NeteaseLoginPanel from './NeteaseLoginPanel';
+import QQMusicLoginPanel from './QQMusicLoginPanel';
 
 interface Playlist {
-  id: number;
+  id: number | string;
   name: string;
   coverImgUrl: string;
   trackCount: number;
   subscribed: boolean;
   creatorNickname?: string;
+  source?: MusicSource;
 }
 
 interface RecordItem {
@@ -33,7 +35,24 @@ interface Props {
   onOpenSearch?: () => void;
   onOpenSettings?: () => void;
   onVisitChar?: (charId: string) => void;
+  onQQMusicConnected?: () => void;
 }
+
+type MusicSource = 'netease' | 'qq';
+
+interface ProfileView {
+  userId: string;
+  nickname: string;
+  avatarUrl: string;
+  signature?: string;
+  backgroundUrl?: string;
+  vipType?: number;
+  follows?: number;
+  followeds?: number;
+  playlistCount?: number;
+}
+
+const playlistKey = (pl: Playlist) => `${pl.source || 'netease'}:${pl.id}`;
 
 // ─── 「一起写的歌」本地专辑卡 — 写歌 App 同步过来的 ACE-Step / MiniMax 出歌 ───
 interface LocalAlbumCardProps {
@@ -149,7 +168,7 @@ const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExp
   </div>
 );
 
-const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar }) => {
+const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onQQMusicConnected }) => {
   const { addToast, characters, userProfile } = useOS();
   const {
     cfg, setCfg, profile, refreshProfile, playSong,
@@ -160,6 +179,8 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   } = useMusic();
   const [localAlbumExpanded, setLocalAlbumExpanded] = useState(false);
   const [showNeteaseLogin, setShowNeteaseLogin] = useState(false);
+  const [showQQMusicLogin, setShowQQMusicLogin] = useState(false);
+  const [activeSource, setActiveSource] = useState<MusicSource>(() => (cfg.qqMusic && (!cfg.cookie || !profile) ? 'qq' : 'netease'));
 
   // 伴听 char 名单（MiniPlayer 徽章用）—— 带头像
   const companions = useMemo(() => {
@@ -173,12 +194,16 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [cloud, setCloud] = useState<Song[]>([]);
+  const [qqProfile, setQQProfile] = useState<ProfileView | null>(null);
   const [loading, setLoading] = useState(false);
-  const [expandedPl, setExpandedPl] = useState<number | null>(null);
-  const [plTracks, setPlTracks] = useState<Record<number, Song[]>>({});
+  const [expandedPl, setExpandedPl] = useState<string | null>(null);
+  const [plTracks, setPlTracks] = useState<Record<string, Song[]>>({});
   const [signedIn, setSignedIn] = useState(false);
 
+  const hasNetease = !!cfg.cookie && !!profile;
+  const hasQQ = !!cfg.qqMusic;
   const uid = profile?.userId;
+  const qqAccount = cfg.qqMusic || null;
 
   // 把不稳定的引用（每秒重建的 addToast 和 cfg 对象）收到 ref 里，
   // 否则 reload 的 deps 会爆炸 → useEffect 循环触发。
@@ -187,22 +212,107 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
 
+  useEffect(() => {
+    if (activeSource === 'netease' && !hasNetease && hasQQ) {
+      setActiveSource('qq');
+    } else if (activeSource === 'qq' && !hasQQ && hasNetease) {
+      setActiveSource('netease');
+    } else if (!hasNetease && !hasQQ && activeSource !== 'netease') {
+      setActiveSource('netease');
+    }
+  }, [activeSource, hasNetease, hasQQ]);
+
+  useEffect(() => {
+    setPlaylists([]);
+    setRecords([]);
+    setCloud([]);
+    setExpandedPl(null);
+    setPlTracks({});
+    setSignedIn(false);
+  }, [activeSource, uid, qqAccount?.uin]);
+
+  const neteaseProfileView = useMemo<ProfileView | null>(() => {
+    if (!profile) return null;
+    return {
+      userId: String(profile.userId),
+      nickname: profile.nickname,
+      avatarUrl: profile.avatarUrl,
+      signature: profile.signature,
+      backgroundUrl: profile.backgroundUrl,
+      vipType: profile.vipType,
+      follows: profile.follows,
+      followeds: profile.followeds,
+      playlistCount: profile.playlistCount,
+    };
+  }, [profile]);
+
+  const qqFallbackProfile = useMemo<ProfileView | null>(() => {
+    if (!qqAccount) return null;
+    return {
+      userId: qqAccount.uin,
+      nickname: qqAccount.nickname || 'QQ 音乐用户',
+      avatarUrl: toHttps(qqAccount.avatarUrl || `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(qqAccount.uin)}&s=100`),
+      signature: 'QQ 音乐',
+      backgroundUrl: '',
+      vipType: 0,
+      follows: 0,
+      followeds: 0,
+      playlistCount: playlists.length,
+    };
+  }, [qqAccount, playlists.length]);
+
+  const viewProfile = activeSource === 'qq' ? (qqProfile || qqFallbackProfile) : neteaseProfileView;
+  const sourceLabel = activeSource === 'qq' ? 'QQ 音乐' : '网易云';
+
   // VIP 标签 —— 无论登录与否都必须先算（hooks 必须恒定顺序，不能放到 early-return 后）
   const vipLabel = useMemo(() => {
+    if (activeSource === 'qq') return 'QQ 音乐';
     const v = profile?.vipType || 0;
     if (v >= 110) return '黑胶 SVIP';
     if (v >= 10) return '黑胶 VIP';
     if (v > 0) return 'VIP';
     return '普通用户';
-  }, [profile]);
+  }, [activeSource, profile]);
 
-  // 加载歌单 / 播放记录 / 云盘
-  // 重点：deps 只含 uid —— 其他依赖通过 ref 读取，避免 OSContext 每秒 tick 触发循环刷新
+  // 加载当前来源的歌单 / 播放记录 / 云盘
+  // 重点：cfg / toast 通过 ref 读取，避免 OSContext 每秒 tick 触发循环刷新
   const reload = useCallback(async () => {
     const curCfg = cfgRef.current;
-    if (!uid || !curCfg.cookie) return;
+    if (activeSource === 'netease' && (!uid || !curCfg.cookie)) return;
+    if (activeSource === 'qq' && !curCfg.qqMusic) return;
     setLoading(true);
     try {
+      if (activeSource === 'qq') {
+        const r = await musicApi.qqUserPlaylist(curCfg);
+        if (r?.profile) {
+          setQQProfile({
+            userId: String(r.profile.userId || curCfg.qqMusic?.uin || ''),
+            nickname: r.profile.nickname || curCfg.qqMusic?.nickname || 'QQ 音乐用户',
+            avatarUrl: toHttps(r.profile.avatarUrl || curCfg.qqMusic?.avatarUrl || ''),
+            signature: r.profile.signature || 'QQ 音乐',
+            backgroundUrl: toHttps(r.profile.backgroundUrl || ''),
+            vipType: r.profile.vipType || 0,
+            follows: r.profile.follows || 0,
+            followeds: r.profile.followeds || 0,
+            playlistCount: r.profile.playlistCount || r.playlist?.length || 0,
+          });
+        }
+        const arr = (r?.playlist || []).map((p: any): Playlist => ({
+          id: String(p.id),
+          name: p.name || '',
+          coverImgUrl: toHttps(p.coverImgUrl || ''),
+          trackCount: p.trackCount || 0,
+          subscribed: !!p.subscribed,
+          creatorNickname: p.creatorNickname,
+          source: 'qq',
+        }));
+        setPlaylists(arr);
+        setRecords([]);
+        setCloud([]);
+        return;
+      }
+      if (!uid) return;
+
       const [plRes, recRes, clRes] = await Promise.allSettled([
         musicApi.userPlaylist(curCfg, uid),
         musicApi.userRecord(curCfg, uid, 1),
@@ -217,6 +327,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           trackCount: p.trackCount || 0,
           subscribed: !!p.subscribed,
           creatorNickname: p.creator?.nickname,
+          source: 'netease',
         }));
         setPlaylists(arr);
       }
@@ -257,34 +368,57 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, [activeSource, uid, qqAccount?.uin]);
 
   useEffect(() => { reload(); }, [reload]);
 
   // 展开歌单 — 同样用 ref 去稳定化 cfg / addToast
   const expandPlaylist = useCallback(async (pl: Playlist) => {
-    if (expandedPl === pl.id) { setExpandedPl(null); return; }
-    setExpandedPl(pl.id);
-    if (plTracks[pl.id]) return;
+    const key = playlistKey(pl);
+    if (expandedPl === key) { setExpandedPl(null); return; }
+    setExpandedPl(key);
+    if (plTracks[key]) return;
     try {
-      const r = await musicApi.playlistTrackAll(cfgRef.current, pl.id, 100, 0);
-      const songs: Song[] = (r?.songs || []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        artists: (s.ar || []).map((a: any) => a.name).join(' / '),
-        album: s.al?.name || '',
-        albumPic: toHttps(s.al?.picUrl || ''),
-        duration: (s.dt || 0) / 1000,
-        fee: s.fee ?? 0,
-      }));
-      setPlTracks(prev => ({ ...prev, [pl.id]: songs }));
+      if ((pl.source || activeSource) === 'qq') {
+        const r = await musicApi.qqPlaylistDetail(cfgRef.current, pl.id);
+        const songs: Song[] = (r?.songs || []).map((s: any) => ({
+          id: s.id,
+          name: s.name || '',
+          artists: s.artists || '',
+          album: s.album || '',
+          albumPic: toHttps(s.albumPic || ''),
+          duration: s.duration || 0,
+          fee: s.fee ?? 0,
+          source: 'qq',
+          qqSongMid: s.qqSongMid,
+          qqMediaMid: s.qqMediaMid,
+        }));
+        setPlTracks(prev => ({ ...prev, [key]: songs }));
+      } else {
+        const r = await musicApi.playlistTrackAll(cfgRef.current, pl.id as number, 100, 0);
+        const songs: Song[] = (r?.songs || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          artists: (s.ar || []).map((a: any) => a.name).join(' / '),
+          album: s.al?.name || '',
+          albumPic: toHttps(s.al?.picUrl || ''),
+          duration: (s.dt || 0) / 1000,
+          fee: s.fee ?? 0,
+          source: 'netease',
+        }));
+        setPlTracks(prev => ({ ...prev, [key]: songs }));
+      }
     } catch (e: any) {
       toastRef.current(`加载歌单失败：${e.message}`, 'error');
     }
-  }, [expandedPl, plTracks]);
+  }, [activeSource, expandedPl, plTracks]);
 
   // 签到
   const doSignIn = useCallback(async () => {
+    if (activeSource === 'qq') {
+      toastRef.current('QQ 音乐暂不支持每日签到', 'info');
+      return;
+    }
     try {
       await musicApi.dailySignin(cfgRef.current, 1);
       setSignedIn(true);
@@ -297,52 +431,78 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         toastRef.current(`签到失败：${e.message}`, 'error');
       }
     }
-  }, []);
+  }, [activeSource]);
 
   // 登出
   const doLogout = useCallback(async () => {
     const curCfg = cfgRef.current;
+    if (activeSource === 'qq') {
+      setCfg({ ...curCfg, qqMusic: null });
+      setActiveSource(curCfg.cookie ? 'netease' : 'netease');
+      setQQProfile(null);
+      toastRef.current('已退出 QQ 音乐', 'success');
+      return;
+    }
     try { await musicApi.logout(curCfg); } catch {}
     setCfg({ ...curCfg, cookie: '' });
+    if (curCfg.qqMusic) setActiveSource('qq');
     toastRef.current('已退出', 'success');
     await refreshProfile();
-  }, [setCfg, refreshProfile]);
+  }, [activeSource, setCfg, refreshProfile]);
 
-  // 未登录 → 默认展示「一起写的歌」本地专辑 + 网易云登录入口；
-  // 没本地专辑 → 直接进登录面板（保持原来体验）。
+  const connectQQMusic = useCallback((account: NonNullable<typeof cfg.qqMusic>) => {
+    setCfg({ ...cfgRef.current, qqMusic: account });
+    setActiveSource('qq');
+    toastRef.current(`已连接 QQ 音乐：${account.nickname}`, 'success');
+    setShowQQMusicLogin(false);
+    onQQMusicConnected?.();
+  }, [setCfg, onQQMusicConnected]);
+
+  if (showQQMusicLogin) {
+    return (
+      <QQMusicLoginPanel
+        onBack={() => setShowQQMusicLogin(false)}
+        onConnected={connectQQMusic}
+      />
+    );
+  }
+
+  if (showNeteaseLogin) {
+    return (
+      <NeteaseLoginPanel
+        onBack={() => setShowNeteaseLogin(false)}
+        onLoggedIn={async (cookie) => {
+          setCfg({ ...cfgRef.current, cookie });
+          setActiveSource('netease');
+          await new Promise(r => setTimeout(r, 300));
+          await refreshProfile();
+          toastRef.current('登录成功', 'success');
+          setShowNeteaseLogin(false);
+        }}
+      />
+    );
+  }
+
+  // 两个音乐账号都未登录 → 展示本地专辑 + 两种账号登录入口。
   // ⚠️ 所有 hooks 必须在这个 early-return **之前** 声明完。
-  if (!cfg.cookie || !profile) {
-    if (localAlbumSongs.length === 0 || showNeteaseLogin) {
-      return (
-        <NeteaseLoginPanel
-          onBack={localAlbumSongs.length > 0 ? () => setShowNeteaseLogin(false) : onBack}
-          onLoggedIn={async (cookie) => {
-            setCfg({ ...cfgRef.current, cookie });
-            await new Promise(r => setTimeout(r, 300));
-            await refreshProfile();
-            toastRef.current('登录成功', 'success');
-            setShowNeteaseLogin(false);
-          }}
-        />
-      );
-    }
-    // 有本地专辑 → 简洁单页：仅 album + 一个登录入口卡
+  if (!hasNetease && !hasQQ) {
     return (
       <div className="flex flex-col h-full relative"
         style={{ background: `linear-gradient(180deg, #ffffff 0%, ${C.bg} 50%, ${C.bgDeep} 100%)` }}>
         <BokehBg />
         <MizuHeader title="My Cloud" onBack={onBack} />
         <div className="relative z-10 flex-1 overflow-y-auto pb-24 px-3 pt-3 shizuku-scrollbar">
-          {/* 本地专辑卡 */}
-          <LocalAlbumCard
-            songs={localAlbumSongs}
-            expanded={localAlbumExpanded}
-            setExpanded={setLocalAlbumExpanded}
-            currentId={current?.id ?? null}
-            playing={playing}
-            onPlay={(s, idx) => playSong(s, { alsoSetQueue: true, replaceQueue: localAlbumSongs, startIdx: idx })}
-            onRemove={removeLocalSong}
-          />
+          {localAlbumSongs.length > 0 && (
+            <LocalAlbumCard
+              songs={localAlbumSongs}
+              expanded={localAlbumExpanded}
+              setExpanded={setLocalAlbumExpanded}
+              currentId={current?.id ?? null}
+              playing={playing}
+              onPlay={(s, idx) => playSong(s, { alsoSetQueue: true, replaceQueue: localAlbumSongs, startIdx: idx })}
+              onRemove={removeLocalSong}
+            />
+          )}
           {/* 登录入口卡 */}
           <button
             onClick={() => setShowNeteaseLogin(true)}
@@ -355,6 +515,24 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             <div className="flex-1 text-left">
               <div className="text-sm" style={{ color: C.text }}>登录网易云</div>
               <div className="text-[10.5px]" style={{ color: C.muted }}>解锁海量曲库 · 自己的歌单 · 一起听</div>
+            </div>
+            <span className="text-[12px]" style={{ color: C.accent }}>→</span>
+          </button>
+          <button
+            onClick={() => setShowQQMusicLogin(true)}
+            className="mt-3 w-full rounded-2xl shizuku-glass p-4 flex items-center gap-3 transition-all active:scale-[0.99]"
+          >
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-semibold"
+              style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, color: 'white', border: `1px solid ${C.faint}40` }}>
+              QQ
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <div className="text-sm" style={{ color: C.text }}>
+                {cfg.qqMusic ? `已连接 QQ 音乐：${cfg.qqMusic.nickname}` : '连接 QQ 音乐'}
+              </div>
+              <div className="text-[10.5px] truncate" style={{ color: C.muted }}>
+                扫码后在同一个「我的」页面查看 QQ 音乐主页和歌单
+              </div>
             </div>
             <span className="text-[12px]" style={{ color: C.accent }}>→</span>
           </button>
@@ -378,6 +556,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         )}
       </div>
     );
+  }
+
+  if (!viewProfile) {
+    return null;
   }
 
   return (
@@ -416,8 +598,8 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
       <div className="flex-1 overflow-y-auto relative z-10 shizuku-scrollbar pb-20">
         {/* Banner 头图 */}
         <div className="relative h-32 overflow-hidden">
-          {profile.backgroundUrl ? (
-            <img src={profile.backgroundUrl} className="absolute inset-0 w-full h-full object-cover" alt="" />
+          {viewProfile.backgroundUrl ? (
+            <img src={viewProfile.backgroundUrl} className="absolute inset-0 w-full h-full object-cover" alt="" />
           ) : (
             <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${C.accent}40, ${C.sakura}40, ${C.lavender}40)` }} />
           )}
@@ -430,7 +612,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
               <img
-                src={profile.avatarUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'}
+                src={viewProfile.avatarUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'}
                 alt=""
                 className="w-16 h-16 rounded-2xl object-cover"
                 style={{ border: `2px solid ${C.glow}60`, boxShadow: `0 4px 20px ${C.glow}30` }}
@@ -441,10 +623,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-base font-semibold truncate" style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>
-                {profile.nickname}
+                {viewProfile.nickname}
               </div>
               <div className="text-[10px] mt-0.5 truncate" style={{ color: C.muted }}>
-                {profile.signature || '—'}
+                {viewProfile.signature || '—'}
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
                 <span className="text-[9px] px-2 py-0.5 rounded-full text-white font-medium"
@@ -452,17 +634,42 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                   {vipLabel}
                 </span>
                 <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ color: C.muted, border: `1px solid ${C.faint}40` }}>
-                  UID · {profile.userId}
+                  {activeSource === 'qq' ? 'QQ' : 'UID'} · {viewProfile.userId}
                 </span>
               </div>
             </div>
           </div>
 
+          {(hasNetease || hasQQ) && (
+            <div className="mt-3 flex items-center gap-1 shizuku-glass rounded-full p-1">
+              <button
+                onClick={() => hasNetease ? setActiveSource('netease') : setShowNeteaseLogin(true)}
+                className="flex-1 py-1.5 rounded-full text-[10px] transition-all"
+                style={{
+                  background: activeSource === 'netease' ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : 'transparent',
+                  color: activeSource === 'netease' ? 'white' : C.muted,
+                }}
+              >
+                网易云
+              </button>
+              <button
+                onClick={() => hasQQ ? setActiveSource('qq') : setShowQQMusicLogin(true)}
+                className="flex-1 py-1.5 rounded-full text-[10px] transition-all"
+                style={{
+                  background: activeSource === 'qq' ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : 'transparent',
+                  color: activeSource === 'qq' ? 'white' : C.muted,
+                }}
+              >
+                QQ 音乐
+              </button>
+            </div>
+          )}
+
           {/* 统计行 */}
           <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-            <StatCell label="歌单" value={playlists.length || profile.playlistCount || 0} />
-            <StatCell label="关注" value={profile.follows ?? 0} />
-            <StatCell label="粉丝" value={profile.followeds ?? 0} />
+            <StatCell label="歌单" value={playlists.length || viewProfile.playlistCount || 0} />
+            <StatCell label="关注" value={viewProfile.follows ?? 0} />
+            <StatCell label="粉丝" value={viewProfile.followeds ?? 0} />
           </div>
 
           {/* 快捷按钮 */}
@@ -476,6 +683,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             </button>
             <button
               onClick={async () => {
+                if (activeSource === 'qq') {
+                  addToast('QQ 音乐暂不支持每日推荐，先从你的 QQ 歌单里听吧', 'info');
+                  return;
+                }
                 try {
                   const r = await musicApi.recommendSongs(cfg);
                   const songs: Song[] = (r?.data?.dailySongs || r?.recommend || []).map((s: any): Song => ({
@@ -498,6 +709,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             </button>
             <button
               onClick={async () => {
+                if (activeSource === 'qq') {
+                  addToast('QQ 音乐暂不支持私人 FM，先从你的 QQ 歌单里听吧', 'info');
+                  return;
+                }
                 try {
                   const r = await musicApi.personalFm(cfg);
                   const songs: Song[] = (r?.data || []).map((s: any): Song => ({
@@ -525,7 +740,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             className="w-full mt-2 py-1.5 rounded-xl text-[10px] transition-all"
             style={{ color: C.faint }}
           >
-            退出登录
+            退出{sourceLabel}
           </button>
         </div>
 
@@ -542,7 +757,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
               {characters.map(ch => {
                 const initialized = !!ch.musicProfile?.initializedAt;
                 const avatar = ch.avatar || '';
-                const isImage = avatar.startsWith('data:') || avatar.startsWith('http');
+                const isImage = isMusicAvatarImage(avatar);
                 return (
                   <button
                     key={ch.id}
@@ -642,46 +857,54 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>还没有歌单</div>
             )}
             {playlists.map(pl => (
-              <div key={pl.id} className="rounded-2xl shizuku-glass overflow-hidden">
-                <button
-                  onClick={() => expandPlaylist(pl)}
-                  className="w-full flex items-center gap-3 p-2.5 text-left"
-                >
-                  <img src={pl.coverImgUrl} alt=""
-                    className="w-12 h-12 rounded-xl object-cover"
-                    style={{ border: `1px solid ${C.faint}30` }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate" style={{ color: C.text }}>{pl.name}</div>
-                    <div className="text-[10px] truncate" style={{ color: C.muted }}>
-                      {pl.trackCount} 首 · {pl.subscribed ? '收藏' : '创建'}
-                      {pl.creatorNickname && ` · ${pl.creatorNickname}`}
-                    </div>
-                  </div>
-                  <div className="text-[10px] shrink-0" style={{ color: C.accent }}>
-                    {expandedPl === pl.id ? '收起' : '展开'}
-                  </div>
-                </button>
-                {expandedPl === pl.id && (
-                  <div className="border-t px-2 py-1" style={{ borderColor: `${C.faint}20` }}>
-                    {(plTracks[pl.id] || []).slice(0, 30).map(s => (
-                      <button key={s.id}
-                        onClick={() => {
-                          playSong(s, { replaceQueue: plTracks[pl.id], startIdx: plTracks[pl.id].findIndex(x => x.id === s.id) });
-                          onOpenPlayer();
-                        }}
-                        className="w-full text-left flex items-center gap-2 py-1.5 px-1">
-                        <img src={s.albumPic} alt="" className="w-7 h-7 rounded-md object-cover" />
+              <div key={playlistKey(pl)} className="rounded-2xl shizuku-glass overflow-hidden">
+                {(() => {
+                  const key = playlistKey(pl);
+                  const tracks = plTracks[key] || [];
+                  return (
+                    <>
+                      <button
+                        onClick={() => expandPlaylist(pl)}
+                        className="w-full flex items-center gap-3 p-2.5 text-left"
+                      >
+                        <img src={pl.coverImgUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt=""
+                          className="w-12 h-12 rounded-xl object-cover"
+                          style={{ border: `1px solid ${C.faint}30` }} />
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11px] truncate" style={{ color: C.text }}>{s.name}</div>
-                          <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                          <div className="text-sm truncate" style={{ color: C.text }}>{pl.name}</div>
+                          <div className="text-[10px] truncate" style={{ color: C.muted }}>
+                            {pl.trackCount} 首 · {pl.subscribed ? '收藏' : '创建'}
+                            {pl.creatorNickname && ` · ${pl.creatorNickname}`}
+                          </div>
+                        </div>
+                        <div className="text-[10px] shrink-0" style={{ color: C.accent }}>
+                          {expandedPl === key ? '收起' : '展开'}
                         </div>
                       </button>
-                    ))}
-                    {(plTracks[pl.id] || []).length === 0 && (
-                      <div className="text-[10px] text-center py-2" style={{ color: C.faint }}>加载中...</div>
-                    )}
-                  </div>
-                )}
+                      {expandedPl === key && (
+                        <div className="border-t px-2 py-1" style={{ borderColor: `${C.faint}20` }}>
+                          {tracks.slice(0, 30).map(s => (
+                            <button key={`${s.source || 'netease'}-${s.id}`}
+                              onClick={() => {
+                                playSong(s, { replaceQueue: tracks, startIdx: tracks.findIndex(x => x.id === s.id) });
+                                onOpenPlayer();
+                              }}
+                              className="w-full text-left flex items-center gap-2 py-1.5 px-1">
+                              <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt="" className="w-7 h-7 rounded-md object-cover" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[11px] truncate" style={{ color: C.text }}>{s.name}</div>
+                                <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                              </div>
+                            </button>
+                          ))}
+                          {tracks.length === 0 && (
+                            <div className="text-[10px] text-center py-2" style={{ color: C.faint }}>加载中...</div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -689,7 +912,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
 
         {tab === 'record' && (
           <div className="px-3 mt-3 space-y-1">
-            {records.length === 0 && !loading && (
+            {activeSource === 'qq' && records.length === 0 && !loading && (
+              <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>QQ 音乐最近播放暂未接入，歌单可以正常播放</div>
+            )}
+            {activeSource !== 'qq' && records.length === 0 && !loading && (
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>最近一周还没有播放记录</div>
             )}
             {records.map((r, i) => (
@@ -719,7 +945,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
 
         {tab === 'cloud' && (
           <div className="px-3 mt-3 space-y-1">
-            {cloud.length === 0 && !loading && (
+            {activeSource === 'qq' && cloud.length === 0 && !loading && (
+              <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>QQ 音乐没有对应的网易云盘入口</div>
+            )}
+            {activeSource !== 'qq' && cloud.length === 0 && !loading && (
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>云盘里还没有歌曲</div>
             )}
             {cloud.map((s, i) => (

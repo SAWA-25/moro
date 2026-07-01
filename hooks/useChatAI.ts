@@ -13,7 +13,7 @@ import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 // evolveFlowNarrative 保留为低频深刷新备用，日常意识流由副 API 的情绪评估同轮产出（innerState 字段）
 // import { evolveFlowNarrative } from '../utils/scheduleGenerator';
-import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
+import { isEmotionBuffFeatureOn } from '../utils/scheduleGenerator';
 import type { DigestResult } from '../utils/memoryPalace';
 // 麦当劳: useChatAI 现在只读 McdMiniApp 当前快照注入 system prompt + 给 LLM 一个
 // UI 钩子工具 propose_cart_items。MCP 实际调用都在 McdMiniApp 组件内做, useChatAI
@@ -366,6 +366,15 @@ interface UseChatAIProps {
     mcdMiniAppRef?: MutableRefObject<import('../utils/mcdToolBridge').McdMiniAppSnapshot | undefined>;
 }
 
+interface TriggerAIOptions {
+    /** One-shot system instruction for the current generation only; never persisted to chat history. */
+    ephemeralSystemPrompt?: string;
+    /** Persist this instead when a special one-shot generation returns no visible assistant message. */
+    emptyReplyFallback?: string;
+    /** Skip dynamic-island / unread / native notification event for this local generation. */
+    suppressNotificationEvent?: boolean;
+}
+
 export const useChatAI = ({
     char,
     userProfile,
@@ -430,6 +439,19 @@ export const useChatAI = ({
 
     // instant 情绪评估的 "情绪更新中" 徽章安全超时句柄 (worker 推回 emotion_update 前别一直转).
     const instantEmotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const emotionBuffFeatureOn = !!(char && isEmotionBuffFeatureOn(char));
+    const emotionBuffFeatureOnRef = useRef(emotionBuffFeatureOn);
+    emotionBuffFeatureOnRef.current = emotionBuffFeatureOn;
+
+    useEffect(() => {
+        if (emotionBuffFeatureOn) return;
+        setEvolvedNarrative('');
+        setEmotionStatus('');
+        if (instantEmotionTimerRef.current) {
+            clearTimeout(instantEmotionTimerRef.current);
+            instantEmotionTimerRef.current = null;
+        }
+    }, [emotionBuffFeatureOn]);
 
     // 切换角色时重置
     useEffect(() => {
@@ -444,7 +466,7 @@ export const useChatAI = ({
     //   2. 离线 / 切到别的 char: activeMsgRuntime 写 KV pending → useChatAI mount 切到这个
     //      char 时 useEffect 兜底 drain
     //
-    // 行为对齐 line 613: gate = isScheduleFeatureOn(char) && emotionConfig.enabled.
+    // 行为对齐主聊天路径: gate = isEmotionBuffFeatureOn(char).
     // ctx 重建用 buildChatRequestPayload 同一个 helper — push 那条 assistant msg 已经在
     // DB 里 (activeMsgRuntime.flushInboxToChat 已 await saveMessage), DB.getRecentMessagesByCharId
     // 拿到的 history 含它.
@@ -465,9 +487,10 @@ export const useChatAI = ({
         const charIdAtMount = char.id;
 
         const runEvalForPushedChar = async (): Promise<void> => {
-            // 双 gate: 跟 line 613 一致 (schedule feature on + emotionConfig enabled).
+            // 跟主聊天路径一致：作息打开 + 心情 buff 开关打开。
             // 关掉的话还是要 clear pending, 否则下次 mount 反复尝试.
-            if (!isScheduleFeatureOn(char) || !char.emotionConfig?.enabled) {
+            const currentChar = charRef.current;
+            if (!currentChar || currentChar.id !== charIdAtMount || !emotionBuffFeatureOnRef.current) {
                 try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
                 return;
             }
@@ -478,8 +501,9 @@ export const useChatAI = ({
                 return;
             }
             // 后台情绪评估属「聊天以外」的辅助任务：角色自带情绪 API 优先，否则走副 API（回落主 API）
-            const emotionApi = (char.emotionConfig.api?.baseUrl)
-                ? char.emotionConfig.api
+            const configuredEmotionApi = currentChar.emotionConfig?.api;
+            const emotionApi = (configuredEmotionApi?.baseUrl)
+                ? configuredEmotionApi
                 : resolveAuxApi(deps.auxApiConfig, deps.apiConfig);
 
             try {
@@ -492,7 +516,7 @@ export const useChatAI = ({
                 const mcdMiniSnap = deps.mcdMiniAppRef?.current;
                 const mcdMiniOpen = !!mcdMiniSnap?.open;
                 const payload = await buildChatRequestPayload({
-                    char,
+                    char: currentChar,
                     userProfile: deps.userProfile,
                     groups: deps.groups,
                     emojis: deps.emojis,
@@ -500,7 +524,7 @@ export const useChatAI = ({
                     historyMsgs: contextMsgs,
                     contextLimit: 200,
                     realtimeConfig: deps.realtimeConfig,
-                    innerState: deps.evolvedNarrative || undefined,
+                    innerState: emotionBuffFeatureOnRef.current ? (deps.evolvedNarrative || undefined) : undefined,
                     musicSnapshot: {
                         current: deps.music.current,
                         playing: deps.music.playing,
@@ -510,8 +534,8 @@ export const useChatAI = ({
                         cfg: deps.music.cfg,
                     },
                     translationConfig: deps.translationConfig,
-                    htmlMode: { enabled: (char as any).htmlModeEnabled !== false, customPrompt: (char as any).htmlModeCustomPrompt },
-                    thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
+                    htmlMode: { enabled: (currentChar as any).htmlModeEnabled !== false, customPrompt: (currentChar as any).htmlModeCustomPrompt },
+                    thinkingChain: { enabled: !!(currentChar as any).showThinkingChain, customPrompt: (currentChar as any).thinkingChainCustomPrompt },
                     mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 });
 
@@ -522,7 +546,7 @@ export const useChatAI = ({
 
                 setEmotionStatus('evaluating');
                 const innerState = await evaluateEmotionBackground(
-                    char, deps.userProfile, payload.systemPrompt, payload.cleanedApiMessages, emotionApi,
+                    currentChar, deps.userProfile, payload.systemPrompt, payload.cleanedApiMessages, emotionApi,
                 );
                 if (innerState) setEvolvedNarrative(innerState);
                 // 成功后清 pending. 失败不清 → 下次 mount drain 重试.
@@ -549,6 +573,7 @@ export const useChatAI = ({
         const innerStateHandler = (e: Event) => {
             const detail = (e as CustomEvent).detail;
             if (detail?.charId !== charIdAtMount) return;
+            if (!emotionBuffFeatureOnRef.current) return;
             if (typeof detail?.innerState === 'string' && detail.innerState.trim()) {
                 setEvolvedNarrative(detail.innerState.trim());
             }
@@ -609,6 +634,7 @@ export const useChatAI = ({
         currentMsgs: Message[],
         overrideApiConfig?: { baseUrl: string; apiKey: string; model: string },
         onInstantPosted?: () => void,
+        options?: TriggerAIOptions,
     ) => {
         if (isTyping || !char) return;
         const effectiveApi = overrideApiConfig || apiConfig;
@@ -672,7 +698,7 @@ export const useChatAI = ({
                 recentMsgsHint: currentMsgs,
                 contextLimit: limit,
                 realtimeConfig,
-                innerState: evolvedNarrative || undefined,
+                innerState: emotionBuffFeatureOn ? (evolvedNarrative || undefined) : undefined,
                 userListeningContext: (() => {
                     if (music.current && music.playing && music.lyric.length > 0) {
                         const idx = music.activeLyricIdx;
@@ -705,9 +731,28 @@ export const useChatAI = ({
                 thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
             }));
-            const systemPrompt = payload.systemPrompt;
+            const ephemeralSystemPrompt = options?.ephemeralSystemPrompt?.trim();
+            const systemPrompt = ephemeralSystemPrompt
+                ? `${payload.systemPrompt}${payload.systemPrompt ? '\n\n' : ''}${ephemeralSystemPrompt}`
+                : payload.systemPrompt;
             const cleanedApiMessages = payload.cleanedApiMessages;
-            const fullMessages = payload.fullMessages;
+            const fullMessages = (() => {
+                if (!ephemeralSystemPrompt) return payload.fullMessages;
+                const mergedBase = payload.fullMessages[0]?.role === 'system'
+                    ? payload.fullMessages.map((msg, index) => (
+                        index === 0
+                            ? { ...msg, content: `${msg.content || ''}${msg.content ? '\n\n' : ''}${ephemeralSystemPrompt}` }
+                            : msg
+                    ))
+                    : [{ role: 'system', content: ephemeralSystemPrompt }, ...payload.fullMessages];
+                return [
+                    ...mergedBase,
+                    {
+                        role: 'system',
+                        content: `[本轮最高优先级的一次性任务]\n${ephemeralSystemPrompt}`,
+                    },
+                ];
+            })();
             const promptBuildSkipped = payload.flags.promptBuildSkipped;
             if (payload.flags.mcdActive) {
                 console.log(`🍔 [MCD-MiniApp] 注入协同点餐上下文 step=${mcdMiniSnap?.step} cartItems=${mcdMiniSnap?.cart?.length || 0} menuItems=${mcdMiniSnap?.menuMeals ? Object.keys(mcdMiniSnap.menuMeals).length : 0} nutrition=${mcdMiniSnap?.nutritionData ? mcdMiniSnap.nutritionData.length : 0}字`);
@@ -731,12 +776,11 @@ export const useChatAI = ({
             //    - instant 模式: 不在客户端跑, 改把 eval prompt + 副 API 凭据塞进 instant 请求 (emotionEval 字段),
             //      worker 跑完主回复后跑 eval 并推 emotion_update 回来, 客户端 flush 时落 buff —— 这样前端被杀也算数,
             //      且不会跟客户端 eval 双跑双扣费. 见下方 instant 分支 + worker/instant-push + activeMsgRuntime.
-            const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled);
-            const instantOn = isInstantConfigReady();
+            const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffFeatureOn);
+            const instantOn = !options?.suppressNotificationEvent && isInstantConfigReady();
+            const configuredEmotionApi = char.emotionConfig?.api;
             const emotionApi = emotionEvalEnabled
-                ? ((char.emotionConfig!.api?.baseUrl)
-                    ? char.emotionConfig!.api!
-                    : resolveAuxApi(auxApiConfig, apiConfig))
+                ? (configuredEmotionApi?.baseUrl ? configuredEmotionApi : resolveAuxApi(auxApiConfig, apiConfig))
                 : null;
             if (emotionEvalEnabled && !instantOn && emotionApi) {
                 setEmotionStatus('evaluating');
@@ -832,7 +876,7 @@ export const useChatAI = ({
             // 300s 超时兜底，返回时 push 已落库（或失败）。外层 finally 统一清 isTyping /
             // KeepAlive / 跑 memory palace 后处理，与本地路径完全对齐。
             // worker 端跑完 LLM → push → SW → activeMsgRuntime.flushInboxToChat 写 DB 并刷 UI。
-            if (isInstantConfigReady()) {
+            if (instantOn) {
                 const instantResult = await sendInstantPushAndAwaitReply({
                     contactName: char.name,
                     messages: fullMessages as InstantPushPayload['messages'],
@@ -1074,6 +1118,7 @@ export const useChatAI = ({
                 // Phase 0: 本地 fetch 路径保持原逻辑, 不跳 2nd-pass LLM, 也没有结构化 directives。
                 skipSecondPassLLM: false,
                 directives: [],
+                emptyReplyFallback: options?.emptyReplyFallback,
                 skipTypingDelay: streamedOk,
             });
 
@@ -1091,7 +1136,7 @@ export const useChatAI = ({
                     if (recentSaved[i].role !== 'assistant') break;
                     trailingAssistant.unshift(recentSaved[i]);
                 }
-                if (trailingAssistant.length && typeof window !== 'undefined') {
+                if (trailingAssistant.length && typeof window !== 'undefined' && !options?.suppressNotificationEvent) {
                     const bodies = trailingAssistant
                         .map(m => String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80))
                         .filter(Boolean);
