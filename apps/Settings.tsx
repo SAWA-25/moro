@@ -7,7 +7,6 @@ import { useOS } from '../context/OSContext';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { safeResponseJson } from '../utils/safeApi';
 import { NotionManager, FeishuManager, RealtimeContextManager } from '../utils/realtimeContext';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
 import { getMcdToken, setMcdToken as saveMcdToken, isMcdEnabled, setMcdEnabled as saveMcdEnabled, testMcdConnection, resetMcdSession } from '../utils/mcdMcpClient';
@@ -40,8 +39,10 @@ import {
     type ApkDownloadProgress,
     type NativeAppInfo,
 } from '../utils/appUpdates';
-import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
+import { queueManualDeepLink, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { fetchModelList, testChatConnection } from '../utils/llmClient';
+import type { ApiErrorHelp } from '../utils/apiErrorHelp';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -81,31 +82,6 @@ const LINE = '#e7e1d6';
 const CARD_BORDER = '#eee9df';
 const CARD_SHADOW = '0 1px 2px rgba(31,35,38,0.04), 0 18px 42px -34px rgba(31,35,38,0.36)';
 const AUX_MODELS_STORAGE_KEY = 'os_aux_available_models';
-const normalizeModelList = (data: any): string[] => {
-    const list =
-        Array.isArray(data) ? data :
-        Array.isArray(data?.data) ? data.data :
-        Array.isArray(data?.models) ? data.models :
-        Array.isArray(data?.model_list) ? data.model_list :
-        [];
-    return Array.from(new Set(
-        list
-            .map((m: any) => typeof m === 'string' ? m : (m?.id ?? m?.name ?? m?.model))
-            .filter((m: any): m is string => typeof m === 'string' && !!m.trim())
-            .map((m: string) => m.trim())
-    ));
-};
-
-const extractApiErrorMessage = (data: any, fallback: string): string => {
-    const candidates = [
-        data?.error?.message,
-        typeof data?.error === 'string' ? data.error : undefined,
-        data?.message,
-        data?.detail,
-        data?.details,
-    ];
-    return candidates.find((v): v is string => typeof v === 'string' && !!v.trim()) || fallback;
-};
 /** 轻量按钮：白色照片纸底 + 极淡边线 */
 const STICKER = 'border border-[#e7e1d6] rounded-full bg-white/90 text-[#577782] shadow-[0_1px_2px_rgba(31,35,38,0.05)] press-soft';
 /** 主按钮：低饱和雾蓝胶囊 */
@@ -874,6 +850,8 @@ const Settings: React.FC = () => {
   const [statusMsg, setStatusMsg] = useState('');
   const [testingApi, setTestingApi] = useState(false);
   const [testApiResult, setTestApiResult] = useState<string | null>(null);
+  const [testingAuxApi, setTestingAuxApi] = useState(false);
+  const [testAuxApiResult, setTestAuxApiResult] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-save draft configs locally to prevent loss during typing
@@ -905,6 +883,23 @@ const Settings: React.FC = () => {
       });
       setAuxStatusMsg('副 API 已保存');
       setTimeout(() => setAuxStatusMsg(''), 2000);
+  };
+
+  const handleTestAuxApi = async () => {
+      if (!localAuxUrl.trim() || !localAuxModel.trim()) return;
+      setTestingAuxApi(true);
+      setTestAuxApiResult(null);
+      try {
+          const reply = await testChatConnection(
+              { baseUrl: localAuxUrl.trim(), apiKey: localAuxKey.trim(), model: localAuxModel.trim() },
+              { stream: false, meta: makeApiUsageMeta('settings.auxApi.testConnection', { apiRole: 'aux' }) },
+          );
+          setTestAuxApiResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
+      } catch (err: any) {
+          setTestAuxApiResult(`❌ 连接失败: ${err.message}`);
+      } finally {
+          setTestingAuxApi(false);
+      }
   };
 
   /** 把主 API 的 URL/Key/模型一键拷进副 API（多数人主副同源，省得重填） */
@@ -996,19 +991,10 @@ const Settings: React.FC = () => {
     setLoadingModelTarget(target);
     setStatus(target === 'aux' ? '正在拉取副 API 模型…' : '正在拉取主 API 模型…');
     try {
-        const baseUrl = url.trim().replace(/\/+$/, '');
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (key.trim()) headers.Authorization = `Bearer ${key.trim()}`;
-        const response = await fetch(`${baseUrl}/models`, {
-            method: 'GET',
-            headers,
-            __moroMeta: makeApiUsageMeta(target === 'aux' ? 'settings.auxApi.fetchModels' : 'settings.mainApi.fetchModels', { apiRole: target }),
-        } as RequestInit & { __moroMeta?: unknown });
-        const data = await safeResponseJson(response);
-        if (!response.ok) {
-            throw new Error(extractApiErrorMessage(data, `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`));
-        }
-        const models = normalizeModelList(data);
+        const models = await fetchModelList(
+            { baseUrl: url, apiKey: key },
+            { meta: makeApiUsageMeta(target === 'aux' ? 'settings.auxApi.fetchModels' : 'settings.mainApi.fetchModels', { apiRole: target }) },
+        );
         if (models.length > 0) {
             if (target === 'aux') {
                 setAuxAvailableModels(models);
@@ -1024,7 +1010,7 @@ const Settings: React.FC = () => {
             setStatus('模型列表格式不兼容');
         }
     } catch (error: any) {
-        setStatus(`拉取失败：${error?.message || '请检查地址和密钥'}`);
+        setStatus(`拉取失败：${error?.message || '请检查地址和密钥'}；也可以先手动输入模型名并保存`);
     } finally {
         setLoadingModelTarget(null);
     }
@@ -1391,6 +1377,17 @@ const Settings: React.FC = () => {
           if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor(groupId);
       }, 180);
   }, []), { enabled: activeApp === AppID.Settings });
+
+  const openApiErrorManualHelp = useCallback((help: ApiErrorHelp) => {
+      setShowApiCallLog(false);
+      queueManualDeepLink({
+          appId: AppID.Manual,
+          route: 'guide',
+          anchorId: help.manualAnchorId,
+          payload: { app: '文具盒', view: 'detail', settingId: help.manualSettingId },
+      });
+      openApp(AppID.Manual);
+  }, [openApp]);
 
   return (
     <div ref={settingsRootRef} className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
@@ -1893,39 +1890,24 @@ const Settings: React.FC = () => {
 
                 <button
                     onClick={async () => {
-                        if (!localUrl.trim() || !localKey.trim() || !localModel.trim()) return;
+                        if (!localUrl.trim() || !localModel.trim()) return;
                         setTestingApi(true);
                         setTestApiResult(null);
                         try {
-                            const res = await fetch(`${localUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localKey.trim()}` },
-                                body: JSON.stringify({
-                                    model: localModel.trim(),
-                                    messages: [{ role: 'user', content: 'Hi' }],
-                                    max_tokens: 5,
-                                    stream: localStream,
-                                }),
-                                __moroMeta: makeApiUsageMeta('settings.mainApi.testConnection', { apiRole: 'main' }),
-                            } as RequestInit & { __moroMeta?: unknown });
-                            if (res.ok) {
-                                // 走 safeResponseJson —— 它能透明把 SSE 流响应拼成普通 chat/completion 结构
-                                const data = await safeResponseJson(res);
-                                const reply = data.choices?.[0]?.message?.content || '';
-                                setTestApiResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-                            } else {
-                                const text = await res.text().catch(() => '');
-                                setTestApiResult(`❌ HTTP ${res.status}: ${text.slice(0, 100)}`);
-                            }
+                            const reply = await testChatConnection(
+                                { baseUrl: localUrl.trim(), apiKey: localKey.trim(), model: localModel.trim() },
+                                { stream: localStream, meta: makeApiUsageMeta('settings.mainApi.testConnection', { apiRole: 'main' }) },
+                            );
+                            setTestApiResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
                         } catch (err: any) {
                             setTestApiResult(`❌ 连接失败: ${err.message}`);
                         } finally {
                             setTestingApi(false);
                         }
                     }}
-                    disabled={testingApi || !localUrl.trim() || !localKey.trim() || !localModel.trim()}
+                    disabled={testingApi || !localUrl.trim() || !localModel.trim()}
                     className={`w-full py-2.5 font-black text-sm mt-2 ${
-                        testingApi || !localUrl.trim() || !localKey.trim() || !localModel.trim()
+                        testingApi || !localUrl.trim() || !localModel.trim()
                             ? 'border border-black/10 rounded-xl/20 text-[#26242a]/30 bg-white'
                             : STICKER + ' text-[#26242a]'
                     }`}
@@ -2009,6 +1991,26 @@ const Settings: React.FC = () => {
                 <button onClick={handleSaveAuxApi} className={`w-full py-3 font-black mt-2 ${INK_BTN}`}>
                     {auxStatusMsg || '保存副 API'}
                 </button>
+
+                <button
+                    onClick={handleTestAuxApi}
+                    disabled={testingAuxApi || !localAuxUrl.trim() || !localAuxModel.trim()}
+                    className={`w-full py-2.5 font-black text-sm mt-2 ${
+                        testingAuxApi || !localAuxUrl.trim() || !localAuxModel.trim()
+                            ? 'border border-black/10 rounded-xl/20 text-[#26242a]/30 bg-white'
+                            : STICKER + ' text-[#26242a]'
+                    }`}
+                >
+                    {testingAuxApi ? '测试中…' : '测试副 API 连接'}
+                </button>
+
+                {testAuxApiResult && (
+                    <div className={`mt-2 text-xs px-3 py-2 border-2 ${
+                        testAuxApiResult.startsWith('✅') ? 'border-[#1c1b1a] bg-white text-[#26242a]' : 'border-dashed border-[#1c1b1a]/50 bg-[#1c1b1a]/5 text-[#26242a]/80'
+                    }`}>
+                        {testAuxApiResult}
+                    </div>
+                )}
             </div>
             </SectionCard>
 
@@ -2828,7 +2830,11 @@ const Settings: React.FC = () => {
       </PaperSheet>
 
       {/* API 后台流水页面 */}
-      <ApiCallLogModal isOpen={showApiCallLog} onClose={() => setShowApiCallLog(false)} />
+      <ApiCallLogModal
+          isOpen={showApiCallLog}
+          onClose={() => setShowApiCallLog(false)}
+          onOpenManualHelp={openApiErrorManualHelp}
+      />
 
       {/* API 预设命名 */}
       <PaperSheet open={showPresetModal} tag="API PRESET" title="保存 API 预设" onClose={() => setShowPresetModal(false)} footer={<button onClick={handleSavePreset} className={`w-full py-3 font-black ${INK_BTN}`}>保存预设</button>}>

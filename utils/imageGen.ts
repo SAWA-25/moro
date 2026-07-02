@@ -1,5 +1,5 @@
 /**
- * AI 生图：走 OpenAI 兼容的 /images/generations 端点（与主聊天 API 共用 baseUrl + key）。
+ * AI 生图：走 OpenAI 兼容的图片生成端点（与主聊天 API 共用 baseUrl + key）。
  *
  * 返回 data URI（b64_json 优先；只给 url 的供应商则直接透传 url），
  * 由调用方决定是否落相册 / 发进聊天。模型名可由调用方传入并自行持久化
@@ -8,32 +8,23 @@
 
 import { APIConfig } from '../types';
 import { safeResponseJson } from './safeApi';
+import { buildOpenAiEndpoint, buildOpenAiHeaders } from './openAiCompat';
 
 export const IMAGE_GEN_MODEL_KEY = 'moro_image_gen_model';
 export const DEFAULT_IMAGE_GEN_MODEL = 'gemini-2.0-flash-exp-image-generation';
-
-const normalizeBaseUrl = (baseUrl: string): string => {
-    let url = (baseUrl || '').trim().replace(/\/+$/, '');
-    // 与聊天端点同样的宽容处理：用户可能填到 /chat/completions 级别
-    url = url.replace(/\/chat\/completions$/, '');
-    return url;
-};
 
 export async function generateImage(
     prompt: string,
     apiConfig: APIConfig,
     model?: string,
 ): Promise<string> {
-    const baseUrl = normalizeBaseUrl(apiConfig.baseUrl);
+    const baseUrl = (apiConfig.baseUrl || '').trim();
     if (!baseUrl || !apiConfig.apiKey) throw new Error('请先在「文具盒」里配置 API');
     const useModel = (model || '').trim() || DEFAULT_IMAGE_GEN_MODEL;
 
-    const resp = await fetch(`${baseUrl}/images/generations`, {
+    const resp = await fetch(buildOpenAiEndpoint(baseUrl, 'images.generations'), {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiConfig.apiKey}`,
-        },
+        headers: buildOpenAiHeaders(apiConfig.apiKey),
         body: JSON.stringify({
             model: useModel,
             prompt,

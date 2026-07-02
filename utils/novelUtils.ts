@@ -1,7 +1,8 @@
 
 import { CharacterProfile, NovelBook, NovelSegment, UserProfile } from '../types';
 import { ContextBuilder } from './context';
-import { safeResponseJson } from './safeApi';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 // --- Visual Themes ---
 export const NOVEL_THEMES = [
@@ -339,25 +340,17 @@ ${char.memories?.slice(-3).map(m => `- ${m.summary}`).join('\n') || '- 无记忆
 **字数要求**：总共400-600字。`;
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json', 
-                'Authorization': `Bearer ${apiConfig.apiKey}` 
-            },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: analysisPrompt }],
-                temperature: 0.7,
-                max_tokens: 8000
-            })
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: analysisPrompt }],
+            temperature: 0.7,
+            max_tokens: 8000,
+        }, {
+            meta: makeApiUsageMeta('creative.novel', { apiRole: 'aux', charId: char.id, charName: char.name }),
         });
-        
-        if (response.ok) {
-            const data = await safeResponseJson(response);
-            const rawPersona = data.choices[0].message.content.trim();
-            
-            const formattedPersona = `
+        const rawPersona = data.choices[0].message.content.trim();
+
+        const formattedPersona = `
 ### ${char.name} 的创作人格档案（AI深度分析）
 
 ${rawPersona}
@@ -365,16 +358,13 @@ ${rawPersona}
 ---
 *分析生成于: ${new Date().toLocaleDateString('zh-CN')}*
 `.trim();
-            
-            updateCharacter(char.id, { 
-                writerPersona: formattedPersona,
-                writerPersonaGeneratedAt: Date.now()
-            });
-            
-            return formattedPersona;
-        } else {
-            throw new Error(`API Error: ${response.status}`);
-        }
+
+        updateCharacter(char.id, {
+            writerPersona: formattedPersona,
+            writerPersonaGeneratedAt: Date.now()
+        });
+
+        return formattedPersona;
     } catch (e: any) {
         console.error('Deep analysis failed:', e);
         return analyzeWriterPersonaSimple(char);

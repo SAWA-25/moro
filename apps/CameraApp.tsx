@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { processImage } from '../utils/file';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { GalleryImage } from '../types';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { ArrowLeft, ArrowsClockwise, Camera as CameraIcon, Images } from '@phosphor-icons/react';
 
 /**
@@ -107,7 +109,7 @@ const CameraApp: React.FC<CameraAppProps> = ({ charId, onExit, onSendToChat }) =
     // ── 让 TA 看看（多模态点评）──
     const showToChar = async () => {
         if (!photo || !char) return;
-        if (!apiConfig.apiKey || !apiConfig.baseUrl) { addToast('请先配置 API', 'error'); return; }
+        if (!apiConfig.baseUrl || !apiConfig.model) { addToast('请先配置 API', 'error'); return; }
         setBusy(true);
         try {
             const systemContent = `你是「${char.name}」。${char.systemPrompt || ''}
@@ -129,20 +131,16 @@ const CameraApp: React.FC<CameraAppProps> = ({ charId, onExit, onSendToChat }) =
                 temperature: 0.85,
                 stream: false,
             };
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify(payload),
+            const data = await callChatCompletion(apiConfig, payload, {
+                meta: makeApiUsageMeta('gallery.caption', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: 'main',
+                    apiBinding: '相机识图',
+                }),
             });
-            if (!res.ok) {
-                let msg = `HTTP ${res.status}`;
-                try { const d = await safeResponseJson(res); msg = d?.error?.message || msg; } catch { /* ignore */ }
-                if (/vision|image|multimodal|不支持/i.test(msg)) msg = '当前模型可能不支持图片识别(Vision)，请切换模型。';
-                throw new Error(msg);
-            }
-            const data = await safeResponseJson(res);
             const choice = data.choices?.[0];
-            let text: string = choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '';
+            let text: string = extractContent(data) || choice?.message?.reasoning_content || choice?.text || '';
             text = (text || '').trim();
             if (!text) throw new Error('TA 没有回应，请重试');
 
@@ -159,12 +157,15 @@ const CameraApp: React.FC<CameraAppProps> = ({ charId, onExit, onSendToChat }) =
                     review: parts.join('\n'),
                     reviewTimestamp: Date.now(),
                     savedDate: new Date().toISOString().split('T')[0],
+                    source: 'camera',
                 };
                 await DB.saveGalleryImage(img);
                 setSavedToGallery(true);
             } catch { /* 存相册失败不阻塞讨论 */ }
         } catch (e: any) {
-            addToast(e?.message || '让 TA 看看失败', 'error');
+            let msg = e?.message || '让 TA 看看失败';
+            if (/vision|image|multimodal|不支持/i.test(msg)) msg = '当前模型可能不支持图片识别(Vision)，请切换模型。';
+            addToast(msg, 'error');
         } finally {
             setBusy(false);
         }

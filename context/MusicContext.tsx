@@ -14,6 +14,19 @@ import React, {
 import { cachedCall as _cachedCall, invalidate as _invalidateCache, clearAll as _clearAllCache } from '../utils/musicCache';
 import { DB } from '../utils/db';
 import type { PostProcessMusicHooks } from '../utils/applyAssistantPostProcessing';
+import {
+  getQQMusicLikeAccountKey,
+  getQQMusicLikeSongKey,
+  loadQQMusicLikedKeys,
+  setQQMusicSongLiked,
+} from '../utils/musicQQLikes';
+import {
+  finishMusicPlayEvent,
+  recordMusicPlay,
+  setMusicTrackLiked,
+  upsertMusicTrack,
+  type MusicPlaySource,
+} from '../utils/musicLibrary';
 
 /* ───────────── 类型 ───────────── */
 export type MusicQuality = 'standard' | 'higher' | 'exhigh' | 'lossless' | 'hires';
@@ -47,6 +60,8 @@ export interface Song {
   qqSongMid?: string;
   /** QQ Music media_mid used for file names when it differs from songmid. */
   qqMediaMid?: string;
+  /** QQ Music numeric song id when the upstream provides one. */
+  qqSongId?: string | number;
   // ── Local-source extensions (used for AI-generated songs from 写歌 App) ──
   /** True for songs not from netease — play them via blob from IndexedDB. */
   local?: boolean;
@@ -97,7 +112,7 @@ const loadLocalAlbum = (): Song[] => {
 const saveLocalAlbum = (songs: Song[]) => {
   try { localStorage.setItem(LS_LOCAL_ALBUM_KEY, JSON.stringify(songs)); } catch {}
 };
-const DEFAULT_WORKER = 'https://sullymeow.ccwu.cc';
+const DEFAULT_WORKER = 'https://moro-n.tamdanhoang79141.workers.dev';
 
 export const MUSIC_DEFAULT_CFG: MusicCfg = {
   workerUrl: DEFAULT_WORKER,
@@ -110,7 +125,10 @@ export const MUSIC_DEFAULT_CFG: MusicCfg = {
 // 旧 worker 域名 → 新自定义域名的迁移表。老用户 localStorage 里存的还是
 // sully-n.qegj567.workers.dev，国内访问超时；自定义域名走 CF 边缘到同一个
 // worker，行为一致。第一次读到自动改写并落盘，下次刷新就稳定了。
-const STALE_WORKER_HOSTS = [/moro-n\.qegj567\.workers\.dev/i];
+const STALE_WORKER_HOSTS = [
+  /moro-n\.qegj567\.workers\.dev/i,
+  /sullymeow\.ccwu\.cc/i,
+];
 const migrateWorkerUrl = (url: string | undefined): string => {
   if (!url) return DEFAULT_WORKER;
   for (const re of STALE_WORKER_HOSTS) {
@@ -333,6 +351,15 @@ export const musicApi = {
   qqPlaylistDetail(cfg: MusicCfg, id: string | number) {
     return musicApi.qqCall(cfg, '/playlist/detail', { id });
   },
+  qqUserRecord(cfg: MusicCfg) {
+    return musicApi.qqCall(cfg, '/user/record', {});
+  },
+  qqLikeList(cfg: MusicCfg) {
+    return musicApi.qqCall(cfg, '/likelist', {});
+  },
+  qqLike(cfg: MusicCfg, songmid: string, like: boolean) {
+    return musicApi.qqCall(cfg, '/like', { songmid, like });
+  },
   qqSongUrl(cfg: MusicCfg, songmid: string, mediaMid?: string) {
     return musicApi.qqCall(cfg, '/song/url', { songmid, mediaMid });
   },
@@ -340,7 +367,13 @@ export const musicApi = {
     return musicApi.qqCall(cfg, '/lyric', { songmid });
   },
   async qqLoginQrCreate(cfg: MusicCfg) {
-    return musicApi.qqLoginCall(cfg, '/qr/create', {});
+    const r = await musicApi.qqLoginCall(cfg, '/qr/create', {});
+    const ticket = String(r?.ticket || r?.data?.ticket || '').trim();
+    const qrImg = r?.qrImg || r?.qrimg || r?.data?.qrImg || r?.data?.qrimg || '';
+    if (!ticket || !qrImg) {
+      throw new Error(r?.message || r?.error || 'QQ 音乐登录代理没有返回二维码，请更新 Worker 后重试');
+    }
+    return { ...r, ticket, qrImg };
   },
   async qqLoginQrCheck(cfg: MusicCfg, ticket: string) {
     return musicApi.qqLoginCall(cfg, '/qr/check', { ticket });
@@ -353,7 +386,20 @@ export const musicApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
       });
-      const j = await res.json().catch(() => ({}));
+      const text = await res.text().catch(() => '');
+      let j: any;
+      try {
+        j = JSON.parse(text);
+      } catch {
+        const preview = text.replace(/\s+/g, ' ').trim().slice(0, 80);
+        const msg = preview.startsWith('<') || /text\/html/i.test(res.headers.get('Content-Type') || '')
+          ? 'QQ 音乐登录代理返回了网页内容，当前站点可能没有部署最新 Worker'
+          : `QQ 音乐登录代理返回了非 JSON 响应${preview ? `：${preview}` : ''}`;
+        throw new Error(msg);
+      }
+      if (!j || typeof j !== 'object' || (res.ok && Object.keys(j).length === 0)) {
+        throw new Error('QQ 音乐登录代理返回为空，请更新 Worker 后重试');
+      }
       if (!res.ok || j?.status === 'error') {
         throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
       }
@@ -402,17 +448,24 @@ interface MusicContextType {
   refreshProfile: () => Promise<void>;
 
   // 操作
-  playSong: (song: Song, opts?: { alsoSetQueue?: boolean; replaceQueue?: Song[]; startIdx?: number }) => Promise<void>;
+  playSong: (song: Song, opts?: { alsoSetQueue?: boolean; replaceQueue?: Song[]; startIdx?: number; playSource?: MusicPlaySource }) => Promise<void>;
   togglePlay: () => void;
   nextSong: () => void;
   prevSong: () => void;
   seek: (pct: number) => void;
+  removeQueueItem: (index: number) => void;
+  moveQueueItem: (from: number, to: number) => void;
+  clearQueue: () => void;
+  libraryVersion: number;
+  refreshLibrary: () => void;
 
   // 播放模式 & 喜欢
   playMode: PlayMode;
   setPlayMode: (m: PlayMode) => void;
   liked: boolean;
   toggleLike: () => Promise<void>;
+  isSongLiked: (song: Song | null | undefined) => boolean;
+  toggleSongLike: (song: Song) => Promise<boolean | void>;
 
   // 一起听 — 当前哪些 char 和 user 一起听（仅视觉状态，不影响播放）
   // 歌曲切换 / 结束时自动清空
@@ -459,6 +512,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [queue, setQueueState] = useState<Song[]>(initialState.queue);
   const [idx, setIdx] = useState<number>(initialState.idx);
   const current = idx >= 0 && idx < queue.length ? queue[idx] : null;
+  const [libraryVersion, setLibraryVersion] = useState(0);
+  const refreshLibrary = useCallback(() => setLibraryVersion(v => v + 1), []);
 
   // 「一起写的歌」本地专辑 — 由写歌 App 同步过来的 ACE-Step / MiniMax 出歌
   const [localAlbumSongs, setLocalAlbumSongs] = useState<Song[]>(loadLocalAlbum);
@@ -470,7 +525,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       saveLocalAlbum(next);
       return next;
     });
-  }, []);
+    void upsertMusicTrack(song).then(refreshLibrary).catch(() => {});
+  }, [refreshLibrary]);
   const removeLocalSong = useCallback((songId: number) => {
     setLocalAlbumSongs(prev => {
       const next = prev.filter(s => s.id !== songId);
@@ -491,6 +547,36 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setQueueState(next);
   }, []);
 
+  const removeQueueItem = useCallback((index: number) => {
+    setQueueState(prev => {
+      if (index < 0 || index >= prev.length) return prev;
+      const next = prev.filter((_, i) => i !== index);
+      setIdx(cur => {
+        if (next.length === 0) return -1;
+        if (index < cur) return cur - 1;
+        if (index === cur) return Math.min(cur, next.length - 1);
+        return cur;
+      });
+      return next;
+    });
+  }, []);
+
+  const moveQueueItem = useCallback((from: number, to: number) => {
+    setQueueState(prev => {
+      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length || from === to) return prev;
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      setIdx(cur => {
+        if (cur === from) return to;
+        if (from < cur && to >= cur) return cur - 1;
+        if (from > cur && to <= cur) return cur + 1;
+        return cur;
+      });
+      return next;
+    });
+  }, []);
+
   // 队列持久化
   useEffect(() => { saveState(queue, idx); }, [queue, idx]);
 
@@ -500,6 +586,14 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [loadingSong, setLoadingSong] = useState(false);
+  const clearQueue = useCallback(() => {
+    setQueueState([]);
+    setIdx(-1);
+    try {
+      const a = audioRef.current;
+      if (a) { a.pause(); a.src = ''; }
+    } catch {}
+  }, []);
 
   // 歌词
   const [lyric, setLyric] = useState<LyricLine[]>([]);
@@ -549,6 +643,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 喜欢列表
   const [likedSet, setLikedSet] = useState<Set<number>>(new Set());
+  const qqLikeAccountKey = useMemo(() => getQQMusicLikeAccountKey(cfg.qqMusic?.uin), [cfg.qqMusic?.uin]);
+  const [qqLikedKeys, setQQLikedKeys] = useState<Set<string>>(() => loadQQMusicLikedKeys(qqLikeAccountKey));
   useEffect(() => {
     if (!cfg.cookie) { setLikedSet(new Set()); return; }
     musicApi.call(cfg, '/likelist', {}).then(r => {
@@ -557,50 +653,81 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }).catch(() => {});
   }, [cfg]);
 
-  // 「喜欢」逻辑分两条路:
+  useEffect(() => {
+    setQQLikedKeys(loadQQMusicLikedKeys(qqLikeAccountKey));
+  }, [qqLikeAccountKey]);
+
+  // 「喜欢」逻辑分三条路:
   //   - 网易云歌 → 走 likelist API
+  //   - QQ 音乐歌 → 写入本地 QQ 喜欢列表
   //   - 本地歌 → 在 localAlbum 里就算喜欢，不在就不喜欢；toggle = add/remove
-  const liked = !!current && (
-    current.local
-      ? localAlbumSongs.some(s => s.id === current.id)
-      : current.source === 'qq'
-        ? false
-      : likedSet.has(current.id)
-  );
-  const toggleLike = useCallback(async () => {
-    if (!current) return;
-    // ── 本地歌：toggle from album ──
-    if (current.local) {
-      const inAlbum = localAlbumSongs.some(s => s.id === current.id);
-      if (inAlbum) {
-        removeLocalSong(current.id);
-        toast('已从「一起写的歌」移除', 'info');
-      } else {
-        addLocalSong(current);
-        toast('已加入「一起写的歌」', 'success');
-      }
-      return;
+  const isSongLiked = useCallback((song: Song | null | undefined): boolean => {
+    if (!song) return false;
+    if (song.local) return localAlbumSongs.some(s => s.id === song.id);
+    if (song.source === 'qq') {
+      const key = getQQMusicLikeSongKey(song);
+      return !!key && qqLikedKeys.has(key);
     }
-    if (current.source === 'qq') {
-      toast('QQ 音乐歌曲暂不支持在这里收藏', 'info');
-      return;
+    return likedSet.has(song.id);
+  }, [likedSet, localAlbumSongs, qqLikedKeys]);
+
+  const liked = !!current && isSongLiked(current);
+
+  const toggleSongLike = useCallback(async (song: Song) => {
+    // ── 本地歌：toggle from album ──
+    if (song.local) {
+      const inAlbum = localAlbumSongs.some(s => s.id === song.id);
+      if (inAlbum) {
+        removeLocalSong(song.id);
+        void setMusicTrackLiked(song, false).then(refreshLibrary).catch(() => {});
+        toast('已从「一起写的歌」移除', 'info');
+        return false;
+      } else {
+        addLocalSong(song);
+        void setMusicTrackLiked(song, true).then(refreshLibrary).catch(() => {});
+        toast('已加入「一起写的歌」', 'success');
+        return true;
+      }
+    }
+    if (song.source === 'qq') {
+      const key = getQQMusicLikeSongKey(song);
+      if (!key) { toast('这首 QQ 音乐缺少收藏标识', 'error'); return; }
+      const willLike = !qqLikedKeys.has(key);
+      try {
+        const result = setQQMusicSongLiked(song, qqLikeAccountKey, willLike);
+        setQQLikedKeys(new Set(result.entries.map(entry => entry.key)));
+        void setMusicTrackLiked(song, willLike).then(refreshLibrary).catch(() => {});
+        toast(willLike ? '已添加到本地 QQ 喜欢' : '已取消本地 QQ 喜欢', 'success');
+        return willLike;
+      } catch (e: any) {
+        toast(`QQ 收藏失败: ${e.message}`, 'error');
+        return;
+      }
     }
     // ── 网易云歌 ──
     if (!cfg.cookie) { toast('需要登录网易云账号', 'error'); return; }
-    const willLike = !likedSet.has(current.id);
+    const willLike = !likedSet.has(song.id);
     try {
-      await musicApi.call(cfg, '/like', { id: current.id, like: willLike });
+      await musicApi.call(cfg, '/like', { id: song.id, like: willLike });
       _invalidateCache('/likelist', cfg.cookie);
       setLikedSet(prev => {
         const next = new Set(prev);
-        if (willLike) next.add(current.id); else next.delete(current.id);
+        if (willLike) next.add(song.id); else next.delete(song.id);
         return next;
       });
+      void setMusicTrackLiked(song, willLike).then(refreshLibrary).catch(() => {});
       toast(willLike ? '已添加到喜欢' : '已取消喜欢', 'success');
+      return willLike;
     } catch (e: any) {
       toast(`喜欢失败: ${e.message}`, 'error');
+      return;
     }
-  }, [current, cfg, likedSet, localAlbumSongs, addLocalSong, removeLocalSong, toast]);
+  }, [addLocalSong, cfg, likedSet, localAlbumSongs, qqLikeAccountKey, qqLikedKeys, refreshLibrary, removeLocalSong, toast]);
+
+  const toggleLike = useCallback(async () => {
+    if (!current) return;
+    await toggleSongLike(current);
+  }, [current, toggleSongLike]);
 
   // 播放模式
   const [playMode, setPlayMode] = useState<PlayMode>('loop');
@@ -633,7 +760,21 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const idxRef = useRef(idx); idxRef.current = idx;
   const modeRef = useRef(playMode); modeRef.current = playMode;
   const cfgRef = useRef(cfg); cfgRef.current = cfg;
+  const listeningTogetherRef = useRef(listeningTogetherWith); listeningTogetherRef.current = listeningTogetherWith;
+  const currentPlayEventIdRef = useRef<string | null>(null);
   const endedHandlerRef = useRef<() => void>(() => {});
+
+  const finishCurrentPlayEvent = useCallback(() => {
+    const id = currentPlayEventIdRef.current;
+    if (!id) return;
+    currentPlayEventIdRef.current = null;
+    const a = audioRef.current;
+    void finishMusicPlayEvent(id, {
+      progress: a?.currentTime ?? progress,
+      duration: a?.duration || duration,
+      endedAt: Date.now(),
+    }).then(refreshLibrary).catch(() => {});
+  }, [duration, progress, refreshLibrary]);
 
   // 初始化 audio（仅 Provider 生命周期创建一次）
   useEffect(() => {
@@ -658,6 +799,15 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     a.addEventListener('ended', onEnd);
 
     return () => {
+      const eventId = currentPlayEventIdRef.current;
+      if (eventId) {
+        currentPlayEventIdRef.current = null;
+        void finishMusicPlayEvent(eventId, {
+          progress: a.currentTime,
+          duration: a.duration || 0,
+          endedAt: Date.now(),
+        }).catch(() => {});
+      }
       a.removeEventListener('play', onPlay);
       a.removeEventListener('pause', onPause);
       a.removeEventListener('timeupdate', onTime);
@@ -669,8 +819,18 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const markLibraryPlaybackStarted = useCallback((song: Song, playSource: MusicPlaySource = 'unknown') => {
+    void recordMusicPlay(song, {
+      playSource,
+      listenTogetherWith: listeningTogetherRef.current,
+    }).then(event => {
+      currentPlayEventIdRef.current = event.id;
+      refreshLibrary();
+    }).catch(() => {});
+  }, [refreshLibrary]);
+
   // 播放单曲
-  const playSong = useCallback(async (song: Song, opts: { alsoSetQueue?: boolean; replaceQueue?: Song[]; startIdx?: number } = {}) => {
+  const playSong = useCallback(async (song: Song, opts: { alsoSetQueue?: boolean; replaceQueue?: Song[]; startIdx?: number; playSource?: MusicPlaySource } = {}) => {
     const { alsoSetQueue = true, replaceQueue, startIdx } = opts;
 
     if (replaceQueue) {
@@ -687,6 +847,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
+    finishCurrentPlayEvent();
     setLoadingSong(true); setLyric([]); setTlyric([]); setProgress(0); setDuration(0);
     try {
       // ── Local-source branch ── 本地生成的歌（写歌 App 出歌）从 IndexedDB 取 blob
@@ -766,6 +927,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           } catch {}
         }
+        markLibraryPlaybackStarted(song, opts.playSource || 'local');
         setLoadingSong(false);
         return;
       }
@@ -802,6 +964,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
           } catch {}
         }
+        markLibraryPlaybackStarted(song, opts.playSource || 'account');
         setLoadingSong(false);
         return;
       }
@@ -837,12 +1000,13 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
         } catch {}
       }
+      markLibraryPlaybackStarted(song, opts.playSource || 'unknown');
     } catch (e: any) {
       toast(`播放失败：${e.message}`, 'error');
     } finally {
       setLoadingSong(false);
     }
-  }, [toast]);
+  }, [finishCurrentPlayEvent, markLibraryPlaybackStarted, toast]);
 
   // 下一首 / 上一首
   const nextSong = useCallback(() => {
@@ -856,14 +1020,14 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       n = (cur + 1) % q.length;
     }
-    setIdx(n); playSong(q[n], { alsoSetQueue: false });
+    setIdx(n); playSong(q[n], { alsoSetQueue: false, playSource: 'queue' });
   }, [playSong]);
 
   const prevSong = useCallback(() => {
     const q = queueRef.current; if (!q.length) return;
     const cur = idxRef.current; if (cur < 0) return;
     const n = (cur - 1 + q.length) % q.length;
-    setIdx(n); playSong(q[n], { alsoSetQueue: false });
+    setIdx(n); playSong(q[n], { alsoSetQueue: false, playSource: 'queue' });
   }, [playSong]);
 
   // 自动下一首（end 事件）— 通过 ref 转发，以免 useEffect([], []) 闭包陷阱
@@ -1061,8 +1225,10 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     lyric, tlyric, activeLyricIdx,
     profile, refreshProfile,
     playSong, togglePlay, nextSong, prevSong, seek,
+    removeQueueItem, moveQueueItem, clearQueue,
+    libraryVersion, refreshLibrary,
     playMode, setPlayMode,
-    liked, toggleLike,
+    liked, toggleLike, isSongLiked, toggleSongLike,
     listeningTogetherWith, addListeningPartner, removeListeningPartner, clearListeningPartners,
     toast, setToastHandler,
     localAlbumSongs, addLocalSong, removeLocalSong,

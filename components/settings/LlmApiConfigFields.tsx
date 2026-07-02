@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { APIConfig } from '../../types';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { fetchModelList } from '../../utils/llmClient';
 
 export type LlmApiDraft = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>;
 
@@ -26,6 +27,9 @@ interface LlmApiConfigFieldsProps {
   showPresets?: boolean;
   showSavePreset?: boolean;
   modelFetchFeatureId?: string;
+  apiRole?: 'main' | 'aux' | 'custom';
+  apiBinding?: string;
+  modelCacheKey?: string;
 }
 
 const defaultInputClass =
@@ -34,33 +38,6 @@ const defaultButtonClass =
   'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 active:scale-95 transition-transform disabled:opacity-50';
 const defaultPrimaryButtonClass =
   'rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white active:scale-95 transition-transform disabled:opacity-50';
-
-const normalizeModelList = (data: unknown): string[] => {
-  const source: unknown[] =
-    Array.isArray(data) ? data :
-    Array.isArray((data as any)?.data) ? (data as any).data :
-    Array.isArray((data as any)?.models) ? (data as any).models :
-    Array.isArray((data as any)?.model_list) ? (data as any).model_list :
-    [];
-
-  return Array.from(new Set(
-    source
-      .map((item: unknown) => typeof item === 'string' ? item : ((item as any)?.id ?? (item as any)?.name ?? (item as any)?.model))
-      .filter((item: unknown): item is string => typeof item === 'string' && !!item.trim())
-      .map((item: string) => item.trim())
-  ));
-};
-
-const extractErrorMessage = (data: any, fallback: string): string => {
-  const candidates = [
-    data?.error?.message,
-    typeof data?.error === 'string' ? data.error : undefined,
-    data?.message,
-    data?.detail,
-    data?.details,
-  ];
-  return candidates.find((item): item is string => typeof item === 'string' && !!item.trim()) || fallback;
-};
 
 const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
   value,
@@ -83,6 +60,9 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
   showPresets = true,
   showSavePreset = true,
   modelFetchFeatureId = 'chat.emotionApi.fetchModels',
+  apiRole = 'custom',
+  apiBinding,
+  modelCacheKey = 'os_available_models',
 }) => {
   const { apiPresets, addApiPreset, availableModels, setAvailableModels, addToast } = useOS();
   const [isFetching, setIsFetching] = useState(false);
@@ -110,8 +90,7 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
   }, [availableModels, modelFilter]);
 
   const handleFetchModels = async () => {
-    const baseUrl = value.baseUrl.trim().replace(/\/+$/, '');
-    if (!baseUrl) {
+    if (!value.baseUrl.trim()) {
       setStatus('请先填写 Base URL');
       addToast('请先填写 Base URL，再拉取模型', 'info');
       return;
@@ -120,21 +99,15 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
     setIsFetching(true);
     setStatus('正在拉取模型...');
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (value.apiKey.trim()) headers.Authorization = `Bearer ${value.apiKey.trim()}`;
-
-      const response = await fetch(`${baseUrl}/models`, {
-        method: 'GET',
-        headers,
-        __moroMeta: makeApiUsageMeta(modelFetchFeatureId, {
-          apiRole: 'custom',
-          apiBinding: label || '独立 API 配置',
-        }),
-      } as RequestInit & { __moroMeta?: unknown });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(extractErrorMessage(data, `HTTP ${response.status}`));
-
-      const models = normalizeModelList(data);
+      const models = await fetchModelList(
+        { baseUrl: value.baseUrl, apiKey: value.apiKey },
+        {
+          meta: makeApiUsageMeta(modelFetchFeatureId, {
+            apiRole,
+            apiBinding: apiBinding || label || '独立 API 配置',
+          }),
+        },
+      );
       if (!models.length) {
         setStatus('没有识别到模型列表，可以先手动填写模型名');
         addToast('没有识别到模型列表，可以先手动填写模型名', 'info');
@@ -142,7 +115,7 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
       }
 
       setAvailableModels(models);
-      try { localStorage.setItem('os_available_models', JSON.stringify(models)); } catch { /* ignore */ }
+      try { localStorage.setItem(modelCacheKey, JSON.stringify(models)); } catch { /* ignore */ }
       if (!models.includes(value.model.trim())) patch({ model: models[0] });
       setShowModelList(true);
       setModelFilter('');
@@ -150,7 +123,7 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
       addToast(`已拉取 ${models.length} 个模型`, 'success');
     } catch (error: any) {
       const message = error?.message || '请检查 Base URL 和 API Key';
-      setStatus(`拉取失败：${message}`);
+      setStatus(`拉取失败：${message}；也可以先手动填写模型名`);
       addToast(`拉取模型失败：${message}`, 'error');
     } finally {
       setIsFetching(false);

@@ -1,6 +1,7 @@
-import { safeResponseJson } from './safeApi';
 import type { ResolvedApi } from './auxApi';
 import { JOB_CATEGORIES, JOB_POSTINGS, LOAN_PRODUCTS } from './bankLife';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 import type {
     BankJobApplication,
     BankJobApplicationStage,
@@ -49,16 +50,18 @@ export function sanitizeAiEvent(input: any, dateStr: string): BankLifeAiEvent {
 export async function callBankLifeAiJson(api: ResolvedApi, messages: { role: 'system' | 'user'; content: string }[], fallback: any): Promise<any> {
     if (!api?.baseUrl || !api?.model) return fallback;
     try {
-        const response = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(api.apiKey ? { Authorization: `Bearer ${api.apiKey}` } : {}),
-            },
-            body: JSON.stringify({ model: api.model, messages, temperature: 0.85, stream: false }),
+        const json = await callChatCompletion(api, {
+            model: api.model,
+            messages,
+            temperature: 0.85,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('bank.lifeAi', {
+                apiRole: api.apiRole || 'aux',
+                apiBinding: api.apiBinding,
+                isBackgroundTask: true,
+            }),
         });
-        if (!response.ok) return fallback;
-        const json = await safeResponseJson(response);
         const content = json?.choices?.[0]?.message?.content || '';
         return parseAiJsonObject(content);
     } catch (error) {

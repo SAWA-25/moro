@@ -12,8 +12,10 @@ import {
     GuidebookPacing,
     GuidebookScoreVisibility,
 } from '../types';
-import { extractJson } from '../utils/safeApi';
+import { extractContent, extractJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
     buildOpeningPrompt,
@@ -43,24 +45,19 @@ const genId = () => Math.random().toString(36).slice(2, 10);
 
 // --- Helper: API Call ---
 async function callAPI(apiConfig: { baseUrl: string; apiKey: string; model: string }, prompt: string): Promise<string> {
-    const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.9,
-            max_tokens: 4000,
-            stream: false,
+    const data = await callChatCompletion(apiConfig, {
+        model: apiConfig.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.9,
+        max_tokens: 4000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('theater.guidebook', {
+            apiRole: 'aux',
+            apiBinding: '攻略本',
         }),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
-    let json: any;
-    try { json = JSON.parse(text); } catch {
-        json = JSON.parse(text.replace(/^data: /, '').trim());
-    }
-    return json?.choices?.[0]?.message?.content?.trim() || '';
+    return extractContent(data)?.trim() || '';
 }
 
 // --- Helper: Fetch recent messages as text (uses char.contextLimit) ---

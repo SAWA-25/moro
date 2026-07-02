@@ -1,15 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
+    DEFAULT_PRESET_NAME,
+    DEFAULT_PRESET_SCOPES,
     INJECTION_POSITION,
     ORDER_CHAR_ID_SINGLE,
     ORDER_CHAR_ID_GROUP,
+    PresetRuntime,
     applyPresetToMessages,
+    createAllPresetScopes,
     createDefaultPreset,
+    ensureDefaultPresetSeed,
     exportTavernPreset,
     getPresetGenParams,
     importTavernPreset,
+    normalizePresetScopes,
     substitutePresetMacros,
 } from './presets';
+import { DB } from './db';
 import type { TavernPreset } from '../types';
 
 const MACROS = { charName: '小明', userName: '阿罗' };
@@ -63,6 +70,94 @@ const history = [
 ];
 const baseMessages = [{ role: 'system', content: 'CORE' }, ...history];
 
+afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+});
+
+describe('Moro default preset seed', () => {
+    it('createDefaultPreset builds the refined all-scope baseline without empty output messages', () => {
+        const preset = createDefaultPreset();
+        const promptIds = preset.prompts.map(p => p.identifier);
+
+        expect(preset.name).toBe(DEFAULT_PRESET_NAME);
+        expect(promptIds).toEqual(expect.arrayContaining([
+            'main',
+            'moro-natural-style',
+            'moro-continuity',
+            'moro-format-guard',
+            'moro-group-guard',
+            'chatHistory',
+            'worldInfoBefore',
+            'worldInfoAfter',
+            'personaDescription',
+            'dialogueExamples',
+        ]));
+        expect(preset.prompt_order.map(po => po.character_id)).toEqual([ORDER_CHAR_ID_SINGLE, ORDER_CHAR_ID_GROUP]);
+        expect(preset.moroScopes).toEqual(createAllPresetScopes());
+
+        const out = applyPresetToMessages(baseMessages, preset, { macros: MACROS });
+        expect(out.some(m => String(m.content).includes('JSON'))).toBe(true);
+        expect(out.some(m => m.content === 'CORE')).toBe(true);
+        expect(out.map(m => m.content)).toEqual(expect.arrayContaining(['u1', 'a1', 'u2', 'a2']));
+        expect(out.every(m => typeof m.content !== 'string' || m.content.trim().length > 0)).toBe(true);
+    });
+
+    it('ensureDefaultPresetSeed seeds an active selection but keeps the master switch off by default', async () => {
+        await DB.deleteDB();
+
+        const seeded = await ensureDefaultPresetSeed();
+        const list = await DB.getAllPresets();
+
+        expect(seeded).toBeTruthy();
+        expect(list).toHaveLength(1);
+        expect(list[0].id).toBe(seeded!.id);
+        expect(PresetRuntime.getActiveId()).toBe(seeded!.id);
+        expect(PresetRuntime.isEnabled()).toBe(false);
+        expect(PresetRuntime.isSamplingApplied()).toBe(true);
+        expect(PresetRuntime.getGlobalScopes()).toEqual(createAllPresetScopes());
+        await expect(PresetRuntime.getActivePreset()).resolves.toBeNull();
+
+        PresetRuntime.setEnabled(true);
+        await expect(PresetRuntime.getActivePreset()).resolves.toMatchObject({ id: seeded!.id });
+    });
+
+    it('ensureDefaultPresetSeed turns an already-seeded built-in default preset off once', async () => {
+        await DB.deleteDB();
+        const existing = createDefaultPreset();
+        await DB.savePreset(existing);
+        PresetRuntime.setActiveId(existing.id);
+        PresetRuntime.setEnabled(true);
+
+        await expect(ensureDefaultPresetSeed()).resolves.toBeNull();
+        expect(PresetRuntime.isEnabled()).toBe(false);
+
+        PresetRuntime.setEnabled(true);
+        await expect(ensureDefaultPresetSeed()).resolves.toBeNull();
+        expect(PresetRuntime.isEnabled()).toBe(true);
+    });
+
+    it('ensureDefaultPresetSeed does not override existing presets or local switches', async () => {
+        await DB.deleteDB();
+        const existing = createDefaultPreset('existing');
+        await DB.savePreset(existing);
+        PresetRuntime.setActiveId(existing.id);
+        PresetRuntime.setEnabled(true);
+        PresetRuntime.setSamplingApplied(false);
+        PresetRuntime.setGlobalScopes(DEFAULT_PRESET_SCOPES);
+
+        await expect(ensureDefaultPresetSeed()).resolves.toBeNull();
+        const list = await DB.getAllPresets();
+
+        expect(list).toHaveLength(1);
+        expect(list[0].id).toBe(existing.id);
+        expect(PresetRuntime.getActiveId()).toBe(existing.id);
+        expect(PresetRuntime.isEnabled()).toBe(true);
+        expect(PresetRuntime.isSamplingApplied()).toBe(false);
+        expect(PresetRuntime.getGlobalScopes()).toEqual(DEFAULT_PRESET_SCOPES);
+    });
+});
+
 describe('importTavernPreset', () => {
     it('完整映射 ST 预设：采样参数 / prompts / prompt_order / raw 兜底', () => {
         const p = importTavernPreset(ST_PRESET_JSON, 'fallback');
@@ -91,6 +186,15 @@ describe('importTavernPreset', () => {
         expect(p.prompts.find(x => x.identifier === 'chatHistory')?.marker).toBe(true);
     });
 
+    it('保留 ST injection_trigger 字段并去重规范化', () => {
+        const p = importTavernPreset({
+            prompts: [{ identifier: 'main', name: 'Main', role: 'system', content: 'x', injection_trigger: ['quiet', 'normal', 'quiet', ''] }],
+            prompt_order: [{ character_id: 100000, order: [{ identifier: 'main', enabled: true }] }],
+        }, 'n');
+        expect(p.prompts[0].injection_trigger).toEqual(['quiet', 'normal']);
+        expect(exportTavernPreset(p).prompts[0].injection_trigger).toEqual(['quiet', 'normal']);
+    });
+
     it('缺 prompts / prompt_order 时落默认结构', () => {
         const p = importTavernPreset({ temperature: 1.2 }, 'bare');
         expect(p.prompts.length).toBeGreaterThan(0);
@@ -117,6 +221,19 @@ describe('exportTavernPreset', () => {
         // 导出物可再导入（往返兼容）
         const again = importTavernPreset(out, 'n2');
         expect(again.temperature).toBe(1.5);
+    });
+
+    it('导出时剥离 Moro 本地字段：API 绑定与作用范围不写入 ST JSON', () => {
+        const p = importTavernPreset(ST_PRESET_JSON, 'n');
+        p.moroApiPresetId = 'api-local';
+        p.moroScopes = { 'chat.private': true, 'structured.tool': true };
+        if (p.raw) {
+            (p.raw as any).moroApiPresetId = 'raw-api';
+            (p.raw as any).moroScopes = { 'chat.groupText': true };
+        }
+        const out = exportTavernPreset(p);
+        expect(out.moroApiPresetId).toBeUndefined();
+        expect(out.moroScopes).toBeUndefined();
     });
 });
 
@@ -261,6 +378,42 @@ describe('applyPresetToMessages', () => {
         const out = applyPresetToMessages(baseMessages, p, { macros: MACROS });
         expect(out.every(m => typeof m.content !== 'string' || m.content.length > 0)).toBe(true);
     });
+
+    it('按 ST injection_trigger 过滤提示词，默认 generationType=normal', () => {
+        const p = createDefaultPreset();
+        p.prompts.push(
+            { identifier: 'normal-only', name: 'normal', role: 'system', content: 'NORMAL', injection_trigger: ['normal'] },
+            { identifier: 'quiet-only', name: 'quiet', role: 'system', content: 'QUIET', injection_trigger: ['quiet'] },
+        );
+        for (const po of p.prompt_order) {
+            po.order.push({ identifier: 'normal-only', enabled: true }, { identifier: 'quiet-only', enabled: true });
+        }
+        expect(applyPresetToMessages(baseMessages, p, { macros: MACROS }).map(m => m.content)).toContain('NORMAL');
+        expect(applyPresetToMessages(baseMessages, p, { macros: MACROS }).map(m => m.content)).not.toContain('QUIET');
+        expect(applyPresetToMessages(baseMessages, p, { macros: MACROS, generationType: 'quiet' }).map(m => m.content)).toContain('QUIET');
+    });
+
+    it('群聊链路可使用 100001 的 prompt_order', () => {
+        const p = createDefaultPreset();
+        const main = p.prompts.find(prompt => prompt.identifier === 'main')!;
+        main.content = 'single {{char}}';
+        p.prompts.push({ identifier: 'group-main', name: 'Group Main', role: 'system', content: 'group {{char}}' });
+        p.prompt_order = [
+            { character_id: ORDER_CHAR_ID_SINGLE, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+            { character_id: ORDER_CHAR_ID_GROUP, order: [{ identifier: 'group-main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+        ];
+        const out = applyPresetToMessages(baseMessages, p, { macros: MACROS, orderCharacterId: ORDER_CHAR_ID_GROUP });
+        expect(out.map(m => m.content)).toEqual(['CORE', 'group 小明', 'u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('tailMessages 总是在预设骨架之后追加，用于 JSON 守卫', () => {
+        const p = createDefaultPreset();
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            tailMessages: [{ role: 'system', content: 'JSON ONLY' }],
+        });
+        expect(out[out.length - 1]).toEqual({ role: 'system', content: 'JSON ONLY' });
+    });
 });
 
 describe('getPresetGenParams', () => {
@@ -280,6 +433,43 @@ describe('getPresetGenParams', () => {
         const params2 = getPresetGenParams(p);
         expect(params2.top_k).toBe(50);
         expect(params2.repetition_penalty).toBe(1.15);
+    });
+});
+
+describe('预设作用范围', () => {
+    it('默认 scope：私聊/主动/群聊文字/电话开，群语音/场景/创作/结构化关', () => {
+        expect(normalizePresetScopes(null)).toEqual(DEFAULT_PRESET_SCOPES);
+        expect(DEFAULT_PRESET_SCOPES['chat.private']).toBe(true);
+        expect(DEFAULT_PRESET_SCOPES['chat.proactive']).toBe(true);
+        expect(DEFAULT_PRESET_SCOPES['chat.groupText']).toBe(true);
+        expect(DEFAULT_PRESET_SCOPES['chat.phoneText']).toBe(true);
+        expect(DEFAULT_PRESET_SCOPES['chat.groupVoice']).toBe(false);
+        expect(DEFAULT_PRESET_SCOPES['structured.tool']).toBe(false);
+    });
+
+    it('最终生效 = 总开关 + 全局 scope + 当前预设 scope', () => {
+        const preset = createDefaultPreset();
+        preset.moroScopes = { ...DEFAULT_PRESET_SCOPES, 'chat.private': true };
+        vi.spyOn(PresetRuntime, 'isEnabled').mockReturnValue(true);
+        vi.spyOn(PresetRuntime, 'getGlobalScopes').mockReturnValue({ ...DEFAULT_PRESET_SCOPES, 'chat.private': false });
+        expect(PresetRuntime.isScopeEnabled('chat.private', preset)).toBe(false);
+        vi.mocked(PresetRuntime.getGlobalScopes).mockReturnValue({ ...DEFAULT_PRESET_SCOPES, 'chat.private': true });
+        preset.moroScopes = { ...DEFAULT_PRESET_SCOPES, 'chat.private': false };
+        expect(PresetRuntime.isScopeEnabled('chat.private', preset)).toBe(false);
+        preset.moroScopes = { ...DEFAULT_PRESET_SCOPES, 'chat.private': true };
+        expect(PresetRuntime.isScopeEnabled('chat.private', preset)).toBe(true);
+    });
+
+    it('scoped getActiveGenParams 尊重采样开关与 scope 取到的预设', async () => {
+        const preset = createDefaultPreset();
+        preset.temperature = 0.66;
+        vi.spyOn(PresetRuntime, 'isSamplingApplied').mockReturnValue(true);
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        await expect(PresetRuntime.getActiveGenParams('structured.tool')).resolves.toBeNull();
+        vi.mocked(PresetRuntime.getActivePresetForScope).mockResolvedValue(preset);
+        await expect(PresetRuntime.getActiveGenParams('chat.private')).resolves.toMatchObject({ temperature: 0.66 });
+        vi.mocked(PresetRuntime.isSamplingApplied).mockReturnValue(false);
+        await expect(PresetRuntime.getActiveGenParams('chat.private')).resolves.toBeNull();
     });
 });
 

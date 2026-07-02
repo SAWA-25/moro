@@ -17,9 +17,9 @@ import { MemoryNodeDB, AnticipationDB } from './db';
 import { fulfillAnticipation, disappointAnticipation } from './anticipation';
 import { formCognitions } from './cognition';
 import { vectorizeAndStore } from './vectorStore';
-import { safeFetchJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
+import { callChatCompletion } from '../llmClient';
 
 /** 从 localStorage 读取远程向量配置（与 pipeline.ts 同一份来源） */
 function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
@@ -253,27 +253,18 @@ ${material.recentContext.map(n => `- (${n.room}, ${n.mood}): ${n.content}`).join
 没有变化的可以不写。只写有变化的。`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: '请开始审视。' },
-                    ],
-                    temperature: 0.6,
-                    max_tokens: 8000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: '请开始审视。' },
+            ],
+            temperature: 0.6,
+            max_tokens: 8000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const parsed = safeParseJsonArray(reply);
@@ -768,28 +759,19 @@ ${memoryContext}
 
     console.log(`🎭 [PersonalityDetect] ${charName} → 调用 LLM（model=${llmConfig.model}, max_tokens=8000）`);
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: '请判断。' },
-                    ],
-                    temperature: 0.3,
-                    // 8000：给 think 型模型留足思考空间，300 会被 reasoning 吃光
-                    max_tokens: 8000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.personality', { charName, apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: '请判断。' },
+            ],
+            temperature: 0.3,
+            // 8000：给 think 型模型留足思考空间，300 会被 reasoning 吃光
+            max_tokens: 8000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.personality', { charName, apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const finishReason = data.choices?.[0]?.finish_reason;

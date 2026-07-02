@@ -14,8 +14,10 @@ import {
     TwitterTweet,
     UserProfile,
 } from '../types';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export const TWITTER_BATCH_SIZE = 12;
 export const TWITTER_MIN_BATCH_SIZE = 10;
@@ -510,26 +512,18 @@ export const parseTwitterJsonLoose = (raw: string): any[] => {
 };
 
 const callLlm = async (apiConfig: APIConfig, systemPrompt: string, userMessage: string, maxTokens = 12000): Promise<string> => {
-    const baseUrl = apiConfig.baseUrl.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiConfig.apiKey || 'sk-none'}`,
-        },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMessage },
-            ],
-            temperature: 0.92,
-            max_tokens: maxTokens,
-            stream: false,
-        }),
+    const data = await callChatCompletion(apiConfig, {
+        model: apiConfig.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+        ],
+        temperature: 0.92,
+        max_tokens: maxTokens,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('twitter.generate', { apiRole: 'aux' }),
     });
-    if (!resp.ok) throw new Error(`LLM API ${resp.status}`);
-    const data = await safeResponseJson(resp);
     return (extractContent(data) || '').trim();
 };
 

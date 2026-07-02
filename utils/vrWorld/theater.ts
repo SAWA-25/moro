@@ -14,7 +14,9 @@ import type {
 import { DB } from '../db';
 import { getVRApi } from './vrApi';
 import { buildChatRequestPayload } from '../chatRequestPayload';
-import { safeFetchJson } from '../safeApi';
+import { extractContent } from '../safeApi';
+import { callChatCompletion } from '../llmClient';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { STAGE_BUBBLE_MAX } from './constants';
 import {
     buildLLMScriptTurn, buildPolishTurn, parseScriptOutput, type ParsedScript,
@@ -23,24 +25,36 @@ import {
     buildDirectorTurn, parseDirectorOutput, type ParsedDirector,
 } from './prompts';
 
-export interface TheaterApi { baseUrl: string; apiKey: string; model: string; }
+export interface TheaterApi { baseUrl: string; apiKey: string; model: string; apiRole?: 'main' | 'aux' | 'custom'; apiBinding?: string; }
 
 /** 解析剧院要用的 API（彼方独立 API → 聊天默认）。 */
 export async function resolveTheaterApi(apiConfig: APIConfig): Promise<TheaterApi | null> {
     const vr = await getVRApi();
-    const api = vr?.baseUrl ? vr : apiConfig;
-    if (!api?.baseUrl) return null;
-    return { baseUrl: api.baseUrl.replace(/\/+$/, ''), apiKey: api.apiKey || 'sk-none', model: api.model };
+    const usingVrApi = !!vr?.baseUrl;
+    const api = usingVrApi ? vr : apiConfig;
+    if (!api?.baseUrl || !api.model) return null;
+    return {
+        baseUrl: api.baseUrl,
+        apiKey: api.apiKey || '',
+        model: api.model,
+        apiRole: usingVrApi ? 'custom' : 'main',
+        apiBinding: usingVrApi ? '彼方独立 API' : '文具盒主 API',
+    };
 }
 
 async function chat(api: TheaterApi, messages: Array<{ role: string; content: any }>, temperature = 0.9): Promise<string> {
-    const data: any = await safeFetchJson(`${api.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
-        body: JSON.stringify({ model: api.model, messages, temperature, stream: false }),
-    }, 2, 0, { appName: '彼方·剧院' });
-    const c: string = data.choices?.[0]?.message?.content || '';
-    return c.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages,
+        temperature,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('vrWorld.theater', {
+            apiRole: api.apiRole || 'custom',
+            apiBinding: api.apiBinding || '彼方·剧院',
+        }),
+    });
+    return extractContent(data);
 }
 
 /** 角色无关上下文（UI 注入一次）。 */

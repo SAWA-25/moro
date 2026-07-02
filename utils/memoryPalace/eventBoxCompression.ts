@@ -26,8 +26,9 @@ import { EventBoxDB, MemoryNodeDB } from './db';
 import type { LightLLMConfig } from './pipeline';
 import { vectorizeAndStore } from './vectorStore';
 import { bulkSetArchived } from './supabaseVector';
-import { safeFetchJson, extractJson } from '../safeApi';
+import { extractJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
+import { callChatCompletion } from '../llmClient';
 
 const VALID_ROOMS: MemoryRoom[] = [
     'living_room', 'bedroom', 'study', 'user_room',
@@ -174,27 +175,18 @@ async function callCompressionLLM(
     const userMsg = `${oldSummaryBlock}\n${livesText}`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userMsg },
-                    ],
-                    temperature: 0.5,
-                    max_tokens: 8000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.eventBoxCompression', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMsg },
+            ],
+            temperature: 0.5,
+            max_tokens: 8000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.eventBoxCompression', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         let parsed: any = extractJson(reply);

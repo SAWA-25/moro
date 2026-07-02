@@ -43,7 +43,7 @@ ST 的作者注释 / 示例消息锚点（2/3/5/6/7）导入时降级为 `after_
 ## 数据流
 
 ```
-OSContext (worldbooks state + 整书开关 state + 整本作用域 state)
+OSContext (worldbooks state + 整书开关 state + 整本作用域 state + 整书高级设置 state)
    └─ useEffect → WorldbookRuntime.sync()      // 模块级注册表镜像
         ├─ ContextBuilder.buildCoreContext     // beforeChar / afterChar 分段
         ├─ ContextBuilder.buildGroupSharedScene// 共享挂载块 + 全局块（一次）
@@ -62,19 +62,28 @@ OSContext (worldbooks state + 整书开关 state + 整本作用域 state)
 | `'keyword'` | 🟢 关键词触发 | 扫描最近聊天消息，命中关键词才注入 |
 
 相关字段：`keys`（主关键词，任一命中即激活）、`secondaryKeys` + `selective`
-（开 selective 后需主词 + 任一二级词同时命中）、`caseSensitive`（默认不敏感）、
-`scanDepth`（扫最近 N 条消息，默认 4）。
+（开 selective 后再看二级词）、`selectiveLogic`（`and_any` / `and_all` /
+`not_any` / `not_all`，默认 `and_any`）、`caseSensitive`（默认不敏感）、
+`matchWholeWords`（整词匹配）、`scanDepth`（扫最近 N 条消息，默认 4）、
+`probability` + `useProbability`（触发概率）、`ignoreBudget`（不计入整书预算）。
+
+整书级高级设置存 `worldbook_group_settings`（按 category）：`recursiveScanning`
+允许已激活条目的正文继续触发关键词条目，`tokenBudget` 用本地粗估 token 裁剪本书条目，
+`maxRecursionSteps` 限制递归轮数。默认不设预算上限；只有导入 ST 书自带预算或用户
+在剪报夹里设置预算时才裁剪，避免旧世界书突然丢内容。
 
 实现要点：
 
-- 扫描上下文由 **`buildChatRequestPayload`** 在构建 prompt 前通过
-  `WorldbookRuntime.setScanContext(最近消息文本[])` 喂入，构建结束即清空
-  （try/finally）。判定在 `WorldbookRuntime.isEntryTriggered`。
+- 扫描上下文统一通过 `WorldbookRuntime.withContext({ scanMessages })` 喂入，构建结束自动
+  恢复上一层上下文；不要在新链路里裸 `setScanContext` 后忘记清空。
+- **有聊天历史的核心链路**会提供扫描近窗：主私聊 / Instant Push 走
+  `buildChatRequestPayload`，主动消息 2.0 走 `activeMsgClient`，电话文字回复走
+  `CallApp`，群聊文字与群语音电话走 `ChatHub` 的当前群聊近窗。
 - **没有扫描上下文的调用方**（约会等单 prompt 场景）不注入关键词条目 ——
   同 ST：没有可扫描的文本就没有命中。常驻条目不受影响。
-- **ST 角色卡导入**：新导入自动映射（constant→常驻；有 keys 且非 constant→关键词）。
-  旧导入条目仍按常驻运行，在世界书 App 编辑器里打开一次（字段自动从 `stData`
-  回填）保存即可接上关键词激活。
+- **ST 导入**：角色卡与独立世界书导入会映射 `probability/useProbability`、
+  `selectiveLogic`、`scan_depth`、`match_whole_words`、`ignore_budget`，并保留书级
+  `token_budget/recursive_scanning/extensions.max_recursion_steps`。
 - 预设 App 启用时，命中的 before/after 条目作为 `worldInfoBefore` /
   `worldInfoAfter` marker 内容注入到预设 prompt_order 定义的位置（见
   `docs/preset-app.md`）。

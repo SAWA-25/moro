@@ -12,7 +12,7 @@
  * 等价。新增 caller（runProactive）只是补齐了过去缺的字段。
  */
 
-import type { CharacterProfile, UserProfile, GroupProfile, Emoji, EmojiCategory, Message, RealtimeConfig, TranslationConfig } from '../types';
+import type { CharacterProfile, UserProfile, GroupProfile, Emoji, EmojiCategory, Message, PresetScopeKey, RealtimeConfig, TranslationConfig } from '../types';
 import { ChatPrompts } from './chatPrompts';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { buildHtmlPrompt } from './htmlPrompt';
@@ -88,6 +88,8 @@ export interface BuildChatPayloadInput {
     htmlMode?: { enabled: boolean; customPrompt?: string };
     thinkingChain?: { enabled: boolean; customPrompt?: string };
     mcdMiniSnap?: McdMiniAppSnapshot;
+    /** 活字盘预设作用范围；私聊默认 chat.private，主动消息等调用方可改成自己的 scope。 */
+    presetScope?: PresetScopeKey;
 }
 
 export interface BuildChatPayloadResult {
@@ -219,7 +221,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // 预设要在 buildSystemPrompt 之前取：启用时核心上下文按 marker 拆分构建
     // （世界书 / 用户档案块单独产出，由预设的 worldInfo* / personaDescription
     // marker 决定位置与开关）。
-    const activePreset = await PresetRuntime.getActivePreset();
+    const presetScope = input.presetScope ?? 'chat.private';
+    const activePreset = await PresetRuntime.getActivePresetForScope(presetScope);
 
     // 预设自带正则（PRESET 作用域）随激活预设进运行时缓存：聊天管线四个挂载点
     // （USER_INPUT / AI_OUTPUT / 组装 / 渲染）是同步的、取不到 async 预设，这里用
@@ -255,14 +258,14 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         .slice(-20)
         .map(m => (typeof (m as any).content === 'string' ? (m as any).content as string : ''))
         .filter(Boolean);
-    WorldbookRuntime.setScanContext(scanTexts);
-    // 人设世界书（=ST persona lorebook）：激活人设绑定的分组在本次构建中视同已挂载
-    WorldbookRuntime.setExtraCategories(activePersona?.lorebookCategory ? [activePersona.lorebookCategory] : null);
-
     // ── 3. buildSystemPrompt 核心（+ 世界书分段，同一扫描上下文内完成） ──
     let systemPrompt = '';
     let depthSections!: ReturnType<typeof WorldbookRuntime.buildPromptSections>;
-    try {
+    await WorldbookRuntime.withContext({
+        scanMessages: scanTexts,
+        // 人设世界书（=ST persona lorebook）：激活人设绑定的分组在本次构建中视同已挂载
+        extraCategories: activePersona?.lorebookCategory ? [activePersona.lorebookCategory] : null,
+    }, async () => {
         // before/after/@Depth 分段在这里统一解析一次：@Depth 条目第 10 步插消息；
         // 预设启用时 before/after 块作为 marker 内容用，未启用时它们已内联在核心上下文里。
         depthSections = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
@@ -275,10 +278,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             /* omitDepthWorldbooks */ true,  // @Depth 世界书在第 10 步插成独立消息
             /* presetMarkerSplit */ !!activePreset,
         );
-    } finally {
-        WorldbookRuntime.setScanContext(null);
-        WorldbookRuntime.setExtraCategories(null);
-    }
+    });
 
     // ── 3.5 循迹联动：最新 Screenlife / 监视 / 报备进入絮语上下文 ──
     try {

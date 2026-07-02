@@ -21,8 +21,11 @@ import {
 } from '../../types';
 import { DB } from '../db';
 import { buildChatRequestPayload } from '../chatRequestPayload';
-import { safeFetchJson } from '../safeApi';
+import { PresetRuntime } from '../presets';
+import { extractContent } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
+import { callChatCompletion } from '../llmClient';
+import { normalizeOpenAiBaseUrl } from '../openAiCompat';
 import { processNewMessages } from '../memoryPalace/pipeline';
 import { resolveMemoryPalaceAuxConfigsFromStorage } from '../memoryPalace/auxConfig';
 import { loadMusicCfgStandalone } from '../../context/MusicContext';
@@ -289,34 +292,46 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         const payload = await buildChatRequestPayload({
             char, userProfile, groups, emojis, categories,
             historyMsgs, contextLimit, realtimeConfig, recallQueryHint,
+            presetScope: 'role.scene',
         });
-        const systemPrompt = payload.systemPrompt + buildVRSystemAddendum(room, char.name);
+        const vrMessages = [
+            ...payload.fullMessages,
+            { role: 'system', content: buildVRSystemAddendum(room, char.name) },
+            { role: 'user', content: roomTurn },
+        ];
+        const presetGenParams = await PresetRuntime.getActiveGenParams('role.scene');
+        const requestBody: any = {
+            model: vrApi.model,
+            messages: vrMessages,
+            temperature: presetGenParams?.temperature ?? 0.9,
+            max_tokens: presetGenParams?.max_tokens,
+            stream: false,
+        };
+        if (presetGenParams) {
+            const { temperature: _t, max_tokens: _m, ...rest } = presetGenParams;
+            Object.assign(requestBody, rest);
+        }
+        if (requestBody.max_tokens === undefined) delete requestBody.max_tokens;
 
         // 调 LLM（记录一次调用，供"调用记录"对账）
-        const baseUrl = vrApi.baseUrl.replace(/\/+$/, '');
+        const baseUrl = normalizeOpenAiBaseUrl(vrApi.baseUrl);
         const callStart = Date.now();
         let data: any;
         try {
-            data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${vrApi.apiKey || 'sk-none'}` },
-                body: JSON.stringify({
-                    model: vrApi.model,
-                    messages: [{ role: 'system', content: systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: roomTurn }],
-                    temperature: 0.9, stream: false,
+            data = await callChatCompletion(vrApi, requestBody, {
+                meta: makeApiUsageMeta('vrWorld.session', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: 'custom',
+                    apiBinding: '页外独立 API',
                 }),
-            }, 2, 0, makeApiUsageMeta('vrWorld.session', {
-                charId: char.id,
-                charName: char.name,
-                apiRole: 'custom',
-                apiBinding: '页外独立 API',
-            }));
+            });
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: true, ms: Date.now() - callStart });
         } catch (e: any) {
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: false, ms: Date.now() - callStart, error: (e?.message || String(e)).slice(0, 160) });
             throw e;
         }
-        let aiContent: string = data.choices?.[0]?.message?.content || '';
+        let aiContent: string = extractContent(data) || '';
         aiContent = aiContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
         const prevState = char.vrState || { enabled: true, intervalMinutes: VR_DEFAULT_INTERVAL_MIN };

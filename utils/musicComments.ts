@@ -13,7 +13,9 @@
 import { APIConfig, CharacterProfile, UserProfile } from '../types';
 import { MusicCfg, musicApi, toHttps } from '../context/MusicContext';
 import { ContextBuilder } from './context';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 /* ───────────── 类型 ───────────── */
 
@@ -101,14 +103,17 @@ interface CharCommentInput {
   previous?: string[];
 }
 
-const callChat = async (api: APIConfig, prompt: string, temperature = 0.92): Promise<string> => {
-  const res = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-    body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature }),
-  });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  const data = await safeResponseJson(res);
+const callChat = async (
+  api: APIConfig,
+  prompt: string,
+  temperature = 0.92,
+  meta: ReturnType<typeof makeApiUsageMeta>,
+): Promise<string> => {
+  const data = await callChatCompletion(api, {
+    model: api.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature,
+  }, { meta });
   return (extractContent(data) || '').trim();
 };
 
@@ -161,7 +166,11 @@ export async function generateCharComment(input: CharCommentInput): Promise<stri
 - 和这首歌的气质、你此刻的心境、你和${user.name || '对方'}的关系自然挂钩（别硬套）
 - 口语，1~2 句，短而有余味；不要书面腔、不要列举、不要解释自己在干嘛
 只输出评论正文本身，不要引号、不要 markdown、不要任何前后缀。`;
-    const out = cleanComment(await callChat(api, prompt));
+    const out = cleanComment(await callChat(api, prompt, 0.92, makeApiUsageMeta('music.comment', {
+      apiRole: 'aux',
+      charId: char.id,
+      charName: char.name,
+    })));
     return out || fallback;
   } catch {
     return fallback;
@@ -195,7 +204,11 @@ ${user.name || '对方'} 在这首歌的评论区写了：「${userComment}」
 ### [Task]
 以「${char.name}」第一人称回 TA 一句——接住 TA 的情绪/想法，像在同一条评论串里盖楼那样自然。贴你的人设和你们的关系，口语，1~2 句，别太长。
 只输出你要说的话，不要引号、不要前后缀。`;
-    const out = cleanComment(await callChat(api, prompt));
+    const out = cleanComment(await callChat(api, prompt, 0.92, makeApiUsageMeta('music.commentReply', {
+      apiRole: 'aux',
+      charId: char.id,
+      charName: char.name,
+    })));
     return out || fallback;
   } catch {
     return fallback;

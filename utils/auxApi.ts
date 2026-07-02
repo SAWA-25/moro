@@ -13,6 +13,9 @@ export interface ResolvedApi {
     baseUrl: string;
     apiKey: string;
     model: string;
+    apiRole?: 'main' | 'aux' | 'custom';
+    apiBinding?: string;
+    fallbackFromAux?: boolean;
 }
 
 /** 副 API 是否「真正可用」（开关开 + URL/模型填齐）。 */
@@ -30,7 +33,7 @@ export function resolveAuxApi(
     main: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>,
 ): ResolvedApi {
     if (isAuxApiOn(aux)) {
-        return { baseUrl: aux!.baseUrl, apiKey: aux!.apiKey, model: aux!.model };
+        return { baseUrl: aux!.baseUrl, apiKey: aux!.apiKey, model: aux!.model, apiRole: 'aux', apiBinding: '文具盒副 API' };
     }
-    return { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model };
+    return { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model, apiRole: 'main', apiBinding: '副 API 未配置，回退主 API', fallbackFromAux: true };
 }

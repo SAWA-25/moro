@@ -605,8 +605,9 @@ const MemoryDiveMode: React.FC<Props> = ({
     // 但潜意识里会留一层情绪底色，与 chat app 的 buff 系统共用同一套机制
     // 情绪 API 未单独配置时回退到主 apiConfig（与记忆宫殿副 API 完全独立）
     if (isEmotionBuffFeatureOn(charProfile)) {
-      const emotionApi = (charProfile.emotionConfig.api?.baseUrl)
-        ? charProfile.emotionConfig.api
+      const configuredEmotionApi = charProfile.emotionConfig?.api;
+      const emotionApi = configuredEmotionApi?.baseUrl
+        ? configuredEmotionApi
         : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
       // fire-and-forget
       emitDiveEmotion({
@@ -619,7 +620,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     }
 
     window.setTimeout(() => setShowResult(result), 1400);
-  }, [charName, charProfile, enqueueDialogues, onExit]);
+  }, [apiConfig.apiKey, apiConfig.baseUrl, apiConfig.model, charName, charProfile, enqueueDialogues, onExit]);
 
   const handleFinalExit = useCallback(() => onExit(showResult), [showResult, onExit]);
 

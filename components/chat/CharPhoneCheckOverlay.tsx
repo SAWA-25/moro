@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread } from '../../types';
+import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread, PhoneCheckSession, PhoneEvidenceRisk } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
-import { safeResponseJson, extractContent } from '../../utils/safeApi';
-import { initUnblockAppeal } from '../../utils/unblockAppeal';
+import { extractContent } from '../../utils/safeApi';
+import { blockCharacterByUser } from '../../utils/blockActions';
 import { recordCharUnlockFail } from '../../utils/lockAttempts';
 import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
 import { useOS } from '../../context/OSContext';
@@ -13,6 +13,14 @@ import { isDevDebugAvailable } from '../../utils/devDebug';
 import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 import { toWallpaperBackground } from '../../utils/defaultWallpapers';
 import { isNativeNotificationRuntime } from '../../utils/browserNotify';
+import { callChatCompletion } from '../../utils/llmClient';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import {
+    buildPhoneCheckSessionSummary,
+    createPhoneCheckSession,
+    makePhoneCheckAction,
+    normalizePhoneCheckStep,
+} from '../../utils/checkPhone';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -45,21 +53,26 @@ type StepApp =
     | 'browser'
     | 'map';
 
-interface ScriptAction {
+export interface ScriptAction {
     // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）；
     // clear_cart 作用在 shop（帮用户清空购物车·代付）
     type: 'none' | 'reply' | 'block' | 'delete' | 'ignore' | 'post_moment' | 'clear_cart';
     content?: string;
 }
 
-interface ScriptStep {
+export interface ScriptStep {
     app: StepApp;
     targetName?: string;
     thought: string;
+    intent?: string;
+    emotion?: string;
+    risk?: PhoneEvidenceRisk;
+    visibleClue?: string;
+    actionReason?: string;
     action?: ScriptAction;
 }
 
-interface CheckScript {
+export interface CheckScript {
     steps: ScriptStep[];
     exitQuestions: string[];
     endHint?: string;
@@ -89,7 +102,7 @@ interface CharPhoneCheckOverlayProps {
     char: CharacterProfile;            // 正在查岗的角色
     userProfile: UserProfile;
     characters: CharacterProfile[];    // 全部联系人（含 char 自己）
-    apiConfig: { baseUrl: string; apiKey: string; model: string };
+    apiConfig: { baseUrl: string; apiKey?: string; model: string; apiRole?: string; apiBinding?: string };
     updateCharacter: (id: string, updates: Partial<CharacterProfile>) => Promise<void> | void;
     updateUserProfile: (updates: Partial<UserProfile>) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
@@ -421,7 +434,7 @@ const callDirectionText: Record<PhoneCallLog['direction'], string> = {
     missed: '未接',
 };
 
-const safeParseScript = (raw: string): CheckScript | null => {
+export const safeParsePhoneCheckScript = (raw: string): CheckScript | null => {
     const clean = (raw || '').replace(/```json/gi, '').replace(/```/g, '').trim();
     const tryParse = (s: string) => { try { return JSON.parse(s); } catch { return null; } };
     let obj = tryParse(clean);
@@ -439,6 +452,7 @@ const safeParseScript = (raw: string): CheckScript | null => {
                 'chat-list',
                 'chat-thread',
                 'moments',
+                'twitter',
                 'schedule',
                 'gallery',
                 'music',
@@ -451,6 +465,11 @@ const safeParseScript = (raw: string): CheckScript | null => {
             ].includes(s.app) ? s.app : 'home') as StepApp,
             targetName: typeof s.targetName === 'string' ? s.targetName : undefined,
             thought: String(s.thought).slice(0, 300),
+            intent: typeof s.intent === 'string' ? s.intent.slice(0, 80) : undefined,
+            emotion: typeof s.emotion === 'string' ? s.emotion.slice(0, 40) : undefined,
+            risk: (['normal', 'private', 'suspicious'].includes(String(s.risk || '').toLowerCase()) ? String(s.risk).toLowerCase() : undefined) as PhoneEvidenceRisk | undefined,
+            visibleClue: typeof s.visibleClue === 'string' ? s.visibleClue.slice(0, 240) : undefined,
+            actionReason: typeof s.actionReason === 'string' ? s.actionReason.slice(0, 240) : undefined,
             action: s.action && typeof s.action === 'object'
                 ? {
                     type: (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment', 'clear_cart'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
@@ -509,17 +528,54 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     const [judgeComment, setJudgeComment] = useState('');
     const endedRef = useRef(false);
     const appliedStepsRef = useRef<Set<number>>(new Set());
+    const archivedStepsRef = useRef<Set<number>>(new Set());
+    const phoneCheckSessionRef = useRef<PhoneCheckSession | null>(null);
     const actionLogRef = useRef<string[]>([]);
     actionLogRef.current = actionLog;
 
-    const llm = async (prompt: string, temperature = 0.9): Promise<string> => {
-        const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature }),
+    const savePhoneCheckSession = (updater: (prev: PhoneCheckSession) => PhoneCheckSession) => {
+        const prev = phoneCheckSessionRef.current;
+        if (!prev) return;
+        const next = updater(prev);
+        phoneCheckSessionRef.current = next;
+        void DB.savePhoneCheckSession(next);
+    };
+
+    const recordSessionAction = (input: Parameters<typeof makePhoneCheckAction>[0]) => {
+        savePhoneCheckSession(prev => ({
+            ...prev,
+            actions: [...prev.actions, makePhoneCheckAction(input)],
+        }));
+    };
+
+    useEffect(() => {
+        const session = createPhoneCheckSession({
+            direction: 'char_to_user',
+            charId: char.id,
+            charName: char.name,
+            userName: userProfile.name || '用户',
+            mode: 'deep',
         });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        return (extractContent(await safeResponseJson(res)) || '').trim();
+        phoneCheckSessionRef.current = session;
+        void DB.savePhoneCheckSession(session);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const llm = async (prompt: string, temperature = 0.9): Promise<string> => {
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('checkPhone.generate', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: apiConfig.apiRole || 'aux',
+                apiBinding: apiConfig.apiBinding || '反向查岗',
+            }),
+        });
+        return (extractContent(data) || '').trim();
     };
 
     const personaBlock = useMemo(() => [
@@ -779,6 +835,12 @@ ${resolveCart(userProfile.shopCart).length > 0
 - "moments" 朋友圈 / "twitter" 推特 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
 - "phone" 电话记录 / "shop" 心意铺购物与购物车 / "takeout" 饭票外卖 / "wallet" 钱包收支 / "browser" 热点与浏览痕迹 / "map" 地区与位置线索
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
+每一步还要写 intent / emotion / risk / visibleClue：
+- intent：TA 点开这里的动机（如确认关系、找生活线索、吃醋、照顾、试探）。
+- emotion：这一刻的情绪（1~3个词）。
+- risk：normal / private / suspicious；涉及隐私、位置、钱、关系操作时至少 private，准备动手操作时通常 suspicious。
+- visibleClue：TA 此刻真实看到的关键线索，必须来自上面的快照或对话节选，不要编真实设备外的新信息。
+如果 action 不为 none，再写 actionReason：TA 为什么会按人设做这个越界动作。
 翻到 moments / twitter / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。twitter 里包含国际时间线和私信概况，看到外文推文时可以提到语言或翻译痕迹。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
@@ -795,11 +857,11 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
 
 ### 输出
 只输出一个 JSON 对象，不要任何其它文字：
-{"steps":[{"app":"home","thought":"…"},{"app":"chat-thread","targetName":"…","thought":"…","action":{"type":"reply","content":"…"}},{"app":"moments","thought":"…","action":{"type":"post_moment","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
+{"steps":[{"app":"home","thought":"…","intent":"…","emotion":"…","risk":"normal","visibleClue":"…"},{"app":"chat-thread","targetName":"…","thought":"…","intent":"…","emotion":"…","risk":"suspicious","visibleClue":"…","actionReason":"…","action":{"type":"reply","content":"…"}},{"app":"moments","thought":"…","intent":"…","emotion":"…","risk":"suspicious","visibleClue":"…","actionReason":"…","action":{"type":"post_moment","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
 
                 const raw = await llm(prompt);
                 if (cancelled) return;
-                const parsed = safeParseScript(raw);
+                const parsed = safeParsePhoneCheckScript(raw);
                 if (!parsed) throw new Error('浏览脚本解析失败');
                 setScript(parsed);
                 setPhase('browsing');
@@ -822,6 +884,38 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
             || contacts.find(c => targetName && targetName.includes(c.name))
             || null;
     }, [currentStep, contacts]);
+
+    useEffect(() => {
+        if (phase !== 'browsing' || !currentStep || archivedStepsRef.current.has(stepIdx)) return;
+        archivedStepsRef.current.add(stepIdx);
+        const stepRecord = normalizePhoneCheckStep({
+            at: Date.now(),
+            app: currentStep.app,
+            title: STEP_LABEL[currentStep.app],
+            targetName: currentStep.targetName,
+            thought: currentStep.thought,
+            intent: currentStep.intent,
+            emotion: currentStep.emotion,
+            risk: currentStep.risk,
+            visibleClue: currentStep.visibleClue,
+            actionReason: currentStep.actionReason,
+        });
+        savePhoneCheckSession(prev => ({
+            ...prev,
+            steps: [...prev.steps, stepRecord],
+            actions: [...prev.actions, makePhoneCheckAction({
+                type: 'browse_step',
+                label: currentStep.targetName ? `查看${STEP_LABEL[currentStep.app]}：${currentStep.targetName}` : `查看${STEP_LABEL[currentStep.app]}`,
+                detail: currentStep.visibleClue || currentStep.thought,
+                app: currentStep.app,
+                targetName: currentStep.targetName,
+                risk: currentStep.risk,
+                riskDelta: currentStep.risk === 'suspicious' ? 0.1 : currentStep.risk === 'private' ? 0.05 : 0.01,
+            })],
+        }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, stepIdx, currentStep]);
+
     const targetChar = useMemo(() => {
         if (targetContact?.char) return targetContact.char;
         if (!currentStep?.targetName) return null;
@@ -873,6 +967,17 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         const target = targetChar;
         const targetLabel = target?.name || targetContact?.name;
         const log = (line: string) => setActionLog(prev => [...prev, line]);
+        const archiveAction = (type: Parameters<typeof makePhoneCheckAction>[0]['type'], label: string, detail?: string, metadata?: Record<string, any>) => {
+            recordSessionAction({
+                type,
+                label,
+                detail,
+                targetName: targetLabel,
+                app: currentStep.app,
+                risk: type === 'char_ignore' ? 'normal' : type === 'char_clear_cart' ? 'private' : 'suspicious',
+                metadata,
+            });
+        };
         (async () => {
             try {
                 if (act.type === 'reply' && target && act.content) {
@@ -883,7 +988,9 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                         content: act.content,
                         metadata: { sentByCharPhoneCheck: char.id, sentByCharPhoneCheckName: char.name },
                     } as any);
-                    log(`在与「${target.name}」的对话里，以${userProfile.name}的名义回复了：「${act.content}」`);
+                    const line = `在与「${target.name}」的对话里，以${userProfile.name}的名义回复了：「${act.content}」`;
+                    log(line);
+                    archiveAction('char_reply', `替 ${userProfile.name} 回复 ${target.name}`, act.content, { targetCharId: target.id });
                 } else if (act.type === 'clear_cart') {
                     // 帮用户清空心意铺购物车（角色代付）：整车进用户背包 + 双方小票
                     const items = expandCart(userProfile.shopCart);
@@ -898,19 +1005,29 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                             shopCart: [],
                         });
                         await updateCharacter(char.id, { shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });
-                        log(`大方地帮 ${userProfile.name} 清空了心意铺购物车（${items.length}件，代付 ¥${fmtPrice(total)}）`);
+                        const line = `大方地帮 ${userProfile.name} 清空了心意铺购物车（${items.length}件，代付 ¥${fmtPrice(total)}）`;
+                        log(line);
+                        archiveAction('char_clear_cart', `帮 ${userProfile.name} 清空购物车`, line, { itemCount: items.length, total });
                     }
                 } else if ((act.type === 'block' || act.type === 'delete') && target && target.id !== char.id) {
-                    await updateCharacter(target.id, { blacklisted: true, blacklistedAt: Date.now(), unblockAppeal: initUnblockAppeal() });
-                    log(act.type === 'block'
+                    await blockCharacterByUser({ char: target, updateCharacter });
+                    const line = act.type === 'block'
                         ? `把「${target.name}」拉黑了`
-                        : `想把「${target.name}」删掉，最终把对方加入了黑名单（删好友按拉黑执行）`);
+                        : `想把「${target.name}」删掉，最终把对方加入了黑名单（删好友按拉黑执行）`;
+                    log(line);
+                    archiveAction(act.type === 'block' ? 'char_block' : 'char_delete', act.type === 'block' ? `拉黑 ${target.name}` : `删除 ${target.name}`, line, { targetCharId: target.id });
                 } else if (act.type === 'ignore' && target) {
-                    log(`看完了与「${target.name}」的对话，什么都没做`);
+                    const line = `看完了与「${target.name}」的对话，什么都没做`;
+                    log(line);
+                    archiveAction('char_ignore', `看完 ${target.name} 后无视`, line, { targetCharId: target.id });
                 } else if ((act.type === 'reply' || act.type === 'block' || act.type === 'delete') && !target && targetLabel) {
-                    log(`看到了社交圈里的「${targetLabel}」，但这不是正式联系人，没有实际替你${act.type === 'reply' ? '回复' : '处理关系'}`);
+                    const line = `看到了社交圈里的「${targetLabel}」，但这不是正式联系人，没有实际替你${act.type === 'reply' ? '回复' : '处理关系'}`;
+                    log(line);
+                    archiveAction('char_ignore', `社交圈联系人未实际操作：${targetLabel}`, line);
                 } else if (act.type === 'ignore' && targetLabel) {
-                    log(`看完了与「${targetLabel}」的社交圈记录，什么都没做`);
+                    const line = `看完了与「${targetLabel}」的社交圈记录，什么都没做`;
+                    log(line);
+                    archiveAction('char_ignore', `看完社交圈记录后无视：${targetLabel}`, line);
                 } else if (act.type === 'post_moment' && act.content) {
                     // 代发朋友圈：以用户名义贴一条公开动态（角色随后能在上下文里看到这条）
                     const newPost: SocialPost = {
@@ -933,7 +1050,9 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                     };
                     await DB.saveSocialPost(newPost);
                     setMoments(prev => [newPost, ...prev]);
-                    log(`以${userProfile.name}的名义发了一条朋友圈：「${act.content}」`);
+                    const line = `以${userProfile.name}的名义发了一条朋友圈：「${act.content}」`;
+                    log(line);
+                    archiveAction('char_post_moment', `替 ${userProfile.name} 发朋友圈`, act.content, { postId: newPost.id });
                 }
             } catch (e) {
                 console.warn('[CharPhoneCheck] 执行动作失败:', e);
@@ -983,13 +1102,42 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                 : exitMode === 'questions' ? `${userProfile.name} 回答了 ${char.name} 出的三个问题，通过后拿回了手机。`
                 : `${userProfile.name} 强行抢回了手机。`;
             const ops = actionLogRef.current.length ? `\n${char.name} 翻手机期间做的事：\n${actionLogRef.current.map(l => `- ${l}`).join('\n')}` : '';
-            await DB.saveMessage({
+            const systemMessageId = await DB.saveMessage({
                 charId: char.id,
                 role: 'system',
                 type: 'text',
                 content: `[查岗记录] 刚才 ${char.name} 拿走了 ${userProfile.name} 的手机翻看。\n${char.name} 的浏览过程与内心想法：\n${browsed || '（刚拿到就被打断了）'}${ops}\n${exitDesc}${extra ? `\n${extra}` : ''}${script?.endHint ? `\n${char.name} 此刻的心情基调：${script.endHint}` : ''}\n（这段经历你们双方都知情，接下来请 ${char.name} 主动就刚才看到的内容发消息。）`,
                 metadata: { charPhoneCheck: true },
             } as any);
+            savePhoneCheckSession(prev => {
+                if (prev.status !== 'active') return prev;
+                const endedAt = Date.now();
+                const next: PhoneCheckSession = {
+                    ...prev,
+                    endedAt,
+                    status: exitMode === 'forced' ? 'interrupted' : 'finished',
+                    exitMode,
+                    moodAfter: script?.endHint,
+                    systemMessageId,
+                    summary: buildPhoneCheckSessionSummary({
+                        ...prev,
+                        endedAt,
+                        exitMode,
+                        status: exitMode === 'forced' ? 'interrupted' : 'finished',
+                        moodAfter: script?.endHint,
+                        systemMessageId,
+                    }, char.name, userProfile.name || '用户'),
+                    actions: [...prev.actions, makePhoneCheckAction({
+                        type: 'exit',
+                        label: exitDesc,
+                        detail: extra || script?.endHint,
+                        riskDelta: 0,
+                        at: endedAt,
+                    })],
+                };
+                void DB.prunePhoneCheckSessions(prev.charId);
+                return next;
+            });
         } catch (e) {
             console.warn('[CharPhoneCheck] 记录落库失败:', e);
         }
@@ -1633,6 +1781,14 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                             <span className="text-[9px] font-bold opacity-60 tracking-wider">{char.name} 的想法</span>
                         </div>
                         <div className="text-[12px] leading-relaxed">{currentStep.thought}</div>
+                        {(currentStep.emotion || currentStep.intent || currentStep.visibleClue) && (
+                            <div className="mt-2 space-y-1 text-[10px] leading-relaxed opacity-70">
+                                {(currentStep.emotion || currentStep.intent) && (
+                                    <div>{[currentStep.emotion, currentStep.intent].filter(Boolean).join(' · ')}</div>
+                                )}
+                                {currentStep.visibleClue && <div className="line-clamp-2">线索：{currentStep.visibleClue}</div>}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

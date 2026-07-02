@@ -7,9 +7,11 @@
  */
 
 import { ContextBuilder } from '../context';
-import { extractJson, safeResponseJson } from '../safeApi';
+import { extractContent, extractJson } from '../safeApi';
 import { injectMemoryPalace } from '../memoryPalace/pipeline';
 import type { CharacterProfile, UserProfile, Message } from '../../types';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
+import { callChatCompletion } from '../llmClient';
 
 // ============================================================
 // 类型
@@ -999,32 +1001,22 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
         console.log(`[520][${opts.label}] attempt ${attempt + 1}/${maxRetries + 1}`);
 
         try {
-            const response = await fetch(`${opts.apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${opts.apiConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: opts.apiConfig.model,
-                    messages: [
-                        { role: 'system', content: opts.systemContext },
-                        { role: 'user', content: userPrompt },
-                    ],
-                    temperature: opts.temperature,
-                    // 之前没设 max_tokens —— Claude 类 provider 默认 4096/8192 token，
-                    // 信件 900-1300 中文字 + JSON 包装会直接被截断（中文 1 字 ≈ 2-3 token）。
-                    // 拉到 32000 把上限堆死，让信能完整写完。
-                    max_tokens: 32000,
-                }),
+            const data = await callChatCompletion(opts.apiConfig, {
+                model: opts.apiConfig.model,
+                messages: [
+                    { role: 'system', content: opts.systemContext },
+                    { role: 'user', content: userPrompt },
+                ],
+                temperature: opts.temperature,
+                // 之前没设 max_tokens —— Claude 类 provider 默认 4096/8192 token，
+                // 信件 900-1300 中文字 + JSON 包装会直接被截断（中文 1 字 ≈ 2-3 token）。
+                // 拉到 32000 把上限堆死，让信能完整写完。
+                max_tokens: 32000,
+            }, {
+                maxRetries: 0,
+                meta: makeApiUsageMeta('special.like520.generate', { apiRole: 'main', apiBinding: `520 活动 ${opts.label}` }),
             });
-
-            if (!response.ok) {
-                throw new Error(`API ${response.status}`);
-            }
-
-            const data = await safeResponseJson(response);
-            const content = data?.choices?.[0]?.message?.content;
+            const content = extractContent(data);
             if (typeof content !== 'string' || !content.trim()) {
                 throw new Error('empty content');
             }

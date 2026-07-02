@@ -5,7 +5,7 @@
 import React, { useEffect } from 'react';
 import {
   ArrowLeft, X, MagnifyingGlass,
-  Play, Pause, SkipBack, SkipForward,
+  Play, Pause, SkipBack, SkipForward, PaperPlaneRight,
 } from '@phosphor-icons/react';
 
 /* ══════════ 色板 — 黑白拼贴手账（米白纸 × 墨黑）══════════
@@ -184,9 +184,18 @@ export const SongRow: React.FC<{
   isVip: boolean;
   isActive: boolean;
   onClick: () => void;
-}> = ({ name, artists, album, albumPic, duration, isVip, isActive, onClick }) => (
-  <button
+  onShare?: () => void;
+}> = ({ name, artists, album, albumPic, duration, isVip, isActive, onClick, onShare }) => (
+  <div
+    role="button"
+    tabIndex={0}
     onClick={onClick}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick();
+      }
+    }}
     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all mb-1.5 mx-1"
     style={{
       background: isActive
@@ -213,8 +222,20 @@ export const SongRow: React.FC<{
       </div>
       <div className="text-[11px] truncate mt-0.5" style={{ color: C.muted }}>{artists} · {album}</div>
     </div>
+    {onShare && (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onShare(); }}
+        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-all"
+        style={{ color: C.accent, background: `${C.glow}26`, border: `1px solid ${C.faint}35` }}
+        title="分享给角色"
+        aria-label="分享给角色"
+      >
+        <PaperPlaneRight size={14} weight="fill" />
+      </button>
+    )}
     <div className="text-[10px] shrink-0 tabular-nums" style={{ color: C.faint }}>{duration}</div>
-  </button>
+  </div>
 );
 
 /* ══════════ 小头像 — 处理 emoji / 图片路径 / data: 三种 avatar ══════════ */

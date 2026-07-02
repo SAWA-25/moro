@@ -9,7 +9,7 @@ import { useMusic, musicApi, toHttps, Song } from '../../context/MusicContext';
 import {
   C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage,
 } from './MusicUI';
-import { MagnifyingGlass, Gear, User as UserIcon } from '@phosphor-icons/react';
+import { MagnifyingGlass, Gear, Heart, User as UserIcon, PaperPlaneRight } from '@phosphor-icons/react';
 import NeteaseLoginPanel from './NeteaseLoginPanel';
 import QQMusicLoginPanel from './QQMusicLoginPanel';
 
@@ -36,6 +36,7 @@ interface Props {
   onOpenSettings?: () => void;
   onVisitChar?: (charId: string) => void;
   onQQMusicConnected?: () => void;
+  onShareSong?: (song: Song) => void;
 }
 
 type MusicSource = 'netease' | 'qq';
@@ -54,6 +55,55 @@ interface ProfileView {
 
 const playlistKey = (pl: Playlist) => `${pl.source || 'netease'}:${pl.id}`;
 
+const stableQQSongId = (key: string) => {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash += (hash << 5) + key.charCodeAt(i);
+  return -Math.max(1, hash & 2147483647);
+};
+
+const mapQQSong = (s: any): Song => {
+  const qqSongMid = String(s?.qqSongMid || s?.songmid || s?.song_mid || s?.mid || '').trim();
+  const qqMediaMid = String(s?.qqMediaMid || s?.mediaMid || s?.strMediaMid || qqSongMid).trim();
+  const id = Number(s?.id) || stableQQSongId(`qq:${qqSongMid || s?.name || s?.songname || ''}`);
+  return {
+    id,
+    name: s?.name || s?.songname || '',
+    artists: s?.artists || s?.singername || '',
+    album: s?.album || s?.albumname || '',
+    albumPic: toHttps(s?.albumPic || s?.albumurl || s?.pic || ''),
+    duration: Number(s?.duration || s?.interval || 0) || 0,
+    fee: s?.fee ?? 0,
+    source: 'qq',
+    qqSongMid,
+    qqMediaMid,
+    qqSongId: s?.qqSongId || s?.rawSongId || s?.songid,
+  };
+};
+
+const SongLikeButton: React.FC<{
+  song: Song;
+  liked: boolean;
+  onToggle: (song: Song) => void;
+}> = ({ song, liked, onToggle }) => (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      onToggle(song);
+    }}
+    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+    style={{
+      color: liked ? C.sakura : C.faint,
+      background: liked ? `${C.sakura}18` : 'rgba(255,255,255,0.18)',
+      border: `1px solid ${liked ? C.sakura : C.faint}30`,
+    }}
+    title={liked ? '取消喜欢' : '喜欢'}
+    aria-label={liked ? `取消喜欢 ${song.name}` : `喜欢 ${song.name}`}
+  >
+    <Heart size={14} weight={liked ? 'fill' : 'regular'} />
+  </button>
+);
+
 // ─── 「一起写的歌」本地专辑卡 — 写歌 App 同步过来的 ACE-Step / MiniMax 出歌 ───
 interface LocalAlbumCardProps {
   songs: Song[];
@@ -63,8 +113,9 @@ interface LocalAlbumCardProps {
   playing: boolean;
   onPlay: (song: Song, idx: number) => void;
   onRemove: (id: number) => void;
+  onShare?: (song: Song) => void;
 }
-const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExpanded, currentId, playing, onPlay, onRemove }) => (
+const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExpanded, currentId, playing, onPlay, onRemove, onShare }) => (
   <div
     className="rounded-2xl overflow-hidden relative"
     style={{
@@ -150,6 +201,18 @@ const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExp
                   </div>
                 </div>
               </button>
+              {onShare && (
+                <button
+                  type="button"
+                  onClick={() => onShare(s)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+                  style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                  title="分享给角色"
+                  aria-label="分享给角色"
+                >
+                  <PaperPlaneRight size={12} weight="fill" />
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (typeof window !== 'undefined' && window.confirm(`从专辑移除《${s.name}》？`)) onRemove(s.id);
@@ -168,13 +231,14 @@ const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExp
   </div>
 );
 
-const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onQQMusicConnected }) => {
+const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onQQMusicConnected, onShareSong }) => {
   const { addToast, characters, userProfile } = useOS();
   const {
     cfg, setCfg, profile, refreshProfile, playSong,
     current, playing, togglePlay, nextSong, prevSong,
     listeningTogetherWith, removeListeningPartner,
     localAlbumSongs, removeLocalSong,
+    isSongLiked, toggleSongLike,
     regeneratingId, regeneratingStatus,
   } = useMusic();
   const [localAlbumExpanded, setLocalAlbumExpanded] = useState(false);
@@ -211,6 +275,10 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   toastRef.current = addToast;
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
+
+  const toggleTrackLike = useCallback((song: Song) => {
+    void toggleSongLike(song);
+  }, [toggleSongLike]);
 
   useEffect(() => {
     if (activeSource === 'netease' && !hasNetease && hasQQ) {
@@ -283,7 +351,12 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     setLoading(true);
     try {
       if (activeSource === 'qq') {
-        const r = await musicApi.qqUserPlaylist(curCfg);
+        const [plRes, recRes] = await Promise.allSettled([
+          musicApi.qqUserPlaylist(curCfg),
+          musicApi.qqUserRecord(curCfg),
+        ]);
+        if (plRes.status === 'rejected' && recRes.status === 'rejected') throw plRes.reason;
+        const r = plRes.status === 'fulfilled' ? plRes.value : null;
         if (r?.profile) {
           setQQProfile({
             userId: String(r.profile.userId || curCfg.qqMusic?.uin || ''),
@@ -307,7 +380,18 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           source: 'qq',
         }));
         setPlaylists(arr);
-        setRecords([]);
+        if (recRes.status === 'fulfilled') {
+          const mappedRecords: RecordItem[] = (recRes.value?.records || [])
+            .map((r: any, i: number): RecordItem => ({
+              score: Number(r?.score ?? Math.max(1, 100 - i * 3)) || 0,
+              playCount: Number(r?.playCount ?? r?.play_count ?? 1) || 1,
+              song: mapQQSong(r?.song || r),
+            }))
+            .filter((r: RecordItem) => !!r.song.qqSongMid);
+          setRecords(mappedRecords);
+        } else {
+          setRecords([]);
+        }
         setCloud([]);
         return;
       }
@@ -381,18 +465,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     try {
       if ((pl.source || activeSource) === 'qq') {
         const r = await musicApi.qqPlaylistDetail(cfgRef.current, pl.id);
-        const songs: Song[] = (r?.songs || []).map((s: any) => ({
-          id: s.id,
-          name: s.name || '',
-          artists: s.artists || '',
-          album: s.album || '',
-          albumPic: toHttps(s.albumPic || ''),
-          duration: s.duration || 0,
-          fee: s.fee ?? 0,
-          source: 'qq',
-          qqSongMid: s.qqSongMid,
-          qqMediaMid: s.qqMediaMid,
-        }));
+        const songs: Song[] = (r?.songs || []).map(mapQQSong).filter((s: Song) => !!s.qqSongMid);
         setPlTracks(prev => ({ ...prev, [key]: songs }));
       } else {
         const r = await musicApi.playlistTrackAll(cfgRef.current, pl.id as number, 100, 0);
@@ -501,6 +574,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
               playing={playing}
               onPlay={(s, idx) => playSong(s, { alsoSetQueue: true, replaceQueue: localAlbumSongs, startIdx: idx })}
               onRemove={removeLocalSong}
+              onShare={onShareSong}
             />
           )}
           {/* 登录入口卡 */}
@@ -851,6 +925,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                 playing={playing}
                 onPlay={(s, idx) => playSong(s, { alsoSetQueue: true, replaceQueue: localAlbumSongs, startIdx: idx })}
                 onRemove={removeLocalSong}
+                onShare={onShareSong}
               />
             )}
             {playlists.length === 0 && !loading && localAlbumSongs.length === 0 && (
@@ -883,20 +958,42 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                       </button>
                       {expandedPl === key && (
                         <div className="border-t px-2 py-1" style={{ borderColor: `${C.faint}20` }}>
-                          {tracks.slice(0, 30).map(s => (
-                            <button key={`${s.source || 'netease'}-${s.id}`}
-                              onClick={() => {
-                                playSong(s, { replaceQueue: tracks, startIdx: tracks.findIndex(x => x.id === s.id) });
-                                onOpenPlayer();
-                              }}
-                              className="w-full text-left flex items-center gap-2 py-1.5 px-1">
-                              <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt="" className="w-7 h-7 rounded-md object-cover" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[11px] truncate" style={{ color: C.text }}>{s.name}</div>
-                                <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                          {tracks.slice(0, 30).map(s => {
+                            const liked = s.source === 'qq' && isSongLiked(s);
+                            return (
+                              <div key={`${s.source || 'netease'}-${s.id}`}
+                                className="w-full flex items-center gap-2 py-1.5 px-1 rounded-xl transition-all"
+                                style={{ background: liked ? `${C.sakura}08` : 'transparent' }}>
+                                <button
+                                  onClick={() => {
+                                    playSong(s, { replaceQueue: tracks, startIdx: tracks.findIndex(x => x.id === s.id) });
+                                    onOpenPlayer();
+                                  }}
+                                  className="flex-1 min-w-0 text-left flex items-center gap-2">
+                                  <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[11px] truncate" style={{ color: C.text }}>{s.name}</div>
+                                    <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                                  </div>
+                                </button>
+                                {s.source === 'qq' && (
+                                  <SongLikeButton song={s} liked={liked} onToggle={toggleTrackLike} />
+                                )}
+                                {onShareSong && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onShareSong(s)}
+                                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+                                    style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                                    title="分享给角色"
+                                    aria-label="分享给角色"
+                                  >
+                                    <PaperPlaneRight size={12} weight="fill" />
+                                  </button>
+                                )}
                               </div>
-                            </button>
-                          ))}
+                            );
+                          })}
                           {tracks.length === 0 && (
                             <div className="text-[10px] text-center py-2" style={{ color: C.faint }}>加载中...</div>
                           )}
@@ -913,32 +1010,49 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         {tab === 'record' && (
           <div className="px-3 mt-3 space-y-1">
             {activeSource === 'qq' && records.length === 0 && !loading && (
-              <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>QQ 音乐最近播放暂未接入，歌单可以正常播放</div>
+              <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>QQ 音乐最近还没有可同步的播放记录</div>
             )}
             {activeSource !== 'qq' && records.length === 0 && !loading && (
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>最近一周还没有播放记录</div>
             )}
             {records.map((r, i) => (
-              <button key={r.song.id + '-' + i}
-                onClick={() => {
-                  const q = records.map(x => x.song);
-                  playSong(r.song, { replaceQueue: q, startIdx: i });
-                  onOpenPlayer();
-                }}
+              <div key={r.song.id + '-' + i}
                 className="w-full flex items-center gap-3 p-2 rounded-2xl text-left transition-all"
                 style={{ background: 'rgba(255,255,255,0.06)' }}
               >
-                <div className="text-[10px] w-5 text-center shrink-0" style={{ color: C.faint }}>{i + 1}</div>
-                <img src={r.song.albumPic} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate" style={{ color: C.text }}>{r.song.name}</div>
-                  <div className="text-[10px] truncate" style={{ color: C.muted }}>{r.song.artists}</div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const q = records.map(x => x.song);
+                    playSong(r.song, { replaceQueue: q, startIdx: i });
+                    onOpenPlayer();
+                  }}
+                  className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                >
+                  <div className="text-[10px] w-5 text-center shrink-0" style={{ color: C.faint }}>{i + 1}</div>
+                  <img src={r.song.albumPic} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate" style={{ color: C.text }}>{r.song.name}</div>
+                    <div className="text-[10px] truncate" style={{ color: C.muted }}>{r.song.artists}</div>
+                  </div>
+                </button>
                 <div className="text-[9px] shrink-0 text-right" style={{ color: C.accent }}>
                   <div>×{r.playCount}</div>
                   <div className="opacity-60">{Math.round(r.score)}°</div>
                 </div>
-              </button>
+                {onShareSong && (
+                  <button
+                    type="button"
+                    onClick={() => onShareSong(r.song)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+                    style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                    title="分享给角色"
+                    aria-label="分享给角色"
+                  >
+                    <PaperPlaneRight size={13} weight="fill" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -952,18 +1066,35 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>云盘里还没有歌曲</div>
             )}
             {cloud.map((s, i) => (
-              <button key={s.id + '-' + i}
-                onClick={() => { playSong(s, { replaceQueue: cloud, startIdx: i }); onOpenPlayer(); }}
+              <div key={s.id + '-' + i}
                 className="w-full flex items-center gap-3 p-2 rounded-2xl text-left transition-all"
                 style={{ background: 'rgba(255,255,255,0.06)' }}
               >
-                <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'}
-                  alt="" className="w-10 h-10 rounded-lg object-cover" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate" style={{ color: C.text }}>{s.name}</div>
-                  <div className="text-[10px] truncate" style={{ color: C.muted }}>{s.artists} · {s.album}</div>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => { playSong(s, { replaceQueue: cloud, startIdx: i }); onOpenPlayer(); }}
+                  className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                >
+                  <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'}
+                    alt="" className="w-10 h-10 rounded-lg object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate" style={{ color: C.text }}>{s.name}</div>
+                    <div className="text-[10px] truncate" style={{ color: C.muted }}>{s.artists} · {s.album}</div>
+                  </div>
+                </button>
+                {onShareSong && (
+                  <button
+                    type="button"
+                    onClick={() => onShareSong(s)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+                    style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                    title="分享给角色"
+                    aria-label="分享给角色"
+                  >
+                    <PaperPlaneRight size={13} weight="fill" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}

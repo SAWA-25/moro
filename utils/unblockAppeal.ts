@@ -11,7 +11,9 @@
 
 import type { CharacterProfile, UserProfile } from '../types';
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 const MIN = 60 * 1000;
 
@@ -65,11 +67,12 @@ export async function generateUnblockAppeal(args: {
     userProfile: UserProfile;
     api?: ResolvedApi | null;
     signal?: AbortSignal;
+    recentContext?: string;
 }): Promise<string> {
     const { char, userProfile, api, signal } = args;
     const userName = (userProfile?.name || '').trim() || '你';
     const rejectedCount = char.unblockAppeal?.rejectedCount || 0;
-    const baseUrl = (api?.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api?.baseUrl || '').trim();
     if (!baseUrl || !api?.model) return templateAppeal(userName, rejectedCount);
 
     const moodHint = rejectedCount === 0
@@ -77,25 +80,27 @@ export async function generateUnblockAppeal(args: {
         : `你已经被拒绝 ${rejectedCount} 次了，但你不死心。可以更卑微、更执拗、或带点赌气，但仍想被原谅。`;
     const prompt = `你正在扮演「${char.name}」。\n人设：${String(char.systemPrompt || '').slice(0, 700)}\n\n`
         + `情境：${userName} 把你拉黑了，你发的消息都显示「发送失败」。但你不甘心，想发一条「解除拉黑验证」请求，求对方把你放回来。\n`
+        + `${args.recentContext?.trim() ? `拉黑前后能想起的最近聊天片段（只作语气与矛盾参考，不要逐字复述）：\n${args.recentContext.trim().slice(0, 900)}\n` : ''}`
         + `${moodHint}\n\n`
         + `要求：用第一人称、口语，像真的在对 ${userName} 说话；1~2 句、简短真挚，完全贴合你的人设语气；`
         + `只输出这句话本身，不要旁白、不要解释、不要引号、不要任何标签。`;
 
     try {
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-            body: JSON.stringify({
-                model: api.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.9,
-                max_tokens: 400,
-                stream: false,
-            }),
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.9,
+            max_tokens: 400,
+            stream: false,
+        }, {
             signal,
+            meta: makeApiUsageMeta('chat.unblockAppeal', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: api.apiRole || 'main',
+                apiBinding: api.apiBinding || '解除拉黑验证',
+            }),
         });
-        if (!res.ok) return templateAppeal(userName, rejectedCount);
-        const data = await safeResponseJson(res);
         const text = (extractContent(data) || '')
             .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
             .replace(/^["'“”\s]+|["'“”\s]+$/g, '')

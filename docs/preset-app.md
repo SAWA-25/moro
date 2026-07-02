@@ -29,17 +29,42 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 
 ## 接入点（谁在用预设）
 
-1. **消息骨架** —— `utils/chatRequestPayload.ts` 第 11 步：`PresetRuntime.getActivePreset()`
+1. **消息骨架** —— `utils/chatRequestPayload.ts` 第 11 步：`PresetRuntime.getActivePresetForScope('chat.private')`
    非空时用 `applyPresetToMessages` 把 `[system(核心上下文), ...history]` 重排成
    prompt_order 定义的消息流。双语 reminder 仍钉在最末尾。
-2. **采样参数** —— `hooks/useChatAI.ts`：`PresetRuntime.getActiveGenParams()` 覆盖
+2. **采样参数** —— `hooks/useChatAI.ts`：`PresetRuntime.getActiveGenParams('chat.private')` 覆盖
    temperature / top_p / 惩罚 / max_tokens 等（本地 fetch 与 instant push 两条路都吃）。
    预设里的「采样参数随请求下发」开关可以只用提示词、参数仍走全局设置。
+3. **群聊 / 电话 / 页外** —— 群聊文字走 `chat.groupText` + `ORDER_CHAR_ID_GROUP`；
+   群语音走 `chat.groupVoice`（默认关，保护 JSON）；电话文字走 `chat.phoneText`；
+   页外/VR 走 `role.scene`（默认关），并在预设骨架之后追加本轮场景任务。
+
+## 作用范围（两层叠加）
+
+活字盘现在不是“开了就影响所有 LLM 请求”，而是按任务 scope 判断：
+
+`最终生效 = 预设总开关开 + 全局允许该 scope + 当前预设启用该 scope`
+
+默认范围：
+
+| scope | 默认 | 用途 |
+|------|------|------|
+| `chat.private` | 开 | 絮语私聊、Instant Push 主回复 |
+| `chat.proactive` | 开 | 角色主动消息 / 离线主动回复 |
+| `chat.groupText` | 开 | 絮语群聊文字回复（使用 100001 群聊 order） |
+| `chat.phoneText` | 开 | 回声亭文字通话回复 |
+| `chat.groupVoice` | 关 | 群语音文字回复，JSON 输出，默认保护 |
+| `role.scene` | 关 | 页外 / VR 等角色自主场景 |
+| `creative.text` | 关 | 番外、论坛等自由文本任务的预留入口 |
+| `structured.tool` | 关 | JSON、总结、记忆抽取等严格格式任务，默认保护 |
+
+结构化任务即使启用 scope，也会在预设骨架之后追加最高优先级 JSON / 格式守卫；
+旧 Service Worker fallback 只能使用快照里的单块 system prompt，不会读 IndexedDB 重新套预设。
 
 ## 与 ST 的语义对齐
 
 - `prompt_order`：character_id 100000（单聊）/ 100001（群聊）原样保留；Moro 的
-  UI 改单聊那份时两份同步（群聊链路目前不走预设）。
+  UI 改单聊那份时两份同步，群聊文字/群语音启用 scope 后读取 100001。
 - 相对提示词（injection_position=0）按列表顺序展开成独立消息，role 取各自设定。
 - 绝对提示词（injection_position=1，即 In-Chat @Depth）：深度从**聊天历史末尾**数
   （depth 0 = 最后一条历史之后、post-history 提示词之前）；同深度 order 大的更靠近
@@ -49,6 +74,8 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
   未知宏原样保留。
 - 导入：未映射的 ST 字段（utility prompts、模型选择等）全量存进 `preset.raw`，
   导出时合并回去 —— 导入再导出不丢字段，文件可以拿回酒馆继续用。
+- `injection_trigger`：随 prompt 导入、保存、导出；运行时按 generation type 过滤，
+  缺省视为 `normal`。
 
 ## marker 映射（ST 占位符在 Moro 的落点）
 
@@ -61,6 +88,10 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 | `personaDescription` | 用户人设块（名字 + 设定/备注）。「人设」App 有激活人设时用人设的名字/描述（位置=嵌入提示词时），否则回落「档案」App 的内容，详见 `docs/persona-app.md` |
 | `dialogueExamples` | 角色的对话示例块（`CharacterProfile.mesExample`，即角色卡 mes_example / 登场人物「台词样张」栏），在自己的 order 位置注入，受 marker 开关控制 |
 | `charDescription` `charPersonality` `scenario` | 共同映射到 Moro 的角色核心上下文（人设/内在认知/世界观/印象/记忆），注入在其中**第一个启用**的 marker 处，其余仅作排序占位 |
+
+世界书块在进入 marker 前已经由 `WorldbookRuntime` 完成关键词、二级词逻辑、概率、
+预算和递归扫描过滤；预设只决定这些块落在 prompt_order 的哪里，不会额外把世界书
+再塞回核心上下文。
 
 实现：预设激活时 `ChatPrompts.buildSystemPrompt(presetMarkerSplit=true)` →
 `buildCoreContext({ omitWorldbooks, skipUserProfile })` 把世界书与用户档案从核心块
@@ -121,6 +152,8 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 - `os_preset_enabled`：总开关（'1' 开）
 - `os_preset_active_id`：激活预设 id
 - `os_preset_apply_sampling`：采样参数是否随请求下发（缺省开）
+- `os_preset_global_scopes`：全局允许哪些任务 scope 被活字盘影响（缺省见上表）
+- `TavernPreset.moroScopes`：当前预设自己的任务 scope，本地字段，不随酒馆 JSON 导出
 
 预设本体存 IndexedDB `llm_presets` store，App 内所有改动即时落库（没有 ST 的
 「设置区 vs 预设文件」双层，故无手动「更新预设」按钮）。

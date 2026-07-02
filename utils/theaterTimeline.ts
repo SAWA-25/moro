@@ -23,8 +23,9 @@ import {
 } from '../types';
 import { DB } from './db';
 import { sanitizeLifeText } from './autonomousLife';
-import { extractJson } from './safeApi';
+import { extractContent, extractJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 import {
     trajectoryBeforePrompt,
     trajectoryBranchPrompt,
@@ -38,6 +39,8 @@ export interface TimelineApi {
     baseUrl: string;
     apiKey: string;
     model: string;
+    apiRole?: 'main' | 'aux' | 'custom';
+    apiBinding?: string;
 }
 
 export interface TrajectoryNode {
@@ -171,23 +174,19 @@ async function callLLM(
     maxTokens = 3200,
     featureId: 'theater.timeline' | 'theater.reflection' = 'theater.timeline',
 ): Promise<string> {
-    const res = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature,
-            max_tokens: maxTokens,
-            stream: false,
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta(featureId, {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
         }),
-        __moroMeta: makeApiUsageMeta(featureId, { apiRole: 'aux' }),
-    } as RequestInit & { __moroMeta?: unknown });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    let json: any;
-    try { json = JSON.parse(text); } catch { json = JSON.parse(text.replace(/^data:\s*/, '').trim()); }
-    return String(json?.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    });
+    return extractContent(data);
 }
 
 function buildPersona(char: CharacterProfile): string {

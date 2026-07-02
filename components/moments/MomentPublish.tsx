@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { CaretRight, Lock, MapPin, UserCirclePlus, Globe, X } from '@phosphor-icons/react';
-import { CharacterProfile, SocialPost } from '../../types';
+import { CharacterProfile, SocialAudienceRoleRule, SocialPost } from '../../types';
 import { processImage } from '../../utils/file';
 import Modal from '../os/Modal';
 
@@ -11,6 +11,7 @@ export interface MomentPublishData {
     mentionedCharIds: string[];
     visibility: 'public' | 'private';
     repostOf?: SocialPost['repostOf'];
+    audienceRules?: SocialPost['audienceRules'];
 }
 
 interface MomentPublishProps {
@@ -30,7 +31,8 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
     const [images, setImages] = useState<string[]>([]);
     const [location, setLocation] = useState('');
     const [mentionedCharIds, setMentionedCharIds] = useState<string[]>([]);
-    const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+    const [audienceMode, setAudienceMode] = useState<'public' | 'private' | 'custom'>('public');
+    const [audienceRoles, setAudienceRoles] = useState<Record<string, SocialAudienceRoleRule>>({});
 
     const [showLocationModal, setShowLocationModal] = useState(false);
     const [locationDraft, setLocationDraft] = useState('');
@@ -61,6 +63,26 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
 
     const toggleMention = (id: string) => {
         setMentionedCharIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        setAudienceRoles(prev => ({
+            ...prev,
+            [id]: { canView: true, canLike: true, canComment: true, canRepost: true, ...(prev[id] || {}), notify: !mentionedCharIds.includes(id) },
+        }));
+    };
+
+    const patchAudienceRole = (id: string, patch: Partial<SocialAudienceRoleRule>) => {
+        setAudienceRoles(prev => {
+            const current = prev[id] || {};
+            const next = { ...current, ...patch };
+            if (patch.canView === false) {
+                next.canLike = false;
+                next.canComment = false;
+                next.canRepost = false;
+                next.notify = false;
+            }
+            if (patch.notify === true) next.canView = true;
+            if (next.canView === true && next.canLike === undefined) next.canLike = true;
+            return { ...prev, [id]: next };
+        });
     };
 
     const handlePublish = () => {
@@ -70,15 +92,24 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
             images,
             location: location.trim() || undefined,
             mentionedCharIds,
-            visibility,
+            visibility: audienceMode === 'private' ? 'private' : 'public',
             repostOf: initialRepost || null,
+            audienceRules: audienceMode === 'custom'
+                ? { mode: 'custom', characters: audienceRoles }
+                : { mode: audienceMode },
         });
     };
 
     const mentionedNames = characters
-        .filter(c => mentionedCharIds.includes(c.id))
+        .filter(c => mentionedCharIds.includes(c.id) || audienceRoles[c.id]?.notify)
         .map(c => c.name)
         .join('、');
+
+    const audienceLabel = audienceMode === 'public'
+        ? '公开'
+        : audienceMode === 'private'
+            ? '私密'
+            : '逐个设置';
 
     return (
         <div className="absolute inset-0 z-50 bg-white flex flex-col animate-slide-up">
@@ -179,11 +210,11 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                         onClick={() => setShowVisibilityModal(true)}
                         className="w-full flex items-center gap-3 px-5 py-4 border-b border-slate-50 active:bg-slate-50"
                     >
-                        {visibility === 'public'
+                        {audienceMode === 'public'
                             ? <Globe size={20} className="text-slate-600" />
                             : <Lock size={20} className="text-slate-600" />}
                         <span className="text-sm text-slate-700 flex-1 text-left">谁可以看</span>
-                        <span className="text-xs text-slate-400">{visibility === 'public' ? '公开' : '私密'}</span>
+                        <span className="text-xs text-slate-400">{audienceLabel}</span>
                         <CaretRight size={14} className="text-slate-300" />
                     </button>
                 </div>
@@ -237,26 +268,70 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                 </div>
             </Modal>
 
-            {/* 谁可以看：公开 / 私密 */}
+            {/* 谁可以看：公开 / 私密 / 逐个设置 */}
             <Modal isOpen={showVisibilityModal} title="谁可以看" onClose={() => setShowVisibilityModal(false)}>
                 <div className="space-y-2">
                     {([
                         { key: 'public', icon: <Globe size={18} />, label: '公开', desc: '角色们可以看到并互动' },
                         { key: 'private', icon: <Lock size={18} />, label: '私密', desc: '仅自己可见，角色不会互动' },
+                        { key: 'custom', icon: <UserCirclePlus size={18} />, label: '逐个设置', desc: '按角色决定能否看、留言、转贴和提醒' },
                     ] as const).map(opt => (
                         <button
                             key={opt.key}
-                            onClick={() => { setVisibility(opt.key); setShowVisibilityModal(false); }}
-                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-colors ${visibility === opt.key ? 'border-slate-800 bg-slate-50' : 'border-slate-100 active:bg-slate-50'}`}
+                            onClick={() => {
+                                setAudienceMode(opt.key);
+                                if (opt.key !== 'custom') setShowVisibilityModal(false);
+                            }}
+                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-colors ${audienceMode === opt.key ? 'border-slate-800 bg-slate-50' : 'border-slate-100 active:bg-slate-50'}`}
                         >
-                            <span className={visibility === opt.key ? 'text-slate-800' : 'text-slate-500'}>{opt.icon}</span>
+                            <span className={audienceMode === opt.key ? 'text-slate-800' : 'text-slate-500'}>{opt.icon}</span>
                             <span className="flex-1 text-left">
                                 <span className="block text-sm font-bold text-slate-700">{opt.label}</span>
                                 <span className="block text-[11px] text-slate-400">{opt.desc}</span>
                             </span>
-                            {visibility === opt.key && <span className="text-slate-800 text-sm font-bold">✓</span>}
+                            {audienceMode === opt.key && <span className="text-slate-800 text-sm font-bold">✓</span>}
                         </button>
                     ))}
+                    {audienceMode === 'custom' && (
+                        <div className="mt-3 space-y-2 max-h-[48vh] overflow-y-auto no-scrollbar pr-1">
+                            {characters.length === 0 && <div className="text-center text-xs text-slate-300 py-6">还没有角色</div>}
+                            {characters.map(c => {
+                                const role = audienceRoles[c.id] || {};
+                                const canView = !!role.canView;
+                                const toggles: Array<[keyof SocialAudienceRoleRule, string]> = [
+                                    ['canView', '看见'],
+                                    ['canComment', '留言'],
+                                    ['canRepost', '转贴'],
+                                    ['notify', '提醒'],
+                                ];
+                                return (
+                                    <div key={c.id} className="rounded-2xl border border-slate-100 p-3 bg-slate-50/70">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <img src={c.avatar} className="w-8 h-8 rounded-full object-cover bg-white" />
+                                            <span className="text-sm font-bold text-slate-700 flex-1 truncate">{c.name}</span>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-1.5">
+                                            {toggles.map(([key, label]) => {
+                                                const active = key === 'canView' ? canView : !!role[key];
+                                                const disabled = key !== 'canView' && !canView;
+                                                return (
+                                                    <button
+                                                        key={key}
+                                                        disabled={disabled}
+                                                        onClick={() => patchAudienceRole(c.id, { [key]: !active } as Partial<SocialAudienceRoleRule>)}
+                                                        className={`py-1.5 rounded-full text-[10px] font-bold border disabled:opacity-35 ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100'}`}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            <button onClick={() => setShowVisibilityModal(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">完成</button>
+                        </div>
+                    )}
                 </div>
             </Modal>
         </div>

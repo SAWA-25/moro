@@ -24,12 +24,13 @@ import { resolveAuxApi } from '../../utils/auxApi';
 import { computeCurrentListening } from '../../utils/charMusicSchedule';
 import { DB } from '../../utils/db';
 import { C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage } from './MusicUI';
-import { ArrowLeft, MusicNote, Heart, Plus, MagnifyingGlass } from '@phosphor-icons/react';
+import { ArrowLeft, MusicNote, Heart, Plus, MagnifyingGlass, PaperPlaneRight } from '@phosphor-icons/react';
 
 interface Props {
   charId: string;
   onBack: () => void;
   onOpenPlayer: () => void;
+  onShareSong?: (song: Song) => void;
 }
 
 const gradientMap: Record<string, string> = {
@@ -57,7 +58,18 @@ const toPlaylistSong = (s: Song): CharPlaylistSong => ({
   albumPic: s.albumPic, duration: s.duration, fee: s.fee,
 });
 
-const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
+const songFromPlaylistSong = (s: CharPlaylistSong): Song => ({
+  id: s.id,
+  name: s.name,
+  artists: s.artists,
+  album: s.album,
+  albumPic: s.albumPic,
+  duration: s.duration,
+  fee: s.fee,
+  source: s.source,
+});
+
+const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer, onShareSong }) => {
   const { characters, updateCharacter, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
   // 角色音乐主页生成属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
   const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
@@ -213,7 +225,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
 
   const playPlaylistSong = (pl: CharPlaylist, song: CharPlaylistSong) => {
     // 用 char 歌单作为队列，点击的歌作为起点
-    const queue: Song[] = pl.songs.map(s => ({ ...s }));
+    const queue: Song[] = pl.songs.map(songFromPlaylistSong);
     const startIdx = queue.findIndex(s => s.id === song.id);
     playSong(queue[startIdx], { replaceQueue: queue, startIdx });
     onOpenPlayer();
@@ -424,20 +436,37 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
                         ) : (
                           <div className="space-y-1 pt-2">
                             {pl.songs.map((s, i) => (
-                              <button
+                              <div
                                 key={s.id}
-                                onClick={() => playPlaylistSong(pl, s)}
                                 className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/40 transition-colors text-left"
                               >
-                                <span className="text-[10px] w-4 shrink-0" style={{ color: C.faint }}>{i + 1}</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-xs truncate" style={{ color: C.text }}>{s.name}</div>
-                                  <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
-                                </div>
-                                {s.fee === 1 && (
-                                  <span className="text-[8px] px-1 rounded" style={{ color: C.vip, border: `1px solid ${C.vip}50` }}>VIP</span>
+                                <button
+                                  type="button"
+                                  onClick={() => playPlaylistSong(pl, s)}
+                                  className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                                >
+                                  <span className="text-[10px] w-4 shrink-0" style={{ color: C.faint }}>{i + 1}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs truncate" style={{ color: C.text }}>{s.name}</div>
+                                    <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                                  </div>
+                                  {s.fee === 1 && (
+                                    <span className="text-[8px] px-1 rounded" style={{ color: C.vip, border: `1px solid ${C.vip}50` }}>VIP</span>
+                                  )}
+                                </button>
+                                {onShareSong && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onShareSong(songFromPlaylistSong(s))}
+                                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-all"
+                                    style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                                    title="分享给角色"
+                                    aria-label="分享给角色"
+                                  >
+                                    <PaperPlaneRight size={12} weight="fill" />
+                                  </button>
                                 )}
-                              </button>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -475,6 +504,18 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
                     <div className="text-[9px] italic max-w-[40%] truncate" style={{ color: C.faint }}>
                       "{r.context}"
                     </div>
+                  )}
+                  {onShareSong && (
+                    <button
+                      type="button"
+                      onClick={() => onShareSong(songFromPlaylistSong(r.song))}
+                      className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-all"
+                      style={{ color: C.accent, background: `${C.glow}28`, border: `1px solid ${C.faint}35` }}
+                      title="分享给角色"
+                      aria-label="分享给角色"
+                    >
+                      <PaperPlaneRight size={12} weight="fill" />
+                    </button>
                   )}
                 </div>
               ))}

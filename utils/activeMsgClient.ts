@@ -13,6 +13,9 @@ import { DB } from './db';
 import { safeResponseJson } from './safeApi';
 import { ActiveMsgStore } from './activeMsgStore';
 import { KeepAlive } from './keepAlive';
+import { activeMsg2ImportantRules, activeMsg2LegacyStyleHint, activeMsg2ModeInstruction } from './laiwangPrompts';
+import { buildOpenAiEndpoint } from './openAiCompat';
+import { WorldbookRuntime } from './worldbookRuntime';
 
 const ACTIVE_MSG_VAPID_PUBLIC_KEY = import.meta.env.VITE_AMSG_VAPID_PUBLIC_KEY || '';
 const ACTIVE_MSG_API_BASE_OVERRIDE = (import.meta.env.VITE_AMSG_API_BASE_URL || '').trim();
@@ -94,7 +97,7 @@ export const sanitizeActiveMsgDatabaseUrl = (value: string) => {
     .trim();
 };
 
-const normalizeChatApiUrl = (baseUrl: string) => `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+const normalizeChatApiUrl = (baseUrl: string) => buildOpenAiEndpoint(baseUrl, 'chat.completions');
 
 const buildActiveMsgApiHint = () => {
   const apiBase = resolveActiveMsgApiBase();
@@ -224,20 +227,7 @@ const buildLegacyStyleProactiveHint = (
   currentTime: string,
   timeSinceUser: string,
 ) => {
-  const target = targetName || '对方';
-  const awayHint = timeSinceUser.includes('没有新的聊天记录')
-    ? `${target}最近没有主动来找你说话。`
-    : `${target}${timeSinceUser.replace(/^距离用户/, '已经')}`;
-
-  return [
-    '【1.0 风格主动消息提示】',
-    `现在是 ${currentTime}。`,
-    `${awayHint}`,
-    `这不是 ${target} 正在和你聊天，而是你突然想起了 ${target}，想主动发条消息给他/她。`,
-    `像真人随手发消息一样自然一点，可以是分享刚看到的东西、轻轻吐槽、问一句近况、突然想念，或者单纯想找 ${target} 聊两句。`,
-    '不要写成汇报近况，不要像在完成任务，也不要解释自己为什么会发这条消息。',
-    `正文尽量短，通常 1 到 2 句就够；如果 ${target} 很久没来找你，可以轻轻带一点想念、好奇或者小小抱怨。`,
-  ].join('\n');
+  return activeMsg2LegacyStyleHint({ targetName, currentTime, timeSinceUser });
 };
 
 const buildCompletePrompt = async (
@@ -252,15 +242,19 @@ const buildCompletePrompt = async (
   const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', currentTime, timeSinceUser);
   const emojis = await DB.getEmojis();
   const categories = await DB.getEmojiCategories();
-  const systemPrompt = await ChatPrompts.buildSystemPrompt(
-    char,
-    userProfile,
-    groups,
-    emojis,
-    categories,
-    recentMessages,
-    realtimeConfig,
-  );
+  const scanMessages = recentMessages
+    .filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+    .slice(-20)
+    .map(message => String(message.content));
+  const systemPrompt = await WorldbookRuntime.withContext({ scanMessages }, () => ChatPrompts.buildSystemPrompt(
+      char,
+      userProfile,
+      groups,
+      emojis,
+      categories,
+      recentMessages,
+      realtimeConfig,
+  ));
   const { apiMessages } = ChatPrompts.buildMessageHistory(
     recentMessages,
     Math.min(char.contextLimit || 120, 120),
@@ -274,36 +268,13 @@ const buildCompletePrompt = async (
     .map((message) => formatHistoryLine(message.role, message.content, char, userProfile))
     .join('\n\n');
 
-  const modeInstruction = (() => {
-    if (config.mode === 'prompted') {
-      return [
-        '这是一条需要 AI 参与生成的主动消息。',
-        '请严格围绕下面的额外提示发起私聊，但仍然保持像真人一样自然，不要像系统任务汇报。',
-        `额外提示：${config.promptHint?.trim() || '无'}`,
-      ].join('\n');
-    }
-
-    if (config.mode === 'auto') {
-      return [
-        '这是一条需要 AI 自主生成的主动消息。',
-        '请结合角色设定、关系状态、最近上下文与当前时间，自然地主动找用户说一到三句私聊消息。',
-        config.promptHint?.trim() ? `可选灵感补充：${config.promptHint.trim()}` : '可选灵感补充：无',
-      ].join('\n');
-    }
-
-    return '这是固定消息模式，不应该走 AI 生成。';
-  })();
+  const modeInstruction = activeMsg2ModeInstruction(config.mode, config.promptHint);
 
   return [
     '你将代表下面这个角色，生成一条“主动发给用户”的私聊消息。',
     '',
     '【重要规则】',
-    '- 这不是回复用户刚刚发来的消息，而是角色主动来找用户聊天。',
-    '- 输出只能是最终要发送的消息正文，不要解释，不要写分析，不要加引号。',
-    '- 像真实聊天一样简短自然，优先 1 到 2 句，最多 3 句。',
-    '- 可以用换行拆成多个聊天气泡，但不要写时间戳、名字前缀、系统提示。',
-    '- 不要出现“作为AI”“系统提示”等元话语。',
-    '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。',
+    ...activeMsg2ImportantRules(userProfile.name || '用户'),
     '',
     '【角色系统设定】',
     systemPrompt,

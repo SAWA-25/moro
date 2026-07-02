@@ -1,100 +1,126 @@
-# 来往·情侣空间（Couple Space）
+# 来往·情侣空间 2.0（Couple Space）
 
-> 改情侣空间相关逻辑前必读。一句话：在「来往」App 里给 user 和某个 char 开一个**类似 QQ 情侣空间**的小天地
-> —— 恋爱天数、亲密度、情侣动态、纪念日倒计时、九宫格相册、每日互动、约定、悄悄话，
-> 数据持久化并注入聊天上下文，让 char「知道」并据此扮演 + 主动互动。
+> 改情侣空间相关逻辑前必读。一句话：情侣空间仍挂在 `CharacterProfile.coupleSpace` 上，但「来往」底栏入口现在是一个多空间手账目录，可以浏览、创建、切换多个角色空间，并把动态、约会、饭票、回顾等关系痕迹沉淀进聊天上下文。
 
-## 入口与导航
+## 入口与多空间模型
 
-- 入口在「来往」App（`apps/ChatHub.tsx`）聊天列表底部导航，**「此刻」右侧**新增第 4 个 tab「情侣空间」（粉色 `Heart` 图标）。
-- 底部导航从 `grid-cols-3` 改为 `grid-cols-4`；`hubTab` 类型加 `'couple'`；顶部标题栏 / 返回按钮 / 状态栏复用列表视图原有结构（与其它 tab 一致）。
-- tab 选中时内嵌渲染 `<CoupleSpace />`（与「此刻」内嵌 `MomentsFeed` 同一套做法），不新增独立 AppID。
-
-## 绑定模型
-
-- **一次绑定一位「另一半」**：当前绑定的 charId 存在 `localStorage['moro_couple_partner_id']`（UI 指针）。
-- **数据按角色存**：情侣空间数据挂在 `CharacterProfile.coupleSpace`（每个角色一份）。所以**解绑不丢回忆**——
-  重新绑定同一个 char 时动态/纪念日/相册都还在；换人只是切换展示的那份数据。
-- 未绑定时显示「选择另一半」列表（恋人/暧昧/订婚/已婚关系的角色排前面，带 💗 标记）。首次绑定给该角色初始化一份空 `coupleSpace`。
+- 入口仍在「来往」App（`apps/ChatHub.tsx`）底栏「情侣空间」，不新增独立 AppID。
+- `localStorage['moro_couple_partner_id']` 只保留为「当前打开的空间」兼容指针，不再代表唯一绑定关系。
+- 进入情侣空间先显示空间目录：已有 `CharacterProfile.coupleSpace` 的角色显示为已开空间，没有的角色可点「开空间」初始化。
+- 详情页左上可返回目录；右上菜单里的「回到空间目录」只是退出当前查看，不删除该角色已有回忆。
+- 数据仍按角色存放：每个角色自己的 `coupleSpace` 独立保存动态、相册、约定、档案、回顾和自动经营状态。
 
 ## 数据模型（`types.ts`）
 
-`CoupleSpace` 挂在角色上，含：`anniversaryDate`（在一起纪念日 YYYY-MM-DD）、`intimacy`（亲密度，0 起无上限）、
-`moments`（动态/留言板）、`anniversaries`（纪念日/生日/约定日）、`photos`（九宫格相册）、`tasks`（约定）、
-`whispers`（悄悄话信箱）、`wishes`（愿望清单/心愿）、`questions`（提问箱问答）、`plant`（养盆栽，首次浇水时创建）、
-`interactions`（每日互动记录）。子类型：`CoupleMoment` / `CoupleComment` / `CoupleAnniversary` / `CouplePhoto` /
-`CoupleTask` / `CoupleWhisper` / `CoupleWish` / `CoupleQuestion` / `CouplePlant` / `CoupleInteraction`。
+`CoupleSpace` 旧字段继续保留：
 
-> **子功能（标签页 / 浮窗 / 菜单）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **盆栽（每日浇水/施肥/晒太阳→成长值→6 阶段）** · **成就（里程碑徽章，纯计算）**
-> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱；＋右上菜单：**默契大考验（情侣小游戏）**；
-> ＋头部：**纪念日提醒横幅**（恋爱纪念日周年 / 各纪念日条目 7 天内最近一个，点击跳「纪念日」tab；纯前端 in-app，未接 Web Push）。
-> 盆栽阶段逻辑 `plantStage()`/`PLANT_STAGES`/`PLANT_CARE`、默契题库 `COMPAT_QUESTIONS`/`pickCompatQuestions()` 均在 `utils/coupleSpace.ts`。
->
-> **默契大考验**：抽 5 道二选一，用户猜 TA 会怎么选 → 角色**一次 LLM 调用**以人设作答（`generateCharCompatAnswers`，失败随机兜底）→ 比对算默契度 %，按命中数 ×2 加亲密度，记 `compatBest` 历史最高。入口在右上菜单（避开已满的 tab 栏 / 两个浮窗）。
+- `anniversaryDate`、`intimacy`
+- `moments`、`anniversaries`、`photos`、`tasks`
+- `whispers`、`wishes`、`questions`、`plant`、`compatBest`
+- `interactions`、`createdAt`、`updatedAt`
 
-- `CoupleMoment` 额外带 `media?: CoupleMedia`（多媒体卡片：`voice` 语音条 / `music` 音乐 / `item` 物件·照片，
-  含 `name`、语音另有 `duration`）和 `innerVoice?`（角色对该条动态的「心声」独白，**点击多媒体块时懒生成、缓存后复用**）。
+2.0 新增可选字段，旧空间由 `ensureCoupleSpace()` 兼容补齐：
 
-## UI·极简白 + 粉紫渐变皮肤（`components/couple/CoupleSpace.tsx`）
+- `settings?: CoupleSpaceSettings`
+  - `autoCareEnabled?: boolean`：`undefined` 视为开启，旧空间和新空间默认允许后台自经营。
+  - `theme?: 'scrapbook'`
+- `profile?: CoupleProfile`
+  - `homeName`、`userNickname`、`charNickname`、`rituals`、`loveLanguage`、`updatedAt`
+- `memoryCards?: CoupleMemoryCard[]`
+  - 来自约会、饭票、回顾、动态或手动记录，可 `pinned`
+- `recaps?: CoupleRecap[]`
+  - 周/月关系回顾小报，含 `highlights`、`suggestedTasks`、`suggestedWishes`
+- `dailyCheckins?: CoupleDailyCheckin[]`
+  - 每日情侣打卡，按 `ymd` 去重
+- `autoCare?: CoupleAutoCareState`
+  - 记录 `lastRunAt`、`lastMomentAt`、`lastRecapAt`、`lastSource`、`lastSummary`
 
-整套界面走「干净极简白（`#FAFAFA`）+ 温柔粉紫渐变强调（`ACCENT = linear-gradient(135deg,#ff9a9e→#fecfef)`）」，
-圆润无衬线字（Quicksand / PingFang SC），正文 `#333`、次要信息 `#999`，容器 `max-w-[480px] mx-auto` 居中适配 PC 预览。
+## 主要视图（`components/couple/CoupleSpace.tsx`）
 
-- **顶部羁绊区**：右上角菜单（`List ≡`，开设置/解绑；返回 `<` 由 ChatHub 外层标题栏提供）、两枚 50px 头像（粉色发光阴影
-  `0 4px 12px rgba(255,182,193,.4)`）中间一条 **SVG 心电图（ECG）连线**——`stroke-dasharray`+`stroke-dashoffset`
-  做 `@keyframes csEcg` 亮色脉冲从左向右持续流动；下方居中「在一起 X 天」+ 纤细亲密度条。
-- **时间线动态卡**：顶部居右绝对时间戳（`YYYY.MM.DD HH:mm`，12px `#A0A0A0`）、左侧 30px 头像、加粗昵称、正文，
-  多媒体块（语音/音乐/物件卡，圆角 12px、极浅粉紫底、`active:scale-[0.98]` 按压反馈）、评论区（`昵称：内容`，昵称加粗）。
-- **「心声」弹窗**（隐藏交互，点任意多媒体块 / 图片 / 卡片底「心声」触发）：毛玻璃遮罩
-  （`rgba(255,255,255,.8)`+`backdrop-filter:blur(8px)`）右上 `X`；**两阶段**——阶段 1 几根粉色竖条（音轨均衡器
-  `@keyframes csEq`）跳动约 1.5s「读取心声中」；阶段 2 黑色心声卡（`#222`/白字/圆角 16/深阴影）以
-  `translateY(20px)→0`+`opacity 0→1`（`@keyframes csVoiceCard` 0.4s ease-out）浮现，顶部「{TA} の 心声」+ 一段独白。
+界面统一为黑白拼贴手账风格，复用 `apps/theater/scrapbook.tsx` 的 `PaperCard`、`ScrapButton`、`Polaroid`、`Stamp` 等组件。照片和头像在目录中可灰阶展示，强调色改为墨黑、米白纸面和灰阶胶带。
 
-- **亲密度**按每 `INTIMACY_PER_LEVEL=100` 一级展示（Lv + 头衔「初识→神仙眷侣」+ 级内进度条）。
-  增长来源：每日互动（亲 6 / 抱 5 / 牵手 4 / 礼物 8）、完成约定 +5、**实现心愿 +8**、发动态 +3、**提问箱提问 +3**、**照料盆栽 +1**、角色互动/评论 +1~2、发悄悄话 +2。
-  （盆栽另有独立「成长值」：浇水 +3 / 施肥 +5 / 晒太阳 +2，每日各一次，与亲密度分开计。）
-  默契大考验：每局按命中题数 ×2 加亲密度（5 题满命中 +10）。
-  这是情侣空间**独立的**度量，**不**走 `utils/relationship.ts` 的好感框架（affection），互不干扰。
+页签调整为：
 
-## 角色侧「主动互动」（`utils/coupleSpace.ts`）
+- `今日`：恋爱天数、亲密度、记忆卡数量、今日打卡、每日互动、后台自经营状态、去约会/翻回顾入口、待完成事项。
+- `动态`：情侣动态、留言、点赞、评论、心声、多媒体卡片和「请 TA 冒个泡」。
+- `相册`：九宫格照片与图片说明。
+- `约定`：约定任务和心愿清单合并在同一页。
+- `纪念`：在一起纪念日、生日、约定日和 7 天内提醒横幅。
+- `档案`：空间名、互相称呼、恋爱小习惯、相处方式，以及最近记忆卡。
+- `回顾`：手动生成周回顾，展示历史关系小报。
+- `游戏`：默契大考验、街角约会入口、情侣盆栽和成就。
 
-一组**失败全吞**的一次性 LLM 调用（走全局副 API，`resolveAuxApi(auxApiConfig, apiConfig)`；失败时组件用模板兜底）：
+浮动入口仍保留：
 
-| 触发 | 函数 | 行为 |
-|------|------|------|
-| 用户发动态 | `generateCharCoupleComment` | 角色自动点赞 + 评论那条动态 |
-| 用户留悄悄话 | `generateCharWhisperReply` | 角色回一条悄悄话 |
-| 用户在提问箱提问 | `generateCharQuestionAnswer` | 角色以恋人身份答一句（失败用 `fallbackQuestionAnswer` 兜底） |
-| 玩默契大考验 | `generateCharCompatAnswers` | 角色一次性对 5 道二选一以人设作答，返回 `'a'/'b'` 数组（失败随机兜底） |
-| 用户亲一下/抱一下/… | `generateCharInteractionNote` | 角色给一句即时反应（节流 6s，过频用模板，避免刷 token） |
-| 点「请 TA 冒个泡」 | `generateCharMoment` | 角色**主动发**一条情侣动态（JSON `{text, mood, media?}`，可选附带语音/音乐/物件卡） |
-| 点多媒体块 / 「心声」 | `generateCharInnerVoice` | 角色对该条动态的私密内心独白（点击触发，懒生成→写回 `moment.innerVoice` 缓存；失败用 `fallbackInnerVoice` 兜底） |
+- 提问箱：你问 TA 答，答案会进入聊天上下文。
+- 悄悄话信箱：更私密的小纸条。
 
-> 这些是 char「在情侣空间发动态 / 回复留言 / 发起互动」的落点。没做后台自主调度（不挤占 token / 不动 OSContext 调度器）——
-> char 自发内容由「请 TA 冒个泡」按钮显式触发，对用户动作的回应则即时跟随。
+## 后台自经营
 
-## 注入聊天上下文（`utils/coupleSpace.ts:buildCoupleSpacePromptBlock`）
+后台自经营不新增常驻定时器，只接在现有主动消息 / 离线生活 / 页面离开生活事件链路之后：
 
-- `utils/context.ts` 在 `buildRelationshipPromptBlock` 之后、**仅单聊**（`!groupOptions?.skipUserProfile`）注入一段
-  「来往·情侣空间」系统提示：恋爱天数、亲密度等级、最近 3 条动态、最近的纪念日倒计时、未完成约定、**未实现的心愿**、
-  **提问箱近来的问答（让 char 言行与自己答过的话保持一致）**、**盆栽当前阶段**、用户**还没被回**的悄悄话。
-- 只有空间真正有内容（设了纪念日 / 亲密度>0 / 有任意条目）才注入，避免空噪声。
-- 让 char 把这些当真实恋爱点滴，聊天里自然提起（某条动态、快到的纪念日、没做完的约定、想圆的心愿、答过的问题、TA 的悄悄话）。
+- `OSContext` 主动消息成功落库后，会调用 `maybeRunCoupleAutoCare` 对应逻辑。
+- 离线生活补齐、离开页面记录、饭票送达等事件也可轻量沉淀到该角色的情侣空间。
+- 自动产物只写入情侣空间，不强制额外发聊天消息；原本主动消息会发送时仍走原聊天链路。
+- 失败全吞，不阻塞主动消息、离线补齐或饭票流程。
 
-## 写库并发安全（`components/couple/CoupleSpace.tsx`）
+节流策略：
 
-- 所有写入走 `mutate(fn, addIntimacy?)`：从 `charactersRef.current`（最新角色）读出 `coupleSpace`，
-  经 `fn` 合成新值后 `updateCharacter(partnerId, { coupleSpace })`。
-- **一个用户动作只做一次同步 `mutate`**：两次连续同步写会因 React 尚未重渲染读到旧 ref 而互相覆盖
-  （已踩坑修复 `toggleTask` 完成加分、`doInteraction` 节流分支——都合并成单次写入）。
-  异步流程（发动态→角色评论、发悄悄话→角色回信、互动→角色反应）中两次写之间隔着 `await`，重渲染已发生，安全。
+- 每个角色每天最多 1 条自动情侣动态（`lastMomentAt` 按本地日期判断）。
+- 每 3 天最多 1 条自动回顾建议（`lastRecapAt`）。
+- `settings.autoCareEnabled === false` 时不触发后台自经营。
+- 用户手动点「生成周回顾」属于显式操作，不受后台冷却和关闭开关影响。
+
+相关函数在 `utils/coupleSpace.ts`：
+
+- `isCoupleAutoCareEnabled`
+- `shouldRunCoupleAutoCare`
+- `generateCharCoupleAutoCare`
+- `generateCoupleRecap`
+- `applyCoupleAutoCareDraft`
+- `buildCoupleDateMemoryCard`
+- `buildCoupleTakeoutMemoryCard`
+
+新增 API usage id：
+
+- `chat.coupleSpace.autoCare`
+- `chat.coupleSpace.recap`
+
+## 聊天上下文注入
+
+`buildCoupleSpacePromptBlock()` 仍只在单聊上下文注入，并且只有空间真正有内容时才注入，避免空噪声。
+
+注入内容包括：
+
+- 恋爱天数、亲密度等级、最近 3 条动态。
+- 最近纪念日、未完成约定、未实现心愿。
+- 最近提问箱问答、盆栽阶段、未回复悄悄话。
+- 2.0 新增：情侣档案固定设定、最多 3 张记忆卡、最多 2 份关系回顾。
+
+提示词文案集中在 `utils/laiwangPrompts.ts` 的情侣空间分区，不在业务 util 内散写 prompt。
+
+## 互动与联动
+
+- 默契大考验题库扩展，`compatBest` 继续记录历史最好成绩。
+- 每日情侣打卡写入 `dailyCheckins`，给今日页和回顾生成提供素材。
+- 从情侣空间点「去约会」会写入 `localStorage['moro_date_intent_v1']` 并打开 `LifeSim` 的约会视图。
+- 街角约会页可点「收进空间」，把当前世界线摘要保存为 `CoupleMemoryCard(kind:'date')`。
+- 饭票送达或投喂完成后，如果该角色已有情侣空间，会自动保存一张 `CoupleMemoryCard(kind:'takeout')`。
+
+## 写库并发安全
+
+- UI 内所有空间写入继续走 `mutate(fn, addIntimacy?)`，从 `charactersRef.current` 读取最新角色，再 `updateCharacter(partnerId, { coupleSpace })`。
+- 一个同步用户动作尽量只做一次 `mutate`，避免 React 尚未重渲染时用旧 ref 互相覆盖。
+- 异步流程中第二次写入放在 `await` 之后，依然基于最新角色数据。
 
 ## 关键代码位置
 
 | 文件 | 关键点 |
 |------|-------|
-| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 主 UI：绑定页 / 双头像+恋爱天数+亲密度头卡 / 每日互动 / 动态·纪念日·相册·约定·心愿·盆栽·成就 子 tab / 提问箱·悄悄话信箱浮窗 / 默契大考验（菜单）/ 各弹窗 |
-| [`utils/coupleSpace.ts`](../utils/coupleSpace.ts) | 纯逻辑：默认值、恋爱天数、纪念日倒计时、亲密度等级、互动定义、提示词块、角色侧 LLM 生成 |
-| [`apps/ChatHub.tsx`](../apps/ChatHub.tsx) | 底部导航第 4 个入口 + 标题 + 内嵌渲染 |
-| [`utils/context.ts`](../utils/context.ts) | 单聊上下文里注入 `buildCoupleSpacePromptBlock` |
-| [`types.ts`](../types.ts) | `CoupleSpace` 及子类型；`CharacterProfile.coupleSpace` |
+| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 多空间目录、手账 UI、今日/档案/回顾/游戏页、打卡、设置开关、约会入口 |
+| [`utils/coupleSpace.ts`](../utils/coupleSpace.ts) | 数据兼容、提示词注入、角色侧 LLM 调用、自动经营、回顾、记忆卡构建 |
+| [`utils/laiwangPrompts.ts`](../utils/laiwangPrompts.ts) | 情侣空间 prompt 文案中心 |
+| [`context/OSContext.tsx`](../context/OSContext.tsx) | 主动消息、离线生活、饭票送达后的自动经营接入 |
+| [`apps/lifesim/DateView.tsx`](../apps/lifesim/DateView.tsx) | 「收进情侣空间」约会记忆卡 |
+| [`apps/LifeSimApp.tsx`](../apps/LifeSimApp.tsx) | 消费情侣空间约会 intent 并打开约会视图 |
+| [`types.ts`](../types.ts) | `CoupleSpace` 及 v2 新增子类型 |

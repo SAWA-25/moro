@@ -20,6 +20,8 @@
 
 `runProactive` 新增第二参 `opts.customHint`：传了就用它当 hint，并跳过「主动消息开关 / 随机模式近期已回复 / 生活事件」等限制（事件驱动的即时反应）。
 
+如果收货角色已经开过「来往·情侣空间」，送达 / 投喂完成还会额外沉淀一张情侣记忆卡（`CoupleMemoryCard(kind:'takeout')`）。这张卡只写进对应角色的 `CharacterProfile.coupleSpace.memoryCards`，不强制额外发聊天消息；之后情侣空间「档案」页和聊天上下文会把它当作两个人的日常痕迹。
+
 ## 2. 聊天回形针「点外卖」+ 外卖订单小票（实时 + 灵动岛）
 
 - 回形针「特别通道」加了 **点外卖**（`components/chat/ChatInputArea.tsx` → `onPanelAction('takeout')`）。Chat 里 `handlePanelAction('takeout')` 用 `setTakeoutIntent({recipientCharId})` 存一次性意图后 `openApp(Takeout)`；`TakeoutApp` 挂载时 `consumeTakeoutIntent()` 预设收货角色。
@@ -53,7 +55,7 @@
 - **菜品选规格 / 加料（SKU 弹层）**：`TakeoutDish` 新增 `specs?`(单选组,选项带 `priceDelta`)、`addons?`(多选,按份加价)、`monthlySales?`。`deriveDishOptions(name)` 按菜名确定性推断（饮品→甜度/冰量+小料；饭/面→份量[+辣度]+加料；麻辣烫/串→辣度+加料；普通辣菜→辣度）；`decorateDishes` 在本地种子与 AI 现搓店两条管线统一挂载。点「选规格」开 `PaperSheet`，`dishUnitPrice`/`formatSpecAddon`/`cartLineKey` 算单价、落人话描述、按「菜+规格+加料」分行 key。`TakeoutOrderItem` 新增 `spec?`/`addons?`（`price` 已含差价，聊天小票/详情向后兼容）。
 - **购物车浮层**：菜篮袋点开 `PaperSheet`，逐行 +/-、清空饭篮、去结算。购物车状态由 `Record<dishId,number>` 升级为 `Record<lineKey,CartLine>`（同菜不同规格各占一行）。
 - **店铺分页（点餐 / 评价 / 商家）**：`storeTab` 切换；评价页＝原食客留言墙，商家页＝品类/评分/月售/送达/起送/距离/营业/优惠 + 街坊提醒。菜篮搁板上方显示**满减凑单进度**（`parseStorePromo`：「再买 ¥X 享…」/「已享…省 ¥X」）。
-- **结算补全**：**预约送达**（`deliveryTimeSlots` 生成「尽快 + 今日半点时段」，落 `TakeoutOrder.scheduledAt` 并据此定 `etaAt`，详情显示「预约 HH:MM 送达」）；**餐具份数**（`TakeoutOrder.tableware`，0＝无需餐具🌱）；**多收货地址**（`getAddresses`/`addAddress`/`removeAddress`，`localStorage moro_takeout_addresses_v1`，结算页 `PaperSheet` 选/增/删，下过单的地址自动入簿）。
+- **结算补全**：**预约送达**（`deliveryTimeSlots` 生成「尽快 + 今日半点时段」，落 `TakeoutOrder.scheduledAt` 并据此定 `etaAt`，详情显示「预约 HH:MM 送达」）；**餐具份数**（`TakeoutOrder.tableware`，0＝无需餐具）；**地址卡**（`TakeoutAddressCard` + `getAddressCards`/`saveAddressCard`/`deleteAddressCard`/`setDefaultAddressCard`，`localStorage moro_takeout_address_cards_v1`，自己和每个角色各有独立虚拟收货点；旧 `moro_takeout_addresses_v1` 字符串地址会自动迁移，旧订单只保留 `TakeoutOrder.address` 快照）。
 - **订单骑手实时轨迹小地图**：`RiderTrackMap`（铺子🏪→你家🏠 虚线路线 + 跑腿按时间进度跑动），配在详情进度条上方；送达后隐藏。
 
 ## 3. 聊天设置「角色主动为用户点外卖」开关

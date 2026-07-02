@@ -8,10 +8,10 @@
 import type { Message } from '../../types';
 import type { MemoryNode, MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
-import { safeFetchJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 import { formatMessageForPrompt } from '../messageFormat';
+import { callChatCompletion } from '../llmClient';
 
 function generateId(): string {
     return `mn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -423,29 +423,20 @@ quote 尽量逐字摘对话原文（别改写），方便日后回看对账；as
 如果对话过于琐碎无值得记忆的内容，返回空数组 []。`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `对话内容：\n${conversationText}` },
-                    ],
-                    temperature: 0.4,
-                    // 12000 比 16000 留余量：避免 LLM 顶满 cap 导致 JSON 输出被 truncate
-                    // buffer 路径 pipeline 上层 CHUNK_SIZE=250 已经在切分 → 单 call 输出可控
-                    max_tokens: 12000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.extraction', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `对话内容：\n${conversationText}` },
+            ],
+            temperature: 0.4,
+            // 12000 比 16000 留余量：避免 LLM 顶满 cap 导致 JSON 输出被 truncate
+            // buffer 路径 pipeline 上层 CHUNK_SIZE=250 已经在切分 → 单 call 输出可控
+            max_tokens: 12000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.extraction', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const parsed = safeParseJsonArray(reply);

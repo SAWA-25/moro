@@ -534,7 +534,7 @@ const AppLoadingFallback: React.FC = () => {
 };
 
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, activeCharacterId, errorDialog, dismissError } = useOS();
+  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, suspendedOfflineSession, resumeOfflineSession, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   const nativeRuntime = isNativeAppRuntime();
   const previousLockedRef = useRef(isLocked);
@@ -846,7 +846,7 @@ const PhoneShell: React.FC = () => {
        {/* 守护样式（注在用户 CSS 之后）：保证 Dock、桌面 Palette 与聊天返回键永远可见可点 ——
            全局 CSS 写崩时用户仍能从 Palette 回到「主题 → 自定义 CSS」清空恢复。 */}
        {hasUserShellCss && (
-         <style>{`.moro-dock,.moro-dock-icon,.moro-palette-btn,.moro-chat-back{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}.moro-dock{display:flex!important;}`}</style>
+         <style>{`.moro-dock,.moro-dock-icon,.moro-palette-btn,.moro-chat-back,.moro-floating-quick-menu,.moro-floating-quick-menu-button,.moro-lock-passcode,.moro-lock-passcode-panel,.moro-lock-passcode-key,.moro-lock-passcode-cancel{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}.moro-dock{display:flex!important;}`}</style>
        )}
        {/* Optimized Background Layer */}
        <div 
@@ -953,6 +953,27 @@ const PhoneShell: React.FC = () => {
               <span className="min-w-0 text-left">
                 <span className="block text-[10px] text-white/55">视频通话中</span>
                 <span className="block text-xs font-bold truncate">{suspendedVideoCall.charName}</span>
+              </span>
+            </button>
+          )}
+
+          {suspendedOfflineSession && (
+            <button
+              onClick={resumeOfflineSession}
+              className="absolute right-4 z-[56] w-40 rounded-2xl bg-[#2b2933]/92 text-white border border-white/20 shadow-2xl px-3 py-2 flex items-center gap-2 active:scale-95 transition-transform"
+              style={{ top: `calc(var(--chrome-top) + ${suspendedVideoCall ? '6.65rem' : '3.25rem'})` }}
+            >
+              {suspendedOfflineSession.avatar ? (
+                <img src={suspendedOfflineSession.avatar} className="w-9 h-9 rounded-xl object-cover border border-white/20 shrink-0" alt="" />
+              ) : (
+                <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-sm font-bold shrink-0">
+                  {suspendedOfflineSession.title.slice(0, 1)}
+                </span>
+              )}
+              <span className="min-w-0 text-left">
+                <span className="block text-[10px] text-white/55">线下现场中</span>
+                <span className="block text-xs font-bold truncate">{suspendedOfflineSession.title}</span>
+                <span className="block text-[9px] text-white/45 truncate">{suspendedOfflineSession.entryCount} 条 · 点击返回</span>
               </span>
             </button>
           )}

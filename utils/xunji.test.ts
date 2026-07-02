@@ -11,6 +11,7 @@ import {
   shouldAutoAdvanceXunji,
   summarizeXunjiForCharacter,
 } from './xunji';
+import { buildCheckPhoneStatusSummary, mapXunjiToPhoneEvidence } from './checkPhone';
 
 const char: CharacterProfile = {
   id: 'char-xunji',
@@ -190,5 +191,24 @@ describe('xunji generators', () => {
     expect(block).toContain('循迹·近期生活痕迹');
     expect(block).toContain('Screenlife');
     expect(block).toContain('适合在絮语里自然接的话题');
+  });
+
+  it('exposes latest xunji data as check-phone status and evidence', async () => {
+    const snapshot = generateXunjiMonitorSnapshot({ char, now: Date.UTC(2026, 5, 29, 12), seed: 'check-phone-compat' });
+    const run = await generateXunjiScreenlifeRun({
+      char,
+      rangeStart: Date.UTC(2026, 5, 29, 8),
+      rangeEnd: Date.UTC(2026, 5, 29, 12),
+      density: 'standard',
+      writeBack: false,
+      seed: 'check-phone-compat-run',
+    });
+    const records = mapXunjiToPhoneEvidence({ run, snapshot });
+    const status = buildCheckPhoneStatusSummary(snapshot);
+
+    expect(status?.unlockCount).toBe(snapshot.unlockCount);
+    expect(status?.topAppName).toBeTruthy();
+    expect(records.some(r => r.meta?.source === 'xunji')).toBe(true);
+    expect(records.some(r => r.meta?.relatedXunjiRunId === run.id)).toBe(true);
   });
 });

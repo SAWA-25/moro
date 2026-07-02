@@ -14,31 +14,25 @@
 
 import { APIConfig, CharacterProfile, CharMusicProfile, CharPlaylist, UserProfile } from '../types';
 import { ContextBuilder } from './context';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
-const callLlm = async (api: APIConfig, sys: string, user: string): Promise<string> => {
-    const baseUrl = api.baseUrl.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${api.apiKey || 'sk-none'}`,
-        },
-        body: JSON.stringify({
-            model: api.model,
-            messages: [
-                { role: 'system', content: sys },
-                { role: 'user', content: user },
-            ],
-            temperature: 0.8,
-            // 之前没设 max_tokens，有的 provider 默认只给 512，JSON 直接被截断 →
-            // extractJson 失败 → 旧逻辑 fallback 到"告五人/陈绮贞"。
-            // 8000 和项目里其它 prompt 一档，给 thinking 模型 / 话多的模型留足空间。
-            max_tokens: 8000,
-            stream: false,
-        }),
+const callLlm = async (api: APIConfig, sys: string, user: string, char: CharacterProfile): Promise<string> => {
+    const j = await callChatCompletion(api, {
+        model: api.model,
+        messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: user },
+        ],
+        temperature: 0.8,
+        // 之前没设 max_tokens，有的 provider 默认只给 512，JSON 直接被截断 →
+        // extractJson 失败 → 旧逻辑 fallback 到"告五人/陈绮贞"。
+        // 8000 和项目里其它 prompt 一档，给 thinking 模型 / 话多的模型留足空间。
+        max_tokens: 8000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('music.persona', { apiRole: 'aux', charId: char.id, charName: char.name }),
     });
-    if (!resp.ok) throw new Error(`LLM ${resp.status}`);
-    const j = await resp.json();
     return j?.choices?.[0]?.message?.content || '';
 };
 
@@ -229,7 +223,7 @@ export const CharMusicPersona = {
         }
 
         const { sys, usr } = buildPersonaPrompt(char, userProfile);
-        const rawText = await callLlm(apiConfig, sys, usr);
+        const rawText = await callLlm(apiConfig, sys, usr, char);
         if (!rawText || !rawText.trim()) {
             throw new Error('LLM 返回为空');
         }

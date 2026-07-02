@@ -1,101 +1,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { API_USAGE_CATALOG, getApiUsageFeature, hydrateApiUsageMeta, makeApiUsageMeta } from './apiUsageCatalog';
+import { API_USAGE_CATALOG, getApiUsageFeature, hydrateApiUsageMeta, isApiUsageFeatureId, makeApiUsageMeta } from './apiUsageCatalog';
 import { llmComplete } from './llmComplete';
 import type { ResolvedApi } from './auxApi';
 
 const ROOT = process.cwd();
-const SCAN_DIRS = ['apps', 'components', 'utils', 'hooks', 'context'];
-const ALLOWED_UNANNOTATED = new Set([
+const SCAN_DIRS = ['apps', 'components', 'utils', 'hooks', 'context', 'worker'];
+const ALLOWED_RAW_ENDPOINT_FILES = new Set([
+    'utils/openAiCompat.ts',
+    'utils/openAiCompat.test.ts',
+    'utils/llmClient.test.ts',
     'utils/apiCallLog.ts',
+    'utils/apiCallLog.test.ts',
     'utils/safeApi.ts',
     'utils/streamChat.ts',
-    'utils/llmComplete.ts',
-    'utils/activeMsgClient.ts',
-    'utils/activeMsgRuntime.ts',
-    'utils/instantPushClient.ts',
-    'utils/swProactiveBridge.ts',
-    'utils/imageGen.ts',
-    'utils/devDebug.ts',
-    'context/OSContext.tsx',
+    'utils/groupOfflineMode.test.ts',
+    'worker/instant-push/src/index.ts',
+    'worker/instant-push/worker.bundle.js',
 ]);
 
-const LEGACY_UNANNOTATED_LLM_FILES = new Set([
-    'apps/almanac/AlmanacCalendar.tsx',
-    'apps/BankApp.tsx',
-    'apps/BrowserApp.tsx',
-    'apps/CallApp.tsx',
-    'apps/CameraApp.tsx',
-    'apps/Character.tsx',
-    'apps/Chat.tsx',
-    'apps/CheckPhone.tsx',
-    'apps/DateApp.tsx',
-    'apps/diaryShared.ts',
-    'apps/Gallery.tsx',
-    'apps/GameApp.tsx',
-    'apps/GuidebookApp.tsx',
-    'apps/lifesim/RoamView.tsx',
-    'apps/LifeSimApp.tsx',
-    'apps/pixelHome/memoryDiveEngine.ts',
-    'apps/RoomApp.tsx',
-    'apps/ScheduleApp.tsx',
-    'apps/SongwritingApp.tsx',
-    'apps/StudyApp.tsx',
-    'apps/VideoCallApp.tsx',
-    'apps/VRWorldApp.tsx',
-    'components/bank/BankAnalytics.tsx',
-    'components/bank/BankLedger.tsx',
-    'components/bank/BankShopScene.tsx',
-    'components/chat/CharPhoneCheckOverlay.tsx',
-    'components/chat/ConvoSettingsPanel.tsx',
-    'components/chat/FriendVerifyModal.tsx',
-    'components/date/DateSession.tsx',
-    'components/Like520Event.tsx',
-    'components/novel/NovelWriter.tsx',
-    'components/ValentineEvent.tsx',
-    'components/WhiteDayEvent.tsx',
+const NON_OPENAI_ENDPOINT_FILES = new Set([
     'utils/aceStepApi.ts',
-    'utils/autonomousLife.ts',
-    'utils/bankLifeAi.ts',
-    'utils/charMusicPersona.ts',
-    'utils/groupOfflineMode.ts',
-    'utils/handbookGenerator.ts',
-    'utils/handbookOrchestrator.ts',
-    'utils/inputAnimationSvg.ts',
-    'utils/like520/prompts.ts',
-    'utils/listenTogether.ts',
-    'utils/musicComments.ts',
-    'utils/novelUtils.ts',
-    'utils/offlineMode.ts',
-    'utils/pixelHomeDecoration.ts',
-    'utils/recenter.ts',
-    'utils/socialDating.ts',
-    'utils/socialProfileGen.ts',
-    'utils/tabloid.ts',
-    'utils/takeout.ts',
-    'utils/talkTherapy.ts',
-    'utils/theaterTimeline.ts',
-    'utils/theaterTruthDare.ts',
-    'utils/theaterWerewolf.ts',
-    'utils/twitterFeed.ts',
-    'utils/unblockAppeal.ts',
-    'utils/userActionSuggest.ts',
-    'utils/vrWorld/runSession.ts',
-    'utils/vrWorld/theater.ts',
-    'utils/xhsFeed.ts',
-    'utils/xhsFreeRoam.ts',
-    'utils/xunji.ts',
 ]);
 
 const CORE_ANNOTATED_FILES: Record<string, string[]> = {
     'apps/Settings.tsx': [
         'settings.mainApi.testConnection',
         'settings.mainApi.fetchModels',
+        'settings.auxApi.testConnection',
         'settings.auxApi.fetchModels',
     ],
     'components/moments/momentsGen.ts': [
         'chat.moments.refresh',
+        'chat.moments.autoPost',
         'chat.moments.reactions',
         'chat.moments.commentReplies',
     ],
@@ -107,6 +45,8 @@ const CORE_ANNOTATED_FILES: Record<string, string[]> = {
         'chat.coupleSpace.innerVoice',
         'chat.coupleSpace.question',
         'chat.coupleSpace.compat',
+        'chat.coupleSpace.autoCare',
+        'chat.coupleSpace.recap',
     ],
     'hooks/useChatAI.ts': [
         'chat.privateReply',
@@ -130,8 +70,20 @@ const CORE_ANNOTATED_FILES: Record<string, string[]> = {
         'date.summary',
     ],
     'apps/CallApp.tsx': ['chat.phoneTextReply'],
-    'apps/Chat.tsx': ['chat.parallelReply'],
-    'apps/ChatHub.tsx': ['chat.groupReply'],
+    'apps/Chat.tsx': [
+        'chat.privateReply',
+        'chat.parallelReply',
+        'chat.livePrivateInterject',
+        'chat.translation',
+        'chat.phoneTextReply',
+        'chat.lockScreen',
+        'chat.coupleSpace.innerVoice',
+        'chat.postProcess.summary',
+    ],
+    'apps/ChatHub.tsx': [
+        'chat.groupReply',
+        'chat.postProcess.summary',
+    ],
     'apps/LifeSimApp.tsx': ['date.scene'],
     'apps/lifesim/RoamView.tsx': [
         'date.reply',
@@ -140,6 +92,7 @@ const CORE_ANNOTATED_FILES: Record<string, string[]> = {
     'utils/recenter.ts': ['chat.recenter'],
     'utils/takeout.ts': ['takeout.generate'],
     'utils/vrWorld/runSession.ts': ['vrWorld.session'],
+    'utils/vrWorld/theater.ts': ['vrWorld.theater'],
     'apps/pixelHome/memoryDiveEngine.ts': [
         'pixelHome.memoryDive.explore',
         'pixelHome.memoryDive.script',
@@ -161,7 +114,7 @@ function walk(dir: string): string[] {
     return fs.readdirSync(abs, { withFileTypes: true }).flatMap(entry => {
         const full = path.join(abs, entry.name);
         if (entry.isDirectory()) return walk(path.relative(ROOT, full));
-        return /\.(ts|tsx)$/.test(entry.name) ? [path.relative(ROOT, full).replace(/\\/g, '/')] : [];
+        return /\.(ts|tsx|js|mjs)$/.test(entry.name) ? [path.relative(ROOT, full).replace(/\\/g, '/')] : [];
     });
 }
 
@@ -245,16 +198,35 @@ describe('LLM 调用静态扫描', () => {
         }
     });
 
-    it('新增 /chat/completions 和 /models 调用必须显式带 featureId 或列入历史遗留', () => {
+    it('OpenAI-compatible 原始端点字符串只留在中心 helper、测试和 worker 协议代码', () => {
         const offenders: string[] = [];
         for (const file of SCAN_DIRS.flatMap(walk)) {
-            if (ALLOWED_UNANNOTATED.has(file)) continue;
+            if (ALLOWED_RAW_ENDPOINT_FILES.has(file)) continue;
+            if (NON_OPENAI_ENDPOINT_FILES.has(file)) continue;
             const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
             if (!/(\/chat\/completions|\/models)/.test(text)) continue;
+            offenders.push(file);
+        }
+        expect(offenders).toEqual([]);
+    });
 
-            const hasFeatureMeta = /makeApiUsageMeta\(|featureId\s*:/.test(text);
-            const hasOnlyComments = !/fetch\(|safeFetchJson\(|llmComplete\(|streamChatCompletion\(/.test(text);
-            if (!hasFeatureMeta && !hasOnlyComments && !LEGACY_UNANNOTATED_LLM_FILES.has(file)) offenders.push(file);
+    it('写死的 LLM featureId 都必须登记在 API_USAGE_CATALOG', () => {
+        const offenders: string[] = [];
+        const patterns = [
+            /makeApiUsageMeta\(\s*['"`]([^'"`]+)['"`]/g,
+            /featureId\s*:\s*['"`]([^'"`]+)['"`]/g,
+        ];
+        for (const file of SCAN_DIRS.flatMap(walk)) {
+            if (file === 'utils/apiUsageCatalog.ts') continue;
+            const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
+            for (const pattern of patterns) {
+                pattern.lastIndex = 0;
+                let match: RegExpExecArray | null;
+                while ((match = pattern.exec(text))) {
+                    const featureId = match[1];
+                    if (!isApiUsageFeatureId(featureId)) offenders.push(`${file}: ${featureId}`);
+                }
+            }
         }
         expect(offenders).toEqual([]);
     });

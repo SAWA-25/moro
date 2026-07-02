@@ -145,6 +145,15 @@ export interface Persona {
 // =====================================================================
 
 export type PresetPromptRole = 'system' | 'user' | 'assistant';
+export type PresetScopeKey =
+    | 'chat.private'
+    | 'chat.proactive'
+    | 'chat.groupText'
+    | 'chat.groupVoice'
+    | 'chat.phoneText'
+    | 'role.scene'
+    | 'creative.text'
+    | 'structured.tool';
 
 /** 预设里的一条提示词（与 ST PromptManager 的 Prompt 对齐）。 */
 export interface PresetPrompt {
@@ -165,6 +174,8 @@ export interface PresetPrompt {
     injection_order?: number;
     /** ST：禁止角色卡覆盖（main / jailbreak 用）。Moro 无角色卡覆盖机制，仅保留字段 */
     forbid_overrides?: boolean;
+    /** ST：限定这条提示词在哪类 generation 触发；空 / 缺省 = 全部触发。 */
+    injection_trigger?: string[];
     /** 个别 ST 导出会把开关直接写在 prompt 上；正式开关在 prompt_order 里 */
     enabled?: boolean;
 }
@@ -205,6 +216,11 @@ export interface TavernPreset {
      * 连接配置切换。Moro 本地字段，不随酒馆 JSON 导出。
      */
     moroApiPresetId?: string;
+    /**
+     * Moro 本地作用范围开关。最终是否生效 = 全局允许范围 AND 当前预设范围。
+     * 不随 SillyTavern JSON 导出。
+     */
+    moroScopes?: Partial<Record<PresetScopeKey, boolean>>;
     // —— 提示词管理器 ——
     prompts: PresetPrompt[];
     prompt_order: PresetPromptOrderCharacter[];
@@ -310,7 +326,7 @@ export interface OSTheme {
   /** 单 App 自定义 CSS：key = AppID。每个 App 外壳都有 .moro-app-shell / .moro-app-shell-<id> /
    *  [data-moro-app="<id>"] 钩子，适合把某个 App 单独改成另一套皮肤。 */
   appCustomCss?: Partial<Record<AppID, string>>;
-  /** 桌面小组件自定义（key = widget id：clock / character / schedule / music / image / imgtl / imgtr / imgwide / text）。
+  /** 桌面小组件自定义（key = widget id：clock / weather / character / schedule / music / image / imgtl / imgtr / imgwide / text）。
    *  在「主题 → 桌面小组件」编辑：隐藏（删除）、改网格尺寸（横版/竖版/方形）、注入小组件自定义 CSS。 */
   desktopWidgetPrefs?: Record<string, DesktopWidgetPref>;
   /** 文字小组件内容（桌面便签）：标题 + 正文，点小组件即可编辑。 */
@@ -811,6 +827,23 @@ export interface PhoneCustomApp {
     prompt: string;
 }
 
+export type PhoneEvidenceSource = 'generated' | 'xunji' | 'user_action' | 'custom';
+export type PhoneEvidenceRisk = 'normal' | 'private' | 'suspicious';
+
+export interface PhoneEvidenceMeta {
+    source?: PhoneEvidenceSource;
+    appName?: string;
+    tags?: string[];
+    risk?: PhoneEvidenceRisk;
+    relatedXunjiRunId?: string;
+    relatedXunjiSnapshotId?: string;
+    relatedReportId?: string;
+    participants?: string[];
+    locationLabel?: string;
+    amount?: string;
+    status?: string;
+}
+
 export interface PhoneEvidence {
     id: string;
     type: 'chat' | 'order' | 'social' | 'delivery' | string;
@@ -819,6 +852,93 @@ export interface PhoneEvidence {
     timestamp: number;
     systemMessageId?: number;
     value?: string;
+    meta?: PhoneEvidenceMeta;
+}
+
+export type PhoneCheckDirection = 'user_to_char' | 'char_to_user';
+export type PhoneCheckMode = 'quick' | 'life' | 'relationship' | 'deep';
+export type PhoneCheckStatus = 'active' | 'finished' | 'interrupted';
+export type PhoneCheckExitMode = 'consent' | 'questions' | 'forced' | 'finished' | 'confront' | 'caught' | 'manual';
+export type PhoneCheckActionType =
+    | 'start'
+    | 'refresh_status'
+    | 'refresh_app'
+    | 'collect_evidence'
+    | 'clear_evidence'
+    | 'confront'
+    | 'delete_record'
+    | 'send_as_character'
+    | 'post_moment_as_character'
+    | 'intrusion_caught'
+    | 'browse_step'
+    | 'char_reply'
+    | 'char_block'
+    | 'char_delete'
+    | 'char_ignore'
+    | 'char_post_moment'
+    | 'char_clear_cart'
+    | 'exit';
+
+export interface PhoneCheckStatusSnapshot {
+    phoneModel?: string;
+    batteryLevel?: number;
+    isCharging?: boolean;
+    unlockCount?: number;
+    screenTimeMinutes?: number;
+    generatedAt?: number;
+    topAppName?: string;
+    topAppMinutes?: number;
+    topAppNote?: string;
+    latestLocation?: string;
+    latestNetwork?: string;
+}
+
+export interface PhoneCheckStepRecord {
+    at: number;
+    app?: string;
+    title?: string;
+    targetName?: string;
+    thought?: string;
+    intent?: string;
+    emotion?: string;
+    risk?: PhoneEvidenceRisk;
+    visibleClue?: string;
+    actionReason?: string;
+    detail?: string;
+}
+
+export interface PhoneCheckActionRecord {
+    id: string;
+    at: number;
+    type: PhoneCheckActionType;
+    label: string;
+    detail?: string;
+    app?: string;
+    targetName?: string;
+    recordId?: string;
+    risk?: PhoneEvidenceRisk;
+    riskDelta?: number;
+    metadata?: Record<string, any>;
+}
+
+export interface PhoneCheckSession {
+    id: string;
+    direction: PhoneCheckDirection;
+    charId: string;
+    charName?: string;
+    userName?: string;
+    mode: PhoneCheckMode;
+    startedAt: number;
+    endedAt?: number;
+    status: PhoneCheckStatus;
+    statusSnapshot?: PhoneCheckStatusSnapshot | null;
+    steps: PhoneCheckStepRecord[];
+    evidence: PhoneEvidence[];
+    actions: PhoneCheckActionRecord[];
+    exitMode?: PhoneCheckExitMode;
+    summary?: string;
+    moodAfter?: string;
+    systemMessageId?: number;
 }
 
 export interface PhoneLockQuestion {
@@ -909,9 +1029,9 @@ export interface Tabloid {
 
 /**
  * SillyTavern 角色卡内嵌世界书 (character_book / lorebook) 的原始设定。
- * Moro 的世界书是「挂载即全文注入」，没有 ST 的关键词扫描激活机制，
  * 导入时把条目级（局部）+ 书级（全局）设置原样保留在这里：
- * 一来保证「全部设定信息」不丢，二来为以后实现关键词激活留好数据。
+ * 一来保证「全部设定信息」不丢，二来给运行时兼容 ST 关键词、概率、
+ * 递归和预算等语义提供回填依据。
  */
 export interface WorldbookSTData {
     // ---- 书级（全局）设置 ----
@@ -933,11 +1053,23 @@ export interface WorldbookSTData {
         enabled?: boolean;         // ST 里是否启用
         insertionOrder?: number;   // 插入顺序
         caseSensitive?: boolean;
+        scanDepth?: number;
+        selectiveLogic?: WorldbookSelectiveLogic;
+        matchWholeWords?: boolean;
+        probability?: number;
+        useProbability?: boolean;
+        ignoreBudget?: boolean;
         priority?: number;
         position?: string | number; // 'before_char' / 'after_char' / ST 内部数字位
         extensions?: Record<string, any>; // ST 私有字段（depth/probability 等）全量兜底
     };
 }
+
+export type WorldbookSelectiveLogic =
+    | 'and_any'
+    | 'not_all'
+    | 'not_any'
+    | 'and_all';
 
 /**
  * 世界书条目的插入位置（对齐 SillyTavern 的 position 语义）：
@@ -993,10 +1125,25 @@ export interface Worldbook {
     secondaryKeys?: string[];
     /** 需同时命中二级过滤词（同 ST selective） */
     selective?: boolean;
+    /**
+     * 二级过滤逻辑（同 ST selectiveLogic）：
+     * and_any = 主词 + 任一二级词；and_all = 主词 + 全部二级词；
+     * not_any = 主词 + 无二级词命中；not_all = 主词 + 至少一个二级词未命中。
+     * 未设置时沿用旧行为 and_any。
+     */
+    selectiveLogic?: WorldbookSelectiveLogic;
     /** 关键词匹配大小写敏感，默认不敏感（同 ST case_sensitive） */
     caseSensitive?: boolean;
+    /** 关键词按整词匹配（同 ST match_whole_words），默认 false */
+    matchWholeWords?: boolean;
     /** 关键词扫描深度：扫最近 N 条消息，默认 4（同 ST scan_depth 语义） */
     scanDepth?: number;
+    /** 触发概率百分比（0-100）。undefined / 100 = 必定通过。 */
+    probability?: number;
+    /** false 时忽略 probability，按必定通过处理；用于保留 ST useProbability。 */
+    useProbability?: boolean;
+    /** true 时不计入世界书预算裁剪（同 ST ignore_budget）。 */
+    ignoreBudget?: boolean;
     /** 'sillytavern' = 从 SillyTavern 角色卡导入的条目 */
     source?: 'sillytavern';
     /** SillyTavern 原始设定信息（仅 source === 'sillytavern' 时存在） */
@@ -2107,6 +2254,103 @@ export interface CharMusicProfile {
     updatedAt: number;
 }
 
+// --- MUSIC LIBRARY (Music App local-first database) ---
+
+export type MusicLibrarySource = 'netease' | 'qq' | 'local' | 'user' | 'discovered';
+
+export interface MusicLibraryTrack {
+    id: string;                         // `${source}:${stable source id}`
+    source: MusicLibrarySource;
+    sourceId: string;
+    numericId?: number;
+    name: string;
+    artists: string;
+    album: string;
+    albumPic: string;
+    duration: number;
+    fee: number;
+    qqSongMid?: string;
+    qqMediaMid?: string;
+    qqSongId?: string | number;
+    local?: boolean;
+    localAssetKey?: string;
+    localMimeType?: string;
+    localCoverStyle?: string;
+    customAuthorCharIds?: string[];
+    localLyrics?: string;
+    lyricLineTimings?: number[];
+    tags?: string[];
+    liked?: boolean;
+    playCount?: number;
+    lastPlayedAt?: number;
+    firstSeenAt: number;
+    updatedAt: number;
+}
+
+export type MusicLibraryPlaylistKind = 'user' | 'smart' | 'account' | 'character' | 'system';
+
+export interface MusicLibraryPlaylist {
+    id: string;
+    kind: MusicLibraryPlaylistKind;
+    title: string;
+    description?: string;
+    source?: MusicLibrarySource | 'mixed';
+    sourceId?: string;
+    coverUrl?: string;
+    coverStyle?: string;
+    trackCount?: number;
+    sortOrder?: number;
+    pinned?: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface MusicPlaylistItem {
+    id: string;
+    playlistId: string;
+    trackId: string;
+    position: number;
+    source?: 'user' | 'account' | 'character' | 'smart';
+    charId?: string;
+    addedAt: number;
+}
+
+export interface MusicPlayEvent {
+    id: string;
+    trackId: string;
+    source: MusicLibrarySource;
+    sourceId: string;
+    startedAt: number;
+    endedAt?: number;
+    duration?: number;
+    progress?: number;
+    completedRatio?: number;
+    completed?: boolean;
+    playSource?: 'search' | 'library' | 'discover' | 'account' | 'character' | 'local' | 'chat' | 'queue' | 'unknown';
+    listenTogetherWith?: string[];
+}
+
+export interface MusicSearchHistoryItem {
+    id: string;
+    keyword: string;
+    source?: MusicLibrarySource | 'mixed';
+    resultCount?: number;
+    count: number;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface MusicRecommendCacheEntry {
+    id: string;
+    kind: 'daily' | 'fm' | 'mixed' | 'character' | 'recent' | 'local';
+    key: string;
+    title: string;
+    trackIds: string[];
+    generatedAt: number;
+    expiresAt: number;
+    reason?: string;
+}
+
 /**
  * 角色离线自主生活事件 —— 由 utils/autonomousLife.ts 的 agent 生成。
  * 角色在用户离线 / 没在聊天时「过自己的日子」，每条事件代表 TA 正在或刚刚经历的
@@ -2114,6 +2358,37 @@ export interface CharMusicProfile {
  *  1. 给主动消息取材 —— 角色分享自己的生活，而不是反复催用户回复（不围着用户转）；
  *  2. 攒成「你不在时 TA 经历了…」的离线动态回顾时间线（来往 App 内可查看）。
  */
+export type CharLifeEventKind =
+  | 'routine'
+  | 'work'
+  | 'study'
+  | 'social'
+  | 'errand'
+  | 'rest'
+  | 'media'
+  | 'food'
+  | 'travel'
+  | 'health'
+  | 'emotion'
+  | 'relationship'
+  | 'accident'
+  | 'other';
+
+export type CharLifeEnergy = 'low' | 'medium' | 'high';
+
+export type CharLifeProactiveAngle =
+  | 'share'
+  | 'vent'
+  | 'ask'
+  | 'tease'
+  | 'care'
+  | 'invite'
+  | 'followup'
+  | 'silence'
+  | 'other';
+
+export type CharLifeTriggerSource = 'proactive' | 'leave' | 'catchup' | 'sw' | 'manual';
+
 export interface CharLifeEvent {
   /** `life_${charId}_${timestamp}_${rand}` */
   id: string;
@@ -2130,8 +2405,30 @@ export interface CharLifeEvent {
   summary: string;
   /** 是否已作为主动消息发给用户（回顾里据此标注「已经跟你说过」，避免重复强调） */
   surfacedAsMsg?: boolean;
+  /** 实际作为主动消息发出的时刻；旧数据可能只有 surfacedAsMsg。 */
+  surfacedAt?: number;
   /** 生成来源：proactive 触发时顺带生成 / 用户离线回来时补齐 */
   source: 'proactive' | 'catchup';
+  /** v2：事件类型，用于回顾标签、主动消息取材和去重。 */
+  eventKind?: CharLifeEventKind;
+  /** v2：当下能量，影响主动消息短促/热烈程度。 */
+  energy?: CharLifeEnergy;
+  /** v2：事件强度 0-100；越高越容易变成主动来信。 */
+  intensity?: number;
+  /** v2：分享意愿 0-100；智能触发低于阈值时只记录生活、不打扰用户。 */
+  shareWillingness?: number;
+  /** v2：连续线索，例如“没睡好->下午低气压”，让离线生活更像同一天。 */
+  thread?: string;
+  /** v2：如果要发主动消息，更适合的开口角度。 */
+  proactiveAngle?: CharLifeProactiveAngle;
+  /** v2：这条事件由哪类触发产生。 */
+  triggerSource?: CharLifeTriggerSource;
+  /** 若这条线下生活事件生成时对齐了今日作息，记录对应日期。 */
+  scheduleDate?: string;
+  /** 若这条线下生活事件生成时对齐了今日作息，记录对应时段开始时间。 */
+  scheduleSlotStartTime?: string;
+  /** 若这条线下生活事件生成时对齐了今日作息，记录对应活动名。 */
+  scheduleSlotActivity?: string;
 }
 
 // =====================================================================
@@ -2469,6 +2766,24 @@ export interface SuspendedVideoCallInfo {
   facing: 'user' | 'environment';
 }
 
+export type SuspendedOfflineSessionInfo =
+  | {
+      kind: 'private';
+      charId: string;
+      title: string;
+      avatar?: string;
+      suspendedAt: number;
+      entryCount: number;
+    }
+  | {
+      kind: 'group';
+      groupId: string;
+      title: string;
+      avatar?: string;
+      suspendedAt: number;
+      entryCount: number;
+    };
+
 /**
  * 角色真实城市配置（见 utils/charCity.ts）。
  * real：现实世界角色直接选真实城市；virtual：架空角色可选原型城市 + 虚拟程度。
@@ -2686,6 +3001,23 @@ export interface CharacterProfile {
      *  一份「你不在时 TA 经历了…」的回顾时间线（见 utils/autonomousLife.ts）。
      *  undefined 视为开启（默认行为）。 */
     autonomousLifeEnabled?: boolean;
+    /** v2：主动来信强度。越高，智能触发越少跳过、口吻越不克制。 */
+    intensity?: 'quiet' | 'balanced' | 'chatty' | 'unfiltered';
+    /** v2：离线生活密度。影响补齐事件数量、生活事件生成/复用节奏。 */
+    lifeDensity?: 'sparse' | 'normal' | 'busy';
+    /** v2：来信口味。只影响主动消息 hint，不改变普通聊天。 */
+    messageFlavor?: 'natural' | 'self' | 'warm' | 'playful' | 'moody';
+    /** v2：主动消息取材来源；未设置时默认全开。 */
+    materialSources?: Array<'life' | 'recentChat' | 'schedule' | 'realtime'>;
+    /** v2：智能触发可跳过。固定间隔仍默认发；随机/智能模式可只记录生活不打扰。 */
+    smartSkipEnabled?: boolean;
+    /** v2：勿扰时段。behavior='life_only' 时只推进生活，不发消息。 */
+    quietHours?: {
+      enabled: boolean;
+      start: string; // HH:mm
+      end: string;   // HH:mm
+      behavior: 'send' | 'life_only' | 'skip';
+    };
     useSecondaryApi?: boolean;
     secondaryApi?: {
       baseUrl: string;
@@ -3021,6 +3353,68 @@ export interface CoupleInteraction {
   at: number;
 }
 
+/** 情侣空间设置。autoCareEnabled 为 undefined 时视为开启，兼容旧空间默认自动经营。 */
+export interface CoupleSpaceSettings {
+  autoCareEnabled?: boolean;
+  theme?: 'scrapbook';
+}
+
+/** 情侣空间档案：两个人给这个空间留下的固定设定与小习惯。 */
+export interface CoupleProfile {
+  homeName?: string;
+  userNickname?: string;
+  charNickname?: string;
+  rituals?: string[];
+  loveLanguage?: string;
+  updatedAt?: number;
+}
+
+/** 可钉住的情侣记忆卡：来自约会、外卖、自动回顾或手动记录。 */
+export interface CoupleMemoryCard {
+  id: string;
+  kind: 'date' | 'takeout' | 'moment' | 'promise' | 'recap' | 'manual' | 'auto';
+  title: string;
+  text: string;
+  sourceId?: string;
+  sourceAt?: number;
+  imageUrl?: string;
+  pinned?: boolean;
+  createdAt: number;
+}
+
+/** 周/月关系回顾小报。 */
+export interface CoupleRecap {
+  id: string;
+  period: 'week' | 'month';
+  periodKey: string;
+  title: string;
+  summary: string;
+  highlights: string[];
+  suggestedTasks: string[];
+  suggestedWishes: string[];
+  sourceIds: string[];
+  createdAt: number;
+}
+
+/** 每日情侣打卡。 */
+export interface CoupleDailyCheckin {
+  id: string;
+  ymd: string;
+  userMood?: string;
+  charMood?: string;
+  note?: string;
+  createdAt: number;
+}
+
+/** 后台自经营节流状态。 */
+export interface CoupleAutoCareState {
+  lastRunAt?: number;
+  lastMomentAt?: number;
+  lastRecapAt?: number;
+  lastSource?: string;
+  lastSummary?: string;
+}
+
 /**
  * 来往·情侣空间（参考 QQ 情侣空间）。挂在 CharacterProfile 上（每个角色一份），
  * 由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文，
@@ -3044,6 +3438,18 @@ export interface CoupleSpace {
   plant?: CouplePlant;
   /** 默契大考验·历史最高默契度（0~100，可选） */
   compatBest?: number;
+  /** v2：空间设置（自动经营默认开，主题默认手账）。 */
+  settings?: CoupleSpaceSettings;
+  /** v2：两个人的固定档案 / 小习惯。 */
+  profile?: CoupleProfile;
+  /** v2：从约会、外卖、动态或回顾沉淀来的记忆卡。 */
+  memoryCards?: CoupleMemoryCard[];
+  /** v2：周/月关系回顾小报。 */
+  recaps?: CoupleRecap[];
+  /** v2：每日情侣打卡。 */
+  dailyCheckins?: CoupleDailyCheckin[];
+  /** v2：后台自经营节流状态。 */
+  autoCare?: CoupleAutoCareState;
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;
@@ -3054,6 +3460,17 @@ export interface CoupleSpace {
  * 会话设置（聊天设置面板）—— 本会话（与该角色的单聊）专属配置。
  * 展示类字段只影响聊天界面；行为类字段会以「会话设定」块注入系统提示词。
  */
+export type LiveChatOverride = 'inherit' | 'on' | 'off';
+
+export interface LiveChatSettings {
+    enabled?: boolean;
+    draftAwareness?: boolean;
+    draftPauseMs?: number;
+    draftMinChars?: number;
+    draftCooldownMs?: number;
+    interjectMaxTargets?: number;
+}
+
 export interface ConvoSettings {
     /** 备注名：聊天界面顶栏 / 消息列表 / 聊天列表显示的名字（不改变角色本名） */
     remarkName?: string;
@@ -3077,6 +3494,8 @@ export interface ConvoSettings {
     inputPlaceholderText?: string;
     /** 旁白模式：允许角色单独输出（动作/场景）旁白气泡 */
     narrationMode?: boolean;
+    /** 实时聊天模式：inherit 跟随全局；on/off 覆盖全局。 */
+    liveChatOverride?: LiveChatOverride;
     /** 心声手记开关（默认开）：关闭后聊天里的「偷看心声」入口不可用 */
     innerVoiceEnabled?: boolean;
     /** 专属铃声：新消息通知音（undefined/'none' = 静音，预设见 utils/ringtone.ts） */
@@ -3116,6 +3535,8 @@ export interface ConvoSettings {
     bubbleStyleMode?: 'split' | 'whole' | 'freeform';
     /** 回复长短按人设随意：只决定本轮说多说少，不决定拆成几条消息 */
     personaDrivenMessageLength?: boolean;
+    /** 连发也逐条回：用户连续发送多条可见文本消息时，逐条排队触发角色回复。默认关。 */
+    autoReplyEachUserMessage?: boolean;
     /** 表情联想：允许角色在合适时机联想并发送表情包（提示词注入） */
     emojiAssociation?: boolean;
     /** 每轮对话生图：生图管线配置位（开启后每轮回复尝试配图，需生图 API） */
@@ -3202,6 +3623,8 @@ export interface GroupProfile {
     mutedAll?: boolean;
     /** 角色各自回复：开启后群聊每轮按成员分别调用 API，而不是一次导演调用统筹全场。 */
     replyIndividually?: boolean;
+    /** 实时聊天模式：inherit 跟随全局；on/off 覆盖全局。 */
+    liveChatOverride?: LiveChatOverride;
     /** 本群专属 API：仅在“角色各自回复”模式下作为成员 API 的回退，不影响私聊或其他群。 */
     groupApi?: GroupApiConfig;
     /** 成员专属 API：charId → API 配置；仅在“角色各自回复”模式下覆盖本群默认 API。 */
@@ -3355,6 +3778,14 @@ export interface UserProfile {
     ambientSocialEnabled?: boolean;
     /** 絮语·是否隐藏已转成正式角色/群聊的社交圈 NPC。undefined 视为隐藏。 */
     ambientSocialHideConverted?: boolean;
+    /** 絮语·实时聊天模式全局默认。默认关闭；开启后会话可单独继承/开启/关闭。 */
+    liveChatSettings?: LiveChatSettings;
+    /** 絮语 v2：总览页与克制型主动性的全局轻量设置。不覆盖单个角色/群聊已有设置。 */
+    chatHubV2?: {
+        agencyMode?: 'quiet_life' | 'lively' | 'story';
+        dashboardLastSeenAt?: number;
+        digestEnabled?: boolean;
+    };
     /** 絮语·用户完整社交关系：随机家人/同事/朋友/亲戚/群聊等背景会话，随剧情时间轻微生长。 */
     ambientSocial?: AmbientSocialState;
     /** 拍一拍后缀（微信式）：别人「拍了拍 你 的<后缀>」里的后缀。用户自定义，默认「脑袋」。 */
@@ -3521,6 +3952,20 @@ export interface GalleryImage {
     charId: string;
     url: string;
     timestamp: number;
+    /** 用户给照片起的短标题。 */
+    title?: string;
+    /** 用户自己的整理备注，不等同于角色点评。 */
+    note?: string;
+    /** 相册内标签，用于筛选和搜索。 */
+    tags?: string[];
+    /** 是否在相册里标为喜欢。 */
+    favorite?: boolean;
+    /** 图片来源：聊天、相机、手动导入或生成图。旧数据可能为空。 */
+    source?: 'chat' | 'camera' | 'import' | 'generated' | 'other';
+    /** 手动导入时保留原文件名，方便用户回忆来源。 */
+    originalName?: string;
+    /** 用户整理元数据的最后更新时间。 */
+    updatedAt?: number;
     review?: string;
     reviewTimestamp?: number;
     savedDate?: string; // YYYY-MM-DD format
@@ -3853,6 +4298,28 @@ export interface SocialComment {
     replyTo?: { commentId: string; name: string };
 }
 
+export type SocialPostSource = 'manual' | 'refresh' | 'auto' | 'chat_forward' | 'phone_check' | 'legacy';
+
+export interface SocialAudienceRoleRule {
+    canView?: boolean;
+    canLike?: boolean;
+    canComment?: boolean;
+    canRepost?: boolean;
+    notify?: boolean;
+}
+
+export interface SocialAudienceRules {
+    mode: 'public' | 'private' | 'custom';
+    characters?: Record<string, SocialAudienceRoleRule>;
+}
+
+export interface SocialRelationSignal {
+    charId: string;
+    kind: 'posted' | 'mentioned' | 'liked' | 'commented' | 'reposted' | 'replied' | 'shared_to_chat';
+    text?: string;
+    at: number;
+}
+
 export interface SocialPost {
     id: string;
     authorName: string;
@@ -3879,6 +4346,16 @@ export interface SocialPost {
     visibility?: 'public' | 'private';
     /** 朋友圈：提醒谁看（角色 id 列表，被提醒的角色保证互动） */
     mentionedCharIds?: string[];
+    /** 此刻：细分可见 / 点赞 / 评论 / 转贴 / 提醒权限；旧 visibility 继续兼容 */
+    audienceRules?: SocialAudienceRules;
+    /** 此刻：最近一次发帖、评论、转发等活跃时间，用于排序和未读 */
+    lastActivityAt?: number;
+    /** 此刻：是否有用户还没看过的新动态/关键互动 */
+    unreadForUser?: boolean;
+    /** 此刻：来源，用于轻提醒和上下文摘要 */
+    source?: SocialPostSource;
+    /** 此刻：与具体角色有关的关系互动线索 */
+    relationSignals?: SocialRelationSignal[];
 }
 
 // --- 推特 App（本地 AI 生成 X/Twitter 时间线）---
@@ -4656,6 +5133,43 @@ export interface PrivateChatArchive {
     source?: 'moro' | 'sillytavern' | 'manual';
 }
 
+export type ChatFollowupSource =
+    | 'private_message'
+    | 'group_message'
+    | 'moments'
+    | 'manual'
+    | 'verification'
+    | 'offline'
+    | 'alarm'
+    | 'system';
+
+export type ChatFollowupTargetKind = 'char' | 'group' | 'hub' | 'system';
+
+export interface ChatFollowup {
+    id: string;
+    source: ChatFollowupSource;
+    targetKind: ChatFollowupTargetKind;
+    targetId?: string;
+    messageId?: number;
+    groupId?: string;
+    title: string;
+    note?: string;
+    status: 'open' | 'done' | 'dismissed';
+    dueAt?: number;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface ChatHubDigest {
+    id: string;
+    date: string;
+    range: { from: number; to: number };
+    sourceItemIds: string[];
+    summary: string;
+    highlights: string[];
+    createdAt: number;
+}
+
 /** 电话 App：一条通话记录（拨出 / 接听 / 未接）。
  *  与 CallApp 的通话消息（metadata.callSessionId）互补：CallApp 落详细逐字稿，
  *  这里只落"通话发生过"的轻量条目，供电话 App 的通话记录列表展示与回拨。 */
@@ -4787,6 +5301,8 @@ export interface FullBackupData {
     messages?: Message[];
     privateChatArchives?: PrivateChatArchive[];
     chatAlarms?: ChatAlarm[];
+    chatFollowups?: ChatFollowup[];
+    chatHubDigests?: ChatHubDigest[];
     periodReminderSettings?: PeriodReminderSettings[];
     periodCycleEvents?: PeriodCycleEvent[];
     healthModuleSettings?: HealthModuleSettings[];
@@ -4807,6 +5323,7 @@ export interface FullBackupData {
     roomTodos?: RoomTodo[]; 
     roomNotes?: RoomNote[];
     socialPosts?: SocialPost[]; 
+    xhsFeedPosts?: XhsFeedPost[];
     courses?: StudyCourse[]; 
     games?: GameSession[];
     worldbooks?: Worldbook[]; 
@@ -4825,7 +5342,14 @@ export interface FullBackupData {
     vrSettings?: any[];                        // 页外设置（独立 API + 调用记录）
     vrPostOffice?: Record<string, string>;     // 邮局本机配置：身份 deviceId / 后端地址（存 localStorage）
     songs?: SongSheet[]; // Songwriting app data
+    musicTracks?: MusicLibraryTrack[];
+    musicPlaylists?: MusicLibraryPlaylist[];
+    musicPlaylistItems?: MusicPlaylistItem[];
+    musicPlayEvents?: MusicPlayEvent[];
+    musicSearchHistory?: MusicSearchHistoryItem[];
+    musicRecommendCache?: MusicRecommendCacheEntry[];
     phoneCallLogs?: PhoneCallLog[];           // 电话 App 通话记录
+    phoneCheckSessions?: PhoneCheckSession[]; // 絮语查岗档案
     exchangeDiaryBooks?: ExchangeDiaryBook[]; // 日记社多角色交换日记本
     innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
     llmPresets?: TavernPreset[];              // 预设 App：SillyTavern 式 Chat Completion 预设
@@ -5106,6 +5630,9 @@ export interface XhsFeedComment {
     timestamp: number;
 }
 
+export type XhsFeedSource = 'generated' | 'user' | 'character_life' | 'clip';
+export type XhsFeedCategory = 'life' | 'food' | 'travel' | 'style' | 'work' | 'study' | 'emotion' | 'hobby' | 'relationship' | 'other';
+
 export interface XhsFeedPost {
     id: string;
     authorType: 'character' | 'npc' | 'user';
@@ -5122,6 +5649,8 @@ export interface XhsFeedPost {
     faved?: boolean;           // 用户已收藏
     comments: XhsFeedComment[];
     createdAt: number;
+    source?: XhsFeedSource;     // 本地来源：生成 / 用户发帖 / 熟人生活 / 剪藏
+    category?: XhsFeedCategory; // 本地分类，用于见闻簿筛选
     repostOf?: string;         // 转发：源帖 id
     repostNote?: string;       // 转发附言
 }
@@ -5741,6 +6270,28 @@ export interface TakeoutOrderItem {
   /** 所选加料（如「加蛋」「加肠」），对标美团「加料」。 */
   addons?: string[];
 }
+export type TakeoutAddressOwnerType = 'me' | 'char';
+export interface TakeoutAddressCard {
+  id: string;
+  ownerType: TakeoutAddressOwnerType;
+  /** ownerType==='char' 时为角色 id；ownerType==='me' 时为空。 */
+  ownerId?: string;
+  /** 地址卡标题，如“家”“公司”“学校”“常去处”。 */
+  label: string;
+  /** 地址标签，用于筛选 / UI 章戳。 */
+  tag: '家' | '公司' | '学校' | '常去处' | '自定义' | string;
+  receiverName: string;
+  /** 虚拟电话、门禁暗号或联系备注。不会触发真实电话。 */
+  contactHint?: string;
+  /** 城市 / 区域，仅作本地展示和地址预填。 */
+  city?: string;
+  addressLine: string;
+  doorplate?: string;
+  deliveryNote?: string;
+  isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
 /** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
 export interface TakeoutReviewReply { name: string; emoji: string; text: string; at: number; isMerchant?: boolean; }
 /** 用户对某单的评价 */
@@ -5817,6 +6368,10 @@ export interface TakeoutOrder {
   riderName: string;
   riderEmoji: string;
   address: string;
+  /** 下单时所选地址卡 id；旧订单可能没有。订单展示仍以 address 快照为准。 */
+  addressCardId?: string;
+  /** 下单时地址卡标签快照，如“家 / 公司 / 学校”。 */
+  addressLabel?: string;
   note?: string;
   placedAt: number;
   etaAt: number;           // 预计送达时间戳

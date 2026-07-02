@@ -52,6 +52,7 @@ const sharedPaths = [
   'vercel.json',
   'vite-env.d.ts',
   'vitest.config.ts',
+  'wrangler.toml',
 ];
 
 const protectedTargetPaths = new Set([

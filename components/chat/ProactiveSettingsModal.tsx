@@ -15,6 +15,13 @@ interface ProactiveSettingsModalProps {
     onStop: () => void;
 }
 
+type ProactiveConfig = NonNullable<CharacterProfile['proactiveConfig']>;
+type ProactiveIntensity = NonNullable<ProactiveConfig['intensity']>;
+type LifeDensity = NonNullable<ProactiveConfig['lifeDensity']>;
+type MessageFlavor = NonNullable<ProactiveConfig['messageFlavor']>;
+type MaterialSource = NonNullable<ProactiveConfig['materialSources']>[number];
+type QuietBehavior = NonNullable<NonNullable<ProactiveConfig['quietHours']>['behavior']>;
+
 const INTERVAL_OPTIONS = [
     { label: '半小时', value: 30 },
     { label: '1 小时', value: 60 },
@@ -25,6 +32,34 @@ const INTERVAL_OPTIONS = [
     { label: '一整天', value: 1440 },
 ];
 
+const INTENSITY_OPTIONS: Array<{ id: ProactiveIntensity; label: string; desc: string }> = [
+    { id: 'quiet', label: '克制', desc: '更少打扰' },
+    { id: 'balanced', label: '自然', desc: '默认节奏' },
+    { id: 'chatty', label: '热络', desc: '更容易来信' },
+    { id: 'unfiltered', label: '随性', desc: '冲动也会发' },
+];
+
+const DENSITY_OPTIONS: Array<{ id: LifeDensity; label: string; desc: string }> = [
+    { id: 'sparse', label: '稀疏', desc: '只记关键片段' },
+    { id: 'normal', label: '普通', desc: '日常连贯' },
+    { id: 'busy', label: '忙碌', desc: '更多碎片' },
+];
+
+const FLAVOR_OPTIONS: Array<{ id: MessageFlavor; label: string }> = [
+    { id: 'natural', label: '自然' },
+    { id: 'self', label: '自我' },
+    { id: 'warm', label: '温软' },
+    { id: 'playful', label: '俏皮' },
+    { id: 'moody', label: '情绪化' },
+];
+
+const MATERIAL_OPTIONS: Array<{ id: MaterialSource; label: string }> = [
+    { id: 'life', label: '生活' },
+    { id: 'recentChat', label: '近聊' },
+    { id: 'schedule', label: '作息' },
+    { id: 'realtime', label: '实时' },
+];
+
 const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     isOpen, onClose, char, isProactiveActive, onSave, onStop
 }) => {
@@ -33,6 +68,15 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     const [interval, setInterval_] = useState(saved?.intervalMinutes ?? 60);
     const [randomMode, setRandomMode] = useState(saved?.randomMode ?? false);
     const [autonomousLife, setAutonomousLife] = useState(saved?.autonomousLifeEnabled ?? true);
+    const [intensity, setIntensity] = useState<ProactiveIntensity>(saved?.intensity ?? 'balanced');
+    const [lifeDensity, setLifeDensity] = useState<LifeDensity>(saved?.lifeDensity ?? 'normal');
+    const [messageFlavor, setMessageFlavor] = useState<MessageFlavor>(saved?.messageFlavor ?? 'natural');
+    const [materialSources, setMaterialSources] = useState<MaterialSource[]>(saved?.materialSources?.length ? saved.materialSources : ['life', 'recentChat', 'schedule', 'realtime']);
+    const [smartSkipEnabled, setSmartSkipEnabled] = useState(saved?.smartSkipEnabled ?? true);
+    const [quietEnabled, setQuietEnabled] = useState(saved?.quietHours?.enabled ?? false);
+    const [quietStart, setQuietStart] = useState(saved?.quietHours?.start ?? '23:00');
+    const [quietEnd, setQuietEnd] = useState(saved?.quietHours?.end ?? '07:00');
+    const [quietBehavior, setQuietBehavior] = useState<QuietBehavior>(saved?.quietHours?.behavior ?? 'life_only');
     const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>(() => getNotifyPermission());
     const [useSecondaryApi, setUseSecondaryApi] = useState(saved?.useSecondaryApi ?? false);
     const [secUrl, setSecUrl] = useState(saved?.secondaryApi?.baseUrl ?? '');
@@ -49,6 +93,15 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
             setInterval_(s?.intervalMinutes ?? 60);
             setRandomMode(s?.randomMode ?? false);
             setAutonomousLife(s?.autonomousLifeEnabled ?? true);
+            setIntensity(s?.intensity ?? 'balanced');
+            setLifeDensity(s?.lifeDensity ?? 'normal');
+            setMessageFlavor(s?.messageFlavor ?? 'natural');
+            setMaterialSources(s?.materialSources?.length ? s.materialSources : ['life', 'recentChat', 'schedule', 'realtime']);
+            setSmartSkipEnabled(s?.smartSkipEnabled ?? true);
+            setQuietEnabled(s?.quietHours?.enabled ?? false);
+            setQuietStart(s?.quietHours?.start ?? '23:00');
+            setQuietEnd(s?.quietHours?.end ?? '07:00');
+            setQuietBehavior(s?.quietHours?.behavior ?? 'life_only');
             setNotifyPerm(getNotifyPermission());
             setUseSecondaryApi(s?.useSecondaryApi ?? false);
             setSecUrl(s?.secondaryApi?.baseUrl ?? '');
@@ -69,6 +122,17 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
             intervalMinutes: interval,
             randomMode,
             autonomousLifeEnabled: autonomousLife,
+            intensity,
+            lifeDensity,
+            messageFlavor,
+            materialSources,
+            smartSkipEnabled,
+            quietHours: {
+                enabled: quietEnabled,
+                start: quietStart,
+                end: quietEnd,
+                behavior: quietBehavior,
+            },
             useSecondaryApi: useSecondaryApi && !!secUrl,
             secondaryApi: useSecondaryApi && secUrl ? {
                 baseUrl: secUrl,
@@ -83,6 +147,14 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
         onStop();
         setEnabled(false);
         onClose();
+    };
+
+    const toggleMaterial = (id: MaterialSource) => {
+        setMaterialSources(prev => {
+            const has = prev.includes(id);
+            const next = has ? prev.filter(x => x !== id) : [...prev, id];
+            return next.length ? next : prev;
+        });
     };
 
     return (
@@ -137,6 +209,92 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             </div>
                             <CandyToggle on={autonomousLife} onToggle={() => setAutonomousLife(!autonomousLife)} candy="#d8a5b7" />
                         </div>
+
+                        {autonomousLife && (
+                            <div className="space-y-3 rounded-[8px] px-3 py-3" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                                <div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>主动强度</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {INTENSITY_OPTIONS.map(opt => (
+                                            <StickerChip key={opt.id} seed={`int-${opt.id}`} active={intensity === opt.id} candy="#f3d7e1" onClick={() => setIntensity(opt.id)}>
+                                                {opt.label}
+                                            </StickerChip>
+                                        ))}
+                                    </div>
+                                    <p className="text-[9.5px] mt-1.5 leading-relaxed" style={{ color: '#857f74' }}>
+                                        {INTENSITY_OPTIONS.find(o => o.id === intensity)?.desc}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>生活密度</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {DENSITY_OPTIONS.map(opt => (
+                                            <StickerChip key={opt.id} seed={`den-${opt.id}`} active={lifeDensity === opt.id} candy="#d9eadf" onClick={() => setLifeDensity(opt.id)}>
+                                                {opt.label}
+                                            </StickerChip>
+                                        ))}
+                                    </div>
+                                    <p className="text-[9.5px] mt-1.5 leading-relaxed" style={{ color: '#857f74' }}>
+                                        {DENSITY_OPTIONS.find(o => o.id === lifeDensity)?.desc}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>来信口味</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {FLAVOR_OPTIONS.map(opt => (
+                                            <StickerChip key={opt.id} seed={`flv-${opt.id}`} active={messageFlavor === opt.id} candy="#f3d7e1" onClick={() => setMessageFlavor(opt.id)}>
+                                                {opt.label}
+                                            </StickerChip>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>取材来源</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {MATERIAL_OPTIONS.map(opt => (
+                                            <StickerChip key={opt.id} seed={`mat-${opt.id}`} active={materialSources.includes(opt.id)} candy="#d9eadf" onClick={() => toggleMaterial(opt.id)}>
+                                                {opt.label}
+                                            </StickerChip>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start justify-between gap-3 pt-1">
+                                    <div className="min-w-0">
+                                        <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>智能触发可跳过</div>
+                                        <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: '#857f74' }}>事件冲动太低时，只写进 TA 的日常，不硬发消息。</p>
+                                    </div>
+                                    <CandyToggle on={smartSkipEnabled} onToggle={() => setSmartSkipEnabled(!smartSkipEnabled)} candy="#d8a5b7" />
+                                </div>
+
+                                <div className="pt-2 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>勿扰时段</div>
+                                            <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: '#857f74' }}>这段时间可以继续过生活，但不一定弹来信。</p>
+                                        </div>
+                                        <CandyToggle on={quietEnabled} onToggle={() => setQuietEnabled(!quietEnabled)} candy="#d8a5b7" />
+                                    </div>
+                                    {quietEnabled && (
+                                        <div className="mt-2 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <input type="time" value={quietStart} onChange={e => setQuietStart(e.target.value)} className="px-2 py-1 text-[12px] rounded-[8px] bg-white border border-[#eed6df]" style={{ color: '#5a3140' }} />
+                                                <span className="text-[10px]" style={{ color: '#857f74' }}>到</span>
+                                                <input type="time" value={quietEnd} onChange={e => setQuietEnd(e.target.value)} className="px-2 py-1 text-[12px] rounded-[8px] bg-white border border-[#eed6df]" style={{ color: '#5a3140' }} />
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                <StickerChip seed="qh-life" active={quietBehavior === 'life_only'} candy="#f3d7e1" onClick={() => setQuietBehavior('life_only')}>只记生活</StickerChip>
+                                                <StickerChip seed="qh-send" active={quietBehavior === 'send'} candy="#f3d7e1" onClick={() => setQuietBehavior('send')}>照常来信</StickerChip>
+                                                <StickerChip seed="qh-skip" active={quietBehavior === 'skip'} candy="#f3d7e1" onClick={() => setQuietBehavior('skip')}>完全跳过</StickerChip>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* 触发方式 */}
                         <div className="pt-1">

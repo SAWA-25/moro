@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Modal from '../os/Modal';
 import { DB } from '../../utils/db';
 import type { ApiCallLogEntry } from '../../utils/apiCallLog';
+import { resolveApiErrorHelp, summarizeApiErrorHelps, type ApiErrorHelp } from '../../utils/apiErrorHelp';
 
 interface ApiCallLogModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onOpenManualHelp?: (help: ApiErrorHelp) => void;
 }
 
 interface FeatureGroup {
@@ -138,7 +140,7 @@ function groupEntries(entries: ApiCallLogEntry[]): AppGroup[] {
     return [...appMap.values()].sort((a, b) => b.entries.length - a.entries.length);
 }
 
-const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) => {
+const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose, onOpenManualHelp }) => {
     const [entries, setEntries] = useState<ApiCallLogEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [expandedFeature, setExpandedFeature] = useState<string | null>(null);
@@ -182,6 +184,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
     const mainTok = sumTokens(entries, 'main');
     const auxTok = sumTokens(entries, 'aux');
     const customTok = sumTokens(entries, 'custom');
+    const errorHelpSummaries = useMemo(() => summarizeApiErrorHelps(entries), [entries]);
 
     return (
         <Modal
@@ -218,6 +221,40 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                     <StatCard label="已知 Token" value={fmtNumber(totalTok)} sub={`${knownTokenEntries}/${entries.length} 条返回 usage`} />
                     <StatCard label="API 消耗" value={`主 ${fmtNumber(mainTok)} · 副 ${fmtNumber(auxTok)}`} sub={`自定义 ${fmtNumber(customTok)}`} />
                     <StatCard label="失败 / 耗时" value={`${entries.length ? Math.round((failedCount / entries.length) * 100) : 0}%`} sub={`平均 ${fmtDuration(avgDuration)}`} danger={failedCount > 0} />
+                </div>
+            )}
+
+            {errorHelpSummaries.length > 0 && (
+                <div className="mb-3 rounded-[20px] border border-rose-200 bg-rose-50 px-3 py-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <div>
+                            <div className="text-[10px] font-mono text-rose-400 uppercase">ERROR HELP</div>
+                            <div className="text-sm font-black text-rose-700">最近失败诊断</div>
+                        </div>
+                        <div className="text-[10px] font-bold text-rose-500 shrink-0">可跳说明书</div>
+                    </div>
+                    <div className="space-y-2">
+                        {errorHelpSummaries.map(item => (
+                            <div key={item.kind} className="rounded-[16px] bg-white/80 border border-rose-100 px-3 py-2">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-black text-[#2f3437]">{item.help.title}</div>
+                                        <p className="mt-0.5 text-[10px] leading-relaxed text-[#69716d]">{item.help.shortReason}</p>
+                                    </div>
+                                    <Badge danger>{item.count} 次</Badge>
+                                </div>
+                                {onOpenManualHelp && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenManualHelp(item.help)}
+                                        className="mt-2 w-full py-2 rounded-2xl bg-rose-600 text-white text-[11px] font-black active:scale-[0.99] transition-transform"
+                                    >
+                                        {item.help.actionLabel}
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -284,6 +321,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                                             entry={e}
                                                             expanded={expandedEntry === e.id}
                                                             onToggle={() => setExpandedEntry(expandedEntry === e.id ? null : e.id)}
+                                                            onOpenManualHelp={onOpenManualHelp}
                                                         />
                                                     ))}
                                                 </div>
@@ -300,12 +338,18 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
     );
 };
 
-const EntryRow: React.FC<{ entry: ApiCallLogEntry; expanded: boolean; onToggle: () => void }> = ({ entry: e, expanded, onToggle }) => {
+const EntryRow: React.FC<{
+    entry: ApiCallLogEntry;
+    expanded: boolean;
+    onToggle: () => void;
+    onOpenManualHelp?: (help: ApiErrorHelp) => void;
+}> = ({ entry: e, expanded, onToggle, onOpenManualHelp }) => {
     const { day, time } = formatTime(e.timestamp);
     const error = nonEmpty(e.errorMessage);
     const response = nonEmpty(e.responsePreview);
     const request = nonEmpty(e.requestPreview);
     const hasDetails = !!(error || response || request || e.baseUrl);
+    const errorHelp = resolveApiErrorHelp(e);
 
     return (
         <div className={`rounded-[16px] border p-3 ${e.ok ? 'bg-[#fffdf8] border-[#eee6da]' : 'bg-rose-50 border-rose-200'}`}>
@@ -316,6 +360,7 @@ const EntryRow: React.FC<{ entry: ApiCallLogEntry; expanded: boolean; onToggle: 
                         <span className="font-mono text-[#69716d]">{time}</span>
                         <Badge>{endpointLabel(e.endpoint)}</Badge>
                         <Badge>{metaSourceLabel(e.metaSource)}</Badge>
+                        {errorHelp ? <Badge danger>{errorHelp.title}</Badge> : null}
                     </div>
                     <div className="mt-1 text-[11px] text-[#69716d] truncate">
                         {e.presetName || e.baseUrl || '未知 API'}{e.charName ? ` · ${e.charName}` : ''}
@@ -339,6 +384,26 @@ const EntryRow: React.FC<{ entry: ApiCallLogEntry; expanded: boolean; onToggle: 
             {error && !expanded && (
                 <div className="mt-3 rounded-2xl bg-white/70 border border-rose-100 px-3 py-2 text-[11px] text-rose-700 line-clamp-2">
                     {error}
+                </div>
+            )}
+
+            {errorHelp && (
+                <div className="mt-3 rounded-2xl bg-white/80 border border-rose-100 px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                            <div className="text-[11px] font-black text-rose-700">可能原因：{errorHelp.title}</div>
+                            <p className="mt-0.5 text-[10px] leading-relaxed text-[#69716d]">{errorHelp.shortReason}</p>
+                        </div>
+                    </div>
+                    {onOpenManualHelp && (
+                        <button
+                            type="button"
+                            onClick={() => onOpenManualHelp(errorHelp)}
+                            className="mt-2 w-full py-2 rounded-2xl bg-rose-600 text-white text-[11px] font-black active:scale-[0.99] transition-transform"
+                        >
+                            {errorHelp.actionLabel}
+                        </button>
+                    )}
                 </div>
             )}
 

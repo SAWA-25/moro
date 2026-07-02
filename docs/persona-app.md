@@ -52,7 +52,7 @@ UI 文案与功能术语对照（代码字段 / ST 语义不变，只换了说�
 | connections（角色锁） | `Persona.connections`，进聊天时 Chat.tsx 调 `resolveForConnection` 自动切换（绑定 > 默认 > 不动），切换时 toast 提示 |
 | `persona_description_position` | `Persona.position`，保留原始数值：0=嵌入提示词，4=@Depth，9=不注入；ST 的 1（废弃）/ 2 / 3（作者注释，Moro 无锚点）导入时归一为 0 |
 | `persona_description_depth` / `role` | `Persona.depth`（默认 2）/ `Persona.role`（0=system 1=user 2=assistant），@Depth 时经 `WorldbookRuntime.spliceDepthMessages` 插进聊天历史 |
-| persona lorebook | `Persona.lorebookCategory`（世界书分组名）。主聊天链路用 `WorldbookRuntime.setExtraCategories` 让该分组的局部条目视同已挂载（仍尊重条目/整书开关与关键词激活），构建完清空 |
+| persona lorebook | `Persona.lorebookCategory`（世界书分组名）。主聊天链路用 `WorldbookRuntime.withContext({ extraCategories })` 让该分组的局部条目视同已挂载（仍尊重条目/整书开关、关键词、二级词逻辑、概率、预算与递归扫描），构建完自动恢复 |
 | `{{persona}}` 宏 | `utils/macros.ts` 支持，替换为当前人设描述（无人设时为档案 bio） |
 | 一角色一人设（multi connections 关闭） | 绑定角色时自动从其他人设上解绑该角色 |
 

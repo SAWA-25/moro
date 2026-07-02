@@ -126,6 +126,9 @@ export function normalizeMessageContent(
         const addedTo = msg.metadata?.addedToPlaylistTitle as string | undefined;
         if (song?.name) {
             const songDesc = song.artists ? `《${song.name}》— ${song.artists}` : `《${song.name}》`;
+            if (intent === 'share' && msg.role === 'user') {
+                return `[音乐卡片] ${userName}把${songDesc}分享给${charName}`;
+            }
             const action =
                 intent === 'join' ? `决定和${userName}一起听这首`
                 : intent === 'add' ? `把这首收进了自己的歌单${addedTo ? `《${addedTo}》` : ''}`

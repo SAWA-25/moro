@@ -8,7 +8,8 @@
  *      secondary_keys、insertion_order/order、case_sensitive、constant、disable 等）
  */
 
-import { Worldbook, WorldbookPosition } from '../types';
+import { Worldbook, WorldbookPosition, WorldbookSTData } from '../types';
+import { normalizeSelectiveLogic } from './worldbookRuntime';
 
 let seq = 0;
 const genId = (): string => `wb-imp-${Date.now().toString(36)}-${(seq++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -19,23 +20,44 @@ const toStrArray = (v: any): string[] => {
     return [];
 };
 
+const numOrU = (v: any): number | undefined => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+};
+
+const boolOrU = (v: any): boolean | undefined => typeof v === 'boolean' ? v : undefined;
+
+const objOrU = (v: any): Record<string, any> | undefined =>
+    v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0 ? v : undefined;
+
 /** 看起来像一个 Moro 世界书对象（已带 title + content）。 */
 const looksLikeMoroBook = (o: any): boolean =>
     o && typeof o === 'object' && typeof o.title === 'string' && typeof o.content === 'string';
 
-const positionFromST = (pos: any): WorldbookPosition | undefined => {
-    // ST position: 0=before_char, 1=after_char, 2/3/4=@depth 系。这里只做温和映射，缺省交给运行时。
-    if (pos === 0) return 'before_char';
-    if (pos === 1) return 'after_char';
+const positionFromST = (pos: any, role?: any): WorldbookPosition | undefined => {
+    // ST position: 0=before_char, 1=after_char, 4=@Depth；作者注释/示例消息等降级到 after_char。
+    if (pos === 0 || pos === 'before_char') return 'before_char';
+    if (pos === 4) {
+        if (role === 1) return 'depth_user';
+        if (role === 2) return 'depth_assistant';
+        return 'depth_system';
+    }
+    if (pos === 1 || pos === 'after_char') return 'after_char';
+    if (typeof pos === 'number') return 'after_char';
     return undefined;
 };
 
 /** 把一个 ST lorebook 条目对象转成 Worldbook。无内容返回 null。 */
-function entryToWorldbook(entry: any, category: string, idx: number): Worldbook | null {
+function entryToWorldbook(entry: any, category: string, idx: number, bookMeta: Omit<WorldbookSTData, 'entry'>): Worldbook | null {
     if (!entry || typeof entry !== 'object') return null;
     const content = typeof entry.content === 'string' ? entry.content : '';
     if (!content.trim()) return null;
 
+    const ext = entry.extensions && typeof entry.extensions === 'object' ? entry.extensions : {};
     const keys = toStrArray(entry.keys ?? entry.key);
     const secondaryKeys = toStrArray(entry.secondary_keys ?? entry.secondaryKeys ?? entry.keysecondary);
     const constant = entry.constant === true;
@@ -43,6 +65,12 @@ function entryToWorldbook(entry: any, category: string, idx: number): Worldbook 
     const order = Number.isFinite(entry.insertion_order) ? entry.insertion_order
         : Number.isFinite(entry.order) ? entry.order : 100;
     const title = String(entry.comment || entry.name || (keys.length ? keys.join(' / ') : `条目 ${idx + 1}`)).slice(0, 80);
+    const probability = numOrU(ext.probability ?? entry.probability);
+    const selectiveLogic = normalizeSelectiveLogic(ext.selectiveLogic ?? ext.selective_logic ?? entry.selectiveLogic ?? entry.selective_logic);
+    const scanDepth = numOrU(ext.scan_depth ?? entry.scan_depth ?? bookMeta.scanDepth);
+    const rawPos = ext.position ?? entry.position;
+    const rawRole = ext.role ?? entry.role;
+    const depth = numOrU(ext.depth ?? entry.depth);
 
     const now = Date.now();
     return {
@@ -54,13 +82,47 @@ function entryToWorldbook(entry: any, category: string, idx: number): Worldbook 
         updatedAt: now,
         enabled: !disabled,
         scope: 'local',
-        position: positionFromST(entry.position),
+        position: positionFromST(rawPos, rawRole),
+        depth,
         order,
         activation: (!constant && keys.length > 0) ? 'keyword' : 'always',
         keys: keys.length ? keys : undefined,
         secondaryKeys: secondaryKeys.length ? secondaryKeys : undefined,
         selective: entry.selective === true || undefined,
+        selectiveLogic,
         caseSensitive: entry.case_sensitive === true || entry.caseSensitive === true || undefined,
+        matchWholeWords: boolOrU(ext.match_whole_words ?? ext.matchWholeWords ?? entry.match_whole_words ?? entry.matchWholeWords),
+        scanDepth,
+        probability,
+        useProbability: boolOrU(ext.useProbability ?? ext.use_probability ?? entry.useProbability ?? entry.use_probability)
+            ?? (probability !== undefined ? true : undefined),
+        ignoreBudget: boolOrU(ext.ignore_budget ?? ext.ignoreBudget ?? entry.ignore_budget ?? entry.ignoreBudget),
+        source: 'sillytavern',
+        stData: {
+            ...bookMeta,
+            entry: {
+                id: entry.id ?? entry.uid,
+                name: entry.name,
+                comment: entry.comment,
+                keys,
+                secondaryKeys,
+                selective: entry.selective === true,
+                constant,
+                enabled: !disabled,
+                insertionOrder: order,
+                caseSensitive: entry.case_sensitive === true || entry.caseSensitive === true || undefined,
+                scanDepth,
+                selectiveLogic,
+                matchWholeWords: boolOrU(ext.match_whole_words ?? ext.matchWholeWords ?? entry.match_whole_words ?? entry.matchWholeWords),
+                probability,
+                useProbability: boolOrU(ext.useProbability ?? ext.use_probability ?? entry.useProbability ?? entry.use_probability)
+                    ?? (probability !== undefined ? true : undefined),
+                ignoreBudget: boolOrU(ext.ignore_budget ?? ext.ignoreBudget ?? entry.ignore_budget ?? entry.ignoreBudget),
+                priority: numOrU(entry.priority),
+                position: entry.position,
+                extensions: objOrU(entry.extensions),
+            },
+        },
     };
 }
 
@@ -94,10 +156,18 @@ export function parseWorldbookJson(json: any, fallbackName: string): Worldbook[]
     // SillyTavern 世界书：{ name?, entries }
     const entries = json?.entries;
     const category = (json?.name && String(json.name).trim()) || cleanName;
+    const bookMeta: Omit<WorldbookSTData, 'entry'> = {
+        bookName: json?.name,
+        bookDescription: json?.description,
+        scanDepth: numOrU(json?.scan_depth),
+        tokenBudget: numOrU(json?.token_budget),
+        recursiveScanning: boolOrU(json?.recursive_scanning),
+        bookExtensions: objOrU(json?.extensions),
+    };
     const list = Array.isArray(entries) ? entries : (entries && typeof entries === 'object' ? Object.values(entries) : []);
     const out: Worldbook[] = [];
     list.forEach((e, i) => {
-        const wb = entryToWorldbook(e, category, i);
+        const wb = entryToWorldbook(e, category, i, bookMeta);
         if (wb) out.push(wb);
     });
     return out;

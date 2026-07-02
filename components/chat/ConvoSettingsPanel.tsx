@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { CharacterProfile, ConvoSettings, EmojiCategory, AppID, PrivateChatArchive } from '../../types';
+import { CharacterProfile, ConvoSettings, EmojiCategory, AppID, PrivateChatArchive, LiveChatOverride } from '../../types';
 import { processImage } from '../../utils/file';
 import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
 import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../../utils/scheduleGenerator';
-import { isAuxApiOn } from '../../utils/auxApi';
+import { isAuxApiOn, resolveAuxApi } from '../../utils/auxApi';
 import { scrollToManualAnchor, useManualDeepLink } from '../../utils/manualDeepLink';
 import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
+import { normalizeLiveChatSettings, resolveLiveChatEnabled } from '../../utils/liveChat';
+import { callChatCompletion } from '../../utils/llmClient';
+import { extractContent } from '../../utils/safeApi';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 
 /**
  * 聊天设置（会话设置）全屏面板。
@@ -225,6 +229,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const updateConvo = (patch: Partial<ConvoSettings>) => {
         updateCharacter(char.id, { convoSettings: { ...char.convoSettings, ...patch } });
     };
+    const globalLiveChatSettings = normalizeLiveChatSettings(userProfile);
+    const liveChatOverride = cs.liveChatOverride || 'inherit';
+    const liveChatEffective = resolveLiveChatEnabled(userProfile, liveChatOverride);
+    const updateLiveChatOverride = (value: LiveChatOverride) => {
+        updateConvo({ liveChatOverride: value === 'inherit' ? undefined : value });
+    };
     const toggleEmotionBuffFeature = () => {
         const nextEnabled = !isEmotionBuffFeatureOn(char);
         updateCharacter(char.id, {
@@ -354,19 +364,26 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const deleteMemo = (id: string) => updateCharacter(char.id, { memos: (char.memos || []).filter(m => m.id !== id) });
     const toggleMemoDone = (id: string) => updateCharacter(char.id, { memos: (char.memos || []).map(m => m.id === id ? { ...m, done: !m.done } : m) });
     const generateMemos = async () => {
-        if (!apiConfig.apiKey) { addToast('先去「文具盒」配置好聊天 API', 'error'); return; }
+        const memoApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!memoApi.baseUrl || !memoApi.model) { addToast('先去「文具盒」配置好 API', 'error'); return; }
         setMemoGenerating(true);
         try {
             const persona = (char.systemPrompt || '').slice(0, 800);
             const prompt = `你是「${char.name}」。请根据你的人设，写 3~4 条你自己手机备忘录里会有的内容（待办、随手记、藏起来的小心事、清单等，要贴合你的性格与生活，简短自然）。\n\n你的人设：${persona}\n\n只输出 JSON 字符串数组，例如：["明天记得交房租","想给 TA 买生日礼物，纠结选什么","健身：周一三五"]`;
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+            const data = await callChatCompletion(memoApi, {
+                model: memoApi.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.9,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('chat.memoGenerate', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: memoApi.apiRole || 'aux',
+                    apiBinding: memoApi.apiBinding || '角色备忘录',
+                }),
             });
-            if (!res.ok) throw new Error('生成失败，再试一次');
-            const data = await res.json();
-            let txt: string = data?.choices?.[0]?.message?.content || '';
+            let txt: string = extractContent(data) || '';
             txt = txt.replace(/```json/g, '').replace(/```/g, '').trim();
             const a = txt.indexOf('['), b = txt.lastIndexOf(']');
             if (a >= 0 && b > a) txt = txt.slice(a, b + 1);
@@ -739,6 +756,25 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         mark="❀" title="按人设随意"
                         note="打开后 TA 会按人设、情绪、关系和话题自己决定这一轮说长说短；它只管消息长短，不改变上面的消息生成形式。"
                         side={<CandyToggle on={personaDrivenMessageLength} onToggle={togglePersonaDrivenMessageLength} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-live-mode"
+                        mark="❀" title="实时聊天模式"
+                        note={`发出文字后 TA 会自动接话；你停顿打字时，TA 也可能看见未发送草稿并插一句。当前：${liveChatEffective ? '开启' : '关闭'}；全局默认：${globalLiveChatSettings.enabled ? '开启' : '关闭'}。`}
+                    >
+                        <div className="flex flex-wrap gap-2">
+                            <StickerChip seed="live-inherit" active={liveChatOverride === 'inherit'} candy="#bfe1cf" onClick={() => updateLiveChatOverride('inherit')}>跟随全局</StickerChip>
+                            <StickerChip seed="live-on" active={liveChatOverride === 'on'} candy="#bfe1cf" onClick={() => updateLiveChatOverride('on')}>本单聊开启</StickerChip>
+                            <StickerChip seed="live-off" active={liveChatOverride === 'off'} candy="#bfe1cf" onClick={() => updateLiveChatOverride('off')}>本单聊关闭</StickerChip>
+                        </div>
+                    </Entry>
+
+                    <Entry
+                        manualAnchor="manual-chat-auto-reply-each"
+                        mark="❀" title="连发也逐条回"
+                        note="打开后，你连续发好几条文字消息时，TA 会按顺序一条一条回应；每条都会单独调用一次 API，消耗也会跟着增加。"
+                        side={<CandyToggle candy="#bfe1cf" on={!!cs.autoReplyEachUserMessage} onToggle={() => updateConvo({ autoReplyEachUserMessage: !cs.autoReplyEachUserMessage })} />}
                     />
 
                     <Entry

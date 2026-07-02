@@ -2,8 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { processImage } from '../utils/file';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent, safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import Modal from '../components/os/Modal';
 import { Camera, ImageSquare, GlobeSimple, MagnifyingGlass, Lightning } from '@phosphor-icons/react';
 
@@ -221,7 +223,7 @@ const BrowserApp: React.FC = () => {
     // --- Content Loader ---
 
     const loadPageContent = async (url: string) => {
-        if (!auxApi.baseUrl) {
+        if (!auxApi.baseUrl || !auxApi.model) {
             addToast('请先在「文具盒」里配置 API', 'error');
             return;
         }
@@ -301,24 +303,19 @@ Generate realistic results linking to hypothetical URLs.`;
                 userPrompt = `Simulate the full webpage content for: "${url}". Make it detailed and realistic.`;
             }
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: userPrompt }
-                    ],
-                    temperature: 0.6,
-                    max_tokens: 4000
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                temperature: 0.6,
+                max_tokens: 4000,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('browser.answer', { apiRole: auxApi.apiRole || 'aux', apiBinding: auxApi.apiBinding || '网页模拟' }),
             });
-
-            if (!response.ok) throw new Error('Network Error');
-            
-            const data = await safeResponseJson(response);
-            const raw = data.choices[0].message.content;
+            const raw = extractContent(data) || '';
             
             // Parse Title and Content
             const parts = raw.split('\n');

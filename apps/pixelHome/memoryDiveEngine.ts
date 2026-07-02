@@ -15,8 +15,9 @@ import { MemoryNodeDB } from '../../utils/memoryPalace/db';
 import { DB } from '../../utils/db';
 import { fetchRemoteByRoom } from '../../utils/memoryPalace/supabaseVector';
 import { ROOM_SLOTS, ROOM_META } from './roomTemplates';
-import { safeFetchJson, extractContent, extractJson } from '../../utils/safeApi';
+import { extractContent, extractJson } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
 import type {
   DiveMode, DiveLLMRequest, DiveLLMResponse, DiveChoice,
@@ -300,27 +301,15 @@ export async function callDiveLLM(
 ): Promise<DiveLLMResponse> {
   const prompt = buildDivePrompt(req, charContext);
 
-  const data = await safeFetchJson(
-    `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: apiConfig.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8,
-        // 中文散文 + JSON 包装极吃 token，给足余量，避免在字符串中间被截断
-        max_tokens: 8000,
-        // 让兼容 OpenAI 的后端强制返回 JSON；不支持的后端会忽略此字段
-        response_format: { type: 'json_object' },
-      }),
-    },
-    2, // 最多重试 2 次（覆盖瞬时 5xx / 网络抖动）
-    0, makeApiUsageMeta('pixelHome.memoryDive.explore', { apiRole: 'aux' }),
-  );
+  const data = await callChatCompletion(apiConfig, {
+    model: apiConfig.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.8,
+    max_tokens: 8000,
+    response_format: { type: 'json_object' },
+  }, {
+    meta: makeApiUsageMeta('pixelHome.memoryDive.explore', { apiRole: 'aux' }),
+  });
 
   const content = extractContent(data);
   let parsed = extractJson(content) as Partial<DiveLLMResponse> | null;
@@ -846,26 +835,15 @@ export async function planRoomVisit(
   const memoryTexts = memories.map(m => m.content);
   const prompt = buildRoomScriptPrompt(params, memoryTexts, charContext);
 
-  const data = await safeFetchJson(
-    `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: apiConfig.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.85,
-        // 3 beats × 3 choices × (line+reaction+narrator) + intro/close 容易超，
-        // 给足余量避免被 max_tokens 截断
-        max_tokens: 20000,
-        response_format: { type: 'json_object' },
-      }),
-    },
-    2, 0, makeApiUsageMeta('pixelHome.memoryDive.script', { apiRole: 'aux' }),
-  );
+  const data = await callChatCompletion(apiConfig, {
+    model: apiConfig.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.85,
+    max_tokens: 20000,
+    response_format: { type: 'json_object' },
+  }, {
+    meta: makeApiUsageMeta('pixelHome.memoryDive.script', { apiRole: 'aux' }),
+  });
 
   const content = extractContent(data);
   const parsed = extractJson(content);
@@ -1005,27 +983,18 @@ export async function emitDiveEmotion(params: EmitDiveEmotionParams): Promise<vo
     if (!params.api?.baseUrl) return;
 
     const prompt = buildDiveEmotionPrompt(params);
-    const data = await safeFetchJson(
-      `${params.api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${params.api.apiKey || 'sk-none'}`,
-        },
-        body: JSON.stringify({
-          model: params.api.model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.85,
-          stream: false,
-        }),
-      },
-      2, 0, makeApiUsageMeta('pixelHome.memoryDive.buff', {
+      const data = await callChatCompletion(params.api, {
+      model: params.api.model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.85,
+      stream: false,
+    }, {
+      meta: makeApiUsageMeta('pixelHome.memoryDive.buff', {
         charId: params.charProfile.id,
         charName: params.charProfile.name,
         apiRole: 'aux',
       }),
-    );
+    });
 
     const raw = data?.choices?.[0]?.message?.content || '';
     const jsonMatch = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\})/);

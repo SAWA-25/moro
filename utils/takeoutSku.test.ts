@@ -4,8 +4,12 @@ import {
     getSearchHistory, pushSearchHistory, clearSearchHistory,
     getAddresses, addAddress, removeAddress,
     deliveryTimeSlots, TAKEOUT_HOT_SEARCHES,
+    getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard, getDefaultAddressCard,
+    formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
+    TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
+    recommendAddOnDishes, takeoutHistoryStats,
 } from './takeout';
-import type { TakeoutDish } from '../types';
+import type { CharacterProfile, TakeoutDish, TakeoutOrder } from '../types';
 
 describe('菜品规格 / 加料（选规格）', () => {
     it('饮品给甜度/冰量；奶茶额外有加料', () => {
@@ -77,7 +81,7 @@ describe('搜索历史 + 热门搜索', () => {
 });
 
 describe('收货地址簿', () => {
-    beforeEach(() => { localStorage.removeItem('moro_takeout_addresses_v1'); localStorage.removeItem('moro_takeout_address'); });
+    beforeEach(() => { localStorage.removeItem('moro_takeout_address_cards_v1'); localStorage.removeItem('moro_takeout_addresses_v1'); localStorage.removeItem('moro_takeout_address'); });
     it('默认有一条；新增置顶去重；删除不会清空到 0', () => {
         expect(getAddresses().length).toBe(1);
         addAddress('公司 A 座 1801');
@@ -91,6 +95,60 @@ describe('收货地址簿', () => {
     });
 });
 
+describe('结构化地址卡', () => {
+    beforeEach(() => { localStorage.removeItem('moro_takeout_address_cards_v1'); localStorage.removeItem('moro_takeout_addresses_v1'); localStorage.removeItem('moro_takeout_address'); });
+    it('把旧字符串地址迁移为用户地址卡，并保留旧单地址兜底', () => {
+        localStorage.setItem('moro_takeout_addresses_v1', JSON.stringify(['公司 A 座 1801', '城南花园 3 栋 502']));
+        localStorage.setItem('moro_takeout_address', '家属院 2 栋 301');
+        const cards = getAddressCards('me');
+        expect(cards.map(c => c.addressLine)).toEqual(['家属院 2 栋 301', '公司 A 座 1801', '城南花园 3 栋 502']);
+        expect(cards[0].isDefault).toBe(true);
+    });
+    it('同一归属下只有一个默认地址；删除默认后自动选下一张', () => {
+        const a = saveAddressCard({ ownerType: 'me', label: '家', tag: '家', receiverName: '我', addressLine: '城南花园', isDefault: true });
+        const b = saveAddressCard({ ownerType: 'me', label: '公司', tag: '公司', receiverName: '我', addressLine: '公司 A 座', isDefault: true });
+        expect(getDefaultAddressCard('me')?.id).toBe(b.id);
+        expect(getAddressCards('me').filter(c => c.isDefault)).toHaveLength(1);
+        deleteAddressCard(b.id);
+        expect(getDefaultAddressCard('me')?.id).toBe(a.id);
+    });
+    it('用户地址与角色地址隔离，并能生成角色默认地址', () => {
+        saveAddressCard({ ownerType: 'me', label: '家', tag: '家', receiverName: '我', addressLine: '我的家', isDefault: true });
+        saveAddressCard({ ownerType: 'char', ownerId: 'c1', label: '学校', tag: '学校', receiverName: '阿月', addressLine: '图书馆门口', isDefault: true });
+        expect(getAddressCards('me')).toHaveLength(1);
+        expect(getAddressCards('char', 'c1')[0].addressLine).toBe('图书馆门口');
+        const char = { id: 'c2', name: '小林', cityConfig: { mode: 'real', realCity: '成都' } } as CharacterProfile;
+        ensureCharacterAddressSeeds([char]);
+        expect(getDefaultAddressCard('char', 'c2')?.addressLine).toContain('小林');
+        expect(getDefaultAddressCard('char', 'c2')?.city).toBe('成都');
+    });
+    it('格式化地址稳定，可作为订单快照；无地址时回退默认地址', () => {
+        const card = saveAddressCard({
+            ownerType: 'me',
+            label: '家',
+            tag: '家',
+            receiverName: '我',
+            contactHint: '门禁 1234',
+            city: '上海',
+            addressLine: '梧桐路 88 号',
+            doorplate: '3 栋 502',
+            deliveryNote: '放门口',
+            isDefault: true,
+        });
+        expect(formatAddressCard(card)).toBe('家 · 上海 梧桐路 88 号 3 栋 502 · 门禁 1234（放门口）');
+        expect(getDefaultTakeoutAddressLine()).toBe(formatAddressCard(card));
+        deleteAddressCard(card.id);
+        expect(getDefaultTakeoutAddressLine()).toBe('城南花园 3 栋 502');
+    });
+    it('可以显式设置默认地址', () => {
+        const a = saveAddressCard({ ownerType: 'me', label: '家', tag: '家', receiverName: '我', addressLine: '家', isDefault: true });
+        const b = saveAddressCard({ ownerType: 'me', label: '公司', tag: '公司', receiverName: '我', addressLine: '公司' });
+        expect(getDefaultAddressCard('me')?.id).toBe(a.id);
+        setDefaultAddressCard(b.id);
+        expect(getDefaultAddressCard('me')?.id).toBe(b.id);
+    });
+});
+
 describe('预约送达时段', () => {
     it('第一项是尽快(null)，其余是 HH:MM 时间点', () => {
         const slots = deliveryTimeSlots(30, new Date('2026-06-24T12:05:00').getTime());
@@ -98,5 +156,50 @@ describe('预约送达时段', () => {
         expect(slots.length).toBe(7);
         expect(slots[1].label).toMatch(/^\d{2}:\d{2}$/);
         expect(slots[1].at).toBeGreaterThan(0);
+    });
+});
+
+describe('口味小纸条', () => {
+    beforeEach(() => { localStorage.removeItem('moro_takeout_taste_profiles_v1'); });
+    it('按收货对象保存、切换偏好，并过滤未知标签', () => {
+        expect(TAKEOUT_TASTE_TAGS).toContain('不要香菜');
+        expect(getTasteTags('me')).toEqual([]);
+        expect(toggleTasteTag('me', '不要香菜')).toEqual(['不要香菜']);
+        expect(toggleTasteTag('char-a', '少辣')).toEqual(['少辣']);
+        expect(getTasteTags('me')).toEqual(['不要香菜']);
+        expect(toggleTasteTag('me', '不存在')).toEqual(['不要香菜']);
+        expect(toggleTasteTag('me', '不要香菜')).toEqual([]);
+    });
+    it('合并备注时不重复已有偏好', () => {
+        expect(buildTasteNote(['少辣', '少辣', '少油'])).toBe('口味偏好：少辣、少油');
+        expect(mergeNoteWithTaste('放门口；少辣', ['少辣', '少油'])).toBe('放门口；少辣；口味偏好：少油');
+        expect(mergeNoteWithTaste('', ['热饮'])).toBe('口味偏好：热饮');
+    });
+});
+
+describe('凑单小帮手 / 饭票统计', () => {
+    const dishes: TakeoutDish[] = [
+        { id: 'tea', name: '柠檬茶', price: 9, monthlySales: 300 },
+        { id: 'rice', name: '牛肉饭', price: 24, monthlySales: 500, popular: true },
+        { id: 'egg', name: '卤蛋', price: 3, monthlySales: 120 },
+        { id: 'soup', name: '例汤', price: 6, monthlySales: 80 },
+    ];
+    it('优先推荐能补齐差额且未选过的菜', () => {
+        const out = recommendAddOnDishes(dishes, ['rice'], 7, 2);
+        expect(out.map(d => d.id)).toContain('tea');
+        expect(out.some(d => d.id === 'rice')).toBe(false);
+    });
+    it('统计本月张数、金额和常点', () => {
+        const now = new Date('2026-07-03T12:00:00').getTime();
+        const orders: TakeoutOrder[] = [
+            { id: '1', storeId: 's', storeName: '面馆', storeEmoji: '🍜', items: [{ dishId: 'n', name: '牛肉面', price: 18, qty: 2 }], subtotal: 36, deliveryFee: 3, packFee: 2, total: 41, recipient: 'me', payer: 'me', payStatus: 'paid', status: 'delivered', riderName: '小袋', riderEmoji: '🛵', address: 'a', placedAt: now, etaAt: now, chat: [] },
+            { id: '2', storeId: 's', storeName: '面馆', storeEmoji: '🍜', items: [{ dishId: 'n', name: '牛肉面', price: 18, qty: 1 }], subtotal: 18, deliveryFee: 3, packFee: 2, total: 23, recipient: 'me', payer: 'me', payStatus: 'paid', status: 'delivered', riderName: '小袋', riderEmoji: '🛵', address: 'a', placedAt: now - 1000, etaAt: now, chat: [] },
+            { id: 'old', storeId: 's', storeName: '旧店', storeEmoji: '🍔', items: [], subtotal: 0, deliveryFee: 0, packFee: 0, total: 99, recipient: 'me', payer: 'me', payStatus: 'paid', status: 'delivered', riderName: '小袋', riderEmoji: '🛵', address: 'a', placedAt: new Date('2026-06-01T12:00:00').getTime(), etaAt: now, chat: [] },
+        ];
+        const stats = takeoutHistoryStats(orders, now);
+        expect(stats.monthCount).toBe(2);
+        expect(stats.monthTotal).toBe(64);
+        expect(stats.topStore).toEqual({ name: '面馆', count: 2 });
+        expect(stats.topDish).toEqual({ name: '牛肉面', count: 3 });
     });
 });

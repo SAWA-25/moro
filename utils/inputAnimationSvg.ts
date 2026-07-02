@@ -7,7 +7,9 @@
  */
 
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 const SYSTEM = [
     '你是一个擅长写「自带动画的内联 SVG」的设计助手。',
@@ -41,24 +43,22 @@ export function extractAndSanitizeSvg(raw: string): string | null {
 
 /** 让 AI 写一段输入动效 SVG。失败抛错，由调用方兜底。 */
 export async function generateInputAnimationSvg(api: ResolvedApi, prompt: string): Promise<string> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages: [
-                { role: 'system', content: SYSTEM },
-                { role: 'user', content: `想要的输入动效：${prompt || '一些轻轻飘动的小爱心和星星'}` },
-            ],
-            temperature: 0.9,
-            max_tokens: 1500,
-            stream: false,
+    if (!api.baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [
+            { role: 'system', content: SYSTEM },
+            { role: 'user', content: `想要的输入动效：${prompt || '一些轻轻飘动的小爱心和星星'}` },
+        ],
+        temperature: 0.9,
+        max_tokens: 1500,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('chat.inputAnimation', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
         }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
     const svg = extractAndSanitizeSvg(extractContent(data) || '');
     if (!svg) throw new Error('没读到有效的 SVG，换个描述再试试');
     return svg;

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { llmComplete } from './llmComplete';
 import type { ResolvedApi } from './auxApi';
+import { PresetRuntime, createDefaultPreset } from './presets';
 
 /**
  * 锁定「解牌防截断」：续写既要认 finish_reason='length'，
@@ -63,5 +64,47 @@ describe('llmComplete 续写', () => {
         const out = await llmComplete(API, [{ role: 'user', content: 'hi' }]);
         expect(out).toBe('半句被截');
         expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('presetScope 关闭时不改 messages，但可合并 scoped 采样参数', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue({ temperature: 0.42, max_tokens: 123 });
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        const fetchFn = queueFetch([res('ok。', 'stop')]);
+        await llmComplete(API, [{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }], { presetScope: 'creative.text' });
+        const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(firstCall[1].body));
+        expect(body.temperature).toBe(0.42);
+        expect(body.max_tokens).toBe(123);
+        expect(body.messages).toEqual([{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }]);
+    });
+
+    it('presetScope 开启且首条是 system 时套预设骨架', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        const preset = createDefaultPreset();
+        const main = preset.prompts.find(p => p.identifier === 'main')!;
+        main.content = 'PRESET {{user}}';
+        preset.prompt_order = [{ character_id: 100000, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }];
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(preset);
+        const fetchFn = queueFetch([res('ok。', 'stop')]);
+        await llmComplete(API, [{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }], { presetScope: 'creative.text' });
+        const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(firstCall[1].body));
+        expect(body.messages.map((m: any) => m.content)).toEqual(['CORE', 'PRESET 用户', 'hi']);
+    });
+
+    it('structured presetScope keeps the default format guard in the request skeleton', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(createDefaultPreset());
+        const fetchFn = queueFetch([res('{"ok":true}', 'stop')]);
+
+        await llmComplete(API, [
+            { role: 'system', content: 'CORE' },
+            { role: 'user', content: 'Return JSON only' },
+        ], { presetScope: 'structured.tool' });
+
+        const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(firstCall[1].body));
+        expect(body.messages.some((m: any) => typeof m.content === 'string' && m.content.includes('JSON'))).toBe(true);
+        expect(body.messages.map((m: any) => m.content)).toEqual(expect.arrayContaining(['CORE', 'Return JSON only']));
     });
 });

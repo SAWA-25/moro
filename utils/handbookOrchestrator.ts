@@ -25,9 +25,11 @@ import {
     LayoutTemplate, SlotDef, SlotRole, SlotPayload,
 } from '../types';
 import { DB } from './db';
-import { safeResponseJson, extractJson } from './safeApi';
+import { extractContent, extractJson } from './safeApi';
 import { ContextBuilder } from './context';
 import { LAYOUT_TEMPLATES, pickTemplate } from './handbookLayouts';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 interface ApiConfig {
     baseUrl: string;
@@ -117,22 +119,15 @@ async function callLLM(
 ): Promise<string | null> {
     try {
         const t0 = Date.now();
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature,
-                max_tokens: maxTokens,
-            }),
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature,
+            max_tokens: maxTokens,
+        }, {
+            meta: makeApiUsageMeta('handbook.compose', { apiRole: 'aux' }),
         });
-        if (!response.ok) {
-            console.error(`[Handbook v2] HTTP ${response.status} ${response.statusText}`);
-            return null;
-        }
-        const data = await safeResponseJson(response);
-        const raw: string = data.choices?.[0]?.message?.content || '';
+        const raw = extractContent(data) || '';
         const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
         console.log(`[Handbook v2] LLM 返回 ${raw.length} chars (${elapsed}s)`);
         return raw.trim();

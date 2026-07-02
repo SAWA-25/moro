@@ -1,5 +1,7 @@
-import { CharacterProfile, UserProfile } from '../types';
-import { safeResponseJson, extractContent } from './safeApi';
+import { AmbientSocialContact, CharacterProfile, UserProfile } from '../types';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 /**
  * 见闻簿·交友（发现身边的人）—— 本地 AI 实时生成一批「附近的人」交友卡片，
@@ -10,7 +12,7 @@ import { safeResponseJson, extractContent } from './safeApi';
  * 一部分卡片可以是你认识的角色「也出现在附近」（实名出镜），其余是虚构路人。
  */
 
-export interface DatingApi { baseUrl: string; apiKey: string; model: string; }
+export interface DatingApi { baseUrl: string; apiKey?: string; model: string; apiRole?: string; apiBinding?: string; }
 
 export type DatingIntent =
     | 'serious' | 'date' | 'casual' | 'sm' | 'bored'
@@ -187,21 +189,64 @@ export function isMatch(p: Pick<DatingProfile, 'isChar' | 'intent'>, rng: () => 
     return rng() < base;
 }
 
+const DATING_RELATION_LABEL: Record<DatingIntent, string> = {
+    serious: '认真认识的人',
+    date: '约会对象',
+    casual: '随缘约会对象',
+    sm: '圈内认识的人',
+    bored: '聊天搭子',
+    gamemate: '游戏搭子',
+    sportmate: '运动搭子',
+    mealmate: '饭搭子',
+    studymate: '学习搭子',
+    soul: '灵魂共鸣对象',
+    offline: '同城新朋友',
+};
+
+export function datingProfileToAmbientContact(
+    p: DatingProfile,
+    userProfile: Pick<UserProfile, 'name'>,
+    now = Date.now(),
+): AmbientSocialContact {
+    const im = intentMeta(p.intent);
+    const userName = userProfile.name || '你';
+    return {
+        id: `dating-${p.id}`,
+        kind: 'contact',
+        name: p.name,
+        relation: p.intent === 'date' || p.intent === 'serious' || p.intent === 'casual' ? 'crush' : 'friend',
+        relationLabel: DATING_RELATION_LABEL[p.intent] || im.label,
+        avatar: p.avatar || '',
+        note: [
+            `在见闻簿·交友里和${userName}匹配/打过招呼。`,
+            `交友目的：${im.label}；距离约 ${p.distanceKm}km。`,
+            p.tags.length ? `标签：${p.tags.join('、')}。` : '',
+            `简介：${p.bio}`,
+        ].filter(Boolean).join('\n'),
+        lastMessage: `我刚刚在见闻簿看到你了。${p.bio ? p.bio.slice(0, 36) : '要不要继续聊聊？'}`,
+        lastAt: now,
+        createdAt: now,
+    };
+}
+
 /** 让某个交友对象用 AI 回应用户的打招呼（短、贴人设/目的、第一人称）。 */
 export async function generateDatingReply(api: DatingApi, p: DatingProfile, userProfile: UserProfile, greeting?: string): Promise<string> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) return fallbackDatingReply(p);
     const im = intentMeta(p.intent);
     const sys = `你是交友软件上的用户「${p.name}」。你的简介：「${p.bio}」。你的交友目的：${im.label}。${p.tags.length ? `标签：${p.tags.join('、')}。` : ''}用户「${userProfile.name || '对方'}」刚在交友软件上跟你打招呼。请用第一人称、完全贴合你的人设与交友目的、口语化地回应 1~2 句，自然、有点钩子或个性，只输出你说的话本身，不要旁白/引号/解释。`;
     const usr = `${userProfile.name || '对方'} 对你说：「${greeting || '你好呀，看到你了～'}」\n你的回应：`;
     try {
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-            body: JSON.stringify({ model: api.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }], temperature: 1.0, max_tokens: 2000, stream: false }),
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+            temperature: 1.0,
+            max_tokens: 2000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('social.dating', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '交友回复' }),
         });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        let t = (extractContent(await safeResponseJson(res)) || '').trim();
+        let t = (extractContent(data) || '').trim();
         t = t.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
         t = t.replace(/^["“「『（(]+/, '').replace(/["”」』）)]+$/, '').replace(/^[^：:]{1,8}[：:]\s*/, '').trim();
         return t.slice(0, 120) || fallbackDatingReply(p);
@@ -212,20 +257,23 @@ export async function generateDatingReply(api: DatingApi, p: DatingProfile, user
 export async function generateDatingBatch(
     api: DatingApi, characters: CharacterProfile[], userProfile: UserProfile, count = 14,
 ): Promise<DatingProfile[]> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) throw new Error('未配置 API');
     // 随机抽几位角色「出镜」
     const pool = [...characters];
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[pool[i], pool[j]] = [pool[j], pool[i]]; }
     const briefs: CharBrief[] = pool.slice(0, 5).map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || '', avatar: c.convoSettings?.charAvatarOverride || c.avatar }));
     const prompt = buildDatingPrompt(briefs, userProfile, count);
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.05, max_tokens: 12000, stream: false }),
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 1.05,
+        max_tokens: 12000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('social.dating', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '交友卡片' }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const raw = (extractContent(await safeResponseJson(res)) || '').trim();
+    const raw = (extractContent(data) || '').trim();
     const list = parseDatingProfiles(raw, briefs);
     if (list.length === 0) throw new Error('交友卡解析失败');
     return list;

@@ -19,11 +19,16 @@ import type {
   CoupleInteractionKind,
   CoupleMoment,
   CoupleMedia,
+  CoupleMemoryCard,
+  CoupleRecap,
+  CoupleTask,
+  CoupleWish,
 } from '../types';
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
   coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
+  coupleAutoCareUserPrompt, coupleRecapUserPrompt,
 } from './laiwangPrompts';
 import { llmComplete, type ChatMsg } from './llmComplete';
 import { makeApiUsageMeta } from './apiUsageCatalog';
@@ -51,6 +56,12 @@ export function createCoupleSpace(): CoupleSpace {
     whispers: [],
     wishes: [],
     questions: [],
+    settings: { theme: 'scrapbook' },
+    profile: { rituals: [] },
+    memoryCards: [],
+    recaps: [],
+    dailyCheckins: [],
+    autoCare: {},
     interactions: [],
     createdAt: now,
     updatedAt: now,
@@ -72,6 +83,12 @@ export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | 
       whispers: cs.whispers || [],
       wishes: cs.wishes || [],
       questions: cs.questions || [],
+      settings: { theme: 'scrapbook', ...(cs.settings || {}) },
+      profile: { ...(cs.profile || {}), rituals: cs.profile?.rituals || [] },
+      memoryCards: cs.memoryCards || [],
+      recaps: cs.recaps || [],
+      dailyCheckins: cs.dailyCheckins || [],
+      autoCare: cs.autoCare || {},
       interactions: cs.interactions || [],
       intimacy: typeof cs.intimacy === 'number' ? cs.intimacy : 0,
     };
@@ -238,6 +255,9 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     (cs.moments?.length || 0) > 0 || (cs.anniversaries?.length || 0) > 0 ||
     (cs.tasks?.length || 0) > 0 || (cs.whispers?.length || 0) > 0 ||
     (cs.wishes?.length || 0) > 0 || (cs.questions?.length || 0) > 0 ||
+    (cs.memoryCards?.length || 0) > 0 || (cs.recaps?.length || 0) > 0 ||
+    (cs.dailyCheckins?.length || 0) > 0 || !!cs.profile?.homeName ||
+    !!cs.profile?.loveLanguage || (cs.profile?.rituals?.length || 0) > 0 ||
     (cs.plant?.growth || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
@@ -264,6 +284,23 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
 
   const pendingTaskTitles = (cs.tasks || []).filter(t => !t.done).slice(0, 3).map(t => t.title);
   const pendingWishes = (cs.wishes || []).filter(w => !w.fulfilled).slice(0, 3).map(w => w.text);
+
+  const profileLines: string[] = [];
+  if (cs.profile?.homeName) profileLines.push(`空间名「${cs.profile.homeName.slice(0, 24)}」`);
+  if (cs.profile?.userNickname) profileLines.push(`${char.name}常叫${userName}「${cs.profile.userNickname.slice(0, 18)}」`);
+  if (cs.profile?.charNickname) profileLines.push(`${userName}常叫你「${cs.profile.charNickname.slice(0, 18)}」`);
+  if (cs.profile?.loveLanguage) profileLines.push(`偏爱的相处方式：${cs.profile.loveLanguage.slice(0, 40)}`);
+  (cs.profile?.rituals || []).slice(0, 3).forEach(r => profileLines.push(`固定小仪式：${r.slice(0, 40)}`));
+
+  const memoryCardLines = [...(cs.memoryCards || [])]
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.createdAt - a.createdAt)
+    .slice(0, 3)
+    .map(c => `${c.pinned ? '置顶' : '记忆'}「${c.title.slice(0, 24)}」：${c.text.slice(0, 60)}`);
+
+  const recapLines = [...(cs.recaps || [])]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 2)
+    .map(r => `${r.title.slice(0, 24)}：${r.summary.slice(0, 70)}`);
 
   // 提问箱里你近来答过的问答（让角色言行与自己答过的话保持一致）
   const recentQaLines = [...(cs.questions || [])]
@@ -298,6 +335,9 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     recentQaLines,
     plantLine,
     lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
+    profileLines,
+    memoryCardLines,
+    recapLines,
   });
 }
 
@@ -458,6 +498,14 @@ export const COMPAT_QUESTIONS: CompatQuestion[] = [
   { q: '更喜欢的天气？', a: '晴天暖阳', b: '雨天慵懒' },
   { q: '看电影更爱？', a: '甜甜爱情片', b: '刺激动作片' },
   { q: '深夜更想？', a: '聊到天亮', b: '抱着早睡' },
+  { q: '纪念日更想收到？', a: '认真准备的惊喜', b: '一起过的普通一天' },
+  { q: '吵完架更容易被什么哄好？', a: '直接抱住', b: '认真解释' },
+  { q: '约会迟到十分钟会？', a: '先撒娇混过去', b: '老实认错补偿' },
+  { q: '更想把情侣空间装成？', a: '乱糟糟但真实', b: '整整齐齐很漂亮' },
+  { q: '想念对方时更可能？', a: '发一条动态暗示', b: '憋着等对方来问' },
+  { q: '更想一起完成的事？', a: '养成一个小习惯', b: '去很远的地方' },
+  { q: '更容易记住？', a: '对方说过的小话', b: '一起经历的大事' },
+  { q: '收到投喂时第一反应？', a: '嘴硬说麻烦', b: '马上开心炫耀' },
 ];
 
 /** 随机抽 n 道默契题。 */
@@ -627,6 +675,292 @@ export async function generateCharMoment(opts: {
   } catch { /* fallthrough */ }
   const text = cleanLine(out, 80, [char.name, userName]);
   return text ? { text } : null;
+}
+
+// ── 情侣空间 2.0：后台自经营 / 回顾 / 记忆卡 ───────────────────────────────
+
+const AUTO_MOMENT_COOLDOWN_MS = DAY_MS;
+const AUTO_RECAP_COOLDOWN_MS = 3 * DAY_MS;
+
+export type CoupleAutoCareKind = 'moment' | 'wish' | 'task' | 'recap' | 'none';
+
+export interface CoupleAutoCareSource {
+  source: 'proactive' | 'leave' | 'catchup' | 'takeout' | 'date' | 'manual';
+  id?: string;
+  at?: number;
+  text: string;
+}
+
+export interface CoupleAutoCareDraft {
+  kind: CoupleAutoCareKind;
+  text?: string;
+  summary?: string;
+  mood?: string;
+  title?: string;
+  highlights?: string[];
+  suggestedTasks?: string[];
+  suggestedWishes?: string[];
+}
+
+export interface CoupleAutoCareDecision {
+  shouldRun: boolean;
+  allowRecap: boolean;
+  reason: string;
+}
+
+const sameLocalDay = (a?: number, b = Date.now()): boolean => {
+  if (!a) return false;
+  return todayYmd(a) === todayYmd(b);
+};
+
+export function isCoupleAutoCareEnabled(space: CoupleSpace | undefined | null): boolean {
+  return space?.settings?.autoCareEnabled !== false;
+}
+
+export function shouldRunCoupleAutoCare(space: CoupleSpace | undefined | null, now = Date.now()): CoupleAutoCareDecision {
+  if (!space) return { shouldRun: false, allowRecap: false, reason: 'no-space' };
+  if (!isCoupleAutoCareEnabled(space)) return { shouldRun: false, allowRecap: false, reason: 'disabled' };
+  const lastMomentToday = sameLocalDay(space.autoCare?.lastMomentAt, now);
+  const allowRecap = now - (space.autoCare?.lastRecapAt || 0) >= AUTO_RECAP_COOLDOWN_MS;
+  if (lastMomentToday && !allowRecap) return { shouldRun: false, allowRecap, reason: 'cooldown' };
+  return { shouldRun: true, allowRecap, reason: lastMomentToday ? 'recap-only' : 'ready' };
+}
+
+const cleanShort = (raw: unknown, maxLen: number): string => String(raw || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+
+const cleanList = (raw: unknown, maxItems: number, maxLen: number): string[] =>
+  Array.isArray(raw)
+    ? raw.map(x => cleanShort(x, maxLen)).filter(Boolean).slice(0, maxItems)
+    : [];
+
+function extractJsonObject(raw: string): any | null {
+  const text = raw.trim();
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1].trim() : text;
+  const m = body.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+
+function normalizeAutoCareDraft(raw: any, allowRecap = true): CoupleAutoCareDraft | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const kindRaw = String(raw.kind || '').trim().toLowerCase();
+  const kind: CoupleAutoCareKind =
+    kindRaw === 'moment' || kindRaw === 'wish' || kindRaw === 'task' || (allowRecap && kindRaw === 'recap') || kindRaw === 'none'
+      ? kindRaw as CoupleAutoCareKind
+      : 'none';
+  const text = cleanShort(raw.text, kind === 'recap' ? 140 : 90);
+  return {
+    kind,
+    text,
+    mood: cleanShort(raw.mood, 8) || undefined,
+    title: cleanShort(raw.title, 28) || undefined,
+    highlights: cleanList(raw.highlights, 4, 48),
+    suggestedTasks: cleanList(raw.suggestedTasks, 2, 40),
+    suggestedWishes: cleanList(raw.suggestedWishes, 2, 40),
+  };
+}
+
+function autoCareRecentSummary(space: CoupleSpace): string {
+  const parts: string[] = [];
+  [...(space.moments || [])].sort((a, b) => b.createdAt - a.createdAt).slice(0, 2)
+    .forEach(m => parts.push(`动态：${describeMoment(m)}`));
+  (space.tasks || []).filter(t => !t.done).slice(0, 2)
+    .forEach(t => parts.push(`未完成约定：${t.title}`));
+  (space.wishes || []).filter(w => !w.fulfilled).slice(0, 2)
+    .forEach(w => parts.push(`未实现心愿：${w.text}`));
+  return parts.join('；').slice(0, 240);
+}
+
+export async function generateCharCoupleAutoCare(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  space: CoupleSpace;
+  source: CoupleAutoCareSource;
+  allowRecap?: boolean;
+}): Promise<CoupleAutoCareDraft | null> {
+  const { char, userName, api, space, source } = opts;
+  const allowRecap = opts.allowRecap !== false;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleAutoCareUserPrompt({ userName, source: source.text.slice(0, 180), recent: autoCareRecentSummary(space), allowRecap }) },
+  ], 500, 'chat.coupleSpace.autoCare');
+  if (!out) return null;
+  return normalizeAutoCareDraft(extractJsonObject(out), allowRecap);
+}
+
+const periodKey = (period: 'week' | 'month', now = Date.now()): string => {
+  const d = new Date(now);
+  const y = d.getFullYear();
+  if (period === 'month') return `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const start = new Date(y, 0, 1).getTime();
+  const week = Math.floor((startOfDay(now) - start) / (7 * DAY_MS)) + 1;
+  return `${y}-W${String(week).padStart(2, '0')}`;
+};
+
+function recapSourceLines(space: CoupleSpace, limit = 10): string[] {
+  const lines: { at: number; text: string }[] = [];
+  (space.moments || []).forEach(m => lines.push({ at: m.createdAt, text: `动态：${describeMoment(m)}` }));
+  (space.tasks || []).forEach(t => lines.push({ at: t.doneAt || t.createdAt, text: `${t.done ? '完成约定' : '约定'}：${t.title}` }));
+  (space.wishes || []).forEach(w => lines.push({ at: w.fulfilledAt || w.createdAt, text: `${w.fulfilled ? '实现心愿' : '心愿'}：${w.text}` }));
+  (space.dailyCheckins || []).forEach(c => lines.push({ at: c.createdAt, text: `打卡：${c.ymd}${c.userMood ? ` ${c.userMood}` : ''}${c.note ? `，${c.note}` : ''}` }));
+  return lines.sort((a, b) => b.at - a.at).slice(0, limit).map(x => x.text.slice(0, 90));
+}
+
+export async function generateCoupleRecap(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  space: CoupleSpace;
+  period?: 'week' | 'month';
+}): Promise<CoupleAutoCareDraft | null> {
+  const period = opts.period || 'week';
+  const out = await callCoupleLLM(opts.api, [
+    { role: 'system', content: personaSystem(opts.char, opts.userName) },
+    { role: 'user', content: coupleRecapUserPrompt({ userName: opts.userName, periodLabel: period === 'month' ? '本月' : '本周', sourceLines: recapSourceLines(opts.space) }) },
+  ], 650, 'chat.coupleSpace.recap');
+  if (!out) return null;
+  const obj = extractJsonObject(out);
+  if (obj && !obj.text && obj.summary) obj.text = obj.summary;
+  const draft = normalizeAutoCareDraft({ ...(obj || {}), kind: 'recap' }, true);
+  return draft?.text || draft?.highlights?.length ? draft : null;
+}
+
+export function buildCoupleDateMemoryCard(input: {
+  title?: string;
+  sceneName?: string;
+  summary: string;
+  sourceId?: string;
+  sourceAt?: number;
+  imageUrl?: string;
+  createdAt?: number;
+}): CoupleMemoryCard {
+  const createdAt = input.createdAt || Date.now();
+  return {
+    id: genCoupleId('mc'),
+    kind: 'date',
+    title: cleanShort(input.title || input.sceneName || '一次约会', 32),
+    text: cleanShort(input.summary, 180),
+    sourceId: input.sourceId,
+    sourceAt: input.sourceAt,
+    imageUrl: input.imageUrl,
+    createdAt,
+  };
+}
+
+export function buildCoupleTakeoutMemoryCard(input: {
+  title?: string;
+  text: string;
+  sourceId?: string;
+  sourceAt?: number;
+  createdAt?: number;
+}): CoupleMemoryCard {
+  const createdAt = input.createdAt || Date.now();
+  return {
+    id: genCoupleId('mc'),
+    kind: 'takeout',
+    title: cleanShort(input.title || '一张饭票', 32),
+    text: cleanShort(input.text, 180),
+    sourceId: input.sourceId,
+    sourceAt: input.sourceAt,
+    createdAt,
+  };
+}
+
+export function applyCoupleAutoCareDraft(
+  space: CoupleSpace,
+  draft: CoupleAutoCareDraft | null | undefined,
+  source: CoupleAutoCareSource,
+  now = Date.now(),
+): { space: CoupleSpace; applied: CoupleAutoCareKind; message?: string } {
+  const base = ensureCoupleSpace({ coupleSpace: space });
+  const manual = source.source === 'manual';
+  const decision = manual ? { shouldRun: true, allowRecap: true, reason: 'manual' } : shouldRunCoupleAutoCare(base, now);
+  const kind = draft?.kind || 'none';
+  const autoCare = { ...(base.autoCare || {}), lastRunAt: now, lastSource: source.source, lastSummary: cleanShort(source.text, 80) };
+  if (!decision.shouldRun || kind === 'none') {
+    return { space: { ...base, autoCare, updatedAt: now }, applied: 'none' };
+  }
+
+  const text = cleanShort(draft?.text, kind === 'recap' ? 140 : 90);
+  if (!text && kind !== 'recap') return { space: { ...base, autoCare, updatedAt: now }, applied: 'none' };
+
+  if (kind === 'moment') {
+    if (!manual && sameLocalDay(base.autoCare?.lastMomentAt, now)) return { space: { ...base, autoCare, updatedAt: now }, applied: 'none' };
+    const moment: CoupleMoment = {
+      id: genCoupleId('mo'),
+      author: 'char',
+      text,
+      mood: draft?.mood,
+      createdAt: now,
+      likedByChar: true,
+      likedByUser: false,
+      comments: [],
+    };
+    return {
+      space: { ...base, moments: [moment, ...base.moments], autoCare: { ...autoCare, lastMomentAt: now }, updatedAt: now },
+      applied: 'moment',
+      message: text,
+    };
+  }
+
+  if (kind === 'wish') {
+    const wish: CoupleWish = { id: genCoupleId('ws'), text, by: 'char', fulfilled: false, createdAt: now };
+    return {
+      space: { ...base, wishes: [wish, ...(base.wishes || [])], autoCare, updatedAt: now },
+      applied: 'wish',
+      message: text,
+    };
+  }
+
+  if (kind === 'task') {
+    const task: CoupleTask = { id: genCoupleId('tk'), title: text, done: false, by: 'char', createdAt: now };
+    return {
+      space: { ...base, tasks: [task, ...base.tasks], autoCare, updatedAt: now },
+      applied: 'task',
+      message: text,
+    };
+  }
+
+  if (kind === 'recap') {
+    if (!manual && now - (base.autoCare?.lastRecapAt || 0) < AUTO_RECAP_COOLDOWN_MS) return { space: { ...base, autoCare, updatedAt: now }, applied: 'none' };
+    const highlights = draft?.highlights?.length ? draft.highlights : (text ? [text] : []);
+    const recap: CoupleRecap = {
+      id: genCoupleId('rc'),
+      period: 'week',
+      periodKey: periodKey('week', now),
+      title: cleanShort(draft?.title || '这几天的小报', 32),
+      summary: text || highlights.join('；').slice(0, 120) || '这几天也在慢慢靠近。',
+      highlights,
+      suggestedTasks: draft?.suggestedTasks || [],
+      suggestedWishes: draft?.suggestedWishes || [],
+      sourceIds: source.id ? [source.id] : [],
+      createdAt: now,
+    };
+    const card: CoupleMemoryCard = {
+      id: genCoupleId('mc'),
+      kind: 'recap',
+      title: recap.title,
+      text: recap.summary,
+      sourceId: recap.id,
+      sourceAt: now,
+      createdAt: now,
+    };
+    return {
+      space: {
+        ...base,
+        recaps: [recap, ...(base.recaps || [])],
+        memoryCards: [card, ...(base.memoryCards || [])],
+        autoCare: { ...autoCare, lastRecapAt: now },
+        updatedAt: now,
+      },
+      applied: 'recap',
+      message: recap.summary,
+    };
+  }
+
+  return { space: { ...base, autoCare, updatedAt: now }, applied: 'none' };
 }
 
 /** 给互动记录数组追加一条并裁剪长度（保留最近 N 条）。 */

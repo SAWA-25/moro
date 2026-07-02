@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Check, PencilSimple, X } from '@phosphor-icons/react';
 import { CharacterProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
@@ -34,10 +35,12 @@ interface OfflineModeModalProps {
     apiConfig: { baseUrl: string; apiKey: string; model: string };
     /** 结束线下模式：情景已落库后回调，宿主负责 reload + 触发角色主动消息 */
     onEnd: () => void;
+    /** 挂起线下模式：只收起窗口，保留 localStorage 草稿，不落库、不触发收尾 */
+    onSuspend: (entryCount: number) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
 
-const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, onEnd, addToast }) => {
+const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, onEnd, onSuspend, addToast }) => {
     const { theme } = useOS();
     const modalStyle = theme.offlineModeStyle || {};
     const modalBg = modalStyle.background || 'linear-gradient(180deg,#fffdfa,#fff4f7)';
@@ -48,6 +51,8 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [ending, setEnding] = useState(false);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editingText, setEditingText] = useState('');
     // 叙述人称：角色 / 用户各可选 第一/第二/第三人称，自由组合（存 localStorage，per-char）
     const [pov, setPov] = useState<OfflinePov>(() => loadOfflinePov(char.id));
     // 开场白方式：新会话先让用户挑这场见面怎么开始（靠近/造访/偶遇/赴约/自定义）；
@@ -65,6 +70,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     };
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
+    const isEditing = editingIndex !== null;
 
     const pushEntries = (...added: OfflineEntry[]) => {
         setEntries(prev => {
@@ -72,6 +78,34 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             saveOfflineSession(char.id, next);
             return next;
         });
+    };
+
+    const beginEditEntry = (index: number, text: string) => {
+        if (busy || ending) return;
+        setEditingIndex(index);
+        setEditingText(text);
+    };
+
+    const cancelEditEntry = () => {
+        setEditingIndex(null);
+        setEditingText('');
+    };
+
+    const saveEditEntry = () => {
+        if (editingIndex === null) return;
+        const text = editingText.trim();
+        if (!text) {
+            addToast('线下内容不能为空', 'info');
+            return;
+        }
+        setEntries(prev => {
+            if (!prev[editingIndex]) return prev;
+            const next = prev.map((entry, index) => index === editingIndex ? { ...entry, text } : entry);
+            saveOfflineSession(char.id, next);
+            return next;
+        });
+        setEditingIndex(null);
+        setEditingText('');
     };
 
     // 选定开场白方式后才生成见面开场（不再一打开就自动生成）。
@@ -100,6 +134,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     }, [entries, busy]);
 
     const runCharTurn = async (userInput?: string) => {
+        if (isEditing) return;
         setBusy(true);
         try {
             const base = userInput
@@ -116,14 +151,14 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
 
     const handleSend = async () => {
         const text = input.trim();
-        if (!text || busy) return;
+        if (!text || busy || isEditing) return;
         setInput('');
         pushEntries({ role: 'user', text, at: Date.now() });
         await runCharTurn(text);
     };
 
     const handleEnd = async () => {
-        if (ending) return;
+        if (ending || isEditing) return;
         setEnding(true);
         try {
             await commitOfflineSessionToContext(char, userProfile.name, entries);
@@ -133,6 +168,71 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             addToast(`线下记录保存失败：${e?.message || e}`, 'error');
             setEnding(false);
         }
+    };
+
+    const handleSuspend = () => {
+        if (busy || ending || isEditing || entries.length === 0) return;
+        saveOfflineSession(char.id, entries);
+        onSuspend(entries.length);
+    };
+
+    const renderEntryText = (text: string, index: number, onAccent = false) => {
+        const editingThis = editingIndex === index;
+        const editButtonStyle = onAccent
+            ? { background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.34)', color: '#fffdfa' }
+            : { background: 'rgba(255,255,255,0.72)', border: '1px solid #eed6df', color: modalInk };
+        if (editingThis) {
+            return (
+                <>
+                    <textarea
+                        value={editingText}
+                        onChange={e => setEditingText(e.target.value)}
+                        rows={4}
+                        autoFocus
+                        spellCheck={false}
+                        className="w-full min-h-[88px] bg-transparent text-[13px] leading-relaxed outline-none resize-y placeholder:text-[#a9a195]"
+                        style={{ color: onAccent ? '#fffdfa' : modalInk, caretColor: onAccent ? '#fffdfa' : modalAccent }}
+                    />
+                    <div className="mt-2 flex justify-end gap-1.5">
+                        <button
+                            type="button"
+                            onClick={saveEditEntry}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition disabled:opacity-50"
+                            style={{ background: onAccent ? 'rgba(255,255,255,0.28)' : modalAccent, border: onAccent ? '1px solid rgba(255,255,255,0.42)' : `1px solid ${modalAccent}`, color: '#fffdfa' }}
+                            title="保存修改"
+                        >
+                            <Check size={14} weight="bold" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={cancelEditEntry}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={editButtonStyle}
+                            title="取消修改"
+                        >
+                            <X size={14} weight="bold" />
+                        </button>
+                    </div>
+                </>
+            );
+        }
+        return (
+            <>
+                <div>{text}</div>
+                <div className="mt-2 flex justify-end">
+                    <button
+                        type="button"
+                        onClick={() => beginEditEntry(index, text)}
+                        disabled={busy || ending || (isEditing && !editingThis)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition disabled:opacity-40"
+                        style={editButtonStyle}
+                        title="修改这条线下内容"
+                    >
+                        <PencilSimple size={14} weight="bold" />
+                    </button>
+                </div>
+            </>
+        );
     };
 
     return (
@@ -159,14 +259,26 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             <div className="text-[9.5px]" style={{ color: '#a892a3' }}>只记录线下发生的事</div>
                         </div>
                     </div>
-                    <button
-                        onClick={handleEnd}
-                        disabled={ending}
-                        className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
-                        style={{ background: '#fffdfa', border: '1px solid #eed6df', color: modalInk, boxShadow: '0 1px 2px rgba(122,90,114,0.12)', ...CUTE_STACK }}
-                    >
-                        {ending ? '保存中…' : '结束线下'}
-                    </button>
+                    <div className="shrink-0 flex items-center gap-1.5">
+                        <button
+                            onClick={handleSuspend}
+                            disabled={busy || ending || isEditing || entries.length === 0}
+                            className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(255,253,250,0.72)', border: '1px solid #eed6df', color: '#8a6478', boxShadow: '0 1px 2px rgba(122,90,114,0.08)', ...CUTE_STACK }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : entries.length === 0 ? '先开始这场见面后再挂起' : '收起窗口，稍后继续这场线下现场'}
+                        >
+                            挂起
+                        </button>
+                        <button
+                            onClick={handleEnd}
+                            disabled={ending || isEditing}
+                            className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: '#fffdfa', border: '1px solid #eed6df', color: modalInk, boxShadow: '0 1px 2px rgba(122,90,114,0.12)', ...CUTE_STACK }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : undefined}
+                        >
+                            {ending ? '保存中…' : '结束线下'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* 叙述人称选择：角色 / 用户各可选 第一(我)/第二(你)/第三(TA)人称，自由组合 */}
@@ -260,7 +372,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         e.role === 'scene' ? (
                             // 旁白：贴在页中央的便签
                             <div key={i} className="moro-offline-modal-entry moro-offline-modal-scene text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#857f74', background: '#fffdfa', border: '1px solid #eed6df' }}>
-                                {e.text}
+                                {renderEntryText(e.text, i)}
                             </div>
                         ) : e.role === 'char' ? (
                             <div key={i} className="flex items-start gap-2.5">
@@ -268,13 +380,13 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                     <img src={char.avatar} className="w-6 h-6 object-cover" alt="" />
                                 </div>
                                 <div className="moro-offline-modal-entry moro-offline-modal-char text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: modalInk, background: '#fffdfa', border: '1px solid #efe2e9', borderRadius: '4px 14px 14px 14px', boxShadow: '0 1px 3px rgba(122,90,114,0.16)' }}>
-                                    {e.text}
+                                    {renderEntryText(e.text, i)}
                                 </div>
                             </div>
                         ) : (
                             <div key={i} className="flex justify-end">
                                 <div className="moro-offline-modal-entry moro-offline-modal-user text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#fffdfa', background: modalAccent, border: '1px solid rgba(216,165,183,0.55)', borderRadius: '14px 4px 14px 14px', boxShadow: '0 1px 3px rgba(122,90,114,0.18)' }}>
-                                    {e.text}
+                                    {renderEntryText(e.text, i, true)}
                                 </div>
                             </div>
                         )
@@ -297,12 +409,12 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         placeholder="说句话，或写下你的动作…"
                         className="flex-1 px-2 py-2 bg-transparent text-[13px] outline-none border-0 border-b border-[#dcc3cf] focus:border-[#d8a5b7] placeholder:text-[#a9a195]"
                         style={{ color: modalInk, caretColor: modalAccent }}
-                        disabled={busy || ending}
+                        disabled={busy || ending || isEditing}
                     />
                     {input.trim() ? (
                         <button
                             onClick={handleSend}
-                            disabled={busy || ending}
+                            disabled={busy || ending || isEditing}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                             style={{ background: modalAccent, border: '1px solid #d8a5b7', color: '#fff', boxShadow: '0 8px 18px -14px rgba(122,90,114,0.35)', ...CUTE_STACK }}
                         >
@@ -311,7 +423,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     ) : (
                         <button
                             onClick={() => { if (!busy && !ending) void runCharTurn(); }}
-                            disabled={busy || ending || entries.length === 0}
+                            disabled={busy || ending || isEditing || entries.length === 0}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                             style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#8a6478', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.24)', ...CUTE_STACK }}
                             title="让 TA 继续推进现场"

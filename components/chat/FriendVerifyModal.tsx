@@ -4,8 +4,10 @@ import { EnvelopeOpen } from '@phosphor-icons/react';
 import { CharacterProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
-import { safeResponseJson, extractContent } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { callChatCompletion } from '../../utils/llmClient';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 
 /**
  * 好友验证（被角色拉黑后重新申请加好友）。
@@ -92,7 +94,7 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
     const handleSend = async () => {
         const verifyText = text.trim();
         if (!verifyText) { addToast('先写一句验证消息吧', 'info'); return; }
-        if (!api?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!api?.baseUrl || !api.model) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setPhase('sending');
         try {
             const userName = userProfile?.name || '用户';
@@ -122,18 +124,20 @@ ${historyText || '（没有可用的聊天记录）'}
             // max_tokens 给足：推理模型的思考过程也计入 completion tokens，
             // 300 会被截断导致 JSON 不完整（「验证结果解析失败」的主因之一）
             const callOnce = async (extraInstruction?: string): Promise<{ accept: boolean; reply: string } | null> => {
-                const response = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                    body: JSON.stringify({
-                        model: api.model,
-                        messages: [{ role: 'user', content: extraInstruction ? `${prompt}\n\n${extraInstruction}` : prompt }],
-                        temperature: 0.85,
-                        max_tokens: 2000,
+                const data = await callChatCompletion(api, {
+                    model: api.model,
+                    messages: [{ role: 'user', content: extraInstruction ? `${prompt}\n\n${extraInstruction}` : prompt }],
+                    temperature: 0.85,
+                    max_tokens: 2000,
+                    stream: false,
+                }, {
+                    meta: makeApiUsageMeta('chat.friendVerify', {
+                        charId: char.id,
+                        charName: char.name,
+                        apiRole: api.apiRole || 'aux',
+                        apiBinding: api.apiBinding || '好友验证',
                     }),
                 });
-                if (!response.ok) throw new Error(`API Error (${response.status})`);
-                const data = await safeResponseJson(response);
                 return coerceVerifyResult(extractContent(data) || '');
             };
 

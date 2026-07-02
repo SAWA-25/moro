@@ -14,6 +14,7 @@ import { resolveMemoryPalaceAuxConfigsFromStorage } from './memoryPalace/auxConf
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
 import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled, makeDebugLogger } from './devDebug';
+import { buildOpenAiEndpoint } from './openAiCompat';
 
 // 同一个 category，两个 tag——保持 console 里现有的 [ActiveMsg] / [amsg] 标签，
 // 方便用户 / 文档里 grep 历史报错信息。两条 tag 都归 instant-push 一类。
@@ -23,6 +24,8 @@ const logAmsg = makeDebugLogger('instant-push', 'amsg');
 let initialized = false;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
 const INSTANT_TRACE_LOG_LIMIT = 200;
+const queuedReplyTargetSessionKeys: string[] = [];
+const queuedReplyTargetSessionKeySet = new Set<string>();
 
 // 三写：console.info + 无条件 localStorage ring + 用户勾控的 devDebug。
 // 参见 instantPushClient.instantTrace 的注释，两边设计一致。
@@ -48,6 +51,38 @@ function activeMsgTrace(event: string, details: Record<string, unknown> = {}): v
   // 复制 / 下载导出。gate 由 isCaptureEnabled('instant-push') 自动管，未勾时零成本。
   appendDevDebugLog('instant-push', { label: `trace:${event}`, data: entry });
 }
+
+const rememberQueuedReplyTargetSessionKey = (key: string): boolean => {
+  if (queuedReplyTargetSessionKeySet.has(key)) return false;
+  queuedReplyTargetSessionKeySet.add(key);
+  queuedReplyTargetSessionKeys.push(key);
+  while (queuedReplyTargetSessionKeys.length > 200) {
+    const oldKey = queuedReplyTargetSessionKeys.shift();
+    if (oldKey) queuedReplyTargetSessionKeySet.delete(oldKey);
+  }
+  return true;
+};
+
+const getQueuedReplyTarget = (
+  message: ActiveMsg2InboxMessage,
+  sessionId?: string,
+): { id: number; content: string; name: string } | undefined => {
+  if (!String(message.body || '').trim()) return undefined;
+  const raw = message.metadata?.queuedReplyTarget;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const rawRecord = raw as Record<string, unknown>;
+  const id = Number(rawRecord.id);
+  if (!Number.isFinite(id)) return undefined;
+  const key = sessionId ? `${sessionId}:${id}` : `${message.messageId}:${id}`;
+  if (!rememberQueuedReplyTargetSessionKey(key)) return undefined;
+  const content = typeof rawRecord.content === 'string'
+    ? rawRecord.content.replace(/\s+/g, ' ').trim()
+    : '';
+  const name = typeof rawRecord.name === 'string' && rawRecord.name.trim()
+    ? rawRecord.name.trim()
+    : '我';
+  return { id, content, name };
+};
 
 // ─── push 路径模块级 XHS 共享状态 ─────────────────────────────────────────────
 //
@@ -176,6 +211,8 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     }
   }
 
+  const queuedReplyTarget = getQueuedReplyTarget(message, sessionId);
+
   await applyAssistantPostProcessing(message.body || '', {
     char,
     userProfile,
@@ -204,6 +241,7 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     },
     xhsCaches: pushXhsCaches,
     lastXhsNotesRef: pushLastXhsNotesRef,
+    defaultReplyTo: queuedReplyTarget,
     api: {
       baseUrl: apiConfig.baseUrl,
       headers: {
@@ -296,8 +334,7 @@ function getInstantTotalMessages(message: ActiveMsg2InboxMessage): number {
 function toChatCompletionsUrl(baseUrl?: string): string {
   const trimmed = (baseUrl || '').trim();
   if (!trimmed) return 'instant-push';
-  if (/\/chat\/completions\/?$/i.test(trimmed)) return trimmed;
-  return `${trimmed.replace(/\/+$/, '')}/chat/completions`;
+  return buildOpenAiEndpoint(trimmed, 'chat.completions');
 }
 
 async function logInstantPushLlmExchange(message: ActiveMsg2InboxMessage): Promise<void> {

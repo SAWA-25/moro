@@ -18,7 +18,7 @@ import { ContextBuilder } from '../utils/context';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import MemoryArchivist from '../components/character/MemoryArchivist';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -28,6 +28,8 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
 import { createCharacterId } from '../utils/characterIdentity';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 
 // ── 剪影集专属胶片资料册色板：冷雾白 + 鼠尾草绿 + 胶片灰 ──
 const INK = '#2f3432';
@@ -432,7 +434,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   };
 
   const handleRefineMonth = async (year: string, month: string, rawText: string, formattedPrompt?: string) => {
-      if (!auxApi.apiKey) { addToast('请先配置 API Key', 'error'); return; }
+      if (!auxApi.baseUrl || !auxApi.model) { addToast('请先配置 API', 'error'); return; }
       if (!formData) return;
 
       const targetId = formData.id; // LOCK ID
@@ -460,24 +462,25 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           : `${taskPreamble}\n\n### 角色视角（仅供写作口吻参考）\n${identityContext}### 详细规则\n以该角色的第一人称写作，使用与日记相同的语言（中文），输出一段精简的月度核心记忆。`;
       const userContent = rawText;
 
-      const refineUrl = `${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`;
       const t0 = performance.now();
       try {
-          const response = await fetch(refineUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-              body: JSON.stringify({
-                  model: auxApi.model,
-                  messages: [
-                      { role: 'system', content: systemContent },
-                      { role: 'user', content: userContent },
-                  ],
-                  temperature: 0.3,
-              })
+          const data = await callChatCompletion(auxApi, {
+              model: auxApi.model,
+              messages: [
+                  { role: 'system', content: systemContent },
+                  { role: 'user', content: userContent },
+              ],
+              temperature: 0.3,
+              stream: false,
+          }, {
+              meta: makeApiUsageMeta('character.memoryArchive', {
+                  charId: targetId,
+                  charName: formData.name,
+                  apiRole: auxApi.apiRole || 'aux',
+                  apiBinding: auxApi.apiBinding || '月度核心记忆',
+              }),
           });
           const dt = Math.round(performance.now() - t0);
-          if (!response.ok) throw new Error(`API Request failed (HTTP ${response.status} after ${dt}ms)`);
-          const data = await safeResponseJson(response);
           const summary = extractContent(data);
           if (!summary) {
               // 失败时留一条诊断 warn：Gemini 3.1 preview 在某些 prompt 下会静默拒答
@@ -520,7 +523,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
    *                        没提供则退回到当前 selectedPromptId
    */
   const handleForceArchiveDate = async (dateStr: string, overridePromptId?: string): Promise<void> => {
-      if (!auxApi.apiKey || !formData) { addToast('请先配置 API Key', 'error'); return; }
+      if (!auxApi.baseUrl || !auxApi.model || !formData) { addToast('请先配置 API', 'error'); return; }
       const targetId = formData.id;
       try {
           const allMsgs = await DB.getMessagesByCharId(targetId, true);
@@ -547,14 +550,21 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
           prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-          const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-              body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 8000, stream: false }),
+          const data = await callChatCompletion(auxApi, {
+              model: auxApi.model,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.5,
+              max_tokens: 8000,
+              stream: false,
+          }, {
+              meta: makeApiUsageMeta('character.memoryArchive', {
+                  charId: targetId,
+                  charName: formData.name,
+                  apiRole: auxApi.apiRole || 'aux',
+                  apiBinding: auxApi.apiBinding || '单日记忆重总结',
+              }),
           });
-          if (!response.ok) throw new Error(`API ${response.status}`);
-          const data = await safeResponseJson(response);
-          let summary = (data.choices?.[0]?.message?.content || '').trim().replace(/^["']|["']$/g, '');
+          let summary = (extractContent(data) || '').trim().replace(/^["']|["']$/g, '');
           if (!summary) throw new Error('空响应');
 
           // upsert：同日期的 mood='archive' 替换；'palace' 自动归档不碰
@@ -603,7 +613,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const handleWebFileDownload = () => { const fileName = `${formData?.name || 'character'}_memories.txt`; const blob = new Blob([exportText], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); addToast('浏览器开始下载了', 'success'); };
 
   const handleImportMemories = async () => {
-      if (!importText.trim() || !auxApi.apiKey) { addToast('请检查输入内容或 API 设置', 'error'); return; }
+      if (!importText.trim() || !auxApi.baseUrl || !auxApi.model) { addToast('请检查输入内容或 API 设置', 'error'); return; }
       if (!formData) return;
 
       const targetId = formData.id; // LOCK ID
@@ -612,10 +622,20 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
       try {
           const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`;
-          const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` }, body: JSON.stringify({ model: auxApi.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) });
-          if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-          const data = await safeResponseJson(response);
-          let content = data.choices?.[0]?.message?.content || '';
+          const data = await callChatCompletion(auxApi, {
+              model: auxApi.model,
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.1,
+              stream: false,
+          }, {
+              meta: makeApiUsageMeta('character.importParse', {
+                  charId: targetId,
+                  charName: formData.name,
+                  apiRole: auxApi.apiRole || 'aux',
+                  apiBinding: auxApi.apiBinding || '旧文本导入',
+              }),
+          });
+          let content = extractContent(data) || '';
           content = content.replace(/```json/g, '').replace(/```/g, '').trim();
           const firstBracket = content.indexOf('[');
           const lastBracket = content.lastIndexOf(']');
@@ -641,7 +661,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   };
 
   const handleBatchSummarize = async () => {
-        if (!auxApi.apiKey || !formData) return;
+        if (!auxApi.baseUrl || !auxApi.model || !formData) return;
 
         const targetId = formData.id; // LOCK ID
         setIsBatchProcessing(true);
@@ -692,19 +712,21 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
                 prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-                const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                    body: JSON.stringify({
+                try {
+                    const data = await callChatCompletion(auxApi, {
                         model: auxApi.model,
                         messages: [{ role: "user", content: prompt }],
                         max_tokens: 8000,
-                        temperature: 0.5
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await safeResponseJson(response);
+                        temperature: 0.5,
+                        stream: false,
+                    }, {
+                        meta: makeApiUsageMeta('character.memoryArchive', {
+                            charId: targetId,
+                            charName: formData.name,
+                            apiRole: auxApi.apiRole || 'aux',
+                            apiBinding: auxApi.apiBinding || '批量记忆总结',
+                        }),
+                    });
                     let summary = extractContent(data);
                     summary = summary.replace(/^["']|["']$/g, '').trim();
 
@@ -716,6 +738,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             mood: 'auto'
                         });
                     }
+                } catch (e) {
+                    console.warn(`[Character] batch summarize failed for ${date}:`, e);
                 }
                 await new Promise(r => setTimeout(r, 500));
             }

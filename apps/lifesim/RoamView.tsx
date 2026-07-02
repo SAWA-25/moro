@@ -12,9 +12,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { AppID, CharacterProfile } from '../../types';
-import { safeFetchJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 import {
     X, ArrowClockwise, Crosshair, Footprints, MapPin, Sparkle,
     PaperPlaneRight, UserPlus, BookOpen, ChatCircleDots, Eye, Storefront,
@@ -179,8 +180,8 @@ function makeStranger(): RoamPerson {
 
 // ── AI ──────────────────────────────────────────────────────
 
-interface Api { baseUrl: string; apiKey: string; model: string; }
-const apiReady = (a?: Api) => !!(a?.baseUrl && a?.apiKey && a?.model);
+interface Api { baseUrl: string; apiKey?: string; model: string; apiRole?: string; apiBinding?: string; }
+const apiReady = (a?: Api) => !!(a?.baseUrl && a?.model);
 
 async function roamChatAI(api: Api, system: string, history: RoamMsg[]): Promise<string | null> {
     if (!apiReady(api)) return null;
@@ -189,16 +190,17 @@ async function roamChatAI(api: Api, system: string, history: RoamMsg[]): Promise
             { role: 'system', content: system },
             ...history.slice(-12).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
         ];
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
-                body: JSON.stringify({ model: api.model, messages, temperature: 0.9, max_tokens: 600, stream: false }),
-            },
-            2, 30000, makeApiUsageMeta('date.reply', { apiRole: 'aux', apiBinding: '街角漫游街头对话' }),
-        );
-        const txt = data?.choices?.[0]?.message?.content?.trim();
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages,
+            temperature: 0.9,
+            max_tokens: 600,
+            stream: false,
+        }, {
+            timeoutMs: 30000,
+            meta: makeApiUsageMeta('date.reply', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '街角漫游街头对话' }),
+        });
+        const txt = (extractContent(data) || '').trim();
         return txt ? txt.replace(/^\[.*?\]\s*/, '').slice(0, 500) : null;
     } catch { return null; }
 }
@@ -350,12 +352,17 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             const user = `世界观设定：\n${wv}\n\n`
                 + (charNames.length ? `这个世界里已经存在这些人（该 NPC 可能「单方面认识」其中 0~2 个——TA 知道对方、对方却不认识 TA）：${charNames.join('、')}\n\n` : '')
                 + '请生成一个会出现在这个世界街头的路人 NPC。';
-            const data = await safeFetchJson(
-                `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-                { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` }, body: JSON.stringify({ model: api.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperature: 0.95, max_tokens: 600, stream: false }) },
-                2, 30000, makeApiUsageMeta('date.worldEngine', { apiRole: 'aux', apiBinding: '街角漫游世界观 NPC 生成' }),
-            );
-            const raw: string = data?.choices?.[0]?.message?.content || '';
+            const data = await callChatCompletion(api, {
+                model: api.model,
+                messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+                temperature: 0.95,
+                max_tokens: 600,
+                stream: false,
+            }, {
+                timeoutMs: 30000,
+                meta: makeApiUsageMeta('date.worldEngine', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '街角漫游世界观 NPC 生成' }),
+            });
+            const raw: string = extractContent(data) || '';
             let obj: any = null;
             try { obj = JSON.parse(raw.replace(/```(?:json)?/gi, '').trim()); }
             catch { const a = raw.indexOf('{'), b = raw.lastIndexOf('}'); if (a >= 0 && b > a) { try { obj = JSON.parse(raw.slice(a, b + 1)); } catch { /* ignore */ } } }

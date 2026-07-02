@@ -1,6 +1,8 @@
-import { APIConfig, CharacterProfile, UserProfile, XhsFeedComment, XhsFeedPost, XhsStockImage } from '../types';
-import { safeResponseJson, extractContent } from './safeApi';
+import { APIConfig, CharacterProfile, UserProfile, XhsFeedCategory, XhsFeedComment, XhsFeedPost, XhsStockImage } from '../types';
+import { extractContent } from './safeApi';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 /**
  * 小红书 App 本地生成信息流。
@@ -44,6 +46,74 @@ export const FEED_TOPIC_POOL: string[] = [
     '盘串', '多肉爆崽', '阳台种菜', '咖啡拉花', '手冲', '威士忌', '精酿', '夜跑', '早八人', '熬夜冠军',
 ];
 
+export const XHS_FEED_CATEGORIES: { key: XhsFeedCategory; label: string }[] = [
+    { key: 'life', label: '生活' },
+    { key: 'food', label: '美食' },
+    { key: 'travel', label: '出行' },
+    { key: 'style', label: '穿搭' },
+    { key: 'work', label: '工作' },
+    { key: 'study', label: '学习' },
+    { key: 'emotion', label: '情绪' },
+    { key: 'hobby', label: '兴趣' },
+    { key: 'relationship', label: '关系' },
+    { key: 'other', label: '其他' },
+];
+
+const CATEGORY_KEYS = new Set<XhsFeedCategory>(XHS_FEED_CATEGORIES.map(c => c.key));
+
+const CATEGORY_KEYWORDS: Record<XhsFeedCategory, string[]> = {
+    life: ['日常', '独居', '租房', '家居', '周末', '碎碎念', '生活', '今天'],
+    food: ['美食', '探店', '咖啡', '甜品', '火锅', '面包', '饭', '菜', '一人食', '深夜放毒'],
+    travel: ['旅行', 'citywalk', '徒步', '露营', '骑行', '酒店', '机票', '公园', '周末去哪儿', '出门'],
+    style: ['穿搭', 'ootd', '美妆', '香水', '美甲', '护肤', '伪素颜', '汉服', 'jk'],
+    work: ['职场', '打工', '工位', '副业', '裸辞', '搞钱', '项目', '通勤', '上班'],
+    study: ['学习', '考研', '考公', '考编', '雅思', '读研', '证书', '图书馆', '自习'],
+    emotion: ['emo', '情绪', '内耗', '焦虑', '树洞', '自我和解', '分手', '疗愈', '清醒'],
+    hobby: ['手账', '摄影', '手作', '编织', '陶艺', '游戏', '追剧', '播客', '音乐节', 'livehouse', '剧本杀'],
+    relationship: ['恋爱', '相亲', '约会', '搭子', '朋友', '亲密', '关系', 'crush', '脱单'],
+    other: [],
+};
+
+export const normalizeXhsFeedCategory = (value: unknown): XhsFeedCategory => {
+    const key = String(value || '').trim() as XhsFeedCategory;
+    return CATEGORY_KEYS.has(key) ? key : 'other';
+};
+
+export const classifyXhsFeedCategory = (tags: string[] = [], title = '', body = ''): XhsFeedCategory => {
+    const haystack = [title, body, ...tags].join(' ').toLowerCase();
+    let best: { key: XhsFeedCategory; score: number } = { key: 'other', score: 0 };
+    for (const [key, words] of Object.entries(CATEGORY_KEYWORDS) as Array<[XhsFeedCategory, string[]]>) {
+        if (key === 'other') continue;
+        const score = words.reduce((sum, word) => sum + (haystack.includes(word.toLowerCase()) ? 1 : 0), 0);
+        if (score > best.score) best = { key, score };
+    }
+    return best.key;
+};
+
+export const chooseXhsCoverUrl = (
+    stockImages: XhsStockImage[] = [],
+    tags: string[] = [],
+    usedCovers: Set<string> = new Set(),
+    rng: () => number = Math.random,
+): string | undefined => {
+    const candidates = stockImages.filter(img => img.url && !usedCovers.has(img.url));
+    if (!candidates.length || rng() > 0.45) return undefined;
+
+    const normalizedTags = tags.map(t => t.toLowerCase());
+    const scored = candidates.map(img => {
+        const score = (img.tags || []).reduce((sum, tag) => {
+            const t = String(tag || '').toLowerCase();
+            return sum + (normalizedTags.some(pt => pt.includes(t) || t.includes(pt)) ? 1 : 0);
+        }, 0);
+        return { img, score };
+    }).sort((a, b) => b.score - a.score);
+    const pool = scored[0]?.score ? scored.filter(s => s.score === scored[0].score).map(s => s.img) : candidates;
+    const img = pool[Math.floor(rng() * pool.length)] || pool[0];
+    if (!img?.url) return undefined;
+    usedCovers.add(img.url);
+    return img.url;
+};
+
 /** 从话题池里随机抽 n 个不重复话题 */
 const pickTopics = (n: number): string[] => {
     const pool = [...FEED_TOPIC_POOL];
@@ -54,29 +124,26 @@ const pickTopics = (n: number): string[] => {
     return pool.slice(0, Math.min(n, pool.length));
 };
 
-const callLlm = async (apiConfig: APIConfig, systemPrompt: string, userMessage: string): Promise<string> => {
-    const baseUrl = apiConfig.baseUrl.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiConfig.apiKey || 'sk-none'}`,
-        },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMessage },
-            ],
-            temperature: 0.9,
-            // 帖子多 + 每帖评论多，给足额度，避免被 max_tokens 截断导致 JSON 不合法
-            // （实测 gemini 等会一路写到上限：8000 常被截在半个对象里，整批 JSON 报废）。
-            max_tokens: 16000,
-            stream: false,
-        }),
+const callLlm = async (
+    apiConfig: APIConfig,
+    systemPrompt: string,
+    userMessage: string,
+    featureId: 'social.generate' | 'social.reply' = 'social.generate',
+): Promise<string> => {
+    const data = await callChatCompletion(apiConfig, {
+        model: apiConfig.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+        ],
+        temperature: 0.9,
+        // 帖子多 + 每帖评论多，给足额度，避免被 max_tokens 截断导致 JSON 不合法
+        // （实测 gemini 等会一路写到上限：8000 常被截在半个对象里，整批 JSON 报废）。
+        max_tokens: 16000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta(featureId, { apiRole: 'aux' }),
     });
-    if (!resp.ok) throw new Error(`LLM API ${resp.status}`);
-    const data = await safeResponseJson(resp);
     return (extractContent(data) || '').trim();
 };
 
@@ -141,8 +208,25 @@ const parseJsonLoose = (raw: string): any => {
 const uid = (): string =>
     (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-/** 抽取参与本批发帖的角色（最多 4 位，随机），给 LLM 的人设摘要 */
-const pickPosterChars = (characters: CharacterProfile[], max = 4): CharacterProfile[] => {
+const XHS_CHARACTER_POST_BASE = 4;
+const XHS_CHARACTER_POST_GROWTH_STEP = 3;
+const XHS_CHARACTER_POST_MAX_RATIO = 0.6;
+
+export const getXhsCharacterPostQuota = (rosterCount: number, batchSize = FEED_BATCH_SIZE): number => {
+    const safeRosterCount = Math.max(0, Math.floor(Number(rosterCount) || 0));
+    const safeBatchSize = Math.max(0, Math.floor(Number(batchSize) || 0));
+    if (!safeRosterCount || !safeBatchSize) return 0;
+
+    const maxByBatchSize = Math.max(1, Math.floor(safeBatchSize * XHS_CHARACTER_POST_MAX_RATIO));
+    const scaledByRoster = safeRosterCount <= XHS_CHARACTER_POST_BASE
+        ? safeRosterCount
+        : XHS_CHARACTER_POST_BASE + Math.ceil((safeRosterCount - XHS_CHARACTER_POST_BASE) / XHS_CHARACTER_POST_GROWTH_STEP);
+
+    return Math.min(safeRosterCount, maxByBatchSize, scaledByRoster);
+};
+
+/** 抽取参与本批发帖的角色：名册越大，本批熟人作者配额越高。 */
+const pickPosterChars = (characters: CharacterProfile[], max = getXhsCharacterPostQuota(characters.length)): CharacterProfile[] => {
     const pool = [...characters];
     for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -166,7 +250,11 @@ export const resolveXhsAuthorCharacter = (
     return matched;
 };
 
-export const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfile): string => {
+export const buildFeedSystemPrompt = (
+    chars: CharacterProfile[],
+    userProfile: UserProfile,
+    targetCharacterPosts = chars.length,
+): string => {
     const charLines = chars.map((c, i) => {
         const persona = (c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300);
         const handle = c.socialProfile?.handle ? `（账号名也可用 ${c.socialProfile.handle}）` : '';
@@ -175,7 +263,9 @@ export const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: Us
         return `${i + 1}. ${formatCharacterWithId(c)}${idPart}${handle}：${persona || '（无人设描述）'}`;
     }).join('\n');
     const topics = pickTopics(22);
-    const charPostCount = chars.length ? Math.min(chars.length, 5) : 0;
+    const charPostCount = chars.length
+        ? Math.min(chars.length, FEED_BATCH_SIZE, Math.max(0, Math.floor(Number(targetCharacterPosts) || 0)))
+        : 0;
     const longMin = Math.max(4, Math.round(FEED_BATCH_SIZE * 0.4)); // 至少四成是有内容的长帖
     return `你是最懂小红书的资深博主兼运营，为一个虚拟手机系统生成一屏**像真人真事、能让人想点进去看**的小红书帖子。真实小红书不是全是一句话水帖：有随手碎片，也有把一件事讲得有起承转合、有干货、有情绪的长帖（探店测评、旅行记录、情感长文、避雷开箱、经验贴）。坚决避免「只有标题、正文一句话就没了」的空壳帖。
 
@@ -189,7 +279,7 @@ ${charLines || '（本批没有角色，全部生成 NPC 帖）'}
 ${topics.join('、')}
 
 ## 硬性要求
-1. 一次生成 ${FEED_BATCH_SIZE} 条帖子：角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 与角色名完全一致，isCharacter=true，**同一个角色最多发 1 条**）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨、健身教练、程序员…，isCharacter=false，昵称像真实小红书用户、各不相同）。
+1. 一次生成 ${FEED_BATCH_SIZE} 条帖子：角色帖目标 ${chars.length ? `${charPostCount} 条（名册角色越多，这个目标会越高；优先让上方每位角色各发 1 条，author 与角色名完全一致，isCharacter=true，**同一个角色最多发 1 条**）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨、健身教练、程序员…，isCharacter=false，昵称像真实小红书用户、各不相同）。
 2. **长短结合**：其中至少 ${longMin} 条是**有实质内容的长帖**（body 150~400 字、可分 2~4 段，把一件事讲清楚——有背景、有过程、有细节/干货、有情绪或观点、结尾带钩子或总结）；其余可以是短帖（几十字），但也要是具体的一件事，不能是空泛模板。
 3. **题材拉开差距、要有新意**：覆盖美食探店、旅行、穿搭、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、数码测评、母婴、职场、恋爱情感、运动户外等不同圈子；情感/八卦/树洞类要把事讲完整（起因经过+细节+心情），**绝不能只有标题或一句话**。具体到人物、地点、数字、对话才像真事，避免「今天好累」「求安慰」这种空壳。
 4. **不重复**：标题不重样、题材不撞车、昵称不重复。
@@ -208,25 +298,19 @@ export const generateFeedBatch = async (
     userProfile: UserProfile,
     stockImages: XhsStockImage[] = [],
 ): Promise<XhsFeedPost[]> => {
-    const posters = pickPosterChars(characters);
+    const characterPostQuota = getXhsCharacterPostQuota(characters.length);
+    const posters = pickPosterChars(characters, characterPostQuota);
     const raw = await callLlm(
         apiConfig,
-        buildFeedSystemPrompt(posters, userProfile),
+        buildFeedSystemPrompt(posters, userProfile, characterPostQuota),
         `现在是 ${new Date().toLocaleString('zh-CN')}，生成 ${FEED_BATCH_SIZE} 条新帖子。`,
+        'social.generate',
     );
     const arr = parseJsonLoose(raw);
     if (!Array.isArray(arr) || arr.length === 0) throw new Error('生成结果为空');
 
     const now = Date.now();
     const usedCovers = new Set<string>();
-    const pickCover = (): string | undefined => {
-        // 三成概率配一张图库封面（不重复），图库为空则全部走渐变占位
-        const candidates = stockImages.filter(img => img.url && !usedCovers.has(img.url));
-        if (!candidates.length || Math.random() > 0.3) return undefined;
-        const img = candidates[Math.floor(Math.random() * candidates.length)];
-        usedCovers.add(img.url);
-        return img.url;
-    };
 
     // 去重：标题撞车的丢掉；同一实名角色只当一次作者（其余转 NPC），治「重复话题/重复角色」
     const seenTitle = new Set<string>();
@@ -239,6 +323,12 @@ export const generateFeedBatch = async (
     }).map((p: any, i: number): XhsFeedPost => {
         const authorName = String(p?.author || '小红薯').slice(0, 24);
         const matched = resolveXhsAuthorCharacter(p, posters, usedChar);
+        const title = String(p?.title || '').trim() || '（无标题）';
+        const body = String(p?.body || '').trim();
+        const tags = Array.isArray(p?.tags) ? p.tags.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean) : [];
+        const category = normalizeXhsFeedCategory(p?.category) !== 'other'
+            ? normalizeXhsFeedCategory(p?.category)
+            : classifyXhsFeedCategory(tags, title, body);
         const comments: XhsFeedComment[] = Array.isArray(p?.comments)
             ? p.comments.slice(0, FEED_COMMENTS_PER_POST).map((cm: any): XhsFeedComment => ({
                 id: uid(),
@@ -254,17 +344,104 @@ export const generateFeedBatch = async (
             charId: matched?.id,
             author: matched?.name || authorName,
             authorAvatar: matched?.avatar,
-            title: String(p?.title || '').trim() || '（无标题）',
-            body: String(p?.body || '').trim(),
-            tags: Array.isArray(p?.tags) ? p.tags.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean) : [],
-            coverUrl: pickCover(),
+            title,
+            body,
+            tags,
+            coverUrl: chooseXhsCoverUrl(stockImages, tags, usedCovers),
             likes: Math.max(0, Math.floor(Number(p?.likes) || 0)),
             favs: Math.floor(Math.max(0, Math.floor(Number(p?.likes) || 0)) * (0.1 + Math.random() * 0.3)),
             comments,
+            source: 'generated',
+            category,
             // 错开发布时间：最近 48 小时内随机分布，保持「刚刷出来」的新帖在前
             createdAt: now - i * 1000 - Math.floor(Math.random() * 48 * 3600 * 1000 * (i / Math.max(arr.length, 1))),
         };
     });
+};
+
+export const buildCharacterLifePostPrompt = (char: CharacterProfile, userProfile: UserProfile): string => {
+    const persona = [
+        `名字：${char.name}`,
+        char.systemPrompt ? `人设：${String(char.systemPrompt).replace(/\s+/g, ' ').slice(0, 800)}` : '',
+        char.worldview ? `世界观：${String(char.worldview).replace(/\s+/g, ' ').slice(0, 300)}` : '',
+        char.socialProfile?.bio ? `主页签名：${char.socialProfile.bio}` : '',
+        char.socialProfile?.region ? `常在地区：${char.socialProfile.region}` : '',
+    ].filter(Boolean).join('\n');
+    const id = getCharacterModelId(char);
+    return `你在为 Moro 的本地「见闻簿」生成一条熟人的公开生活动态。它只保存在本地，不会发布到真实平台。
+
+## 发帖人
+${persona || `名字：${char.name}`}
+身份锚 charId="${id}"
+
+## 浏览者
+${userProfile.name || '用户'} 会在见闻簿里看到这条动态，但帖子不要直接 @ TA，也不要写成私聊消息。
+
+## 要求
+1. 只写 ${char.name} 会公开发出来的一条生活动态：像真实小红书/生活笔记，不要像 AI 作文。
+2. 题材从 TA 的人设、当下时间、兴趣、工作学习、城市、情绪、见闻里自然生长；有具体细节。
+3. body 80~260 字，可分段；既可以是日常、探店、穿搭、学习工作、兴趣记录，也可以是轻微树洞。
+4. category 必须从这些 key 里选一个：${XHS_FEED_CATEGORIES.map(c => c.key).join('、')}。
+5. tags 4~8 个，不带 #；likes 0~300，评论 2~4 条，像路人真实评论。
+
+只输出一个 JSON 对象，不要 markdown，不要解释：
+{"author":"${char.name}","charId":"${id}","isCharacter":true,"title":"…","body":"…","category":"life","tags":["…"],"likes":36,"comments":[{"author":"…","content":"…","likes":3}]}`;
+};
+
+/** 单个熟人更新近况：纯本地生成，不触碰真实平台。 */
+export const generateCharacterLifePost = async (
+    apiConfig: APIConfig,
+    char: CharacterProfile,
+    userProfile: UserProfile,
+    stockImages: XhsStockImage[] = [],
+): Promise<XhsFeedPost> => {
+    const raw = await callLlm(
+        apiConfig,
+        '你是擅长写真实生活动态的社交平台内容生成器。只输出合法 JSON。',
+        buildCharacterLifePostPrompt(char, userProfile),
+        'social.generate',
+    );
+    const parsed = parseJsonLoose(raw);
+    const source = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!source || typeof source !== 'object') throw new Error('熟人动态生成结果为空');
+
+    const now = Date.now();
+    const title = String(source?.title || '').trim() || `${char.name} 的一条近况`;
+    const body = String(source?.body || source?.content || '').trim();
+    if (!body) throw new Error('熟人动态缺少正文');
+    const tags = Array.isArray(source?.tags)
+        ? source.tags.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean)
+        : ['熟人近况', '日常'];
+    const comments: XhsFeedComment[] = Array.isArray(source?.comments)
+        ? source.comments.slice(0, 4).map((cm: any): XhsFeedComment => ({
+            id: uid(),
+            author: String(cm?.author || '路过的小红薯').slice(0, 24),
+            content: String(cm?.content || '').trim(),
+            likes: Math.max(0, Math.floor(Number(cm?.likes) || 0)),
+            timestamp: now - Math.floor(Math.random() * 3600000),
+        })).filter((cm: XhsFeedComment) => cm.content)
+        : [];
+    const category = normalizeXhsFeedCategory(source?.category) !== 'other'
+        ? normalizeXhsFeedCategory(source?.category)
+        : classifyXhsFeedCategory(tags, title, body);
+
+    return {
+        id: uid(),
+        authorType: 'character',
+        charId: char.id,
+        author: char.name,
+        authorAvatar: char.convoSettings?.charAvatarOverride || char.avatar,
+        title,
+        body,
+        tags,
+        coverUrl: chooseXhsCoverUrl(stockImages, tags, new Set(), () => 0),
+        likes: Math.max(0, Math.floor(Number(source?.likes) || Math.random() * 120)),
+        favs: Math.floor(Math.random() * 20),
+        comments,
+        createdAt: now,
+        source: 'character_life',
+        category,
+    };
 };
 
 /** 用户评论后，帖子作者（角色按人设 / NPC 按帖子口吻）回一条评论 */
@@ -287,6 +464,7 @@ export const generateAuthorReply = async (
 「${userProfile.name}」刚刚评论了：「${userComment}」
 
 写你的回复：`,
+        'social.reply',
     );
     return {
         id: uid(),

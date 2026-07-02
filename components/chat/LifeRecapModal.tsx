@@ -28,6 +28,36 @@ function timeLabel(ts: number): string {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const LIFE_KIND_LABELS: Record<string, string> = {
+    routine: '日常',
+    work: '工作',
+    study: '学习',
+    social: '社交',
+    errand: '琐事',
+    rest: '休息',
+    media: '刷到',
+    food: '吃喝',
+    travel: '路上',
+    health: '身体',
+    emotion: '情绪',
+    relationship: '关系',
+    accident: '小意外',
+    other: '生活',
+};
+
+const ENERGY_LABELS: Record<string, string> = { low: '低能量', medium: '普通能量', high: '高能量' };
+const ANGLE_LABELS: Record<string, string> = {
+    share: '想分享',
+    vent: '想吐槽',
+    ask: '想问你',
+    tease: '想逗你',
+    care: '想关心',
+    invite: '想邀你',
+    followup: '接旧话',
+    silence: '不想说',
+    other: '顺手说',
+};
+
 /** 标记某角色的回顾已看到（清掉聊天里的「TA 经历了…」横幅）。 */
 export function markLifeRecapSeen(charId: string) {
     try { localStorage.setItem(`life_recap_seen_${charId}`, String(Date.now())); } catch { /* ignore */ }
@@ -113,6 +143,15 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                             style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                             <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...CUTE_STACK, color: PAPER_TONES.ink, overflowWrap: 'anywhere' }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                {ev.eventKind && (
+                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{LIFE_KIND_LABELS[ev.eventKind] || '生活'}</span>
+                                                )}
+                                                {ev.energy && (
+                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#f7f2e9', border: '1px solid #eed6df' }}>{ENERGY_LABELS[ev.energy] || ev.energy}</span>
+                                                )}
+                                                {ev.proactiveAngle && (
+                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fffdfa', border: '1px solid #eed6df' }}>{ANGLE_LABELS[ev.proactiveAngle] || '顺手说'}</span>
+                                                )}
                                                 {ev.mood && (
                                                     <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{ev.mood}</span>
                                                 )}
@@ -120,7 +159,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                                     <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>位置：{ev.location}</span>
                                                 )}
                                                 {ev.surfacedAsMsg && (
-                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#a892a3', background: '#fff4f7', border: '1px solid #eed6df' }}>已跟你说过</span>
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#a892a3', background: '#fff4f7', border: '1px solid #eed6df' }}>已跟你说过{ev.surfacedAt ? ` ${timeLabel(ev.surfacedAt)}` : ''}</span>
                                                 )}
                                             </div>
                                         </div>

@@ -5,7 +5,9 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { SongSheet, SongLine, SongComment, SongMood, SongGenre, SongAudio, MusicProvider, AppID } from '../types';
 import { SONG_GENRES, SONG_MOODS, SECTION_LABELS, COVER_STYLES, SongPrompts, LYRIC_TEMPLATES, getLyricTemplate } from '../utils/songPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { safeResponseJson, extractJson } from '../utils/safeApi';
+import { extractContent, extractJson } from '../utils/safeApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { DB } from '../utils/db';
 import {
     synthesizeSong,
@@ -356,17 +358,23 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
             apiMessages.push({ role: 'user', content: userPrompt });
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: apiMessages, temperature: 0.8, max_tokens: 2000 })
-            });
-
-            if (response.ok) {
-                const data = await safeResponseJson(response);
+            {
+                const data = await callChatCompletion(auxApi, {
+                    model: auxApi.model,
+                    messages: apiMessages,
+                    temperature: 0.8,
+                    max_tokens: 2000,
+                }, {
+                    meta: makeApiUsageMeta('creative.songwriting', {
+                        charId: collaborator.id,
+                        charName: collaborator.name,
+                        apiRole: auxApi.apiRole || 'aux',
+                        apiBinding: auxApi.apiBinding || 'Songwriting',
+                    }),
+                });
                 if (data.usage?.total_tokens) setLastTokenUsage(data.usage.total_tokens);
 
-                const rawContent = data.choices[0].message.content.trim();
+                const rawContent = (extractContent(data) || '').trim();
                 const parsed = extractJson(rawContent);
 
                 const newComments: SongComment[] = [];
@@ -492,8 +500,6 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 };
                 setActiveSong(finalSong);
                 await updateSong(finalSong.id, { comments: finalSong.comments });
-            } else {
-                throw new Error(`API Error: ${response.status}`);
             }
         } catch (e: any) {
             addToast('请求失败: ' + e.message, 'error');
@@ -610,18 +616,20 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             const prompt = SongPrompts.buildCompletionPrompt(collaborator, userProfile, activeSong);
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 500 })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+                max_tokens: 500,
+            }, {
+                meta: makeApiUsageMeta('creative.songwriting', {
+                    charId: collaborator.id,
+                    charName: collaborator.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || 'Songwriting',
+                }),
             });
-
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                setCompletionReview(data.choices[0].message.content.trim());
-            } else {
-                setCompletionReview('(评价生成失败，但不影响保存)');
-            }
+            setCompletionReview((extractContent(data) || '').trim());
         } catch {
             setCompletionReview('(网络错误，但不影响保存)');
         } finally {
@@ -1041,7 +1049,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const handleAiWritePrompt = async () => {
         if (!activeSong) return;
-        if (!auxApi.baseUrl || !auxApi.apiKey) {
+        if (!auxApi.baseUrl || !auxApi.model) {
             addToast('请先在「文具盒」里配置 LLM API', 'error');
             return;
         }

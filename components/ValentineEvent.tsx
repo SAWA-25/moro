@@ -13,7 +13,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
+import { callChatCompletion, fetchModelList } from '../utils/llmClient';
 import { APIConfig, CharacterProfile, SpecialMomentRecord } from '../types';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { Capacitor } from '@capacitor/core';
@@ -297,24 +298,15 @@ const InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ 
         setIsLoadingModels(true);
         setStatusMsg('正在连接...');
         try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' },
-                __moroMeta: makeApiUsageMeta('special.valentineApi.fetchModels', { apiRole: 'main', apiBinding: '情人节活动 API' }),
-            } as RequestInit & { __moroMeta?: unknown });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m).filter((m: any): m is string => typeof m === 'string' && !!m.trim());
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
-        } catch (error: any) {
-            setStatusMsg('连接失败');
+            const models = await fetchModelList({ baseUrl: localUrl, apiKey: localKey }, {
+                meta: makeApiUsageMeta('special.valentineApi.fetchModels', { apiRole: 'main', apiBinding: '情人节活动 API' }),
+            });
+            setAvailableModels(models);
+            if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
+            setStatusMsg(`获取到 ${models.length} 个模型`);
+            setShowModelList(true);
+        } catch {
+            setStatusMsg('连接失败，也可以先手动填写模型名');
         } finally {
             setIsLoadingModels(false);
         }
@@ -569,7 +561,7 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
         const c = characters.find(ch => ch.id === cId);
         if (!c) { setErrorMsg('找不到角色'); setPhase('error'); return; }
 
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) {
+        if (!apiConfig.baseUrl || !apiConfig.model) {
             setErrorMsg('API 未配置');
             setPhase('error');
             return;
@@ -624,22 +616,22 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
 
 禁止使用不在列表中的情绪标签。台词用双引号，动作直接写。`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [
-                        { role: 'system', content: baseContext },
-                        { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` }
-                    ],
-                    temperature: 0.88
-                })
+            const data = await callChatCompletion(apiConfig, {
+                model: apiConfig.model,
+                messages: [
+                    { role: 'system', content: baseContext },
+                    { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` }
+                ],
+                temperature: 0.88
+            }, {
+                meta: makeApiUsageMeta('special.valentine.generate', {
+                    charId: cId,
+                    charName: c.name,
+                    apiRole: 'main',
+                    apiBinding: '情人节活动 API',
+                }),
             });
-
-            if (!response.ok) throw new Error(`API 错误: ${response.status}`);
-            const data = await safeResponseJson(response);
-            const content = data.choices?.[0]?.message?.content;
+            const content = extractContent(data);
             if (!content) throw new Error('AI 返回为空');
 
             hydrateSessionFromContent(content);

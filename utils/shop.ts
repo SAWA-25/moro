@@ -542,6 +542,158 @@ export function recommendItems(catalog: ShopItem[], favorites: string[], count =
         .map(x => x.it);
 }
 
+// ── 心意参谋：关系 / 场景 / 预算导购 ────────────────────────────────────────
+export type GiftOccasionKey = 'daily' | 'birthday' | 'date' | 'apology' | 'comfort' | 'celebrate' | 'practical' | 'tease';
+
+export interface GiftOccasion {
+    key: GiftOccasionKey;
+    label: string;
+    hint: string;
+}
+
+export const SHOP_GIFT_OCCASIONS: GiftOccasion[] = [
+    { key: 'daily', label: '日常惦记', hint: '轻一点，像顺手带回来的心意' },
+    { key: 'birthday', label: '生日纪念', hint: '要有一点郑重感和留念感' },
+    { key: 'date', label: '约会见面', hint: '甜、漂亮、能制造气氛' },
+    { key: 'apology', label: '道歉和好', hint: '别太冒进，重点是态度' },
+    { key: 'comfort', label: '安慰陪伴', hint: '柔软、实用、能照顾到 TA' },
+    { key: 'celebrate', label: '庆祝奖励', hint: '适合为 TA 鼓掌或犒劳' },
+    { key: 'practical', label: '实用补给', hint: '最好能进入 TA 的日常' },
+    { key: 'tease', label: '整活逗笑', hint: '有趣但不要太冒犯' },
+];
+
+export interface RelationStage {
+    key: 'careful' | 'familiar' | 'close' | 'intimate';
+    label: string;
+    hint: string;
+    sweetPrice: number;
+}
+
+export interface GiftAdvice {
+    item: ShopItem;
+    score: number;
+    reason: string;
+    tags: string[];
+    relationLabel: string;
+    caution?: string;
+}
+
+export interface GiftAdvisorProfile {
+    charName?: string;
+    affection?: number;
+    personaText?: string;
+    occasion?: GiftOccasionKey;
+    budget?: number;
+    favorites?: string[];
+}
+
+const OCCASION_CATEGORY_BONUS: Record<GiftOccasionKey, Partial<Record<string, number>>> = {
+    daily: { food: 22, life: 24, plush: 12, flower: 8 },
+    birthday: { jewel: 22, tech: 20, romance: 18, plush: 16, food: 12, life: 10 },
+    date: { romance: 28, flower: 24, food: 18, jewel: 16, plush: 10 },
+    apology: { flower: 22, food: 18, life: 16, plush: 12, romance: -8, tech: -10 },
+    comfort: { plush: 28, life: 22, food: 18, flower: 8, tech: 4 },
+    celebrate: { food: 22, flower: 18, tech: 16, romance: 14, jewel: 10 },
+    practical: { life: 28, tech: 24, food: 8, jewel: -6, romance: -8 },
+    tease: { plush: 24, food: 18, tech: 10, romance: 6, jewel: -10 },
+};
+
+const RELATION_CATEGORY_BONUS: Record<RelationStage['key'], Partial<Record<string, number>>> = {
+    careful: { food: 18, life: 14, plush: 8, flower: 6, romance: -18, jewel: -10 },
+    familiar: { life: 18, food: 16, tech: 12, plush: 12, flower: 8 },
+    close: { life: 16, tech: 15, jewel: 14, romance: 12, plush: 10, flower: 8 },
+    intimate: { romance: 24, jewel: 20, flower: 16, life: 10, tech: 8 },
+};
+
+const CATEGORY_PERSONA_KEYWORDS: Record<string, string[]> = {
+    flower: ['花', '植物', '园艺', '香气', '漂亮', '浪漫'],
+    food: ['吃', '甜', '蛋糕', '奶茶', '咖啡', '烘焙', '料理', '零食'],
+    jewel: ['首饰', '戒指', '项链', '漂亮', '精致', '发饰', '穿搭'],
+    plush: ['抱', '软', '玩偶', '娃娃', '猫', '兔', '睡觉', '可爱'],
+    tech: ['音乐', '耳机', '数码', '游戏', '摄影', '相机', '代码', '效率'],
+    life: ['生活', '房间', '香薰', '雨', '围巾', '杯', '书桌', '睡眠'],
+    romance: ['恋', '爱', '纪念', '星空', '信', '约会', '心动', '浪漫'],
+};
+
+export function relationStageFromAffection(affection: number | undefined): RelationStage {
+    const n = typeof affection === 'number' ? affection : 50;
+    if (n < 35) return { key: 'careful', label: '点到为止', hint: '适合不冒犯的小心意', sweetPrice: 49 };
+    if (n < 60) return { key: 'familiar', label: '熟悉日常', hint: '适合贴近日常的礼物', sweetPrice: 99 };
+    if (n < 82) return { key: 'close', label: '亲近在意', hint: '可以多一点个人偏好', sweetPrice: 199 };
+    return { key: 'intimate', label: '亲密纪念', hint: '适合郑重、浪漫或定制感', sweetPrice: 399 };
+}
+
+export function itemGiftSignals(item: ShopItem): { relationLabel: string; scenes: string[]; caution?: string } {
+    const scenesByCat: Record<string, string[]> = {
+        flower: ['见面', '道歉', '纪念'],
+        food: ['日常', '庆祝', '安慰'],
+        jewel: ['纪念', '亲密', '生日'],
+        plush: ['安慰', '整活', '陪伴'],
+        tech: ['实用', '生日', '奖励'],
+        life: ['日常', '照顾', '实用'],
+        romance: ['约会', '纪念', '告白'],
+    };
+    let relationLabel = '轻量心意';
+    if (item.category === 'romance' || item.price >= 399) relationLabel = '亲密纪念';
+    else if (item.category === 'jewel' || item.price >= 159) relationLabel = '熟后更稳';
+    else if (item.category === 'life' || item.category === 'tech') relationLabel = '实用陪伴';
+    else if (item.category === 'plush') relationLabel = '柔软安慰';
+    const rating = itemRating(item.id);
+    const caution = rating < 3.4 ? '评分偏低，适合剧情整活或故意踩雷' : item.price > 520 ? '价格偏高，关系不够近时可能显得突然' : undefined;
+    return { relationLabel, scenes: scenesByCat[item.category] || ['日常'], caution };
+}
+
+export function recommendGiftsForCharacter(catalog: ShopItem[], profile: GiftAdvisorProfile, count = 8): GiftAdvice[] {
+    const source = catalog.length ? catalog : SHOP_ITEMS;
+    const budget = Math.max(5, profile.budget ?? 199);
+    const stage = relationStageFromAffection(profile.affection);
+    const occasion = profile.occasion || 'daily';
+    const favCats = new Set((profile.favorites || []).map(id => getShopItem(id)?.category).filter(Boolean) as string[]);
+    const persona = (profile.personaText || '').toLowerCase();
+    const affordable = source.filter(it => it.price <= budget);
+    const pool = affordable.length >= Math.min(3, count) ? affordable : source;
+    const occasionDef = SHOP_GIFT_OCCASIONS.find(o => o.key === occasion) || SHOP_GIFT_OCCASIONS[0];
+
+    return pool
+        .map(item => {
+            const signals = itemGiftSignals(item);
+            const occasionScore = OCCASION_CATEGORY_BONUS[occasion]?.[item.category] || 0;
+            const relationScore = RELATION_CATEGORY_BONUS[stage.key]?.[item.category] || 0;
+            const personaHits = (CATEGORY_PERSONA_KEYWORDS[item.category] || []).filter(k => persona.includes(k)).length;
+            const priceDelta = Math.abs(item.price - stage.sweetPrice);
+            const priceScore = item.price <= budget
+                ? Math.max(0, 34 - Math.round(priceDelta / 12))
+                : -Math.min(80, Math.round((item.price - budget) / 4));
+            const ratingScore = Math.round((itemRating(item.id) - 3) * 10);
+            const favScore = favCats.has(item.category) ? 14 : 0;
+            const freshness = hashStr(`${occasion}|${stage.key}|${item.id}`) % 9;
+            const score = occasionScore + relationScore + personaHits * 9 + priceScore + ratingScore + favScore + freshness;
+            const tags = [
+                occasionDef.label,
+                signals.relationLabel,
+                item.price <= budget ? '预算内' : '超预算',
+                ...(personaHits ? ['贴人设'] : []),
+                ...(favScore ? ['合你眼缘'] : []),
+            ].slice(0, 5);
+            const reasons = [
+                `${profile.charName || 'TA'}现在更适合「${stage.label}」尺度`,
+                occasionScore > 0 ? `契合「${occasionDef.label}」` : '',
+                personaHits ? '能贴到 TA 的设定偏好' : signals.scenes.length ? `偏${signals.scenes[0]}场景` : '',
+                item.price <= budget ? `¥${formatPrice(item.price)} 在预算内` : `¥${formatPrice(item.price)} 会超预算`,
+            ].filter(Boolean);
+            return {
+                item,
+                score,
+                reason: reasons.join(' · '),
+                tags,
+                relationLabel: signals.relationLabel,
+                caution: signals.caution,
+            };
+        })
+        .sort((a, b) => b.score - a.score || a.item.price - b.item.price)
+        .slice(0, count);
+}
+
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────
 
 export interface CharShopDecision {
@@ -555,9 +707,12 @@ export function buildCharShopPrompt(
     char: { name: string; personaText?: string },
     userName: string,
     budget: number,
+    items: ShopItem[] = SHOP_ITEMS,
 ): { system: string; user: string } {
-    const affordable = SHOP_ITEMS.filter(i => i.price <= budget);
-    const menu = (affordable.length ? affordable : SHOP_ITEMS)
+    const shelf = items.length ? items : SHOP_ITEMS;
+    const affordable = shelf.filter(i => i.price <= budget);
+    const menu = (affordable.length ? affordable : shelf)
+        .slice(0, 36)
         .map(i => `- ${i.id} | ${i.emoji}${i.name} | ¥${formatPrice(i.price)} | ${i.blurb}`)
         .join('\n');
     const persona = (char.personaText || '').toString().slice(0, 800);
@@ -588,6 +743,83 @@ export function parseCharShopDecision(raw: string): CharShopDecision | null {
         const action: CharShopDecision['action'] = obj.action === 'gift' ? 'gift' : obj.action === 'want' ? 'want' : 'buy';
         const note = String(obj.note || '').trim().slice(0, 40);
         return { action, itemId: item.id, note };
+    } catch {
+        return null;
+    }
+}
+
+// ── 陪伴逛心意铺（角色能看见当前界面并即时反应）──────────────────────────────
+
+export type ShopCompanionSurface = 'home' | 'category' | 'item' | 'cart' | 'order' | 'my';
+export type ShopCompanionAction = 'comment' | 'want' | 'ask_user_pay' | 'char_pay';
+
+export interface ShopCompanionContext {
+    surface: ShopCompanionSurface;
+    item?: ShopItem;
+    visibleItems?: ShopItem[];
+    cart?: ShopCartLine[];
+    userAction?: string;
+    budget?: number;
+}
+
+export interface ShopCompanionReaction {
+    action: ShopCompanionAction;
+    itemId?: string;
+    speech: string;
+}
+
+const COMPANION_ACTIONS = new Set<ShopCompanionAction>(['comment', 'want', 'ask_user_pay', 'char_pay']);
+
+const compactShelf = (items: ShopItem[]): string =>
+    items.slice(0, 18).map(i => `- ${i.id} | ${i.emoji}${i.name} | ¥${formatPrice(i.price)} | ${i.blurb}`).join('\n');
+
+/** 组装「角色陪用户逛心意铺」的即时反应 prompt。 */
+export function buildShopCompanionPrompt(
+    char: { name: string; personaText?: string; affection?: number },
+    userName: string,
+    ctx: ShopCompanionContext,
+): { system: string; user: string } {
+    const persona = (char.personaText || '').toString().slice(0, 900);
+    const visible = (ctx.visibleItems && ctx.visibleItems.length ? ctx.visibleItems : ctx.item ? [ctx.item] : SHOP_ITEMS).filter(Boolean);
+    const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
+    const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
+    const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
+    const system = `你是「${char.name}」，正在陪 ${userName} 逛虚拟礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作。请完全按你的人设、关系亲疏、预算感和当下心情反应。\n${persona ? `【人设】\n${persona}\n` : ''}`;
+    const user = `当前界面：${ctx.surface}
+用户刚做的事：${ctx.userAction || '正在浏览'}
+你的大致预算感：¥${formatPrice(budget)}
+正在看的商品：${itemLine}
+购物车：${cartLines}
+屏幕上可见商品：
+${compactShelf(visible)}
+
+请选择一个动作：
+- "comment"：只说一句陪逛反应，不触发购买。
+- "want"：你明显喜欢某件商品，想先记进自己的心愿单。
+- "ask_user_pay"：你想要某件商品，并向 ${userName} 撒娇/认真请求帮你付款；系统会弹出请求窗口。
+- "char_pay"：你决定直接付款买给 ${userName}（适合你很想送、金额不离谱、关系/性格允许时）。
+
+只输出 JSON，不要多余文字：
+{"action":"comment / want / ask_user_pay / char_pay","itemId":"若动作涉及商品，必须是上面某个 id","speech":"你对 ${userName} 说的一句话，第一人称，6~36字，贴人设"}`;
+    return { system, user };
+}
+
+/** 解析陪逛反应；非法 action 降级为 comment，涉及商品的动作会校验 itemId。 */
+export function parseShopCompanionReaction(raw: string, fallbackItemId?: string): ShopCompanionReaction | null {
+    if (!raw) return null;
+    let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+        const obj = JSON.parse(txt.slice(start, end + 1));
+        const action: ShopCompanionAction = COMPANION_ACTIONS.has(obj.action) ? obj.action : 'comment';
+        const rawItemId = String(obj.itemId || fallbackItemId || '').trim();
+        const item = rawItemId ? getShopItem(rawItemId) : undefined;
+        const needsItem = action !== 'comment';
+        if (needsItem && !item) return null;
+        const speech = String(obj.speech || obj.note || '').trim().slice(0, 80) || '这个挺有意思。';
+        return { action, ...(item ? { itemId: item.id } : {}), speech };
     } catch {
         return null;
     }

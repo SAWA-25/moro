@@ -10,24 +10,28 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings,
+    XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings, PhoneCheckSession,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
     TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession, TheaterFauxPiece,
     TheaterReflectionSession,
     TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord,
-    DesktopPetState
+    DesktopPetState,
+    MusicLibraryTrack, MusicLibraryPlaylist, MusicPlaylistItem, MusicPlayEvent, MusicSearchHistoryItem, MusicRecommendCacheEntry,
+    ChatFollowup, ChatHubDigest
 } from '../types';
 import { ensureCharacterModelId } from './characterIdentity';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 86; // Bumped: v86 theater reflection sessions
+const DB_VERSION = 90; // Bumped: v90 moments audience/unread indexes
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
 const STORE_PRIVATE_CHAT_ARCHIVES = 'private_chat_archives';
 const STORE_CHAT_ALARMS = 'chat_alarms';
+const STORE_CHAT_FOLLOWUPS = 'chat_followups';
+const STORE_CHAT_HUB_DIGESTS = 'chat_hub_digests';
 const STORE_PERIOD_REMINDER_SETTINGS = 'period_reminder_settings';
 const STORE_PERIOD_CYCLE_EVENTS = 'period_cycle_events';
 const STORE_HEALTH_MODULE_SETTINGS = 'health_module_settings';
@@ -68,6 +72,12 @@ const STORE_TWITTER_ACCOUNTS = 'twitter_accounts'; // 推特 App 角色/NPC 账�
 const STORE_TWITTER_DM = 'twitter_dm_threads';    // 推特 App 私信线程
 const STORE_TWITTER_SEARCH = 'twitter_search_records'; // 推特 App 搜索历史
 const STORE_SONGS = 'songs';
+const STORE_MUSIC_TRACKS = 'music_tracks';
+const STORE_MUSIC_PLAYLISTS = 'music_playlists';
+const STORE_MUSIC_PLAYLIST_ITEMS = 'music_playlist_items';
+const STORE_MUSIC_PLAY_EVENTS = 'music_play_events';
+const STORE_MUSIC_SEARCH_HISTORY = 'music_search_history';
+const STORE_MUSIC_RECOMMEND_CACHE = 'music_recommend_cache';
 const STORE_QUIZZES = 'quizzes';
 const STORE_GUIDEBOOK = 'guidebook';
 const STORE_LIFE_SIM = 'life_sim';
@@ -88,6 +98,7 @@ const STORE_VR_LETTERS = 'vr_letters';            // 邮局信件（本地存档
 const STORE_VR_SETTINGS = 'vr_settings';          // 页外设置单例：独立 API（id='api'）+ 调用记录（id='apilog'）
 const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 后台流水单例（id='log'，保留近 5 天）
 const STORE_PHONE_CALL_LOGS = 'phone_call_logs';  // 电话 App 通话记录（拨出/接听/未接，轻量条目）
+const STORE_PHONE_CHECK_SESSIONS = 'phone_check_sessions'; // 絮语查岗档案（用户查 TA / TA 查用户）
 const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交换日记本（entries 内联在 book 里）
 const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-char，不进聊天上下文）
 const STORE_LLM_PRESETS = 'llm_presets';          // 预设 App：SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数）
@@ -443,6 +454,38 @@ export const openDB = (): Promise<IDBDatabase> => {
           }
       }
 
+      // v88: 絮语总览（稍后回待办 + 今日摘要）
+      if (!db.objectStoreNames.contains(STORE_CHAT_FOLLOWUPS)) {
+          const followupStore = db.createObjectStore(STORE_CHAT_FOLLOWUPS, { keyPath: 'id' });
+          followupStore.createIndex('status', 'status', { unique: false });
+          followupStore.createIndex('targetId', 'targetId', { unique: false });
+          followupStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      } else {
+          const followupStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_CHAT_FOLLOWUPS);
+          if (followupStore && !followupStore.indexNames.contains('status')) {
+              try { followupStore.createIndex('status', 'status', { unique: false }); } catch { /* ignore */ }
+          }
+          if (followupStore && !followupStore.indexNames.contains('targetId')) {
+              try { followupStore.createIndex('targetId', 'targetId', { unique: false }); } catch { /* ignore */ }
+          }
+          if (followupStore && !followupStore.indexNames.contains('updatedAt')) {
+              try { followupStore.createIndex('updatedAt', 'updatedAt', { unique: false }); } catch { /* ignore */ }
+          }
+      }
+      if (!db.objectStoreNames.contains(STORE_CHAT_HUB_DIGESTS)) {
+          const digestStore = db.createObjectStore(STORE_CHAT_HUB_DIGESTS, { keyPath: 'id' });
+          digestStore.createIndex('date', 'date', { unique: false });
+          digestStore.createIndex('createdAt', 'createdAt', { unique: false });
+      } else {
+          const digestStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_CHAT_HUB_DIGESTS);
+          if (digestStore && !digestStore.indexNames.contains('date')) {
+              try { digestStore.createIndex('date', 'date', { unique: false }); } catch { /* ignore */ }
+          }
+          if (digestStore && !digestStore.indexNames.contains('createdAt')) {
+              try { digestStore.createIndex('createdAt', 'createdAt', { unique: false }); } catch { /* ignore */ }
+          }
+      }
+
       // v62: messages 加 [charId, type] 复合索引。页外动态按 (charId, 'vr_card') 直取 vr_card，
       // 成本只跟 vr_card 条数相关，跟总消息量无关——上万条聊天的用户也不必把整段历史 getAll
       // 进内存再筛。没有 type 字段的老消息不会进此索引，正好不影响（我们只查 vr_card）。
@@ -586,7 +629,27 @@ export const openDB = (): Promise<IDBDatabase> => {
 
       createStore(STORE_GROUPS, { keyPath: 'id' });
       createStore(STORE_JOURNAL_STICKERS, { keyPath: 'name' });
-      createStore(STORE_SOCIAL_POSTS, { keyPath: 'id' });
+      const ensureSocialIndexes = (store: IDBObjectStore) => {
+          [
+              ['timestamp', 'timestamp'],
+              ['authorCharId', 'authorCharId'],
+              ['authorType', 'authorType'],
+              ['visibility', 'visibility'],
+              ['lastActivityAt', 'lastActivityAt'],
+              ['unreadForUser', 'unreadForUser'],
+          ].forEach(([name, keyPath]) => {
+              if (!store.indexNames.contains(name)) {
+                  try { store.createIndex(name, keyPath, { unique: false }); } catch { /* ignore */ }
+              }
+          });
+      };
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) {
+          const socialStore = db.createObjectStore(STORE_SOCIAL_POSTS, { keyPath: 'id' });
+          ensureSocialIndexes(socialStore);
+      } else {
+          const socialStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_SOCIAL_POSTS);
+          if (socialStore) ensureSocialIndexes(socialStore);
+      }
       createStore(STORE_COURSES, { keyPath: 'id' });
       createStore(STORE_GAMES, { keyPath: 'id' }); 
       createStore(STORE_WORLDBOOKS, { keyPath: 'id' }); 
@@ -653,6 +716,43 @@ export const openDB = (): Promise<IDBDatabase> => {
           searchStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
 
+      if (!db.objectStoreNames.contains(STORE_MUSIC_TRACKS)) {
+          const mtStore = db.createObjectStore(STORE_MUSIC_TRACKS, { keyPath: 'id' });
+          mtStore.createIndex('source', 'source', { unique: false });
+          mtStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          mtStore.createIndex('lastPlayedAt', 'lastPlayedAt', { unique: false });
+          mtStore.createIndex('liked', 'liked', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MUSIC_PLAYLISTS)) {
+          const mplStore = db.createObjectStore(STORE_MUSIC_PLAYLISTS, { keyPath: 'id' });
+          mplStore.createIndex('kind', 'kind', { unique: false });
+          mplStore.createIndex('source', 'source', { unique: false });
+          mplStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          mplStore.createIndex('pinned', 'pinned', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MUSIC_PLAYLIST_ITEMS)) {
+          const mpiStore = db.createObjectStore(STORE_MUSIC_PLAYLIST_ITEMS, { keyPath: 'id' });
+          mpiStore.createIndex('playlistId', 'playlistId', { unique: false });
+          mpiStore.createIndex('trackId', 'trackId', { unique: false });
+          mpiStore.createIndex('playlist_position', ['playlistId', 'position'], { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MUSIC_PLAY_EVENTS)) {
+          const mpeStore = db.createObjectStore(STORE_MUSIC_PLAY_EVENTS, { keyPath: 'id' });
+          mpeStore.createIndex('trackId', 'trackId', { unique: false });
+          mpeStore.createIndex('startedAt', 'startedAt', { unique: false });
+          mpeStore.createIndex('playSource', 'playSource', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MUSIC_SEARCH_HISTORY)) {
+          const mshStore = db.createObjectStore(STORE_MUSIC_SEARCH_HISTORY, { keyPath: 'id' });
+          mshStore.createIndex('keyword', 'keyword', { unique: true });
+          mshStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MUSIC_RECOMMEND_CACHE)) {
+          const mrcStore = db.createObjectStore(STORE_MUSIC_RECOMMEND_CACHE, { keyPath: 'id' });
+          mrcStore.createIndex('kind', 'kind', { unique: false });
+          mrcStore.createIndex('key', 'key', { unique: false });
+          mrcStore.createIndex('expiresAt', 'expiresAt', { unique: false });
+      }
       createStore(STORE_SONGS, { keyPath: 'id' });
       createStore(STORE_QUIZZES, { keyPath: 'id' });
       createStore(STORE_GUIDEBOOK, { keyPath: 'id' });
@@ -777,6 +877,27 @@ export const openDB = (): Promise<IDBDatabase> => {
           pclStore.createIndex('charId', 'charId', { unique: false });
           pclStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORE_PHONE_CHECK_SESSIONS)) {
+          const pcsStore = db.createObjectStore(STORE_PHONE_CHECK_SESSIONS, { keyPath: 'id' });
+          pcsStore.createIndex('charId', 'charId', { unique: false });
+          pcsStore.createIndex('direction', 'direction', { unique: false });
+          pcsStore.createIndex('startedAt', 'startedAt', { unique: false });
+          pcsStore.createIndex('status', 'status', { unique: false });
+      } else {
+          const pcsStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_PHONE_CHECK_SESSIONS);
+          if (pcsStore && !pcsStore.indexNames.contains('charId')) {
+              try { pcsStore.createIndex('charId', 'charId', { unique: false }); } catch { /* ignore */ }
+          }
+          if (pcsStore && !pcsStore.indexNames.contains('direction')) {
+              try { pcsStore.createIndex('direction', 'direction', { unique: false }); } catch { /* ignore */ }
+          }
+          if (pcsStore && !pcsStore.indexNames.contains('startedAt')) {
+              try { pcsStore.createIndex('startedAt', 'startedAt', { unique: false }); } catch { /* ignore */ }
+          }
+          if (pcsStore && !pcsStore.indexNames.contains('status')) {
+              try { pcsStore.createIndex('status', 'status', { unique: false }); } catch { /* ignore */ }
+          }
+      }
       createStore(STORE_EXCHANGE_DIARY, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(STORE_INNER_VOICES)) {
           const ivStore = db.createObjectStore(STORE_INNER_VOICES, { keyPath: 'id' });
@@ -887,6 +1008,52 @@ export const openDB = (): Promise<IDBDatabase> => {
 
   dbPromise = promise;
   return promise;
+};
+
+const getAllStoreItems = async <T,>(storeName: string): Promise<T[]> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(storeName)) return [];
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve((req.result || []) as T[]);
+        req.onerror = () => reject(req.error);
+    });
+};
+
+const getStoreItem = async <T,>(storeName: string, id: IDBValidKey): Promise<T | null> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(storeName)) return null;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).get(id);
+        req.onsuccess = () => resolve((req.result || null) as T | null);
+        req.onerror = () => reject(req.error);
+    });
+};
+
+const putStoreItem = async <T,>(storeName: string, item: T): Promise<void> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(storeName)) return;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(item as any);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+    });
+};
+
+const deleteStoreItem = async (storeName: string, id: IDBValidKey): Promise<void> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(storeName)) return;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+    });
 };
 
 export const DB = {
@@ -1626,7 +1793,108 @@ export const DB = {
   saveSocialPost: async (post: SocialPost): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
-      transaction.objectStore(STORE_SOCIAL_POSTS).put(post);
+      transaction.objectStore(STORE_SOCIAL_POSTS).put({
+          ...post,
+          lastActivityAt: post.lastActivityAt || post.timestamp || Date.now(),
+      });
+  },
+
+  updateSocialPost: async (id: string, updater: (post: SocialPost) => SocialPost | null | undefined): Promise<SocialPost | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) return null;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
+          const store = tx.objectStore(STORE_SOCIAL_POSTS);
+          const req = store.get(id);
+          let next: SocialPost | null = null;
+          req.onsuccess = () => {
+              const existing = req.result as SocialPost | undefined;
+              if (!existing) { resolve(null); return; }
+              const updated = updater(existing);
+              if (!updated) { resolve(null); return; }
+              next = { ...updated, lastActivityAt: updated.lastActivityAt || updated.timestamp || existing.lastActivityAt || Date.now() };
+              store.put(next);
+          };
+          req.onerror = () => reject(req.error);
+          tx.oncomplete = () => resolve(next);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getUnreadSocialPosts: async (): Promise<SocialPost[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_SOCIAL_POSTS, 'readonly');
+          const store = tx.objectStore(STORE_SOCIAL_POSTS);
+          const req = store.getAll();
+          req.onsuccess = () => {
+              const rows = (req.result || []) as SocialPost[];
+              resolve(rows
+                  .filter(p => !!p.unreadForUser)
+                  .sort((a, b) => (b.lastActivityAt || b.timestamp || 0) - (a.lastActivityAt || a.timestamp || 0)));
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  markSocialPostsSeen: async (ids?: string[]): Promise<number> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) return 0;
+      return new Promise((resolve, reject) => {
+          const targetIds = ids && ids.length > 0 ? new Set(ids) : null;
+          const tx = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
+          const store = tx.objectStore(STORE_SOCIAL_POSTS);
+          const req = store.openCursor();
+          let touched = 0;
+          req.onsuccess = () => {
+              const cursor = req.result;
+              if (!cursor) return;
+              const post = cursor.value as SocialPost;
+              if ((targetIds ? targetIds.has(post.id) : !!post.unreadForUser) && post.unreadForUser) {
+                  cursor.update({ ...post, unreadForUser: false });
+                  touched++;
+              }
+              cursor.continue();
+          };
+          req.onerror = () => reject(req.error);
+          tx.oncomplete = () => resolve(touched);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getSocialPostsByAuthorChar: async (charId: string, limit = 50): Promise<SocialPost[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_SOCIAL_POSTS, 'readonly');
+          const store = tx.objectStore(STORE_SOCIAL_POSTS);
+          const collected: SocialPost[] = [];
+          if (store.indexNames.contains('authorCharId')) {
+              const req = store.index('authorCharId').openCursor(IDBKeyRange.only(charId));
+              req.onsuccess = () => {
+                  const cursor = req.result;
+                  if (!cursor) return;
+                  collected.push(cursor.value as SocialPost);
+                  cursor.continue();
+              };
+              req.onerror = () => reject(req.error);
+              tx.oncomplete = () => resolve(collected
+                  .sort((a, b) => (b.lastActivityAt || b.timestamp || 0) - (a.lastActivityAt || a.timestamp || 0))
+                  .slice(0, limit));
+              tx.onerror = () => reject(tx.error);
+              tx.onabort = () => reject(tx.error);
+              return;
+          }
+          const req = store.getAll();
+          req.onsuccess = () => resolve(((req.result || []) as SocialPost[])
+              .filter(p => p.authorCharId === charId)
+              .sort((a, b) => (b.lastActivityAt || b.timestamp || 0) - (a.lastActivityAt || a.timestamp || 0))
+              .slice(0, limit));
+          req.onerror = () => reject(req.error);
+      });
   },
 
   deleteSocialPost: async (id: string): Promise<void> => {
@@ -1815,14 +2083,14 @@ export const DB = {
   },
 
   /** 标记某事件已作为主动消息发出（回顾里据此区分「已说过 / 你没在时发生的」）。 */
-  markLifeEventSurfaced: async (id: string): Promise<void> => {
+  markLifeEventSurfaced: async (id: string, surfacedAt = Date.now()): Promise<void> => {
       const db = await openDB();
       const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
       const store = tx.objectStore(STORE_CHAR_LIFE_EVENTS);
       const getReq = store.get(id);
       getReq.onsuccess = () => {
           const ev = getReq.result as CharLifeEvent | undefined;
-          if (ev) { ev.surfacedAsMsg = true; store.put(ev); }
+          if (ev) { ev.surfacedAsMsg = true; ev.surfacedAt = surfacedAt; store.put(ev); }
       };
       return new Promise((resolve, reject) => {
           tx.oncomplete = () => resolve();
@@ -2231,6 +2499,38 @@ export const DB = {
       });
   },
 
+  getAllChatFollowups: async (): Promise<ChatFollowup[]> => (
+      await getAllStoreItems<ChatFollowup>(STORE_CHAT_FOLLOWUPS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+
+  saveChatFollowup: (followup: ChatFollowup): Promise<void> =>
+      putStoreItem(STORE_CHAT_FOLLOWUPS, followup),
+
+  deleteChatFollowup: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_CHAT_FOLLOWUPS, id),
+
+  updateChatFollowupStatus: async (id: string, status: ChatFollowup['status']): Promise<ChatFollowup | null> => {
+      const existing = await getStoreItem<ChatFollowup>(STORE_CHAT_FOLLOWUPS, id);
+      if (!existing) return null;
+      const next = { ...existing, status, updatedAt: Date.now() };
+      await putStoreItem(STORE_CHAT_FOLLOWUPS, next);
+      return next;
+  },
+
+  getAllChatHubDigests: async (): Promise<ChatHubDigest[]> => (
+      await getAllStoreItems<ChatHubDigest>(STORE_CHAT_HUB_DIGESTS)
+  ).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+
+  getChatHubDigestByDate: async (date: string): Promise<ChatHubDigest | null> => {
+      const all = await getAllStoreItems<ChatHubDigest>(STORE_CHAT_HUB_DIGESTS);
+      return all
+          .filter(item => item.date === date)
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+  },
+
+  saveChatHubDigest: (digest: ChatHubDigest): Promise<void> =>
+      putStoreItem(STORE_CHAT_HUB_DIGESTS, digest),
+
   // ─── 折子戏·仿真图文历史 ───
   getAllTheaterFauxPieces: async (): Promise<TheaterFauxPiece[]> => {
       const db = await openDB();
@@ -2568,23 +2868,29 @@ export const DB = {
       });
   },
 
-  updateGalleryImageReview: async (id: string, review: string): Promise<void> => {
+  updateGalleryImage: async (id: string, patch: Partial<Omit<GalleryImage, 'id'>>): Promise<GalleryImage> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_GALLERY, 'readwrite');
       const store = transaction.objectStore(STORE_GALLERY);
       return new Promise((resolve, reject) => {
           const req = store.get(id);
           req.onsuccess = () => {
-              const data = req.result as GalleryImage;
-              if (data) {
-                  data.review = review;
-                  data.reviewTimestamp = Date.now();
-                  store.put(data);
-                  resolve();
-              } else reject(new Error('Image not found'));
+              const data = req.result as GalleryImage | undefined;
+              if (!data) {
+                  reject(new Error('Image not found'));
+                  return;
+              }
+              const updated: GalleryImage = { ...data, ...patch, id: data.id, updatedAt: Date.now() };
+              const putReq = store.put(updated);
+              putReq.onsuccess = () => resolve(updated);
+              putReq.onerror = () => reject(putReq.error);
           };
           req.onerror = () => reject(req.error);
       });
+  },
+
+  updateGalleryImageReview: async (id: string, review: string): Promise<void> => {
+      await DB.updateGalleryImage(id, { review, reviewTimestamp: Date.now() });
   },
 
   deleteGalleryImage: async (id: string): Promise<void> => {
@@ -3529,6 +3835,42 @@ export const DB = {
   clearPhoneCallLogs: async (): Promise<void> => {
       const db = await openDB();
       db.transaction(STORE_PHONE_CALL_LOGS, 'readwrite').objectStore(STORE_PHONE_CALL_LOGS).clear();
+  },
+
+  // --- 絮语查岗档案 ---
+  savePhoneCheckSession: (session: PhoneCheckSession): Promise<void> =>
+      putStoreItem(STORE_PHONE_CHECK_SESSIONS, session),
+
+  getPhoneCheckSession: (id: string): Promise<PhoneCheckSession | null> =>
+      getStoreItem<PhoneCheckSession>(STORE_PHONE_CHECK_SESSIONS, id),
+
+  getPhoneCheckSessions: async (charId?: string, limit?: number): Promise<PhoneCheckSession[]> => {
+      const all = await getAllStoreItems<PhoneCheckSession>(STORE_PHONE_CHECK_SESSIONS);
+      const filtered = charId ? all.filter(session => session.charId === charId) : all;
+      const sorted = filtered.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+      return limit && limit > 0 ? sorted.slice(0, limit) : sorted;
+  },
+
+  deletePhoneCheckSession: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_PHONE_CHECK_SESSIONS, id),
+
+  deletePhoneCheckSessionsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_PHONE_CHECK_SESSIONS, 'charId', charId),
+
+  prunePhoneCheckSessions: async (charId: string, keepN = 80): Promise<void> => {
+      const sessions = await DB.getPhoneCheckSessions(charId);
+      if (sessions.length <= keepN) return;
+      const toDelete = sessions.slice(keepN);
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_PHONE_CHECK_SESSIONS)) return;
+      const tx = db.transaction(STORE_PHONE_CHECK_SESSIONS, 'readwrite');
+      const store = tx.objectStore(STORE_PHONE_CHECK_SESSIONS);
+      toDelete.forEach(session => store.delete(session.id));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
   },
 
   // --- 日记社：多角色交换日记本 ---
@@ -4608,6 +4950,33 @@ export const DB = {
       transaction.objectStore(STORE_SONGS).delete(id);
   },
 
+  // --- Music Library (Music App) ---
+  getAllMusicTracks: () => getAllStoreItems<MusicLibraryTrack>(STORE_MUSIC_TRACKS),
+  getMusicTrack: (id: string) => getStoreItem<MusicLibraryTrack>(STORE_MUSIC_TRACKS, id),
+  saveMusicTrack: (track: MusicLibraryTrack) => putStoreItem(STORE_MUSIC_TRACKS, track),
+  deleteMusicTrack: (id: string) => deleteStoreItem(STORE_MUSIC_TRACKS, id),
+
+  getAllMusicPlaylists: () => getAllStoreItems<MusicLibraryPlaylist>(STORE_MUSIC_PLAYLISTS),
+  getMusicPlaylist: (id: string) => getStoreItem<MusicLibraryPlaylist>(STORE_MUSIC_PLAYLISTS, id),
+  saveMusicPlaylist: (playlist: MusicLibraryPlaylist) => putStoreItem(STORE_MUSIC_PLAYLISTS, playlist),
+  deleteMusicPlaylist: (id: string) => deleteStoreItem(STORE_MUSIC_PLAYLISTS, id),
+
+  getAllMusicPlaylistItems: () => getAllStoreItems<MusicPlaylistItem>(STORE_MUSIC_PLAYLIST_ITEMS),
+  saveMusicPlaylistItem: (item: MusicPlaylistItem) => putStoreItem(STORE_MUSIC_PLAYLIST_ITEMS, item),
+  deleteMusicPlaylistItem: (id: string) => deleteStoreItem(STORE_MUSIC_PLAYLIST_ITEMS, id),
+
+  getAllMusicPlayEvents: () => getAllStoreItems<MusicPlayEvent>(STORE_MUSIC_PLAY_EVENTS),
+  saveMusicPlayEvent: (event: MusicPlayEvent) => putStoreItem(STORE_MUSIC_PLAY_EVENTS, event),
+  deleteMusicPlayEvent: (id: string) => deleteStoreItem(STORE_MUSIC_PLAY_EVENTS, id),
+
+  getAllMusicSearchHistory: () => getAllStoreItems<MusicSearchHistoryItem>(STORE_MUSIC_SEARCH_HISTORY),
+  saveMusicSearchHistoryItem: (item: MusicSearchHistoryItem) => putStoreItem(STORE_MUSIC_SEARCH_HISTORY, item),
+  deleteMusicSearchHistoryItem: (id: string) => deleteStoreItem(STORE_MUSIC_SEARCH_HISTORY, id),
+
+  getAllMusicRecommendCache: () => getAllStoreItems<MusicRecommendCacheEntry>(STORE_MUSIC_RECOMMEND_CACHE),
+  saveMusicRecommendCache: (entry: MusicRecommendCacheEntry) => putStoreItem(STORE_MUSIC_RECOMMEND_CACHE, entry),
+  deleteMusicRecommendCache: (id: string) => deleteStoreItem(STORE_MUSIC_RECOMMEND_CACHE, id),
+
   // --- Guidebook (攻略本) ---
   getAllGuidebookSessions: async (): Promise<GuidebookSession[]> => {
       const db = await openDB();
@@ -4745,11 +5114,13 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, chatAlarms, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
           getAllFromStore(STORE_CHAT_ALARMS),
+          getAllFromStore(STORE_CHAT_FOLLOWUPS),
+          getAllFromStore(STORE_CHAT_HUB_DIGESTS),
           getAllFromStore(STORE_PERIOD_REMINDER_SETTINGS),
           getAllFromStore(STORE_PERIOD_CYCLE_EVENTS),
           getAllFromStore(STORE_HEALTH_MODULE_SETTINGS),
@@ -4779,6 +5150,7 @@ export const DB = {
           getAllFromStore(STORE_BANK_DATA),
           getAllFromStore(STORE_XHS_ACTIVITIES),
           getAllFromStore(STORE_XHS_STOCK),
+          getAllFromStore(STORE_XHS_FEED),
           getAllFromStore(STORE_TWITTER_TWEETS),
           getAllFromStore(STORE_TWITTER_NOTIFS),
           getAllFromStore(STORE_TWITTER_PROFILE),
@@ -4786,6 +5158,12 @@ export const DB = {
           getAllFromStore(STORE_TWITTER_DM),
           getAllFromStore(STORE_TWITTER_SEARCH),
           getAllFromStore(STORE_SONGS),
+          getAllFromStore(STORE_MUSIC_TRACKS),
+          getAllFromStore(STORE_MUSIC_PLAYLISTS),
+          getAllFromStore(STORE_MUSIC_PLAYLIST_ITEMS),
+          getAllFromStore(STORE_MUSIC_PLAY_EVENTS),
+          getAllFromStore(STORE_MUSIC_SEARCH_HISTORY),
+          getAllFromStore(STORE_MUSIC_RECOMMEND_CACHE),
           getAllFromStore(STORE_QUIZZES),
           getAllFromStore(STORE_GUIDEBOOK),
           getAllFromStore(STORE_THEATER_QUIZ_SESSIONS),
@@ -4809,6 +5187,7 @@ export const DB = {
           getAllFromStore(STORE_VR_LETTERS),
           getAllFromStore(STORE_VR_SETTINGS),
           getAllFromStore(STORE_PHONE_CALL_LOGS),
+          getAllFromStore(STORE_PHONE_CHECK_SESSIONS),
           getAllFromStore(STORE_EXCHANGE_DIARY),
           getAllFromStore(STORE_INNER_VOICES),
           getAllFromStore(STORE_LLM_PRESETS),
@@ -4832,12 +5211,13 @@ export const DB = {
       const dollhouseRecord = bankData.find((d: any) => d.id === 'dollhouse_state');
 
       return {
-          characters, messages, privateChatArchives, chatAlarms, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
+          characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
           bankTransactions: bankTx,
           xhsActivities,
           xhsStockImages,
+          xhsFeedPosts,
           twitterTweets,
           twitterNotifications,
           twitterProfile: twitterProfileRecords[0] || undefined,
@@ -4845,6 +5225,12 @@ export const DB = {
           twitterDMThreads,
           twitterSearchRecords,
           songs,
+          musicTracks,
+          musicPlaylists,
+          musicPlaylistItems,
+          musicPlayEvents,
+          musicSearchHistory,
+          musicRecommendCache,
           quizSessions: quizzes,
           guidebookSessions,
           theaterQuizSessions,
@@ -4869,6 +5255,7 @@ export const DB = {
           vrSettings,
           vrPostOffice: exportPostOfficeLocal(), // 邮局本机配置（身份/后端地址，存 localStorage）
           phoneCallLogs,
+          phoneCheckSessions,
           exchangeDiaryBooks,
           innerVoices,
           llmPresets,
@@ -4898,13 +5285,15 @@ export const DB = {
       
       const availableStores = [
           STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
-          STORE_CHAT_ALARMS, STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
+          STORE_CHAT_ALARMS, STORE_CHAT_FOLLOWUPS, STORE_CHAT_HUB_DIGESTS, STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
           STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES,
           STORE_ASSETS, STORE_GALLERY, STORE_USER, STORE_DIARIES,
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
           STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS, STORE_SONGS,
+          STORE_MUSIC_TRACKS, STORE_MUSIC_PLAYLISTS, STORE_MUSIC_PLAYLIST_ITEMS, STORE_MUSIC_PLAY_EVENTS,
+          STORE_MUSIC_SEARCH_HISTORY, STORE_MUSIC_RECOMMEND_CACHE,
           STORE_BANK_TX, STORE_BANK_DATA,
-          STORE_XHS_ACTIVITIES, STORE_XHS_STOCK, STORE_TWITTER_TWEETS, STORE_TWITTER_NOTIFS,
+          STORE_XHS_ACTIVITIES, STORE_XHS_STOCK, STORE_XHS_FEED, STORE_TWITTER_TWEETS, STORE_TWITTER_NOTIFS,
           STORE_TWITTER_PROFILE, STORE_TWITTER_ACCOUNTS, STORE_TWITTER_DM, STORE_TWITTER_SEARCH,
           STORE_QUIZZES,
           STORE_GUIDEBOOK,
@@ -4922,7 +5311,7 @@ export const DB = {
           STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
-          STORE_PHONE_CALL_LOGS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
+          STORE_PHONE_CALL_LOGS, STORE_PHONE_CHECK_SESSIONS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
           STORE_LLM_PRESETS, STORE_PERSONAS, STORE_DESKTOP_PET,
           STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS,
       ].filter(name => db.objectStoreNames.contains(name));
@@ -4964,6 +5353,8 @@ export const DB = {
           data.messages !== undefined,
           data.privateChatArchives !== undefined,
           data.chatAlarms !== undefined,
+          data.chatFollowups !== undefined,
+          data.chatHubDigests !== undefined,
           data.periodReminderSettings !== undefined,
           data.periodCycleEvents !== undefined,
           data.healthModuleSettings !== undefined,
@@ -4991,6 +5382,12 @@ export const DB = {
           data.personas !== undefined,
           data.novels !== undefined,
           data.songs !== undefined,
+          data.musicTracks !== undefined,
+          data.musicPlaylists !== undefined,
+          data.musicPlaylistItems !== undefined,
+          data.musicPlayEvents !== undefined,
+          data.musicSearchHistory !== undefined,
+          data.musicRecommendCache !== undefined,
           data.quizSessions !== undefined,
           data.guidebookSessions !== undefined,
           data.theaterQuizSessions !== undefined,
@@ -5035,6 +5432,7 @@ export const DB = {
           data.userProfile !== undefined,
           data.bankState !== undefined || data.bankDollhouse !== undefined,
           data.phoneCallLogs !== undefined,
+          data.phoneCheckSessions !== undefined,
           data.exchangeDiaryBooks !== undefined,
           data.innerVoices !== undefined,
           data.relationshipNetworkEdges !== undefined,
@@ -5218,6 +5616,26 @@ export const DB = {
           data.chatAlarms = undefined as any;
       }, data.chatAlarms?.length || 0);
 
+      await runSection('絮语稍后回', data.chatFollowups !== undefined, async () => {
+          if (!hasStore(STORE_CHAT_FOLLOWUPS)) return;
+          const isPatchMode = !hasCharacterBackup;
+          if (!isPatchMode) {
+              await clearStore(STORE_CHAT_FOLLOWUPS);
+          }
+          await putItems(STORE_CHAT_FOLLOWUPS, data.chatFollowups || [], '絮语稍后回', false);
+          data.chatFollowups = undefined as any;
+      }, data.chatFollowups?.length || 0);
+
+      await runSection('絮语总览摘要', data.chatHubDigests !== undefined, async () => {
+          if (!hasStore(STORE_CHAT_HUB_DIGESTS)) return;
+          const isPatchMode = !hasCharacterBackup;
+          if (!isPatchMode) {
+              await clearStore(STORE_CHAT_HUB_DIGESTS);
+          }
+          await putItems(STORE_CHAT_HUB_DIGESTS, data.chatHubDigests || [], '絮语总览摘要', false);
+          data.chatHubDigests = undefined as any;
+      }, data.chatHubDigests?.length || 0);
+
       await runSection('经期提醒设置', data.periodReminderSettings !== undefined, async () => {
           await clearAndAdd(STORE_PERIOD_REMINDER_SETTINGS, data.periodReminderSettings || [], '经期提醒设置', false);
           data.periodReminderSettings = undefined as any;
@@ -5290,6 +5708,10 @@ export const DB = {
           await clearAndAdd(STORE_PHONE_CALL_LOGS, data.phoneCallLogs, '通话记录', false);
           data.phoneCallLogs = undefined as any;
       }, data.phoneCallLogs?.length || 0);
+      await runSection('查岗档案', data.phoneCheckSessions !== undefined, async () => {
+          await clearAndAdd(STORE_PHONE_CHECK_SESSIONS, data.phoneCheckSessions, '查岗档案', false);
+          data.phoneCheckSessions = undefined as any;
+      }, data.phoneCheckSessions?.length || 0);
       await runSection('日记社', data.exchangeDiaryBooks !== undefined, async () => {
           await clearAndAdd(STORE_EXCHANGE_DIARY, data.exchangeDiaryBooks, '日记社', false);
           data.exchangeDiaryBooks = undefined as any;
@@ -5412,6 +5834,30 @@ export const DB = {
           await clearAndAdd(STORE_SONGS, data.songs, '歌曲', false);
           data.songs = undefined as any;
       }, data.songs?.length || 0);
+      await runSection('音乐资料库·歌曲', data.musicTracks !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_TRACKS, data.musicTracks, '音乐资料库·歌曲', false);
+          data.musicTracks = undefined as any;
+      }, data.musicTracks?.length || 0);
+      await runSection('音乐资料库·歌单', data.musicPlaylists !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_PLAYLISTS, data.musicPlaylists, '音乐资料库·歌单', false);
+          data.musicPlaylists = undefined as any;
+      }, data.musicPlaylists?.length || 0);
+      await runSection('音乐资料库·歌单歌曲', data.musicPlaylistItems !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_PLAYLIST_ITEMS, data.musicPlaylistItems, '音乐资料库·歌单歌曲', false);
+          data.musicPlaylistItems = undefined as any;
+      }, data.musicPlaylistItems?.length || 0);
+      await runSection('音乐资料库·播放记录', data.musicPlayEvents !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_PLAY_EVENTS, data.musicPlayEvents, '音乐资料库·播放记录', false);
+          data.musicPlayEvents = undefined as any;
+      }, data.musicPlayEvents?.length || 0);
+      await runSection('音乐资料库·搜索记录', data.musicSearchHistory !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_SEARCH_HISTORY, data.musicSearchHistory, '音乐资料库·搜索记录', false);
+          data.musicSearchHistory = undefined as any;
+      }, data.musicSearchHistory?.length || 0);
+      await runSection('音乐资料库·推荐缓存', data.musicRecommendCache !== undefined, async () => {
+          await clearAndAdd(STORE_MUSIC_RECOMMEND_CACHE, data.musicRecommendCache, '音乐资料库·推荐缓存', false);
+          data.musicRecommendCache = undefined as any;
+      }, data.musicRecommendCache?.length || 0);
       await runSection('练习本', data.quizSessions !== undefined, async () => {
           await clearAndAdd(STORE_QUIZZES, data.quizSessions, '练习本', false);
           data.quizSessions = undefined as any;
@@ -5463,6 +5909,10 @@ export const DB = {
           await clearAndAdd(STORE_XHS_STOCK, data.xhsStockImages, '小红书图库', true);
           data.xhsStockImages = undefined as any;
       }, data.xhsStockImages?.length || 0);
+      await runSection('见闻簿卡片', data.xhsFeedPosts !== undefined, async () => {
+          await clearAndAdd(STORE_XHS_FEED, data.xhsFeedPosts, '见闻簿卡片', true);
+          data.xhsFeedPosts = undefined as any;
+      }, data.xhsFeedPosts?.length || 0);
       await runSection('推特时间线', data.twitterTweets !== undefined, async () => {
           await clearAndAdd(STORE_TWITTER_TWEETS, data.twitterTweets, '推特时间线', false);
           data.twitterTweets = undefined as any;

@@ -7,7 +7,7 @@ import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, 
 import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { REACTION_EMOJIS } from '../../utils/messageReactions';
-import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye, BookmarkSimple } from '@phosphor-icons/react';
+import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye, BookmarkSimple, NotePencil } from '@phosphor-icons/react';
 
 interface ChatModalsProps {
     modalType: string;
@@ -79,6 +79,7 @@ interface ChatModalsProps {
     onRecallMessage: () => void;
     onForwardMessage: () => void;
     onCollectMessage?: () => void;
+    onAddMessageToDashboard?: () => void;
     onPostMessageToMoments?: () => void;
     onReactMessage: (emoji: string) => void;
     onCopyMessage: () => void;
@@ -155,7 +156,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onBgUpload, onRemoveBg, onClearHistory,
     onClearChatContextOnly,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
-    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onCollectMessage, onPostMessageToMoments, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
+    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onCollectMessage, onAddMessageToDashboard, onPostMessageToMoments, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
@@ -887,6 +888,9 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     <ScrapRowBtn onClick={onReplyMessage} icon={<Quotes size={18} weight="bold" />}>引一句来回</ScrapRowBtn>
                     {onCollectMessage && (
                         <ScrapRowBtn onClick={onCollectMessage} icon={<BookmarkSimple size={18} weight="bold" />}>收进典藏馆</ScrapRowBtn>
+                    )}
+                    {onAddMessageToDashboard && selectedMessage?.role !== 'system' && (
+                        <ScrapRowBtn onClick={onAddMessageToDashboard} icon={<NotePencil size={18} weight="bold" />}>记到总览</ScrapRowBtn>
                     )}
                     <ScrapRowBtn onClick={onForwardMessage} icon={<ShareNetwork size={18} weight="bold" />}>转给别人看</ScrapRowBtn>
                     {onPostMessageToMoments && selectedMessage?.role !== 'system' && (

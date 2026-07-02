@@ -1,7 +1,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { BankTransaction, SavingsGoal, APIConfig } from '../../types';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';
 
 interface Props {
@@ -122,7 +124,8 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
 
     // AI categorization and summary
     const analyzeWithAI = async () => {
-        if (!apiConfig?.apiKey || expenseTx.length === 0) return;
+        const api = apiConfig as (APIConfig & { apiRole?: string; apiBinding?: string }) | undefined;
+        if (!api?.baseUrl || !api.model || expenseTx.length === 0) return;
 
         setIsAnalyzing(true);
         try {
@@ -143,27 +146,26 @@ ${txList}
   "summary": "总结文字"
 }`;
 
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] })
+            const data = await callChatCompletion(api, {
+                model: api.model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('bank.lifeAi', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '账目分析' }),
             });
 
-            if (res.ok) {
-                const data = await safeResponseJson(res);
-                let jsonStr = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
-                const result = JSON.parse(jsonStr);
+            let jsonStr = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
+            const result = JSON.parse(jsonStr);
 
-                // Map categories to transaction IDs
-                const newCategories: Record<string, string> = { ...categorizedTx };
-                expenseTx.forEach(tx => {
-                    if (result.categories[tx.note]) {
-                        newCategories[tx.id] = result.categories[tx.note];
-                    }
-                });
-                setCategorizedTx(newCategories);
-                setAiSummary(result.summary || '');
-            }
+            // Map categories to transaction IDs
+            const newCategories: Record<string, string> = { ...categorizedTx };
+            expenseTx.forEach(tx => {
+                if (result.categories[tx.note]) {
+                    newCategories[tx.id] = result.categories[tx.note];
+                }
+            });
+            setCategorizedTx(newCategories);
+            setAiSummary(result.summary || '');
         } catch (e) {
             console.error('AI analysis failed:', e);
         } finally {

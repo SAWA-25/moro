@@ -2738,6 +2738,54 @@ function classifyLLMOutput(text) {
 // utils/instantWorkerVersion.ts
 var INSTANT_WORKER_VERSION = "2026-06-10";
 
+// utils/openAiCompat.ts
+var ENDPOINT_SUFFIXES = [
+  /\/chat\/completions\/?$/i,
+  /\/models\/?$/i,
+  /\/images\/generations\/?$/i,
+  /\/embeddings\/?$/i
+];
+function normalizeOpenAiBaseUrl(baseUrl) {
+  let value = (baseUrl || "").trim();
+  if (!value) return "";
+  value = value.replace(/[?#].*$/, "").replace(/\/+$/, "");
+  for (const suffix of ENDPOINT_SUFFIXES) {
+    value = value.replace(suffix, "").replace(/\/+$/, "");
+  }
+  try {
+    const url = new URL(value);
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/v1";
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+  }
+  return value;
+}
+function buildOpenAiEndpoint(baseUrl, endpoint) {
+  const base = normalizeOpenAiBaseUrl(baseUrl);
+  const suffix = endpoint === "chat.completions" ? "chat/completions" : endpoint === "images.generations" ? "images/generations" : endpoint;
+  return `${base}/${suffix}`;
+}
+function buildOpenAiHeaders(apiKey, extra) {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${(apiKey || "").trim() || "sk-none"}`,
+    ...extra || {}
+  };
+}
+function extractApiErrorMessage(data, fallback) {
+  const value = data;
+  const candidates = [
+    value?.error?.message,
+    typeof value?.error === "string" ? value.error : void 0,
+    value?.message,
+    value?.detail,
+    value?.details
+  ];
+  return candidates.find((v) => typeof v === "string" && !!v.trim()) || fallback;
+}
+
 // worker/instant-push/src/index.ts
 var MULTIPART_TRANSPORT = { enabled: true };
 var UTILITY_CORS_HEADERS = {
@@ -3060,13 +3108,9 @@ async function runEmotionEval(body) {
   const evalContent = String(ee.prompt).replace("__EMOTION_EVAL_SYSTEM_PROMPT__", () => systemPromptText).replace("__EMOTION_EVAL_HISTORY__", () => recentLines);
   const evalMessages = [{ role: "user", content: evalContent }];
   try {
-    const baseUrl = String(ee.api.baseUrl).replace(/\/+$/, "");
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(buildOpenAiEndpoint(ee.api.baseUrl, "chat.completions"), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${ee.api.apiKey || "sk-none"}`
-      },
+      headers: buildOpenAiHeaders(ee.api.apiKey),
       body: JSON.stringify({
         model: ee.api.model,
         messages: evalMessages,
@@ -3079,7 +3123,12 @@ async function runEmotionEval(body) {
       const data = await res.json();
       raw = data?.choices?.[0]?.message?.content || "";
     } else {
-      console.error("[emotion-eval] LLM call failed", res.status);
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+      }
+      console.error("[emotion-eval] LLM call failed", res.status, extractApiErrorMessage(data, `HTTP ${res.status}`));
     }
     return raw;
   } catch (e) {

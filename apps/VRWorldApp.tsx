@@ -20,7 +20,8 @@ import { stripLeakedAttrs } from '../utils/vrWorld/prompts';
 import { PostOffice, MAX_LETTER_CHARS, exportIdentity, importIdentity, getAdminToken, setAdminToken, type RemoteReply, type RemoteLetterStat, type RemoteAdminLetter } from '../utils/vrWorld/postOffice';
 import { getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
 import { resolveAuxApi } from '../utils/auxApi';
-import { safeResponseJson } from '../utils/safeApi';
+import { testChatConnection } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -2798,17 +2799,17 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
     const test = async () => {
         const cfg = effective;
-        if (!cfg?.baseUrl) { setTestResult('当前没有可用的 API'); return; }
+        if (!cfg?.baseUrl || !cfg?.model) { setTestResult('No API configured'); return; }
         setTesting(true); setTestResult(null);
         try {
-            const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey || 'sk-none'}` },
-                body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5, stream: false }),
+            const r = await testChatConnection(cfg, {
+                meta: makeApiUsageMeta('vrWorld.session', {
+                    apiRole: follow ? 'main' : 'custom',
+                    apiBinding: follow ? 'Follow chat API' : 'VR custom API',
+                }),
             });
-            if (res.ok) { const d = await safeResponseJson(res); const r = d.choices?.[0]?.message?.content || ''; setTestResult(`连接成功 — 模型回复:"${r.slice(0, 24)}"`); }
-            else { const t = await res.text().catch(() => ''); setTestResult(`HTTP ${res.status}: ${t.slice(0, 80)}`); }
-        } catch (e: any) { setTestResult(`连接失败: ${e.message}`); } finally { setTesting(false); }
+            setTestResult('Connection OK - model replied: ' + r.slice(0, 24));
+        } catch (e: any) { setTestResult('Connection failed: ' + e.message); } finally { setTesting(false); }
     };
 
     const okCount = log.filter(l => l.ok).length;
@@ -2830,7 +2831,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                 <InkBtn tone="soft" onClick={test} disabled={testing} className="mt-2.5 text-[11px] px-3 py-1.5 font-semibold">
                     {testing ? '测试中…' : '测试连接'}
                 </InkBtn>
-                {testResult && <div className="mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug" style={{ color: testResult.startsWith('连接成功') ? PAPER.teal : PAPER.red, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{testResult}</div>}
+                {testResult && <div className="mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug" style={{ color: testResult.startsWith('Connection OK') ? PAPER.teal : PAPER.red, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{testResult}</div>}
             </InsCard>
 
             {/* 选择 API */}

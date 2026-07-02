@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate, Phone, ArrowsClockwise, Play, Trash, CaretLeft } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import { safeFetchJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { startDialTone } from '../utils/ringtone';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -12,6 +12,9 @@ import { RealtimeContextManager } from '../utils/realtimeContext';
 import { DB } from '../utils/db';
 import { ChatPrompts } from '../utils/chatPrompts';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { callChatCompletion } from '../utils/llmClient';
+import { PresetRuntime, applyPresetToMessages } from '../utils/presets';
+import { WorldbookRuntime } from '../utils/worldbookRuntime';
 import { Message, ChatTheme } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
@@ -705,33 +708,55 @@ const CallApp: React.FC = () => {
     return [...history, { role: 'user', content: finalInput }];
   };
   const requestAssistantReply = async (input: string, skipDbId?: number): Promise<string> => {
-    const baseUrl = apiConfig.baseUrl?.replace(/\/+$/, '');
-    if (!baseUrl) throw new Error('请先在「文具盒」里配置聊天 API URL');
+    const baseUrl = apiConfig.baseUrl?.trim();
+    if (!baseUrl || !apiConfig.model) throw new Error('请先在「文具盒」里配置聊天 API URL 和模型');
     const userName = userProfile?.name?.trim() || '用户';
     if (selectedChar) {
       const callMsgs = await DB.getMessagesByCharId(selectedChar.id);
       await injectMemoryPalace(selectedChar, callMsgs);
     }
-    const systemPrompt = selectedChar
-      ? buildCallPrompt(userName, selectedChar.name, ContextBuilder.buildCoreContext(selectedChar, userProfile, true), voiceLang || undefined)
-      : buildCallPrompt(userName, undefined, undefined, voiceLang || undefined);
     const messages = await buildHistoryMessages(input, skipDbId);
-    const chatData = await safeFetchJson(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey || 'sk-none'}` },
-      body: JSON.stringify({
-        model: apiConfig.model,
-        messages: [{ role: 'system', content: systemPrompt }, ...messages],
-        temperature: 0.85,
-        stream: false,
+    const scanMessages = messages
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-20)
+      .map(m => String(m.content));
+    const systemPrompt = selectedChar
+      ? await WorldbookRuntime.withContext(
+        { scanMessages },
+        () => buildCallPrompt(userName, selectedChar.name, ContextBuilder.buildCoreContext(selectedChar, userProfile, true), voiceLang || undefined),
+      )
+      : buildCallPrompt(userName, undefined, undefined, voiceLang || undefined);
+    const activePreset = await PresetRuntime.getActivePresetForScope('chat.phoneText');
+    const fullMessages = activePreset
+      ? applyPresetToMessages([{ role: 'system', content: systemPrompt }, ...messages], activePreset, {
+        macros: {
+          charName: selectedChar?.name || '角色',
+          userName,
+        },
+      })
+      : [{ role: 'system', content: systemPrompt }, ...messages];
+    const presetGenParams = await PresetRuntime.getActiveGenParams('chat.phoneText');
+    const requestBody: any = {
+      model: apiConfig.model,
+      messages: fullMessages,
+      temperature: presetGenParams?.temperature ?? 0.85,
+      max_tokens: presetGenParams?.max_tokens,
+      stream: false,
+    };
+    if (presetGenParams) {
+      const { temperature: _t, max_tokens: _m, ...rest } = presetGenParams;
+      Object.assign(requestBody, rest);
+    }
+    if (requestBody.max_tokens === undefined) delete requestBody.max_tokens;
+    const chatData = await callChatCompletion(apiConfig, requestBody, {
+      meta: makeApiUsageMeta('chat.phoneTextReply', {
+        charId: selectedChar?.id,
+        charName: selectedChar?.name,
+        apiRole: 'main',
+        apiBinding: '语音通话文字回复',
       }),
-    }, 2, 0, makeApiUsageMeta('chat.phoneTextReply', {
-      charId: selectedChar?.id,
-      charName: selectedChar?.name,
-      apiRole: 'main',
-      apiBinding: '语音通话文字回复',
-    }));
-    const assistantText = chatData?.choices?.[0]?.message?.content?.trim() || '';
+    });
+    const assistantText = (extractContent(chatData) || '').trim();
     if (!assistantText) throw new Error('文本接口返回为空');
     return assistantText;
   };

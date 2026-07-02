@@ -75,7 +75,10 @@
 `AuxApiConfig { enabled, baseUrl, apiKey, model }`（OSContext，持久化 `os_aux_api_config`）。负责「主聊天对话以外」的**所有** LLM 任务——把主线（聊天）的额度与注意力让出来。
 
 - 解析：`utils/auxApi.ts` `resolveAuxApi(aux, main)` —— 副 API 开且填齐就用副 API，否则回退主 `apiConfig`（**没配副 API 时行为与改造前完全一致**）；`isAuxApiOn(aux)` 判断是否「真正可用」。
-- 默认形态：每个消费方在组件顶部取 `const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }`（保留 `temperature/stream/minimax` 等形状，只替换 `baseUrl/apiKey/model` 三件套），再喂给各自的 fetch / 工具函数。
+- 默认形态：每个消费方在组件顶部取 `const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }`（保留 `temperature/stream/minimax` 等形状，只替换 `baseUrl/apiKey/model` 三件套），再喂给共享 LLM 客户端或工具函数。
+- OpenAI 兼容入口统一走 `utils/openAiCompat.ts` + `utils/llmClient.ts`：Base URL 可填根地址、`/v1`、完整聊天端点、模型列表端点或图片生成端点，统一归一化后再拼路径；空 Key 的本地/免鉴权接口会用 `sk-none` 兜底 header。
+- 模型列表、连接测试和聊天补全共用 `fetchModelList` / `testChatConnection` / `callChatCompletion` / `llmComplete`。服务商不支持模型列表时只提示手动输入模型名，不阻断保存。
+- `resolveAuxApi` 返回的 `ResolvedApi` 会标注 `apiRole`、`apiBinding` 和 `fallbackFromAux`：API 后台流水能区分「副 API 可用」「副 API 未配置而回退主 API」以及角色级/场景级自定义 API。
 
 #### 边界：什么走主 API、什么走副 API
 

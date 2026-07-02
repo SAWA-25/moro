@@ -6,7 +6,9 @@
 
 import { APIConfig, CharacterProfile, UserProfile } from '../types';
 import { ContextBuilder } from './context';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 export type ListenAction =
     | { kind: 'none' }
@@ -66,13 +68,17 @@ ${TRIGGER_TASK[trigger]}
 
 只输出一个 JSON（不要 markdown、不要解释）：
 {"reply":"你要说的话","action":{"kind":"none"}}`;
-        const res = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
-            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.9,
+        }, {
+            meta: makeApiUsageMeta('music.listenTogether', {
+                apiRole: 'aux',
+                charId: char.id,
+                charName: char.name,
+            }),
         });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        const data = await safeResponseJson(res);
         const content = (extractContent(data) || '').trim();
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {

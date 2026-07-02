@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { APIConfig, CharacterProfile, UserProfile } from '../types';
 import { momentsRefreshPrompt } from './laiwangPrompts';
-import { generateCharacterMoments, getMomentVisibleCharacters, resolveMomentCharacter } from '../components/moments/momentsGen';
+import { generateCharacterMoments, generateReactions, getMomentVisibleCharacters, resolveMomentCharacter } from '../components/moments/momentsGen';
 
 const apiConfig: APIConfig = {
     baseUrl: 'https://api.example.test/v1',
@@ -227,5 +227,51 @@ describe('generateCharacterMoments identity mapping', () => {
 
         expect(posts).toHaveLength(1);
         expect(posts[0].authorCharId).toBe('local-a');
+    });
+});
+
+describe('generateReactions audience permissions', () => {
+    it('drops model output from characters without permission to interact', async () => {
+        const post = {
+            id: 'post-custom',
+            authorName: 'User',
+            authorAvatar: '',
+            title: '',
+            content: '只给林夏看的一条动态',
+            images: [],
+            likes: 0,
+            isCollected: false,
+            isLiked: false,
+            comments: [],
+            timestamp: 1,
+            tags: [],
+            authorType: 'user' as const,
+            visibility: 'public' as const,
+            audienceRules: {
+                mode: 'custom' as const,
+                characters: {
+                    'local-a': { canView: true, canLike: true, canComment: true, canRepost: false },
+                    'local-b': { canView: false, canLike: false, canComment: false, canRepost: false },
+                },
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            choices: [{ message: { content: JSON.stringify([
+                { charId: 'model-b', postId: 'post-custom', action: 'comment', content: '我不该看见' },
+                { charId: 'model-a', postId: 'post-custom', action: 'comment', content: '收到。' },
+            ]) } }],
+        }), { status: 200 })));
+
+        const ops = await generateReactions({
+            apiConfig,
+            characters: chars,
+            userProfile: user,
+            post,
+            feed: [],
+        });
+
+        expect(ops).toHaveLength(1);
+        expect(ops[0]).toMatchObject({ type: 'comment', postId: 'post-custom' });
+        expect((ops[0] as any).comment.authorCharId).toBe('local-a');
     });
 });

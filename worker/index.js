@@ -859,6 +859,16 @@ function splitSetCookie(header) {
   return String(header).split(/,(?=\s*[^;,=\s]+=[^;,]*)/g).map(s => s.trim()).filter(Boolean);
 }
 
+function getSetCookieLines(headers) {
+  if (!headers) return [];
+  const getter = headers.getSetCookie;
+  if (typeof getter === "function") {
+    const lines = getter.call(headers);
+    if (Array.isArray(lines) && lines.length) return lines;
+  }
+  return splitSetCookie(headers.get("Set-Cookie") || headers.get("set-cookie"));
+}
+
 function mergeSetCookies(jar, setCookieHeader) {
   const next = { ...(jar || {}) };
   for (const line of splitSetCookie(setCookieHeader)) {
@@ -884,6 +894,13 @@ function hash33(s) {
   const txt = String(s || '');
   for (let i = 0; i < txt.length; i++) e += (e << 5) + txt.charCodeAt(i);
   return e & 2147483647;
+}
+
+function qqGtk(jar = {}) {
+  const skey = String(jar.p_skey || jar.skey || jar.qqmusic_key || jar.qm_keyst || '');
+  let hash = 5381;
+  for (let i = 0; i < skey.length; i++) hash += (hash << 5) + skey.charCodeAt(i);
+  return hash & 0x7fffffff;
 }
 
 function base64UrlEncodeJson(obj) {
@@ -1045,8 +1062,13 @@ function qqAlbumPic(albummid) {
   return mid ? `https://y.qq.com/music/photo_new/T002R300x300M000${mid}.jpg?max_age=2592000` : '';
 }
 
+function qqSongPayload(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  return raw.songinfo || raw.song || raw.musicData || raw.track || raw;
+}
+
 function normalizeQQSong(raw) {
-  const s = raw?.songinfo || raw || {};
+  const s = qqSongPayload(raw);
   const file = s.file || {};
   const songmid = String(s.songmid || s.song_mid || s.mid || s.strMediaMid || file.media_mid || '').trim();
   const mediaMid = String(s.strMediaMid || s.media_mid || file.media_mid || songmid || '').trim();
@@ -1056,6 +1078,7 @@ function normalizeQQSong(raw) {
   const albumMid = s.albummid || s.album_mid || s.album?.pmid || s.album?.mid || '';
   const rawDuration = Number(s.interval || s.duration || s.songinterval || 0);
   const duration = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
+  const qqSongId = s.songid || s.id || null;
   return {
     id: -Math.max(1, hash33(`qq:${songmid || s.songid || s.id || s.songname || s.name}`)),
     name: s.songname || s.name || s.title || '',
@@ -1067,7 +1090,8 @@ function normalizeQQSong(raw) {
     source: "qq",
     qqSongMid: songmid,
     qqMediaMid: mediaMid,
-    rawSongId: s.songid || s.id || null,
+    qqSongId,
+    rawSongId: qqSongId,
   };
 }
 
@@ -1125,6 +1149,180 @@ async function fetchQQCollectedPlaylists(jar, uin) {
   });
 }
 
+function looksLikeQQSong(raw) {
+  const s = qqSongPayload(raw);
+  if (!s || typeof s !== 'object') return false;
+  const mid = s.songmid || s.song_mid || s.mid || s.strMediaMid || s.file?.media_mid;
+  const title = s.songname || s.name || s.title;
+  return !!(mid && title);
+}
+
+function collectQQSongRows(node, out = [], seen = new Set()) {
+  if (!node || out.length >= 300) return out;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      if (looksLikeQQSong(item)) {
+        const s = qqSongPayload(item);
+        const key = String(s.songmid || s.song_mid || s.mid || s.strMediaMid || s.songid || s.id || '').trim();
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          out.push(item);
+        }
+      } else {
+        collectQQSongRows(item, out, seen);
+      }
+    }
+    return out;
+  }
+  if (typeof node !== 'object') return out;
+  if (looksLikeQQSong(node)) {
+    const s = qqSongPayload(node);
+    const key = String(s.songmid || s.song_mid || s.mid || s.strMediaMid || s.songid || s.id || '').trim();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      out.push(node);
+    }
+    return out;
+  }
+  for (const key of ['songlist', 'song_list', 'list', 'items', 'v_song', 'vec_song', 'vec_songlist', 'listen_song', 'recent', 'data']) {
+    if (node[key]) collectQQSongRows(node[key], out, seen);
+  }
+  return out;
+}
+
+function normalizeQQRecord(row, idx) {
+  const song = normalizeQQSong(row);
+  const playCount = Number(
+    row?.playCount ?? row?.play_count ?? row?.playcnt ?? row?.count ?? row?.cnt ?? row?.num ?? row?.listenCount ?? 1
+  ) || 1;
+  const score = Number(row?.score ?? row?.weight ?? row?.percent ?? Math.max(1, 100 - idx * 3)) || 0;
+  return { song, playCount, score };
+}
+
+async function fetchQQRecentRecords(jar, uin) {
+  const params = {
+    uin,
+    hostUin: uin,
+    loginUin: uin,
+    begin: 0,
+    num: 50,
+    pagenum: 0,
+    pagesize: 50,
+    type: 1,
+    g_tk: qqGtk(jar),
+    format: "json",
+    inCharset: "utf8",
+    outCharset: "utf-8",
+    notice: 0,
+    platform: "yqq.json",
+    needNewCode: 0,
+  };
+  const candidates = [
+    "https://c.y.qq.com/v8/fcg-bin/fcg_v8_user_music_record.fcg",
+    "https://c.y.qq.com/rsc/fcgi-bin/fcg_v8_user_music_record.fcg",
+  ];
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      const data = await qqFetchJson(url, {
+        jar,
+        headers: { "Referer": `https://y.qq.com/n/ryqq/profile/${encodeURIComponent(uin)}` },
+        data: params,
+      });
+      const records = collectQQSongRows(data).map(normalizeQQRecord).filter(r => r.song.qqSongMid);
+      if (records.length) return records;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (lastError) throw lastError;
+  return [];
+}
+
+async function fetchQQLikedSongs(jar, uin) {
+  const data = await qqFetchJson("https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg", {
+    jar,
+    headers: { "Referer": `https://y.qq.com/n/ryqq/profile/${encodeURIComponent(uin)}` },
+    data: {
+      ct: 20,
+      cid: 205360956,
+      userid: uin,
+      reqtype: 1,
+      sin: 0,
+      ein: 299,
+      g_tk: qqGtk(jar),
+      format: "json",
+      inCharset: "utf8",
+      outCharset: "utf-8",
+    },
+  });
+  return collectQQSongRows(data).map(normalizeQQSong).filter(s => s.qqSongMid);
+}
+
+async function writeQQSongLike(jar, uin, songmid, like) {
+  const payload = {
+    comm: { uin: uin || 0, format: "json", ct: 20, cv: 0 },
+    req_0: {
+      module: "music.musicasset.SongFavWrite",
+      method: like ? "AddSongFans" : "DelSongFans",
+      param: { v_songMid: [songmid] },
+    },
+  };
+  try {
+    const result = await qqFetchJson("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+      jar,
+      data: {
+        "-": like ? "add_song_fav" : "del_song_fav",
+        g_tk: qqGtk(jar),
+        loginUin: uin || 0,
+        hostUin: 0,
+        format: "json",
+        inCharset: "utf8",
+        outCharset: "utf-8",
+        notice: 0,
+        platform: "yqq.json",
+        needNewCode: 0,
+        data: JSON.stringify(payload),
+      },
+    });
+    const code = result?.req_0?.code ?? result?.code ?? 0;
+    if (Number(code) === 0) return result;
+  } catch {}
+
+  const oldEndpoint = like
+    ? "https://c.y.qq.com/fav/fcgi-bin/fcg_music_add2songdir.fcg"
+    : "https://c.y.qq.com/fav/fcgi-bin/fcg_music_delbatchsong.fcg";
+  const legacy = await qqFetchJson(oldEndpoint, {
+    jar,
+    headers: { "Referer": "https://y.qq.com/" },
+    data: {
+      loginUin: uin || 0,
+      hostUin: 0,
+      g_tk: qqGtk(jar),
+      format: "json",
+      inCharset: "utf8",
+      outCharset: "utf-8",
+      notice: 0,
+      platform: "yqq.json",
+      needNewCode: 0,
+      dirid: 201,
+      midlist: songmid,
+      typelist: 13,
+      addtype: '',
+      formsender: 4,
+      source: 103,
+      r2: 0,
+      r3: 0,
+      utf8: 1,
+    },
+  });
+  const legacyCode = legacy?.code ?? legacy?.retcode ?? 0;
+  if (Number(legacyCode) !== 0) {
+    throw new Error(legacy?.message || legacy?.msg || `QQ 音乐收藏接口返回 ${legacyCode}`);
+  }
+  return legacy;
+}
+
 async function qqProfileFromSonglists(jar, uin) {
   const created = await fetchQQCreatedPlaylists(jar, uin);
   const disslist = created?.data?.disslist || [];
@@ -1178,6 +1376,29 @@ async function handleQQMusicApi(pathname, body) {
       return true;
     });
     return { status: "success", profile: data.profile, playlist };
+  }
+
+  if (pathname === "/qqmusic/user/record") {
+    const records = await fetchQQRecentRecords(jar, uin);
+    return { status: "success", records };
+  }
+
+  if (pathname === "/qqmusic/likelist") {
+    const songs = await fetchQQLikedSongs(jar, uin);
+    return {
+      status: "success",
+      songs,
+      ids: songs.map(s => s.id),
+      mids: songs.map(s => s.qqSongMid).filter(Boolean),
+    };
+  }
+
+  if (pathname === "/qqmusic/like") {
+    const songmid = String(body.songmid || '').trim();
+    if (!songmid) return { status: "error", message: "缺少 QQ 音乐 songmid" };
+    const like = body.like !== false;
+    await writeQQSongLike(jar, uin, songmid, like);
+    return { status: "success", songmid, like };
   }
 
   if (pathname === "/qqmusic/playlist/detail") {
@@ -1353,7 +1574,10 @@ async function createQQMusicQrTicket() {
   loginUrl.searchParams.set("target", "self");
 
   const loginRes = await fetch(loginUrl.toString(), { headers: qqLoginHeaders(jar) });
-  jar = mergeSetCookies(jar, loginRes.headers.get("Set-Cookie"));
+  jar = mergeSetCookies(jar, getSetCookieLines(loginRes.headers));
+  if (!loginRes.ok) {
+    throw new Error(`QQ 登录页打开失败 (${loginRes.status})`);
+  }
   const loginHtml = await loginRes.text().catch(() => '');
   const { ptuiVersion, jsVersion } = extractQQLoginVersion(loginHtml);
 
@@ -1369,14 +1593,22 @@ async function createQQMusicQrTicket() {
   qrUrl.searchParams.set("pt_3rd_aid", "0");
 
   const qrRes = await fetch(qrUrl.toString(), { headers: qqLoginHeaders(jar) });
-  jar = mergeSetCookies(jar, qrRes.headers.get("Set-Cookie"));
+  jar = mergeSetCookies(jar, getSetCookieLines(qrRes.headers));
   if (!qrRes.ok) {
     throw new Error(`QQ 二维码生成失败 (${qrRes.status})`);
   }
+  const contentType = qrRes.headers.get("Content-Type") || "image/png";
   const buf = await qrRes.arrayBuffer();
+  if (!/^image\//i.test(contentType) || buf.byteLength < 32) {
+    let preview = '';
+    try {
+      preview = new TextDecoder().decode(buf.slice(0, 160)).replace(/\s+/g, ' ').trim();
+    } catch {}
+    throw new Error(`QQ 二维码生成返回了非图片内容${preview ? `：${preview.slice(0, 80)}` : ''}`);
+  }
   let bin = '';
   for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
-  const qrImg = `data:${qrRes.headers.get("Content-Type") || "image/png"};base64,${btoa(bin)}`;
+  const qrImg = `data:${contentType};base64,${btoa(bin)}`;
 
   if (!jar.qrsig) throw new Error("QQ 二维码缺少 qrsig");
   const ticket = base64UrlEncodeJson({
@@ -1416,7 +1648,7 @@ async function checkQQMusicQrTicket(ticket) {
   if (state.jsVersion) checkUrl.searchParams.set("pt_js_version", state.jsVersion);
 
   const res = await fetch(checkUrl.toString(), { headers: qqLoginHeaders(jar) });
-  jar = mergeSetCookies(jar, res.headers.get("Set-Cookie"));
+  jar = mergeSetCookies(jar, getSetCookieLines(res.headers));
   const text = await res.text().catch(() => '');
   const parsed = parsePtuiCallback(text);
   const msg = decodeMaybeGarbledChinese(parsed.message || text);

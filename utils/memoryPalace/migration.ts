@@ -14,7 +14,6 @@ import { MemoryNodeDB } from './db';
 import { vectorizeAndStore } from './vectorStore';
 import { buildLinks } from './links';
 import { runConsolidation } from './consolidation';
-import { safeFetchJson } from '../safeApi';
 import { safeParseJsonArray } from './jsonUtils';
 import {
     buildRelatedMemoriesBlock, buildRelatedToRule, buildRelatedToFormatHint,
@@ -24,6 +23,7 @@ import { fetchRelatedMemoriesForExtraction, splitLogsToBullets } from './related
 import { bindMemoriesIntoEventBox } from './eventBox';
 import { maybeCompressEventBoxes } from './eventBoxCompression';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
+import { callChatCompletion } from '../llmClient';
 
 function generateId(): string {
     return `mn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -136,32 +136,23 @@ async function extractMonthMemories(
 date 字段填记忆对应的大概日期。`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: logsText },
-                    ],
-                    temperature: 0.5,
-                    // 12000 比 16000 留余量，避免 LLM 贴着 cap 产出被截断；
-                    // 配合外层 sub-batch 切分（≤6 天/call），输出 token 一般在 3k-6k，12k 充分够
-                    max_tokens: 12000,
-                    stream: false,
-                }),
-            },
-            1,         // 失败只再试 1 次（整体 3 次 × 5min = 15min 太久）
-            5 * 60_000, // 单次 5 分钟硬超时：第一批 142s 就过了，若超过 5min 基本是 provider 卡死，
-                       // 继续等只会让用户误以为整页冻住（实际主线程闲着等 fetch），主动 abort 切下一批。
-            makeApiUsageMeta('memoryPalace.migration', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: logsText },
+            ],
+            temperature: 0.5,
+            // 12000 比 16000 留余量，避免 LLM 贴着 cap 产出被截断；
+            // 配合外层 sub-batch 切分（≤6 天/call），输出 token 一般在 3k-6k，12k 充分够
+            max_tokens: 12000,
+            stream: false,
+        }, {
+            maxRetries: 1,         // 失败只再试 1 次（整体 3 次 × 5min = 15min 太久）
+            timeoutMs: 5 * 60_000, // 单次 5 分钟硬超时：第一批 142s 就过了，若超过 5min 基本是 provider 卡死，
+                                  // 继续等只会让用户误以为整页冻住（实际主线程闲着等 fetch），主动 abort 切下一批。
+            meta: makeApiUsageMeta('memoryPalace.migration', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const parsed = safeParseJsonArray(reply);

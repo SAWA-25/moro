@@ -9,8 +9,10 @@
 
 import { CharacterProfile, UserProfile, Message } from '../types';
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent, extractJson } from './safeApi';
+import { extractContent, extractJson } from './safeApi';
 import { USER_ACTION_SUGGEST_SYSTEM, userActionSuggestUserPrompt } from './laiwangPrompts';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 // 文案见 utils/laiwangPrompts.ts → [6] 行动建议
 const SYSTEM = USER_ACTION_SUGGEST_SYSTEM;
@@ -118,25 +120,25 @@ async function requestActionsOnce(args: {
     signal?: AbortSignal;
 }): Promise<string[]> {
     const { api, char, userName, transcript, count, avoid, signal } = args;
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     const userMsg = userActionSuggestUserPrompt({ charName: char.name, userName, transcript, count, avoid });
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            // 给足额度：思考型模型（gemini-3.1-pro 等）会先用掉一大截 token 推理，
-            // 1000 常被推理吃光、正文 JSON 数组被截断 → 解析为空 → 前台「没想出来」。
-            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
-            temperature: 1.0,
-            max_tokens: 4000,
-            stream: false,
-        }),
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        // 给足额度：思考型模型（gemini-3.1-pro 等）会先用掉一大截 token 推理，
+        // 1000 常被推理吃光、正文 JSON 数组被截断 → 解析为空 → 前台「没想出来」。
+        messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
+        temperature: 1.0,
+        max_tokens: 4000,
+        stream: false,
+    }, {
         signal,
+        meta: makeApiUsageMeta('chat.userActionSuggest', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
+            charId: char.id,
+            charName: char.name,
+        }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
     return parseActions(extractContent(data) || '');
 }
 

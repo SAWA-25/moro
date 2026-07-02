@@ -19,9 +19,15 @@ import {
     UploadSimple,
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import { AppID, Worldbook, WorldbookPosition } from '../types';
+import { AppID, Worldbook, WorldbookPosition, WorldbookSelectiveLogic } from '../types';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
-import { DEFAULT_WB_CATEGORY, type WorldbookGroupScope } from '../utils/worldbookRuntime';
+import {
+    DEFAULT_WB_CATEGORY,
+    matchWorldbookKey,
+    normalizeSelectiveLogic,
+    type WorldbookGroupScope,
+    type WorldbookGroupSettings,
+} from '../utils/worldbookRuntime';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import {
     Chip,
@@ -95,6 +101,15 @@ const POSITION_OPTIONS: { value: WorldbookPosition; label: string; short: string
     { value: 'depth_user', label: '插入聊天历史 · user（@Depth）', short: '@D user' },
     { value: 'depth_assistant', label: '插入聊天历史 · assistant（@Depth）', short: '@D assistant' },
 ];
+
+const SELECTIVE_LOGIC_OPTIONS: { value: WorldbookSelectiveLogic; label: string; hint: string }[] = [
+    { value: 'and_any', label: '主词 + 任一二级词', hint: 'AND ANY' },
+    { value: 'and_all', label: '主词 + 全部二级词', hint: 'AND ALL' },
+    { value: 'not_any', label: '主词 + 不命中二级词', hint: 'NOT ANY' },
+    { value: 'not_all', label: '主词 + 不全命中二级词', hint: 'NOT ALL' },
+];
+
+const clampProbability = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
 const parseKeyList = (raw: string): string[] =>
     raw.split(/[,，]/).map(s => s.trim()).filter(Boolean);
@@ -246,6 +261,8 @@ const WorldbookApp: React.FC = () => {
         setWorldbookGroupEnabled,
         worldbookGroupScopes,
         setWorldbookGroupScope,
+        worldbookGroupSettings,
+        setWorldbookGroupSettings,
         activeApp,
     } = useOS();
 
@@ -274,8 +291,13 @@ const WorldbookApp: React.FC = () => {
     const [tempKeys, setTempKeys] = useState('');
     const [tempSecondaryKeys, setTempSecondaryKeys] = useState('');
     const [tempSelective, setTempSelective] = useState(false);
+    const [tempSelectiveLogic, setTempSelectiveLogic] = useState<WorldbookSelectiveLogic>('and_any');
     const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
+    const [tempMatchWholeWords, setTempMatchWholeWords] = useState(false);
     const [tempScanDepth, setTempScanDepth] = useState(4);
+    const [tempUseProbability, setTempUseProbability] = useState(false);
+    const [tempProbability, setTempProbability] = useState(100);
+    const [tempIgnoreBudget, setTempIgnoreBudget] = useState(false);
     const [scanTestText, setScanTestText] = useState('');
     const [importing, setImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -355,19 +377,31 @@ const WorldbookApp: React.FC = () => {
         const lines = scanTestText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
         const depth = Math.max(1, tempScanDepth || 4);
         const hay = lines.slice(-depth).join('\n');
-        const hayCmp = tempCaseSensitive ? hay : hay.toLowerCase();
-        const hit = (k: string) => hayCmp.includes(tempCaseSensitive ? k : k.toLowerCase());
+        const hit = (k: string) => matchWorldbookKey(hay, k, {
+            caseSensitive: tempCaseSensitive,
+            matchWholeWords: tempMatchWholeWords,
+        });
 
         const hitKeys = keys.filter(hit);
         const hitSecondary = secondary.filter(hit);
         if (hitKeys.length === 0) {
             return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息未命中主关键词` };
         }
-        if (tempSelective && secondary.length > 0 && hitSecondary.length === 0) {
-            return { triggered: false, hitKeys, hitSecondary, reason: '已命中主关键词，但未命中二级关键词' };
+        if (tempSelective && secondary.length > 0) {
+            const secondaryHits = secondary.map(hit);
+            const logic = normalizeSelectiveLogic(tempSelectiveLogic) || 'and_any';
+            const secondaryPass =
+                logic === 'and_all' ? secondaryHits.every(Boolean)
+                    : logic === 'not_any' ? !secondaryHits.some(Boolean)
+                        : logic === 'not_all' ? !secondaryHits.every(Boolean)
+                            : secondaryHits.some(Boolean);
+            if (!secondaryPass) {
+                return { triggered: false, hitKeys, hitSecondary, reason: `已命中主关键词，但二级词逻辑「${SELECTIVE_LOGIC_OPTIONS.find(o => o.value === logic)?.label || logic}」未通过` };
+            }
         }
-        return { triggered: true, hitKeys, hitSecondary, reason: '' };
-    }, [tempActivation, tempKeys, tempSecondaryKeys, tempSelective, tempCaseSensitive, tempScanDepth, scanTestText]);
+        const probabilityHint = tempUseProbability && tempProbability < 100 ? `；触发概率 ${clampProbability(tempProbability)}%` : '';
+        return { triggered: true, hitKeys, hitSecondary, reason: probabilityHint };
+    }, [tempActivation, tempKeys, tempSecondaryKeys, tempSelective, tempSelectiveLogic, tempCaseSensitive, tempMatchWholeWords, tempScanDepth, tempUseProbability, tempProbability, scanTestText]);
 
     const openCreate = (categoryOverride?: string) => {
         const targetCategory = categoryOverride || activeCategory || groupedEntries[0]?.[0] || '';
@@ -387,8 +421,13 @@ const WorldbookApp: React.FC = () => {
         setTempKeys('');
         setTempSecondaryKeys('');
         setTempSelective(false);
+        setTempSelectiveLogic('and_any');
         setTempCaseSensitive(false);
+        setTempMatchWholeWords(false);
         setTempScanDepth(4);
+        setTempUseProbability(false);
+        setTempProbability(100);
+        setTempIgnoreBudget(false);
         setScanTestText('');
         setIsEditing(true);
     };
@@ -448,8 +487,20 @@ const WorldbookApp: React.FC = () => {
         setTempKeys((book.keys ?? stEntry?.keys ?? []).join(', '));
         setTempSecondaryKeys((book.secondaryKeys ?? stEntry?.secondaryKeys ?? []).join(', '));
         setTempSelective(book.selective ?? !!stEntry?.selective);
+        setTempSelectiveLogic(normalizeSelectiveLogic(book.selectiveLogic ?? stEntry?.selectiveLogic ?? stEntry?.extensions?.selectiveLogic ?? stEntry?.extensions?.selective_logic) || 'and_any');
         setTempCaseSensitive(book.caseSensitive ?? !!stEntry?.caseSensitive);
+        setTempMatchWholeWords(book.matchWholeWords ?? stEntry?.matchWholeWords ?? !!stEntry?.extensions?.match_whole_words);
         setTempScanDepth(typeof book.scanDepth === 'number' ? book.scanDepth : (book.stData?.scanDepth ?? 4));
+        const probability = typeof book.probability === 'number'
+            ? book.probability
+            : typeof stEntry?.probability === 'number'
+                ? stEntry.probability
+                : typeof stEntry?.extensions?.probability === 'number'
+                    ? stEntry.extensions.probability
+                    : 100;
+        setTempProbability(clampProbability(probability));
+        setTempUseProbability(book.useProbability !== false && (book.useProbability === true || stEntry?.useProbability === true || typeof book.probability === 'number' || typeof stEntry?.probability === 'number' || typeof stEntry?.extensions?.probability === 'number'));
+        setTempIgnoreBudget(book.ignoreBudget ?? stEntry?.ignoreBudget ?? !!stEntry?.extensions?.ignore_budget);
         setScanTestText('');
         setIsEditing(true);
     };
@@ -519,8 +570,13 @@ const WorldbookApp: React.FC = () => {
             keys: isKeyword && keys.length > 0 ? keys : undefined,
             secondaryKeys: isKeyword && secondaryKeys.length > 0 ? secondaryKeys : undefined,
             selective: isKeyword && tempSelective ? true : undefined,
+            selectiveLogic: isKeyword && tempSelective ? tempSelectiveLogic : undefined,
             caseSensitive: isKeyword && tempCaseSensitive ? true : undefined,
+            matchWholeWords: isKeyword && tempMatchWholeWords ? true : undefined,
             scanDepth: isKeyword ? Math.max(1, tempScanDepth) : undefined,
+            probability: tempUseProbability ? clampProbability(tempProbability) : undefined,
+            useProbability: tempUseProbability ? true : undefined,
+            ignoreBudget: tempIgnoreBudget ? true : undefined,
         };
 
         if (editingBook) {
@@ -605,6 +661,10 @@ const WorldbookApp: React.FC = () => {
                         {entry.enabled === false && <MetaBadge tone="danger">原卡停用</MetaBadge>}
                         {(entry.keys?.length || 0) > 0 && <MetaBadge>关键词 {entry.keys!.join(', ')}</MetaBadge>}
                         {(entry.secondaryKeys?.length || 0) > 0 && <MetaBadge>二级词 {entry.secondaryKeys!.join(', ')}</MetaBadge>}
+                        {entry.selectiveLogic && <MetaBadge>二级逻辑 {SELECTIVE_LOGIC_OPTIONS.find(o => o.value === entry.selectiveLogic)?.hint || entry.selectiveLogic}</MetaBadge>}
+                        {entry.matchWholeWords && <MetaBadge>整词匹配</MetaBadge>}
+                        {entry.probability !== undefined && <MetaBadge>概率 {entry.probability}%</MetaBadge>}
+                        {entry.ignoreBudget && <MetaBadge>忽略预算</MetaBadge>}
                         {entry.insertionOrder !== undefined && <MetaBadge>顺序 {entry.insertionOrder}</MetaBadge>}
                         {entry.position !== undefined && <MetaBadge>位置 {String(entry.position)}</MetaBadge>}
                     </>
@@ -676,6 +736,9 @@ const WorldbookApp: React.FC = () => {
                             {isKeywordEntry && (book.keys?.length || 0) > 0 && (
                                 <MetaBadge tone="mark">{book.keys!.slice(0, 3).join(' / ')}{book.keys!.length > 3 ? '...' : ''}</MetaBadge>
                             )}
+                            {isKeywordEntry && book.matchWholeWords && <MetaBadge>整词</MetaBadge>}
+                            {typeof book.probability === 'number' && book.useProbability !== false && <MetaBadge>概率 {clampProbability(book.probability)}%</MetaBadge>}
+                            {book.ignoreBudget && <MetaBadge>预算豁免</MetaBadge>}
                         </div>
                         {open && renderStBadges(book)}
                     </div>
@@ -705,6 +768,23 @@ const WorldbookApp: React.FC = () => {
             : `${totalCount} 条`;
         const theme = spineTheme(category);
         const scopeTone = scope === 'global' ? SECONDARY : A;
+        const fallbackGroupSettings = (() => {
+            for (const book of allBooks) {
+                const data = book.stData;
+                if (!data) continue;
+                const out: WorldbookGroupSettings = {};
+                if (typeof data.recursiveScanning === 'boolean') out.recursiveScanning = data.recursiveScanning;
+                if (typeof data.tokenBudget === 'number' && data.tokenBudget >= 0) out.tokenBudget = data.tokenBudget;
+                const maxSteps = data.bookExtensions?.max_recursion_steps ?? data.bookExtensions?.maxRecursionSteps;
+                if (typeof maxSteps === 'number' && maxSteps >= 0) out.maxRecursionSteps = maxSteps;
+                if (Object.keys(out).length > 0) return out;
+            }
+            return {};
+        })();
+        const groupSettings = { ...fallbackGroupSettings, ...(worldbookGroupSettings[category] || {}) };
+        const updateGroupSettings = (updates: Partial<WorldbookGroupSettings>) => {
+            setWorldbookGroupSettings(category, { ...groupSettings, ...updates });
+        };
 
         return (
             <section key={category} className="space-y-3">
@@ -745,6 +825,8 @@ const WorldbookApp: React.FC = () => {
                                         <MetaBadge tone={scope === 'global' ? 'green' : 'soft'}>{scope === 'global' ? '整本全局' : '整本局部'}</MetaBadge>
                                         <MetaBadge tone="green">{enabledCount} 条启用</MetaBadge>
                                         <MetaBadge tone="mark">{keywordCount} 个关键词</MetaBadge>
+                                        {groupSettings.recursiveScanning && <MetaBadge tone="mark">递归扫描</MetaBadge>}
+                                        {(groupSettings.tokenBudget || 0) > 0 && <MetaBadge>预算 {groupSettings.tokenBudget}</MetaBadge>}
                                         {!enabled && <MetaBadge tone="danger">整本停用</MetaBadge>}
                                     </div>
                                 </div>
@@ -804,6 +886,45 @@ const WorldbookApp: React.FC = () => {
                                 >
                                     <GlobeSimple size={14} weight="bold" />全局：所有角色
                                 </button>
+                            </div>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                <button
+                                    type="button"
+                                    onClick={() => updateGroupSettings({ recursiveScanning: !groupSettings.recursiveScanning })}
+                                    className="rounded-[8px] px-3 py-2 text-left press-soft"
+                                    style={{ background: groupSettings.recursiveScanning ? MARK.soft : '#fbfefe', border: `1px solid ${groupSettings.recursiveScanning ? '#d9d4ee' : '#dbe8ef'}` }}
+                                >
+                                    <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>递归扫描</div>
+                                    <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{groupSettings.recursiveScanning ? '正文继续触发关键词' : '只扫描聊天近窗'}</div>
+                                </button>
+                                <div>
+                                    <div className="mb-1 text-[10px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.faint }}>TOKEN 预算</div>
+                                    <TextInput
+                                        type="number"
+                                        min={0}
+                                        value={(groupSettings.tokenBudget || 0) > 0 ? groupSettings.tokenBudget : ''}
+                                        onChange={e => {
+                                            const raw = e.target.value.trim();
+                                            updateGroupSettings({ tokenBudget: raw ? Math.max(1, parseInt(raw, 10) || 1) : 0 });
+                                        }}
+                                        placeholder="不限"
+                                    />
+                                </div>
+                                <div>
+                                    <div className="mb-1 text-[10px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.faint }}>递归轮数</div>
+                                    <TextInput
+                                        type="number"
+                                        min={0}
+                                        disabled={!groupSettings.recursiveScanning}
+                                        value={typeof groupSettings.maxRecursionSteps === 'number' ? groupSettings.maxRecursionSteps : ''}
+                                        onChange={e => {
+                                            const raw = e.target.value.trim();
+                                            updateGroupSettings({ maxRecursionSteps: raw ? Math.max(0, parseInt(raw, 10) || 0) : 0 });
+                                        }}
+                                        placeholder="默认 4"
+                                        style={!groupSettings.recursiveScanning ? { opacity: 0.45 } : undefined}
+                                    />
+                                </div>
                             </div>
                         </div>
 
@@ -971,6 +1092,22 @@ const WorldbookApp: React.FC = () => {
                                     常驻条目不需要关键词；关键词条目会先扫描最近聊天，命中主关键词后才注入。整本全局/局部只决定哪些角色可用。
                                 </p>
                             </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button type="button" onClick={() => setTempUseProbability(v => !v)} className="rounded-[8px] px-3 py-2 text-left press-soft" style={{ background: tempUseProbability ? '#fbfefe' : 'rgba(251,254,254,0.72)', border: `1px solid ${tempUseProbability ? '#b4ccdc' : '#dbe8ef'}` }}>
+                                    <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>触发概率</div>
+                                    <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempUseProbability ? `${clampProbability(tempProbability)}% 通过` : '必定通过'}</div>
+                                </button>
+                                <button type="button" onClick={() => setTempIgnoreBudget(v => !v)} className="rounded-[8px] px-3 py-2 text-left press-soft" style={{ background: tempIgnoreBudget ? '#fbfefe' : 'rgba(251,254,254,0.72)', border: `1px solid ${tempIgnoreBudget ? '#b4ccdc' : '#dbe8ef'}` }}>
+                                    <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>预算豁免</div>
+                                    <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempIgnoreBudget ? '不计入整书预算' : '计入整书预算'}</div>
+                                </button>
+                            </div>
+                            {tempUseProbability && (
+                                <div>
+                                    <FieldLabel en="PROBABILITY">触发概率（0-100）</FieldLabel>
+                                    <TextInput type="number" min={0} max={100} value={tempProbability} onChange={e => setTempProbability(clampProbability(parseInt(e.target.value, 10) || 0))} />
+                                </div>
+                            )}
                             {tempActivation === 'keyword' ? (
                                 <div className="space-y-3 rounded-[8px] p-3 animate-fade-in" style={{ background: MARK.soft, border: '1px solid #d9d4ee' }}>
                                     <SectionLabel en="KEYWORDS" accent={AC}>关键词设置</SectionLabel>
@@ -982,16 +1119,33 @@ const WorldbookApp: React.FC = () => {
                                         <FieldLabel en="SECONDARY">二级关键词</FieldLabel>
                                         <TextInput value={tempSecondaryKeys} onChange={e => setTempSecondaryKeys(e.target.value)} placeholder="可选；开启二级过滤时使用" />
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                         <button type="button" onClick={() => setTempSelective(v => !v)} className="rounded-[8px] px-3 py-2 text-left press-soft" style={{ background: tempSelective ? '#fbfefe' : 'rgba(251,254,254,0.72)', border: `1px solid ${tempSelective ? '#b4ccdc' : '#dbe8ef'}` }}>
                                             <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>二级过滤</div>
-                                            <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempSelective ? '需同时命中二级词' : '只看主关键词'}</div>
+                                            <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempSelective ? '启用二级逻辑' : '只看主关键词'}</div>
                                         </button>
                                         <button type="button" onClick={() => setTempCaseSensitive(v => !v)} className="rounded-[8px] px-3 py-2 text-left press-soft" style={{ background: tempCaseSensitive ? '#fbfefe' : 'rgba(251,254,254,0.72)', border: `1px solid ${tempCaseSensitive ? '#b4ccdc' : '#dbe8ef'}` }}>
                                             <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>大小写</div>
                                             <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempCaseSensitive ? '敏感匹配' : '不敏感匹配'}</div>
                                         </button>
+                                        <button type="button" onClick={() => setTempMatchWholeWords(v => !v)} className="rounded-[8px] px-3 py-2 text-left press-soft" style={{ background: tempMatchWholeWords ? '#fbfefe' : 'rgba(251,254,254,0.72)', border: `1px solid ${tempMatchWholeWords ? '#b4ccdc' : '#dbe8ef'}` }}>
+                                            <div className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: WB_TEXT.ink }}>整词匹配</div>
+                                            <div className="mt-0.5 text-[10px]" style={{ ...CUTE_STACK, color: WB_TEXT.soft }}>{tempMatchWholeWords ? '避免词内命中' : '允许片段命中'}</div>
+                                        </button>
                                     </div>
+                                    {tempSelective && (
+                                        <div>
+                                            <FieldLabel en="LOGIC">二级词逻辑</FieldLabel>
+                                            <select
+                                                value={tempSelectiveLogic}
+                                                onChange={e => setTempSelectiveLogic(e.target.value as WorldbookSelectiveLogic)}
+                                                className="w-full appearance-none px-4 py-3 text-sm font-bold outline-none"
+                                                style={FIELD_STYLE}
+                                            >
+                                                {SELECTIVE_LOGIC_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                     <div>
                                         <FieldLabel en="SCAN">扫描深度</FieldLabel>
                                         <TextInput type="number" min={1} value={tempScanDepth} onChange={e => setTempScanDepth(Math.max(1, parseInt(e.target.value, 10) || 1))} />
@@ -1002,7 +1156,7 @@ const WorldbookApp: React.FC = () => {
                                         {scanTestResult && (
                                             <div className="mt-2 rounded-[8px] px-3 py-2 text-[11px] leading-relaxed" style={{ ...CUTE_STACK, background: scanTestResult.triggered ? '#f6fbf8' : '#fbfefe', color: scanTestResult.triggered ? '#5f7f6d' : '#6f4d85', border: `1px solid ${scanTestResult.triggered ? '#dbe9e2' : '#dbe8ef'}` }}>
                                                 {scanTestResult.triggered
-                                                    ? `会触发。命中：${scanTestResult.hitKeys.join(' / ')}${scanTestResult.hitSecondary.length ? `；二级词：${scanTestResult.hitSecondary.join(' / ')}` : ''}`
+                                                    ? `会触发。命中：${scanTestResult.hitKeys.join(' / ')}${scanTestResult.hitSecondary.length ? `；二级词：${scanTestResult.hitSecondary.join(' / ')}` : ''}${scanTestResult.reason}`
                                                     : scanTestResult.reason}
                                             </div>
                                         )}

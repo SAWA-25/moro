@@ -6,9 +6,11 @@ import BankAssetIcon from './BankAssetIcon';
 import { ContextBuilder } from '../../utils/context';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { PawPrint, Bell, Sparkle, Book } from '@phosphor-icons/react';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 
 interface Props {
     shopState: BankShopState;
@@ -94,8 +96,8 @@ const BankShopScene: React.FC<Props> = ({
             addToast(`AP不足 (需${COST})`, 'error');
             return;
         }
-        if (!apiConfig.apiKey) {
-            addToast('请配置 API Key', 'error');
+        if (!apiConfig.baseUrl || !apiConfig.model) {
+            addToast('请配置 API', 'error');
             return;
         }
 
@@ -156,15 +158,22 @@ Output JSON: { "action": "...", "comment": "你进店后说的话" }
 Language: Chinese.`;
             }
 
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] })
+            const api = apiConfig as APIConfig & { apiRole?: string; apiBinding?: string };
+            const data = await callChatCompletion(api, {
+                model: api.model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('bank.lifeAi', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: api.apiRole || 'aux',
+                    apiBinding: api.apiBinding || '店铺拜访',
+                }),
             });
 
-            if (res.ok) {
-                const data = await safeResponseJson(res);
-                let jsonStr = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
+            {
+                let jsonStr = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
                 const result = JSON.parse(jsonStr);
                 const comment = result.comment || '来逛逛~';
 

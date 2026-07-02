@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate, PaperPlaneRight, Minus } from '@phosphor-icons/react';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { ContextBuilder } from '../utils/context';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -94,7 +96,7 @@ const VideoCallApp: React.FC = () => {
         if (userLine) setChatLines(prev => [...prev, userLine]);
         setReplying(true);
         try {
-            if (!apiConfig.baseUrl || !apiConfig.apiKey) {
+            if (!apiConfig.baseUrl || !apiConfig.model) {
                 if (endedRef.current || suspendedRef.current) return false;
                 setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: params.fallback, timestamp: Date.now() }]);
                 return true;
@@ -116,17 +118,18 @@ ${videoCallPromptBody({
                 micOn,
                 hasVoice: hasVoiceOutput,
             })}`;
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.85,
+            const data = await callChatCompletion(apiConfig, {
+                model: apiConfig.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.85,
+            }, {
+                meta: makeApiUsageMeta('chat.phoneTextReply', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: 'main',
+                    apiBinding: '视频通话',
                 }),
             });
-            if (!response.ok) throw new Error(`API ${response.status}`);
-            const data = await safeResponseJson(response);
             const reply = (extractContent(data) || '').trim() || params.fallback;
             if (endedRef.current || suspendedRef.current) return false;
             setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: reply, timestamp: Date.now() }]);

@@ -12,12 +12,24 @@
 自主生活在这条链路前面插了一个 **agent**：先让角色的生活往前走一格（生成一件 TA 正在经历的小事），
 主动消息再从这件事取材——角色于是「分享自己的生活」，也可能只是顺口说说自己，不一定扯到用户身上。
 
+## v2：主动回合规划
+
+现在主动消息不再等于「每次触发都生成一条生活事件并立刻发出」。`planAutonomousProactiveTurn()` 会先规划这一轮：
+
+- 读取角色 `proactiveConfig` 的主动强度、生活密度、取材来源、来信口味和勿扰时段。
+- 优先复用近 8 小时未说过的生活事件；如果生活密度允许或没有可用素材，再 `advanceLife()` 生成新事件。
+- 固定间隔默认继续发；随机 / 智能触发会按 `intensity + shareWillingness + proactiveAngle` 算冲动分，低分时只写入「TA 的日常」，不打扰用户。
+- 勿扰时段有三种行为：照常来信、只记生活、完全跳过。只记生活时不保存 hidden proactive hint，也不调用主聊天 API。
+- 生活事件只有在主动消息实际落库并派发通知后才 `markLifeEventSurfaced(id, surfacedAt)`，避免生成失败却被标成「已跟你说过」。
+
+`CharLifeEvent` v2 字段都是可选字段，旧数据无需迁移：`eventKind` / `energy` / `intensity` / `shareWillingness` / `thread` / `proactiveAngle` / `triggerSource` / `surfacedAt`。
+
 ## 三个出口
 
 1. **主动消息取材**（在线 / 离线推送都走这条）
-   - proactive 触发 → `advanceLife()` 生成 1 条 `CharLifeEvent` 落库 → `buildAutonomousProactiveHint()`
-     把这件事包成系统提示 → 角色基于「我刚刚/正在做 X」开口。
-   - 这条事件标记 `surfacedAsMsg = true`（回顾里显示「已跟你说过」）。
+   - proactive 触发 → `planAutonomousProactiveTurn()` 选择 / 生成 1 条 `CharLifeEvent` → 决定 `send` / `life_only` / `skip`。
+   - `send` 才会 `buildAutonomousProactiveHint()` 并进入主聊天生成；成功落库后标记 `surfacedAsMsg = true` + `surfacedAt`。
+   - `life_only` 只把事件留在「TA 的日常」；`skip` 连生活事件也不强行生成。
 
 2. **离线动态回顾**（「你不在时 TA 经历了…」时间线）
    - 用户离线 ≥ `CATCHUP_MIN_GAP_MS`（默认 2 小时）回来时，`catchUpOfflineLife()` 一次 LLM 调用
@@ -58,7 +70,7 @@
 
 | 文件 | 关键点 |
 |------|-------|
-| [`utils/autonomousLife.ts`](../utils/autonomousLife.ts) | agent 本体：`advanceLife` / `catchUpOfflineLife` / `buildAutonomousProactiveHint` / **`buildRecentLifeContextBlock`（线下→线上注入）** / `isAutonomousLifeEnabled` / `resolveLifeApi`（**默认副 API**）；prompt、JSON 解析、时间戳铺排都在这 |
+| [`utils/autonomousLife.ts`](../utils/autonomousLife.ts) | agent 本体：`planAutonomousProactiveTurn` / `advanceLife` / `catchUpOfflineLife` / `buildAutonomousProactiveHint` / **`buildRecentLifeContextBlock`（线下→线上注入）** / `isAutonomousLifeEnabled` / `resolveLifeApi`（**默认副 API**）；prompt、JSON 解析、时间戳铺排都在这 |
 | [`utils/chatPrompts.ts`](../utils/chatPrompts.ts) | `buildSystemPrompt` 里调 `buildRecentLifeContextBlock` 把「近来的线下生活」并进线上聊天 system prompt（与天气/日程/日记并发取数后拼接） |
 | [`utils/browserNotify.ts`](../utils/browserNotify.ts) | 通知权限查询/申请、Chrome/Edge 识别、`showLocalNotification`（SW 优先） |
 | [`apps/ChatHub.tsx`](../apps/ChatHub.tsx) | 「往来」会话列表：私聊行显示「此刻 · …」线下生活状态绿点（`lifeStatus`）；列表行错峰淡入 + 底栏 tab 选中动效 |

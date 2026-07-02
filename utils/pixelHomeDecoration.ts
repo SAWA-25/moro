@@ -9,8 +9,8 @@ import type { DecorationDiff, DecorationAction, PixelRoomLayout } from '../apps/
 import type { DigestResult } from './memoryPalace/digestion';
 import { PixelLayoutDB } from '../apps/pixelHome/pixelHomeDb';
 import { ROOM_META, ALL_ROOMS } from '../apps/pixelHome/roomTemplates';
-import { safeFetchJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 interface LLMConfig {
   baseUrl: string;
@@ -92,26 +92,17 @@ ${JSON.stringify(layoutSummary, null, 2)}
   "summary": "你的一句装修感言"
 }`;
 
-    const data = await safeFetchJson(
-      `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${llmConfig.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: llmConfig.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: '请根据你现在的心境，决定要不要整理一下房间。' },
-          ],
-          temperature: 0.7,
-          max_tokens: 800,
-        }),
-      },
-      2, 0, makeApiUsageMeta('room.decoration', { charId, charName, apiRole: 'aux' }),
-    );
+    const data = await callChatCompletion(llmConfig, {
+      model: llmConfig.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: '请根据你现在的心境，决定要不要整理一下房间。' },
+      ],
+      temperature: 0.7,
+      max_tokens: 800,
+    }, {
+      meta: makeApiUsageMeta('room.decoration', { charId, charName, apiRole: 'aux' }),
+    });
 
     const reply = data.choices?.[0]?.message?.content || '';
     const jsonMatch = reply.match(/\{[\s\S]*\}/);

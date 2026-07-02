@@ -130,6 +130,8 @@ export default defineConfig({
       onwarn(warning, defaultHandler) {
         // 抑制动态导入与静态导入混合的无害警告
         if (warning.message?.includes('dynamic import will not move module into another chunk')) return;
+        // PDF.js 的发布包内部带有可选 eval / new Function 路径；调用方已关闭运行时 eval。
+        if (warning.code === 'EVAL' && warning.id?.includes('pdfjs-dist')) return;
         defaultHandler(warning);
       },
       output: {

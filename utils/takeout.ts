@@ -13,13 +13,16 @@
 import {
     TakeoutStore, TakeoutDish, TakeoutOrder, TakeoutStatus, TakeoutOrderItem,
     TakeoutIncident, TakeoutIncidentKind, TakeoutChatMsg,
-    TakeoutDishSpec, TakeoutDishAddon,
+    TakeoutDishSpec, TakeoutDishAddon, TakeoutAddressCard, TakeoutAddressOwnerType,
+    CharacterProfile,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
-import { safeResponseJson, extractContent, safeFetchJson, extractJson } from './safeApi';
+import { extractContent, extractJson } from './safeApi';
 import { takeoutReceivedHint } from './laiwangPrompts';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
+import { resolveCity } from './charCity';
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -325,30 +328,227 @@ export function pushSearchHistory(q: string): string[] {
 }
 export function clearSearchHistory(): void { try { localStorage.removeItem(SEARCH_HISTORY_KEY); } catch { /* ignore */ } }
 
-// ── 收货地址簿（多地址管理，对标美团地址管理）─────────────────────
-const ADDRESS_BOOK_KEY = 'moro_takeout_addresses_v1';
+// ── 收货地址卡（多地址管理 + 角色地址联动）─────────────────────
+const LEGACY_ADDRESS_BOOK_KEY = 'moro_takeout_addresses_v1';
+const LEGACY_ADDRESS_KEY = 'moro_takeout_address';
+const ADDRESS_CARDS_KEY = 'moro_takeout_address_cards_v1';
 const DEFAULT_ADDRESS = '城南花园 3 栋 502';
-export function getAddresses(): string[] {
+export const TAKEOUT_ADDRESS_TAGS = ['家', '公司', '学校', '常去处', '自定义'];
+
+const ownerKey = (ownerType: TakeoutAddressOwnerType, ownerId?: string) => ownerType === 'char' ? `char:${ownerId || ''}` : 'me';
+const cardHash = (s: string): number => {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+};
+
+function uniqueStrings(items: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of items) {
+        const v = String(raw || '').trim();
+        if (!v || seen.has(v)) continue;
+        seen.add(v); out.push(v);
+    }
+    return out;
+}
+
+function legacyAddressStrings(): string[] {
+    const arr: string[] = [];
     try {
-        const a = JSON.parse(localStorage.getItem(ADDRESS_BOOK_KEY) || 'null');
-        if (Array.isArray(a) && a.length) return a.filter((x): x is string => typeof x === 'string');
+        const oldList = JSON.parse(localStorage.getItem(LEGACY_ADDRESS_BOOK_KEY) || '[]');
+        if (Array.isArray(oldList)) arr.push(...oldList.filter((x): x is string => typeof x === 'string'));
     } catch { /* ignore */ }
-    // 兼容旧的单地址 key
-    try { const old = localStorage.getItem('moro_takeout_address'); if (old) return [old]; } catch { /* ignore */ }
-    return [DEFAULT_ADDRESS];
+    try {
+        const oldOne = localStorage.getItem(LEGACY_ADDRESS_KEY);
+        if (oldOne) arr.unshift(oldOne);
+    } catch { /* ignore */ }
+    return uniqueStrings(arr);
+}
+
+function normalizeAddressCard(raw: any, now = Date.now()): TakeoutAddressCard | null {
+    const ownerType: TakeoutAddressOwnerType = raw?.ownerType === 'char' ? 'char' : 'me';
+    const ownerId = ownerType === 'char' ? String(raw?.ownerId || '').trim() : undefined;
+    if (ownerType === 'char' && !ownerId) return null;
+    const addressLine = String(raw?.addressLine || '').trim();
+    if (!addressLine) return null;
+    const tag = TAKEOUT_ADDRESS_TAGS.includes(String(raw?.tag || '')) ? String(raw.tag) : '自定义';
+    const label = String(raw?.label || tag || '地址').trim() || '地址';
+    const createdAt = Number(raw?.createdAt) || now;
+    return {
+        id: String(raw?.id || genId('addr')),
+        ownerType,
+        ownerId,
+        label,
+        tag,
+        receiverName: String(raw?.receiverName || (ownerType === 'me' ? '我' : 'TA')).trim() || (ownerType === 'me' ? '我' : 'TA'),
+        contactHint: String(raw?.contactHint || '').trim() || undefined,
+        city: String(raw?.city || '').trim() || undefined,
+        addressLine,
+        doorplate: String(raw?.doorplate || '').trim() || undefined,
+        deliveryNote: String(raw?.deliveryNote || '').trim() || undefined,
+        isDefault: !!raw?.isDefault,
+        createdAt,
+        updatedAt: Number(raw?.updatedAt) || createdAt,
+    };
+}
+
+function normalizeAddressCards(cards: TakeoutAddressCard[]): TakeoutAddressCard[] {
+    const grouped = new Map<string, TakeoutAddressCard[]>();
+    for (const card of cards) {
+        const k = ownerKey(card.ownerType, card.ownerId);
+        const list = grouped.get(k) || [];
+        list.push(card);
+        grouped.set(k, list);
+    }
+    const out: TakeoutAddressCard[] = [];
+    for (const list of grouped.values()) {
+        list.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.updatedAt - a.updatedAt);
+        const defaultIndex = Math.max(0, list.findIndex(c => c.isDefault));
+        list.forEach((c, i) => out.push({ ...c, isDefault: i === defaultIndex }));
+    }
+    return out;
+}
+
+function writeAddressCards(cards: TakeoutAddressCard[]): void {
+    try { localStorage.setItem(ADDRESS_CARDS_KEY, JSON.stringify(normalizeAddressCards(cards))); } catch { /* ignore */ }
+}
+
+function readAddressCards(): TakeoutAddressCard[] {
+    try {
+        const raw = JSON.parse(localStorage.getItem(ADDRESS_CARDS_KEY) || '[]');
+        if (Array.isArray(raw) && raw.length) {
+            return normalizeAddressCards(raw.map(x => normalizeAddressCard(x)).filter((x): x is TakeoutAddressCard => !!x));
+        }
+    } catch { /* ignore */ }
+    const now = Date.now();
+    const migrated = legacyAddressStrings().map((line, i) => normalizeAddressCard({
+        id: `addr_legacy_me_${i}_${cardHash(line).toString(36)}`,
+        ownerType: 'me',
+        label: i === 0 ? '家' : `地址${i + 1}`,
+        tag: i === 0 ? '家' : '自定义',
+        receiverName: '我',
+        addressLine: line,
+        isDefault: i === 0,
+        createdAt: now - i,
+        updatedAt: now - i,
+    }, now)).filter((x): x is TakeoutAddressCard => !!x);
+    if (migrated.length) writeAddressCards(migrated);
+    return migrated;
+}
+
+export function getAddressCards(ownerType: TakeoutAddressOwnerType = 'me', ownerId?: string): TakeoutAddressCard[] {
+    const k = ownerKey(ownerType, ownerId);
+    return readAddressCards()
+        .filter(c => ownerKey(c.ownerType, c.ownerId) === k)
+        .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.updatedAt - a.updatedAt);
+}
+
+export function saveAddressCard(input: Partial<TakeoutAddressCard> & Pick<TakeoutAddressCard, 'ownerType' | 'addressLine'>): TakeoutAddressCard {
+    const all = readAddressCards();
+    const now = Date.now();
+    const current = input.id ? all.find(c => c.id === input.id) : undefined;
+    const ownerType: TakeoutAddressOwnerType = input.ownerType === 'char' ? 'char' : 'me';
+    const ownerId = ownerType === 'char' ? String(input.ownerId || current?.ownerId || '').trim() : undefined;
+    const sameOwner = all.filter(c => ownerKey(c.ownerType, c.ownerId) === ownerKey(ownerType, ownerId));
+    const next = normalizeAddressCard({
+        ...current,
+        ...input,
+        ownerType,
+        ownerId,
+        id: current?.id || input.id || genId('addr'),
+        isDefault: input.isDefault ?? current?.isDefault ?? sameOwner.length === 0,
+        createdAt: current?.createdAt || now,
+        updatedAt: now,
+    }, now)!;
+    const without = all.filter(c => c.id !== next.id);
+    const shouldDefault = next.isDefault || sameOwner.length === 0;
+    const merged = without.map(c => ownerKey(c.ownerType, c.ownerId) === ownerKey(next.ownerType, next.ownerId) && shouldDefault ? { ...c, isDefault: false } : c);
+    writeAddressCards([...merged, { ...next, isDefault: shouldDefault }]);
+    return { ...next, isDefault: shouldDefault };
+}
+
+export function deleteAddressCard(id: string): TakeoutAddressCard[] {
+    const all = readAddressCards();
+    const next = normalizeAddressCards(all.filter(c => c.id !== id));
+    writeAddressCards(next);
+    return next;
+}
+
+export function setDefaultAddressCard(id: string): TakeoutAddressCard | null {
+    const all = readAddressCards();
+    const target = all.find(c => c.id === id);
+    if (!target) return null;
+    const k = ownerKey(target.ownerType, target.ownerId);
+    const next = all.map(c => ownerKey(c.ownerType, c.ownerId) === k ? { ...c, isDefault: c.id === id, updatedAt: c.id === id ? Date.now() : c.updatedAt } : c);
+    writeAddressCards(next);
+    return getDefaultAddressCard(target.ownerType, target.ownerId);
+}
+
+export function getDefaultAddressCard(ownerType: TakeoutAddressOwnerType = 'me', ownerId?: string): TakeoutAddressCard | null {
+    const cards = getAddressCards(ownerType, ownerId);
+    return cards.find(c => c.isDefault) || cards[0] || null;
+}
+
+export function formatAddressCard(card: TakeoutAddressCard): string {
+    const place = [card.city, card.addressLine, card.doorplate].filter(Boolean).join(' ');
+    const label = card.label ? `${card.label} · ` : '';
+    const contact = card.contactHint ? ` · ${card.contactHint}` : '';
+    const note = card.deliveryNote ? `（${card.deliveryNote}）` : '';
+    return `${label}${place}${contact}${note}`.trim();
+}
+
+export function getDefaultTakeoutAddressLine(): string {
+    const card = getDefaultAddressCard('me');
+    return card ? formatAddressCard(card) : DEFAULT_ADDRESS;
+}
+
+export function ensureCharacterAddressSeeds(characters: CharacterProfile[]): TakeoutAddressCard[] {
+    let all = readAddressCards();
+    let changed = false;
+    const now = Date.now();
+    for (const char of characters) {
+        if (!char?.id || all.some(c => c.ownerType === 'char' && c.ownerId === char.id)) continue;
+        const city = resolveCity(char)?.displayCity;
+        const line = city ? `${city} · ${char.name}常去的街角` : `${char.name}常住的小区门口`;
+        const seed = normalizeAddressCard({
+            id: `addr_char_${char.id}_${cardHash(line).toString(36)}`,
+            ownerType: 'char',
+            ownerId: char.id,
+            label: '家',
+            tag: '家',
+            receiverName: char.name,
+            contactHint: '来往私信',
+            city,
+            addressLine: line,
+            doorplate: '门口自取',
+            deliveryNote: '到门口发消息',
+            isDefault: true,
+            createdAt: now,
+            updatedAt: now,
+        }, now);
+        if (seed) { all = [...all, seed]; changed = true; }
+    }
+    if (changed) writeAddressCards(all);
+    return readAddressCards();
+}
+
+// 旧字符串地址 API：保留给旧代码 / 旧测试使用，内部映射到地址卡。
+export function getAddresses(): string[] {
+    const lines = getAddressCards('me').map(c => c.addressLine);
+    return lines.length ? lines : [DEFAULT_ADDRESS];
 }
 export function addAddress(addr: string): string[] {
     const v = addr.trim();
     if (!v) return getAddresses();
-    const next = [v, ...getAddresses().filter(x => x !== v)].slice(0, 12);
-    try { localStorage.setItem(ADDRESS_BOOK_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    return next;
+    saveAddressCard({ ownerType: 'me', label: '家', tag: '家', receiverName: '我', addressLine: v, isDefault: true });
+    return getAddresses();
 }
 export function removeAddress(addr: string): string[] {
-    const next = getAddresses().filter(x => x !== addr);
-    const safe = next.length ? next : [DEFAULT_ADDRESS];
-    try { localStorage.setItem(ADDRESS_BOOK_KEY, JSON.stringify(safe)); } catch { /* ignore */ }
-    return safe;
+    const card = getAddressCards('me').find(c => formatAddressCard(c) === addr || c.addressLine === addr);
+    if (card) deleteAddressCard(card.id);
+    if (getAddressCards('me').length === 0) saveAddressCard({ ownerType: 'me', label: '家', tag: '家', receiverName: '我', addressLine: DEFAULT_ADDRESS, isDefault: true });
+    return getAddresses();
 }
 
 // ── 预约送达：时段（对标美团「立即送出 / 预约」）──────────────────
@@ -367,6 +567,110 @@ export function deliveryTimeSlots(deliveryMinutes: number, now = Date.now()): De
     return slots;
 }
 
+// ── 饭票长期使用：凑单推荐 / 口味小纸条 / 本月统计 ───────────────
+export const TAKEOUT_TASTE_TAGS = ['不要香菜', '少辣', '无辣', '多辣', '少油', '少盐', '多放饭', '汤汁分开', '热饮', '少糖'];
+const TASTE_PROFILE_KEY = 'moro_takeout_taste_profiles_v1';
+const tasteKey = (targetId?: string | null) => (targetId && targetId.trim()) || 'me';
+
+function readTasteProfiles(): Record<string, string[]> {
+    try {
+        const raw = JSON.parse(localStorage.getItem(TASTE_PROFILE_KEY) || '{}');
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const out: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(raw)) {
+            if (!Array.isArray(v)) continue;
+            out[k] = v.filter((x): x is string => typeof x === 'string' && TAKEOUT_TASTE_TAGS.includes(x));
+        }
+        return out;
+    } catch { return {}; }
+}
+
+function writeTasteProfiles(profiles: Record<string, string[]>): void {
+    try { localStorage.setItem(TASTE_PROFILE_KEY, JSON.stringify(profiles)); } catch { /* ignore */ }
+}
+
+/** 按收货对象保存的口味偏好（me 或 charId），用于下单备注。 */
+export function getTasteTags(targetId: string = 'me'): string[] {
+    return readTasteProfiles()[tasteKey(targetId)] || [];
+}
+
+export function toggleTasteTag(targetId: string, tag: string): string[] {
+    if (!TAKEOUT_TASTE_TAGS.includes(tag)) return getTasteTags(targetId);
+    const key = tasteKey(targetId);
+    const profiles = readTasteProfiles();
+    const cur = profiles[key] || [];
+    const next = cur.includes(tag) ? cur.filter(x => x !== tag) : [...cur, tag].slice(0, 8);
+    profiles[key] = next;
+    writeTasteProfiles(profiles);
+    return next;
+}
+
+export function buildTasteNote(tags: string[]): string {
+    const clean = tags.filter((x, i, a) => TAKEOUT_TASTE_TAGS.includes(x) && a.indexOf(x) === i);
+    return clean.length ? `口味偏好：${clean.join('、')}` : '';
+}
+
+/** 把口味小纸条并进备注；已写过的偏好不重复塞。 */
+export function mergeNoteWithTaste(note: string | undefined, tags: string[]): string {
+    const base = (note || '').trim();
+    const missing = tags.filter(t => !base.includes(t));
+    const taste = buildTasteNote(missing);
+    if (!taste) return base;
+    return base ? `${base}；${taste}` : taste;
+}
+
+/** 根据当前差额推荐一口能凑起送/满减的小菜。 */
+export function recommendAddOnDishes(
+    dishes: TakeoutDish[],
+    pickedDishIds: string[] = [],
+    gap = 0,
+    limit = 4,
+): TakeoutDish[] {
+    const picked = new Set(pickedDishIds);
+    const pool = dishes.filter(d => !picked.has(d.id) && Number.isFinite(d.price) && d.price > 0);
+    const scored = pool.map(d => {
+        const sales = Math.log10((d.monthlySales || 1) + 1);
+        const popular = d.popular ? 5 : 0;
+        const cheapSnack = d.price <= 12 ? 3 : 0;
+        const reach = gap > 0
+            ? (d.price >= gap ? 100 - Math.abs(d.price - gap) : 72 - Math.abs(gap - d.price) * 0.8)
+            : 70 - d.price * 0.6;
+        return { d, score: reach + sales + popular + cheapSnack };
+    });
+    return scored.sort((a, b) => b.score - a.score).slice(0, Math.max(0, limit)).map(x => x.d);
+}
+
+export interface TakeoutHistoryStats {
+    monthCount: number;
+    monthTotal: number;
+    topStore?: { name: string; count: number };
+    topDish?: { name: string; count: number };
+}
+
+export function takeoutHistoryStats(orders: TakeoutOrder[], now = Date.now()): TakeoutHistoryStats {
+    const start = new Date(now);
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    const monthOrders = orders.filter(o => o.placedAt >= start.getTime() && !o.cancelledByStore);
+    const storeMap = new Map<string, number>();
+    const dishMap = new Map<string, number>();
+    let total = 0;
+    for (const o of monthOrders) {
+        total += Number(o.total || 0);
+        storeMap.set(o.storeName, (storeMap.get(o.storeName) || 0) + 1);
+        for (const item of o.items || []) dishMap.set(item.name, (dishMap.get(item.name) || 0) + (item.qty || 1));
+    }
+    const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topStore = top(storeMap);
+    const topDish = top(dishMap);
+    return {
+        monthCount: monthOrders.length,
+        monthTotal: round2(total),
+        topStore: topStore ? { name: topStore[0], count: topStore[1] } : undefined,
+        topDish: topDish ? { name: topDish[0], count: topDish[1] } : undefined,
+    };
+}
+
 // ── AI 现搓店铺（含菜品） ──────────────────────────────────────────
 interface AiStoreRaw {
     name?: string; emoji?: string; category?: string; blurb?: string;
@@ -379,7 +683,7 @@ interface AiStoreRaw {
  * 失败 / 未配 API 时回退到本地种子 generateStores()。
  */
 export async function generateStoresAI(api: ResolvedApi, count = 12, query?: string): Promise<TakeoutStore[]> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) throw new Error('未配置副 API');
     const q = (query || '').trim();
     const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
@@ -394,15 +698,15 @@ ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧�
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
     // 给足 token：20 家带菜品的店铺 JSON 很长，实测 gemini 等会一路写到上限——8000 仍常被截在
     // 半个店铺里导致整批 JSON 不合法。提到 16000 + 上面「写完再收尾」的硬约束 + extractJson 截断修复。
-    const data = await safeFetchJson(
-        `${baseUrl}/chat/completions`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 16000, stream: false }),
-        },
-        2, 0, makeApiUsageMeta('takeout.generate', { apiRole: 'aux', apiBinding: '生成店铺' }),
-    );
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 1.0,
+        max_tokens: 16000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('takeout.generate', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '生成店铺' }),
+    });
     const raw = extractContent(data) || data?.choices?.[0]?.message?.content || '';
     const parsed = extractJson(raw);
     let list: AiStoreRaw[] = Array.isArray(parsed?.stores) ? parsed.stores : (Array.isArray(parsed) ? parsed : []);
@@ -658,7 +962,7 @@ export async function buildDeliveryReply(
     const fallback = () => target === 'support' ? pick(CANNED_SUPPORT)
         : target === 'rider' ? (riderIsBad(order) ? pick(CANNED_RIDER_BAD) : (tipped ? pick(CANNED_RIDER_TIPPED) : pick(CANNED_RIDER_GOOD)))
             : (storeIsBad(order) ? pick(CANNED_STORE_BAD) : pick(CANNED_STORE_GOOD));
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) return fallback();
 
     const issues = (order.incidents || []).map(i => i.title).join('、');
@@ -679,13 +983,15 @@ export async function buildDeliveryReply(
     const hist = history.slice(-6).map(h => `${h.role === 'user' ? '食客' : roleZh}：${h.text}`).join('\n');
     const prompt = `${persona}\n这张饭票点的是：${items}。\n${hist ? `之前的对话：\n${hist}\n` : ''}食客刚说：${userText}\n用一句话自然回复（不超过30字，口语，不要任何前缀）：`;
     try {
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9, max_tokens: 120, stream: false }),
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.9,
+            max_tokens: 120,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('takeout.generate', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '外卖对话' }),
         });
-        if (!res.ok) throw new Error();
-        const data = await safeResponseJson(res);
         return (extractContent(data) || '').trim() || fallback();
     } catch {
         return fallback();
@@ -925,7 +1231,7 @@ export async function generateStoreReviewsAI(
     store: Pick<TakeoutStore, 'name' | 'category' | 'rating' | 'warning' | 'dishes'>,
     count = 8,
 ): Promise<StoreNpcReview[]> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) return generateStoreReviews(store.name, store.rating, count);
     const rating = store.rating ?? 4.3;
     const dishHint = (store.dishes || []).slice(0, 4).map(d => d.name).join('、');
@@ -937,15 +1243,15 @@ export async function generateStoreReviewsAI(
 每条：name（食客昵称，有梗）、emoji（一个动物头像 emoji）、rating（1~5 整数，按上面分布）、text（15~45字）、可选 reply（商家或其他食客的一句回复）。
 只输出 JSON，不要解释：{"reviews":[{"name":"","emoji":"🐱","rating":5,"text":"","reply":""}]}`;
     try {
-        const data = await safeFetchJson(
-            `${baseUrl}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 1600, stream: false }),
-            },
-            2, 0, makeApiUsageMeta('takeout.generate', { apiRole: 'aux', apiBinding: '生成食评' }),
-        );
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 1.0,
+            max_tokens: 1600,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('takeout.generate', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '生成食评' }),
+        });
         const raw = data?.choices?.[0]?.message?.content || '';
         const parsed = extractJson(raw);
         const list: AiReviewRaw[] = Array.isArray(parsed?.reviews) ? parsed.reviews : (Array.isArray(parsed) ? parsed : []);

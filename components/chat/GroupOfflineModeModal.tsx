@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Signpost, UsersThree } from '@phosphor-icons/react';
+import { Check, PencilSimple, Signpost, UsersThree, X } from '@phosphor-icons/react';
 import type { CharacterProfile, GroupProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { CUTE_STACK, MONO_STACK, SERIF_STACK } from '../handbook/paper';
@@ -23,6 +23,7 @@ interface GroupOfflineModeModalProps {
     userProfile: UserProfile;
     apiConfig: { baseUrl: string; apiKey: string; model: string };
     onEnd: () => void;
+    onSuspend: (entryCount: number) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
 
@@ -78,6 +79,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     userProfile,
     apiConfig,
     onEnd,
+    onSuspend,
     addToast,
 }) => {
     const { theme } = useOS();
@@ -92,6 +94,8 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [ending, setEnding] = useState(false);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editingText, setEditingText] = useState('');
     const [pov, setPov] = useState<GroupOfflinePov>(() => loadGroupOfflinePov(group.id));
     const [openingChosen, setOpeningChosen] = useState(() => loadGroupOfflineSession(group.id).length > 0);
     const [preset, setPreset] = useState<GroupOpeningPreset>('appointment');
@@ -99,10 +103,35 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     const [customOpen, setCustomOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
+    const isEditing = editingIndex !== null;
 
     const persistEntries = (next: GroupOfflineEntry[]) => {
         setEntries(next);
         saveGroupOfflineSession(group.id, next);
+    };
+
+    const beginEditEntry = (index: number, text: string) => {
+        if (busy || ending) return;
+        setEditingIndex(index);
+        setEditingText(text);
+    };
+
+    const cancelEditEntry = () => {
+        setEditingIndex(null);
+        setEditingText('');
+    };
+
+    const saveEditEntry = () => {
+        if (editingIndex === null) return;
+        const text = editingText.trim();
+        if (!text) {
+            addToast('线下内容不能为空', 'info');
+            return;
+        }
+        const next = entries.map((entry, index) => index === editingIndex ? { ...entry, text } : entry);
+        persistEntries(next);
+        setEditingIndex(null);
+        setEditingText('');
     };
 
     const setPovFor = (who: keyof GroupOfflinePov, person: OfflinePovPerson) => {
@@ -146,6 +175,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     };
 
     const runGroupTurn = async (baseEntries: GroupOfflineEntry[], userInput?: string) => {
+        if (isEditing) return;
         setBusy(true);
         try {
             const reply = await generateGroupOfflineTurn(group, members, userProfile, apiConfig, baseEntries, userInput, pov);
@@ -168,7 +198,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
 
     const handleSend = async () => {
         const text = input.trim();
-        if (!text || busy || ending) return;
+        if (!text || busy || ending || isEditing) return;
         setInput('');
         const next = [...entries, { role: 'user' as const, text, at: Date.now() }];
         persistEntries(next);
@@ -176,7 +206,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     };
 
     const handleEnd = async () => {
-        if (ending) return;
+        if (ending || isEditing) return;
         setEnding(true);
         try {
             await commitGroupOfflineSessionToContext(group, userName, entries);
@@ -186,6 +216,12 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
             addToast(`群聊赴约记录保存失败：${e?.message || e}`, 'error');
             setEnding(false);
         }
+    };
+
+    const handleSuspend = () => {
+        if (busy || ending || isEditing || entries.length === 0) return;
+        saveGroupOfflineSession(group.id, entries);
+        onSuspend(entries.length);
     };
 
     const renderAvatarStack = (size = 'w-7 h-7') => (
@@ -200,6 +236,63 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
             ))}
         </div>
     );
+
+    const renderEntryText = (text: string, index: number) => {
+        const editingThis = editingIndex === index;
+        const editButtonStyle = { background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(210,204,199,0.72)', color: modalInk };
+        if (editingThis) {
+            return (
+                <>
+                    <textarea
+                        value={editingText}
+                        onChange={e => setEditingText(e.target.value)}
+                        rows={4}
+                        autoFocus
+                        spellCheck={false}
+                        className="w-full min-h-[88px] bg-transparent text-[13px] leading-relaxed outline-none resize-y placeholder:text-[#aaa]"
+                        style={{ color: modalInk, caretColor: modalAccent }}
+                    />
+                    <div className="mt-2 flex justify-end gap-1.5">
+                        <button
+                            type="button"
+                            onClick={saveEditEntry}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition disabled:opacity-50"
+                            style={{ background: modalAccent, border: `1px solid ${modalAccent}`, color: '#fffdfa' }}
+                            title="保存修改"
+                        >
+                            <Check size={14} weight="bold" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={cancelEditEntry}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={editButtonStyle}
+                            title="取消修改"
+                        >
+                            <X size={14} weight="bold" />
+                        </button>
+                    </div>
+                </>
+            );
+        }
+        return (
+            <>
+                <div>{text}</div>
+                <div className="mt-2 flex justify-end">
+                    <button
+                        type="button"
+                        onClick={() => beginEditEntry(index, text)}
+                        disabled={busy || ending || (isEditing && !editingThis)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition disabled:opacity-40"
+                        style={editButtonStyle}
+                        title="修改这条线下内容"
+                    >
+                        <PencilSimple size={14} weight="bold" />
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     return (
         <div className="moro-offline-modal-backdrop absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }}>
@@ -221,14 +314,26 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                             <div className="text-[9.5px]" style={{ color: '#918a8e' }}>{members.length + 1} 人在现场</div>
                         </div>
                     </div>
-                    <button
-                        onClick={handleEnd}
-                        disabled={ending}
-                        className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
-                        style={{ background: '#fffdfa', border: '1px solid rgba(210,204,199,0.72)', color: modalInk, boxShadow: '0 1px 2px rgba(38,38,38,0.08)', ...CUTE_STACK }}
-                    >
-                        {ending ? '保存中' : '结束线下'}
-                    </button>
+                    <div className="shrink-0 flex items-center gap-1.5">
+                        <button
+                            onClick={handleSuspend}
+                            disabled={busy || ending || isEditing || entries.length === 0}
+                            className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(255,253,250,0.72)', border: '1px solid rgba(210,204,199,0.72)', color: '#6f686c', boxShadow: '0 1px 2px rgba(38,38,38,0.06)', ...CUTE_STACK }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : entries.length === 0 ? '先开始这场赴约后再挂起' : '收起窗口，稍后继续这场线下现场'}
+                        >
+                            挂起
+                        </button>
+                        <button
+                            onClick={handleEnd}
+                            disabled={ending || isEditing}
+                            className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: '#fffdfa', border: '1px solid rgba(210,204,199,0.72)', color: modalInk, boxShadow: '0 1px 2px rgba(38,38,38,0.08)', ...CUTE_STACK }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : undefined}
+                        >
+                            {ending ? '保存中' : '结束线下'}
+                        </button>
+                    </div>
                 </div>
 
                 <div className="shrink-0 px-4 py-2 flex items-center gap-x-3 gap-y-1.5 flex-wrap border-b" style={{ borderColor: 'rgba(210,204,199,0.72)' }}>
@@ -322,7 +427,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                     {entries.map((entry, index) => (
                         entry.role === 'scene' ? (
                             <div key={index} className="moro-offline-modal-entry moro-offline-modal-scene text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#6f686c', background: '#fffdfa', border: '1px solid rgba(210,204,199,0.72)' }}>
-                                {entry.text}
+                                {renderEntryText(entry.text, index)}
                             </div>
                         ) : entry.role === 'char' ? (
                             <div key={index} className="flex items-start gap-2.5">
@@ -330,14 +435,14 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                                 <div className="max-w-[84%]">
                                     <div className="mb-1 text-[10px]" style={{ color: '#918a8e' }}>{entry.speakerName || group.name}</div>
                                     <div className="moro-offline-modal-entry moro-offline-modal-char text-[13px] leading-relaxed whitespace-pre-wrap px-4 py-2.5" style={{ color: modalInk, background: '#f6f6f6', borderRadius: '4px 14px 14px 14px' }}>
-                                        {entry.text}
+                                        {renderEntryText(entry.text, index)}
                                     </div>
                                 </div>
                             </div>
                         ) : (
                             <div key={index} className="flex justify-end">
                                 <div className="moro-offline-modal-entry moro-offline-modal-user text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: modalInk, background: '#f6f6f6', borderRadius: '14px 4px 14px 14px' }}>
-                                    {entry.text}
+                                    {renderEntryText(entry.text, index)}
                                 </div>
                             </div>
                         )
@@ -360,12 +465,12 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                             placeholder="说句话，或写下你的动作..."
                             className="flex-1 px-2 py-2 bg-transparent text-[13px] outline-none border-0 border-b border-[#d2ccc7] placeholder:text-[#aaa]"
                             style={{ color: modalInk, caretColor: modalAccent }}
-                            disabled={busy || ending}
+                            disabled={busy || ending || isEditing}
                         />
                         {input.trim() ? (
                             <button
                                 onClick={() => void handleSend()}
-                                disabled={busy || ending}
+                                disabled={busy || ending || isEditing}
                                 className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                                 style={{ background: modalAccent, border: `1px solid ${modalAccent}`, color: '#fff', ...CUTE_STACK }}
                             >
@@ -374,7 +479,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                         ) : (
                             <button
                                 onClick={() => { if (!busy && !ending) void runGroupTurn(entries); }}
-                                disabled={busy || ending || entries.length === 0}
+                                disabled={busy || ending || isEditing || entries.length === 0}
                                 className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center gap-1"
                                 style={{ background: '#fffdfa', border: '1px solid rgba(210,204,199,0.72)', color: '#6f686c', ...CUTE_STACK }}
                                 title="让群成员继续推进现场"

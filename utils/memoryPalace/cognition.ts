@@ -19,8 +19,8 @@
 
 import type { MemoryNode, ScoredMemory } from './types';
 import { MemoryNodeDB, MemoryLinkDB } from './db';
-import { safeFetchJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
+import { callChatCompletion } from '../llmClient';
 
 // ─── 工作记忆快照（短期） ─────────────────────────────────
 
@@ -309,21 +309,15 @@ ${lines}
 要求：① 一句话，40 字以内；② 是「理解/判断」而非复述事件（例：「我渐渐明白，${who}嘴上逞强，其实最怕一个人」）；③ 贴合人设语气。
 只输出这一句话，不要引号、不要解释。`;
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${llmConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: '请提炼。' }],
-                    temperature: 0.6,
-                    max_tokens: 2000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux', charName }),
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: '请提炼。' }],
+            temperature: 0.6,
+            max_tokens: 2000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.cognition', { apiRole: 'aux', charName }),
+        });
         const reply = (data.choices?.[0]?.message?.content || '').trim();
         // 取第一行非空、剥引号
         const oneLine = reply.split(/\n+/).map((s: string) => s.trim()).find((s: string) => s.length > 0) || '';

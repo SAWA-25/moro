@@ -8,6 +8,7 @@
     "build": "pnpm run build:workers && vite build",
     "preview": "vite preview",
     "sync:native": "node scripts/sync-native.mjs",
+    "deploy:worker": "wrangler deploy --config wrangler.toml",
     "cap:sync": "cap sync",
     "build:ios": "pnpm build && cap sync ios",
     "cap:android": "cap open android",
@@ -56,6 +57,7 @@
     "terser": "5.31.6",
     "typescript": "^5.3.3",
     "vite": "^5.0.10",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "wrangler": "^3.114.17"
   }
 }

@@ -1,6 +1,8 @@
 import { CharacterProfile, UserProfile, Message, Tabloid } from '../types';
 import { DB } from './db';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 /**
  * 回顾摘要（日回顾 / 周回顾 / 月回顾）。
@@ -14,7 +16,7 @@ import { safeResponseJson, extractContent } from './safeApi';
 
 export type TabloidPeriod = 'day' | 'week' | 'month';
 
-export interface TabloidApi { baseUrl: string; apiKey: string; model: string }
+export interface TabloidApi { baseUrl: string; apiKey: string; model: string; apiRole?: 'main' | 'aux' | 'custom'; apiBinding?: string }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -39,13 +41,17 @@ export const tabloidKey = (period: TabloidPeriod, ref: number = Date.now()): str
 
 interface TabloidApiOpts { temperature?: number }
 const callLLM = async (api: TabloidApi, prompt: string, opts: TabloidApiOpts = {}): Promise<string> => {
-    const res = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
-        body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: opts.temperature ?? 0.92 }),
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: opts.temperature ?? 0.92,
+    }, {
+        meta: makeApiUsageMeta('chat.tabloid', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
+        }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    return (extractContent(await safeResponseJson(res)) || '').trim();
+    return (extractContent(data) || '').trim();
 };
 
 /** 单条消息压成一行可读摘要（媒体类不内联原始数据） */

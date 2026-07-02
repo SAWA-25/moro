@@ -3,9 +3,11 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Task, Anniversary } from '../types';
 import { ContextBuilder } from '../utils/context';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { PaperPage, PaperNote, TapeLabel, Postmark, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
 
 /**
@@ -110,7 +112,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const generateTaskReward = async (task: Task) => {
         const supervisor = characters.find(c => c.id === task.supervisorId);
-        if (!supervisor || !auxApi.apiKey) {
+        if (!supervisor || !auxApi.baseUrl || !auxApi.model) {
             addToast('任务已完成', 'success');
             return;
         }
@@ -143,25 +145,21 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 { role: "user", content: userPrompt }
             ];
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: messages,
-                    temperature: 0.9,
-                    max_tokens: 8000
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: messages,
+                temperature: 0.9,
+                max_tokens: 8000
+            }, {
+                meta: makeApiUsageMeta('almanac.scheduleGenerate', {
+                    charId: supervisor.id,
+                    charName: supervisor.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '时光契约',
+                }),
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`API Error ${response.status}: ${errorText.slice(0, 100)}`);
-            }
-
-            const data = await safeResponseJson(response);
-
-            let text = data.choices?.[0]?.message?.content?.trim();
+            let text = extractContent(data)?.trim();
             if (!text && data.choices?.[0]?.message?.reasoning_content) {
                 console.warn("AI returned empty content but has reasoning.");
             }
@@ -188,7 +186,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const generateAnniversaryThought = async (anni: Anniversary) => {
         const char = characters.find(c => c.id === anni.charId);
-        if (!char || !auxApi.apiKey) return;
+        if (!char || !auxApi.baseUrl || !auxApi.model) return;
 
         // Check cache (24h)
         if (anni.aiThought && anni.lastThoughtGeneratedAt && (Date.now() - anni.lastThoughtGeneratedAt < 24 * 60 * 60 * 1000)) {
@@ -222,24 +220,20 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         ];
 
         try {
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: messages,
-                    temperature: 0.8,
-                    max_tokens: 8000
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: messages,
+                temperature: 0.8,
+                max_tokens: 8000
+            }, {
+                meta: makeApiUsageMeta('almanac.scheduleGenerate', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '时光契约',
+                }),
             });
-
-            if (!response.ok) {
-                 const errorText = await response.text();
-                 throw new Error(`API Error ${response.status}: ${errorText.slice(0, 50)}`);
-            }
-
-            const data = await safeResponseJson(response);
-            const text = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '');
+            const text = extractContent(data)?.trim().replace(/^["']|["']$/g, '');
 
             if (text) {
                 const updatedAnni = { ...anni, aiThought: text, lastThoughtGeneratedAt: Date.now() };

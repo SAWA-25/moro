@@ -16,6 +16,9 @@ import type {
   XunjiTransport,
 } from '../types';
 import { xunjiChatContextBlock } from './laiwangPrompts';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
+import { extractContent } from './safeApi';
 
 export const XUNJI_REPORT_EVENT = 'moro-xunji-report';
 
@@ -499,15 +502,10 @@ export function generateXunjiMonitorSnapshot(args: {
 }
 
 async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 1600, signal?: AbortSignal): Promise<string> {
-  const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+  const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${api.apiKey || 'sk-none'}`,
-    },
-    body: JSON.stringify({
+  try {
+    const data = await callChatCompletion(api, {
       model: api.model,
       stream: false,
       temperature: 0.78,
@@ -516,12 +514,14 @@ async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 160
         { role: 'system', content: '你为虚拟手机系统生成角色循迹快照。只能返回 JSON，不要解释，不要代码块。内容必须像同一个角色真实会有的日常，而不是泛泛模板。' },
         { role: 'user', content: prompt },
       ],
-    }),
-    signal,
-  });
-  if (!res.ok) return '';
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || '';
+    }, {
+      signal,
+      meta: makeApiUsageMeta('xunji.generate', { apiRole: 'aux', apiBinding: '循迹快照' }),
+    });
+    return extractContent(data) || '';
+  } catch {
+    return '';
+  }
 }
 
 function mergeAiSnapshot(fallback: XunjiMonitorSnapshot, parsed: any): XunjiMonitorSnapshot {
@@ -928,15 +928,10 @@ function buildLocalMoments(
 }
 
 async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: AbortSignal): Promise<string> {
-  const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+  const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${api.apiKey || 'sk-none'}`,
-    },
-    body: JSON.stringify({
+  try {
+    const data = await callChatCompletion(api, {
       model: api.model,
       stream: false,
       temperature: 0.9,
@@ -945,12 +940,14 @@ async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: A
         { role: 'system', content: '你为虚拟角色生成 Screenlife 演出。只返回 JSON，不要写解释。' },
         { role: 'user', content: prompt },
       ],
-    }),
-    signal,
-  });
-  if (!res.ok) return '';
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || '';
+    }, {
+      signal,
+      meta: makeApiUsageMeta('xunji.generate', { apiRole: 'aux', apiBinding: 'Screenlife 演出' }),
+    });
+    return extractContent(data) || '';
+  } catch {
+    return '';
+  }
 }
 
 function extractJson<T>(text: string): T | null {

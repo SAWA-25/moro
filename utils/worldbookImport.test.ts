@@ -53,6 +53,69 @@ describe('parseWorldbookJson', () => {
         expect(books.every(b => b.enabled === false)).toBe(true);
     });
 
+    it('映射 ST 高级触发字段与书级预算/递归设置', () => {
+        const st = {
+            name: '高级世界书',
+            scan_depth: 7,
+            token_budget: 256,
+            recursive_scanning: true,
+            extensions: { max_recursion_steps: 3 },
+            entries: {
+                '9': {
+                    uid: 9,
+                    key: ['Dragon'],
+                    keysecondary: ['Gate', 'Key'],
+                    selective: true,
+                    selectiveLogic: 3,
+                    content: '龙门设定。',
+                    order: 12,
+                    position: 4,
+                    role: 1,
+                    depth: 2,
+                    extensions: {
+                        probability: 80,
+                        useProbability: true,
+                        match_whole_words: true,
+                        ignore_budget: true,
+                        scan_depth: 5,
+                    },
+                },
+            },
+        };
+        const books = parseWorldbookJson(st, 'fallback');
+        expect(books).toHaveLength(1);
+        expect(books[0]).toMatchObject({
+            category: '高级世界书',
+            activation: 'keyword',
+            keys: ['Dragon'],
+            secondaryKeys: ['Gate', 'Key'],
+            selective: true,
+            selectiveLogic: 'and_all',
+            position: 'depth_user',
+            depth: 2,
+            order: 12,
+            probability: 80,
+            useProbability: true,
+            matchWholeWords: true,
+            ignoreBudget: true,
+            scanDepth: 5,
+        });
+        expect(books[0].stData).toMatchObject({
+            scanDepth: 7,
+            tokenBudget: 256,
+            recursiveScanning: true,
+            bookExtensions: { max_recursion_steps: 3 },
+            entry: {
+                id: 9,
+                selectiveLogic: 'and_all',
+                probability: 80,
+                matchWholeWords: true,
+                ignoreBudget: true,
+                scanDepth: 5,
+            },
+        });
+    });
+
     it('空/未知结构返回空数组', () => {
         expect(parseWorldbookJson({}, 'x')).toEqual([]);
         expect(parseWorldbookJson({ foo: 'bar' }, 'x')).toEqual([]);

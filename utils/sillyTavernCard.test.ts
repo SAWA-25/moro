@@ -84,7 +84,15 @@ const v2Card = {
                     case_sensitive: false,
                     priority: 10,
                     position: 'after_char',
-                    extensions: { probability: 80, depth: 4 },
+                    extensions: {
+                        probability: 80,
+                        useProbability: true,
+                        depth: 4,
+                        scan_depth: 6,
+                        selectiveLogic: 3,
+                        match_whole_words: true,
+                        ignore_budget: true,
+                    },
                 },
                 {
                     keys: [],
@@ -214,7 +222,21 @@ describe('convertSTCardToCharacter', () => {
             caseSensitive: false,
             priority: 10,
             position: 'after_char',
-            extensions: { probability: 80, depth: 4 },
+            selectiveLogic: 'and_all',
+            scanDepth: 6,
+            matchWholeWords: true,
+            probability: 80,
+            useProbability: true,
+            ignoreBudget: true,
+            extensions: {
+                probability: 80,
+                useProbability: true,
+                depth: 4,
+                scan_depth: 6,
+                selectiveLogic: 3,
+                match_whole_words: true,
+                ignore_budget: true,
+            },
         });
         expect(airship.stData).toMatchObject({
             bookName: '小满的世界',
@@ -225,6 +247,14 @@ describe('convertSTCardToCharacter', () => {
             bookExtensions: { st_custom: 1 },
         });
         expect(airship.content).toBe('小满的飞艇名叫「云雀号」。');
+        expect(airship).toMatchObject({
+            selectiveLogic: 'and_all',
+            scanDepth: 6,
+            matchWholeWords: true,
+            probability: 80,
+            useProbability: true,
+            ignoreBudget: true,
+        });
     });
 
     it('有内容的条目全部按 insertion_order 挂载（禁用条目挂载但 enabled=false），卡片信息不挂载', () => {

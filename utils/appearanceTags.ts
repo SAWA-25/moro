@@ -8,8 +8,8 @@
  */
 
 import { CharacterProfile } from '../types';
-import { safeFetchJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 export interface AppearanceApiConfig {
     baseUrl: string;
@@ -82,21 +82,15 @@ ${source || '（资料不多，凭名字与常识给出合理且中性的外貌�
 5. 直接输出标签本身，不要前言、不要解释、不要代码块、不要编号。`;
 
     try {
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({
-                    model: api.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.5,
-                    max_tokens: 600,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('character.appearanceTags', { apiRole: 'aux', charId: char.id, charName: char.name }),
-        );
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5,
+            max_tokens: 600,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('character.appearanceTags', { apiRole: 'aux', charId: char.id, charName: char.name }),
+        });
         const content = normalizeTags(data.choices?.[0]?.message?.content || '');
         return content.length >= 3 ? content : null;
     } catch (e: any) {

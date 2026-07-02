@@ -12,7 +12,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { APIConfig, CharacterProfile, SpecialMomentRecord } from '../types';
-import { safeResponseJson } from '../utils/safeApi';
+import { fetchModelList, testChatConnection } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     runLike520CallA,
@@ -3559,54 +3559,36 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
         setIsLoadingModels(true);
         setStatusMsg('正在连接...');
         try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' },
-                __moroMeta: makeApiUsageMeta('special.like520Api.fetchModels', { apiRole: 'main', apiBinding: '520 活动 API' }),
-            } as RequestInit & { __moroMeta?: unknown });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m).filter((m: any): m is string => typeof m === 'string' && !!m.trim());
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
+            const models = await fetchModelList({ baseUrl: localUrl, apiKey: localKey }, {
+                meta: makeApiUsageMeta('special.like520Api.fetchModels', { apiRole: 'main', apiBinding: '520 活动 API' }),
+            });
+            setAvailableModels(models);
+            if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
+            setStatusMsg(`获取到 ${models.length} 个模型`);
+            setShowModelList(true);
         } catch {
-            setStatusMsg('连接失败');
+            setStatusMsg('连接失败，也可以先手动填写模型名');
         } finally {
             setIsLoadingModels(false);
         }
     };
 
     const handleTest = async () => {
-        if (!localUrl.trim() || !localKey.trim() || !localModel.trim()) return;
+        if (!localUrl.trim() || !localModel.trim()) return;
         setTesting(true);
         setTestResult(null);
         try {
-            const res = await fetch(`${localUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localKey.trim()}` },
-                body: JSON.stringify({
-                    model: localModel.trim(),
-                    messages: [{ role: 'user', content: 'Hi' }],
-                    max_tokens: 5,
-                    stream: localStream,
-                }),
+            const reply = await testChatConnection({
+                baseUrl: localUrl.trim(),
+                apiKey: localKey.trim(),
+                model: localModel.trim(),
+            }, {
+                stream: localStream,
+                meta: makeApiUsageMeta('special.like520.generate', { apiRole: 'main', apiBinding: '520 活动 API' }),
             });
-            if (res.ok) {
-                const data = await safeResponseJson(res);
-                const reply = data.choices?.[0]?.message?.content || '';
-                setTestResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-            } else {
-                const text = await res.text().catch(() => '');
-                setTestResult(`❌ HTTP ${res.status}: ${text.slice(0, 100)}`);
-            }
+            setTestResult(`连接成功，模型回复: "${reply.slice(0, 30)}"`);
         } catch (err: any) {
-            setTestResult(`❌ 连接失败: ${err.message}`);
+            setTestResult(`连接失败: ${err.message}`);
         } finally {
             setTesting(false);
         }
@@ -3617,7 +3599,7 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
         onDone();
     };
 
-    const testDisabled = testing || !localUrl.trim() || !localKey.trim() || !localModel.trim();
+    const testDisabled = testing || !localUrl.trim() || !localModel.trim();
 
     return (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">

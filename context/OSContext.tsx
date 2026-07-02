@@ -1,35 +1,44 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, ChatAlarm, PeriodReminderSettings, HealthReminder } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, SuspendedOfflineSessionInfo, ChatAlarm, PeriodReminderSettings, HealthReminder } from '../types';
 import { DB } from '../utils/db';
 import { createAutoBankTransaction } from '../utils/bankLedger';
-import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
+import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupSettingsFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupSettingsToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope, type WorldbookGroupSettings } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
-import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
+import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS, planAutonomousProactiveTurn } from '../utils/autonomousLife';
 import { proactiveFallbackHint } from '../utils/laiwangPrompts';
-import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
+import { canCharContactUser, CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { isAppealDue, generateUnblockAppeal } from '../utils/unblockAppeal';
 import { resolveAuxApi } from '../utils/auxApi';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
-import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated } from '../utils/takeout';
+import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine } from '../utils/takeout';
+import {
+  applyCoupleAutoCareDraft,
+  buildCoupleTakeoutMemoryCard,
+  ensureCoupleSpace,
+  generateCharCoupleAutoCare,
+  shouldRunCoupleAutoCare,
+  type CoupleAutoCareSource,
+} from '../utils/coupleSpace';
 import { isBackgroundReplyNotifyEnabled } from '../utils/backgroundReply';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
 import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { ChatParser } from '../utils/chatParser';
-import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { callChatCompletion } from '../utils/llmClient';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
 import { createCharacterId, ensureCharacterModelId } from '../utils/characterIdentity';
 import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
+import { maybeRunMomentsAutoPost } from '../utils/momentsAutoPost';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
-import { refreshPresetRegexCache } from '../utils/presets';
+import { PresetRuntime, ensureDefaultPresetSeed, refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
 import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { extractThinkingChainFromCompletion, flattenContent, stripThinkBlocks } from '../utils/llmReasoning';
@@ -296,6 +305,9 @@ interface OSContextType {
   /** 整书作用域（按分组/书名，undefined/local = 局部需挂载；global = 所有角色可用） */
   worldbookGroupScopes: Record<string, WorldbookGroupScope>;
   setWorldbookGroupScope: (category: string, scope: WorldbookGroupScope) => void;
+  /** 整书高级设置（递归扫描 / 预算等） */
+  worldbookGroupSettings: Record<string, WorldbookGroupSettings>;
+  setWorldbookGroupSettings: (category: string, settings: WorldbookGroupSettings) => void;
 
   // Novels (NEW)
   novels: NovelBook[];
@@ -414,6 +426,10 @@ interface OSContextType {
   suspendVideoCall: (info: SuspendedVideoCallInfo) => void;
   resumeVideoCall: () => void;
   clearSuspendedVideoCall: () => void;
+  suspendedOfflineSession: SuspendedOfflineSessionInfo | null;
+  suspendOfflineSession: (info: SuspendedOfflineSessionInfo) => void;
+  resumeOfflineSession: () => void;
+  clearSuspendedOfflineSession: () => void;
 }
 
 // 默认壁纸：奶白手帐纸面 —— 由上至下微微变暖的米白，承托白色拼贴卡片（黑白手帐风）。
@@ -715,6 +731,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [worldbookGroupToggles, setWorldbookGroupToggles] = useState<Record<string, boolean>>(() => loadGroupTogglesFromStorage());
   // 整书作用域（按 category 分组）：local=需挂载，global=所有角色可用
   const [worldbookGroupScopes, setWorldbookGroupScopes] = useState<Record<string, WorldbookGroupScope>>(() => loadGroupScopesFromStorage());
+  // 整书高级设置（按 category 分组）：递归扫描 / 预算 / 最大递归轮数
+  const [worldbookGroupSettings, setWorldbookGroupSettingsState] = useState<Record<string, WorldbookGroupSettings>>(() => loadGroupSettingsFromStorage());
   const [novels, setNovels] = useState<NovelBook[]>([]); // New
   const [songs, setSongs] = useState<SongSheet[]>([]);
 
@@ -774,6 +792,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // Call Suspend
   const [suspendedCall, setSuspendedCall] = useState<{ charId: string; charName: string; charAvatar?: string; startedAt: number; bubbles?: any[]; sessionId?: string; elapsedSeconds?: number; voiceLang?: string } | null>(null);
   const [suspendedVideoCall, setSuspendedVideoCall] = useState<SuspendedVideoCallInfo | null>(null);
+  const [suspendedOfflineSession, setSuspendedOfflineSession] = useState<SuspendedOfflineSessionInfo | null>(null);
   const relationshipNetworkAutoRunningRef = useRef(false);
 
   const sendProactiveNativeNotification = useCallback(async (charId: string, charName: string, body: string) => {
@@ -1045,7 +1064,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // 启动预热「预设自带正则」运行时缓存：用户可能直接进聊天（不开活字盘），
   // 激活预设带来的脚本要在第一条消息（含 USER_INPUT 挂载点）就能命中。
-  useEffect(() => { void refreshPresetRegexCache(); }, []);
+  useEffect(() => {
+      void (async () => {
+          await ensureDefaultPresetSeed();
+          await refreshPresetRegexCache();
+      })();
+  }, []);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -1475,7 +1499,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       void (async () => {
                           try {
                               const api = resolveAuxApi(auxApiConfig, apiConfig);
-                              const text = await generateUnblockAppeal({ char, userProfile: userProfileRef.current, api });
+                              const recent = await DB.getRecentMessagesByCharId(char.id, 30).catch(() => []);
+                              const userName = userProfileRef.current?.name || '用户';
+                              const recentContext = recent
+                                  .filter(m => (m.role === 'user' || m.role === 'assistant') && (!m.type || m.type === 'text') && !m.metadata?.hidden && typeof m.content === 'string' && m.content.trim())
+                                  .slice(-12)
+                                  .map(m => `${m.role === 'user' ? userName : char.name}：${String(m.content).replace(/\s+/g, ' ').slice(0, 90)}`)
+                                  .join('\n');
+                              const text = await generateUnblockAppeal({ char, userProfile: userProfileRef.current, api, recentContext });
                               // 二次确认：生成期间用户可能已解封 / 已有待处理申诉
                               const fresh = charactersRef.current.find(c => c.id === char.id) || char;
                               if (!fresh.blacklisted || !fresh.unblockAppeal?.active || fresh.unblockAppeal?.awaiting) return;
@@ -1663,6 +1694,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Only mark unread if user is NOT currently viewing this character's chat
           // Always bump timestamp so Chat reloads messages if currently open
           setLastMsgTimestamp(Date.now());
+          const eventChar = charactersRef.current.find(c => c.id === charId);
+          if (eventChar && !canCharContactUser(eventChar)) return;
 
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
           const inc = normalizeUnreadIncrement(count ?? (Array.isArray(bodies) ? bodies.length : 1));
@@ -1708,11 +1741,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 同一条链路）。页面级 `new Notification(...)` 在标签后台 / PWA / 移动端会
           // 静默失败，必须走 SW registration 才稳定。
           if (!skipSystemNotify && source !== 'chat-alarm' && !Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
-              const char = characters.find(c => c.id === charId);
               navigator.serviceWorker.ready.then(reg => {
                   reg.showNotification(charName, {
                       body: preview,
-                      icon: char?.avatar || './icons/icon-192.png',
+                      icon: eventChar?.avatar || './icons/icon-192.png',
                       badge: './icons/icon-192.png',
                       tag: `proactive-${charId}`,
                       data: { charId, kind: 'proactive-1.0' },
@@ -1828,8 +1860,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (!d?.charId) return;
           const char = charactersRef.current.find(c => c.id === d.charId);
           if (!char || !char.convoSettings?.proactiveTakeoutOrder) return;
-          let address = '城南花园 3 栋 502';
-          try { address = localStorage.getItem('moro_takeout_address') || address; } catch { /* ignore */ }
+          const address = getDefaultTakeoutAddressLine();
           try {
               const order = synthesizeCharOrder(d.charId, d.desc || '', address);
               order.cardPosted = true;
@@ -2065,11 +2096,78 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   useEffect(() => {
       if (!isDataLoaded) return;
+      const run = (trigger: string, charIds?: string[]) => {
+          void maybeRunMomentsAutoPost({
+              characters: charactersRef.current,
+              userProfile: userProfileRef.current,
+              apiConfig: apiConfigRef.current,
+              auxApiConfig: auxApiConfigRef.current,
+              trigger,
+              charIds,
+          });
+      };
+      const onVisible = () => {
+          if (document.visibilityState === 'visible') run('focus');
+      };
+      const onProactive = (e: Event) => {
+          const charId = (e as CustomEvent).detail?.charId as string | undefined;
+          run('proactive-message-sent', charId ? [charId] : undefined);
+      };
+      const onCatchup = (e: Event) => {
+          const detail = (e as CustomEvent).detail || {};
+          const charIds = Array.isArray(detail.events)
+              ? Array.from(new Set(detail.events.map((ev: CharLifeEvent) => ev.charId).filter(Boolean)))
+              : (detail.charId ? [detail.charId] : undefined);
+          run('autonomous-life-catchup', charIds as string[] | undefined);
+      };
+      run('startup');
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('focus', onVisible);
+      window.addEventListener('proactive-message-sent', onProactive);
+      window.addEventListener('autonomous-life-catchup', onCatchup);
+      return () => {
+          document.removeEventListener('visibilitychange', onVisible);
+          window.removeEventListener('focus', onVisible);
+          window.removeEventListener('proactive-message-sent', onProactive);
+          window.removeEventListener('autonomous-life-catchup', onCatchup);
+      };
+  }, [isDataLoaded]);
+
+  useEffect(() => {
+      if (!isDataLoaded) return;
 
       const drainQueuedProactive = () => {
           const nextQueued = proactiveQueueRef.current.shift();
           if (nextQueued) {
               void runProactive(nextQueued.charId, nextQueued.opts);
+          }
+      };
+
+      const runCoupleAutoCareForSource = async (charId: string, source: CoupleAutoCareSource) => {
+          const fresh = charactersRef.current.find(c => c.id === charId);
+          if (!fresh?.coupleSpace || fresh.charBlock?.active) return;
+          const now = source.at || Date.now();
+          const space = ensureCoupleSpace(fresh);
+          const decision = shouldRunCoupleAutoCare(space, now);
+          if (!decision.shouldRun) return;
+          const api = resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current);
+          if (!api.baseUrl) return;
+          try {
+              const draft = await generateCharCoupleAutoCare({
+                  char: fresh,
+                  userName: userProfileRef.current?.name || '对方',
+                  api,
+                  space,
+                  source,
+                  allowRecap: decision.allowRecap,
+              });
+              const latest = charactersRef.current.find(c => c.id === charId);
+              if (!latest?.coupleSpace) return;
+              const applied = applyCoupleAutoCareDraft(ensureCoupleSpace(latest), draft, source, Date.now());
+              if (applied.applied === 'none' && !draft) return;
+              await updateCharacter(charId, { coupleSpace: applied.space });
+          } catch (e) {
+              console.warn('[CoupleSpace/AutoCare] skipped:', e);
           }
       };
 
@@ -2106,6 +2204,31 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (char.charBlock?.active) {
               drainQueuedProactive();
               console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: char blocked user`);
+              return;
+          }
+
+          // 用户拉黑角色期间：角色仍可在本地过自己的生活，但不能主动消息、未读或通知打扰用户。
+          if (char.blacklisted) {
+              if (!customHint && isAutonomousLifeEnabled(char)) {
+                  const lifeApi = resolveLifeApi(char, auxApiConfigRef.current, currentApiConfig);
+                  if (lifeApi.baseUrl) {
+                      try {
+                          const recentMsgs = await DB.getRecentMessagesByCharId(charId, 40);
+                          const userName = currentUserProfile?.name || '对方';
+                          const recentChat = recentMsgs
+                              .filter(m => (m.role === 'user' || m.role === 'assistant') && (!m.type || m.type === 'text') && !m.metadata?.proactiveHint && typeof m.content === 'string' && m.content.trim())
+                              .slice(-6)
+                              .map(m => `${m.role === 'user' ? userName : char.name}：${String(m.content).replace(/\s+/g, ' ').slice(0, 60)}`)
+                              .join('\n');
+                          const ev = await advanceLife(char, lifeApi, { source: 'proactive', triggerSource: 'proactive', recentChat });
+                          if (ev) window.dispatchEvent(new CustomEvent('autonomous-life-advanced', { detail: { charId: char.id, charName: char.name, blocked: true } }));
+                      } catch (e) {
+                          console.warn('[Proactive/Global] blocked life-only advance skipped:', e);
+                      }
+                  }
+              }
+              drainQueuedProactive();
+              console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: user blacklisted char`);
               return;
           }
 
@@ -2173,7 +2296,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       .slice(-6)
                       .map(m => `${m.role === 'user' ? userName : char.name}：${String(m.content).replace(/\s+/g, ' ').slice(0, 60)}`)
                       .join('\n');
-                  lifeEvent = await advanceLife(char, lifeApi, { source: 'proactive', recentChat });
+                  const lifePlan = await planAutonomousProactiveTurn(char, lifeApi, {
+                      recentChat,
+                      randomMode: pCfg?.randomMode,
+                  });
+                  lifeEvent = lifePlan.event;
+                  if (lifePlan.decision !== 'send') {
+                      console.log(`🌱 [Proactive/Global] ${char.name} v2 ${lifePlan.decision}: ${lifePlan.reason} (score=${lifePlan.score})`);
+                      return;
+                  }
               }
 
               const hintContent = customHint
@@ -2189,9 +2320,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   content: hintContent,
                   metadata: { proactiveHint: true, hidden: true }
               });
-              // 这条生活事件已经作为主动消息发给用户了，回顾里据此标注「已说过」。
-              if (lifeEvent) void DB.markLifeEventSurfaced(lifeEvent.id);
-
               // 3. Build prompt & message history — 走和 useChatAI / emotion eval 同一个 helper，
               //    保证三家拿到的"材料"完全一致；区别只在前面追加的"现在主动找用户"那条 hint。
               const allMsgs = await DB.getRecentMessagesByCharId(charId, char.contextLimit || 500);
@@ -2217,6 +2345,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 不存在；保持 undefined 即可，与"用户当时根本没在 chat 界面"的语义一致
                   htmlMode: { enabled: (char as any).htmlModeEnabled !== false, customPrompt: (char as any).htmlModeCustomPrompt },
                   thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
+                  presetScope: 'chat.proactive',
               });
               const systemPrompt = payload.systemPrompt;
               const apiMessages = payload.cleanedApiMessages;
@@ -2240,9 +2369,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               // 4. API call
-              const baseUrl = api.baseUrl.replace(/\/+$/, '');
-              const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` };
-              const reqBody: any = { model: api.model, messages: fullMessages, temperature: 0.85, stream: false };
+              const presetGenParams = await PresetRuntime.getActiveGenParams('chat.proactive');
+              const reqBody: any = {
+                  model: api.model,
+                  messages: fullMessages,
+                  temperature: presetGenParams?.temperature ?? 0.85,
+                  max_tokens: presetGenParams?.max_tokens,
+                  stream: false,
+              };
+              if (presetGenParams) {
+                  const { temperature: _t, max_tokens: _m, ...rest } = presetGenParams;
+                  Object.assign(reqBody, rest);
+              }
+              if (reqBody.max_tokens === undefined) delete reqBody.max_tokens;
               // 思考链开启时显式向后端请求 extended thinking — 与 useChatAI 同步,
               // 不同代理认不同入口,全都试一遍,代理不识别的会自动忽略
               if (payload.flags.thinkingActive) {
@@ -2254,14 +2393,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   reqBody.reasoning_effort = 'medium';
                   reqBody.extra_body = { ...(reqBody.extra_body || {}), thinking: { type: 'enabled', budget_tokens: 4000 } };
               }
-              const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                  method: 'POST', headers,
-                  body: JSON.stringify(reqBody)
-              }, 2, 0, makeApiUsageMeta('chat.proactiveReply', {
+              const data = await callChatCompletion(api, reqBody, {
+                meta: makeApiUsageMeta('chat.proactiveReply', {
                   charId,
                   charName: char.name,
                   apiRole: 'main',
-              }));
+                }),
+              });
 
               // 5. Process & save response
               let aiContent = flattenContent(data.choices?.[0]?.message?.content);
@@ -2515,6 +2653,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           skipSystemNotify: !!opts?.skipSystemNotify,
                       }
                   }));
+                  // 这条生活事件确实生成了可见主动消息后，才在回顾里标注「已跟你说过」。
+                  if (lifeEvent) {
+                      void DB.markLifeEventSurfaced(lifeEvent.id, Date.now());
+                      void runCoupleAutoCareForSource(charId, {
+                          source: 'proactive',
+                          id: lifeEvent.id,
+                          at: lifeEvent.timestamp,
+                          text: lifeEvent.summary || lifeEvent.activity,
+                      });
+                  }
               }
 
               // 7. 角色主动拨语音电话：页面可见时弹来电界面（IncomingCallOverlay 接管），
@@ -2608,6 +2756,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   if (!alarm.enabled) continue;
                   const char = charById.get(alarm.charId);
                   if (!char) continue;
+                  if (!canCharContactUser(char)) continue;
                   for (const at of collectNativeAlarmOccurrences(alarm, now)) {
                       notifications.push({
                           id: nativeNotificationIdForAlarm(alarm.id, at),
@@ -2828,12 +2977,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       continue;
                   }
 
-                  await showChatAlarmNotification(char, alarm);
-
-                  if (char.charBlock?.active || char.blacklisted) {
+                  if (!canCharContactUser(char)) {
                       await DB.saveChatAlarm(markAlarmFired(alarm, now));
                       continue;
                   }
+
+                  await showChatAlarmNotification(char, alarm);
 
                   const channel = resolveAlarmChannel(alarm);
                   const notificationData = { type: 'chat-alarm', source: 'chat-alarm', charId: alarm.charId, alarmId: alarm.id };
@@ -2899,7 +3048,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const eligibleChars = canTellChars
                       ? charIds
                           .map(charId => charactersRef.current.find(c => c.id === charId))
-                          .filter((char): char is CharacterProfile => !!char && !char.charBlock?.active && !char.blacklisted)
+                          .filter((char): char is CharacterProfile => !!char && canCharContactUser(char))
                       : [];
                   const shouldShowSystem = settings.notifyChannel === 'system' || settings.notifyChannel === 'both' || !canTellChars || eligibleChars.length === 0;
                   if (shouldShowSystem) {
@@ -2944,7 +3093,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const eligibleChars = canTellChars
                       ? charIds
                           .map(charId => charactersRef.current.find(c => c.id === charId))
-                          .filter((char): char is CharacterProfile => !!char && !char.charBlock?.active && !char.blacklisted)
+                          .filter((char): char is CharacterProfile => !!char && canCharContactUser(char))
                       : [];
                   const shouldShowSystem = reminder.channel === 'system' || reminder.channel === 'both' || !canTellChars || eligibleChars.length === 0;
                   if (shouldShowSystem) {
@@ -3013,7 +3162,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const userName = userProfileRef.current?.name || '对方';
                   for (const [charId, lines] of byChar) {
                       const char = charactersRef.current.find(c => c.id === charId);
-                      if (!char || char.charBlock?.active || char.blacklisted) continue;
+                      if (!char || !canCharContactUser(char)) continue;
                       await runProactive(char.id, {
                           customHint: buildHealthSummaryCompanionHint({
                               summaryText: `${date}：${lines.join('；')}`,
@@ -3081,8 +3230,27 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const baseAff = affectionByChar.get(o.charId) ?? char.affection;
                   const nextAff = applyAffectionDelta(baseAff, 2);
                   affectionByChar.set(o.charId, nextAff);
-                  updateCharacter(o.charId, { affection: nextAff });
-                  if (char.charBlock?.active || char.blacklisted) continue; // 拉黑期间不反应
+                  const updates: Partial<CharacterProfile> = { affection: nextAff };
+                  if (char.coupleSpace) {
+                      const cs = ensureCoupleSpace(char);
+                      const items = (o.items || []).map(i => `${i.emoji || ''}${i.name}`).join('、') || '一份饭票';
+                      const card = buildCoupleTakeoutMemoryCard({
+                          title: `${o.storeName}的饭票`,
+                          text: `${userName}给${char.name}点了${items}，这张小票被收进了情侣空间。`,
+                          sourceId: o.id,
+                          sourceAt: now,
+                          createdAt: now,
+                      });
+                      updates.coupleSpace = { ...cs, memoryCards: [card, ...(cs.memoryCards || [])], updatedAt: now };
+                  }
+                  updateCharacter(o.charId, updates);
+                  if (!canCharContactUser(char)) continue; // 拉黑期间不反应
+                  void runCoupleAutoCareForSource(o.charId, {
+                      source: 'takeout',
+                      id: o.id,
+                      at: now,
+                      text: `${userName}给你点的${o.storeName}外卖送到了。`,
+                  });
                   await runProactive(o.charId, { customHint: buildTakeoutReceivedHint(o, userName) });
               }
           } catch (e) {
@@ -3159,6 +3327,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           try { localStorage.setItem(LAST_SEEN_KEY, String(Date.now())); } catch { /* ignore */ }
       };
 
+      const applyLifeEventToCoupleSpace = (charId: string, source: CoupleAutoCareSource) => {
+          const fresh = charactersRef.current.find(c => c.id === charId);
+          if (!fresh?.coupleSpace) return;
+          const now = source.at || Date.now();
+          const current = ensureCoupleSpace(fresh);
+          const decision = shouldRunCoupleAutoCare(current, now);
+          if (!decision.shouldRun || decision.reason === 'recap-only') return;
+          const text = source.text.replace(/\s+/g, ' ').trim().slice(0, 70);
+          if (!text) return;
+          const applied = applyCoupleAutoCareDraft(current, { kind: 'moment', text, mood: '📝' }, source, now);
+          if (applied.applied !== 'none') void updateCharacter(charId, { coupleSpace: applied.space });
+      };
+
       // 用户「刚离开」（切后台 / 锁屏 / 关页前）：让开了自主生活的角色**立刻**过一格日子，
       // 趁页面挂起前把请求发出去（best-effort）。这样「一离线 TA 就开始过自己的日子」，
       // 不必干等到 2 小时后回来才一次性补——回来时的 catchUpOfflineLife 仍会补齐更长的 gap。
@@ -3177,8 +3358,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               stamps[char.id] = now;
               touched = true;
               // fire-and-forget：不 await（页面要挂起了），成功落库后广播让列表「此刻」状态刷新
-              void advanceLife(char, api, { source: 'proactive', now }).then(ev => {
-                  if (ev) window.dispatchEvent(new CustomEvent('autonomous-life-advanced', { detail: { charId: char.id, charName: char.name } }));
+              void advanceLife(char, api, { source: 'proactive', triggerSource: 'leave', now }).then(ev => {
+                  if (ev) {
+                      window.dispatchEvent(new CustomEvent('autonomous-life-advanced', { detail: { charId: char.id, charName: char.name } }));
+                      applyLifeEventToCoupleSpace(char.id, { source: 'leave', id: ev.id, at: ev.timestamp, text: ev.summary || ev.activity });
+                  }
               }).catch(() => { /* 离线生成失败忽略 */ });
           }
           if (touched) { try { localStorage.setItem(LEAVE_GEN_KEY, JSON.stringify(stamps)); } catch { /* ignore */ } }
@@ -3214,6 +3398,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       window.dispatchEvent(new CustomEvent('autonomous-life-catchup', {
                           detail: { charId: char.id, charName: char.name, count: events.length },
                       }));
+                      const ev = events[events.length - 1];
+                      if (ev) applyLifeEventToCoupleSpace(char.id, { source: 'catchup', id: ev.id, at: ev.timestamp, text: ev.summary || ev.activity });
                   }
               } catch { /* per-char failure ignored */ }
           }
@@ -3625,11 +3811,26 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
   };
 
+  const setWorldbookGroupSettings = (category: string, settings: WorldbookGroupSettings) => {
+      const normalizedCategory = category || DEFAULT_WB_CATEGORY;
+      setWorldbookGroupSettingsState(prev => {
+          const next = { ...prev };
+          const clean: WorldbookGroupSettings = {};
+          if (typeof settings.recursiveScanning === 'boolean') clean.recursiveScanning = settings.recursiveScanning;
+          if (typeof settings.tokenBudget === 'number' && settings.tokenBudget >= 0) clean.tokenBudget = Math.floor(settings.tokenBudget);
+          if (typeof settings.maxRecursionSteps === 'number' && settings.maxRecursionSteps >= 0) clean.maxRecursionSteps = Math.floor(settings.maxRecursionSteps);
+          if (Object.keys(clean).length > 0) next[normalizedCategory] = clean;
+          else delete next[normalizedCategory];
+          saveGroupSettingsToStorage(next);
+          return next;
+      });
+  };
+
   // 世界书注册表镜像：让 ContextBuilder / chatRequestPayload 这些非 React 模块
   // 能读到最新的全量世界书、整书开关与整书作用域
   useEffect(() => {
-      WorldbookRuntime.sync(worldbooks, worldbookGroupToggles, worldbookGroupScopes);
-  }, [worldbooks, worldbookGroupToggles, worldbookGroupScopes]);
+      WorldbookRuntime.sync(worldbooks, worldbookGroupToggles, worldbookGroupScopes, worldbookGroupSettings);
+  }, [worldbooks, worldbookGroupToggles, worldbookGroupScopes, worldbookGroupSettings]);
 
   const updateWorldbook = async (id: string, updates: Partial<Worldbook>) => {
       // Compute the updated entity up-front. Relying on a closure side-effect
@@ -3715,6 +3916,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const next = { ...prev };
           delete next[normalizedCategory];
           saveGroupScopesToStorage(next);
+          return next;
+      });
+
+      setWorldbookGroupSettingsState(prev => {
+          const next = { ...prev };
+          delete next[normalizedCategory];
+          saveGroupSettingsToStorage(next);
           return next;
       });
 
@@ -4988,6 +5196,38 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const clearSuspendedVideoCall = () => {
     setSuspendedVideoCall(null);
   };
+  const suspendOfflineSession = (info: SuspendedOfflineSessionInfo) => {
+    setSuspendedOfflineSession(info);
+  };
+  const resumeOfflineSession = () => {
+    const info = suspendedOfflineSession;
+    if (!info) return;
+    try {
+      if (info.kind === 'private') {
+        sessionStorage.setItem('moro_chat_resume_offline_char_id', info.charId);
+        setActiveCharacterId(info.charId);
+        setActiveApp(AppID.Chat);
+      } else {
+        sessionStorage.setItem('moro_chathub_resume_group_offline_id', info.groupId);
+        setActiveApp(AppID.GroupChat);
+      }
+    } catch {
+      if (info.kind === 'private') {
+        setActiveCharacterId(info.charId);
+        setActiveApp(AppID.Chat);
+      } else {
+        setActiveApp(AppID.GroupChat);
+      }
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('moro-offline-resume-request', { detail: info }));
+    } catch {
+      // ignore
+    }
+  };
+  const clearSuspendedOfflineSession = () => {
+    setSuspendedOfflineSession(null);
+  };
 
   // --- Back Handler Logic ---
   const registerBackHandler = useCallback((handler: () => boolean, appId?: AppID) => {
@@ -5042,6 +5282,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setWorldbookGroupEnabled,
     worldbookGroupScopes,
     setWorldbookGroupScope,
+    worldbookGroupSettings,
+    setWorldbookGroupSettings,
     deleteWorldbook,
     deleteWorldbookCategory,
     novels,
@@ -5114,7 +5356,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     suspendedVideoCall,
     suspendVideoCall,
     resumeVideoCall,
-    clearSuspendedVideoCall
+    clearSuspendedVideoCall,
+    suspendedOfflineSession,
+    suspendOfflineSession,
+    resumeOfflineSession,
+    clearSuspendedOfflineSession
   };
 
   return (

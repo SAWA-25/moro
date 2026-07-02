@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowsClockwise, Camera, CaretLeft } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
-import { SocialComment, SocialPost } from '../../types';
+import { AppID, SocialComment, SocialPost } from '../../types';
 import { processImage } from '../../utils/file';
 import Modal from '../os/Modal';
 import MomentCard from './MomentCard';
@@ -10,6 +10,7 @@ import MomentPublish, { MomentPublishData } from './MomentPublish';
 import { generateCharacterMoments, generateCommentReplies, generateReactions, getMomentVisibleCharacters, ReactionOp } from './momentsGen';
 import { MOMENTS_COVER_KEY, newId } from './momentsUtils';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { normalizeSocialPostForMoments } from '../../utils/momentsAccess';
 
 export interface MomentsFeedProps {
     /** 嵌入聊天 App 的「朋友圈」标签页时为 true：不渲染自己的返回按钮/safe-top，让外层容器管理 */
@@ -26,7 +27,7 @@ export interface MomentsFeedProps {
 
 /** 「此刻」动态簿（原创手帐拼贴风）：纸面页眉（拍立得封面 + 用户名片 + 贴纸按钮）+ 纸卡动态流 + 发布 + 角色互动 */
 const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandlerRef }) => {
-    const { characters, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    const { characters, apiConfig, auxApiConfig, addToast, userProfile, setActiveCharacterId, openApp } = useOS();
     // 朋友圈生成/评论/互动是「聊天以外的辅助任务」→ 走副 API（未配置则回退主 API）。
     // 用 {...apiConfig, ...aux} 保留 APIConfig 形状，只替换 baseUrl/apiKey/model 三件套。
     const genApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
@@ -45,7 +46,9 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
     /** 转发选项面板：转发到朋友圈 / 转发给某个角色 */
     const [repostChooser, setRepostChooser] = useState<SocialPost | null>(null);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [filter, setFilter] = useState<'all' | 'unread' | 'mine' | 'characters' | 'mentioned'>('all');
     const visibleMomentCharacters = getMomentVisibleCharacters(characters, userProfile);
+    const unreadPostKey = posts.filter(p => p.unreadForUser).map(p => p.id).join('|');
 
     const coverInputRef = useRef<HTMLInputElement>(null);
     const postsRef = useRef<SocialPost[]>(posts);
@@ -71,24 +74,35 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
 
     useEffect(() => {
         DB.getSocialPosts()
-            .then(loaded => setPosts(loaded.sort((a, b) => b.timestamp - a.timestamp)))
+            .then(loaded => setPosts(sortDesc(loaded.map(normalizeSocialPostForMoments))))
             .catch(() => {});
     }, []);
 
+    useEffect(() => {
+        const unreadIds = posts.filter(p => p.unreadForUser).map(p => p.id);
+        if (unreadIds.length === 0) return;
+        const timer = window.setTimeout(() => {
+            DB.markSocialPostsSeen(unreadIds).catch(() => {});
+            setPosts(prev => prev.map(p => unreadIds.includes(p.id) ? { ...p, unreadForUser: false } : p));
+            window.dispatchEvent(new CustomEvent('moments-seen'));
+        }, 900);
+        return () => window.clearTimeout(timer);
+    }, [unreadPostKey]);
+
     // --- 持久化辅助 ---
 
-    const sortDesc = (list: SocialPost[]) => [...list].sort((a, b) => b.timestamp - a.timestamp);
+    const sortDesc = (list: SocialPost[]) => [...list].sort((a, b) => (b.lastActivityAt || b.timestamp) - (a.lastActivityAt || a.timestamp));
 
     const upsertPosts = (changed: SocialPost[]) => {
         if (changed.length === 0) return;
         const byId = new Map(changed.map(p => [p.id, p]));
         setPosts(prev => {
-            const merged = prev.map(p => byId.get(p.id) || p);
+            const merged = prev.map(p => byId.get(p.id) || p).map(normalizeSocialPostForMoments);
             const existing = new Set(prev.map(p => p.id));
-            changed.forEach(p => { if (!existing.has(p.id)) merged.push(p); });
+            changed.forEach(p => { if (!existing.has(p.id)) merged.push(normalizeSocialPostForMoments(p)); });
             return sortDesc(merged);
         });
-        changed.forEach(p => { DB.saveSocialPost(p).catch(console.error); });
+        changed.forEach(p => { DB.saveSocialPost(normalizeSocialPostForMoments(p)).catch(console.error); });
     };
 
     const notifyCharacterMomentPosts = (changed: SocialPost[]) => {
@@ -125,6 +139,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
             touched.get(id) || current.find(p => p.id === id);
 
         const newPosts: SocialPost[] = [];
+        const now = Date.now();
         ops.forEach(op => {
             if (op.type === 'repost') { newPosts.push(op.post); return; }
             const target = getTarget(op.postId);
@@ -136,7 +151,15 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 // 爆款帖的 likes 含热度补值（> 具名列表长度），增量保留
                 touched.set(target.id, { ...target, likedBy: nextLiked, likes: Math.max(target.likes + 1, nextLiked.length) });
             } else if (op.type === 'comment') {
-                touched.set(target.id, { ...target, comments: [...(target.comments || []), op.comment] });
+                touched.set(target.id, {
+                    ...target,
+                    comments: [...(target.comments || []), op.comment],
+                    lastActivityAt: now,
+                    unreadForUser: op.comment.authorType === 'character',
+                    relationSignals: op.comment.authorCharId
+                        ? [...(target.relationSignals || []), { charId: op.comment.authorCharId, kind: 'commented', text: `${op.comment.authorName} 评论了此刻：${op.comment.content.slice(0, 60)}`, at: now }]
+                        : target.relationSignals,
+                });
             }
         });
         upsertPosts([...touched.values(), ...newPosts]);
@@ -207,7 +230,14 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
             repostOf: data.repostOf || null,
             location: data.location,
             visibility: data.visibility,
-            mentionedCharIds: data.mentionedCharIds,
+            mentionedCharIds: Array.from(new Set([
+                ...(data.mentionedCharIds || []),
+                ...Object.entries(data.audienceRules?.characters || {}).filter(([, rule]) => rule?.notify).map(([id]) => id),
+            ])),
+            audienceRules: data.audienceRules,
+            lastActivityAt: Date.now(),
+            unreadForUser: false,
+            source: 'manual',
         };
         upsertPosts([post]);
         setView('feed');
@@ -262,7 +292,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
             authorType: 'user',
             replyTo: commentDraft.replyTo,
         };
-        const updated = { ...post, comments: [...(post.comments || []), comment] };
+        const updated = { ...post, comments: [...(post.comments || []), comment], lastActivityAt: Date.now() };
         upsertPosts([updated]);
         setCommentText('');
         setCommentDraft(null);
@@ -347,9 +377,30 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         addToast(ok ? '已分享到聊天' : '分享失败', ok ? 'success' : 'error');
     };
 
+    const handleOpenCommentInChat = async (post: SocialPost, comment: SocialComment) => {
+        if (!comment.authorCharId) return;
+        const ok = await sendPostToChat(comment.authorCharId, { ...post, comments: [comment] });
+        if (ok) {
+            setActiveCharacterId(comment.authorCharId);
+            openApp(AppID.Chat);
+        }
+        addToast(ok ? `已带着这句去找 ${comment.authorName}` : '转发失败', ok ? 'success' : 'error');
+    };
+
     // --- 渲染 ---
 
     const draftPost = commentDraft ? posts.find(p => p.id === commentDraft.postId) : null;
+    const filteredPosts = posts.filter(post => {
+        if (filter === 'unread') return !!post.unreadForUser;
+        if (filter === 'mine') return post.authorType === 'user';
+        if (filter === 'characters') return post.authorType === 'character';
+        if (filter === 'mentioned') {
+            return !!post.unreadForUser
+                || (post.comments || []).some(c => c.replyTo?.name === userProfile.name || c.authorName === userProfile.name)
+                || (post.relationSignals || []).length > 0;
+        }
+        return true;
+    });
 
     return (
         <div
@@ -430,6 +481,23 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                                 贴一条
                             </button>
                         </div>
+                        <div className="flex gap-1.5 mt-3 overflow-x-auto no-scrollbar">
+                            {([
+                                ['all', '全部'],
+                                ['unread', `未读${posts.some(p => p.unreadForUser) ? ' · 新' : ''}`],
+                                ['mine', '只看我'],
+                                ['characters', '只看 TA'],
+                                ['mentioned', '提醒我的'],
+                            ] as const).map(([key, label]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setFilter(key)}
+                                    className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${filter === key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100'}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -443,13 +511,13 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
 
                 {/* 动态流（纸卡拼贴流） */}
                 <div className="pt-1 pb-28">
-                    {posts.length === 0 && !isRefreshing && (
+                    {filteredPosts.length === 0 && !isRefreshing && (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-3 px-8 text-center">
                             <Camera size={44} className="opacity-40" />
                             <span className="text-xs leading-relaxed">这一页还空着——点「贴一条」留下你的瞬间，或「翻翻新动态」看看大家在干嘛</span>
                         </div>
                     )}
-                    {posts.map(post => (
+                    {filteredPosts.map(post => (
                         <MomentCard
                             key={post.id}
                             post={post}
@@ -461,6 +529,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                             onShareToChat={(p) => setSharePost(p)}
                             onDeletePost={handleDeletePost}
                             onDeleteComment={handleDeleteComment}
+                            onOpenCommentInChat={handleOpenCommentInChat}
                             onPreviewImage={setPreviewImage}
                         />
                     ))}

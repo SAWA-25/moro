@@ -14,6 +14,9 @@ import { CharacterProfile, UserProfile, XhsActivityRecord, XhsFreeRoamSession, A
 import { ContextBuilder } from './context';
 import { XhsMcpClient, McpToolResult, extractNotesFromMcpData, normalizeNote } from './xhsMcpClient';
 import { DB } from './db';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { extractContent } from './safeApi';
 
 // ==================== Types ====================
 
@@ -55,27 +58,21 @@ const callLlm = async (
     systemPrompt: string,
     userMessage: string,
 ): Promise<string> => {
-    const baseUrl = apiConfig.baseUrl.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiConfig.apiKey || 'sk-none'}`,
-        },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMessage },
-            ],
-            temperature: 0.85,
-            stream: false,
+    const data = await callChatCompletion(apiConfig, {
+        model: apiConfig.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+        ],
+        temperature: 0.85,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('xhsFreeRoam.generate', {
+            apiRole: (apiConfig as any).apiRole || 'aux',
+            apiBinding: (apiConfig as any).apiBinding,
         }),
     });
-
-    if (!resp.ok) throw new Error(`LLM API ${resp.status}: ${await resp.text().catch(() => '')}`);
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || '';
+    return extractContent(data) || '';
 };
 
 const parseJson = <T>(text: string): T | null => {

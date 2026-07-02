@@ -19,9 +19,9 @@
  */
 
 import { CharacterProfile, UserProfile, Message } from '../types';
-import { safeFetchJson } from './safeApi';
 import { recenterSystem } from './laiwangPrompts';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 export interface RecenterApiConfig {
     baseUrl: string;
@@ -79,25 +79,19 @@ export async function runRecenter(
     const systemPrompt = recenterSystem({ charName: char.name, userName: user.name, persona, dialogue });
 
     try {
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({
-                    model: api.model,
-                    messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: '回神吧。' }],
-                    temperature: 0.8,
-                    max_tokens: 2000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('chat.recenter', {
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: '回神吧。' }],
+            temperature: 0.8,
+            max_tokens: 2000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('chat.recenter', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'main',
             }),
-        );
+        });
 
         let content = (data.choices?.[0]?.message?.content || '').trim();
         content = content.replace(/```json/gi, '').replace(/```/g, '').trim();

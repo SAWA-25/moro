@@ -56,6 +56,7 @@ const settingSearchText = (setting: ManualSetting) => [
   setting.id,
   setting.title,
   setting.description,
+  ...(setting.keywords || []),
   setting.defaultBehavior || '',
   ...(setting.path || []),
   ...(setting.options || []).flatMap(option => [option.label, option.description]),
@@ -70,6 +71,7 @@ const entrySearchText = (entry: ManualEntry, nativeRuntime: boolean) => {
     entry.app,
     entry.en,
     entry.summary,
+    ...(entry.keywords || []),
     ...entry.features,
     ...(entry.beginnerSteps || []),
     ...(entry.commonQuestions || []).flatMap(item => [item.title, item.answer]),
@@ -128,13 +130,17 @@ const getEntrySearchHit = (entry: ManualEntry, query: string, nativeRuntime: boo
     return { anchorId: entryAnchor(entry), label: `${entry.app} 总览`, context: 'App 条目' };
   }
 
+  if (textMatches(q, entry.keywords || [])) {
+    return { anchorId: entryAnchor(entry), label: `${entry.app} 关键词`, context: '搜索别名' };
+  }
+
   const visibleSections = visibleSectionsOf(entry, nativeRuntime);
   for (const section of visibleSections) {
     if (textMatches(q, [section.title, section.description || ''])) {
       return { anchorId: sectionAnchor(entry, section.id), label: section.title, context: '设置分组' };
     }
     for (const setting of section.settings) {
-      if (textMatches(q, [setting.title])) {
+      if (textMatches(q, [setting.title, ...(setting.keywords || [])])) {
         return { anchorId: settingAnchor(entry, setting.id), label: setting.title, context: section.title };
       }
     }
@@ -267,6 +273,196 @@ const UpdateNoticeCard: React.FC<{ notice: ManualUpdateNotice; latest?: boolean 
   );
 };
 
+type ManualGuideView = 'detail' | 'map';
+
+type ManualMapCluster = {
+  key: string;
+  parent: string;
+  category: ManualCategory;
+  root?: ManualEntry;
+  children: ManualEntry[];
+};
+
+const parentNameOf = (entry: ManualEntry) => entry.app.split('·')[0] || entry.app;
+
+const ManualAppMap: React.FC<{
+  clusters: ManualMapCluster[];
+  nativeRuntime: boolean;
+  query: string;
+  searchHits: Map<string, ManualSearchHit>;
+  onShowEntry: (entry: ManualEntry) => void;
+  onOpenEntry: (entry: ManualEntry) => void;
+}> = ({ clusters, nativeRuntime, query, searchHits, onShowEntry, onOpenEntry }) => {
+  const hasQuery = !!query.trim();
+  const grouped = CATEGORY_ORDER
+    .filter((item): item is ManualCategory => item !== 'all')
+    .map(category => ({
+      category,
+      clusters: clusters.filter(cluster => cluster.category === category),
+    }))
+    .filter(group => group.clusters.length > 0);
+
+  const renderEntryActions = (entry: ManualEntry, compact = false) => {
+    const destination = MANUAL_DESTINATIONS[entry.app];
+    return (
+      <div className={['flex items-center gap-2', compact ? 'mt-2' : 'mt-3'].join(' ')}>
+        <button
+          onClick={() => onShowEntry(entry)}
+          className="h-8 px-3 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black active:scale-95 transition-transform"
+        >
+          看说明
+        </button>
+        {destination && (
+          <button
+            onClick={() => onOpenEntry(entry)}
+            className="h-8 px-3 rounded-full bg-[#fffdf8] border border-black/[0.08] text-[#5c5143] text-[10px] font-black active:scale-95 transition-transform"
+          >
+            打开 App
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderPath = (entry: ManualEntry) => {
+    const destination = MANUAL_DESTINATIONS[entry.app];
+    if (!destination) return null;
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        {destination.path.map((step, index) => (
+          <React.Fragment key={`${entry.app}-map-path-${step}`}>
+            <span className="px-2 py-0.5 rounded-full bg-[#fffdf8] border border-black/[0.05] text-[9.5px] font-bold text-[#7b705f]">
+              {step}
+            </span>
+            {index < destination.path.length - 1 && <CaretRight size={9} weight="bold" className="text-[#a79a84]" />}
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  };
+
+  const renderChild = (entry: ManualEntry) => {
+    const hit = searchHits.get(entry.app);
+    const settings = settingCountOf(entry, nativeRuntime);
+    return (
+      <div key={entry.app} className="rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[12px] font-black text-[#342f28] leading-snug">{entry.app}</div>
+            <p className="mt-1 text-[10.8px] leading-relaxed text-[#6b604f]">{entry.summary}</p>
+          </div>
+          <span className="shrink-0 label-mono text-[8px] text-[#9a8c75]">{settings} ITEMS</span>
+        </div>
+        {renderPath(entry)}
+        {hasQuery && hit && (
+          <div className="mt-2 rounded-[11px] bg-white/72 border border-black/[0.05] px-2.5 py-1.5 text-[10px] leading-relaxed text-[#6b604f]">
+            命中：<span className="font-black text-[#3d362e]">{hit.label}</span>
+            <span className="text-[#9a8c75]"> · {hit.context}</span>
+          </div>
+        )}
+        {renderEntryActions(entry, true)}
+      </div>
+    );
+  };
+
+  if (grouped.length === 0) {
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-5">
+        <div className="rounded-[18px] bg-white/78 border border-black/10 px-4 py-8 text-center text-[12px] leading-relaxed text-[#7b705f]">
+          没搜到可展示的 App 地图项。换个词试试，比如“主动消息”“预设范围”“相册点评”。
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-5 space-y-4" data-manual-anchor="manual-app-map-root">
+      {grouped.map(({ category, clusters: categoryClusters }) => {
+        const meta = CATEGORY_META[category];
+        return (
+          <section key={category} className="space-y-2.5">
+            <div className="flex items-center gap-2">
+              <span className="h-px flex-1 bg-black/10" />
+              <span className="inline-flex items-center gap-1.5 label-mono text-[9px] tracking-[0.22em] text-[#9a8c75]">
+                {React.createElement(meta.Icon, { size: 12, weight: 'bold' })}
+                {meta.label}
+              </span>
+              <span className="h-px flex-1 bg-black/10" />
+            </div>
+
+            {categoryClusters.map((cluster) => {
+              const main = cluster.root || cluster.children[0];
+              if (!main) return null;
+              const destination = MANUAL_DESTINATIONS[main.app];
+              const appConfig = destination ? INSTALLED_APPS.find(app => app.id === destination.appId) : null;
+              const IconComp = appConfig ? Icons[appConfig.icon] : null;
+              const settings = settingCountOf(main, nativeRuntime);
+              const hit = searchHits.get(main.app);
+              const visibleChildren = cluster.children.filter(child => child.app !== main.app);
+              return (
+                <article
+                  key={cluster.key}
+                  className="relative overflow-hidden rounded-[20px] bg-[#fffdf8] border border-black/10 px-3.5 py-3.5 shadow-[0_16px_34px_-28px_rgba(35,33,29,0.5)]"
+                >
+                  <div
+                    aria-hidden
+                    className="absolute inset-0 opacity-[0.14] pointer-events-none"
+                    style={{
+                      backgroundImage:
+                        'linear-gradient(rgba(35,33,29,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(35,33,29,0.05) 1px, transparent 1px)',
+                      backgroundSize: '18px 18px',
+                    }}
+                  />
+                  <div className="relative">
+                    <div className="flex items-start gap-3">
+                      <div className="shrink-0 w-10 h-10 rounded-full bg-[#23211d] text-white flex items-center justify-center">
+                        {IconComp
+                          ? <IconComp className="w-5 h-5" />
+                          : React.createElement(meta.Icon, { size: 19, weight: 'bold' })}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-[17px] font-black leading-tight text-[#2f2a24]">{cluster.parent}</h2>
+                          <span className="label-mono text-[8px] tracking-[0.18em] text-[#9a8c75]">{meta.en}</span>
+                        </div>
+                        <p className="mt-1.5 text-[11.5px] leading-relaxed text-[#5c5143]">{main.summary}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="px-2 py-1 rounded-full bg-[#f7f1e6] border border-black/[0.05] text-[9.5px] font-bold text-[#7b705f]">
+                            {settings} 项设置
+                          </span>
+                          {visibleChildren.length > 0 && (
+                            <span className="px-2 py-1 rounded-full bg-[#f7f1e6] border border-black/[0.05] text-[9.5px] font-bold text-[#7b705f]">
+                              {visibleChildren.length} 个子入口
+                            </span>
+                          )}
+                        </div>
+                        {renderPath(main)}
+                        {hasQuery && hit && (
+                          <div className="mt-2 rounded-[11px] bg-[#f7f1e6] border border-black/[0.05] px-2.5 py-1.5 text-[10px] leading-relaxed text-[#6b604f]">
+                            命中：<span className="font-black text-[#3d362e]">{hit.label}</span>
+                            <span className="text-[#9a8c75]"> · {hit.context}</span>
+                          </div>
+                        )}
+                        {renderEntryActions(main)}
+                      </div>
+                    </div>
+
+                    {visibleChildren.length > 0 && (
+                      <div className="mt-3 grid gap-2">
+                        {visibleChildren.map(renderChild)}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+};
+
 const ManualApp: React.FC = () => {
   const { closeApp, openApp } = useOS();
   const nativeRuntime = isNativeAppRuntime();
@@ -275,6 +471,7 @@ const ManualApp: React.FC = () => {
   const [query, setQuery] = useState('');
   const [activeApp, setActiveApp] = useState(MANUAL_ENTRIES[0]?.app || '');
   const [page, setPage] = useState<'guide' | 'updates'>('guide');
+  const [view, setView] = useState<ManualGuideView>('detail');
   const [manualSearchTarget, setManualSearchTarget] = useState<{ app: string; anchorId: string; nonce: number } | null>(null);
 
   useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
@@ -282,6 +479,27 @@ const ManualApp: React.FC = () => {
   useManualDeepLink(AppID.Manual, useCallback((target) => {
     if (target.route === 'updates' || target.payload?.page === 'updates') {
       setPage('updates');
+      return;
+    }
+    const targetApp = typeof target.payload?.app === 'string' ? target.payload.app : '';
+    if (target.route === 'map' || target.payload?.view === 'map') {
+      setPage('guide');
+      setView('map');
+      return;
+    }
+    if (target.route === 'guide' || target.anchorId || targetApp) {
+      setPage('guide');
+      setView('detail');
+      setCategory('all');
+      setQuery('');
+      if (targetApp) setActiveApp(targetApp);
+      if (target.anchorId) {
+        setManualSearchTarget({
+          app: targetApp || MANUAL_ENTRIES[0]?.app || '',
+          anchorId: target.anchorId,
+          nonce: Date.now(),
+        });
+      }
     }
   }, []));
 
@@ -319,6 +537,42 @@ const ManualApp: React.FC = () => {
   }, [nativeRuntime, query, visibleEntries]);
 
   const activeSearchHit = activeEntry ? searchHits.get(activeEntry.app) || null : null;
+  const visibleEntryByApp = useMemo(
+    () => new Map(visibleEntries.map(entry => [entry.app, entry] as const)),
+    [visibleEntries],
+  );
+  const entryOrder = useMemo(
+    () => new Map(visibleEntries.map((entry, index) => [entry.app, index] as const)),
+    [visibleEntries],
+  );
+
+  const appMapClusters = useMemo(() => {
+    const clusters = new Map<string, ManualMapCluster>();
+    filteredEntries.forEach((entry) => {
+      const parent = parentNameOf(entry);
+      const root = visibleEntryByApp.get(parent);
+      const category = (root || entry).category;
+      const key = `${category}:${parent}`;
+      const cluster = clusters.get(key) || {
+        key,
+        parent,
+        category,
+        root: root && (category === root.category) ? root : undefined,
+        children: [],
+      };
+      if (entry.app === parent) {
+        cluster.root = entry;
+      } else if (!cluster.children.some(child => child.app === entry.app)) {
+        cluster.children.push(entry);
+      }
+      clusters.set(key, cluster);
+    });
+    return [...clusters.values()].sort((a, b) => {
+      const aOrder = entryOrder.get(a.root?.app || a.children[0]?.app || '') ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = entryOrder.get(b.root?.app || b.children[0]?.app || '') ?? Number.MAX_SAFE_INTEGER;
+      return aOrder - bOrder;
+    });
+  }, [entryOrder, filteredEntries, visibleEntryByApp]);
 
   const activeDestination = activeEntry ? MANUAL_DESTINATIONS[activeEntry.app] : null;
   const activeAppConfig = activeDestination
@@ -355,26 +609,38 @@ const ManualApp: React.FC = () => {
     }
   };
 
+  const showEntryDetail = (entry: ManualEntry) => {
+    setView('detail');
+    selectEntry(entry);
+  };
+
   useEffect(() => {
-    if (page !== 'guide' || !manualSearchTarget || activeEntry?.app !== manualSearchTarget.app) return;
+    if (page !== 'guide' || view !== 'detail' || !manualSearchTarget || activeEntry?.app !== manualSearchTarget.app) return;
     const timeout = window.setTimeout(() => {
       scrollToManualAnchor(manualSearchTarget.anchorId);
     }, 120);
     return () => window.clearTimeout(timeout);
-  }, [activeEntry?.app, manualSearchTarget, page]);
+  }, [activeEntry?.app, manualSearchTarget, page, view]);
 
   useEffect(() => {
-    if (page !== 'guide' || !query.trim() || !activeSearchHit) return;
+    if (page !== 'guide' || view !== 'detail' || !query.trim() || !activeSearchHit) return;
     const timeout = window.setTimeout(() => {
       scrollToManualAnchor(activeSearchHit.anchorId);
     }, 260);
     return () => window.clearTimeout(timeout);
-  }, [activeEntry?.app, activeSearchHit, page, query]);
+  }, [activeEntry?.app, activeSearchHit, page, query, view]);
 
   const openDestination = () => {
     if (!activeDestination) return;
     if (activeDestination.deepLink) jumpTo(activeDestination.deepLink);
     else openApp(activeDestination.appId);
+  };
+
+  const openEntryDestination = (entry: ManualEntry) => {
+    const destination = MANUAL_DESTINATIONS[entry.app];
+    if (!destination) return;
+    if (destination.deepLink) jumpTo(destination.deepLink);
+    else openApp(destination.appId);
   };
 
   if (page === 'updates') {
@@ -480,9 +746,34 @@ const ManualApp: React.FC = () => {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索 App、设置、开关或路径"
+              placeholder="搜索 App、设置、开关、别名或路径"
               className="w-full bg-transparent text-[13px] text-[#23211d] placeholder:text-[#a79a84] focus:outline-none"
             />
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 rounded-[14px] bg-[#f6f1e7] border border-black/[0.06] p-1">
+            {([
+              { id: 'detail' as const, label: '说明详情', Icon: BookOpenText },
+              { id: 'map' as const, label: 'App 地图', Icon: SlidersHorizontal },
+            ]).map((item) => {
+              const selected = view === item.id;
+              const IconComp = item.Icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setView(item.id)}
+                  className="h-9 rounded-[11px] inline-flex items-center justify-center gap-1.5 text-[11px] font-black active:scale-[0.98] transition-transform"
+                  style={{
+                    background: selected ? '#23211d' : 'transparent',
+                    color: selected ? '#fffdf8' : '#6b604f',
+                    boxShadow: selected ? '0 10px 22px -18px rgba(35,33,29,0.65)' : 'none',
+                  }}
+                >
+                  <IconComp size={13} weight="bold" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="mt-3 flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
@@ -512,6 +803,16 @@ const ManualApp: React.FC = () => {
         </div>
       </div>
 
+      {view === 'map' ? (
+        <ManualAppMap
+          clusters={appMapClusters}
+          nativeRuntime={nativeRuntime}
+          query={query}
+          searchHits={searchHits}
+          onShowEntry={showEntryDetail}
+          onOpenEntry={openEntryDestination}
+        />
+      ) : (
       <div className="flex-1 min-h-0 px-4 pb-5 grid grid-cols-[122px_minmax(0,1fr)] gap-3">
         <div className="min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
           {filteredEntries.length === 0 ? (
@@ -793,6 +1094,7 @@ const ManualApp: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

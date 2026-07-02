@@ -7,8 +7,9 @@
  * 纯函数、零依赖（手写 PNG chunk 解析），可在 node 测试环境直接跑。
  */
 
-import { CharacterProfile, RegexScriptData, Worldbook, WorldbookPosition, WorldbookSTData } from '../types';
+import { CharacterProfile, RegexScriptData, Worldbook, WorldbookPosition, WorldbookSelectiveLogic, WorldbookSTData } from '../types';
 import { normalizeRegexScript } from './regex/engine';
+import { normalizeSelectiveLogic } from './worldbookRuntime';
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -29,9 +30,15 @@ interface STBookEntryNorm {
     content: string;
     constant: boolean;
     selective: boolean;
+    selectiveLogic?: WorldbookSelectiveLogic;
     enabled: boolean;
     insertionOrder: number;
     caseSensitive?: boolean;
+    scanDepth?: number;
+    matchWholeWords?: boolean;
+    probability?: number;
+    useProbability?: boolean;
+    ignoreBudget?: boolean;
     priority?: number;
     position?: string | number;
     extensions?: Record<string, any>;
@@ -257,6 +264,7 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
         const rawPos = e.extensions?.position ?? e.position;
         const rawRole = e.extensions?.role ?? e.role;
         const rawDepth = numOrU(e.extensions?.depth ?? e.depth);
+        const probability = numOrU(e.extensions?.probability ?? e.probability);
         return {
             id: e.id ?? e.uid,
             name: strOrU(e.name),
@@ -266,9 +274,16 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
             content: typeof e.content === 'string' ? e.content : '',
             constant: !!e.constant,
             selective: !!e.selective,
+            selectiveLogic: normalizeSelectiveLogic(e.extensions?.selectiveLogic ?? e.extensions?.selective_logic ?? e.selectiveLogic ?? e.selective_logic),
             enabled: e.enabled !== undefined ? !!e.enabled : !e.disable,
             insertionOrder: numOrU(e.insertion_order ?? e.order) ?? 100,
             caseSensitive: boolOrU(e.case_sensitive ?? e.caseSensitive),
+            scanDepth: numOrU(e.extensions?.scan_depth ?? e.scan_depth),
+            matchWholeWords: boolOrU(e.extensions?.match_whole_words ?? e.extensions?.matchWholeWords ?? e.match_whole_words ?? e.matchWholeWords),
+            probability,
+            useProbability: boolOrU(e.extensions?.useProbability ?? e.extensions?.use_probability ?? e.useProbability ?? e.use_probability)
+                ?? (probability !== undefined ? true : undefined),
+            ignoreBudget: boolOrU(e.extensions?.ignore_budget ?? e.extensions?.ignoreBudget ?? e.ignore_budget ?? e.ignoreBudget),
             priority: numOrU(e.priority),
             position: typeof e.position === 'string' || typeof e.position === 'number' ? e.position : undefined,
             extensions: objOrU(e.extensions),
@@ -385,8 +400,13 @@ export function convertSTCardToCharacter(
                 keys: entry.keys.length > 0 ? entry.keys : undefined,
                 secondaryKeys: entry.secondaryKeys.length > 0 ? entry.secondaryKeys : undefined,
                 selective: entry.selective || undefined,
+                selectiveLogic: entry.selectiveLogic,
                 caseSensitive: entry.caseSensitive,
-                scanDepth: book.scanDepth,
+                matchWholeWords: entry.matchWholeWords,
+                scanDepth: entry.scanDepth ?? book.scanDepth,
+                probability: entry.probability,
+                useProbability: entry.useProbability,
+                ignoreBudget: entry.ignoreBudget,
                 source: 'sillytavern',
                 stData: {
                     ...bookMeta,
@@ -397,10 +417,16 @@ export function convertSTCardToCharacter(
                         keys: entry.keys,
                         secondaryKeys: entry.secondaryKeys,
                         selective: entry.selective,
+                        selectiveLogic: entry.selectiveLogic,
                         constant: entry.constant,
                         enabled: entry.enabled,
                         insertionOrder: entry.insertionOrder,
                         caseSensitive: entry.caseSensitive,
+                        scanDepth: entry.scanDepth,
+                        matchWholeWords: entry.matchWholeWords,
+                        probability: entry.probability,
+                        useProbability: entry.useProbability,
+                        ignoreBudget: entry.ignoreBudget,
                         priority: entry.priority,
                         position: entry.position,
                         extensions: entry.extensions,

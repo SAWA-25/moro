@@ -17,6 +17,10 @@ import {
     isItemReviewed, makeUserReview, userReviewsForItem, goodRate,
     coinsToYuan, yuanToCoins, checkinAvailable, dailyCheckinReward,
     pushFootprint, resolveFootprints, itemSpecs,
+    SHOP_GIFT_OCCASIONS, recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
+    buildShopCompanionPrompt, parseShopCompanionReaction,
+    type GiftOccasionKey, type GiftAdvice,
+    type ShopCompanionReaction, type ShopCompanionSurface,
 } from '../utils/shop';
 import type { ShopOrder } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -34,7 +38,9 @@ import {
 } from '@phosphor-icons/react';
 
 type MainTab = 'home' | 'category' | 'cart' | 'my';
-type SubView = null | 'orders' | 'bag' | 'receipts' | 'fav' | 'footprints' | 'coupons';
+type SubView = null | 'orders' | 'bag' | 'receipts' | 'fav' | 'footprints' | 'coupons' | 'advisor';
+type CompanionLog = { id: string; text: string; action?: ShopCompanionReaction['action']; itemId?: string; at: number };
+type CompanionRequest = { charId: string; item: ShopItem; speech: string };
 
 // ── 黑白拼贴手账·通用样式片 ───────────────────────────────────────────────
 /** 米白纸卡（缝线描边 + 纸面渐变） */
@@ -105,6 +111,21 @@ const ShopApp: React.FC = () => {
     const claimedCoupons = userProfile.shopCoupons || [];
     const counts = orderStatusCounts(orders, myReviews);
     const checkinDone = !checkinAvailable(userProfile.shopCheckinAt);
+    const wishCount = characters.reduce((sum, c) => sum + cartCount(c.shopCart), 0);
+    const [companionId, setCompanionId] = useState('');
+    const [companionPicker, setCompanionPicker] = useState(false);
+    const [companionBusy, setCompanionBusy] = useState(false);
+    const [companionLog, setCompanionLog] = useState<CompanionLog[]>([]);
+    const [companionRequest, setCompanionRequest] = useState<CompanionRequest | null>(null);
+    const companion = useMemo(() => characters.find(c => c.id === companionId) || null, [characters, companionId]);
+
+    useEffect(() => {
+        if (companionId && !characters.some(c => c.id === companionId)) {
+            setCompanionId('');
+            setCompanionLog([]);
+            setCompanionRequest(null);
+        }
+    }, [characters, companionId]);
 
     const toggleFav = (itemId: string) => {
         const fav = userProfile.shopFavorites || [];
@@ -117,7 +138,11 @@ const ShopApp: React.FC = () => {
     const recordFootprint = (item: ShopItem) => {
         updateUserProfile({ shopFootprints: pushFootprint(userProfile.shopFootprints, item.id) });
     };
-    const openDetail = (item: ShopItem) => { setDetailItem(item); recordFootprint(item); };
+    const openDetail = (item: ShopItem) => {
+        setDetailItem(item);
+        recordFootprint(item);
+        void runCompanionReaction('item', { item, userAction: `打开了 ${item.name} 的详情` });
+    };
 
     // ── 商品 AI 实时生成（每批 ≥20 件；缓存到本地，「翻新货架」可刷新） ──
     const CATALOG_KEY = 'moro_shop_catalog_v1';
@@ -151,6 +176,7 @@ const ShopApp: React.FC = () => {
         if (!resolveAuxApi(auxApiConfig, apiConfig).apiKey) { addToast('配好副 API 才能现挑哦', 'info'); return; }
         addToast(`正按「${term}」翻找相关好物…`, 'info');
         void generateCatalog(`请紧扣关键词「${term}」生成尽量相关的礼物（围绕该主题/场景/送礼对象/节日）`);
+        void runCompanionReaction('home', { visibleItems: visibleItemsForCompanion(), userAction: `搜索了「${term}」` });
         setSearch(''); setCat('all');
     };
 
@@ -189,6 +215,155 @@ const ShopApp: React.FC = () => {
         updateUserProfile({ shopOrders: [order, ...(userProfile.shopOrders || [])] });
         emitShopUpdated();
         return order;
+    };
+
+    const visibleItemsForCompanion = (focus?: ShopItem): ShopItem[] => {
+        const shelf = catalog.length ? catalog : SHOP_ITEMS;
+        if (focus) return [focus, ...shelf.filter(i => i.id !== focus.id)].slice(0, 18);
+        if (tab === 'cart') return resolveCart(cart).map(x => x.item).slice(0, 18);
+        if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x).slice(0, 18);
+        const q = search.trim().toLowerCase();
+        let list = shelf;
+        if (q) list = list.filter(i =>
+            i.name.toLowerCase().includes(q) || i.blurb.toLowerCase().includes(q) ||
+            (SHOP_CATEGORIES.find(c => c.key === i.category)?.label || '').includes(q) || i.emoji.includes(q));
+        if (cat !== 'all') list = list.filter(i => i.category === cat);
+        return list.slice(0, 18);
+    };
+
+    const pushCompanionLine = (text: string, action?: ShopCompanionReaction['action'], itemId?: string) => {
+        setCompanionLog(prev => [{ id: `shop-comp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text, action, itemId, at: Date.now() }, ...prev].slice(0, 6));
+    };
+
+    const fallbackCompanionReaction = (surface: ShopCompanionSurface, item?: ShopItem): ShopCompanionReaction => {
+        if (item) return { action: 'comment', itemId: item.id, speech: `${item.emoji}${item.name}，这个我想多看一眼。` };
+        if (surface === 'cart') return { action: 'comment', speech: cartCount(cart) ? '篮子里已经有几件了，我帮你一起掂量。' : '篮子空着也好，慢慢挑不急。' };
+        return { action: 'comment', speech: '我在旁边看着呢，挑到顺眼的就停一下。' };
+    };
+
+    const companionCharPay = async (char: CharacterProfile, item: ShopItem, speech: string) => {
+        const order = placeOrder([{ item, qty: 1 }], 'char', char.name);
+        try {
+            await DB.saveMessage({
+                charId: char.id, role: 'assistant', type: 'text',
+                content: `${speech}\n[心意铺] 我替你付了 ${item.emoji}${item.name}，等包裹到了记得签收。`,
+                metadata: { shopCompanion: true, shopOrderId: order.id, shopAction: 'char_pay' },
+            } as any);
+        } catch { /* ignore */ }
+        addToast(`${char.name} 替你付了 ${item.emoji}${item.name}`, 'success');
+        emitShopUpdated();
+    };
+
+    const applyCompanionReaction = async (char: CharacterProfile, reaction: ShopCompanionReaction) => {
+        const item = reaction.itemId ? getShopItem(reaction.itemId) : undefined;
+        pushCompanionLine(reaction.speech, reaction.action, reaction.itemId);
+        if (reaction.action === 'comment') return;
+        if (!item) return;
+        if (reaction.action === 'want') {
+            updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
+            addToast(`${char.name} 看中了 ${item.emoji}${item.name}`, 'success');
+            emitShopUpdated();
+            return;
+        }
+        if (reaction.action === 'ask_user_pay') {
+            setCompanionRequest({ charId: char.id, item, speech: reaction.speech });
+            return;
+        }
+        if (reaction.action === 'char_pay') {
+            await companionCharPay(char, item, reaction.speech);
+        }
+    };
+
+    const runCompanionReaction = async (
+        surface: ShopCompanionSurface,
+        opts: { item?: ShopItem; visibleItems?: ShopItem[]; cart?: typeof cart; userAction?: string } = {},
+        charOverride?: CharacterProfile,
+    ) => {
+        const char = charOverride || companion;
+        if (!char || companionBusy) return;
+        setCompanionBusy(true);
+        try {
+            const visibleItems = opts.visibleItems || visibleItemsForCompanion(opts.item);
+            let reaction: ShopCompanionReaction | null = null;
+            const api = resolveAuxApi(auxApiConfig, apiConfig);
+            if (api.apiKey) {
+                try {
+                    const { system, user } = buildShopCompanionPrompt(
+                        { name: char.name, personaText: char.systemPrompt, affection: char.affection },
+                        userProfile.name || '你',
+                        {
+                            surface,
+                            item: opts.item,
+                            visibleItems,
+                            cart: opts.cart || cart,
+                            userAction: opts.userAction,
+                            budget: Math.round(80 + (char.affection ?? 50) * 4),
+                        },
+                    );
+                    const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.85, maxTokens: 260 });
+                    reaction = parseShopCompanionReaction(raw, opts.item?.id);
+                } catch { /* fallback below */ }
+            }
+            if (!reaction) reaction = fallbackCompanionReaction(surface, opts.item || visibleItems[0]);
+            await applyCompanionReaction(char, reaction);
+        } finally {
+            setCompanionBusy(false);
+        }
+    };
+
+    const chooseCompanion = (char: CharacterProfile) => {
+        setCompanionId(char.id);
+        setCompanionPicker(false);
+        setCompanionLog([]);
+        pushCompanionLine(`我来了，今天陪你慢慢挑。`);
+        void runCompanionReaction(tab === 'cart' ? 'cart' : tab === 'my' ? 'my' : tab === 'category' ? 'category' : 'home', {
+            visibleItems: visibleItemsForCompanion(),
+            cart,
+            userAction: '刚开始一起逛心意铺',
+        }, char);
+    };
+
+    const addCompanionRequestToWishlist = () => {
+        const req = companionRequest;
+        const char = req ? characters.find(c => c.id === req.charId) : null;
+        if (!req || !char) return;
+        updateCharacter(char.id, { shopCart: addToCart(char.shopCart, req.item.id) });
+        pushCompanionLine(`那我先把 ${req.item.emoji}${req.item.name} 夹进心愿单。`, 'want', req.item.id);
+        addToast(`${char.name} 的心愿单夹进 ${req.item.emoji}${req.item.name}`, 'success');
+        emitShopUpdated();
+        setCompanionRequest(null);
+    };
+
+    const payCompanionRequest = async () => {
+        const req = companionRequest;
+        const char = req ? characters.find(c => c.id === req.charId) : null;
+        if (!req || !char) return;
+        if (balance < req.item.price) { addToast('钱包不够替 TA 付呢', 'error'); return; }
+        adjustUserBalance(-req.item.price, {
+            note: `陪 ${char.name} 逛心意铺代付 ${req.item.name}`,
+            category: 'shopping',
+            kind: 'shop-companion-pay',
+            sourceApp: '心意铺',
+            sourceId: req.item.id,
+            relatedEntityId: char.id,
+        });
+        const charReceipt = makeReceipt(req.item, 'char', 'buy', 'self', char.name, `${userProfile.name || '我'}陪逛代付`);
+        const userReceipt = makeReceipt(req.item, 'user', 'gift', char.id, char.name, '陪逛代付');
+        updateCharacter(char.id, {
+            shopCart: removeFromCart(char.shopCart, req.item.id),
+            shopReceipts: [charReceipt, ...(char.shopReceipts || [])],
+        });
+        updateUserProfile({ shopReceipts: [userReceipt, ...(userProfile.shopReceipts || [])] });
+        try {
+            await DB.saveMessage({
+                charId: char.id, role: 'system', type: 'text',
+                content: `[心意铺陪逛] ${userProfile.name || '你'} 替 ${char.name} 付了 ${req.item.emoji}${req.item.name}（¥${formatPrice(req.item.price)}）`,
+            } as any);
+        } catch { /* ignore */ }
+        pushCompanionLine(`收下啦，我会记得这是你陪我逛时买的。`, 'want', req.item.id);
+        addToast(`替 ${char.name} 付了 ${req.item.emoji}${req.item.name}`, 'success');
+        emitShopUpdated();
+        setCompanionRequest(null);
     };
 
     // 确认收货：订单商品进背包 + 双方小票，标记 receivedAt
@@ -271,9 +446,11 @@ const ShopApp: React.FC = () => {
 
     // ── 购物车 ──
     const addItemToCart = (item: ShopItem, qty = 1) => {
-        updateUserProfile({ shopCart: addToCart(userProfile.shopCart, item.id, qty) });
+        const nextCart = addToCart(userProfile.shopCart, item.id, qty);
+        updateUserProfile({ shopCart: nextCart });
         addToast(`放进篮子 ${item.emoji}${qty > 1 ? `×${qty}` : ''}`, 'success');
         emitShopUpdated();
+        void runCompanionReaction('cart', { item, cart: nextCart, userAction: `把 ${item.name} 放进篮子` });
     };
     const changeQty = (itemId: string, qty: number) => {
         updateUserProfile({ shopCart: setCartQty(userProfile.shopCart, itemId, qty) });
@@ -401,9 +578,16 @@ const ShopApp: React.FC = () => {
         emitShopUpdated();
     };
 
+    const addItemToCharWishlist = (item: ShopItem, char: CharacterProfile) => {
+        updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
+        addToast(`${char.name} 的心愿单夹进 ${item.emoji}${item.name}`, 'success');
+        emitShopUpdated();
+    };
+
     // ── 送礼给角色 ──
     const [giftTarget, setGiftTarget] = useState<ShopOwnedItem | null>(null);
     const [giftNote, setGiftNote] = useState('');
+    const [wishItem, setWishItem] = useState<ShopItem | null>(null);
     const confirmGift = async (char: CharacterProfile) => {
         const owned = giftTarget;
         if (!owned) return;
@@ -430,7 +614,8 @@ const ShopApp: React.FC = () => {
 
     const onCharShop = async (char: CharacterProfile) => {
         const budget = Math.round(100 + (char.affection ?? 50) * 4);
-        const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.systemPrompt }, userProfile.name || '你', budget);
+        const shelf = catalog.length ? catalog : SHOP_ITEMS;
+        const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.systemPrompt }, userProfile.name || '你', budget, shelf);
         let decision = null as ReturnType<typeof parseCharShopDecision>;
         try {
             const raw = await llmComplete(resolveAuxApi(auxApiConfig, apiConfig), [
@@ -439,8 +624,9 @@ const ShopApp: React.FC = () => {
             decision = parseCharShopDecision(raw);
         } catch { /* 用兜底 */ }
         if (!decision) {
-            const affordable = SHOP_ITEMS.filter(i => i.price <= budget);
-            const pick = (affordable.length ? affordable : SHOP_ITEMS)[Math.floor(Math.random() * (affordable.length || SHOP_ITEMS.length))];
+            const affordable = shelf.filter(i => i.price <= budget);
+            const pool = affordable.length ? affordable : shelf;
+            const pick = pool[Math.floor(Math.random() * pool.length)];
             decision = { action: Math.random() < 0.5 ? 'gift' : 'buy', itemId: pick.id, note: '' };
         }
         const item = getShopItem(decision.itemId)!;
@@ -493,7 +679,12 @@ const ShopApp: React.FC = () => {
     const goOrders = (f: 'all' | OrderStatusKey) => { setTab('my'); setSub('orders'); setOrderFilter(f); };
 
     // 切换底栏主 tab 时清掉子页
-    const switchTab = (t: MainTab) => { setTab(t); setSub(null); };
+    const switchTab = (t: MainTab) => {
+        setTab(t);
+        setSub(null);
+        const surface: ShopCompanionSurface = t === 'cart' ? 'cart' : t === 'my' ? 'my' : t === 'category' ? 'category' : 'home';
+        void runCompanionReaction(surface, { visibleItems: visibleItemsForCompanion(), cart, userAction: `切到${t === 'cart' ? '篮子' : t === 'my' ? '我的' : t === 'category' ? '分类' : '货架'}` });
+    };
 
     const navItems: { id: MainTab; label: string; Icon: React.ElementType }[] = [
         { id: 'home', label: '货架', Icon: House },
@@ -504,11 +695,11 @@ const ShopApp: React.FC = () => {
 
     const subTitle: Record<Exclude<SubView, null>, string> = {
         orders: '寄件记录', bag: '我的柜子', receipts: '心意账本',
-        fav: '心头好', footprints: '翻看过的', coupons: '撕券处',
+        fav: '心头好', footprints: '翻看过的', coupons: '撕券处', advisor: '心意参谋',
     };
     const subEn: Record<Exclude<SubView, null>, string> = {
         orders: 'PARCELS', bag: 'CABINET', receipts: 'LEDGER',
-        fav: 'FAVOURITES', footprints: 'FOOTPRINTS', coupons: 'COUPONS',
+        fav: 'FAVOURITES', footprints: 'FOOTPRINTS', coupons: 'COUPONS', advisor: 'GIFT ADVISOR',
     };
 
     return (
@@ -529,6 +720,14 @@ const ShopApp: React.FC = () => {
                         <div className="text-[7px] tracking-[0.36em] uppercase mt-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{sub ? subEn[sub] : 'A LITTLE GIFT STALL'}</div>
                     </div>
                     <div className="flex-1" />
+                    <button onClick={() => setCompanionPicker(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black active:scale-95 transition-transform max-w-[92px]"
+                        style={{ background: companion ? 'rgba(255,253,247,0.9)' : INK, color: companion ? INK : PAPER, border: companion ? '1px dashed rgba(150,144,132,0.6)' : 'none' }}>
+                        {companion ? (
+                            <img src={companion.convoSettings?.charAvatarOverride || companion.avatar} className="w-4 h-4 rounded-full object-cover shrink-0" />
+                        ) : <User size={13} weight="fill" />}
+                        <span className="truncate">{companion ? (companion.convoSettings?.remarkName?.trim() || companion.name) : '陪逛'}</span>
+                    </button>
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-black tabular-nums" style={{ background: 'rgba(255,253,247,0.85)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>
                         <span style={{ color: INK }}>◑</span>{coins}
                     </span>
@@ -540,7 +739,35 @@ const ShopApp: React.FC = () => {
 
             {/* 内容区 */}
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
-                {sub === 'orders' ? (
+                {!sub && (
+                    <ShopCompanionStrip
+                        companion={companion}
+                        busy={companionBusy}
+                        latest={companionLog[0]}
+                        onPick={() => setCompanionPicker(true)}
+                        onEnd={() => { setCompanionId(''); setCompanionLog([]); setCompanionRequest(null); }}
+                        onReact={() => void runCompanionReaction(tab === 'cart' ? 'cart' : tab === 'my' ? 'my' : tab === 'category' ? 'category' : 'home', {
+                            visibleItems: visibleItemsForCompanion(detailItem || undefined),
+                            cart,
+                            item: detailItem || undefined,
+                            userAction: '主动问 TA 看法',
+                        })}
+                    />
+                )}
+                {sub === 'advisor' ? (
+                    <GiftAdvisorView
+                        catalog={catalog.length ? catalog : SHOP_ITEMS}
+                        characters={characters}
+                        balance={balance}
+                        favorites={favorites}
+                        onOpen={openDetail}
+                        onAddCart={addItemToCart}
+                        onBuy={(i) => openSku(i, 'buy')}
+                        onAddWish={addItemToCharWishlist}
+                        onCharShop={onCharShop}
+                        onClearCharCart={clearCharCart}
+                    />
+                ) : sub === 'orders' ? (
                     <OrdersView orders={orders} reviews={myReviews} filter={orderFilter} setFilter={setOrderFilter}
                         onReceive={confirmReceipt} onGoShop={() => switchTab('home')}
                         onLogistics={setLogisticsOrder} onRefund={requestRefund}
@@ -561,8 +788,9 @@ const ShopApp: React.FC = () => {
                 ) : tab === 'home' ? (
                     <ShopCatalog
                         catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()} onSearchGen={searchGen}
-                        cat={cat} setCat={setCat} search={search} setSearch={setSearch}
+                        cat={cat} setCat={(next) => { setCat(next); void runCompanionReaction('category', { visibleItems: visibleItemsForCompanion(), userAction: `切到${next === 'fav' ? '心头好' : next === 'all' ? '全部' : (SHOP_CATEGORIES.find(c => c.key === next)?.label || next)}` }); }} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
+                        charactersCount={characters.length} wishCount={wishCount} onOpenAdvisor={() => setSub('advisor')}
                         claimedCoupons={claimedCoupons} onClaimCoupon={claimCoupon} onBuyFlash={(it, p) => buyItem(it, 1, p)}
                         onBuy={(i) => openSku(i, 'buy')} onAddCart={addItemToCart}
                         onOpenDetail={openDetail} onToggleFav={toggleFav}
@@ -577,7 +805,7 @@ const ShopApp: React.FC = () => {
                         name={userProfile.name || '我'} avatar={userProfile.avatar} balance={balance} coins={coins}
                         counts={counts} checkinDone={checkinDone} onCheckin={doCheckin}
                         bagCount={inventory.length} favCount={favorites.length} footprintCount={footprints.length}
-                        couponCount={claimedCoupons.length}
+                        couponCount={claimedCoupons.length} wishCount={wishCount}
                         onGoOrders={goOrders} onOpenSub={openSubFromMy}
                     />
                 )}
@@ -649,6 +877,7 @@ const ShopApp: React.FC = () => {
                     genReviews={genReviews} myReviews={userReviewsForItem(myReviews, detailItem.id)}
                     onClose={() => setDetailItem(null)} onToggleFav={toggleFav}
                     onAddCart={(i) => openSku(i, 'cart')} onBuy={(i) => openSku(i, 'buy')}
+                    onAddWish={(i) => setWishItem(i)}
                 />
             )}
 
@@ -687,6 +916,79 @@ const ShopApp: React.FC = () => {
                 </div>
             </PaperDialog>
 
+            {/* 记心愿：选角色 */}
+            <PaperDialog open={!!wishItem} title={wishItem ? `把 ${wishItem.emoji}${wishItem.name} 夹进谁的心愿？` : ''} en="WISHLIST" tape="sage"
+                onClose={() => setWishItem(null)}>
+                <div className="space-y-3">
+                    <div className="text-[12px] leading-relaxed" style={{ color: INK_SOFT }}>
+                        心愿单不会立刻扣款，只是帮 TA 把想要的东西记下来；以后可在心意参谋里代付或清空。
+                    </div>
+                    {characters.length === 0 ? (
+                        <div className="text-center text-xs py-6" style={{ color: INK_SOFT }}>还没有角色</div>
+                    ) : (
+                        <div className="flex flex-wrap gap-3 justify-center max-h-56 overflow-y-auto no-scrollbar pt-1">
+                            {characters.map((c, i) => (
+                                <Polaroid key={c.id} src={c.convoSettings?.charAvatarOverride || c.avatar}
+                                    caption={c.convoSettings?.remarkName?.trim() || c.name} size={52} rotate={i % 2 ? -2 : 2}
+                                    onClick={() => { if (wishItem) addItemToCharWishlist(wishItem, c); setWishItem(null); }} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </PaperDialog>
+
+            {/* 陪逛：选择一个角色一起看货架 */}
+            <PaperDialog open={companionPicker} title="找谁陪你逛" en="COMPANION" tape="sage"
+                onClose={() => setCompanionPicker(false)}>
+                <div className="space-y-3">
+                    {characters.length === 0 ? (
+                        <div className="text-center text-xs py-6" style={{ color: INK_SOFT }}>还没有角色</div>
+                    ) : (
+                        <div className="flex flex-wrap gap-3 justify-center max-h-60 overflow-y-auto no-scrollbar pt-1">
+                            {characters.map((c, i) => (
+                                <Polaroid key={c.id} src={c.convoSettings?.charAvatarOverride || c.avatar}
+                                    caption={c.convoSettings?.remarkName?.trim() || c.name} size={52} rotate={i % 2 ? -2 : 2}
+                                    onClick={() => chooseCompanion(c)} />
+                            ))}
+                        </div>
+                    )}
+                    {companion && (
+                        <ScrapButton variant="ghost" onClick={() => { setCompanionId(''); setCompanionLog([]); setCompanionPicker(false); }} className="w-full py-2 text-[12px]">
+                            先自己逛
+                        </ScrapButton>
+                    )}
+                </div>
+            </PaperDialog>
+
+            {/* 陪逛：角色看中商品，请用户决定是否付款 */}
+            <PaperDialog open={!!companionRequest}
+                title={companionRequest ? `${characters.find(c => c.id === companionRequest.charId)?.name || 'TA'} 想要 ${companionRequest.item.emoji}${companionRequest.item.name}` : ''}
+                en="PAY REQUEST" tape="rose"
+                onClose={() => setCompanionRequest(null)}>
+                {companionRequest && (
+                    <div className="space-y-3">
+                        <div className="rounded-2xl p-3 flex items-center gap-3" style={PANEL}>
+                            <span className="w-12 h-12 rounded-2xl flex items-center justify-center text-[28px] shrink-0" style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.5)' }}>{companionRequest.item.emoji}</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[14px] font-black truncate" style={{ color: INK }}>{companionRequest.item.name}</div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>¥{formatPrice(companionRequest.item.price)} · {companionRequest.item.blurb}</div>
+                            </div>
+                        </div>
+                        <div className="text-[13px] leading-relaxed px-1" style={{ color: INK }}>
+                            “{companionRequest.speech}”
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <ScrapButton variant="paper" onClick={addCompanionRequestToWishlist} className="py-2.5 text-[12px]">先记心愿</ScrapButton>
+                            <ScrapButton variant={balance >= companionRequest.item.price ? 'ink' : 'ghost'} disabled={balance < companionRequest.item.price}
+                                onClick={() => void payCompanionRequest()} className="py-2.5 text-[12px]">
+                                {balance >= companionRequest.item.price ? `替 TA 付 ¥${formatPrice(companionRequest.item.price)}` : '钱包不足'}
+                            </ScrapButton>
+                        </div>
+                        <ScrapButton variant="ghost" onClick={() => setCompanionRequest(null)} className="w-full py-2 text-[12px]">这次先等等</ScrapButton>
+                    </div>
+                )}
+            </PaperDialog>
+
             {/* 求代付：选一个角色帮忙付购物车 */}
             <PaperDialog open={payPicker} title="求 TA 替你付篮子" en="ASK TO PAY" tape="amber"
                 onClose={() => { if (!payReqBusy) setPayPicker(false); }}>
@@ -710,6 +1012,54 @@ const ShopApp: React.FC = () => {
     );
 };
 
+const ShopCompanionStrip: React.FC<{
+    companion: CharacterProfile | null;
+    busy: boolean;
+    latest?: CompanionLog;
+    onPick: () => void;
+    onEnd: () => void;
+    onReact: () => void;
+}> = ({ companion, busy, latest, onPick, onEnd, onReact }) => {
+    if (!companion) {
+        return (
+            <button onClick={onPick}
+                className="w-full mb-3 rounded-2xl px-3 py-2.5 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
+                style={{ ...PANEL, outlineOffset: '-6px' }}>
+                <Stamp size={38} color="ink"><User size={19} weight="fill" /></Stamp>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-black" style={{ color: INK }}>今天谁陪你逛</div>
+                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>挑到顺眼的，就在这儿停一下</div>
+                </div>
+                <CaretRight size={17} weight="bold" style={{ color: INK }} />
+            </button>
+        );
+    }
+    const name = companion.convoSettings?.remarkName?.trim() || companion.name;
+    return (
+        <div className="mb-3 rounded-2xl p-2.5 flex items-center gap-2.5" style={PANEL}>
+            <img src={companion.convoSettings?.charAvatarOverride || companion.avatar}
+                className="w-10 h-10 rounded-2xl object-cover shrink-0" style={{ border: '1px solid rgba(176,170,158,0.7)' }} />
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[12px] font-black truncate" style={{ color: INK }}>{name}</span>
+                    <span className="text-[8px] tracking-[0.2em]" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>WITH YOU</span>
+                </div>
+                <div className="text-[12px] leading-snug line-clamp-2" style={{ color: INK_SOFT }}>
+                    {busy ? '正看着这一屏…' : latest?.text || '我在，看中哪件就停一下。'}
+                </div>
+            </div>
+            <div className="flex flex-col gap-1 shrink-0">
+                <button onClick={onReact} disabled={busy} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95 disabled:opacity-50"
+                    style={{ background: INK, color: PAPER }}>问一句</button>
+                <button onClick={onPick} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
+                    style={{ background: 'rgba(255,253,247,0.85)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>换人</button>
+                <button onClick={onEnd} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
+                    style={{ background: 'rgba(150,144,132,0.16)', color: INK_SOFT }}>结束</button>
+            </div>
+        </div>
+    );
+};
+
 // ── 可复用商品卡（米白纸卡 + 彩色商品图） ─────────────────────────────────────
 const ItemCard: React.FC<{
     item: ShopItem; balance: number; faved?: boolean; tilt?: number;
@@ -717,6 +1067,7 @@ const ItemCard: React.FC<{
     onBuy?: (i: ShopItem) => void; onAddCart?: (i: ShopItem) => void;
 }> = ({ item, balance, faved, tilt = 0, onOpen, onToggleFav, onBuy, onAddCart }) => {
     const afford = balance >= item.price;
+    const signals = itemGiftSignals(item);
     return (
         <div className="relative flex flex-col overflow-hidden" style={{ ...PANEL, transform: tilt ? `rotate(${tilt}deg)` : undefined }}>
             <div className="relative cursor-pointer" onClick={() => onOpen(item)}>
@@ -736,6 +1087,12 @@ const ItemCard: React.FC<{
                 <div className="flex items-center gap-1.5 mt-0.5 mb-2 text-[9.5px]" style={{ color: INK_SOFT }}>
                     <span className="flex items-center gap-0.5"><Star size={10} weight="fill" style={{ color: INK }} />{itemRating(item.id)}</span>
                     <span>·</span><span>寄出 {formatSales(monthlySales(item.id))}</span>
+                </div>
+                <div className="mb-2 flex items-center gap-1 overflow-hidden">
+                    <span className="shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>
+                        {signals.relationLabel}
+                    </span>
+                    <span className="min-w-0 truncate text-[9px]" style={{ color: INK_SOFT }}>{signals.scenes.join(' / ')}</span>
                 </div>
                 <div className="flex items-center justify-between mt-auto gap-1.5">
                     <span className="text-[15px] font-black" style={{ color: INK }}>¥{formatPrice(item.price)}</span>
@@ -765,10 +1122,11 @@ const ShopCatalog: React.FC<{
     cat: string; setCat: (c: string) => void;
     search: string; setSearch: (s: string) => void;
     balance: number; favorites: string[];
+    charactersCount: number; wishCount: number; onOpenAdvisor: () => void;
     claimedCoupons: string[]; onClaimCoupon: (id: string) => void; onBuyFlash: (item: ShopItem, price: number) => void;
     onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     onOpenDetail: (i: ShopItem) => void; onToggleFav: (id: string) => void;
-}> = ({ catalog, genBusy, onRefresh, onSearchGen, cat, setCat, search, setSearch, balance, favorites, claimedCoupons, onClaimCoupon, onBuyFlash, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
+}> = ({ catalog, genBusy, onRefresh, onSearchGen, cat, setCat, search, setSearch, balance, favorites, charactersCount, wishCount, onOpenAdvisor, claimedCoupons, onClaimCoupon, onBuyFlash, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
     const home = cat === 'all' && !search.trim();
     const items = useMemo(() => {
         if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x);
@@ -804,6 +1162,7 @@ const ShopCatalog: React.FC<{
             {home && (
                 <>
                     <ShopBanner />
+                    <GiftAdvisorCallout charactersCount={charactersCount} wishCount={wishCount} onOpen={onOpenAdvisor} />
                     <CouponStrip claimed={claimedCoupons} onClaim={onClaimCoupon} />
                     <FlashSaleStrip catalog={catalog} balance={balance} onBuy={onBuyFlash} onOpen={onOpenDetail} />
                 </>
@@ -903,6 +1262,24 @@ const ShopBanner: React.FC = () => {
     );
 };
 
+const GiftAdvisorCallout: React.FC<{ charactersCount: number; wishCount: number; onOpen: () => void; }> = ({ charactersCount, wishCount, onOpen }) => (
+    <button onClick={onOpen}
+        className="w-full mb-3 rounded-2xl p-3 text-left active:scale-[0.99] transition-transform relative overflow-hidden"
+        style={{ ...PANEL, outlineOffset: '-6px' }}>
+        <div className="absolute -right-5 -top-5 w-24 h-24 rotate-12" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px', opacity: 0.18 }} />
+        <div className="relative flex items-center gap-3">
+            <Stamp size={42} color="ink"><Gift size={22} weight="fill" /></Stamp>
+            <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-black" style={{ color: INK }}>心意参谋</div>
+                <div className="text-[11px] leading-snug mt-0.5" style={{ color: INK_SOFT }}>
+                    {charactersCount ? `按角色、场景和预算挑礼物${wishCount ? ` · ${wishCount} 件心愿待看` : ''}` : '先有角色，再帮你挑得更准'}
+                </div>
+            </div>
+            <CaretRight size={18} weight="bold" style={{ color: INK }} />
+        </div>
+    </button>
+);
+
 // ── 营销位：撕券处 ──
 const CouponStrip: React.FC<{ claimed: string[]; onClaim: (id: string) => void; }> = ({ claimed, onClaim }) => (
     <div className="mb-3">
@@ -995,7 +1372,8 @@ const ProductDetail: React.FC<{
     myReviews: ShopUserReview[];
     onClose: () => void; onToggleFav: (id: string) => void;
     onAddCart: (i: ShopItem) => void; onBuy: (i: ShopItem) => void;
-}> = ({ item, faved, balance, genReviews, myReviews, onClose, onToggleFav, onAddCart, onBuy }) => {
+    onAddWish: (i: ShopItem) => void;
+}> = ({ item, faved, balance, genReviews, myReviews, onClose, onToggleFav, onAddCart, onBuy, onAddWish }) => {
     const [reviews, setReviews] = useState<ShopReview[] | null>(null);
     useEffect(() => {
         let alive = true;
@@ -1006,6 +1384,7 @@ const ProductDetail: React.FC<{
     const afford = balance >= item.price;
     const allStars = [...myReviews.map(r => r.stars), ...(reviews || []).map(r => r.stars)];
     const rate = goodRate(allStars, itemRating(item.id));
+    const signals = itemGiftSignals(item);
     return (
         <div className="absolute inset-0 z-[60] flex flex-col animate-fade-in" style={{ background: PAGE_BG, color: INK }}>
             <PaperBackdrop corners={false} />
@@ -1031,6 +1410,18 @@ const ProductDetail: React.FC<{
                     </div>
                     <div className="text-[15px] font-black mt-1.5" style={{ color: INK }}>{item.name}</div>
                     <div className="text-[12px] leading-relaxed mt-1" style={{ color: INK_SOFT }}>{item.blurb}</div>
+                </div>
+                <div className="mt-2.5 rounded-2xl p-4" style={PANEL}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[13px] font-black" style={{ color: INK }}>送礼尺度</span>
+                        <span className="rounded-full px-2.5 py-1 text-[10px] font-black" style={{ background: INK, color: PAPER }}>{signals.relationLabel}</span>
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                        {signals.scenes.map(s => (
+                            <span key={s} className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{s}</span>
+                        ))}
+                    </div>
+                    {signals.caution && <div className="text-[11px] leading-relaxed mt-2" style={{ color: INK_SOFT }}>{signals.caution}</div>}
                 </div>
                 {/* 保障 */}
                 <div className="mt-2.5 rounded-2xl px-4 py-2.5 flex items-center gap-3 flex-wrap text-[10px]" style={{ ...PANEL, color: INK_SOFT }}>
@@ -1081,6 +1472,10 @@ const ProductDetail: React.FC<{
                 <button onClick={() => onToggleFav(item.id)} className="flex flex-col items-center justify-center px-1 shrink-0 w-11" style={{ color: INK }}>
                     <Heart size={20} weight={faved ? 'fill' : 'bold'} />
                     <span className="text-[8px] mt-0.5">{faved ? '已收' : '收藏'}</span>
+                </button>
+                <button onClick={() => onAddWish(item)} className="flex flex-col items-center justify-center px-1 shrink-0 w-11" style={{ color: INK }}>
+                    <Storefront size={20} weight="bold" />
+                    <span className="text-[8px] mt-0.5">心愿</span>
                 </button>
                 <ScrapButton variant="paper" onClick={() => onAddCart(item)} className="flex-1 py-2.5 text-[13px]">放进篮子</ScrapButton>
                 <ScrapButton variant={afford ? 'ink' : 'ghost'} onClick={() => afford && onBuy(item)} disabled={!afford} className="flex-1 py-2.5 text-[13px]">
@@ -1299,6 +1694,195 @@ const EmptyState: React.FC<{ Icon: React.ElementType; title: string; hint?: stri
     </div>
 );
 
+// ── 心意参谋：按角色 / 场景 / 预算挑礼物 ──
+const GiftAdvisorView: React.FC<{
+    catalog: ShopItem[];
+    characters: CharacterProfile[];
+    balance: number;
+    favorites: string[];
+    onOpen: (i: ShopItem) => void;
+    onAddCart: (i: ShopItem) => void;
+    onBuy: (i: ShopItem) => void;
+    onAddWish: (item: ShopItem, char: CharacterProfile) => void;
+    onCharShop: (char: CharacterProfile) => Promise<void>;
+    onClearCharCart: (char: CharacterProfile) => Promise<void>;
+}> = ({ catalog, characters, balance, favorites, onOpen, onAddCart, onBuy, onAddWish, onCharShop, onClearCharCart }) => {
+    const [charId, setCharId] = useState<string>(characters[0]?.id || '');
+    const [occasion, setOccasion] = useState<GiftOccasionKey>('daily');
+    const [budget, setBudget] = useState(199);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        if (!characters.length) return;
+        if (!characters.some(c => c.id === charId)) setCharId(characters[0].id);
+    }, [characters, charId]);
+
+    const char = characters.find(c => c.id === charId) || characters[0] || null;
+    const stage = relationStageFromAffection(char?.affection);
+
+    useEffect(() => {
+        if (char) setBudget(stage.sweetPrice);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [char?.id]);
+
+    const advice = useMemo(() => {
+        if (!char) return [] as GiftAdvice[];
+        return recommendGiftsForCharacter(catalog, {
+            charName: char.convoSettings?.remarkName?.trim() || char.name,
+            affection: char.affection,
+            personaText: char.systemPrompt,
+            occasion,
+            budget,
+            favorites,
+        }, 8);
+    }, [catalog, char?.id, char?.affection, char?.systemPrompt, occasion, budget, favorites]);
+
+    if (!characters.length) return <EmptyState Icon={Gift} title="还没有可参谋的对象" hint="有角色后，心意铺会按 TA 的人设和关系阶段挑礼物" />;
+    if (!char) return null;
+
+    const charName = char.convoSettings?.remarkName?.trim() || char.name;
+    const wishLines = resolveCart(char.shopCart);
+    const wishTotal = cartTotal(char.shopCart);
+
+    return (
+        <div className="pt-1 space-y-3">
+            <div className="rounded-2xl p-3.5" style={PANEL}>
+                <SectionTag en="FOR WHOM" className="mb-2">给谁挑</SectionTag>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                    {characters.map((c, i) => {
+                        const on = c.id === char.id;
+                        return (
+                            <button key={c.id} onClick={() => setCharId(c.id)}
+                                className="shrink-0 flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full transition-all active:scale-95"
+                                style={on ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.76)', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.6)' }}>
+                                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-7 h-7 rounded-full object-cover" alt="" />
+                                <span className="text-[12px] font-black">{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                                {cartCount(c.shopCart) > 0 && <InkBadge n={cartCount(c.shopCart)} className={on ? '' : 'opacity-80'} />}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                    <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(31,29,26,0.08)' }}>
+                        <div className="text-[12px] font-black" style={{ color: INK }}>{stage.label}</div>
+                        <div className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>{stage.hint}</div>
+                    </div>
+                    <button disabled={busy} onClick={async () => { setBusy(true); try { await onCharShop(char); } finally { setBusy(false); } }}
+                        className="rounded-xl px-3 py-2 text-left active:scale-[0.98] transition-transform"
+                        style={{ background: INK, color: PAPER }}>
+                        <div className="text-[12px] font-black">{busy ? 'TA 正在翻' : '请 TA 逛铺'}</div>
+                        <div className="text-[10px] mt-0.5" style={{ opacity: 0.78 }}>让 {charName} 自己挑一次</div>
+                    </button>
+                </div>
+            </div>
+
+            <div className="rounded-2xl p-3.5" style={PANEL}>
+                <div className="flex items-center justify-between mb-2">
+                    <SectionTag en="SCENE">场景和预算</SectionTag>
+                    <span className="text-[12px] font-black tabular-nums" style={{ color: INK }}>¥{budget}</span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                    {SHOP_GIFT_OCCASIONS.map(o => (
+                        <button key={o.key} onClick={() => setOccasion(o.key)}
+                            className="shrink-0 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all active:scale-95" style={chipStyle(occasion === o.key)}>
+                            {o.label}
+                        </button>
+                    ))}
+                </div>
+                <input type="range" min={20} max={999} step={10} value={budget}
+                    onChange={e => setBudget(Number(e.target.value))}
+                    className="w-full accent-[#1f1d1a]" />
+                <div className="flex justify-between text-[10px]" style={{ color: INK_SOFT }}>
+                    <span>小心意</span>
+                    <span>郑重点</span>
+                </div>
+            </div>
+
+            {wishLines.length > 0 && (
+                <div className="rounded-2xl p-3.5" style={PANEL}>
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[13px] font-black" style={{ color: INK }}>{charName} 的心愿单</span>
+                        <span className="text-[12px] font-black" style={{ color: INK }}>¥{formatPrice(wishTotal)}</span>
+                    </div>
+                    <div className="space-y-1.5 mb-2.5">
+                        {wishLines.slice(0, 4).map(({ item, qty }) => (
+                            <button key={item.id} onClick={() => onOpen(item)}
+                                className="w-full flex items-center gap-2 text-left rounded-xl px-2 py-1.5 active:opacity-70"
+                                style={{ background: 'rgba(255,253,247,0.64)' }}>
+                                <span className="text-[18px]">{item.emoji}</span>
+                                <span className="flex-1 min-w-0 truncate text-[12px] font-bold" style={{ color: INK }}>{item.name} ×{qty}</span>
+                                <span className="text-[11px]" style={{ color: INK_SOFT }}>¥{formatPrice(item.price * qty)}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <ScrapButton variant={balance >= wishTotal ? 'ink' : 'ghost'} disabled={busy || balance < wishTotal}
+                        onClick={async () => { setBusy(true); try { await onClearCharCart(char); } finally { setBusy(false); } }}
+                        className="w-full py-2 text-[12px]">
+                        {balance >= wishTotal ? `替 TA 清空心愿单` : '钱包不足以代付'}
+                    </ScrapButton>
+                </div>
+            )}
+
+            <div>
+                <SectionTag en="PICKS" className="mb-2">参谋挑的</SectionTag>
+                <div className="space-y-2.5">
+                    {advice.map(a => (
+                        <GiftAdviceCard key={a.item.id} advice={a} balance={balance} char={char}
+                            onOpen={onOpen} onAddCart={onAddCart} onBuy={onBuy} onAddWish={onAddWish} />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const GiftAdviceCard: React.FC<{
+    advice: GiftAdvice;
+    balance: number;
+    char: CharacterProfile;
+    onOpen: (i: ShopItem) => void;
+    onAddCart: (i: ShopItem) => void;
+    onBuy: (i: ShopItem) => void;
+    onAddWish: (item: ShopItem, char: CharacterProfile) => void;
+}> = ({ advice, balance, char, onOpen, onAddCart, onBuy, onAddWish }) => {
+    const item = advice.item;
+    const afford = balance >= item.price;
+    return (
+        <div className="rounded-2xl p-3 flex gap-3" style={PANEL}>
+            <button onClick={() => onOpen(item)}
+                className="w-20 h-20 rounded-2xl flex items-center justify-center text-[38px] shrink-0 overflow-hidden active:scale-95 transition-transform"
+                style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.55)' }}>
+                {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : item.emoji}
+            </button>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                    <button onClick={() => onOpen(item)} className="text-left min-w-0">
+                        <div className="text-[14px] font-black truncate" style={{ color: INK }}>{item.name}</div>
+                        <div className="text-[11px] mt-0.5" style={{ color: INK_SOFT }}>¥{formatPrice(item.price)} · {advice.relationLabel}</div>
+                    </button>
+                    <span className="shrink-0 text-[13px] font-black" style={{ color: INK }}>{Math.max(0, Math.round(advice.score))}</span>
+                </div>
+                <div className="text-[11px] leading-snug mt-1.5 line-clamp-2" style={{ color: '#3a362f' }}>{advice.reason}</div>
+                {advice.caution && <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>{advice.caution}</div>}
+                <div className="flex gap-1.5 flex-wrap mt-2">
+                    {advice.tags.map(t => (
+                        <span key={t} className="rounded-full px-2 py-0.5 text-[9.5px] font-bold" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{t}</span>
+                    ))}
+                </div>
+                <div className="flex items-center gap-2 mt-2.5">
+                    <button onClick={() => onAddCart(item)} className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ background: 'rgba(255,253,247,0.95)', color: INK, border: '1px dashed rgba(150,144,132,0.7)' }}>
+                        <ShoppingCart size={15} weight="bold" />
+                    </button>
+                    <ScrapButton variant="paper" onClick={() => onAddWish(item, char)} className="px-3 py-1.5 text-[11px]">夹心愿</ScrapButton>
+                    <ScrapButton variant={afford ? 'ink' : 'ghost'} onClick={() => afford && onBuy(item)} disabled={!afford} className="px-3 py-1.5 text-[11px]">
+                        {afford ? '买下' : '差点'}
+                    </ScrapButton>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ── 篮子（购物车） ──
 const CartView: React.FC<{
     cart: { itemId: string; qty: number }[];
@@ -1346,9 +1930,9 @@ const CartView: React.FC<{
 const MyCenter: React.FC<{
     name: string; avatar?: string; balance: number; coins: number;
     counts: Record<OrderStatusKey, number>; checkinDone: boolean; onCheckin: () => void;
-    bagCount: number; favCount: number; footprintCount: number; couponCount: number;
+    bagCount: number; favCount: number; footprintCount: number; couponCount: number; wishCount: number;
     onGoOrders: (f: 'all' | OrderStatusKey) => void; onOpenSub: (s: SubView) => void;
-}> = ({ name, avatar, balance, coins, counts, checkinDone, onCheckin, bagCount, favCount, footprintCount, couponCount, onGoOrders, onOpenSub }) => {
+}> = ({ name, avatar, balance, coins, counts, checkinDone, onCheckin, bagCount, favCount, footprintCount, couponCount, wishCount, onGoOrders, onOpenSub }) => {
     const orderEntries: { key: OrderStatusKey; label: string; Icon: React.ElementType; n: number }[] = [
         { key: 'toReceive', label: '在途', Icon: Truck, n: counts.toReceive },
         { key: 'toReview', label: '待留言', Icon: PencilSimpleLine, n: counts.toReview },
@@ -1361,7 +1945,7 @@ const MyCenter: React.FC<{
         { label: '翻看过的', Icon: ClockCounterClockwise, n: footprintCount, go: () => onOpenSub('footprints') },
         { label: '撕券处', Icon: Ticket, n: couponCount, go: () => onOpenSub('coupons') },
         { label: '心意账本', Icon: ReceiptIcon, go: () => onOpenSub('receipts') },
-        { label: '请 TA 逛铺', Icon: Storefront, go: () => onOpenSub('receipts') },
+        { label: '心意参谋', Icon: Storefront, n: wishCount, go: () => onOpenSub('advisor') },
     ];
     return (
         <div className="pt-1 space-y-3">

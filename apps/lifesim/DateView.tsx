@@ -18,6 +18,7 @@ import {
 } from '../../utils/dateStore';
 import { synthesizeSongMinimax, loadMinimaxMusicBlob } from '../../utils/minimaxMusic';
 import { synthesizeSpeech } from '../../utils/minimaxTts';
+import { buildCoupleDateMemoryCard, ensureCoupleSpace } from '../../utils/coupleSpace';
 
 // 暮色暖调
 const C = {
@@ -35,7 +36,7 @@ const Pill: React.FC<{ children: React.ReactNode; onClick?: () => void; active?:
 );
 
 const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { characters, activeCharacterId, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
+    const { characters, activeCharacterId, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
     const char = useMemo(() => characters.find(c => c.id === activeCharacterId), [characters, activeCharacterId]);
 
     const [screen, setScreen] = useState<'list' | 'scene' | 'session'>('list');
@@ -231,6 +232,27 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         addToast('从这一刻分出了一条新世界线', 'success');
     };
 
+    const saveToCoupleSpace = async () => {
+        if (!active || !char) return;
+        const latest = characters.find(c => c.id === char.id) || char;
+        if (!latest.coupleSpace) { addToast('先在「絮语 · 情侣空间」给 TA 开一个空间吧', 'info'); return; }
+        const recent = active.messages.slice(-8).map(m => {
+            if (m.role === 'user') return `${userProfile.name || '我'}：${[m.speech, m.action].filter(Boolean).join(' / ')}`;
+            if (m.role === 'char') return `${latest.name}：${[m.speech, m.action].filter(Boolean).join(' / ')}`;
+            return `场景：${m.action || m.speech || ''}`;
+        }).filter(Boolean).join('；');
+        const card = buildCoupleDateMemoryCard({
+            title: active.title,
+            sceneName: active.sceneName,
+            summary: active.recap || recent || `${active.sceneName}里的一次约会。`,
+            sourceId: active.id,
+            sourceAt: active.updatedAt || Date.now(),
+        });
+        const cs = ensureCoupleSpace(latest);
+        await updateCharacter(latest.id, { coupleSpace: { ...cs, memoryCards: [card, ...(cs.memoryCards || [])], updatedAt: Date.now() } });
+        addToast('已收进情侣空间的记忆卡', 'success');
+    };
+
     // ───────────────────────── 渲染 ─────────────────────────
     if (screen === 'scene') {
         return (
@@ -304,6 +326,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             onBack={() => { bgmAudioRef.current?.pause(); setBgmOn(false); setScreen('list'); }}
             right={
                 <div style={{ display: 'flex', gap: 6 }}>
+                    <Pill onClick={saveToCoupleSpace} title="收进情侣空间">收进空间</Pill>
                     <Pill onClick={toggleBgm} active={bgmOn} disabled={bgmBusy} title="氛围 BGM（MiniMax 生成）">{bgmBusy ? '谱曲…' : (bgmOn ? '♪ 暂停' : '♪ BGM')}</Pill>
                     <Pill onClick={() => setVoiceOn(v => !v)} active={voiceOn} title="角色台词语音">{voiceOn ? '🔊 有声' : '🔈 静音'}</Pill>
                 </div>

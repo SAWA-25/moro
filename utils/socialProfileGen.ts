@@ -1,5 +1,7 @@
 import { APIConfig, CharacterProfile } from '../types';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 /**
  * 角色主页「微信号 / 地区 / 个性签名」AI 生成。
@@ -56,18 +58,18 @@ ${persona}
 只输出一个 JSON 对象，不要任何其它文字：
 {"handle": "...", "region": "...", "bio": "..."}`;
 
-    const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.9,
-            max_tokens: 300,
+    const data = await callChatCompletion(apiConfig, {
+        model: apiConfig.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.9,
+        max_tokens: 300,
+    }, {
+        meta: makeApiUsageMeta('social.profile', {
+            apiRole: 'aux',
+            charId: char.id,
+            charName: char.name,
         }),
     });
-    if (!response.ok) throw new Error(`API Error (${response.status})`);
-    const data = await safeResponseJson(response);
     const parsed = safeParseObject(extractContent(data));
     if (!parsed) throw new Error('资料生成结果解析失败');
 

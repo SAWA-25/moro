@@ -9,10 +9,10 @@
 import type { MemoryNode, MemoryLink, LinkType } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { MemoryLinkDB } from './db';
-import { safeFetchJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
 import { getEmotionVA, emotionDistance } from './emotionSpace';
+import { callChatCompletion } from '../llmClient';
 
 const TEMPORAL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 小时
 const CO_ACTIVATION_INCREMENT = 0.05;
@@ -76,27 +76,18 @@ strength 范围 0.3-0.8。没有关联返回 []。只输出 JSON。`;
     const userMsg = `新记忆：\n${newList}\n\n旧记忆：\n${oldList}`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: prompt },
-                        { role: 'user', content: userMsg },
-                    ],
-                    temperature: 0.2,
-                    max_tokens: 800,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.links', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: prompt },
+                { role: 'user', content: userMsg },
+            ],
+            temperature: 0.2,
+            max_tokens: 800,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.links', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const parsed = safeParseJsonArray(reply);

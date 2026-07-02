@@ -12,8 +12,9 @@
  */
 
 import { CharacterProfile, UserProfile, DateScene, DateWorldline, DateMessage } from '../types';
-import { safeFetchJson, extractJson } from './safeApi';
+import { extractJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 export interface DateApiConfig { baseUrl: string; apiKey: string; model: string }
 
@@ -123,25 +124,19 @@ export async function runDateTurn(
     const isFirstTurn = worldline.messages.length === 0;
     const prompt = buildDateTurnPrompt(char, user, scene, worldline, userSpeech, userAction, isFirstTurn);
     try {
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({
-                    model: api.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.9,
-                    max_tokens: 1500,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('date.worldEngine', {
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.9,
+            max_tokens: 1500,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('date.worldEngine', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'aux',
             }),
-        );
+        });
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = extractJson(raw);
         if (!parsed) return null;
@@ -178,19 +173,19 @@ ${prior}
 
 要求：120-220 字，写清楚——他们去了哪/做了什么、关系/情绪推进到哪一步、有没有埋下能延续的小线索。第三人称、客观、别加评价。只输出这段记录。`;
     try {
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 600, stream: false }),
-            },
-            2, 0, makeApiUsageMeta('date.summary', {
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5,
+            max_tokens: 600,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('date.summary', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'aux',
             }),
-        );
+        });
         const txt = (data.choices?.[0]?.message?.content || '').trim();
         return txt.length >= 10 ? txt : null;
     } catch (e: any) {

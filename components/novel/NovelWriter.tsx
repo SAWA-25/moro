@@ -7,7 +7,9 @@ import {
     buildPrompt, parsePersonaMarkdown
 } from '../../utils/novelUtils';
 import { useOS } from '../../context/OSContext';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
+import { callChatCompletion } from '../../utils/llmClient';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import {
     PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, GRID_BG, LINES_BG,
     Tape, Stitch, Cut, Kicker, BackSticker, IconStamp, InkButton, Chip, TypingDots,
@@ -206,17 +208,25 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
             const prompt = buildPrompt(char, userProfile, activeBook, userPrompt, storyContext, genOptions, contextSegments, characters);
             const temperature = 0.85;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }], temperature, max_tokens: 8000 })
+            const data = await callChatCompletion(apiConfig, {
+                model: apiConfig.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature,
+                max_tokens: 8000,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('creative.novel', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: apiConfig.apiRole || 'aux',
+                    apiBinding: apiConfig.apiBinding || '小说续写',
+                }),
             });
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
+            {
                 if (data.usage?.total_tokens) setLastTokenUsage(data.usage.total_tokens);
 
-                let content = data.choices[0].message.content.trim();
+                let content = (extractContent(data) || '').trim();
                 const originalRaw = content;
                 content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
                 const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -243,7 +253,7 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
                     updateNovel(activeBook.id, { segments: next });
                     return next;
                 });
-            } else { throw new Error(`API Error: ${response.status}`); }
+            }
         } catch (e: any) { addToast('没写出来：' + e.message, 'error'); } finally { setIsTyping(false); }
     };
 
@@ -358,16 +368,18 @@ ${chapterText.substring(0, 200000)}
 6. **写作格式**：使用清晰的结构化格式（可以分段或使用标记），让后续章节的AI仅凭此总结就能无缝衔接创作。
 
 请直接输出总结内容，不需要JSON格式。`;
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }] })
+            const data = await callChatCompletion(apiConfig, {
+                model: apiConfig.model,
+                messages: [{ role: "user", content: prompt }],
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('creative.novel', {
+                    apiRole: apiConfig.apiRole || 'aux',
+                    apiBinding: apiConfig.apiBinding || '章节总结',
+                }),
             });
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                setSummaryContent(data.choices[0].message.content);
-            } else { setSummaryContent('生成失败，请重试。'); }
+            setSummaryContent(extractContent(data) || '生成失败，请重试。');
         } catch (e: any) { setSummaryContent(`错误: ${e.message}`); } finally { setIsGeneratingSummary(false); }
     };
 

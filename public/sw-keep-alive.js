@@ -1280,6 +1280,54 @@ async function removeQueuedRequest(id) {
   });
 }
 
+// utils/openAiCompat.ts
+var ENDPOINT_SUFFIXES = [
+  /\/chat\/completions\/?$/i,
+  /\/models\/?$/i,
+  /\/images\/generations\/?$/i,
+  /\/embeddings\/?$/i
+];
+function normalizeOpenAiBaseUrl(baseUrl) {
+  let value = (baseUrl || "").trim();
+  if (!value) return "";
+  value = value.replace(/[?#].*$/, "").replace(/\/+$/, "");
+  for (const suffix of ENDPOINT_SUFFIXES) {
+    value = value.replace(suffix, "").replace(/\/+$/, "");
+  }
+  try {
+    const url = new URL(value);
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/v1";
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+  }
+  return value;
+}
+function buildOpenAiEndpoint(baseUrl, endpoint) {
+  const base = normalizeOpenAiBaseUrl(baseUrl);
+  const suffix = endpoint === "chat.completions" ? "chat/completions" : endpoint === "images.generations" ? "images/generations" : endpoint;
+  return `${base}/${suffix}`;
+}
+function buildOpenAiHeaders(apiKey, extra) {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${(apiKey || "").trim() || "sk-none"}`,
+    ...extra || {}
+  };
+}
+function extractApiErrorMessage(data, fallback) {
+  const value = data;
+  const candidates = [
+    value?.error?.message,
+    typeof value?.error === "string" ? value.error : void 0,
+    value?.message,
+    value?.detail,
+    value?.details
+  ];
+  return candidates.find((v) => typeof v === "string" && !!v.trim()) || fallback;
+}
+
 // utils/swProactiveBridge.ts
 var DB_NAME = "MoroProactiveSW";
 var DB_VERSION = 1;
@@ -1345,8 +1393,56 @@ async function swMarkGenerated(charId, ts) {
   snap.lastGenAt = ts;
   await swPutSnapshot(snap);
 }
+function parseHHmm(value, fallback) {
+  const m = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const h = Math.max(0, Math.min(23, parseInt(m[1], 10)));
+  const min = Math.max(0, Math.min(59, parseInt(m[2], 10)));
+  return h * 60 + min;
+}
+function swResolveQuietHours(snap, now = Date.now()) {
+  const q = snap.proactiveV2?.quietHours;
+  if (!q?.enabled) return { active: false, behavior: "send" };
+  const start = parseHHmm(q.start, 23 * 60);
+  const end = parseHHmm(q.end, 7 * 60);
+  const d = new Date(now);
+  const cur = d.getHours() * 60 + d.getMinutes();
+  const active = start === end ? false : start < end ? cur >= start && cur < end : cur >= start || cur < end;
+  return { active, behavior: q.behavior || "life_only" };
+}
+function swShouldGenerateProactive(snap, now = Date.now()) {
+  if (!snap?.enabled) return { ok: false, reason: "disabled" };
+  if (!snap.api?.baseUrl || !snap.api?.model) return { ok: false, reason: "missing_api" };
+  if (snap.updatedAt && now - snap.updatedAt > 48 * 60 * 60 * 1e3) return { ok: false, reason: "stale_snapshot" };
+  const quiet = swResolveQuietHours(snap, now);
+  if (quiet.active && quiet.behavior !== "send") return { ok: false, reason: `quiet_hours_${quiet.behavior}` };
+  return { ok: true, reason: "ok" };
+}
+function formatLifeEventsForPrompt(events) {
+  const picked = (events || []).filter((e) => e && e.activity).slice(-5);
+  if (picked.length === 0) return "";
+  const lines = picked.map((e) => {
+    const d = new Date(e.timestamp);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const tags = [e.eventKind, e.energy, e.proactiveAngle, e.thread ? `\u7EBF\u7D22:${e.thread}` : ""].filter(Boolean).join(" / ");
+    return `- ${hh}:${mm}${e.location ? `\uFF08${e.location}\uFF09` : ""}\uFF1A${e.activity}${e.mood ? `\uFF0C${e.mood}` : ""}${tags ? `\uFF08${tags}\uFF09` : ""}`;
+  });
+  return `
+\u4F60\u6700\u8FD1\u81EA\u5DF1\u7684\u751F\u6D3B\u5207\u7247\uFF08\u4E0D\u662F\u6C47\u62A5\u7D20\u6750\uFF0C\u8981\u538B\u6210\u4E00\u53E5\u771F\u5B9E\u6D88\u606F\uFF09\uFF1A
+${lines.join("\n")}
+`;
+}
 function swBuildMessages(snap) {
-  const msgs = [{ role: "system", content: snap.systemPrompt }];
+  const v2 = snap.proactiveV2;
+  const v2Prompt = [
+    formatLifeEventsForPrompt(snap.lifeEvents),
+    v2?.messageFlavor ? `\u6765\u4FE1\u53E3\u5473\uFF1A${v2.messageFlavor}\u3002` : "",
+    v2?.materialSources?.length ? `\u5141\u8BB8\u53D6\u6750\uFF1A${v2.materialSources.join("\u3001")}\u3002` : "",
+    "\u4E0D\u8981\u5199\u6210\u201C\u6211\u4ECA\u5929\u505A\u4E86A/B/C\u201D\u7684\u6D41\u6C34\u8D26\uFF1B\u53EA\u8F93\u51FA\u4E00\u6761\u4F1A\u771F\u7684\u53D1\u8FDB\u804A\u5929\u6846\u7684\u6D88\u606F\u6B63\u6587\u3002"
+  ].filter(Boolean).join("\n");
+  const msgs = [{ role: "system", content: `${snap.systemPrompt}${v2Prompt ? `
+${v2Prompt}` : ""}` }];
   for (const m of snap.recentMessages || []) {
     if (!m || !m.content) continue;
     msgs.push({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 500) });
@@ -1355,20 +1451,20 @@ function swBuildMessages(snap) {
   return msgs;
 }
 async function swCallLLM(api, messages, maxTokens = 400, signal) {
-  const baseUrl = (api.baseUrl || "").replace(/\/+$/, "");
+  const baseUrl = (api.baseUrl || "").trim();
   if (!baseUrl || !api.model) return "";
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(buildOpenAiEndpoint(baseUrl, "chat.completions"), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${api.apiKey || "sk-none"}`
-      },
+      headers: buildOpenAiHeaders(api.apiKey),
       body: JSON.stringify({ model: api.model, messages, temperature: 0.92, max_tokens: maxTokens, stream: false }),
       signal
     });
-    if (!res.ok) return "";
-    const data = await res.json();
+    const data = await res.json().catch(async () => ({ message: await res.text().catch(() => "") }));
+    if (!res.ok) {
+      console.warn("[swProactiveBridge] LLM failed:", extractApiErrorMessage(data, `HTTP ${res.status}`));
+      return "";
+    }
     return data?.choices?.[0]?.message?.content || "";
   } catch {
     return "";
@@ -1509,6 +1605,11 @@ async function generateProactiveInSW(charId) {
   try {
     const snap = await swReadSnapshot(charId);
     if (!snap || !snap.enabled || !snap.api?.baseUrl || !snap.api?.model) return;
+    const guard = swShouldGenerateProactive(snap, now);
+    if (!guard.ok) {
+      traceSw("proactive-sw-skipped", void 0, { charId, reason: guard.reason });
+      return;
+    }
     const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
     if (!text) return;
     const ts = Date.now();

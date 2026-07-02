@@ -1234,7 +1234,7 @@ export async function sendTestInstantPush(
   }
 
   // amsg-instant 0.4.0+ runs normalizeAiApiUrl Worker-side; we can forward
-  // apiConfig.baseUrl as-is (root / /v1 / full /chat/completions all accepted).
+  // apiConfig.baseUrl as-is (root / /v1 / full chat endpoint all accepted).
   //
   // metadata.test = true 让 SW push handler 绕过"前台跳过 showNotification"
   // 逻辑 — 测试就是要看到通知, 不能被前台静默吃掉.

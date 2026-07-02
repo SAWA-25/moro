@@ -3,9 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile } from '../types';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import BankShopScene from '../components/bank/BankShopScene';
 import BankDollhouse from '../components/bank/BankDollhouse';
 import BankGameMenu from '../components/bank/BankGameMenu';
@@ -922,7 +924,7 @@ const BankApp: React.FC = () => {
             const randomChar = pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
             let newEntries: BankGuestbookItem[] | null = null;
 
-            if (auxApi.apiKey && randomChar) {
+            if (auxApi.baseUrl && auxApi.model && randomChar) {
                 try {
                     await injectMemoryPalace(randomChar);
                     const charContext = ContextBuilder.buildCoreContext(randomChar, userProfile, true);
@@ -955,27 +957,31 @@ ${previousGuestbook}
 ]
 `;
 
-                    const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                        body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] })
+                    const data = await callChatCompletion(auxApi, {
+                        model: auxApi.model,
+                        messages: [{ role: 'user', content: prompt }],
+                        stream: false,
+                    }, {
+                        meta: makeApiUsageMeta('bank.lifeAi', {
+                            charId: randomChar.id,
+                            charName: randomChar.name,
+                            apiRole: auxApi.apiRole || 'aux',
+                            apiBinding: auxApi.apiBinding || '留言簿',
+                        }),
                     });
 
-                    if (response.ok) {
-                        const data = await safeResponseJson(response);
-                        const jsonStr = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
-                        const result = JSON.parse(jsonStr);
-                        newEntries = result.map((item: any) => ({
-                            id: `gb-${Date.now()}-${Math.random()}`,
-                            authorName: item.authorName,
-                            content: item.content,
-                            isChar: item.isChar,
-                            charId: item.isChar ? randomChar.id : undefined,
-                            avatar: item.isChar ? randomChar.avatar : undefined,
-                            timestamp: Date.now(),
-                            systemMessageId: undefined,
-                        }));
-                    }
+                    const jsonStr = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
+                    const result = JSON.parse(jsonStr);
+                    newEntries = result.map((item: any) => ({
+                        id: `gb-${Date.now()}-${Math.random()}`,
+                        authorName: item.authorName,
+                        content: item.content,
+                        isChar: item.isChar,
+                        charId: item.isChar ? randomChar.id : undefined,
+                        avatar: item.isChar ? randomChar.avatar : undefined,
+                        timestamp: Date.now(),
+                        systemMessageId: undefined,
+                    }));
                 } catch (e) {
                     console.warn('Guestbook AI failed, using local notes', e);
                 }
@@ -1413,14 +1419,14 @@ ${JSON.stringify(list, null, 2)}
 
 只输出 JSON 数组，每项 {"id":"原样照抄","text":"点评","rating":1到5整数}：`;
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] }),
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('bank.lifeAi', { apiRole: auxApi.apiRole || 'aux', apiBinding: auxApi.apiBinding || '顾客点评' }),
             });
-            if (!response.ok) return;
-            const data = await safeResponseJson(response);
-            const jsonStr = (data.choices?.[0]?.message?.content || '').replace(/```json/g, '').replace(/```/g, '').trim();
+            const jsonStr = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
             const parsed = JSON.parse(jsonStr);
             if (!Array.isArray(parsed)) return;
 
@@ -1645,8 +1651,8 @@ ${JSON.stringify(list, null, 2)}
         });
 
         // 客户评价交给 AI 后台润色：把模板评价改写得更多样、有个性，并据此微调星级（影响口碑）。
-        // 非阻塞——营业已即时出结果；没配 Key 或失败就沿用本地点评。
-        if (auxApi.apiKey && newReviews.length > 0) {
+        // 非阻塞——营业已即时出结果；没配 API 或失败就沿用本地点评。
+        if (auxApi.baseUrl && auxApi.model && newReviews.length > 0) {
             void enrichReviewsWithAI(newReviews, Array.from(itemMap.values()).map(it => it.name), level);
         }
     };

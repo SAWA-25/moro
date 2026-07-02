@@ -10,9 +10,10 @@
 
 import type { CharacterProfile, AuxApiConfig } from '../types';
 import { DB } from './db';
-import { resolveLifeApi } from './autonomousLife';
+import { formatMaterialSources, getMaterialSources, getMessageFlavor, getProactiveIntensity, resolveLifeApi, sanitizeLifeText } from './autonomousLife';
 import { ProactiveChat } from './proactiveChat';
 import { swPutSnapshot, swKeepOnly, swReadAll, type SwProactiveSnapshot } from './swProactiveBridge';
+import { swOfflineProactiveSystemPrompt } from './laiwangPrompts';
 
 interface MainApiLike { baseUrl?: string; apiKey?: string; model?: string }
 
@@ -58,6 +59,28 @@ async function currentActivity(charId: string): Promise<string> {
   }
 }
 
+async function recentLifeEvents(char: CharacterProfile): Promise<NonNullable<SwProactiveSnapshot['lifeEvents']>> {
+  try {
+    const events = await DB.getLifeEvents(char.id, 8);
+    return events.map(e => ({
+      timestamp: e.timestamp,
+      activity: sanitizeLifeText(e.activity) || e.activity,
+      mood: e.mood ? sanitizeLifeText(e.mood) : undefined,
+      location: e.location ? sanitizeLifeText(e.location) : undefined,
+      summary: e.summary ? sanitizeLifeText(e.summary) : undefined,
+      surfacedAsMsg: !!e.surfacedAsMsg,
+      eventKind: e.eventKind,
+      energy: e.energy,
+      intensity: e.intensity,
+      shareWillingness: e.shareWillingness,
+      thread: e.thread ? sanitizeLifeText(e.thread) : undefined,
+      proactiveAngle: e.proactiveAngle,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function buildSnapshot(
   char: CharacterProfile,
   auxApiConfig: AuxApiConfig | null | undefined,
@@ -81,12 +104,18 @@ async function buildSnapshot(
   } catch { /* ignore */ }
 
   const activity = await currentActivity(char.id);
+  const lifeEvents = await recentLifeEvents(char);
+  const materialSources = getMaterialSources(char);
   const systemPrompt = [
-    `你是「${char.name}」。请严格保持人设，不要出戏。`,
-    personaBrief(char),
-    activity ? `你现在大概在：${activity}` : '',
-    `现在是${describeNow(new Date())}。你主动拿起手机给对方发一条消息——不是回复，是你自己想起 TA、或想分享此刻的心情/正在做的事。`,
-    `要求：完全用「${char.name}」的口吻；自然、口语、简短（1~3 句，像真的在发微信）；可以聊你此刻在做的事；不要加引号、旁白、动作描写或任何方括号标记，只输出要发出去的消息正文本身。`,
+    swOfflineProactiveSystemPrompt({
+      charName: char.name,
+      personaText: personaBrief(char),
+      activity,
+      nowText: describeNow(new Date()),
+      userName: '对方',
+    }),
+    lifeEvents.length ? `你最近的生活不是空白的，下面快照会给你若干切片。主动消息要从这些切片里长出来，不要像总结。` : '',
+    `主动消息 v2：主动强度 ${getProactiveIntensity(char)}，来信口味 ${getMessageFlavor(char)}，允许取材 ${formatMaterialSources(char)}。`,
   ].filter(Boolean).join('\n');
 
   return {
@@ -98,6 +127,13 @@ async function buildSnapshot(
     systemPrompt,
     instruction: '（轮到你主动发消息了，直接写消息正文）',
     recentMessages,
+    lifeEvents,
+    proactiveV2: {
+      intensity: char.proactiveConfig?.intensity || 'balanced',
+      messageFlavor: char.proactiveConfig?.messageFlavor || 'natural',
+      materialSources,
+      quietHours: char.proactiveConfig?.quietHours,
+    },
     updatedAt: Date.now(),
   };
 }

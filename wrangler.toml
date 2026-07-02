@@ -1,0 +1,8 @@
+name = "moro-n"
+main = "worker/index.js"
+compatibility_date = "2026-01-01"
+account_id = "edd0f985cd2068333c3d7cea6516f3f9"
+
+# Root API Worker used by the default music/search/WebDAV/GitHub proxy URL.
+# Custom domains/routes such as sullymeow.ccwu.cc are managed in Cloudflare,
+# so this config intentionally does not hard-code routes.

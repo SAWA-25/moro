@@ -1,7 +1,7 @@
 /**
  * QQ 音乐连接面板
  * - 扫码登录 QQ 音乐网页登录态
- * - 登录成功后只保存 QQ 音乐账号信息，不替换网易云播放链路
+ * - 登录成功后用于 QQ 音乐主页、歌单、最近播放、歌词播放和红心收藏
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
@@ -75,12 +75,16 @@ const QQMusicLoginPanel: React.FC<Props> = ({ onBack, onConnected }) => {
     setTicket('');
     try {
       const r = await musicApi.qqLoginQrCreate(cfg);
-      if (!r.ticket || !r.qrImg) throw new Error(r.message || '没有拿到二维码');
-      setTicket(r.ticket);
-      setQrImg(r.qrImg);
+      const nextTicket = String(r.ticket || '').trim();
+      const nextQrImg = r.qrImg || '';
+      if (!nextTicket || !nextQrImg) {
+        throw new Error(r.message || 'QQ 音乐登录代理没有返回二维码，请更新 Worker 后重试');
+      }
+      setTicket(nextTicket);
+      setQrImg(nextQrImg);
       setStatus('waiting');
       pollRef.current = window.setInterval(() => {
-        void checkOnce(r.ticket).catch((e: any) => {
+        void checkOnce(nextTicket).catch((e: any) => {
           setDetail(e?.message || '轮询失败');
         });
       }, 2500);
@@ -137,7 +141,7 @@ const QQMusicLoginPanel: React.FC<Props> = ({ onBack, onConnected }) => {
               </button>
             )}
             <div className="text-[9px] mt-2 italic max-w-[240px] mx-auto" style={{ color: C.faint }}>
-              连接会先确认你的 QQ 账号态，再用于 QQ 音乐相关能力；现有播放和搜索仍按当前音乐源工作。
+              连接会先确认你的 QQ 账号态，再用于 QQ 音乐主页、歌单、最近播放和红心收藏。
             </div>
             {ticket && (
               <div className="text-[8px] mt-2 font-mono opacity-60" style={{ color: C.faint }}>

@@ -25,8 +25,9 @@ import { createLifeSimResetCardData } from '../utils/lifeSimChatCard';
 import { buildFallbackLifeSimSessionSummary, buildLifeSimSessionSummaryPrompt } from '../utils/lifeSimSessionSummary';
 import { getLifeSimToneEmoji } from '../utils/lifeSimTone';
 // Offline simulation removed — random events didn't match the theme
-import { extractJson, safeFetchJson } from '../utils/safeApi';
+import { extractContent, extractJson } from '../utils/safeApi';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { callChatCompletion } from '../utils/llmClient';
 import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
@@ -82,29 +83,39 @@ const SEASON_SCRAP: Record<string, { accent: string; tape: string; tape2: string
 
 const AI_MAX_RETRIES = 2;
 
+interface LifeSimApiConfig {
+    baseUrl: string;
+    apiKey?: string;
+    model: string;
+    apiRole?: string;
+    apiBinding?: string;
+}
+
 async function callCharAI(
-    apiConfig: { baseUrl: string; apiKey: string; model: string },
-    systemPrompt: string
+    apiConfig: LifeSimApiConfig,
+    systemPrompt: string,
+    usage: { featureId?: string; apiBinding?: string; charId?: string; charName?: string } = {}
 ): Promise<string> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= AI_MAX_RETRIES; attempt++) {
         try {
-            const data = await safeFetchJson(
-                `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                    body: JSON.stringify({
-                        model: apiConfig.model,
-                        messages: [{ role: 'user', content: systemPrompt }],
-                        temperature: 0.85, max_tokens: 8192, stream: false,
-                        response_format: { type: 'json_object' },
-                    }),
-                },
-                2, 0, makeApiUsageMeta('date.scene', { apiRole: 'aux', apiBinding: '街角剧情生成' })
-            );
-            return data?.choices?.[0]?.message?.content?.trim() || '';
+            const data = await callChatCompletion(apiConfig, {
+                model: apiConfig.model,
+                messages: [{ role: 'user', content: systemPrompt }],
+                temperature: 0.85,
+                max_tokens: 8192,
+                stream: false,
+                response_format: { type: 'json_object' },
+            }, {
+                meta: makeApiUsageMeta(usage.featureId || 'date.scene', {
+                    charId: usage.charId,
+                    charName: usage.charName,
+                    apiRole: apiConfig.apiRole || 'aux',
+                    apiBinding: apiConfig.apiBinding || usage.apiBinding || '街角剧情生成',
+                }),
+            });
+            return (extractContent(data) || '').trim();
         } catch (e: any) {
             const isNetwork = e?.name === 'AbortError' || e?.message?.includes('fetch') || e?.message?.includes('network') || e?.message?.includes('aborted');
             lastError = e;
@@ -146,6 +157,16 @@ const LifeSimApp: React.FC = () => {
     const [actionPanel, setActionPanel] = useState<'none'|'stir'|'add'>('none');
 
     // ── 初始化 ──────────────────────────────────────────────────
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('moro_date_intent_v1');
+            if (!raw) return;
+            const intent = JSON.parse(raw);
+            localStorage.removeItem('moro_date_intent_v1');
+            if (intent?.from === 'couple') setShowDate(true);
+        } catch { /* ignore */ }
+    }, []);
 
     useEffect(() => {
         async function init() {
@@ -205,6 +226,8 @@ const LifeSimApp: React.FC = () => {
             baseUrl: override.baseUrl?.trim() || auxApi.baseUrl,
             apiKey: override.apiKey?.trim() || auxApi.apiKey,
             model: override.model?.trim() || auxApi.model,
+            apiRole: 'custom',
+            apiBinding: '街角独立 API',
         };
     }, [auxApi]);
 
@@ -217,12 +240,13 @@ const LifeSimApp: React.FC = () => {
 
         try {
             let decision = fallback;
-            const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+            const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
             if (canUseApi) {
                 const raw = await callCharAI(
-                    { baseUrl: resolvedApiConfig.baseUrl, apiKey: resolvedApiConfig.apiKey, model: resolvedApiConfig.model },
-                    buildWorldDramaPlannerPrompt(userProfile, state, state.actionLog)
+                    resolvedApiConfig,
+                    buildWorldDramaPlannerPrompt(userProfile, state, state.actionLog),
+                    { featureId: 'date.worldEngine', apiBinding: '街角主线编剧' },
                 );
                 let rawJson = extractJson(raw);
                 if (Array.isArray(rawJson)) rawJson = rawJson[0];
@@ -436,7 +460,7 @@ const LifeSimApp: React.FC = () => {
         let s = deepClone(initialState);
         const replayActions: SimAction[] = [...seededReplayActions];
         const resolvedApiConfig = resolveLifeSimApiConfig(initialState);
-        const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+        const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
         for (const charId of s.charQueue) {
             const char = characters.find(c => c.id === charId);
@@ -457,8 +481,9 @@ const LifeSimApp: React.FC = () => {
                     await injectMemoryPalace(char, undefined, chatHistory || undefined);
                     const systemPrompt = buildCharTurnSystemPrompt(char, userProfile, chatHistory, s, s.actionLog);
                     const raw = await callCharAI(
-                        { baseUrl: resolvedApiConfig.baseUrl, apiKey: resolvedApiConfig.apiKey, model: resolvedApiConfig.model },
-                        systemPrompt
+                        resolvedApiConfig,
+                        systemPrompt,
+                        { featureId: 'date.scene', apiBinding: '街角角色回合', charId: char.id, charName: char.name },
                     );
 
                     rawJson = extractJson(raw);
@@ -785,12 +810,13 @@ const LifeSimApp: React.FC = () => {
 
         try {
             let summary = fallbackSummary;
-            const canUseApi = !!(userProfile && resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+            const canUseApi = !!(userProfile && resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
             if (canUseApi && userProfile) {
                 const raw = await callCharAI(
-                    { baseUrl: resolvedApiConfig.baseUrl, apiKey: resolvedApiConfig.apiKey, model: resolvedApiConfig.model },
-                    buildLifeSimSessionSummaryPrompt(userProfile, participantNames, gameState.actionLog)
+                    resolvedApiConfig,
+                    buildLifeSimSessionSummaryPrompt(userProfile, participantNames, gameState.actionLog),
+                    { featureId: 'date.summary', apiBinding: '街角会话总结' },
                 );
                 let rawJson = extractJson(raw);
                 if (Array.isArray(rawJson)) rawJson = rawJson[0];

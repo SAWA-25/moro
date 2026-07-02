@@ -1,16 +1,41 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneProfile, SocialPost } from '../types';
+import { CharacterProfile, PhoneCheckMode, PhoneCheckSession, PhoneEvidence, PhoneCustomApp, PhoneProfile, SocialPost, XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { buildPhoneCityHint } from '../utils/charCity';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { evaluatePhoneLockSubmission, isPhoneLocked, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
+import {
+    CHECK_PHONE_APP_DEFS,
+    CHECK_PHONE_MODE_LABELS,
+    buildCheckPhoneRecordPrompt,
+    buildCheckPhoneStatusSummary,
+    buildEvidenceConfrontText,
+    buildPhoneCheckSessionSummary,
+    calculatePhoneCheckRisk,
+    createPhoneCheckSession,
+    estimatePhoneCheckAwareness,
+    getCheckPhoneAppDefinition,
+    makePhoneCheckAction,
+    mapXunjiToPhoneEvidence,
+    mergePhoneEvidenceRecords,
+    parsePhoneEvidenceJson,
+    summarizeEvidenceTrail,
+    systemMessageForPhoneEvidence,
+} from '../utils/checkPhone';
+import {
+    DEFAULT_XUNJI_REPORT_RULES,
+    generateXunjiMonitorSnapshot,
+    generateXunjiRealtimeSnapshot,
+    generateXunjiReports,
+} from '../utils/xunji';
 import {
     User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
     NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
@@ -33,21 +58,26 @@ const paletteFor = (char: CharacterProfile | null): PhoneTheme => PHONE_PALETTES
 
 // ── 可检查的全套 App（每个 App 一类记录，统一走 LLM 取数） ──
 interface CatalogApp { key: string; type: string; name: string; Icon: React.FC<any>; tint: string; logPrefix: string; instruction?: string; cityHint?: boolean }
-const APP_CATALOG: CatalogApp[] = [
-    { key: 'chat',    type: 'chat',     name: '信息',   Icon: ChatCircleDots,      tint: '#34d399', logPrefix: '聊天软件' },
-    { key: 'call',    type: 'call',     name: '电话',   Icon: Phone,               tint: '#60a5fa', logPrefix: '通话记录' },
-    { key: 'taobao',  type: 'order',    name: '购物',   Icon: ShoppingBag,         tint: '#fb923c', logPrefix: '购物APP', cityHint: true },
-    { key: 'waimai',  type: 'delivery', name: '外卖',   Icon: Hamburger,           tint: '#f59e0b', logPrefix: '外卖APP', cityHint: true },
-    { key: 'social',  type: 'social',   name: '动态',   Icon: CircleNotch,         tint: '#f472b6', logPrefix: '朋友圈' },
-    { key: 'notes',   type: 'notes',    name: '备忘录', Icon: NotePencil,          tint: '#fbbf24', logPrefix: '备忘录',   instruction: '生成 3 条该角色备忘录/便签里的内容（待办、随手记、藏起来的心事、清单等，贴人设）。\n格式JSON数组: [{ "title": "便签标题", "detail": "内容" }]' },
-    { key: 'wallet',  type: 'wallet',   name: '钱包',   Icon: Wallet,              tint: '#4ade80', logPrefix: '钱包',     instruction: '生成该角色钱包里的账户余额 + 2~3 笔最近收支（金额必须符合人设身份）。\n格式JSON数组: [{ "title": "项目(如 账户余额/某笔支出)", "detail": "说明", "value": "金额(如 ¥1,280 / -¥68)" }]' },
-    { key: 'album',   type: 'album',    name: '相册',   Icon: ImageSquare,         tint: '#22d3ee', logPrefix: '相册',     instruction: '生成 3~4 条该角色相册里照片的文字描述（拍了什么、当时的场景与心情，贴人设）。\n格式JSON数组: [{ "title": "照片主题", "detail": "画面与心情描述" }]' },
-    { key: 'music',   type: 'music',    name: '音乐',   Icon: MusicNotes,          tint: '#a78bfa', logPrefix: '音乐',     instruction: '生成该角色最近在听的 3~4 首歌（歌名+歌手+为什么循环它，贴人设与近期心境）。\n格式JSON数组: [{ "title": "歌名 - 歌手", "detail": "为什么在听/循环了多少次" }]' },
-    { key: 'browser', type: 'browser',  name: '浏览',   Icon: GlobeHemisphereWest, tint: '#38bdf8', logPrefix: '浏览记录', instruction: '生成 3~4 条该角色最近的浏览器搜索/浏览记录（搜了什么，能侧面透出 TA 的关心或小秘密，贴人设）。\n格式JSON数组: [{ "title": "搜索词/网页标题", "detail": "备注" }]' },
-    { key: 'map',     type: 'map',      name: '地图',   Icon: Compass,             tint: '#14b8a6', logPrefix: '地图足迹', cityHint: true, instruction: '生成 3~4 条该角色最近在地图/定位/打车软件里的地点记录（去过哪里、收藏了什么地点、搜过哪条路线）。地点要贴合角色城市与人设，不要都写景点。\n格式JSON数组: [{ "title": "地点/路线", "detail": "为什么出现这条记录/时间/备注" }]' },
-    { key: 'health',  type: 'health',   name: '健康',   Icon: Heartbeat,           tint: '#f87171', logPrefix: '健康',     instruction: '生成该角色今天的健康数据（步数、睡眠、心率等 3~4 项，数值贴人设作息）。\n格式JSON数组: [{ "title": "指标(如 今日步数)", "detail": "说明", "value": "数值" }]' },
-    { key: 'calendar',type: 'calendar', name: '日历',   Icon: CalendarBlank,       tint: '#fb7185', logPrefix: '日历',     instruction: '生成 3~4 条该角色日历上的日程/待办（贴人设的工作、约会、提醒）。\n格式JSON数组: [{ "title": "事项", "detail": "时间/地点/备注" }]' },
-];
+const APP_UI: Record<string, { Icon: React.FC<any>; tint: string }> = {
+    chat: { Icon: ChatCircleDots, tint: '#34d399' },
+    call: { Icon: Phone, tint: '#60a5fa' },
+    order: { Icon: ShoppingBag, tint: '#fb923c' },
+    delivery: { Icon: Hamburger, tint: '#f59e0b' },
+    social: { Icon: CircleNotch, tint: '#f472b6' },
+    notes: { Icon: NotePencil, tint: '#fbbf24' },
+    wallet: { Icon: Wallet, tint: '#4ade80' },
+    album: { Icon: ImageSquare, tint: '#22d3ee' },
+    music: { Icon: MusicNotes, tint: '#a78bfa' },
+    browser: { Icon: GlobeHemisphereWest, tint: '#38bdf8' },
+    map: { Icon: Compass, tint: '#14b8a6' },
+    health: { Icon: Heartbeat, tint: '#f87171' },
+    calendar: { Icon: CalendarBlank, tint: '#fb7185' },
+};
+const APP_CATALOG: CatalogApp[] = CHECK_PHONE_APP_DEFS.map(app => ({
+    ...app,
+    Icon: APP_UI[app.type]?.Icon || GearSix,
+    tint: APP_UI[app.type]?.tint || '#64748b',
+}));
 const catalogByType = (type: string): CatalogApp | undefined => APP_CATALOG.find(a => a.type === type);
 
 const TwemojiImg: React.FC<{ code: string; alt?: string; className?: string }> = ({ code, alt, className = 'w-4 h-4 inline-block' }) => (
@@ -126,6 +156,13 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const [phoneLockExitCode, setPhoneLockExitCode] = useState('');
     const [phoneLockExitError, setPhoneLockExitError] = useState('');
     const [phoneLockExitBusy, setPhoneLockExitBusy] = useState(false);
+    const [xunjiSnapshot, setXunjiSnapshot] = useState<XunjiMonitorSnapshot | null>(null);
+    const [xunjiRun, setXunjiRun] = useState<XunjiScreenlifeRun | null>(null);
+    const [xunjiReports, setXunjiReports] = useState<XunjiReportItem[]>([]);
+    const [isRefreshingPhoneStatus, setIsRefreshingPhoneStatus] = useState(false);
+    const [evidenceBasket, setEvidenceBasket] = useState<PhoneEvidence[]>([]);
+    const [checkMode, setCheckMode] = useState<PhoneCheckMode>('life');
+    const [phoneCheckSession, setPhoneCheckSession] = useState<PhoneCheckSession | null>(null);
 
     // Debug Toggle
     const [showDebug, setShowDebug] = useState(false);
@@ -133,10 +170,19 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const [isDecorating, setIsDecorating] = useState(false);
 
     // Derived state for evidence records
-    const records = targetChar?.phoneState?.records || [];
+    const storedRecords = targetChar?.phoneState?.records || [];
+    const xunjiRecords = useMemo(
+        () => mapXunjiToPhoneEvidence({ run: xunjiRun, snapshot: xunjiSnapshot, reports: xunjiReports }),
+        [xunjiRun?.id, xunjiSnapshot?.id, xunjiReports.map(r => r.id).join('|')]
+    );
+    const records = useMemo(
+        () => mergePhoneEvidenceRecords(storedRecords, xunjiRecords),
+        [storedRecords, xunjiRecords]
+    );
     const customApps = targetChar?.phoneState?.customApps || [];
     const phoneProfile: PhoneProfile = targetChar?.phoneState?.profile || {};
     const activePhoneLock = isPhoneLocked(targetChar?.phoneState?.lock) ? targetChar?.phoneState?.lock : null;
+    const phoneStatus = useMemo(() => buildCheckPhoneStatusSummary(xunjiSnapshot), [xunjiSnapshot?.id, xunjiSnapshot?.generatedAt]);
 
     // 角色专属手机皮肤：确定性配色 + 可选 LLM 装点覆盖
     const theme = useMemo<PhoneTheme>(() => {
@@ -150,13 +196,103 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const deviceName = phoneProfile.deviceName || (targetChar ? `${targetChar.name} 的手机` : '手机');
     const tagline = phoneProfile.tagline || '一台属于 TA 的手机';
 
+    const persistPhoneCheckSession = (updater: (prev: PhoneCheckSession) => PhoneCheckSession) => {
+        setPhoneCheckSession(prev => {
+            if (!prev) return prev;
+            const next = updater(prev);
+            void DB.savePhoneCheckSession(next);
+            return next;
+        });
+    };
+
+    const recordPhoneCheckAction = (input: Parameters<typeof makePhoneCheckAction>[0]) => {
+        persistPhoneCheckSession(prev => ({
+            ...prev,
+            actions: [...prev.actions, makePhoneCheckAction(input)],
+        }));
+    };
+
+    const finalizePhoneCheckSession = (exitMode: PhoneCheckSession['exitMode'], extraSummary?: string) => {
+        persistPhoneCheckSession(prev => {
+            if (prev.status !== 'active') return prev;
+            const endedAt = Date.now();
+            const base = buildPhoneCheckSessionSummary(prev, targetChar?.name, userProfile.name || '用户');
+            const next: PhoneCheckSession = {
+                ...prev,
+                endedAt,
+                exitMode,
+                status: exitMode === 'caught' || exitMode === 'forced' ? 'interrupted' : 'finished',
+                summary: [base, extraSummary].filter(Boolean).join('\n'),
+                actions: [...prev.actions, makePhoneCheckAction({
+                    type: 'exit',
+                    label: `查岗结束：${exitMode || 'manual'}`,
+                    detail: extraSummary,
+                    riskDelta: 0,
+                    at: endedAt,
+                })],
+            };
+            void DB.prunePhoneCheckSessions(prev.charId);
+            return next;
+        });
+    };
+
+    const switchCheckMode = (mode: PhoneCheckMode) => {
+        setCheckMode(mode);
+        persistPhoneCheckSession(prev => ({
+            ...prev,
+            mode,
+            actions: [...prev.actions, makePhoneCheckAction({
+                type: 'browse_step',
+                label: `切换查岗模式：${CHECK_PHONE_MODE_LABELS[mode]}`,
+                riskDelta: 0,
+            })],
+        }));
+    };
+
+    useEffect(() => {
+        if (!targetChar) {
+            setPhoneCheckSession(null);
+            return;
+        }
+        const session = createPhoneCheckSession({
+            direction: 'user_to_char',
+            charId: targetChar.id,
+            charName: targetChar.name,
+            userName: userProfile.name || '用户',
+            mode: checkMode,
+            statusSnapshot: phoneStatus || null,
+        });
+        setPhoneCheckSession(session);
+        void DB.savePhoneCheckSession(session);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [targetChar?.id]);
+
+    useEffect(() => {
+        if (!phoneStatus) return;
+        persistPhoneCheckSession(prev => ({ ...prev, statusSnapshot: phoneStatus }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phoneStatus?.generatedAt]);
+
     // 把一条记录框成「对峙台词」抛进剧情
     const confrontWith = (record: PhoneEvidence) => {
         if (!onConfront || !targetChar) return;
-        const appName = catalogByType(record.type)?.name || customApps.find(a => a.id === record.type)?.name || '手机';
+        const appName = record.meta?.appName || getCheckPhoneAppDefinition(record.type)?.name || catalogByType(record.type)?.name || customApps.find(a => a.id === record.type)?.name || '手机';
         const framed = record.type === 'chat'
             ? `（我翻了你的手机，看到你和「${record.title}」的聊天：\n${record.detail}）\n——这是怎么回事？你跟我说清楚。`
             : `（我翻了你的手机，看到${appName}里这条：「${record.title}」${record.detail ? ` — ${record.detail}` : ''}${record.value ? `（${record.value}）` : ''}）\n——你解释一下吧。`;
+        recordPhoneCheckAction({
+            type: 'confront',
+            label: `拿「${record.title}」去对峙`,
+            detail: framed.slice(0, 500),
+            app: appName,
+            recordId: record.id,
+            risk: record.meta?.risk,
+        });
+        persistPhoneCheckSession(prev => ({
+            ...prev,
+            evidence: prev.evidence.some(item => item.id === record.id) ? prev.evidence : [...prev.evidence, record].slice(-24),
+        }));
+        finalizePhoneCheckSession('confront', `对峙线索：${appName}「${record.title}」`);
         onConfront(framed);
     };
 
@@ -179,6 +315,45 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     useEffect(() => {
         window.scrollTo(0, 0);
     }, [activeAppId, view]);
+
+    useEffect(() => {
+        if (!targetChar) {
+            setXunjiSnapshot(null);
+            setXunjiRun(null);
+            setXunjiReports([]);
+            setEvidenceBasket([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const [snapshot, runs, reports] = await Promise.all([
+                    DB.getLatestXunjiSnapshot(targetChar.id),
+                    DB.getXunjiRuns(targetChar.id, 1),
+                    DB.getXunjiReports(targetChar.id, 8),
+                ]);
+                if (cancelled) return;
+                const fallbackSnapshot = snapshot || generateXunjiMonitorSnapshot({
+                    char: targetChar,
+                    seed: `${targetChar.id}_check_phone_fallback`,
+                });
+                setXunjiSnapshot(fallbackSnapshot);
+                setXunjiRun(runs[0] || null);
+                setXunjiReports(reports || []);
+            } catch (error) {
+                console.warn('[CheckPhone] failed to load xunji state:', error);
+                if (!cancelled) {
+                    setXunjiSnapshot(generateXunjiMonitorSnapshot({
+                        char: targetChar,
+                        seed: `${targetChar.id}_check_phone_local`,
+                    }));
+                    setXunjiRun(null);
+                    setXunjiReports([]);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [targetChar?.id]);
 
     // Auto scroll to bottom of chat detail
     // NOTE: Do NOT use scrollIntoView - it propagates to page scroll on mobile, shifting the entire layout up
@@ -206,6 +381,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     }, [initialCharId]);
 
     const handleExitPhone = () => {
+        finalizePhoneCheckSession('manual');
         if (onExit) { onExit(); return; }
         setView('select');
         setTargetChar(null);
@@ -264,6 +440,11 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
 
     const handleDeleteRecord = async (record: PhoneEvidence) => {
         if (!targetChar) return;
+        if (isXunjiRecord(record)) {
+            setEvidenceBasket(prev => prev.filter(item => item.id !== record.id));
+            addToast('循迹线索来自最近手机状态，不能在这里删除', 'info');
+            return;
+        }
         
         const newRecords = (targetChar.phoneState?.records || []).filter(r => r.id !== record.id);
         updateCharacter(targetChar.id, { 
@@ -280,6 +461,17 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         }
 
         addToast('记录已删除', 'success');
+        recordPhoneCheckAction({
+            type: 'delete_record',
+            label: `删除 ${record.meta?.appName || record.type} 记录`,
+            detail: `${record.title} / ${record.detail.slice(0, 160)}`,
+            app: record.meta?.appName || record.type,
+            recordId: record.id,
+            risk: 'suspicious',
+        });
+        if (onConfront) {
+            await judgeIntrusion('删除 TA 手机里的记录', `${record.title} / ${record.detail.slice(0, 120)}`);
+        }
     };
 
     const handleDeleteApp = (appId: string) => {
@@ -314,17 +506,117 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         addToast(`已安装 ${newAppName}`, 'success');
     };
 
+    const handleRefreshPhoneStatus = async () => {
+        if (!targetChar) return;
+        setIsRefreshingPhoneStatus(true);
+        try {
+            const nextSnapshot = await generateXunjiRealtimeSnapshot({
+                char: targetChar,
+                previous: xunjiSnapshot,
+                api: auxApi.baseUrl && auxApi.model ? { baseUrl: auxApi.baseUrl, apiKey: auxApi.apiKey, model: auxApi.model } : null,
+            });
+            const nextReports = generateXunjiReports({
+                char: targetChar,
+                snapshot: nextSnapshot,
+                rules: DEFAULT_XUNJI_REPORT_RULES,
+            }).slice(0, 8);
+            await Promise.all([
+                DB.saveXunjiSnapshot(nextSnapshot),
+                nextReports.length ? DB.saveXunjiReports(nextReports) : Promise.resolve(),
+            ]);
+            setXunjiSnapshot(nextSnapshot);
+            setXunjiReports(nextReports);
+            recordPhoneCheckAction({
+                type: 'refresh_status',
+                label: '刷新此刻手机状态',
+                detail: `${nextSnapshot.phoneModel} / ${nextSnapshot.batteryLevel}% / 解锁 ${nextSnapshot.unlockCount} 次`,
+                risk: 'private',
+            });
+            addToast(auxApi.baseUrl && auxApi.model ? '此刻手机状态已刷新' : '已用本地模拟刷新手机状态', 'success');
+        } catch (error) {
+            console.warn('[CheckPhone] refresh phone status failed:', error);
+            const fallback = generateXunjiMonitorSnapshot({
+                char: targetChar,
+                previous: xunjiSnapshot,
+                seed: `${targetChar.id}_${Date.now()}_check_phone_refresh_fallback`,
+            });
+            setXunjiSnapshot(fallback);
+            recordPhoneCheckAction({
+                type: 'refresh_status',
+                label: '刷新此刻手机状态（本地兜底）',
+                detail: `${fallback.phoneModel} / ${fallback.batteryLevel}%`,
+                risk: 'private',
+            });
+            addToast('刷新失败，已改用本地手机状态', 'info');
+        } finally {
+            setIsRefreshingPhoneStatus(false);
+        }
+    };
+
+    const isXunjiRecord = (record: PhoneEvidence) => record.meta?.source === 'xunji';
+
+    const isEvidenceCollected = (record: PhoneEvidence) => evidenceBasket.some(item => item.id === record.id);
+
+    const toggleEvidence = (record: PhoneEvidence) => {
+        const collected = isEvidenceCollected(record);
+        if (collected) {
+            recordPhoneCheckAction({
+                type: 'clear_evidence',
+                label: `移出线索：${record.title}`,
+                app: record.meta?.appName || record.type,
+                recordId: record.id,
+                riskDelta: 0,
+            });
+            persistPhoneCheckSession(session => ({
+                ...session,
+                evidence: session.evidence.filter(item => item.id !== record.id),
+            }));
+            setEvidenceBasket(prev => prev.filter(item => item.id !== record.id));
+            return;
+        }
+        recordPhoneCheckAction({
+            type: 'collect_evidence',
+            label: `收进线索：${record.title}`,
+            detail: record.detail.slice(0, 220),
+            app: record.meta?.appName || record.type,
+            recordId: record.id,
+            risk: record.meta?.risk,
+        });
+        persistPhoneCheckSession(session => ({
+            ...session,
+            evidence: session.evidence.some(item => item.id === record.id) ? session.evidence : [...session.evidence, record].slice(-24),
+        }));
+        setEvidenceBasket(prev => [...prev, record].slice(-8));
+    };
+
+    const confrontWithBasket = () => {
+        if (!onConfront || !targetChar || evidenceBasket.length === 0) return;
+        const text = buildEvidenceConfrontText(evidenceBasket, targetChar.name);
+        recordPhoneCheckAction({
+            type: 'confront',
+            label: `带回 ${evidenceBasket.length} 条线索对峙`,
+            detail: summarizeEvidenceTrail(evidenceBasket, 6).slice(0, 900),
+            risk: evidenceBasket.some(item => item.meta?.risk === 'suspicious') ? 'suspicious' : 'private',
+        });
+        persistPhoneCheckSession(prev => ({
+            ...prev,
+            evidence: mergePhoneEvidenceRecords(prev.evidence, evidenceBasket).slice(-24),
+        }));
+        finalizePhoneCheckSession('confront', `证据篮对峙：${evidenceBasket.length} 条线索`);
+        onConfront(text);
+        setEvidenceBasket([]);
+    };
+
     const awarenessFallback = (action: string): { caught: boolean; shouldEnd: boolean; reply: string } => {
         if (!targetChar) return { caught: false, shouldEnd: false, reply: '' };
         const profileText = `${targetChar.name} ${targetChar.systemPrompt || ''}`.toLowerCase();
-        let score = 0.32;
-        if (/(敏感|警惕|多疑|占有|控制|侦探|杀手|黑客|安全|边界|洁癖|细节|反侦察)/i.test(profileText)) score += 0.28;
-        if (/(迟钝|大条|粗心|天然|信任|温柔|随和)/i.test(profileText)) score -= 0.16;
-        if (action.includes('发动态')) score += 0.12;
-        const caught = Math.random() < Math.max(0.08, Math.min(0.82, score));
+        const baseRisk = calculatePhoneCheckRisk(phoneCheckSession?.actions || [], mergePhoneEvidenceRecords(phoneCheckSession?.evidence || [], evidenceBasket));
+        const actionBump = action.includes('删除') ? 0.18 : action.includes('发动态') ? 0.22 : action.includes('冒用') ? 0.2 : 0.08;
+        const probability = estimatePhoneCheckAwareness({ profileText, base: Math.min(0.94, baseRisk + actionBump) });
+        const caught = Math.random() < probability;
         return {
             caught,
-            shouldEnd: caught && Math.random() < 0.68,
+            shouldEnd: caught && Math.random() < Math.max(0.35, Math.min(0.86, probability + 0.1)),
             reply: caught
                 ? `你是不是动了我的手机？这个痕迹太明显了。`
                 : `（暂时没有察觉。）`,
@@ -334,7 +626,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const judgeIntrusion = async (action: string, detail: string) => {
         if (!targetChar) return;
         let result = awarenessFallback(action);
-        if (auxApi.apiKey && auxApi.baseUrl) {
+        if (auxApi.baseUrl && auxApi.model) {
             try {
                 const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true);
                 const prompt = `${context}
@@ -347,38 +639,57 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
 请按「${targetChar.name}」的人设、警觉度、占有欲、边界感、对 ${userProfile.name || '用户'} 的信任程度，判断 TA 是否会察觉，以及是否会立刻结束这次查岗。
 只输出 JSON，不要 markdown：
 {"caught": true或false, "shouldEnd": true或false, "reply": "如果察觉，TA 此刻说的一句话；没察觉则写一句很短的旁白"}`;
-                const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                    body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.85 }),
+                const data = await callChatCompletion(auxApi, {
+                    model: auxApi.model,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.85,
+                    stream: false,
+                }, {
+                    meta: makeApiUsageMeta('checkPhone.generate', {
+                        charId: targetChar.id,
+                        charName: targetChar.name,
+                        apiRole: auxApi.apiRole || 'aux',
+                        apiBinding: auxApi.apiBinding || '查岗察觉',
+                    }),
                 });
-                if (res.ok) {
-                    let raw = (await safeResponseJson(res)).choices?.[0]?.message?.content || '';
-                    raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-                    const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
-                    if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
-                    const obj = JSON.parse(raw);
-                    result = {
-                        caught: !!obj.caught,
-                        shouldEnd: !!obj.shouldEnd,
-                        reply: typeof obj.reply === 'string' && obj.reply.trim() ? obj.reply.trim().slice(0, 120) : result.reply,
-                    };
-                }
+                let raw = (extractContent(data) || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+                const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+                if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
+                const obj = JSON.parse(raw);
+                result = {
+                    caught: !!obj.caught,
+                    shouldEnd: !!obj.shouldEnd,
+                    reply: typeof obj.reply === 'string' && obj.reply.trim() ? obj.reply.trim().slice(0, 120) : result.reply,
+                };
             } catch {
                 // fallback above is good enough for offline / parse failures
             }
         }
 
         if (result.caught) {
-            await DB.saveMessage({
+            const systemMessageId = await DB.saveMessage({
                 charId: targetChar.id,
                 role: 'system',
                 type: 'text',
                 content: `[查岗察觉] ${targetChar.name} 察觉到 ${userProfile.name || '用户'} 在查岗时动了 TA 的手机：${action}（${detail}）。${result.shouldEnd ? 'TA 决定立刻结束这次查岗。' : 'TA 暂时没有结束，但已经记住了。'}TA 当时说：「${result.reply}」`,
                 metadata: { phoneIntrusionCaught: true },
             } as any);
+            recordPhoneCheckAction({
+                type: 'intrusion_caught',
+                label: `${targetChar.name} 察觉查岗越界`,
+                detail: `${action}：${detail}；${result.reply}`,
+                risk: 'suspicious',
+            });
+            persistPhoneCheckSession(prev => ({ ...prev, systemMessageId }));
+            if (result.shouldEnd) finalizePhoneCheckSession('caught', `${targetChar.name} 察觉并结束查岗：${result.reply}`);
             setIntrusionNotice({ title: `${targetChar.name} 察觉了`, body: result.reply, shouldExit: result.shouldEnd });
         } else {
+            recordPhoneCheckAction({
+                type: 'browse_step',
+                label: '越界动作暂未被发现',
+                detail: `${action}：${detail}`,
+                riskDelta: 0.04,
+            });
             setIntrusionNotice({ title: '暂时没被发现', body: result.reply || `${targetChar.name} 还没察觉手机被动过。` });
         }
     };
@@ -406,6 +717,15 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
             content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，冒用 ${targetChar.name} 的名义给「${selectedChatRecord.title}」发了一条消息：「${text}」。这件事可能会被 ${targetChar.name} 察觉。`,
             metadata: { userSentAsCharacter: true },
         } as any);
+        recordPhoneCheckAction({
+            type: 'send_as_character',
+            label: `冒用 ${targetChar.name} 给「${selectedChatRecord.title}」发消息`,
+            detail: text,
+            app: '信息',
+            targetName: selectedChatRecord.title,
+            recordId: selectedChatRecord.id,
+            risk: 'suspicious',
+        });
         await judgeIntrusion('冒用 TA 的名义给联系人发消息', `给「${selectedChatRecord.title}」发：「${text}」`);
     };
 
@@ -440,6 +760,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
             detail: text,
             timestamp: Date.now(),
             value: '已发布',
+            meta: { source: 'user_action', appName: '动态', risk: 'suspicious', tags: ['代发'] },
         };
         await updateCharacter(targetChar.id, {
             phoneState: {
@@ -457,6 +778,18 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
         setMomentText('');
         setShowMomentComposer(false);
         addToast('已用 TA 的此刻发出', 'success');
+        recordPhoneCheckAction({
+            type: 'post_moment_as_character',
+            label: `用 ${targetChar.name} 的此刻发动态`,
+            detail: text,
+            app: '动态',
+            recordId: newRecord.id,
+            risk: 'suspicious',
+        });
+        persistPhoneCheckSession(prev => ({
+            ...prev,
+            evidence: prev.evidence.some(item => item.id === newRecord.id) ? prev.evidence : [...prev.evidence, newRecord].slice(-24),
+        }));
         await judgeIntrusion('用 TA 的此刻发动态', text);
     };
 
@@ -478,7 +811,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
     // --- Core Generation Logic ---
 
     const handleGenerate = async (type: string, customPrompt?: string) => {
-        if (!targetChar || !auxApi.apiKey) {
+        if (!targetChar || !auxApi.baseUrl || !auxApi.model) {
             addToast('配置错误', 'error');
             return;
         }
@@ -499,118 +832,84 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
                 return `${roleName}: ${content}`;
             }).join('\n');
 
-            let promptInstruction = "";
-            let logPrefix = "";
-
-            if (customPrompt) {
-                promptInstruction = `用户正在查看你的手机 App: "${type}"。
-该 App 的功能/用户想看的内容是: "${customPrompt}"。
-请生成 2-4 条符合该 App 功能的记录。
-必须符合你的人设（例如银行余额要符合身份，备忘录要符合性格）。
-格式JSON数组: [{ "title": "标题/项目名", "detail": "详细内容/金额/状态", "value": "可选的数值状态(如 +100)" }, ...]`;
-                const customApp = customApps.find(a => a.id === type);
-                logPrefix = customApp ? customApp.name : type;
-            } else {
-                if (type === 'chat') {
-                    promptInstruction = `生成 3 个该角色手机聊天软件(Message/Line)中的**对话片段**。
-    要求：
-    1. **自动匹配角色**: 根据人设，虚构 3 个合理的联系人（如：如果是学生，联系人可以是“辅导员”、“社团学长”；如果是杀手，联系人可以是“中间人”）。不要使用“User”作为联系人。
-    2. **对话感**: 内容必须是有来有回的对话脚本（3-4句），体现他们之间的关系。
-    3. **格式**: 必须严格使用 "我:..." 代表主角(你)，"对方:..." 或 "人名:..." 代表联系人。
-    格式JSON数组: [{ "title": "联系人名称 (身份)", "detail": "对方: 最近怎么样？\\n我: 还活着。\\n对方: 那就好。" }, ...]`;
-                    logPrefix = "聊天软件";
-                } else if (type === 'call') {
-                    promptInstruction = `生成 3 条该角色的近期**通话记录**。
-    格式JSON数组: [{ "title": "联系人名称", "value": "呼入 (5分钟) / 未接 / 呼出 (30秒)", "detail": "关于下周聚会的事..." }, ...]`;
-                    logPrefix = "通话记录";
-                } else if (type === 'order') {
-                    promptInstruction = `生成 3 条该角色最近的购物订单。${buildPhoneCityHint(targetChar)}
-    格式JSON数组: [{ "title": "商品名", "detail": "状态" }, ...]`;
-                    logPrefix = "购物APP";
-                } else if (type === 'delivery') {
-                    promptInstruction = `生成 3 条该角色最近的外卖记录。${buildPhoneCityHint(targetChar)}
-    格式JSON数组: [{ "title": "店名", "detail": "菜品" }, ...]`;
-                    logPrefix = "外卖APP";
-                } else if (type === 'social') {
-                    promptInstruction = `生成 2 条该角色的朋友圈/社交媒体动态。
-    格式JSON数组: [{ "title": "时间/状态", "detail": "正文内容" }, ...]`;
-                    logPrefix = "朋友圈";
-                } else {
-                    // 其余全套 App（备忘录 / 钱包 / 相册 / 音乐 / 浏览 / 健康 / 日历…）走目录里的取数指令
-                    const cat = catalogByType(type);
-                    if (cat?.instruction) {
-                        promptInstruction = `${cat.instruction}${cat.cityHint ? `\n${buildPhoneCityHint(targetChar)}` : ''}`;
-                        logPrefix = cat.logPrefix;
-                    }
-                }
-            }
-
-            if (!promptInstruction) { setIsLoading(false); addToast('这个 App 暂不支持检查', 'info'); return; }
-
-            const fullPrompt = `${context}\n\n### [Current Status]\n时间距离上次互动: ${timeGap}\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${promptInstruction}\n请根据[Current Status]和人设调整生成内容的时间戳和情绪。如果很久没聊天，记录可能是近期的独处状态；如果刚聊过，记录可能与聊天内容相关。`;
-
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: [{ role: "user", content: fullPrompt }],
-                    temperature: 0.8
-                })
+            const customApp = customApps.find(a => a.id === type);
+            const promptBundle = buildCheckPhoneRecordPrompt({
+                char: targetChar,
+                userName: userProfile.name || '用户',
+                type,
+                appName: customApp?.name,
+                customPrompt,
+                context,
+                recentMessages: recentMsgs,
+                timeGap,
+                snapshot: xunjiSnapshot,
+                run: xunjiRun,
+                reports: xunjiReports,
+                mode: checkMode,
             });
 
-            if (!response.ok) throw new Error('API Error');
-            const data = await safeResponseJson(response);
-            let content = data.choices[0].message.content;
-            content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBracket = content.indexOf('[');
-            const lastBracket = content.lastIndexOf(']');
-            if (firstBracket > -1 && lastBracket > -1) content = content.substring(firstBracket, lastBracket + 1);
-            
-            let json = [];
-            try { json = JSON.parse(content); } catch (e) { json = []; }
+            if (!promptBundle) { setIsLoading(false); addToast('这个 App 暂不支持检查', 'info'); return; }
+
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: "user", content: promptBundle.prompt }],
+                temperature: 0.8,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('checkPhone.generate', {
+                    charId: targetChar.id,
+                    charName: targetChar.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || promptBundle.appName,
+                }),
+            });
+            const content = extractContent(data) || '';
+            const parsedRecords = parsePhoneEvidenceJson(content, {
+                type,
+                appName: promptBundle.appName,
+                source: customPrompt ? 'custom' : 'generated',
+                now: Date.now(),
+            });
 
             const newRecordsToAdd: PhoneEvidence[] = [];
 
-            if (Array.isArray(json)) {
-                for (const item of json) {
-                    const recordTitle = item.title || 'Unknown';
-                    const recordDetail = item.detail || '...';
-                    
-                    let sysMsgContent = "";
-                    if (type === 'chat') {
-                        sysMsgContent = `[系统: ${targetChar.name} 与 "${recordTitle}" 的聊天记录-内容涉及: ${recordDetail.replace(/\n/g, ' ')}]`;
-                    } else {
-                        sysMsgContent = `[系统: ${targetChar.name}的手机(${logPrefix}) 显示: ${recordTitle} - ${recordDetail}]`;
-                    }
-                    
-                    await DB.saveMessage({
-                        charId: targetChar.id,
-                        role: 'system',
-                        type: 'text',
-                        content: sysMsgContent
-                    });
-                    
-                    const currentMsgs = await DB.getMessagesByCharId(targetChar.id);
-                    const savedMsg = currentMsgs[currentMsgs.length - 1];
-                    
-                    newRecordsToAdd.push({
-                        id: `rec-${Date.now()}-${Math.random()}`,
-                        type: type, 
-                        title: recordTitle,
-                        detail: recordDetail,
-                        value: item.value,
-                        timestamp: Date.now(),
-                        systemMessageId: savedMsg?.id 
-                    });
-                    
-                    await new Promise(r => setTimeout(r, 50)); 
-                }
+            for (const record of parsedRecords) {
+                await DB.saveMessage({
+                    charId: targetChar.id,
+                    role: 'system',
+                    type: 'text',
+                    content: systemMessageForPhoneEvidence(targetChar.name, record, promptBundle.logPrefix)
+                });
+
+                const currentMsgs = await DB.getMessagesByCharId(targetChar.id);
+                const savedMsg = currentMsgs[currentMsgs.length - 1];
+
+                newRecordsToAdd.push({
+                    ...record,
+                    id: record.id || `rec-${Date.now()}-${Math.random()}`,
+                    type,
+                    timestamp: Date.now(),
+                    systemMessageId: savedMsg?.id,
+                    meta: {
+                        ...record.meta,
+                        appName: record.meta?.appName || promptBundle.appName,
+                        source: customPrompt ? 'custom' : 'generated',
+                    },
+                });
+
+                await new Promise(r => setTimeout(r, 50));
             }
 
             const existingRecords = targetChar.phoneState?.records || [];
             updateCharacter(targetChar.id, {
                 phoneState: { ...targetChar.phoneState, records: [...existingRecords, ...newRecordsToAdd] }
+            });
+            recordPhoneCheckAction({
+                type: 'refresh_app',
+                label: `刷新 ${promptBundle.appName}`,
+                detail: `新增 ${newRecordsToAdd.length} 条记录；模式：${CHECK_PHONE_MODE_LABELS[checkMode]}`,
+                app: promptBundle.appName,
+                risk: newRecordsToAdd.some(r => r.meta?.risk === 'suspicious') ? 'suspicious' : newRecordsToAdd.some(r => r.meta?.risk === 'private') ? 'private' : 'normal',
             });
 
             addToast(`已刷新 ${newRecordsToAdd.length} 条数据`, 'success');
@@ -625,7 +924,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
 
     // --- AI 装点这台手机：让设备名 / 桌面副标 / 强调色更贴角色 ---
     const handleDecorate = async () => {
-        if (!targetChar || !auxApi.apiKey) { addToast('配置错误', 'error'); return; }
+        if (!targetChar || !auxApi.baseUrl || !auxApi.model) { addToast('配置错误', 'error'); return; }
         setIsDecorating(true);
         try {
             const persona = [
@@ -637,13 +936,20 @@ ${persona}
 
 只输出一个 JSON 对象，不要任何其它文字：
 {"deviceName":"设备名(像 TA 会给自己手机起的名字，10字内，可带 TA 的名字)","tagline":"锁屏/桌面上的一句话副标(20字内，像 TA 的签名/心情)","accent":"一个最贴 TA 气质的强调色十六进制(如 #a78bfa)"}`;
-            const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.9,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('checkPhone.generate', {
+                    charId: targetChar.id,
+                    charName: targetChar.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '手机皮肤',
+                }),
             });
-            if (!res.ok) throw new Error(`API ${res.status}`);
-            let content = (await safeResponseJson(res)).choices?.[0]?.message?.content || '';
+            let content = extractContent(data) || '';
             content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
             const s = content.indexOf('{'); const e = content.lastIndexOf('}');
             if (s >= 0 && e > s) content = content.slice(s, e + 1);
@@ -672,7 +978,7 @@ ${persona}
     // --- Continue Chat Logic ---
 
     const handleContinueChat = async () => {
-        if (!selectedChatRecord || !targetChar || !auxApi.apiKey) return;
+        if (!selectedChatRecord || !targetChar || !auxApi.baseUrl || !auxApi.model) return;
         setIsLoading(true);
 
         try {
@@ -695,19 +1001,21 @@ Format:
 - Only output the new dialogue lines. Do NOT repeat history.
 `;
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.85
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.85,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('checkPhone.generate', {
+                    charId: targetChar.id,
+                    charName: targetChar.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '聊天续写',
+                }),
             });
-
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                let newLines = data.choices[0].message.content.trim();
+            {
+                let newLines = (extractContent(data) || '').trim();
                 
                 // Clean up any markdown
                 newLines = newLines.replace(/```/g, '');
@@ -752,6 +1060,54 @@ Format:
         </div>
     );
 
+    const riskLabel = (risk?: string) => {
+        if (risk === 'suspicious') return '可疑';
+        if (risk === 'private') return '私密';
+        return '普通';
+    };
+
+    const renderMetaChips = (record: PhoneEvidence, tint = '#64748b') => {
+        const tags = record.meta?.tags?.slice(0, 2) || [];
+        const source = record.meta?.source === 'xunji' ? '循迹' : record.meta?.source === 'user_action' ? '改动' : record.meta?.source === 'custom' ? '自装' : '生成';
+        return (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: tint, background: `${tint}14` }}>{source}</span>
+                {record.meta?.risk && record.meta.risk !== 'normal' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-500">{riskLabel(record.meta.risk)}</span>
+                )}
+                {tags.map(tag => <span key={tag} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">#{tag}</span>)}
+            </div>
+        );
+    };
+
+    const renderEvidenceButton = (record: PhoneEvidence, tint = '#64748b') => {
+        if (!onConfront) return null;
+        const collected = isEvidenceCollected(record);
+        return (
+            <button
+                onClick={(e) => { e.stopPropagation(); toggleEvidence(record); }}
+                className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-transform"
+                style={{ color: collected ? '#fff' : tint, background: collected ? tint : `${tint}14` }}
+            >
+                {collected ? '已收线索' : '收线索'}
+            </button>
+        );
+    };
+
+    const renderEvidenceBar = () => {
+        if (!onConfront || evidenceBasket.length === 0) return null;
+        return (
+            <div className="absolute left-4 right-4 bottom-20 z-[220] rounded-2xl px-3 py-2 flex items-center gap-2 shadow-2xl" style={{ background: 'rgba(15,23,42,0.92)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <div className="min-w-0 flex-1">
+                    <div className="text-[11px] font-black">证据篮 · {evidenceBasket.length} 条</div>
+                    <div className="text-[10px] opacity-70 truncate">{evidenceBasket.map(item => item.title).join(' / ')}</div>
+                </div>
+                <button onClick={() => setEvidenceBasket([])} className="shrink-0 px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-white/10 active:scale-95">清空</button>
+                <button onClick={confrontWithBasket} className="shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-black active:scale-95" style={{ background: '#e26b84' }}>带回絮语</button>
+            </div>
+        );
+    };
+
     const renderChatList = () => {
         const list = records.filter(r => r.type === 'chat').sort((a,b) => b.timestamp - a.timestamp);
         return (
@@ -777,9 +1133,20 @@ Format:
                                     <div className="text-xs text-slate-500 truncate">
                                         {r.detail.split('\n').pop() || '...'}
                                     </div>
+                                    {renderMetaChips(r, '#34d399')}
                                 </div>
                             </div>
-                            <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(r); }} className="absolute top-2 right-2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10">×</button>
+                            <div className="flex items-center justify-between mt-3">
+                                {renderEvidenceButton(r, '#34d399') || <span />}
+                                {onConfront && (
+                                    <button onClick={(e) => { e.stopPropagation(); confrontWith(r); }} className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-transform" style={{ color: '#e26b84', background: '#e26b8418' }}>
+                                        <Quotes size={11} weight="fill" /> 拿去对峙
+                                    </button>
+                                )}
+                            </div>
+                            {!isXunjiRecord(r) && (
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(r); }} className="absolute top-2 right-2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10">×</button>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -867,6 +1234,7 @@ Format:
                     >
                         {isLoading ? '对方正在输入...' : '偷看后续 / 拱火'}
                     </button>
+                    {renderEvidenceButton(selectedChatRecord, '#34d399')}
                     {onConfront && (
                         <button
                             onClick={() => confrontWith(selectedChatRecord)}
@@ -905,14 +1273,18 @@ Format:
                                         {r.value && !isMissed && <span>• {r.value.replace(/.*?\((.*?)\).*/, '$1')}</span>}
                                     </div>
                                     {r.detail && <div className="text-[10px] text-slate-500 mt-1 italic truncate">"{r.detail}"</div>}
+                                    {renderMetaChips(r, '#334155')}
                                 </div>
+                                {renderEvidenceButton(r, '#334155')}
                                 {onConfront && (
                                     <button onClick={() => confrontWith(r)} title="拿去对峙" className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ color: '#e26b84', background: '#e26b8418' }}>
                                         <Quotes size={13} weight="fill" />
                                     </button>
                                 )}
                                 <div className="text-[10px] text-slate-300">{new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                                <button onClick={() => handleDeleteRecord(r)} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                {!isXunjiRecord(r) && (
+                                    <button onClick={() => handleDeleteRecord(r)} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                )}
                             </div>
                         );
                     })}
@@ -957,15 +1329,21 @@ Format:
                                 {r.value && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ color: tint, background: `${tint}1a` }}>{r.value}</span>}
                             </div>
                             <div className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap">{r.detail}</div>
+                            {renderMetaChips(r, tint)}
                             <div className="flex items-center justify-between mt-2">
-                                {onConfront ? (
-                                    <button onClick={() => confrontWith(r)} className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-transform" style={{ color: tint, background: `${tint}14` }}>
-                                        <Quotes size={11} weight="fill" /> 拿去对峙
-                                    </button>
-                                ) : <span />}
+                                <div className="flex items-center gap-1.5">
+                                    {renderEvidenceButton(r, tint)}
+                                    {onConfront ? (
+                                        <button onClick={() => confrontWith(r)} className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-transform" style={{ color: tint, background: `${tint}14` }}>
+                                            <Quotes size={11} weight="fill" /> 拿去对峙
+                                        </button>
+                                    ) : <span />}
+                                </div>
                                 <div className="text-[10px] text-slate-300">{new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
                             </div>
-                            <button onClick={() => handleDeleteRecord(r)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-md">×</button>
+                            {!isXunjiRecord(r) && (
+                                <button onClick={() => handleDeleteRecord(r)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-md">×</button>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -1102,6 +1480,68 @@ Format:
                         </button>
                     </div>
 
+                    <div className="mb-6 rounded-[18px] p-4" style={{ background: 'rgba(0,0,0,0.22)', border: `1px solid ${theme.border}`, color: theme.text, backdropFilter: 'blur(12px)' }}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[11px] font-bold opacity-65">此刻手机状态</div>
+                                <div className="mt-1 text-[15px] font-black truncate">{phoneStatus?.phoneModel || deviceName}</div>
+                                <div className="mt-1 text-[11px] leading-relaxed opacity-70 truncate">
+                                    {phoneStatus?.latestLocation || '正在同步最近位置与屏幕痕迹'}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => { void handleRefreshPhoneStatus(); }}
+                                disabled={isRefreshingPhoneStatus}
+                                className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 disabled:opacity-60"
+                                style={{ background: theme.accent, color: '#fff' }}
+                            >
+                                {isRefreshingPhoneStatus ? '同步中' : '刷新此刻'}
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                            <div className="rounded-2xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                                <div className="text-[9px] opacity-55">电量</div>
+                                <div className="text-[13px] font-black">{phoneStatus ? `${phoneStatus.batteryLevel}%${phoneStatus.isCharging ? ' ⚡' : ''}` : '--'}</div>
+                            </div>
+                            <div className="rounded-2xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                                <div className="text-[9px] opacity-55">解锁</div>
+                                <div className="text-[13px] font-black">{phoneStatus ? `${phoneStatus.unlockCount} 次` : '--'}</div>
+                            </div>
+                            <div className="rounded-2xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                                <div className="text-[9px] opacity-55">屏幕</div>
+                                <div className="text-[13px] font-black">{phoneStatus ? `${phoneStatus.screenTimeMinutes} 分` : '--'}</div>
+                            </div>
+                        </div>
+                        {phoneStatus?.topAppName && (
+                            <div className="mt-3 text-[11px] leading-relaxed opacity-75 truncate">
+                                停留最久：{phoneStatus.topAppName}{phoneStatus.topAppMinutes ? ` · ${phoneStatus.topAppMinutes} 分钟` : ''}{phoneStatus.topAppNote ? ` · ${phoneStatus.topAppNote}` : ''}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mb-5 rounded-[18px] p-3" style={{ background: 'rgba(0,0,0,0.18)', border: `1px solid ${theme.border}`, color: theme.text, backdropFilter: 'blur(10px)' }}>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="text-[11px] font-bold opacity-65">查岗模式</div>
+                            <div className="text-[10px] opacity-55">线索会写入档案</div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                            {(Object.entries(CHECK_PHONE_MODE_LABELS) as [PhoneCheckMode, string][]).map(([mode, label]) => (
+                                <button
+                                    key={mode}
+                                    onClick={() => switchCheckMode(mode)}
+                                    className="min-w-0 px-2 py-2 rounded-2xl text-[10px] font-black active:scale-95 transition-transform truncate"
+                                    style={{
+                                        background: checkMode === mode ? theme.accent : 'rgba(255,255,255,0.08)',
+                                        color: checkMode === mode ? '#fff' : theme.sub,
+                                        border: `1px solid ${checkMode === mode ? 'rgba(255,255,255,0.2)' : theme.border}`,
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Apps grid：全套可检查 App + 自定义 App + 安装 */}
                     <div className="grid grid-cols-4 gap-y-5 gap-x-2 place-items-center content-start">
                         {APP_CATALOG.map(app => (
@@ -1195,6 +1635,7 @@ Format:
                     return null;
                 })()
             )}
+            {renderEvidenceBar()}
 
             <PhoneLockExitUnlockSheet
                 open={phoneLockExitOpen}

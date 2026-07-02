@@ -23,6 +23,7 @@ import {
 import { classifyLLMOutput } from './classifier';
 import { sanitizeIntoSegments, type Segment } from '../../../utils/sanitize';
 import { INSTANT_WORKER_VERSION } from '../../../utils/instantWorkerVersion';
+import { buildOpenAiEndpoint, buildOpenAiHeaders, extractApiErrorMessage } from '../../../utils/openAiCompat';
 
 export interface Env {
   VAPID_PUBLIC_KEY: string;
@@ -447,13 +448,9 @@ async function runEmotionEval(body: any): Promise<string> {
     .replace('__EMOTION_EVAL_HISTORY__', () => recentLines);
   const evalMessages = [{ role: 'user', content: evalContent }];
   try {
-    const baseUrl = String(ee.api.baseUrl).replace(/\/+$/, '');
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(buildOpenAiEndpoint(ee.api.baseUrl, 'chat.completions'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ee.api.apiKey || 'sk-none'}`,
-      },
+      headers: buildOpenAiHeaders(ee.api.apiKey),
       body: JSON.stringify({
         model: ee.api.model,
         messages: evalMessages,
@@ -466,7 +463,9 @@ async function runEmotionEval(body: any): Promise<string> {
       const data: any = await res.json();
       raw = data?.choices?.[0]?.message?.content || '';
     } else {
-      console.error('[emotion-eval] LLM call failed', res.status);
+      let data: any = null;
+      try { data = await res.json(); } catch { /* ignore */ }
+      console.error('[emotion-eval] LLM call failed', res.status, extractApiErrorMessage(data, `HTTP ${res.status}`));
     }
 
     return raw;

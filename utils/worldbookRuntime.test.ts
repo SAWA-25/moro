@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { WorldbookRuntime, type WorldbookGroupScope } from './worldbookRuntime';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { WorldbookRuntime, type WorldbookGroupScope, type WorldbookGroupSettings } from './worldbookRuntime';
 import { CharacterProfile, Worldbook } from '../types';
 
 const wb = (over: Partial<Worldbook> & { id: string; title: string; content: string }): Worldbook => ({
@@ -25,7 +25,8 @@ const syncBooks = (
     books: Worldbook[],
     toggles: Record<string, boolean> = {},
     scopes: Record<string, WorldbookGroupScope> = {},
-) => WorldbookRuntime.sync(books, toggles, scopes);
+    settings: Record<string, WorldbookGroupSettings> = {},
+) => WorldbookRuntime.sync(books, toggles, scopes, settings);
 
 describe('WorldbookRuntime 解析与开关', () => {
     beforeEach(() => {
@@ -225,6 +226,7 @@ describe('spliceDepthMessages @Depth 注入', () => {
 
 describe('关键词激活（ST 绿灯条目移植）', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         syncBooks([]);
         WorldbookRuntime.setScanContext(null);
         WorldbookRuntime.setExtraCategories(null);
@@ -280,6 +282,75 @@ describe('关键词激活（ST 绿灯条目移植）', () => {
         expect(WorldbookRuntime.resolveForChar(mountedKwChar()).local).toHaveLength(0);
         WorldbookRuntime.setScanContext(['魔法学院开学了']);
         expect(WorldbookRuntime.resolveForChar(mountedKwChar()).local).toHaveLength(1);
+    });
+
+    it('selectiveLogic 支持 ST 四种二级词逻辑', () => {
+        const triggered = (selectiveLogic: Worldbook['selectiveLogic'], text: string) => {
+            syncBooks([kw({ id: 'k1', keys: ['主线'], secondaryKeys: ['红', '蓝'], selective: true, selectiveLogic })]);
+            WorldbookRuntime.setScanContext([text]);
+            return WorldbookRuntime.resolveForChar(mountedKwChar()).local.length > 0;
+        };
+
+        expect(triggered('and_any', '主线 红')).toBe(true);
+        expect(triggered('and_any', '主线')).toBe(false);
+        expect(triggered('and_all', '主线 红 蓝')).toBe(true);
+        expect(triggered('and_all', '主线 红')).toBe(false);
+        expect(triggered('not_any', '主线')).toBe(true);
+        expect(triggered('not_any', '主线 红')).toBe(false);
+        expect(triggered('not_all', '主线 红')).toBe(true);
+        expect(triggered('not_all', '主线 红 蓝')).toBe(false);
+    });
+
+    it('整词匹配避免词内命中，/regex/i 关键词按正则执行', () => {
+        syncBooks([
+            kw({ id: 'k1', keys: ['cat'], matchWholeWords: true }),
+            kw({ id: 'k2', keys: ['/dragon\\d+/i'] }),
+        ]);
+        WorldbookRuntime.setScanContext(['concatenate DRAGON42']);
+        expect(WorldbookRuntime.resolveForChar(mountedKwChar()).local.map(e => e.id)).toEqual(['k2']);
+
+        WorldbookRuntime.setScanContext(['a cat appears']);
+        expect(WorldbookRuntime.resolveForChar(mountedKwChar()).local.map(e => e.id)).toEqual(['k1']);
+    });
+
+    it('触发概率：0 必定失败，100 必定通过，中间值按 Math.random 判定', () => {
+        syncBooks([
+            kw({ id: 'p0', activation: 'always', probability: 0 }),
+            kw({ id: 'p100', activation: 'always', probability: 100 }),
+            kw({ id: 'p50', activation: 'always', probability: 50 }),
+        ]);
+        const random = vi.spyOn(Math, 'random').mockReturnValue(0.49);
+        const mounted = charWith([{ id: 'p0', title: 'p0', content: 'p0内容', category: '局部书' }]);
+        expect(WorldbookRuntime.resolveForChar(mounted).local.map(e => e.id)).toEqual(['p100', 'p50']);
+
+        random.mockReturnValue(0.5);
+        expect(WorldbookRuntime.resolveForChar(mounted).local.map(e => e.id)).toEqual(['p100']);
+    });
+
+    it('整书 token 预算按 order 裁剪，ignoreBudget 条目不计入预算', () => {
+        syncBooks([
+            kw({ id: 'a', activation: 'always', order: 1, content: 'abcdefghij' }),
+            kw({ id: 'b', activation: 'always', order: 2, content: 'extra' }),
+            kw({ id: 'c', activation: 'always', order: 3, content: 'ignored', ignoreBudget: true }),
+        ], {}, {}, { 局部书: { tokenBudget: 3 } });
+
+        expect(WorldbookRuntime.resolveForChar(charWith([{ id: 'a', title: 'a', content: 'a内容', category: '局部书' }])).local.map(e => e.id)).toEqual(['a', 'c']);
+    });
+
+    it('递归扫描：已激活条目正文可触发同书关键词条目', () => {
+        syncBooks([
+            kw({ id: 'seed', activation: 'always', order: 1, content: '传闻里提到了龙门。' }),
+            kw({ id: 'k1', keys: ['龙门'], order: 2, content: '龙门是隐藏地点。' }),
+        ], {}, {}, { 局部书: { recursiveScanning: true, maxRecursionSteps: 2 } });
+        WorldbookRuntime.setScanContext(['今天聊普通日常']);
+        expect(WorldbookRuntime.resolveForChar(charWith([{ id: 'seed', title: 'seed', content: 'seed', category: '局部书' }])).local.map(e => e.id)).toEqual(['seed', 'k1']);
+
+        syncBooks([
+            kw({ id: 'seed', activation: 'always', order: 1, content: '传闻里提到了龙门。' }),
+            kw({ id: 'k1', keys: ['龙门'], order: 2, content: '龙门是隐藏地点。' }),
+        ]);
+        WorldbookRuntime.setScanContext(['今天聊普通日常']);
+        expect(WorldbookRuntime.resolveForChar(charWith([{ id: 'seed', title: 'seed', content: 'seed', category: '局部书' }])).local.map(e => e.id)).toEqual(['seed']);
     });
 
     it('扫描深度只看最近 N 条消息', () => {

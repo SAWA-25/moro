@@ -246,10 +246,14 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const renderBuffRow = (centered: boolean) => {
         if (buffs.length === 0) return null;
         return (
-            <div className={`moro-chat-buffs relative w-full min-w-0 max-w-full ${centered ? 'flex justify-center' : ''}`}>
+            <div
+                className={`moro-chat-buffs relative w-full min-w-0 max-w-full ${centered ? 'flex justify-center' : ''}`}
+                data-moro-protected="emotion-buffs"
+            >
                 <div
                     ref={buffPreviewRef}
                     className={`flex w-full min-w-0 max-w-full items-center gap-0.5 overflow-x-auto whitespace-nowrap pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${centered ? 'justify-center' : ''}`}
+                    data-moro-buff-row="true"
                 >
                     {visibleBuffs.map((buff) => (
                         <button
@@ -264,6 +268,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                             className="shrink-0 max-w-[8.75rem] truncate text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border cursor-pointer transition-colors select-none"
                             style={buffChipStyle(buff)}
                             title={buff.label}
+                            data-moro-buff-chip="true"
                         >
                             {buff.emoji ? `${buff.emoji} ` : ''}
                             {buff.label}
@@ -274,6 +279,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                             onClick={(e) => { e.stopPropagation(); setIsBuffListExpanded((prev) => !prev); }}
                             className="shrink-0 min-w-[22px] text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border transition-colors border-slate-300 text-slate-500 bg-slate-100/90 hover:bg-slate-200/80"
                             title="查看全部状态"
+                            data-moro-buff-chip="true"
                         >
                             +{hiddenBuffCount}
                         </button>
@@ -400,7 +406,11 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
             <div className="bg-transparent backdrop-blur-xl" style={{ height: useCenteredLayout ? 'calc(var(--safe-top) + 2.5rem)' : 'var(--safe-top)' }} />
         )}
         {/* header 主体：moro-chat-header 钩子 + 内容垂直居中（items-center）；safe-top 已由上面 spacer 让位 */}
-        <div className={`moro-chat-header ${headerDensityClass} flex items-center relative ${headerToneClass}`} style={headerSafeStyle}>
+        <div
+            className={`moro-chat-header ${headerDensityClass} flex items-center relative ${headerToneClass}`}
+            style={headerSafeStyle}
+            data-moro-has-buffs={buffs.length > 0 ? 'true' : undefined}
+        >
             {selectionMode ? (
                 <div className="flex items-center justify-between w-full">
                     <button onClick={onCancelSelection} className={`text-sm font-bold px-2 py-1 ${secondaryTextClass}`}>取消</button>

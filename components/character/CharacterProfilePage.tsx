@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CharacterProfile } from '../../types';
 import { DB } from '../../utils/db';
 import { useOS } from '../../context/OSContext';
-import { initUnblockAppeal } from '../../utils/unblockAppeal';
+import { blockCharacterByUser, unblockCharacterByUser } from '../../utils/blockActions';
 import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 
 /**
@@ -170,11 +170,9 @@ const FriendSettingsPage: React.FC<{
                             // blacklistedAt 标记拉黑时刻：此后角色发来的消息气泡旁带红色感叹号。
                             // 拉黑同时开启「解除拉黑申诉」：角色稍后会主动发来求解封的验证消息；
                             // 移出黑名单则停止申诉。
-                            updateCharacter(char.id, {
-                                blacklisted: next,
-                                blacklistedAt: next ? Date.now() : undefined,
-                                unblockAppeal: next ? initUnblockAppeal() : { active: false, awaiting: false, nextAt: 0, rejectedCount: 0 },
-                            });
+                            void (next
+                                ? blockCharacterByUser({ char, updateCharacter })
+                                : unblockCharacterByUser({ char, updateCharacter, handledFrom: 'manual' }));
                             addToast(next ? `已将 ${char.name} 加入黑名单` : `已将 ${char.name} 移出黑名单`, 'info');
                         }} />}
                     />

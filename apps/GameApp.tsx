@@ -6,6 +6,8 @@ import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, Ga
 import { ContextBuilder } from '../utils/context';
 import { extractContent, extractJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     trpgWorldGenPrompt, trpgProloguePrompt, trpgGameLoopPrompt,
     trpgStatusWarning, trpgGameOverTrigger, trpgRollInstruction,
@@ -315,37 +317,18 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     // --- Helper: Robust API Call ---
     const fetchGameAPI = async (prompt: string, maxTokens: number = 8000) => {
-        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-            body: JSON.stringify({
-                model: auxApi.model,
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.9, 
-                max_tokens: maxTokens,
-                stream: false
-            })
+        const json = await callChatCompletion(auxApi, {
+            model: auxApi.model,
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.9,
+            max_tokens: maxTokens,
+            stream: false
+        }, {
+            meta: makeApiUsageMeta('theater.trpg', {
+                apiRole: auxApi.apiRole || 'aux',
+                apiBinding: auxApi.apiBinding || 'TRPG',
+            }),
         });
-
-        if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
-
-        const text = await response.text();
-        let json: any;
-        try {
-            json = JSON.parse(text);
-        } catch {
-            // Try stripping "data: " prefix (common in proxy misconfigurations)
-            const cleaned = text.replace(/^data: /, '').trim();
-            try {
-                json = JSON.parse(cleaned);
-            } catch {
-                // Detect HTML responses
-                if (text.trimStart().startsWith('<')) {
-                    throw new Error('API返回了HTML而非JSON，请检查API地址是否正确');
-                }
-                throw new Error(`API返回了无法解析的格式: ${text.slice(0, 100)}`);
-            }
-        }
 
         if (json.usage?.total_tokens) {
             const usage = {

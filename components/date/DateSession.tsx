@@ -6,6 +6,9 @@ import { DB } from '../../utils/db';
 import DateSettings from './DateSettings';
 import { synthesizeSpeech, cleanTextForTts } from '../../utils/minimaxTts';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { callChatCompletion } from '../../utils/llmClient';
+import { extractContent } from '../../utils/safeApi';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 
 // Helper: Parse dialogue with simple state machine
 const isContextNoise = (line: string) => {
@@ -158,17 +161,20 @@ const DateSession: React.FC<DateSessionProps> = ({
                 try {
                     // 台词翻译属「聊天以外」的辅助任务：走副 API（语音合成仍用 MiniMax 主线）
                     const transApi = resolveAuxApi(auxApiConfig, apiConfig);
-                    const transRes = await fetch(`${transApi.baseUrl}/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${transApi.apiKey}` },
-                        body: JSON.stringify({
-                            model: transApi.model,
-                            messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.` }, { role: 'user', content: ttsText }],
-                            temperature: 0.3,
+                    const transData = await callChatCompletion(transApi, {
+                        model: transApi.model,
+                        messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.` }, { role: 'user', content: ttsText }],
+                        temperature: 0.3,
+                        stream: false,
+                    }, {
+                        meta: makeApiUsageMeta('chat.translation', {
+                            charId: char.id,
+                            charName: char.name,
+                            apiRole: transApi.apiRole || 'aux',
+                            apiBinding: transApi.apiBinding || '约会台词翻译',
                         }),
                     });
-                    const transData = await transRes.json();
-                    const translated = transData?.choices?.[0]?.message?.content?.trim();
+                    const translated = (extractContent(transData) || '').trim();
                     if (translated) ttsText = translated;
                 } catch { /* use original */ }
             }

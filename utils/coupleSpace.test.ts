@@ -1,6 +1,16 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { generateCharQuestionAnswer, generateCharWhisperReply, type CoupleApi } from './coupleSpace';
-import type { CharacterProfile } from '../types';
+import {
+    applyCoupleAutoCareDraft,
+    buildCoupleSpacePromptBlock,
+    ensureCoupleSpace,
+    generateCharQuestionAnswer,
+    generateCharWhisperReply,
+    generateCoupleRecap,
+    isCoupleAutoCareEnabled,
+    shouldRunCoupleAutoCare,
+    type CoupleApi,
+} from './coupleSpace';
+import type { CharacterProfile, CoupleSpace } from '../types';
 
 /**
  * 回归：情侣空间 AI 调用必须能消化「主聊天能用」的各种响应形态。
@@ -81,5 +91,140 @@ describe('情侣空间 LLM 调用（callCoupleLLM via llmComplete）', () => {
         const body = JSON.parse(init.body as string);
         // 思维链 headroom 远超答案长度：至少要 1000 才够推理模型想完
         expect(body.max_tokens).toBeGreaterThanOrEqual(1000);
+    });
+});
+
+describe('情侣空间 2.0 数据兼容与后台自经营', () => {
+    const now = new Date(2026, 6, 3, 12, 0, 0).getTime();
+
+    function oldSpace(partial: Partial<CoupleSpace> = {}): CoupleSpace {
+        return {
+            intimacy: 12,
+            moments: [],
+            anniversaries: [],
+            photos: [],
+            tasks: [],
+            whispers: [],
+            interactions: [],
+            createdAt: now - 10_000,
+            updatedAt: now - 5_000,
+            ...partial,
+        } as CoupleSpace;
+    }
+
+    it('ensureCoupleSpace 会给旧空间补齐 v2 字段，且旧空间默认开启后台自经营', () => {
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace() });
+
+        expect(space.settings?.theme).toBe('scrapbook');
+        expect(space.settings?.autoCareEnabled).toBeUndefined();
+        expect(space.profile?.rituals).toEqual([]);
+        expect(space.memoryCards).toEqual([]);
+        expect(space.recaps).toEqual([]);
+        expect(space.dailyCheckins).toEqual([]);
+        expect(space.autoCare).toEqual({});
+        expect(isCoupleAutoCareEnabled(space)).toBe(true);
+    });
+
+    it('单个空间关闭 autoCareEnabled=false 后不会触发自动经营', () => {
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace({ settings: { autoCareEnabled: false, theme: 'scrapbook' } }) });
+
+        expect(isCoupleAutoCareEnabled(space)).toBe(false);
+        expect(shouldRunCoupleAutoCare(space, now)).toMatchObject({ shouldRun: false, reason: 'disabled' });
+    });
+
+    it('后台自经营遵守每日动态上限与三天回顾冷却', () => {
+        const fresh = ensureCoupleSpace({ coupleSpace: oldSpace() });
+        expect(shouldRunCoupleAutoCare(fresh, now)).toMatchObject({ shouldRun: true, allowRecap: true });
+
+        const todayAndRecentRecap = ensureCoupleSpace({
+            coupleSpace: oldSpace({ autoCare: { lastMomentAt: now - 60_000, lastRecapAt: now - 60_000 } }),
+        });
+        expect(shouldRunCoupleAutoCare(todayAndRecentRecap, now)).toMatchObject({ shouldRun: false, allowRecap: false, reason: 'cooldown' });
+
+        const recapOnly = ensureCoupleSpace({
+            coupleSpace: oldSpace({ autoCare: { lastMomentAt: now - 60_000, lastRecapAt: now - 4 * 24 * 60 * 60 * 1000 } }),
+        });
+        expect(shouldRunCoupleAutoCare(recapOnly, now)).toMatchObject({ shouldRun: true, allowRecap: true, reason: 'recap-only' });
+    });
+
+    it('applyCoupleAutoCareDraft 写入自动产物；失败/none 全吞但记录状态', () => {
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace() });
+        const applied = applyCoupleAutoCareDraft(space, { kind: 'moment', text: '路过花店时突然想把这束花贴进来。', mood: '🌷' }, { source: 'proactive', text: '路过花店', at: now }, now);
+
+        expect(applied.applied).toBe('moment');
+        expect(applied.space.moments[0]).toMatchObject({ author: 'char', text: '路过花店时突然想把这束花贴进来。', mood: '🌷' });
+        expect(applied.space.autoCare?.lastMomentAt).toBe(now);
+
+        const failed = applyCoupleAutoCareDraft(applied.space, null, { source: 'catchup', text: '补齐离线生活', at: now + 1 }, now + 1);
+        expect(failed.applied).toBe('none');
+        expect(failed.space.autoCare?.lastSource).toBe('catchup');
+    });
+
+    it('手动回顾不受后台自动经营开关和三天冷却影响', () => {
+        const space = ensureCoupleSpace({
+            coupleSpace: oldSpace({
+                settings: { autoCareEnabled: false, theme: 'scrapbook' },
+                autoCare: { lastRecapAt: now - 60_000 },
+            }),
+        });
+        const applied = applyCoupleAutoCareDraft(space, {
+            kind: 'recap',
+            title: '本周小报',
+            text: '这周的心事被好好夹进手账里。',
+            highlights: ['一起完成了一个约定'],
+        }, { source: 'manual', text: '用户手动生成情侣空间回顾', at: now }, now);
+
+        expect(applied.applied).toBe('recap');
+        expect(applied.space.recaps?.[0].title).toBe('本周小报');
+        expect(applied.space.memoryCards?.[0]).toMatchObject({ kind: 'recap', title: '本周小报' });
+    });
+
+    it('generateCoupleRecap 能解析 summary 格式 JSON 并保留建议项', async () => {
+        mockFetch(jsonRes({
+            content: JSON.stringify({
+                title: '雨天小报',
+                summary: '你们把一个普通雨天过成了两个人的暗号。',
+                highlights: ['一起记下雨声', '把晚安说得很认真'],
+                suggestedTasks: ['周末一起散步'],
+                suggestedWishes: ['去看海'],
+            }),
+        }));
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace({ moments: [{ id: 'm1', author: 'user', text: '今天雨声很好听', createdAt: now, comments: [], likedByChar: false, likedByUser: false }] }) });
+
+        const draft = await generateCoupleRecap({ char, userName: '小明', api: API, space, period: 'week' });
+        expect(draft).toMatchObject({
+            kind: 'recap',
+            title: '雨天小报',
+            text: '你们把一个普通雨天过成了两个人的暗号。',
+            suggestedTasks: ['周末一起散步'],
+            suggestedWishes: ['去看海'],
+        });
+    });
+
+    it('聊天上下文注入包含档案、回顾、记忆卡且数量受限', () => {
+        const testChar = {
+            ...char,
+            name: '流浪者',
+            coupleSpace: ensureCoupleSpace({
+                coupleSpace: oldSpace({
+                    profile: { homeName: '雨天备用拥抱处', loveLanguage: '先抱抱再讲道理', rituals: ['睡前互道晚安', '吵架后先牵手', '周五一起吃甜点', '这条应被裁剪'] },
+                    memoryCards: [1, 2, 3, 4].map(i => ({ id: `mc${i}`, kind: 'manual', title: `记忆卡${i}`, text: `第${i}张记忆卡`, createdAt: now - i })),
+                    recaps: [1, 2, 3].map(i => ({ id: `rc${i}`, period: 'week', periodKey: `2026-W0${i}`, title: `回顾${i}`, summary: `第${i}份关系回顾`, highlights: [], suggestedTasks: [], suggestedWishes: [], sourceIds: [], createdAt: now - i })),
+                }),
+            }),
+        } as CharacterProfile;
+
+        const block = buildCoupleSpacePromptBlock(testChar, '小明');
+        expect(block).toContain('情侣档案');
+        expect(block).toContain('雨天备用拥抱处');
+        expect(block).toContain('先抱抱再讲道理');
+        expect(block).toContain('记忆卡1');
+        expect(block).toContain('记忆卡3');
+        expect(block).not.toContain('记忆卡4');
+        expect(block).toContain('回顾1');
+        expect(block).toContain('回顾2');
+        expect(block).not.toContain('回顾3');
+        expect(block).toContain('睡前互道晚安');
+        expect(block).not.toContain('这条应被裁剪');
     });
 });

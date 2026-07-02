@@ -18,8 +18,10 @@ import {
     HandbookPage, HandbookFragment, HandbookLayout, LayoutPlacement, LayoutRole,
 } from '../types';
 import { DB } from './db';
-import { safeResponseJson, extractJson as safeExtractJson } from './safeApi';
+import { extractContent, extractJson as safeExtractJson } from './safeApi';
 import { ContextBuilder } from './context';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 // 局部 seedFloat — composePageLayout 用 (不引用 components/ 避免 utils → components 反向依赖).
 // FNV-1a + xorshift, 与 paper.tsx 里同名函数行为一致.
@@ -422,22 +424,15 @@ ${transcriptParts.join('\n\n')}
 直接输出 JSON 数组。`;
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.8,
-                max_tokens: 12000,
-            }),
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.8,
+            max_tokens: 12000,
+        }, {
+            meta: makeApiUsageMeta('handbook.userDiary', { apiRole: 'aux' }),
         });
-        if (!response.ok) {
-            console.error('[Handbook/UserDiary] API error:', response.status);
-            return { page: null, placements: [], totalUserMsgs, perChar };
-        }
-        const data = await safeResponseJson(response);
-        let raw: string = data.choices?.[0]?.message?.content || '';
+        let raw = extractContent(data) || '';
         raw = raw.trim();
         if (raw.length < 4) return { page: null, placements: [], totalUserMsgs, perChar };
 
@@ -662,22 +657,19 @@ text 里允许少量 markdown 语法,渲染时会变成对应的视觉效果:
 直接输出 JSON 数组。`;
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.85,
-                max_tokens: 12000,
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.85,
+            max_tokens: 12000,
+        }, {
+            meta: makeApiUsageMeta('handbook.lifeStream', {
+                apiRole: 'aux',
+                charId: char.id,
+                charName: char.name,
             }),
         });
-        if (!response.ok) {
-            console.error('[Handbook/Lifestream] API error:', response.status, char.name);
-            return { page: null, placements: [] };
-        }
-        const data = await safeResponseJson(response);
-        let raw: string = data.choices?.[0]?.message?.content || '';
+        let raw = extractContent(data) || '';
         raw = raw.trim();
         if (raw.length < 4) return { page: null, placements: [] };
 

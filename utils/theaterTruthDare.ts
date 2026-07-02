@@ -15,8 +15,10 @@
 import { CharacterProfile, UserProfile, TruthDareSession, TruthDarePlayer, TruthDareKind, TruthDareSpice } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { ContextBuilder } from './context';
-import { safeResponseJson, extractContent, extractJson } from './safeApi';
+import { extractContent, extractJson } from './safeApi';
 import { truthDareSystem, truthDarePoseUser, truthDareCharRoundUser, truthDareAnswerUser } from './theaterPrompts';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 export const TD_KIND_CN: Record<TruthDareKind, string> = { truth: '真心话', dare: '大冒险' };
 export const TD_KIND_EMOJI: Record<TruthDareKind, string> = { truth: '💬', dare: '🔥' };
@@ -78,19 +80,19 @@ function systemFor(char: CharacterProfile, userProfile: UserProfile, spice: Trut
 }
 
 async function callRaw(api: ResolvedApi, system: string, user: string, maxTokens = 500): Promise<string> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-            temperature: 0.95, max_tokens: maxTokens, stream: false,
+    if (!api.baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        temperature: 0.95,
+        max_tokens: maxTokens,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('theater.truthDare', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
         }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
     return (extractContent(data) || '').trim();
 }
 

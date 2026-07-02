@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { BankTransaction, CharLedgerEntry, CharacterProfile, APIConfig, UserProfile, LedgerComment } from '../../types';
 import { DB } from '../../utils/db';
 import { ContextBuilder } from '../../utils/context';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 import { HAND_FONT, tinyRotate } from '../../apps/almanac/handbookKit';
 
 /**
@@ -39,14 +41,17 @@ const avatarNode = (c?: CharacterProfile, size = 28) => {
 };
 
 async function llmOnce(apiConfig: APIConfig, system: string, user: string, temp = 0.85): Promise<string> {
-    const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
-        body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: temp, max_tokens: 8000 }),
+    const api = apiConfig as APIConfig & { apiRole?: string; apiBinding?: string };
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        temperature: temp,
+        max_tokens: 8000,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta('bank.lifeAi', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '互评账本' }),
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
-    return (data.choices?.[0]?.message?.content || '').trim();
+    return (extractContent(data) || '').trim();
 }
 
 const stripQuotes = (s: string) => s.replace(/^["'「」\s]+|["'「」\s]+$/g, '');
@@ -91,7 +96,7 @@ const BankLedger: React.FC<Props> = ({ transactions, onTxUpdated, characters, ap
     const commentOnTx = useCallback(async (tx: BankTransaction) => {
         const char = charById(commenterId) || characters[0];
         if (!char) { addToast('还没有角色', 'info'); return; }
-        if (!apiConfig.apiKey) { addToast('还没配置 API', 'info'); return; }
+        if (!apiConfig.baseUrl || !apiConfig.model) { addToast('还没配置 API', 'info'); return; }
         setBusyTxId(tx.id);
         try {
             await injectMemoryPalace(char, undefined, tx.note);
@@ -118,7 +123,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
 
     // 角色给自己记一笔账
     const genCharEntry = useCallback(async (char: CharacterProfile) => {
-        if (!apiConfig.apiKey) { addToast('还没配置 API', 'info'); return; }
+        if (!apiConfig.baseUrl || !apiConfig.model) { addToast('还没配置 API', 'info'); return; }
         setGenBusy(true);
         try {
             await injectMemoryPalace(char, undefined, '记账');
@@ -159,7 +164,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
         setCharEntries(prev => prev.map(e => e.id === entry.id ? updated : e));
         setCommentDrafts(prev => ({ ...prev, [entry.id]: '' }));
 
-        if (!char || !apiConfig.apiKey) return;
+        if (!char || !apiConfig.baseUrl || !apiConfig.model) return;
         setReplyBusyId(entry.id);
         try {
             await injectMemoryPalace(char, undefined, entry.note);

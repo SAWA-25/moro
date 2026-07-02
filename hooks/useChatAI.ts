@@ -3,7 +3,6 @@ import { useState, useRef, useEffect, MutableRefObject } from 'react';
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, AuxApiConfig } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { DB } from '../utils/db';
-import { safeFetchJson } from '../utils/safeApi';
 import { KeepAlive } from '../utils/keepAlive';
 import { ProactiveChat } from '../utils/proactiveChat';
 // 思考链 / HTML / MCD / memoryPalace 注入已下沉到 chatRequestPayload；这里不再直接调用
@@ -35,6 +34,9 @@ import { applyEmotionEvalRaw } from '../utils/emotionApply';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { budgetChatMessages, isAuxContextBudgetEnabled } from '../utils/contextBudget';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { replyQueuedUserMessageHint } from '../utils/laiwangPrompts';
+import { callChatCompletion } from '../utils/llmClient';
+import { buildOpenAiEndpoint, buildOpenAiHeaders } from '../utils/openAiCompat';
 
 // ─── 情绪评估（副API，fire & forget）───
 
@@ -313,28 +315,18 @@ export async function evaluateEmotionBackground(
         const evalApiMessages = budgetedContext.messages.slice(1);
         const prompt = buildEmotionEvalPrompt(charData, userProfile, evalSystemPrompt, evalApiMessages);
 
-        const baseUrl = api.baseUrl.replace(/\/+$/, '');
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${api.apiKey || 'sk-none'}`
-        };
-
-        const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: api.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.85,
-                stream: false
-            })
-        }, 2, 0, makeApiUsageMeta('chat.postProcess.emotionEval', {
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.85,
+            stream: false
+        }, { meta: makeApiUsageMeta('chat.postProcess.emotionEval', {
             charId: charData.id,
             charName: charData.name,
             apiRole: 'aux',
             apiBinding: '情绪评估',
             isBackgroundTask: true,
-        }));
+        }) });
 
         const raw = data.choices?.[0]?.message?.content || '';
         return await applyEmotionEvalRaw(raw, charData);
@@ -373,6 +365,12 @@ interface TriggerAIOptions {
     emptyReplyFallback?: string;
     /** Skip dynamic-island / unread / native notification event for this local generation. */
     suppressNotificationEvent?: boolean;
+    /** Override API usage catalog id for one-shot live/draft generations. */
+    apiUsageFeatureId?: string;
+    /** Extra API usage context for one-shot live/draft generations. */
+    apiUsageContext?: Record<string, unknown>;
+    /** Queue mode: this generation should answer exactly this user message. */
+    targetUserMessage?: Pick<Message, 'id' | 'content' | 'timestamp'>;
 }
 
 export const useChatAI = ({
@@ -635,18 +633,31 @@ export const useChatAI = ({
         overrideApiConfig?: { baseUrl: string; apiKey: string; model: string },
         onInstantPosted?: () => void,
         options?: TriggerAIOptions,
-    ) => {
-        if (isTyping || !char) return;
+    ): Promise<boolean> => {
+        if (isTyping || !char) return false;
         const effectiveApi = overrideApiConfig || apiConfig;
-        if (!effectiveApi.baseUrl) { alert("请先在「文具盒」里配置 API URL"); return; }
+        if (!effectiveApi.baseUrl) { alert("请先在「文具盒」里配置 API URL"); return false; }
 
         // Telegram 式回执：API 成功响应前出错 → 把待回执的用户消息标成「发送失败」；
         // 拿到回复后 → 全部升级「已读」。apiResponded 用于在 catch 里区分这两种情况
         // （catch 也兜后处理管线的错——那时回复其实已经送达，不能标失败）。
         let apiResponded = false;
+        const targetUserMessage = options?.targetUserMessage;
+        const targetReplyPreview = targetUserMessage?.content.replace(/\s+/g, ' ').trim() || '';
+        const targetReplyTo = targetUserMessage
+            ? {
+                id: targetUserMessage.id,
+                content: targetReplyPreview.length > 20 ? `${targetReplyPreview.slice(0, 20)}...` : targetReplyPreview,
+                name: userProfile.name || '我',
+            }
+            : undefined;
         const markUserMessagesRead = async () => {
             try {
-                await DB.markCharMessagesStatus(char.id, 'user', 'read');
+                if (targetUserMessage) {
+                    await DB.setMessagesStatus([targetUserMessage.id], 'read');
+                } else {
+                    await DB.markCharMessagesStatus(char.id, 'user', 'read');
+                }
                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
             } catch { /* 回执失败不影响消息本体 */ }
         };
@@ -658,8 +669,7 @@ export const useChatAI = ({
         await KeepAlive.start();
 
         try {
-            const baseUrl = effectiveApi.baseUrl.replace(/\/+$/, '');
-            const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` };
+            const headers = buildOpenAiHeaders(effectiveApi.apiKey);
 
             // ── 分段计时（从用户发送到 API 发出）──
             const perfSendT0 = performance.now();
@@ -731,7 +741,17 @@ export const useChatAI = ({
                 thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
             }));
-            const ephemeralSystemPrompt = options?.ephemeralSystemPrompt?.trim();
+            const targetReplyPrompt = targetUserMessage
+                ? replyQueuedUserMessageHint({
+                    userName: userProfile.name || '用户',
+                    content: targetUserMessage.content,
+                    timestamp: targetUserMessage.timestamp,
+                })
+                : '';
+            const ephemeralSystemPrompt = [
+                options?.ephemeralSystemPrompt?.trim(),
+                targetReplyPrompt,
+            ].filter(Boolean).join('\n\n');
             const systemPrompt = ephemeralSystemPrompt
                 ? `${payload.systemPrompt}${payload.systemPrompt ? '\n\n' : ''}${ephemeralSystemPrompt}`
                 : payload.systemPrompt;
@@ -829,7 +849,7 @@ export const useChatAI = ({
             const apiT0 = performance.now();
             // 预设 App 的采样参数（temperature / top_p / penalties / max_tokens 等）：
             // 预设启用且「应用采样参数」开着时覆盖全局 API 设置，与 ST 预设行为一致。
-            const presetGenParams = await PresetRuntime.getActiveGenParams();
+            const presetGenParams = await PresetRuntime.getActiveGenParams('chat.private');
             const userTemp = presetGenParams?.temperature
                 ?? (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
             const userStream = (effectiveApi as any).stream ?? apiConfig.stream ?? false;
@@ -889,7 +909,11 @@ export const useChatAI = ({
                     // 这里按 contract 只传 https URL, data URL 本地头像直接不传
                     // (SW 显示通知时回退到默认 app icon, 不影响推送成功率).
                     avatarUrl: /^https?:\/\//i.test(char.avatar || '') ? char.avatar : undefined,
-                    metadata: { source: 'moro-chat', charId: char.id },
+                    metadata: {
+                        source: 'moro-chat',
+                        charId: char.id,
+                        ...(targetReplyTo ? { queuedReplyTarget: targetReplyTo } : {}),
+                    },
                     // 副 API 情绪评估: worker 跑完主回复后用这套跑 eval, 推 emotion_update 回来 (见 worker 包装层).
                     // 放顶层字段, 不进 metadata —— 框架不会回显它, 副 API apiKey 不会泄进 push.
                     ...(instantEmotionEval ? { emotionEval: instantEmotionEval } : {}),
@@ -920,8 +944,11 @@ export const useChatAI = ({
                 }
                 // instant 失败不标「发送失败」：SSE 报错 ≠ 未送达（push 可能晚到，见
                 // docs/instant-push-dual-channel.md），只在确认成功时升级已读。
-                if (instantResult.ok) await markUserMessagesRead();
-                return;
+                if (instantResult.ok) {
+                    await markUserMessagesRead();
+                    return true;
+                }
+                return false;
             }
 
             // ── 流式输出：本地 fetch 路径默认走 SSE 累积完整回复；聊天页只显示"正在输入"，
@@ -929,14 +956,17 @@ export const useChatAI = ({
             //    流式不兼容，仍走整包；流式失败时回退 safeFetchJson 保持旧行为。
             let data: any = null;
             let streamedOk = false;
-            const chatReplyMeta = makeApiUsageMeta('chat.privateReply', {
+            const chatReplyUsageFeatureId = options?.apiUsageFeatureId || 'chat.privateReply';
+            const chatReplyUsageContext = {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'main',
-            });
+                ...(options?.apiUsageContext || {}),
+            };
+            const chatReplyMeta = makeApiUsageMeta(chatReplyUsageFeatureId, chatReplyUsageContext);
             if (!payload.flags.mcdActive) {
                 try {
-                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody, meta: chatReplyMeta }, () => {});
+                    data = await streamChatCompletion(buildOpenAiEndpoint(effectiveApi.baseUrl, 'chat.completions'), { headers, body: baseReqBody, meta: chatReplyMeta }, () => {});
                     streamedOk = true;
                 } catch (streamErr) {
                     console.warn('[Stream] 流式请求失败，回退非流式:', streamErr);
@@ -944,10 +974,7 @@ export const useChatAI = ({
                 }
             }
             if (!data) {
-                data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                    method: 'POST', headers,
-                    body: JSON.stringify(baseReqBody)
-                }, 2, 0, chatReplyMeta);
+                data = await callChatCompletion(effectiveApi, baseReqBody, { meta: chatReplyMeta });
             }
             apiResponded = true;
             console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms${streamedOk ? ' (streamed)' : ''}`);
@@ -1046,15 +1073,10 @@ export const useChatAI = ({
                     const followBody = { ...baseReqBody, messages: loopMessages };
                     delete followBody.tools;
                     delete followBody.tool_choice;
-                    data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                        method: 'POST', headers,
-                        body: JSON.stringify(followBody)
-                    }, 2, 0, makeApiUsageMeta('chat.privateReply', {
-                        charId: char.id,
-                        charName: char.name,
-                        apiRole: 'main',
+                    data = await callChatCompletion(effectiveApi, followBody, { meta: makeApiUsageMeta(chatReplyUsageFeatureId, {
+                        ...chatReplyUsageContext,
                         apiBinding: '麦当劳点餐工具续写',
-                    }));
+                    }) });
                     updateTokenUsage(data, historyMsgCount, `mcd-propose-${it + 1}`);
                     // 第二轮跳过 (我们已经禁用了 tools)
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
@@ -1099,7 +1121,7 @@ export const useChatAI = ({
                 mcdInheritMeta,
                 xhsCaches,
                 api: {
-                    baseUrl,
+                    baseUrl: effectiveApi.baseUrl,
                     headers,
                     effectiveApi,
                 },
@@ -1119,6 +1141,7 @@ export const useChatAI = ({
                 skipSecondPassLLM: false,
                 directives: [],
                 emptyReplyFallback: options?.emptyReplyFallback,
+                defaultReplyTo: targetReplyTo,
                 skipTypingDelay: streamedOk,
             });
 
@@ -1149,6 +1172,7 @@ export const useChatAI = ({
 
             // 角色已成功回复 → 此前的用户消息全部升级为「已读」（双勾）
             await markUserMessagesRead();
+            return true;
 
         } catch (e: any) {
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
@@ -1156,15 +1180,17 @@ export const useChatAI = ({
             // API 响应前就失败（网络/鉴权/限流）→ 待回执的用户消息标「发送失败」红色感叹号
             if (!apiResponded) {
                 try {
-                    const recent = await DB.getRecentMessagesByCharId(char.id, 50);
-                    const failedIds = recent
-                        .filter(m => m.role === 'user' && !m.groupId && m.metadata?.msgStatus === 'sent')
-                        .map(m => m.id);
+                    const failedIds = targetUserMessage
+                        ? [targetUserMessage.id]
+                        : (await DB.getRecentMessagesByCharId(char.id, 50))
+                            .filter(m => m.role === 'user' && !m.groupId && m.metadata?.msgStatus === 'sent')
+                            .map(m => m.id);
                     await DB.setMessagesStatus(failedIds, 'failed');
                 } catch { /* 回执失败不影响错误提示本体 */ }
             }
             await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[回复处理失败: ${e.message}]` });
             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+            return false;
         } finally {
             KeepAlive.stop();
             setIsTyping(false);

@@ -5,6 +5,7 @@ import {
   CouplePhoto, CoupleTask, CoupleWish, CoupleQuestion, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
   CouplePlant,
 } from '../../types';
+import { AppID } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
 import Modal from '../os/Modal';
@@ -17,11 +18,13 @@ import {
   generateCharQuestionAnswer, fallbackQuestionAnswer,
   plantStage, PLANT_CARE,
   pickCompatQuestions, generateCharCompatAnswers, type CompatQuestion,
+  generateCoupleRecap, applyCoupleAutoCareDraft,
 } from '../../utils/coupleSpace';
+import { PaperCard, ScrapButton, Stamp, Polaroid, INK, INK_SOFT, PAPER } from '../../apps/theater/scrapbook';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
   CheckCircle, Circle, List, EnvelopeOpen, CalendarBlank, X, ChatCircleDots,
-  Microphone, MusicNotes, Gift, ImageSquare, Quotes,
+  Microphone, MusicNotes, Gift, ImageSquare, Quotes, ArrowLeft,
 } from '@phosphor-icons/react';
 
 const PARTNER_KEY = 'moro_couple_partner_id';
@@ -71,7 +74,10 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
   love: '💞', birthday: '🎂', promise: '🤙', custom: '📌',
 };
 
-type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist' | 'plant' | 'achievements';
+type Tab = 'today' | 'moments' | 'album' | 'tasks' | 'anniversary' | 'profile' | 'recap' | 'game';
+type CoupleSpaceProps = {
+  visibleCharacters?: CharacterProfile[];
+};
 
 // ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
 const HeartbeatLine: React.FC = () => (
@@ -86,13 +92,15 @@ const HeartbeatLine: React.FC = () => (
   </svg>
 );
 
-const CoupleSpace: React.FC = () => {
-  const { characters, userProfile, updateCharacter, addToast, apiConfig, auxApiConfig } = useOS();
+const CoupleSpace: React.FC<CoupleSpaceProps> = ({ visibleCharacters }) => {
+  const { characters, userProfile, updateCharacter, addToast, apiConfig, auxApiConfig, openApp, setActiveCharacterId } = useOS();
+  const directoryCharacters = visibleCharacters || characters;
 
   const [partnerId, setPartnerId] = useState<string | null>(() => {
     try { return localStorage.getItem(PARTNER_KEY); } catch { return null; }
   });
-  const partner = useMemo(() => characters.find(c => c.id === partnerId) || null, [characters, partnerId]);
+  const [showDirectory, setShowDirectory] = useState(true);
+  const partner = useMemo(() => directoryCharacters.find(c => c.id === partnerId) || null, [directoryCharacters, partnerId]);
   const space = useMemo(() => ensureCoupleSpace(partner || undefined), [partner]);
 
   const charactersRef = useRef(characters); charactersRef.current = characters;
@@ -119,25 +127,32 @@ const CoupleSpace: React.FC = () => {
 
   // ── 绑定 / 解绑 ──
   const bindPartner = (id: string) => {
+    if (!directoryCharacters.some(c => c.id === id)) return;
     try { localStorage.setItem(PARTNER_KEY, id); } catch { /* ignore */ }
     setPartnerId(id);
+    setShowDirectory(false);
     const c = charactersRef.current.find(x => x.id === id);
     if (c && !c.coupleSpace) void updateCharacter(id, { coupleSpace: createCoupleSpace() });
   };
   const unbind = () => {
     try { localStorage.removeItem(PARTNER_KEY); } catch { /* ignore */ }
     setPartnerId(null);
+    setShowDirectory(true);
     setShowSettings(false);
   };
 
   // ── UI 状态 ──
-  const [tab, setTab] = useState<Tab>('moments');
+  const [tab, setTab] = useState<Tab>('today');
   const [showSettings, setShowSettings] = useState(false);
   const [showWhispers, setShowWhispers] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [showAnnivForm, setShowAnnivForm] = useState(false);
   const [showAnnivDateSet, setShowAnnivDateSet] = useState(false);
   const [photoView, setPhotoView] = useState<CouplePhoto | null>(null);
+  const [profileDraft, setProfileDraft] = useState({ homeName: '', userNickname: '', charNickname: '', loveLanguage: '', rituals: '' });
+  const [checkinMood, setCheckinMood] = useState('');
+  const [checkinNote, setCheckinNote] = useState('');
+  const [recapBusy, setRecapBusy] = useState(false);
 
   // 互动反馈 + 漂浮动画
   const [charReaction, setCharReaction] = useState<{ text: string; emoji: string; loading?: boolean } | null>(null);
@@ -464,43 +479,131 @@ const CoupleSpace: React.FC = () => {
     setQuestionBusy(false);
   };
 
-  // ── 渲染：未绑定 ──
-  if (!partner) {
+  useEffect(() => {
+    if (!partner) return;
+    const p = ensureCoupleSpace(partner).profile;
+    setProfileDraft({
+      homeName: p?.homeName || '',
+      userNickname: p?.userNickname || '',
+      charNickname: p?.charNickname || '',
+      loveLanguage: p?.loveLanguage || '',
+      rituals: (p?.rituals || []).join('\n'),
+    });
+  }, [partnerId]);
+
+  const saveProfile = () => {
+    const rituals = profileDraft.rituals.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 8);
+    mutate(cs => ({
+      ...cs,
+      profile: {
+        homeName: profileDraft.homeName.trim() || undefined,
+        userNickname: profileDraft.userNickname.trim() || undefined,
+        charNickname: profileDraft.charNickname.trim() || undefined,
+        loveLanguage: profileDraft.loveLanguage.trim() || undefined,
+        rituals,
+        updatedAt: Date.now(),
+      },
+    }), 0);
+    addToast('情侣档案已保存', 'success');
+  };
+
+  const doDailyCheckin = () => {
+    const today = todayYmd();
+    const note = checkinNote.trim();
+    if (!checkinMood && !note) { addToast('选个心情，或写一句今天的状态', 'info'); return; }
+    mutate(cs => {
+      const rest = (cs.dailyCheckins || []).filter(c => c.ymd !== today);
+      return {
+        ...cs,
+        dailyCheckins: [
+          { id: genCoupleId('ck'), ymd: today, userMood: checkinMood || undefined, note: note || undefined, createdAt: Date.now() },
+          ...rest,
+        ],
+      };
+    }, 1);
+    setCheckinMood(''); setCheckinNote('');
+    addToast('今日情侣打卡 +1 亲密度', 'success');
+  };
+
+  const runManualRecap = async () => {
+    if (!partner || recapBusy) return;
+    setRecapBusy(true);
+    try {
+      const draft = await generateCoupleRecap({ char: partner, userName, api: coupleApi, space, period: 'week' });
+      const applied = applyCoupleAutoCareDraft(space, draft, { source: 'manual', text: '用户手动生成情侣空间回顾', at: Date.now() }, Date.now());
+      if (applied.applied === 'recap') {
+        mutate(() => applied.space, 0);
+        addToast('已生成一张关系回顾小报', 'success');
+      } else {
+        addToast('素材还太少，先多记录一点再回顾吧', 'info');
+      }
+    } catch {
+      addToast('回顾生成失败，稍后再试', 'error');
+    } finally {
+      setRecapBusy(false);
+    }
+  };
+
+  const toggleAutoCare = () => {
+    mutate(cs => ({
+      ...cs,
+      settings: { ...(cs.settings || {}), theme: 'scrapbook', autoCareEnabled: cs.settings?.autoCareEnabled === false ? true : false },
+    }), 0);
+  };
+
+  const openDateFromCouple = () => {
+    if (!partner) return;
+    try { localStorage.setItem('moro_date_intent_v1', JSON.stringify({ charId: partner.id, from: 'couple', at: Date.now() })); } catch { /* ignore */ }
+    setActiveCharacterId(partner.id);
+    openApp(AppID.LifeSim);
+  };
+
+  // ── 渲染：空间目录 / 多空间入口 ──
+  if (showDirectory || !partner) {
     const romantic = (c: CharacterProfile) => ['crush', 'lover', 'engaged', 'married'].includes(c.relationship?.stage || '');
-    const sorted = [...characters].sort((a, b) => (romantic(b) ? 1 : 0) - (romantic(a) ? 1 : 0));
+    const sorted = [...directoryCharacters].sort((a, b) => Number(!!b.coupleSpace) - Number(!!a.coupleSpace) || (romantic(b) ? 1 : 0) - (romantic(a) ? 1 : 0));
+    const opened = sorted.filter(c => !!c.coupleSpace).length;
     return (
-      <div className="h-full w-full overflow-y-auto" style={{ background: BG, fontFamily: FONT_STACK }}>
-        <div className="max-w-[480px] mx-auto">
-          <div className="flex flex-col items-center px-6 pt-10 pb-6 text-center">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-3.5 relative" style={{ background: ACCENT, boxShadow: '0 8px 24px rgba(255,154,158,0.45)' }}>
-              <Heart size={30} weight="fill" className="text-white" />
-              <Sparkle size={18} weight="fill" className="text-white/90 absolute -top-1 -right-1" />
+      <div className="h-full w-full overflow-y-auto" style={{ background: '#f6f3ec', fontFamily: FONT_STACK, color: INK }}>
+        <div className="max-w-[480px] mx-auto px-4 py-5 space-y-4">
+          <PaperCard tape="ink" className="p-5">
+            <div className="flex items-center gap-3">
+              <Stamp size={48}><Heart size={24} weight="fill" /></Stamp>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-black leading-tight">情侣空间手账</h2>
+                <p className="text-[12px] leading-relaxed mt-1" style={{ color: INK_SOFT }}>
+                  已开 {opened} 个空间。每位角色保留自己的回忆，可随时切换。
+                </p>
+              </div>
             </div>
-            <h2 className="text-lg font-black text-[#333]">情侣空间</h2>
-            <p className="text-[12px] text-[#999] mt-2 leading-relaxed max-w-[16rem]">
-              选一位 TA，绑定为你的另一半，<br />一起经营只属于你们的小天地 💕
-            </p>
-          </div>
-          <div className="px-4 pb-10 space-y-2">
+          </PaperCard>
+          <div className="space-y-3 pb-10">
             {sorted.length === 0 && (
-              <div className="text-center text-[#bbb] text-xs py-10">还没有角色，先去「名册」认识一个人吧</div>
+              <PaperCard className="p-5 text-center text-xs" style={{ color: INK_SOFT }}>还没有角色，先去「名册」认识一个人吧</PaperCard>
             )}
             {sorted.map(c => {
               const isRomantic = romantic(c);
+              const cs = c.coupleSpace ? ensureCoupleSpace(c) : null;
+              const cDays = loveDays(cs?.anniversaryDate);
+              const avatar = c.convoSettings?.charAvatarOverride || c.avatar;
               return (
-                <button key={c.id} onClick={() => bindPartner(c.id)}
-                  className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-transform shadow-[0_2px_14px_rgba(0,0,0,0.04)] border border-[#f0f0f0]">
-                  <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover shrink-0" style={{ boxShadow: AVATAR_GLOW }} />
+                <PaperCard key={c.id} onClick={() => bindPartner(c.id)} className="p-3" tape={cs ? 'ink' : null}>
+                  <div className="flex items-center gap-3">
+                  <Polaroid src={avatar} caption={cs ? 'OPEN' : 'NEW'} size={48} grayscale rotate={-2} />
                   <div className="flex-1 min-w-0 text-left">
-                    <div className="font-bold text-[#333] truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
+                    <div className="font-black truncate text-sm" style={{ color: INK }}>{cs?.profile?.homeName || c.convoSettings?.remarkName?.trim() || c.name}</div>
                     {c.relationship?.label && (
-                      <div className={`text-[11px] mt-0.5 ${isRomantic ? 'font-semibold' : 'text-[#999]'}`} style={isRomantic ? { color: '#e07a9c' } : undefined}>
-                        {isRomantic ? '💗 ' : ''}{c.relationship.label}
+                      <div className="text-[11px] mt-0.5 font-semibold" style={{ color: isRomantic ? INK : INK_SOFT }}>
+                        {isRomantic ? '♥ ' : ''}{c.relationship.label}
                       </div>
                     )}
+                    <div className="text-[10.5px] mt-1" style={{ color: INK_SOFT }}>
+                      {cs ? `${cDays > 0 ? `在一起 ${cDays} 天 · ` : ''}${cs.moments.length} 动态 · ${cs.memoryCards?.length || 0} 记忆卡` : '还没开空间，点一下创建'}
+                    </div>
                   </div>
-                  <span className="text-[11px] text-white px-3.5 py-1.5 rounded-full font-bold shrink-0" style={{ background: ACCENT }}>绑定</span>
-                </button>
+                  <span className="text-[11px] px-3 py-1.5 rounded-full font-black shrink-0" style={{ background: cs ? '#1f1d1a' : '#fffdf8', color: cs ? '#f6f3ec' : INK, border: cs ? 'none' : '1px dashed #9a9284' }}>{cs ? '进入' : '开空间'}</span>
+                  </div>
+                </PaperCard>
               );
             })}
           </div>
@@ -522,6 +625,11 @@ const CoupleSpace: React.FC = () => {
   const wishes = space.wishes || [];
   const pendingWishes = wishes.filter(w => !w.fulfilled);
   const doneWishes = wishes.filter(w => w.fulfilled);
+  const today = todayYmd();
+  const todayCheckin = (space.dailyCheckins || []).find(c => c.ymd === today);
+  const memoryCards = space.memoryCards || [];
+  const recaps = space.recaps || [];
+  const autoCareOn = space.settings?.autoCareEnabled !== false;
 
   // 纪念日提醒：7 天内最近的一个（恋爱纪念日周年 + 各纪念日条目），点击跳到纪念日 tab
   const annivReminder = (() => {
@@ -561,6 +669,9 @@ const CoupleSpace: React.FC = () => {
 
       {/* ── 顶部羁绊区：菜单 + 双头像心跳连线 + 在一起天数 + 亲密度 ── */}
       <div className="shrink-0 px-5 pt-4 pb-3 bg-white border-b border-[#f2f2f2] relative">
+        <button onClick={() => setShowDirectory(true)} className="absolute top-2.5 left-3 p-1 text-[#777] active:scale-90 transition z-10" title="返回空间目录">
+          <ArrowLeft size={20} weight="bold" />
+        </button>
         <button onClick={() => setShowSettings(true)} className="absolute top-2.5 right-3 p-1 text-[#999] active:scale-90 transition z-10" title="菜单">
           <List size={20} weight="bold" />
         </button>
@@ -584,14 +695,14 @@ const CoupleSpace: React.FC = () => {
           {space.anniversaryDate ? (
             days > 0 ? (
               <button onClick={openDateSet} className="active:scale-95 transition text-[12px] tracking-wide" style={{ color: '#a8788c' }}>
-                在一起 <span className="font-bold" style={{ color: '#e07a9c' }}>{days}</span> 天
+                在一起 <span className="font-bold" style={{ color: INK }}>{days}</span> 天
               </button>
             ) : (
-              <span className="text-[12px]" style={{ color: '#a8788c' }}>纪念日 {space.anniversaryDate}，就要在一起啦 💓</span>
+              <span className="text-[12px]" style={{ color: INK_SOFT }}>纪念日 {space.anniversaryDate}，就要在一起啦</span>
             )
           ) : (
             <button onClick={() => { setAnnivDateDraft(todayYmd()); setShowAnnivDateSet(true); }}
-              className="text-[12px] font-bold px-3 py-1 rounded-full active:scale-95 transition" style={{ background: ACCENT_SOFT, color: '#e07a9c' }}>
+              className="text-[12px] font-bold px-3 py-1 rounded-full active:scale-95 transition" style={{ background: ACCENT_SOFT, color: INK }}>
               ＋ 设定在一起纪念日
             </button>
           )}
@@ -599,10 +710,10 @@ const CoupleSpace: React.FC = () => {
 
         {/* 亲密度（纤细一行） */}
         <div className="mt-3 flex items-center gap-2">
-          <span className="text-[11px] font-bold flex items-center gap-1 shrink-0" style={{ color: '#c76b8e' }}>
+          <span className="text-[11px] font-bold flex items-center gap-1 shrink-0" style={{ color: INK }}>
             <Sparkle size={12} weight="fill" /> Lv.{lv} {intimacyTitle(space.intimacy)}
           </span>
-          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#f1e7ec' }}>
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#e5e0d7' }}>
             <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(4, prog * 100)}%`, background: ACCENT }} />
           </div>
           <span className="text-[10px] shrink-0" style={{ color: '#bbb' }}>{Math.round(space.intimacy)}</span>
@@ -624,36 +735,13 @@ const CoupleSpace: React.FC = () => {
         </button>
       )}
 
-      {/* 每日互动 */}
-      <div className="shrink-0 px-4 pt-3 pb-1">
-        <div className="flex items-stretch gap-2">
-          {INTERACTIONS.map(it => (
-            <button key={it.kind} onClick={() => doInteraction(it.kind)}
-              className="flex-1 bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
-              <span className="text-xl leading-none">{it.emoji}</span>
-              <span className="text-[10px] font-bold" style={{ color: '#c76b8e' }}>{it.label}</span>
-            </button>
-          ))}
-        </div>
-        {/* 对方反应气泡 */}
-        {charReaction && (
-          <div className="mt-2 flex items-center gap-2 bg-white rounded-2xl px-3 py-2 shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-[#f2f2f2]" style={{ animation: 'csPop .25s ease-out' }}>
-            <img src={partnerAvatar} className="w-7 h-7 rounded-full object-cover shrink-0" />
-            <div className="flex-1 min-w-0 text-[12px] leading-snug" style={{ color: '#555' }}>
-              {charReaction.loading ? <span style={{ color: '#d9a' }}>{partnerName} 正在回应… {charReaction.text}</span> : <span>{charReaction.text}</span>}
-            </div>
-            <span className="text-base shrink-0">{charReaction.emoji}</span>
-          </div>
-        )}
-      </div>
-
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
-        <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
-          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿'], ['plant', '盆栽'], ['achievements', '成就']] as [Tab, string][]).map(([k, label]) => (
+        <div className="flex rounded-full p-1 text-[12px] font-bold overflow-x-auto no-scrollbar" style={{ background: '#ebe5da' }}>
+          {([['today', '今日'], ['moments', '动态'], ['album', '相册'], ['tasks', '约定'], ['anniversary', '纪念'], ['profile', '档案'], ['recap', '回顾'], ['game', '游戏']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className="flex-1 py-1.5 rounded-full transition"
-              style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
+              className="shrink-0 px-3 py-1.5 rounded-full transition"
+              style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(31,29,26,0.25)' } : { color: INK_SOFT }}>
               {label}
             </button>
           ))}
@@ -662,6 +750,77 @@ const CoupleSpace: React.FC = () => {
 
       {/* 内容区 */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+        {tab === 'today' && (
+          <>
+            <div className="grid grid-cols-3 gap-2.5">
+              <PaperCard className="p-3 text-center"><div className="text-lg font-black">{days || '—'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>相恋天数</div></PaperCard>
+              <PaperCard className="p-3 text-center"><div className="text-lg font-black">Lv.{lv}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>{intimacyTitle(space.intimacy)}</div></PaperCard>
+              <PaperCard className="p-3 text-center"><div className="text-lg font-black">{memoryCards.length}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>记忆卡</div></PaperCard>
+            </div>
+            <PaperCard tape="ink" className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black">今日情侣打卡</div>
+                  <div className="text-[11px]" style={{ color: INK_SOFT }}>{todayCheckin ? `今天已打卡：${todayCheckin.userMood || ''} ${todayCheckin.note || ''}` : '留下一点今天的心情'}</div>
+                </div>
+                <Stamp size={38}>{todayCheckin ? '✓' : '今'}</Stamp>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {MOOD_EMOJIS.slice(0, 8).map(em => (
+                  <button key={em} onClick={() => setCheckinMood(checkinMood === em ? '' : em)} className="w-8 h-8 rounded-full text-lg" style={{ background: checkinMood === em ? '#1f1d1a' : '#fffdf8', color: checkinMood === em ? '#fff' : INK }}>{em}</button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input value={checkinNote} onChange={e => setCheckinNote(e.target.value)} placeholder="今天想记一句…" className="flex-1 px-3 py-2 rounded-xl text-[13px] outline-none border" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+                <ScrapButton onClick={doDailyCheckin} className="px-4 py-2">盖章</ScrapButton>
+              </div>
+            </PaperCard>
+            <div className="grid grid-cols-4 gap-2">
+              {INTERACTIONS.map(it => (
+                <button key={it.kind} onClick={() => doInteraction(it.kind)}
+                  className="bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition border border-[#e3ddd2]">
+                  <span className="text-xl leading-none">{it.emoji}</span>
+                  <span className="text-[10px] font-bold" style={{ color: INK }}>{it.label}</span>
+                </button>
+              ))}
+            </div>
+            {charReaction && (
+              <PaperCard className="p-3">
+                <div className="flex items-center gap-2">
+                  <img src={partnerAvatar} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                  <div className="flex-1 min-w-0 text-[12px] leading-snug" style={{ color: '#555' }}>
+                    {charReaction.loading ? <span>{partnerName} 正在回应… {charReaction.text}</span> : <span>{charReaction.text}</span>}
+                  </div>
+                  <span className="text-base shrink-0">{charReaction.emoji}</span>
+                </div>
+              </PaperCard>
+            )}
+            <PaperCard className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black">后台自经营</div>
+                  <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                    {autoCareOn ? `开启中${space.autoCare?.lastSummary ? ` · 上次：${space.autoCare.lastSummary}` : ''}` : '已关闭，TA 不会自动打理这个空间'}
+                  </div>
+                </div>
+                <ScrapButton variant={autoCareOn ? 'ink' : 'paper'} onClick={toggleAutoCare} className="px-3 py-2">{autoCareOn ? '开' : '关'}</ScrapButton>
+              </div>
+            </PaperCard>
+            <div className="grid grid-cols-2 gap-2">
+              <ScrapButton onClick={openDateFromCouple} className="py-2.5" icon={<Heart size={15} weight="fill" />}>去约会</ScrapButton>
+              <ScrapButton variant="paper" onClick={() => setTab('recap')} className="py-2.5" icon={<Quotes size={15} weight="fill" />}>翻回顾</ScrapButton>
+            </div>
+            {(pendingTasks.length > 0 || pendingWishes.length > 0) && (
+              <PaperCard className="p-4 space-y-2">
+                <div className="text-sm font-black">还挂在墙上的事</div>
+                {[...pendingTasks.slice(0, 2).map(t => `约定：${t.title}`), ...pendingWishes.slice(0, 2).map(w => `心愿：${w.text}`)].map(x => (
+                  <div key={x} className="text-[12px]" style={{ color: INK_SOFT }}>- {x}</div>
+                ))}
+              </PaperCard>
+            )}
+          </>
+        )}
+
         {tab === 'moments' && (
           <>
             <div className="flex gap-2">
@@ -781,8 +940,9 @@ const CoupleSpace: React.FC = () => {
           </>
         )}
 
-        {tab === 'wishlist' && (
+        {tab === 'tasks' && (
           <>
+            <div className="text-[11px] font-black pt-2 pl-1" style={{ color: INK_SOFT }}>心愿清单</div>
             <div className="flex gap-2">
               <input value={wishInput} onChange={e => setWishInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addWish(wishInput); }}
                 placeholder="许个一起实现的心愿…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-[#eee] focus:border-[#f3c0d2]" />
@@ -816,7 +976,70 @@ const CoupleSpace: React.FC = () => {
           </>
         )}
 
-        {tab === 'plant' && (() => {
+        {tab === 'profile' && (
+          <>
+            <PaperCard tape="ink" className="p-4 space-y-3">
+              <div>
+                <div className="text-sm font-black">情侣档案</div>
+                <div className="text-[11px]" style={{ color: INK_SOFT }}>这些会进聊天上下文，让 TA 记得你们的小习惯。</div>
+              </div>
+              <input value={profileDraft.homeName} onChange={e => setProfileDraft(p => ({ ...p, homeName: e.target.value }))} placeholder="空间名（如 雨天备用拥抱处）" className="w-full px-3 py-2 rounded-xl text-[13px] outline-none border" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={profileDraft.userNickname} onChange={e => setProfileDraft(p => ({ ...p, userNickname: e.target.value }))} placeholder="TA 叫你的称呼" className="px-3 py-2 rounded-xl text-[13px] outline-none border" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+                <input value={profileDraft.charNickname} onChange={e => setProfileDraft(p => ({ ...p, charNickname: e.target.value }))} placeholder="你叫 TA 的称呼" className="px-3 py-2 rounded-xl text-[13px] outline-none border" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+              </div>
+              <input value={profileDraft.loveLanguage} onChange={e => setProfileDraft(p => ({ ...p, loveLanguage: e.target.value }))} placeholder="偏爱的相处方式（如 先抱抱再讲道理）" className="w-full px-3 py-2 rounded-xl text-[13px] outline-none border" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+              <textarea value={profileDraft.rituals} onChange={e => setProfileDraft(p => ({ ...p, rituals: e.target.value }))} placeholder={"固定小仪式，一行一个\n例如：睡前互道晚安\n例如：吵架后先牵手"} rows={4} className="w-full px-3 py-2 rounded-xl text-[13px] outline-none border resize-none" style={{ background: '#fffdf8', borderColor: '#d8d0c3' }} />
+              <ScrapButton onClick={saveProfile} className="w-full py-2.5">保存档案</ScrapButton>
+            </PaperCard>
+            <PaperCard className="p-4">
+              <div className="text-sm font-black mb-2">最近记忆卡</div>
+              {memoryCards.length === 0 ? (
+                <div className="text-[12px]" style={{ color: INK_SOFT }}>约会、饭票、回顾都会慢慢收进这里。</div>
+              ) : memoryCards.slice(0, 6).map(c => (
+                <div key={c.id} className="py-2 border-t border-dashed first:border-t-0" style={{ borderColor: '#d8d0c3' }}>
+                  <div className="text-[12px] font-black">{c.title}</div>
+                  <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>{c.text}</div>
+                </div>
+              ))}
+            </PaperCard>
+          </>
+        )}
+
+        {tab === 'recap' && (
+          <>
+            <div className="flex gap-2">
+              <ScrapButton onClick={runManualRecap} disabled={recapBusy} className="flex-1 py-2.5" icon={recapBusy ? <ArrowsClockwise size={15} className="animate-spin" /> : <Quotes size={15} weight="fill" />}>
+                {recapBusy ? '生成中' : '生成周回顾'}
+              </ScrapButton>
+              <ScrapButton variant="paper" onClick={() => setTab('profile')} className="px-4 py-2.5">记忆卡</ScrapButton>
+            </div>
+            {recaps.length === 0 ? (
+              <PaperCard className="p-5 text-center text-[12px]" style={{ color: INK_SOFT }}>还没有关系回顾。多发几条动态、完成几个约定后再来翻小报。</PaperCard>
+            ) : recaps.map(r => (
+              <PaperCard key={r.id} tape="ink" className="p-4 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black">{r.title}</div>
+                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{r.periodKey} · {timeAgo(r.createdAt)}</div>
+                  </div>
+                  <Stamp size={36}>报</Stamp>
+                </div>
+                <div className="text-[13px] leading-relaxed">{r.summary}</div>
+                {r.highlights.length > 0 && <div className="space-y-1">{r.highlights.map(h => <div key={h} className="text-[11px]" style={{ color: INK_SOFT }}>- {h}</div>)}</div>}
+              </PaperCard>
+            ))}
+          </>
+        )}
+
+        {tab === 'game' && (
+          <div className="grid grid-cols-2 gap-2">
+            <ScrapButton onClick={openGame} className="py-2.5" icon={<Sparkle size={15} weight="fill" />}>默契大考验</ScrapButton>
+            <ScrapButton variant="paper" onClick={openDateFromCouple} className="py-2.5" icon={<Heart size={15} weight="fill" />}>去约会</ScrapButton>
+          </div>
+        )}
+
+        {tab === 'game' && (() => {
           const today = todayYmd();
           const growth = space.plant?.growth || 0;
           const ps = plantStage(growth);
@@ -860,7 +1083,7 @@ const CoupleSpace: React.FC = () => {
           );
         })()}
 
-        {tab === 'achievements' && (() => {
+        {tab === 'game' && (() => {
           const lvl = intimacyLevel(space.intimacy || 0);
           const days = loveDays(space.anniversaryDate);
           const ACH = [
@@ -1107,11 +1330,17 @@ const CoupleSpace: React.FC = () => {
             <span>💞 默契大考验</span>
             {space.compatBest ? <span className="text-[11px] font-normal text-white/80">· 最高 {space.compatBest}%</span> : null}
           </button>
+          <button onClick={() => { setShowSettings(false); openDateFromCouple(); }} className="w-full py-3 bg-white text-[#333] font-bold rounded-2xl active:scale-95 transition border border-[#e5ded3]">
+            从这里去约会
+          </button>
+          <button onClick={toggleAutoCare} className="w-full py-3 bg-white text-[#333] font-bold rounded-2xl active:scale-95 transition border border-[#e5ded3]">
+            后台自经营：{autoCareOn ? '开启中' : '已关闭'}
+          </button>
           <p className="text-[12px] text-[#999] leading-relaxed px-1">
-            解除绑定不会删除你们的回忆——重新绑定 {partnerName} 时，动态、纪念日、相册都还在。
+            回到目录不会删除回忆；每个角色的空间都会保留在自己的角色资料里。
           </p>
-          <button onClick={unbind} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-2xl active:scale-95 transition border border-rose-100">
-            解除绑定
+          <button onClick={unbind} className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-2xl active:scale-95 transition border border-stone-200">
+            回到空间目录
           </button>
         </div>
       </Modal>

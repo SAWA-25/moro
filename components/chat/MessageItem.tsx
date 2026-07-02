@@ -870,6 +870,11 @@ interface MessageItemProps {
     onOpenTakeoutCard?: (m: Message) => void;
     /** 点开求婚小卡：进入浪漫的求婚界面（决定是否答应）。 */
     onOpenProposal?: (m: Message) => void;
+    /** 点音乐卡封面播放 / 暂停全局音乐。 */
+    onPlayMusicCard?: (m: Message) => void;
+    activeMusicSongId?: number | null;
+    activeMusicSource?: string;
+    musicPlaying?: boolean;
     /** 这条是不是最后一轮里的 user 消息（用于「行动选择器」头像入口）。 */
     isLastUserMsg?: boolean;
     /** 点击最后一轮的 user 头像：打开「行动选择器」（生成可编辑的行动选项）。 */
@@ -920,6 +925,10 @@ const MessageItem = React.memo(({
     onClaimTransfer,
     onOpenTakeoutCard,
     onOpenProposal,
+    onPlayMusicCard,
+    activeMusicSongId,
+    activeMusicSource,
+    musicPlaying = false,
     isLastUserMsg = false,
     onUserAvatarClick,
 }: MessageItemProps) => {
@@ -1633,10 +1642,16 @@ const MessageItem = React.memo(({
 
     // --- Music Card Rendering (一起听 / 加入歌单) ---
     if (m.type === 'music_card' && m.metadata?.song) {
-        const song = m.metadata.song as { songId: number; name: string; artists: string; albumPic: string };
+        const song = m.metadata.song as { id?: number; songId?: number; name: string; artists: string; albumPic: string; source?: string };
         const intent = (m.metadata.intent || 'join') as 'join' | 'add' | 'join_and_add' | 'share';
         const isTogether = intent === 'join' || intent === 'join_and_add';
         const addedTo = m.metadata.addedToPlaylistTitle as string | undefined;
+        const songId = Number(song.id ?? song.songId);
+        const songSource = song.source || 'netease';
+        const isActiveMusicCard = Number.isFinite(songId)
+            && activeMusicSongId === songId
+            && (activeMusicSource || 'netease') === songSource;
+        const isCardPlaying = isActiveMusicCard && musicPlaying;
 
         // 头像渲染：有图用图，无图显姓名首字
         const renderAvatar = (src: string | undefined, name: string, ring: string) => (
@@ -1758,6 +1773,34 @@ const MessageItem = React.memo(({
                             ♫ 分享给你
                         </div>
                     )}
+                    {onPlayMusicCard && !selectionMode && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onPlayMusicCard(m);
+                            }}
+                            className="absolute bottom-2 right-2 w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                            style={{
+                                background: isCardPlaying ? 'rgba(42,31,77,0.92)' : 'rgba(255,255,255,0.9)',
+                                color: isCardPlaying ? '#fff' : '#5a49a8',
+                                boxShadow: '0 8px 18px rgba(42,31,77,0.22)',
+                                border: '1px solid rgba(255,255,255,0.8)',
+                            }}
+                            title={isCardPlaying ? '暂停' : '播放'}
+                            aria-label={isCardPlaying ? '暂停音乐' : '播放音乐'}
+                        >
+                            {isCardPlaying ? (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M7 5h3.5v14H7V5Zm6.5 0H17v14h-3.5V5Z" />
+                                </svg>
+                            ) : (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ marginLeft: 2 }}>
+                                    <path d="M8 5v14l11-7L8 5Z" />
+                                </svg>
+                            )}
+                        </button>
+                    )}
                 </div>
                 <div className="p-3">
                     <div className="font-bold text-sm line-clamp-1 leading-snug"
@@ -1786,6 +1829,7 @@ const MessageItem = React.memo(({
     if (m.type === 'xhs_card' && m.metadata?.xhsNote) {
         const note = m.metadata.xhsNote;
         const openXhsNote = () => {
+            if (note.local) return;
             const nid = note.noteId || note.note_id || note.id;
             if (!nid) return;
             const token = note.xsecToken || note.xsec_token;
@@ -1795,7 +1839,7 @@ const MessageItem = React.memo(({
         return commonLayout(
             <div
                 onClick={openXhsNote}
-                className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
+                className={`w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 active:opacity-90 transition-opacity ${note.local ? '' : 'cursor-pointer'}`}>
                 {/* Cover image */}
                 {note.coverUrl ? (
                     <div className="relative w-full h-36 bg-slate-100 overflow-hidden">
@@ -1850,7 +1894,7 @@ const MessageItem = React.memo(({
                     </div>
                     {/* Footer label */}
                     <div className="mt-2 pt-1.5 flex items-center gap-1 text-[9px] text-slate-300">
-                        <span className="text-red-400 font-bold">小红书</span> <span>·</span> <span>{note.type === 'video' ? '视频' : '笔记'}{isUser ? '分享' : '推荐'}</span>
+                        <span className="text-red-400 font-bold">{note.local ? '见闻簿' : '小红书'}</span> <span>·</span> <span>{note.local ? '本地笔记' : `${note.type === 'video' ? '视频' : '笔记'}${isUser ? '分享' : '推荐'}`}</span>
                     </div>
                 </div>
             </div>

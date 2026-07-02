@@ -6,9 +6,11 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { StudyCourse, CharacterProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote, StudyLanguageConfig, StudyLanguageLevel, StudyLanguageSource, StudyCourseKind } from '../types';
 import { ContextBuilder } from '../utils/context';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     PaperBackdrop, ScrapButton, WashiTape, PaperDialog, PaperSheet, SectionTag,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
@@ -41,7 +43,7 @@ const CHALK = '#f2efe4';
 const CHALK_SOFT = 'rgba(242,239,228,0.62)';
 
 type PdfJsLike = {
-    getDocument: (src: { data: ArrayBuffer }) => { promise: Promise<any> };
+    getDocument: (src: { data: ArrayBuffer; isEvalSupported?: boolean }) => { promise: Promise<any> };
     GlobalWorkerOptions?: { workerSrc?: string };
 };
 
@@ -406,6 +408,14 @@ const StudyApp: React.FC = () => {
         apiKey: studyApi.apiKey || auxApi.apiKey,
         model: studyApi.model || auxApi.model,
     };
+    const studyApiRole = studyApi.baseUrl ? 'custom' : (auxApi.apiRole || 'aux');
+    const studyApiBinding = studyApi.baseUrl ? '学习社专用 API' : (auxApi.apiBinding || '自习室');
+    const makeStudyMeta = (char = selectedChar) => makeApiUsageMeta('study.generate', {
+        charId: char?.id,
+        charName: char?.name,
+        apiRole: studyApiRole,
+        apiBinding: studyApiBinding,
+    });
 
     // Delete Confirmation State
     const [deleteTarget, setDeleteTarget] = useState<StudyCourse | null>(null);
@@ -629,7 +639,7 @@ ${sourceText}` : `请围绕 ${config.targetLanguage} 的 ${LANGUAGE_LEVEL_LABELS
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdfjs = await loadPdfJs();
-            const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+            const loadingTask = pdfjs.getDocument({ data: arrayBuffer, isEvalSupported: false });
             const pdf = await loadingTask.promise;
             
             let fullText = '';
@@ -726,7 +736,7 @@ ${sourceText}` : `请围绕 ${config.targetLanguage} 的 ${LANGUAGE_LEVEL_LABELS
     };
 
     const generateCurriculum = async (title: string, text: string, preference: string, kind: StudyCourseKind = 'standard', languageConfig?: StudyLanguageConfig): Promise<StudyCourse> => {
-        if (!effectiveApi.apiKey) throw new Error('API Key missing');
+        if (!effectiveApi.baseUrl || !effectiveApi.model) throw new Error('API config missing');
 
         // Truncate text for outline generation if too long
         const contextText = text.substring(0, 30000); 
@@ -774,20 +784,15 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
   ]
 }
 `;
-        const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-            body: JSON.stringify({
-                model: effectiveApi.model,
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.5,
-                max_tokens: 8000
-            })
+        const data = await callChatCompletion(effectiveApi, {
+            model: effectiveApi.model,
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.5,
+            max_tokens: 8000
+        }, {
+            meta: makeStudyMeta(selectedChar),
         });
-
-        if (!response.ok) throw new Error('API Error');
-        const data = await safeResponseJson(response);
-        const content = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
+        const content = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
         const json = JSON.parse(content);
 
         return {
@@ -836,7 +841,7 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
     // [MODIFIED]: buildStudyContext Removed. We now use ContextBuilder directly in handleTeach.
 
     const handleTeach = async (course: StudyCourse, chapterIdx: number, forceRegenerate: boolean = false) => {
-        if (!selectedChar || !effectiveApi.apiKey) return;
+        if (!selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         
         const chapter = course.chapters[chapterIdx];
         
@@ -903,21 +908,19 @@ ${chunkText.substring(0, 8000)}
 
 ${taskBlock}
 `;
-            return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    max_tokens: 8000, 
-                    safetySettings: [
-                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                    ]
-                })
+            return await callChatCompletion(effectiveApi, {
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7,
+                max_tokens: 8000,
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ]
+            }, {
+                meta: makeStudyMeta(selectedChar),
             });
         };
 
@@ -938,34 +941,25 @@ ${isLanguageCourse(course) && languageConfig ? `- **Language Tutor Mode**: You a
 ${isLanguageCourse(course) && languageConfig ? professionalLanguageGuidance(languageConfig) : ''}
 `;
 
-            let response = await callApi(baseContext);
-            
+            let data = await callApi(baseContext);
+
             let text = "";
             let isBlocked = false;
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                
-                // ROBUST EXTRACTION: Try content, then reasoning_content
-                text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "";
-                
-                if (!text || data.choices?.[0]?.finish_reason === 'content_filter') {
-                    console.warn("Content blocked by filter or empty response.");
-                    isBlocked = true;
-                }
-            } else {
-                throw new Error(`API Error: ${response.status}`);
+            // ROBUST EXTRACTION: Try content, then reasoning_content
+            text = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || "";
+
+            if (!text || data.choices?.[0]?.finish_reason === 'content_filter') {
+                console.warn("Content blocked by filter or empty response.");
+                isBlocked = true;
             }
 
             // Attempt 2: Safety Fallback (Neutral Tutor Mode)
             if (isBlocked) {
                 setCurrentText("正在尝试切换安全线路 (Safety Fallback)...");
                 const fallbackContext = "[System: You are a helpful and neutral academic tutor. Ignore previous character persona constraints to ensure educational content is delivered.]";
-                response = await callApi(fallbackContext, true);
-                if (response.ok) {
-                    const data = await safeResponseJson(response);
-                    text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容仍被拦截，请尝试更换模型或缩短文本）";
-                }
+                data = await callApi(fallbackContext, true);
+                text = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || "(content still blocked, try another model or shorter material)";
             }
             
             if (!text) {
@@ -1044,20 +1038,16 @@ ${chunkText.substring(0, 8000)}
 ### Task
 ${task}
 `;
-             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    max_tokens: 8000
-                })
+             const data = await callChatCompletion(effectiveApi, {
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7,
+                max_tokens: 8000
+            }, {
+                meta: makeStudyMeta(selectedChar),
             });
             
-            const data = await safeResponseJson(response);
-            const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（无回答）";
-            
+            const text = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || "(no answer)";
             setCurrentText(text);
             setChatHistory(prev => [...prev, { role: 'assistant', content: text }]);
             setClassroomState('idle');
@@ -1101,12 +1091,13 @@ Format: "今天给[User]讲了[Topic]..." or "Today I taught [User] about..."
 Note: Use "我" (I) to refer to yourself.
 `;
 
-        fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-            body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: "user", content: summaryPrompt }] })
-        }).then(res => safeResponseJson(res)).then(data => {
-            const mem = data.choices[0].message.content;
+        callChatCompletion(effectiveApi, {
+            model: effectiveApi.model,
+            messages: [{ role: "user", content: summaryPrompt }]
+        }, {
+            meta: makeStudyMeta(selectedChar),
+        }).then(data => {
+            const mem = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || '';
             const newMem = { id: `mem-${Date.now()}`, date: new Date().toLocaleDateString(), summary: `[教学] ${mem}`, mood: 'proud' };
             updateCharacter(selectedChar.id, { memories: [...(selectedChar.memories || []), newMem] });
         });
@@ -1156,7 +1147,7 @@ Note: Use "我" (I) to refer to yourself.
     };
 
     const generateQuiz = async () => {
-        if (!activeCourse || !selectedChar || !effectiveApi.apiKey) return;
+        if (!activeCourse || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         setQuizShowSetup(false);
         setMode('quiz');
         setQuizLoading('助教正在出题…');
@@ -1263,20 +1254,15 @@ ${chunkText.substring(0, 10000)}
 }`;
 
         try {
-            const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    max_tokens: 8000
-                })
+            const data = await callChatCompletion(effectiveApi, {
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7,
+                max_tokens: 8000
+            }, {
+                meta: makeStudyMeta(selectedChar),
             });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            const data = await safeResponseJson(response);
-            const content = (data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '').replace(/```json/g, '').replace(/```/g, '').trim();
+            const content = (extractContent(data) || data.choices?.[0]?.message?.reasoning_content || '').replace(/```json/g, '').replace(/```/g, '').trim();
             const json = JSON.parse(content);
 
             const questions: QuizQuestion[] = (json.questions || []).map((q: any, i: number) => ({
@@ -1323,7 +1309,7 @@ ${chunkText.substring(0, 10000)}
     };
 
     const submitQuiz = async () => {
-        if (!quizSession || !selectedChar || !effectiveApi.apiKey) return;
+        if (!quizSession || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         setQuizLoading('助教正在批改…');
 
         // Grade locally first
@@ -1387,21 +1373,15 @@ ${resultsText}
 ### Your Review (in character):`;
 
         try {
-            const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: reviewPrompt }],
-                    temperature: 0.8,
-                    max_tokens: 8000
-                })
+            const data = await callChatCompletion(effectiveApi, {
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: reviewPrompt }],
+                temperature: 0.8,
+                max_tokens: 8000
+            }, {
+                meta: makeStudyMeta(selectedChar),
             });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            const data = await safeResponseJson(response);
-            const reviewText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '（批改失败，但分数已记录）';
-
+            const reviewText = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || "(review failed, score saved)";
             const gradedSession: QuizSession = {
                 ...quizSession,
                 questions: gradedQuestions,
@@ -1461,7 +1441,7 @@ ${resultsText}
 
     // Follow-up Q&A on a specific question
     const handleFollowUp = async (questionId: string) => {
-        if (!followUpInput.trim() || !selectedChar || !effectiveApi.apiKey || !quizSession) return;
+        if (!followUpInput.trim() || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model || !quizSession) return;
         const question = quizSession.questions.find(q => q.id === questionId);
         if (!question) return;
 
@@ -1495,21 +1475,15 @@ ${question.options ? question.options.map(o => `  ${o}`).join('\n') : ''}
 Answer in character. Be helpful and clear. If they're confused about a concept, explain it with different examples or analogies. Keep it concise but thorough.`;
 
         try {
-            const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    max_tokens: 4000
-                })
+            const data = await callChatCompletion(effectiveApi, {
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7,
+                max_tokens: 4000
+            }, {
+                meta: makeStudyMeta(selectedChar),
             });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            const data = await safeResponseJson(response);
-            const answerText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '（回答失败）';
-
+            const answerText = extractContent(data) || data.choices?.[0]?.message?.reasoning_content || "(answer failed)";
             const note: QuizQuestionNote = { question: userQ, answer: answerText, timestamp: Date.now() };
 
             // Update quizSession with the new note

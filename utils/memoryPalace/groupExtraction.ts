@@ -11,9 +11,9 @@
 import type { Message } from '../../types';
 import type { MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
-import { safeFetchJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { safeParseJsonArray } from './jsonUtils';
+import { callChatCompletion } from '../llmClient';
 
 /** 群记忆草稿——尚未指派 charId（一份记忆稍后会复制给每个成员持久化） */
 export interface GroupMemoryDraft {
@@ -136,27 +136,18 @@ ${buildGroupRulesBlock(groupName, memberNames, userLabel)}
 如果群聊过于琐碎无值得记忆的内容，返回空数组 []。`;
 
     try {
-        const data = await safeFetchJson(
-            `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `群聊记录：\n${conversationText}` },
-                    ],
-                    temperature: 0.4,
-                    max_tokens: 12000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('memoryPalace.groupExtraction', { apiRole: 'aux' })
-        );
+        const data = await callChatCompletion(llmConfig, {
+            model: llmConfig.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `群聊记录：\n${conversationText}` },
+            ],
+            temperature: 0.4,
+            max_tokens: 12000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('memoryPalace.groupExtraction', { apiRole: 'aux' }),
+        });
 
         const reply = data.choices?.[0]?.message?.content || '';
         const parsed = safeParseJsonArray(reply);

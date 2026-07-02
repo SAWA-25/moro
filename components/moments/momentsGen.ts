@@ -1,16 +1,26 @@
 import { AmbientSocialEntry, APIConfig, CharacterProfile, SocialComment, SocialPost, UserProfile } from '../../types';
 import { ContextBuilder } from '../../utils/context';
 import { DB } from '../../utils/db';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { callChatCompletion } from '../../utils/llmClient';
 import { formatCharacterWithId, getCharacterModelId } from '../../utils/characterIdentity';
 import {
+    momentsAutoPostPrompt,
     momentsCommentReplyPrompt,
     momentsReactionPrompt,
     momentsRefreshPrompt,
 } from '../../utils/laiwangPrompts';
 import { isAmbientSocialCharacter } from '../../utils/ambientSocial';
 import { displayableImages, newId, npcAvatar, postDisplayText } from './momentsUtils';
+import {
+    canCharacterCommentMoment,
+    canCharacterLikeMoment,
+    canCharacterRepostMoment,
+    canCharacterViewMoment,
+    canNpcAccessMoment,
+    normalizeSocialPostForMoments,
+} from '../../utils/momentsAccess';
 
 // --- Robust JSON Parser（沿用旧 SocialApp 的容错解析） ---
 const safeParseJSON = (input: string): any[] => {
@@ -44,7 +54,7 @@ const safeParseJSON = (input: string): any[] => {
     }
 };
 
-/** 统一的 LLM 调用（沿用旧 SocialApp 的 fetch + safeResponseJson 模式） */
+/** 统一的 LLM 调用。 */
 const callLLM = async (
     apiConfig: APIConfig,
     prompt: string,
@@ -53,20 +63,17 @@ const callLLM = async (
     featureId: string = 'chat.moments.refresh',
     metaContext: Parameters<typeof makeApiUsageMeta>[1] = {},
 ): Promise<any[]> => {
-    const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-        body: JSON.stringify({
-            model: apiConfig.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature,
-            max_tokens: maxTokens,
-        }),
-        __moroMeta: makeApiUsageMeta(featureId, { apiRole: 'aux', ...metaContext }),
-    } as RequestInit & { __moroMeta?: unknown });
-    if (!response.ok) throw new Error(`API Error (${response.status})`);
-    const data = await safeResponseJson(response);
-    return safeParseJSON(data?.choices?.[0]?.message?.content || '');
+    const api = apiConfig as APIConfig & { apiRole?: string; apiBinding?: string };
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+    }, {
+        meta: makeApiUsageMeta(featureId, { ...metaContext, apiRole: metaContext.apiRole || api.apiRole || 'aux', apiBinding: metaContext.apiBinding || api.apiBinding }),
+    });
+    return safeParseJSON(extractContent(data) || '');
 };
 
 /** 角色对帖子的互动结果（作为"增量操作"返回，由 MomentsFeed 套用到最新 state，避免竞态覆盖） */
@@ -123,14 +130,17 @@ const feedDigest = (
     allowNpc: boolean,
     blockedNpcNames: Set<string>,
     limit = 8,
+    viewerCharIds?: string[],
 ): string => {
     const visibleCharIds = new Set(characters.map(c => c.id));
     const visibleCharNames = new Set(characters.map(c => c.name));
     const visible = feed
         .filter(p => {
+            const post = normalizeSocialPostForMoments(p);
+            if (viewerCharIds && viewerCharIds.some(id => !canCharacterViewMoment(post, id))) return false;
             if (p.visibility === 'private') return false;
             if (blockedNpcNames.has(p.authorName)) return false;
-            if (allowNpc) return true;
+            if (allowNpc) return canNpcAccessMoment(post) || p.authorType !== 'stranger';
             if (p.authorType === 'stranger') return false;
             if (p.authorType === 'user' || p.authorName === userName) return true;
             if (p.authorType === 'character') {
@@ -319,7 +329,7 @@ export const generateCharacterMoments = async (params: {
         socialCircle,
         candidateBlocks: blocks.join('\n\n'),
         roster,
-        feedDigest: feedDigest(feed, momentCharacters, userProfile.name, allowNpc, blockedNpcNames),
+        feedDigest: feedDigest(feed, momentCharacters, userProfile.name, allowNpc, blockedNpcNames, 8, selected.map(c => c.id)),
     });
 
     const json = await callLLM(apiConfig, prompt, 0.95, 16000, 'chat.moments.refresh');
@@ -353,7 +363,11 @@ export const generateCharacterMoments = async (params: {
 
         let repostOf: SocialPost['repostOf'] = null;
         if (item?.repostOfPostId) {
-            const origin = feed.find(p => p.id === item.repostOfPostId && p.visibility !== 'private');
+            const origin = feed.find(p => {
+                if (p.id !== item.repostOfPostId) return false;
+                const normalized = normalizeSocialPostForMoments(p);
+                return author ? canCharacterRepostMoment(normalized, author.id) : canNpcAccessMoment(normalized);
+            });
             if (origin) {
                 repostOf = {
                     postId: origin.id,
@@ -398,10 +412,80 @@ export const generateCharacterMoments = async (params: {
             repostOf,
             location: item?.location ? String(item.location).slice(0, 30) : undefined,
             visibility: 'public',
+            lastActivityAt: now - idx * 1000,
+            unreadForUser: true,
+            source: 'refresh',
+            relationSignals: authorCharId ? [{ charId: authorCharId, kind: 'posted', text: `${authorName} 发了一条此刻：${content.slice(0, 60)}`, at: now - idx * 1000 }] : [],
         });
     });
 
     return posts;
+};
+
+export const generateAutoCharacterMoment = async (params: {
+    apiConfig: APIConfig;
+    char: CharacterProfile;
+    userProfile: UserProfile;
+    feed: SocialPost[];
+    trigger: string;
+    recentLife?: string;
+}): Promise<SocialPost | null> => {
+    const { apiConfig, char, userProfile, feed, trigger, recentLife } = params;
+    const blockedNpcNames = hiddenAmbientNpcNames(userProfile);
+    const charBlock = await buildCharBlock(char, userProfile);
+    const prompt = momentsAutoPostPrompt({
+        userName: userProfile.name,
+        charName: char.name,
+        charBlock,
+        recentLife: recentLife || '',
+        feedDigest: feedDigest(feed, [char], userProfile.name, false, blockedNpcNames, 6, [char.id]),
+        trigger,
+    });
+    const json = await callLLM(apiConfig, prompt, 0.9, 2200, 'chat.moments.autoPost', { charId: char.id, charName: char.name });
+    const item = Array.isArray(json) ? json[0] : null;
+    const content = String(item?.content || '').trim();
+    const author = resolveMomentCharacter([char], item?.charId) || char;
+    if (!content || author.id !== char.id) return null;
+
+    let repostOf: SocialPost['repostOf'] = null;
+    if (item?.repostOfPostId) {
+        const origin = feed.find(p => p.id === item.repostOfPostId && canCharacterRepostMoment(normalizeSocialPostForMoments(p), char.id));
+        if (origin) {
+            repostOf = {
+                postId: origin.id,
+                authorName: origin.authorName,
+                content: postDisplayText(origin),
+                images: displayableImages(origin),
+            };
+        }
+    }
+
+    const now = Date.now();
+    return {
+        id: newId('moment-auto'),
+        authorName: char.name,
+        authorAvatar: char.avatar,
+        title: '',
+        content,
+        images: [],
+        likes: 0,
+        isCollected: false,
+        isLiked: false,
+        comments: [],
+        timestamp: now,
+        tags: ['主动此刻'],
+        authorType: 'character',
+        authorCharId: char.id,
+        likedBy: [],
+        repostOf,
+        location: item?.location ? String(item.location).slice(0, 30) : undefined,
+        visibility: 'public',
+        audienceRules: { mode: 'public' },
+        lastActivityAt: now,
+        unreadForUser: true,
+        source: 'auto',
+        relationSignals: [{ charId: char.id, kind: 'posted', text: `${char.name} 主动发了一条此刻：${content.slice(0, 60)}`, at: now }],
+    };
 };
 
 /**
@@ -418,11 +502,15 @@ export const generateReactions = async (params: {
 }): Promise<ReactionOp[]> => {
     const { apiConfig, characters, userProfile, post, feed } = params;
     if (characters.length === 0 || post.visibility === 'private') return [];
+    const targetPost = normalizeSocialPostForMoments(post);
 
-    const mentioned = (post.mentionedCharIds || [])
+    const explicitNotifyIds = Object.entries(targetPost.audienceRules?.characters || {})
+        .filter(([, rule]) => rule?.notify)
+        .map(([id]) => id);
+    const mentioned = Array.from(new Set([...(post.mentionedCharIds || []), ...explicitNotifyIds]))
         .map(id => charByLocalId(characters, id))
-        .filter((c): c is CharacterProfile => !!c);
-    const others = pickRandom(characters.filter(c => !mentioned.some(m => m.id === c.id)), Math.max(0, 4 - mentioned.length));
+        .filter((c): c is CharacterProfile => !!c && canCharacterViewMoment(targetPost, c.id));
+    const others = pickRandom(characters.filter(c => !mentioned.some(m => m.id === c.id) && canCharacterViewMoment(targetPost, c.id)), Math.max(0, 4 - mentioned.length));
     const reactors = [...mentioned, ...others];
     if (reactors.length === 0) return [];
 
@@ -430,9 +518,10 @@ export const generateReactions = async (params: {
 
     // 主目标 + 少量近期帖作为顺手互动对象
     const sideTargets = feed
-        .filter(p => p.id !== post.id && p.visibility !== 'private')
+        .map(p => normalizeSocialPostForMoments(p))
+        .filter(p => p.id !== post.id && reactors.every(actor => canCharacterViewMoment(p, actor.id)))
         .slice(0, 3);
-    const targets = [post, ...sideTargets];
+    const targets = [targetPost, ...sideTargets];
     const targetDigest = targets.map(p => {
         const who = p.authorType === 'user' ? `${p.authorName}(用户本人)` : p.authorName;
         const imgs = displayableImages(p).length;
@@ -467,8 +556,10 @@ export const generateReactions = async (params: {
         const action = String(item?.action || '').toLowerCase();
 
         if (action === 'like') {
+            if (!canCharacterLikeMoment(target, actor.id)) return;
             ops.push({ type: 'like', postId: target.id, liker: { id: actor.id, name: actor.name } });
         } else if (action === 'comment') {
+            if (!canCharacterCommentMoment(target, actor.id)) return;
             const text = String(item?.content || '').trim();
             if (!text) return;
             let replyTo: SocialComment['replyTo'];
@@ -492,6 +583,7 @@ export const generateReactions = async (params: {
                 },
             });
         } else if (action === 'repost' && !repostUsed) {
+            if (!canCharacterRepostMoment(target, actor.id)) return;
             const text = String(item?.content || '').trim();
             if (!text) return;
             repostUsed = true;
@@ -520,6 +612,10 @@ export const generateReactions = async (params: {
                         images: displayableImages(target),
                     },
                     visibility: 'public',
+                    lastActivityAt: Date.now(),
+                    unreadForUser: true,
+                    source: 'auto',
+                    relationSignals: [{ charId: actor.id, kind: 'reposted', text: `${actor.name} 转发了 ${target.authorName} 的此刻：${text.slice(0, 60)}`, at: Date.now() }],
                 },
             });
         }
@@ -540,6 +636,7 @@ export const generateCommentReplies = async (params: {
 }): Promise<SocialComment[]> => {
     const { apiConfig, characters, userProfile, post, userComment } = params;
     if (post.visibility === 'private') return [];
+    const visiblePost = normalizeSocialPostForMoments(post);
 
     // 候选回应者：帖子作者(角色) + 该帖评论区出现过的角色 + 随机补位
     const involvedIds = new Set<string>();
@@ -549,8 +646,8 @@ export const generateCommentReplies = async (params: {
         const target = (post.comments || []).find(c => c.id === userComment.replyTo!.commentId);
         if (target?.authorCharId) involvedIds.add(target.authorCharId);
     }
-    let candidates = characters.filter(c => involvedIds.has(c.id));
-    if (candidates.length === 0) candidates = pickRandom(characters, Math.min(2, characters.length));
+    let candidates = characters.filter(c => involvedIds.has(c.id) && canCharacterCommentMoment(visiblePost, c.id));
+    if (candidates.length === 0) candidates = pickRandom(characters.filter(c => canCharacterCommentMoment(visiblePost, c.id)), Math.min(2, characters.length));
     candidates = candidates.slice(0, 3);
     if (candidates.length === 0) return [];
 

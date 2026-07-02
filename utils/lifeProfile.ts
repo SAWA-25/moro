@@ -10,8 +10,8 @@
  */
 
 import { CharacterProfile, UserProfile, MemoryFragment } from '../types';
-import { safeFetchJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 export interface LifeProfileApiConfig {
     baseUrl: string;
@@ -87,21 +87,15 @@ ${styleHint}
 直接输出 markdown 正文，不要前言、不要额外解释、不要用代码块包裹。`;
 
     try {
-        const data = await safeFetchJson(
-            `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({
-                    model: api.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.8,
-                    max_tokens: 2000,
-                    stream: false,
-                }),
-            },
-            2, 0, makeApiUsageMeta('character.lifeProfile', { apiRole: 'aux', charId: char.id, charName: char.name }),
-        );
+        const data = await callChatCompletion(api, {
+            model: api.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.8,
+            max_tokens: 2000,
+            stream: false,
+        }, {
+            meta: makeApiUsageMeta('character.lifeProfile', { apiRole: 'aux', charId: char.id, charName: char.name }),
+        });
         let content = (data.choices?.[0]?.message?.content || '').trim();
         content = content.replace(/^```(?:markdown)?\s*/i, '').replace(/\s*```$/i, '').trim();
         return content.length >= 20 ? content : null;

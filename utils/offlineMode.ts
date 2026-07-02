@@ -1,8 +1,10 @@
 import { CharacterProfile, UserProfile, Message } from '../types';
 import { DB } from './db';
 import { ContextBuilder } from './context';
-import { safeResponseJson, extractContent } from './safeApi';
+import { extractContent } from './safeApi';
 import { RealtimeContextManager } from './realtimeContext';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 
 /**
  * 线下模式（自动线下）。
@@ -122,20 +124,25 @@ const formatEntries = (entries: OfflineEntry[], charName: string, userName: stri
         return `${e.role === 'char' ? charName : userName}：${e.text}`;
     }).join('\n');
 
-interface OfflineApi { baseUrl: string; apiKey: string; model: string }
+interface OfflineApi {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    apiRole?: 'main' | 'aux' | 'custom';
+    apiBinding?: string;
+}
 
 const callLLM = async (api: OfflineApi, prompt: string, temperature = 0.9): Promise<string> => {
-    const response = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature,
+    const data = await callChatCompletion(api, {
+        model: api.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+    }, {
+        meta: makeApiUsageMeta('chat.offlineMode', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
         }),
     });
-    if (!response.ok) throw new Error(`API ${response.status}`);
-    const data = await safeResponseJson(response);
     return (extractContent(data) || '').trim();
 };
 
@@ -165,8 +172,10 @@ ${recentLines || '（你们还没怎么聊过）'}
 **这场见面是上面那段线上聊天的直接延续**，请把它当成同一段关系、同一条时间线上的事：
 - 承接线上聊到的话题、约定、心情和未说完的话，自然延续，而不是另起一段毫无关联的剧情；
 - 记得你们线上是什么关系、聊到哪儿了，见面时的熟悉度、语气、称呼都要和线上一致；
-- 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开。
-接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。${clockBlock}`;
+- 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开；
+- 现场反应要像真人刚碰面：先看见对方、听见周围声音、注意到衣着/气味/天气/手里的东西，再决定怎么开口或靠近，不要直接跳成总结、告白或大段独白；
+- 关系没到的地方不要硬亲密，性格克制的人可以尴尬、嘴硬、岔开，熟悉的人也可以用玩笑、沉默或顺手的小动作表达。
+接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。文字要自然、具体、有生活气，避免舞台剧报幕、小说腔排比和过度煽情。${clockBlock}`;
 };
 
 // ── 线下开场白方式（见面是怎么开始的）──────────────────────────────
@@ -224,7 +233,11 @@ export const generateOfflineOpening = async (
 ${povText}
 ${sceneFrame}
 ### [任务]
-写出见面那一刻的开场（120-250字）：交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，以及「${char.name}」见到 ${userProfile.name} 的第一反应——动作、神态、说的第一句话，必须完全贴合人设。
+写出见面那一刻的开场（120-250字）：
+- 交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，但只写会被当场注意到的细节；
+- 承接最近线上聊天里的约定、情绪或未说完的话，让这场见面像顺着上一句聊天自然发生；
+- 写「${char.name}」见到 ${userProfile.name} 的第一反应：一个具体动作/神态 + 一句贴合人设的开口，可以短、可以别扭、可以有停顿；
+- 不要替 ${userProfile.name} 说话或行动，不要把双方关系突然推进到人设不支持的亲密程度。
 按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`);
 };
 
@@ -249,7 +262,12 @@ ${transcript || '（刚见面）'}
 ${tail}
 
 ### [任务]
-以「${char.name}」的身份续写现场接下来的一小段（80-200字）：TA 的动作、神态、台词，可穿插简短场景旁白。按上面 [叙述人称] 的要求叙述，节奏自然、贴合人设，不要替 ${userProfile.name} 说话或行动。直接输出正文，不要任何前缀或解释。`);
+以「${char.name}」的身份续写现场接下来的一小段（80-200字）：
+- 先回应 ${userProfile.name} 刚刚的行动/发言，再用一个很小的动作、神态或环境细节把现场往前推；
+- 台词像真人面对面说话，可以短句、停顿、没说完、临时改口，不要每次都工整抒情；
+- 可以让「${char.name}」主动做点符合人设的事（递东西、让路、靠近/退开、转移话题、带着走），但不要替 ${userProfile.name} 说话或行动；
+- 保持当前关系的边界和熟悉度，不要硬转暧昧、硬制造冲突，也不要把现场写成剧情总结。
+按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`);
 };
 
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */
@@ -264,7 +282,7 @@ export const commitOfflineSessionToContext = async (
         type: 'text',
         content: `[线下模式记录] 你（${char.name}）和 ${userName} 刚刚线下见面了，下面是这次见面现场发生的全部情景。`
             + `见面已经结束，你们现在回到线上聊天——请把这次见面当作真实发生过、你清楚记得的事：`
-            + `线上接着聊时可以自然提起见面时的细节、延续当时的心情和话题，不要表现得好像没见过面。\n${transcript}`,
+            + `线上接着聊时可以自然提起见面时的细节、延续当时的心情和话题；如果刚才有尴尬、未说完、好笑或亲近的瞬间，可以像真人事后回味那样轻轻带到聊天里。不要表现得好像没见过面，也不要把这段经历硬写成总结报告。\n${transcript}`,
         metadata: { offlineSession: true },
     } as any);
 };

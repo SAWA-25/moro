@@ -15,6 +15,9 @@
 import { SongSheet, SongLine, APIConfig, CharacterProfile } from '../types';
 import { SONG_GENRES, SONG_MOODS } from './songPrompts';
 import { DB } from './db';
+import { extractContent } from './safeApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 // ── Endpoint config ──
 // Same Cloudflare Worker domain that hosts /netease, /xhs, /webdav etc.
@@ -194,8 +197,9 @@ export async function generatePromptViaLLM(
   signal?: AbortSignal,
   outputLanguage: 'en' | 'zh' = 'en',
 ): Promise<string> {
-  if (!apiConfig.baseUrl || !apiConfig.apiKey || !apiConfig.model) {
-    throw new Error('请先在「文具盒」里配置 LLM API（baseUrl + key + model）');
+  const api = apiConfig as APIConfig & { apiRole?: string; apiBinding?: string };
+  if (!api.baseUrl || !api.model) {
+    throw new Error('请先在「文具盒」里配置 LLM API（baseUrl + model）');
   }
   const trimmed = guidance.trim();
 
@@ -298,32 +302,22 @@ ${trimmed || '(用户没填，请完全凭角色档案的怪癖和气质来决�
 ${trimmed ? '⚠️ 再次提醒: 用户 hint 里写明的具体音乐元素 (vocal 性别 / 风格 / 乐器 / BPM) 必须原样保留。' : ''}
 最终回复仅是那一行标签串本身 (不要前后缀 / 不要解释)。**即使 hint 模糊或为空, 也必须给出一段 8-15 个标签的完整字符串, 绝不能空回。**`;
 
-  const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiConfig.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: apiConfig.model,
-      messages: [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      // High temp for distinctive choices, but not so high it hallucinates
-      temperature: 0.95,
-      // Generous budget — modern models burn tokens on thinking.
-      // Output is one short line; we trust the prompt to keep the model concise.
-      max_tokens: 8000,
-    }),
+  const data = await callChatCompletion(api, {
+    model: api.model,
+    messages: [
+      { role: 'system', content: sysPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    // High temp for distinctive choices, but not so high it hallucinates
+    temperature: 0.95,
+    // Generous budget — modern models burn tokens on thinking.
+    // Output is one short line; we trust the prompt to keep the model concise.
+    max_tokens: 8000,
+  }, {
     signal,
+    meta: makeApiUsageMeta('creative.songwriting', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '写歌提示词' }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`LLM 调用失败 (HTTP ${res.status}): ${text.slice(0, 150)}`);
-  }
-  const data = await res.json();
-  const raw: string = data?.choices?.[0]?.message?.content || '';
+  const raw: string = extractContent(data) || '';
   if (!raw) throw new Error('LLM 没返回内容');
 
   // 清理：剥掉常见的引号/markdown/解释前缀

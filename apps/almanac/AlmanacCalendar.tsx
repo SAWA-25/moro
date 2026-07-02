@@ -15,9 +15,11 @@ import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { CalendarMark, CharacterProfile } from '../../types';
 import { ContextBuilder } from '../../utils/context';
-import { safeResponseJson } from '../../utils/safeApi';
+import { extractContent } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
+import { callChatCompletion } from '../../utils/llmClient';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import {
     Chip,
     IconCircle,
@@ -147,7 +149,7 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
     // ---- 角色自标（AI） ----
     const genCharMarks = useCallback(async (char: CharacterProfile, quiet: boolean) => {
-        if (!char || !auxApi.apiKey) {
+        if (!char || !auxApi.baseUrl || !auxApi.model) {
             if (!quiet) addToast('还没配置 API，角色先记不了', 'info');
             return;
         }
@@ -171,17 +173,24 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 - date 必须在 ${today} 之后、45 天以内。
 - **必须使用用户常用语言**。`;
 
-            const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: [
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [
                     { role: 'system', content: baseContext },
                     { role: 'user', content: userPrompt },
-                ], temperature: 0.9, max_tokens: 8000 }),
+                ],
+                temperature: 0.9,
+                max_tokens: 8000,
+                stream: false,
+            }, {
+                meta: makeApiUsageMeta('almanac.calendarMarks', {
+                    charId: char.id,
+                    charName: char.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '共享月历',
+                }),
             });
-            if (!res.ok) throw new Error(`API ${res.status}`);
-            const data = await safeResponseJson(res);
-            const text = data.choices?.[0]?.message?.content?.trim() || '';
+            const text = (extractContent(data) || '').trim();
             const items = parseMarkJson(text).filter((it) => it.date > today).slice(0, 4);
             if (items.length === 0) {
                 if (!quiet) addToast(`${char.name} 这次没记下什么`, 'info');

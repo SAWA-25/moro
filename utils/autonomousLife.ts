@@ -15,15 +15,21 @@
  * prompt 短、max_tokens 小。失败全吞 —— 自主生活只是锦上添花，绝不能影响主聊天。
  */
 
-import { CharacterProfile, CharLifeEvent, AuxApiConfig } from '../types';
+import { CharacterProfile, CharLifeEvent, AuxApiConfig, DailySchedule, ScheduleSlot } from '../types';
 import { DB } from './db';
 import { isAuxApiOn } from './auxApi';
 import { AUTONOMOUS_SINGLE_SYSTEM, AUTONOMOUS_BATCH_SYSTEM, autonomousProactiveHint, recentLifeContextIntro } from './laiwangPrompts';
+import { callChatCompletion } from './llmClient';
+import { makeApiUsageMeta } from './apiUsageCatalog';
+import { extractContent } from './safeApi';
 
 export interface LifeApi {
   baseUrl: string;
   apiKey?: string;
   model: string;
+  apiRole?: 'main' | 'aux' | 'custom';
+  apiBinding?: string;
+  fallbackFromAux?: boolean;
 }
 
 /** 喂给 agent 的最近事件条数（保证一天有连续性、有起伏，又不撑爆 prompt）。 */
@@ -40,6 +46,124 @@ const SINGLE_MAX_TOKENS = 400;
 const BATCH_MAX_TOKENS = 800;
 
 const genId = () => Math.random().toString(36).slice(2, 10);
+
+type ProactiveConfig = NonNullable<CharacterProfile['proactiveConfig']>;
+type ProactiveIntensity = NonNullable<ProactiveConfig['intensity']>;
+type LifeDensity = NonNullable<ProactiveConfig['lifeDensity']>;
+type MessageFlavor = NonNullable<ProactiveConfig['messageFlavor']>;
+type MaterialSource = NonNullable<ProactiveConfig['materialSources']>[number];
+type QuietBehavior = NonNullable<ProactiveConfig['quietHours']>['behavior'];
+
+export type AutonomousProactiveDecision = 'send' | 'life_only' | 'skip';
+
+export interface AutonomousProactivePlan {
+  decision: AutonomousProactiveDecision;
+  event: CharLifeEvent | null;
+  reason: string;
+  generated: boolean;
+  reused: boolean;
+  quietHoursActive: boolean;
+  score: number;
+}
+
+export interface AutonomousProactivePlanOptions {
+  now?: number;
+  signal?: AbortSignal;
+  recentChat?: string;
+  randomMode?: boolean;
+}
+
+const DEFAULT_MATERIAL_SOURCES: MaterialSource[] = ['life', 'recentChat', 'schedule', 'realtime'];
+const MATERIAL_SOURCE_LABELS: Record<MaterialSource, string> = {
+  life: '自己的生活事件',
+  recentChat: '最近聊天余温',
+  schedule: '今日作息',
+  realtime: '实时世界',
+};
+
+export function getProactiveIntensity(char: CharacterProfile): ProactiveIntensity {
+  return char.proactiveConfig?.intensity || 'balanced';
+}
+
+export function getLifeDensity(char: CharacterProfile): LifeDensity {
+  return char.proactiveConfig?.lifeDensity || 'normal';
+}
+
+export function getMessageFlavor(char: CharacterProfile): MessageFlavor {
+  return char.proactiveConfig?.messageFlavor || 'natural';
+}
+
+export function getMaterialSources(char: CharacterProfile): MaterialSource[] {
+  const raw = char.proactiveConfig?.materialSources;
+  if (!raw || raw.length === 0) return DEFAULT_MATERIAL_SOURCES;
+  const allowed = new Set(DEFAULT_MATERIAL_SOURCES);
+  const picked = raw.filter((s): s is MaterialSource => allowed.has(s as MaterialSource));
+  return picked.length ? Array.from(new Set(picked)) : DEFAULT_MATERIAL_SOURCES;
+}
+
+export function formatMaterialSources(char: CharacterProfile): string {
+  return getMaterialSources(char).map(s => MATERIAL_SOURCE_LABELS[s]).join('、');
+}
+
+function lifeGenerationCooldownMs(density: LifeDensity): number {
+  if (density === 'sparse') return 2 * 60 * 60 * 1000;
+  if (density === 'busy') return 15 * 60 * 1000;
+  return 45 * 60 * 1000;
+}
+
+function catchupPlanForDensity(density: LifeDensity): { everyMs: number; max: number } {
+  if (density === 'sparse') return { everyMs: 5 * 60 * 60 * 1000, max: 4 };
+  if (density === 'busy') return { everyMs: 2 * 60 * 60 * 1000, max: 8 };
+  return { everyMs: 3 * 60 * 60 * 1000, max: CATCHUP_MAX_EVENTS };
+}
+
+function proactiveThreshold(intensity: ProactiveIntensity): number {
+  if (intensity === 'quiet') return 70;
+  if (intensity === 'chatty') return 38;
+  if (intensity === 'unfiltered') return 24;
+  return 52;
+}
+
+function clampScore(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+export function scoreLifeEventForProactive(event: CharLifeEvent | null | undefined): number {
+  if (!event) return 0;
+  const intensity = clampScore(event.intensity, 50);
+  const share = clampScore(event.shareWillingness, event.proactiveAngle === 'silence' ? 15 : 55);
+  let score = Math.round(intensity * 0.45 + share * 0.55);
+  if (event.energy === 'high') score += 8;
+  if (event.energy === 'low') score -= 6;
+  if (event.proactiveAngle === 'silence') score -= 22;
+  if (event.proactiveAngle === 'ask' || event.proactiveAngle === 'invite') score += 6;
+  return Math.max(0, Math.min(100, score));
+}
+
+function parseHHmm(value: string | undefined, fallback: number): number {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const h = Math.max(0, Math.min(23, parseInt(m[1], 10)));
+  const min = Math.max(0, Math.min(59, parseInt(m[2], 10)));
+  return h * 60 + min;
+}
+
+export function resolveQuietHours(char: CharacterProfile, now = Date.now()): { active: boolean; behavior: QuietBehavior } {
+  const q = char.proactiveConfig?.quietHours;
+  if (!q?.enabled) return { active: false, behavior: 'send' };
+  const start = parseHHmm(q.start, 23 * 60);
+  const end = parseHHmm(q.end, 7 * 60);
+  const d = new Date(now);
+  const cur = d.getHours() * 60 + d.getMinutes();
+  const active = start === end
+    ? false
+    : start < end
+    ? cur >= start && cur < end
+    : cur >= start || cur < end;
+  return { active, behavior: q.behavior || 'life_only' };
+}
 
 /** undefined 视为开启：开了「悄悄来信」即默认让角色过自己的生活。 */
 export function isAutonomousLifeEnabled(char: CharacterProfile): boolean {
@@ -60,9 +184,11 @@ export function isAutonomousLifeEnabled(char: CharacterProfile): boolean {
  */
 export function resolveLifeApi(char: CharacterProfile, aux: AuxApiConfig | null | undefined, mainApi: LifeApi): LifeApi {
   const cfg = char.proactiveConfig;
-  if (cfg?.useSecondaryApi && cfg.secondaryApi?.baseUrl) return cfg.secondaryApi;
-  if (isAuxApiOn(aux)) return { baseUrl: aux!.baseUrl, apiKey: aux!.apiKey || '', model: aux!.model };
-  return mainApi;
+  if (cfg?.useSecondaryApi && cfg.secondaryApi?.baseUrl) {
+    return { ...cfg.secondaryApi, apiRole: 'custom', apiBinding: '角色主动消息副 API' };
+  }
+  if (isAuxApiOn(aux)) return { baseUrl: aux!.baseUrl, apiKey: aux!.apiKey || '', model: aux!.model, apiRole: 'aux', apiBinding: '文具盒副 API' };
+  return { ...mainApi, apiRole: 'main', apiBinding: '副 API 未配置，回退主 API', fallbackFromAux: true };
 }
 
 // ── 时间 / 人设 上下文 ───────────────────────────────────────────
@@ -84,6 +210,132 @@ function describeTime(d: Date): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]} ${hh}:${mm}（${dayPart(d.getHours())}）`;
+}
+
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isoDateKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function isScheduleFeatureLikelyOn(char: CharacterProfile): boolean {
+  if (char.scheduleFeatureEnabled === true) return true;
+  if (char.scheduleFeatureEnabled === false) return false;
+  return !!char.scheduleStyle;
+}
+
+async function loadScheduleForLife(char: CharacterProfile, timestamp: number): Promise<DailySchedule | null> {
+  if (!getMaterialSources(char).includes('schedule')) return null;
+  if (!isScheduleFeatureLikelyOn(char)) return null;
+  const d = new Date(timestamp);
+  const keys = Array.from(new Set([isoDateKey(d), localDateKey(d)]));
+  for (const key of keys) {
+    const schedule = await DB.getDailySchedule(char.id, key).catch(() => null);
+    if (schedule?.slots?.length) return schedule;
+  }
+  return null;
+}
+
+async function loadSchedulesForLife(char: CharacterProfile, timestamps: number[]): Promise<Array<DailySchedule | null>> {
+  const cache = new Map<string, DailySchedule | null>();
+  const out: Array<DailySchedule | null> = [];
+  for (const ts of timestamps) {
+    const d = new Date(ts);
+    const cacheKey = Array.from(new Set([isoDateKey(d), localDateKey(d)])).join('|');
+    if (!cache.has(cacheKey)) {
+      cache.set(cacheKey, await loadScheduleForLife(char, ts));
+    }
+    out.push(cache.get(cacheKey) || null);
+  }
+  return out;
+}
+
+function slotStartMinutes(slot: ScheduleSlot): number {
+  return parseHHmm(slot.startTime, 0);
+}
+
+function findScheduleSlotAt(schedule: DailySchedule | null | undefined, timestamp: number): {
+  current: ScheduleSlot | null;
+  previous: ScheduleSlot | null;
+  next: ScheduleSlot | null;
+} {
+  if (!schedule?.slots?.length) return { current: null, previous: null, next: null };
+  const sorted = [...schedule.slots].sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b));
+  const d = new Date(timestamp);
+  const minutes = d.getHours() * 60 + d.getMinutes();
+  let idx = -1;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (minutes >= slotStartMinutes(sorted[i])) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return { current: null, previous: null, next: sorted[0] || null };
+  return {
+    current: sorted[idx] || null,
+    previous: idx > 0 ? sorted[idx - 1] : null,
+    next: idx < sorted.length - 1 ? sorted[idx + 1] : null,
+  };
+}
+
+function formatScheduleSlot(slot: ScheduleSlot | null | undefined): string {
+  if (!slot) return '（无）';
+  const time = slot.endTime ? `${slot.startTime}-${slot.endTime}` : slot.startTime;
+  const where = slot.location ? `（${slot.location}）` : '';
+  const desc = slot.description ? `：${slot.description}` : '';
+  const anchor = slot.anchored || slot.source === 'chat' ? ' [聊天约定/锚点]' : '';
+  return `${time} ${slot.activity}${where}${desc}${anchor}`;
+}
+
+function buildScheduleLifeContext(schedule: DailySchedule | null, timestamp: number): {
+  block: string;
+  slot: ScheduleSlot | null;
+} {
+  if (!schedule?.slots?.length) return { block: '', slot: null };
+  const { current, previous, next } = findScheduleSlotAt(schedule, timestamp);
+  const anchors = schedule.slots
+    .filter(s => s.anchored || s.source === 'chat')
+    .map(formatScheduleSlot)
+    .join('\n');
+  const lines = [
+    '今日作息对齐（必须遵守）：',
+    `- 预估发生时间：${describeTime(new Date(timestamp))}`,
+    `- 当前/最接近时段：${formatScheduleSlot(current)}`,
+    previous ? `- 上一时段：${formatScheduleSlot(previous)}` : '',
+    next ? `- 下一时段：${formatScheduleSlot(next)}` : '',
+    anchors ? `- 今天已定下的聊天锚点：\n${anchors}` : '',
+    '生成生活小事时要和当前/最接近时段相容；不要让 TA 在同一时间出现在两个地点，或一边做日程里互斥的事一边做另一件事。若写临时小插曲，请写成发生在该时段的路上、间隙或被日程影响后的自然变化。',
+  ].filter(Boolean);
+  return { block: lines.join('\n'), slot: current };
+}
+
+function buildCatchupScheduleContext(schedules: Array<DailySchedule | null>, timestamps: number[]): string {
+  if (timestamps.length === 0 || !schedules.some(s => s?.slots?.length)) return '';
+  const lines = timestamps.map((ts, idx) => {
+    const schedule = schedules[idx] || null;
+    const { current, next } = findScheduleSlotAt(schedule, ts);
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${idx + 1}. ${hh}:${mm} → 当前/最接近：${formatScheduleSlot(current)}${next ? `；之后：${formatScheduleSlot(next)}` : ''}`;
+  });
+  return [
+    '这段离线补齐要和今日作息同步。下面每一行对应你将按顺序生成的一件小事，后续会按这些时间落库：',
+    ...lines,
+    '每件小事都必须贴合对应时段；不要和聊天锚点、地点、正在做的事撞车。若发生偏离，请写出是“临时变化/间隙/路上”的合理过渡。',
+  ].join('\n');
+}
+
+function scheduleEventPatch(schedule: DailySchedule | null, timestamp: number): Pick<CharLifeEvent, 'scheduleDate' | 'scheduleSlotStartTime' | 'scheduleSlotActivity'> {
+  const { current } = findScheduleSlotAt(schedule, timestamp);
+  if (!schedule || !current) return {};
+  return {
+    scheduleDate: schedule.date,
+    scheduleSlotStartTime: current.startTime,
+    scheduleSlotActivity: current.activity,
+  };
 }
 
 /** 把角色核心设定压成一小段喂给 agent —— 只取 name + systemPrompt + worldview，截断防超长。 */
@@ -110,29 +362,22 @@ function recentEventsBrief(events: CharLifeEvent[]): string {
 // ── LLM 调用 ────────────────────────────────────────────────────
 
 async function callLLM(api: LifeApi, messages: any[], maxTokens: number, signal?: AbortSignal): Promise<string> {
-  const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-  if (!baseUrl || !api.model) return '';
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${api.apiKey || 'sk-none'}`,
-    },
-    body: JSON.stringify({
-      model: api.model,
-      messages,
-      temperature: 0.92,
-      max_tokens: maxTokens,
-      stream: false,
-    }),
+  if (!api.baseUrl || !api.model) return '';
+  const data = await callChatCompletion(api, {
+    model: api.model,
+    messages,
+    temperature: 0.92,
+    max_tokens: maxTokens,
+    stream: false,
+  }, {
     signal,
+    meta: makeApiUsageMeta('chat.autonomousLife', {
+      apiRole: api.apiRole || 'aux',
+      apiBinding: api.apiBinding,
+      isBackgroundTask: true,
+    }),
   });
-  if (!res.ok) {
-    console.warn('[AutonomousLife] LLM call failed', res.status);
-    return '';
-  }
-  const data: any = await res.json();
-  return data?.choices?.[0]?.message?.content || '';
+  return extractContent(data) || '';
 }
 
 /** 去掉代码围栏：成对的 ```json…``` 优先，否则剥掉未闭合的开头/结尾围栏。 */
@@ -272,6 +517,25 @@ interface LifeEventDraft {
   mood?: string;
   location?: string;
   summary?: string;
+  eventKind?: CharLifeEvent['eventKind'];
+  kind?: CharLifeEvent['eventKind'];
+  energy?: CharLifeEvent['energy'];
+  intensity?: number;
+  shareWillingness?: number;
+  thread?: string;
+  proactiveAngle?: CharLifeEvent['proactiveAngle'];
+  angle?: CharLifeEvent['proactiveAngle'];
+}
+
+const LIFE_EVENT_KINDS: NonNullable<CharLifeEvent['eventKind']>[] = [
+  'routine', 'work', 'study', 'social', 'errand', 'rest', 'media', 'food', 'travel', 'health', 'emotion', 'relationship', 'accident', 'other',
+];
+const LIFE_EVENT_ENERGIES: NonNullable<CharLifeEvent['energy']>[] = ['low', 'medium', 'high'];
+const LIFE_EVENT_ANGLES: NonNullable<CharLifeEvent['proactiveAngle']>[] = ['share', 'vent', 'ask', 'tease', 'care', 'invite', 'followup', 'silence', 'other'];
+
+function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback?: T): T | undefined {
+  const s = String(value || '').trim() as T;
+  return allowed.includes(s) ? s : fallback;
 }
 
 function draftToEvent(
@@ -279,9 +543,14 @@ function draftToEvent(
   charId: string,
   timestamp: number,
   source: CharLifeEvent['source'],
+  triggerSource?: CharLifeEvent['triggerSource'],
+  extra?: Partial<CharLifeEvent>,
 ): CharLifeEvent | null {
   const activity = cleanField(draft.activity) || cleanField(draft.summary) || '';
   if (!activity) return null;
+  const eventKind = pickEnum(draft.eventKind || draft.kind, LIFE_EVENT_KINDS);
+  const energy = pickEnum(draft.energy, LIFE_EVENT_ENERGIES);
+  const proactiveAngle = pickEnum(draft.proactiveAngle || draft.angle, LIFE_EVENT_ANGLES);
   return {
     id: `life_${charId}_${timestamp}_${genId()}`,
     charId,
@@ -291,6 +560,14 @@ function draftToEvent(
     location: cleanField(draft.location),
     summary: cleanField(draft.summary) || activity,
     source,
+    eventKind,
+    energy,
+    intensity: draft.intensity === undefined ? undefined : clampScore(draft.intensity, 50),
+    shareWillingness: draft.shareWillingness === undefined ? undefined : clampScore(draft.shareWillingness, 55),
+    thread: cleanField(draft.thread),
+    proactiveAngle,
+    triggerSource,
+    ...extra,
   };
 }
 
@@ -306,11 +583,19 @@ const SINGLE_SYSTEM = AUTONOMOUS_SINGLE_SYSTEM;
 export async function advanceLife(
   char: CharacterProfile,
   api: LifeApi,
-  opts?: { source?: CharLifeEvent['source']; now?: number; signal?: AbortSignal; recentChat?: string },
+  opts?: {
+    source?: CharLifeEvent['source'];
+    triggerSource?: CharLifeEvent['triggerSource'];
+    now?: number;
+    signal?: AbortSignal;
+    recentChat?: string;
+  },
 ): Promise<CharLifeEvent | null> {
   try {
     const now = opts?.now ?? Date.now();
     const recent = await DB.getLifeEvents(char.id, RECENT_EVENTS_FOR_CONTEXT);
+    const schedule = await loadScheduleForLife(char, now);
+    const scheduleContext = buildScheduleLifeContext(schedule, now);
     // 线上→线下：把最近聊了什么也给一眼，让 TA「此刻的生活」能自然呼应这段关系/对话
     // （只是参考，不是在回复对方，也不强行扯上）。
     const chatNote = (opts?.recentChat || '').trim();
@@ -318,8 +603,11 @@ export async function advanceLife(
       personaBrief(char),
       '',
       `现在是：${describeTime(new Date(now))}`,
+      `生活密度：${getLifeDensity(char)}；主动强度：${getProactiveIntensity(char)}；来信口味：${getMessageFlavor(char)}。`,
+      `允许取材：${formatMaterialSources(char)}。`,
       '',
       ...(chatNote ? ['你和对方最近的对话（仅作参考，让你此刻的生活或心情能自然呼应，但你不是在回复对方、也不必强行扯上）：', chatNote, ''] : []),
+      ...(scheduleContext.block ? [scheduleContext.block, ''] : []),
       'TA 最近的生活：',
       recentEventsBrief(recent),
       '',
@@ -339,7 +627,14 @@ export async function advanceLife(
       draft = cleaned ? { activity: cleaned.slice(0, 120) } : null;
     }
     if (!draft) return null;
-    const event = draftToEvent(draft, char.id, now, opts?.source ?? 'proactive');
+    const event = draftToEvent(
+      draft,
+      char.id,
+      now,
+      opts?.source ?? 'proactive',
+      opts?.triggerSource ?? opts?.source ?? 'proactive',
+      scheduleEventPatch(schedule, now),
+    );
     if (!event) return null;
 
     await DB.saveLifeEvent(event);
@@ -353,10 +648,10 @@ export async function advanceLife(
 
 // ── 对外：离线补齐（用户回来时调用）────────────────────────────────
 
-function planCatchupCount(gapMs: number): number {
-  // 大致每 ~3 小时一件事，封顶 CATCHUP_MAX_EVENTS。
-  const byTime = Math.round(gapMs / (3 * 60 * 60 * 1000));
-  return Math.max(1, Math.min(CATCHUP_MAX_EVENTS, byTime));
+function planCatchupCount(gapMs: number, density: LifeDensity): number {
+  const plan = catchupPlanForDensity(density);
+  const byTime = Math.round(gapMs / plan.everyMs);
+  return Math.max(1, Math.min(plan.max, byTime));
 }
 
 // 文案见 utils/laiwangPrompts.ts → [3] 自主生活
@@ -380,15 +675,23 @@ export async function catchUpOfflineLife(
     // 扣掉这段离线里 proactive 已经顺带生成的事件，避免重复调 API + 回顾臃肿。
     const all = await DB.getLifeEvents(char.id);
     const existingInGap = all.filter(e => e.timestamp >= gapStart && e.timestamp <= now).length;
-    const n = planCatchupCount(gapMs) - existingInGap;
+    const density = getLifeDensity(char);
+    const n = planCatchupCount(gapMs, density) - existingInGap;
     if (n <= 0) return [];
     const recent = all.slice(-RECENT_EVENTS_FOR_CONTEXT);
     const hours = Math.round(gapMs / (60 * 60 * 1000));
+    const step = gapMs / (n + 1);
+    const plannedTimestamps = Array.from({ length: n }, (_, i) => Math.round(gapStart + step * (i + 1)));
+    const schedules = await loadSchedulesForLife(char, plannedTimestamps);
+    const scheduleContext = buildCatchupScheduleContext(schedules, plannedTimestamps);
     const userMsg = [
       personaBrief(char),
       '',
       `这段时间：从 ${describeTime(new Date(gapStart))} 到 ${describeTime(new Date(now))}（大约 ${hours} 小时）。`,
       '',
+      `生活密度：${density}；主动强度：${getProactiveIntensity(char)}；允许取材：${formatMaterialSources(char)}。`,
+      '',
+      ...(scheduleContext ? [scheduleContext, ''] : []),
       '在此之前 TA 的生活：',
       recentEventsBrief(recent),
       '',
@@ -408,14 +711,11 @@ export async function catchUpOfflineLife(
     }
     if (!Array.isArray(drafts) || drafts.length === 0) return [];
 
-    const picked = drafts.slice(0, CATCHUP_MAX_EVENTS);
-    // 时间戳均匀铺在 gap 内（留点边距，别正好压在边界上）。
-    const span = gapMs;
-    const step = span / (picked.length + 1);
+    const picked = drafts.slice(0, n);
     const events: CharLifeEvent[] = [];
     for (let i = 0; i < picked.length; i++) {
-      const ts = Math.round(gapStart + step * (i + 1));
-      const ev = draftToEvent(picked[i], char.id, ts, 'catchup');
+      const ts = plannedTimestamps[i] ?? Math.round(gapStart + (gapMs / (picked.length + 1)) * (i + 1));
+      const ev = draftToEvent(picked[i], char.id, ts, 'catchup', 'catchup', scheduleEventPatch(schedules[i] || null, ts));
       if (ev) events.push(ev);
     }
     for (const ev of events) await DB.saveLifeEvent(ev);
@@ -425,6 +725,102 @@ export async function catchUpOfflineLife(
     console.warn('[AutonomousLife] catchUpOfflineLife failed:', e);
     return [];
   }
+}
+
+// ── 对外：主动消息 v2 回合规划 ────────────────────────────────────
+
+function pickReusableLifeEvent(events: CharLifeEvent[], now: number): CharLifeEvent | null {
+  const candidates = events
+    .filter(e => e.timestamp <= now && !e.surfacedAsMsg)
+    .filter(e => now - e.timestamp <= 8 * 60 * 60 * 1000)
+    .sort((a, b) => {
+      const scoreDiff = scoreLifeEventForProactive(b) - scoreLifeEventForProactive(a);
+      return scoreDiff || b.timestamp - a.timestamp;
+    });
+  return candidates[0] || null;
+}
+
+/**
+ * 主动消息 v2：先让角色继续生活，再决定这轮是否值得打扰用户。
+ * - 固定间隔默认发；
+ * - 随机/智能触发可因为事件分数低而只记录生活；
+ * - 勿扰时段可配置为继续发、只记生活或跳过。
+ */
+export async function planAutonomousProactiveTurn(
+  char: CharacterProfile,
+  api: LifeApi,
+  opts?: AutonomousProactivePlanOptions,
+): Promise<AutonomousProactivePlan> {
+  const now = opts?.now ?? Date.now();
+  const quiet = resolveQuietHours(char, now);
+  const materialSources = getMaterialSources(char);
+
+  if (quiet.active && quiet.behavior === 'skip') {
+    return { decision: 'skip', event: null, reason: 'quiet_hours_skip', generated: false, reused: false, quietHoursActive: true, score: 0 };
+  }
+  if (!materialSources.includes('life')) {
+    return {
+      decision: quiet.active && quiet.behavior === 'life_only' ? 'life_only' : 'send',
+      event: null,
+      reason: 'life_material_disabled',
+      generated: false,
+      reused: false,
+      quietHoursActive: quiet.active,
+      score: 0,
+    };
+  }
+
+  let event: CharLifeEvent | null = null;
+  let generated = false;
+  let reused = false;
+  try {
+    const recent = await DB.getLifeEventsSince(char.id, now - 8 * 60 * 60 * 1000);
+    const last = recent.filter(e => e.timestamp <= now).slice(-1)[0];
+    const reusable = pickReusableLifeEvent(recent, now);
+    const cooldown = lifeGenerationCooldownMs(getLifeDensity(char));
+    const shouldGenerate = !reusable || !last || now - last.timestamp >= cooldown;
+
+    if (shouldGenerate) {
+      event = await advanceLife(char, api, {
+        source: 'proactive',
+        triggerSource: 'proactive',
+        now,
+        signal: opts?.signal,
+        recentChat: materialSources.includes('recentChat') ? opts?.recentChat : '',
+      });
+      generated = !!event;
+    }
+    if (!event && reusable) {
+      event = reusable;
+      reused = true;
+    }
+  } catch (e) {
+    console.warn('[AutonomousLife] planAutonomousProactiveTurn failed to prepare event:', e);
+  }
+
+  if (quiet.active && quiet.behavior === 'life_only') {
+    return {
+      decision: 'life_only',
+      event,
+      reason: event ? 'quiet_hours_life_only' : 'quiet_hours_no_event',
+      generated,
+      reused,
+      quietHoursActive: true,
+      score: scoreLifeEventForProactive(event),
+    };
+  }
+
+  if (!event) {
+    return { decision: 'send', event: null, reason: 'no_life_event_fallback', generated, reused, quietHoursActive: quiet.active, score: 0 };
+  }
+
+  const score = scoreLifeEventForProactive(event);
+  const smartSkip = !!opts?.randomMode && char.proactiveConfig?.smartSkipEnabled !== false;
+  if (smartSkip && score < proactiveThreshold(getProactiveIntensity(char))) {
+    return { decision: 'life_only', event, reason: 'low_share_willingness', generated, reused, quietHoursActive: quiet.active, score };
+  }
+
+  return { decision: 'send', event, reason: generated ? 'generated_life_event' : 'reused_life_event', generated, reused, quietHoursActive: quiet.active, score };
 }
 
 // ── 对外：把「近来的线下生活」拼成线上聊天上下文（让线上/线下关联）──────
@@ -454,7 +850,8 @@ export async function buildRecentLifeContextBlock(
       const t = describeTime(new Date(e.timestamp));
       const where = e.location ? `（在${e.location}）` : '';
       const mood = e.mood ? `，${e.mood}` : '';
-      return `- ${t}${where}：${sanitizeLifeText(e.activity)}${mood}`;
+      const tags = [e.eventKind, e.energy, e.thread ? `线索:${sanitizeLifeText(e.thread)}` : ''].filter(Boolean).join(' / ');
+      return `- ${t}${where}：${sanitizeLifeText(e.activity)}${mood}${tags ? `（${tags}）` : ''}`;
     }).join('\n');
     return `\n${recentLifeContextIntro(userName)}\n${lines}\n`;
   } catch (e) {
@@ -483,9 +880,26 @@ export function buildAutonomousProactiveHint(args: {
   const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed } = args;
   const where = event.location ? `（在${event.location}）` : '';
   const mood = event.mood ? `，此刻的心情是「${event.mood}」` : '';
+  const thread = event.thread ? sanitizeLifeText(event.thread) : '';
   const gapNote = timeSinceUser
     ? `${userName}已经 ${timeSinceUser} 没找你了，但你有你自己的生活，不必一直围着 ${userName} 转。`
     : '';
   // 文案见 utils/laiwangPrompts.ts → [3] 自主生活
-  return autonomousProactiveHint({ userName, timeStr, activity: event.activity, where, mood, gapNote, randomMode, proactiveCallAllowed });
+  return autonomousProactiveHint({
+    userName,
+    timeStr,
+    activity: event.activity,
+    where,
+    mood,
+    gapNote,
+    randomMode,
+    proactiveCallAllowed,
+    eventKind: event.eventKind,
+    energy: event.energy,
+    proactiveAngle: event.proactiveAngle,
+    thread,
+    messageFlavor: getMessageFlavor(char),
+    materialSources: formatMaterialSources(char),
+    score: scoreLifeEventForProactive(event),
+  });
 }

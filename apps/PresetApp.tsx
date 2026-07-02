@@ -14,15 +14,19 @@ import {
     INJECTION_POSITION,
     MARKER_HINTS,
     ORDER_CHAR_ID_SINGLE,
+    PRESET_SCOPE_KEYS,
+    PRESET_SCOPE_META,
     PresetRuntime,
     createDefaultPreset,
     createPresetLocalId,
+    ensureDefaultPresetSeed,
     estimateTokens,
     exportTavernPreset,
     importTavernPreset,
+    normalizePresetScopes,
 } from '../utils/presets';
 import { setPresetRegexScripts } from '../utils/regex/store';
-import type { PresetPrompt, PresetPromptOrderEntry, TavernPreset } from '../types';
+import type { PresetPrompt, PresetPromptOrderEntry, PresetScopeKey, TavernPreset } from '../types';
 import { InsSheet } from '../components/ui/insKit';
 import { MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
 import {
@@ -107,8 +111,8 @@ const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: (
     </div>
 );
 
-const Page: React.FC<{ title: string; en: string; children: React.ReactNode }> = ({ title, en, children }) => (
-    <section className="relative overflow-hidden rounded-[18px] bg-white" style={{ border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,52,71,0.26)' }}>
+const Page: React.FC<{ title: string; en: string; children: React.ReactNode; anchor?: string }> = ({ title, en, children, anchor }) => (
+    <section data-manual-anchor={anchor} className="relative overflow-hidden rounded-[18px] bg-white" style={{ border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,52,71,0.26)' }}>
         <span aria-hidden className="absolute left-4 top-0 h-[3px] w-16 rounded-b-full" style={{ background: `linear-gradient(90deg, ${PRESS.solid}, ${COPPER_TONE.solid})` }} />
         <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
             <span className="text-[15px] font-bold leading-tight" style={{ ...CUTE_STACK, color: INK }}>{title}</span>
@@ -193,6 +197,7 @@ const HeroPlate: React.FC<{ activeName: string; enabled: boolean; presetCount: n
     activeName, enabled, presetCount, enabledEntries, totalEntries, totalTokens, markerEntries, onToggle,
 }) => (
     <section
+        data-manual-anchor="manual-presets-root"
         className="relative overflow-hidden rounded-[24px] p-4"
         style={{
             background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(238,248,252,0.96))',
@@ -474,6 +479,7 @@ const PresetApp: React.FC = () => {
     const [activeId, setActiveId] = useState<string | null>(PresetRuntime.getActiveId());
     const [enabled, setEnabled] = useState(PresetRuntime.isEnabled());
     const [applySampling, setApplySampling] = useState(PresetRuntime.isSamplingApplied());
+    const [globalScopes, setGlobalScopes] = useState<Record<PresetScopeKey, boolean>>(() => PresetRuntime.getGlobalScopes());
     const [loaded, setLoaded] = useState(false);
     const [showParams, setShowParams] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -490,18 +496,31 @@ const PresetApp: React.FC = () => {
     const active = useMemo(() => presets.find(p => p.id === activeId) || null, [presets, activeId]);
 
     useEffect(() => {
-        DB.getAllPresets()
-            .then(list => {
+        let cancelled = false;
+        (async () => {
+            try {
+                await ensureDefaultPresetSeed();
+                const list = await DB.getAllPresets();
+                if (cancelled) return;
                 list.sort((a, b) => a.createdAt - b.createdAt);
                 setPresets(list);
                 const storedId = PresetRuntime.getActiveId();
                 if (list.length > 0 && !list.some(p => p.id === storedId)) {
                     setActiveId(list[0].id);
                     PresetRuntime.setActiveId(list[0].id);
+                } else {
+                    setActiveId(storedId);
                 }
-            })
-            .catch(e => addToast(`预设列表读取失败: ${e?.message || e}`, 'error'))
-            .finally(() => setLoaded(true));
+                setEnabled(PresetRuntime.isEnabled());
+                setApplySampling(PresetRuntime.isSamplingApplied());
+                setGlobalScopes(PresetRuntime.getGlobalScopes());
+            } catch (e: any) {
+                if (!cancelled) addToast(`预设列表读取失败: ${e?.message || e}`, 'error');
+            } finally {
+                if (!cancelled) setLoaded(true);
+            }
+        })();
+        return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -631,6 +650,20 @@ const PresetApp: React.FC = () => {
     const toggleSampling = (on: boolean) => {
         setApplySampling(on);
         PresetRuntime.setSamplingApplied(on);
+    };
+
+    const activeScopes = useMemo(() => normalizePresetScopes(active?.moroScopes), [active?.moroScopes]);
+
+    const toggleGlobalScope = (scope: PresetScopeKey, on: boolean) => {
+        const next = { ...globalScopes, [scope]: on };
+        setGlobalScopes(next);
+        PresetRuntime.setGlobalScopes(next);
+    };
+
+    const togglePresetScope = (scope: PresetScopeKey, on: boolean) => {
+        mutateActive(d => {
+            d.moroScopes = { ...normalizePresetScopes(d.moroScopes), [scope]: on };
+        });
     };
 
     // ── 提示词顺序 ──────────────────────────────────────
@@ -838,7 +871,7 @@ const PresetApp: React.FC = () => {
                     onToggle={toggleEnabled}
                 />
 
-                <Page title="预设管理" en="Library">
+                <Page title="预设管理" en="Library" anchor="manual-presets-library">
                     <Entry mark="FILE" title="预设文件" note="新建、导入或复制后会自动选中；修改会保存到本地。">
 
                     {loaded && presets.length === 0 ? (
@@ -949,7 +982,7 @@ const PresetApp: React.FC = () => {
 
                 {active && (
                     <>
-                        <Page title="连接与参数" en="API & Params">
+                        <Page title="连接与参数" en="API & Params" anchor="manual-presets-root">
                             <Entry mark="API" title="API 方案" note="绑定后，切换到这个预设时会同步套用对应的连接配置。" side={<LinkSimple size={18} weight="bold" style={{ color: PRESS.solid }} />}>
                                 <div className="rounded-[14px] px-3 py-2.5 text-[11px] font-mono mb-2.5" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}>
                                     {apiConfig.model || '未设置模型'}{apiHost ? ` @ ${apiHost}` : ''}
@@ -1028,7 +1061,50 @@ const PresetApp: React.FC = () => {
                             </Entry>
                         </Page>
 
-                        <Page title="提示词顺序" en="Order">
+                        <Page title="作用范围" en="Scopes" anchor="manual-presets-scopes">
+                            <Entry mark="RUN" title="任务联动" note="最终生效需要“全局允许”和“本预设启用”同时打开；结构化任务默认保护，避免 JSON / 总结被聊天预设带偏。">
+                                <div className="space-y-2">
+                                    {PRESET_SCOPE_KEYS.map(scope => {
+                                        const meta = PRESET_SCOPE_META[scope];
+                                        const effective = !!globalScopes[scope] && !!activeScopes[scope];
+                                        return (
+                                            <div
+                                                key={scope}
+                                                className="rounded-[14px] px-3 py-3"
+                                                style={{
+                                                    background: effective ? ACTIVE_TONE.soft : (meta.risky ? WARN_TONE.soft : PAPER),
+                                                    border: `1px solid ${effective ? `${ACTIVE_TONE.solid}44` : (meta.risky ? `${WARN_TONE.solid}34` : LINE)}`,
+                                                    boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)',
+                                                }}
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[12px] font-bold" style={{ ...CUTE_STACK, color: meta.risky ? WARN_TONE.ink : INK }}>{meta.title}</span>
+                                                            <span className="label-mono text-[8px]" style={{ color: effective ? ACTIVE_TONE.ink : INS_SOFT }}>{effective ? '生效' : '未生效'}</span>
+                                                            {meta.risky && <span className="label-mono text-[8px]" style={{ color: WARN_TONE.ink }}>谨慎</span>}
+                                                        </div>
+                                                        <p className="text-[10px] leading-relaxed mt-1" style={{ color: INS_SOFT }}>{meta.note}</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 shrink-0">
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <span className="text-[8px] font-bold" style={{ ...MONO_STACK, color: INS_SOFT }}>全局</span>
+                                                            <InkSwitch small on={!!globalScopes[scope]} onChange={v => toggleGlobalScope(scope, v)} />
+                                                        </div>
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <span className="text-[8px] font-bold" style={{ ...MONO_STACK, color: INS_SOFT }}>本预设</span>
+                                                            <InkSwitch small on={!!activeScopes[scope]} onChange={v => togglePresetScope(scope, v)} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </Entry>
+                        </Page>
+
+                        <Page title="提示词顺序" en="Order" anchor="manual-presets-prompts">
                             <Entry mark="ORDER" title="发送顺序" note="拖动左侧图标调整顺序；关闭条目后，该条不会写入聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
                                 <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
                                     {orderEntries.map((entry, idx) => {

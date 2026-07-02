@@ -6,7 +6,7 @@ import {
     Clock, House, Trash, CaretRight, ShoppingBag, Timer, CalendarCheck,
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview, TakeoutDish } from '../types';
+import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview, TakeoutDish, TakeoutAddressCard } from '../types';
 import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
 import {
@@ -20,8 +20,11 @@ import {
     recommendStores, groupDishes, type StoreSort, type StoreFilter,
     dishHasOptions, dishUnitPrice, formatSpecAddon, cartLineKey,
     TAKEOUT_HOT_SEARCHES, getSearchHistory, pushSearchHistory, clearSearchHistory,
-    getAddresses, addAddress, removeAddress,
+    TAKEOUT_ADDRESS_TAGS, getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard,
+    getDefaultAddressCard, formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
     deliveryTimeSlots, type DeliverySlot,
+    TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
+    recommendAddOnDishes, takeoutHistoryStats,
 } from '../utils/takeout';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
@@ -43,7 +46,6 @@ import {
  */
 
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-const ADDR_KEY = 'moro_takeout_address';
 const CATS = ['全部', '中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉', '药品'];
 const NOTE_CHIPS = ['少辣', '多放饭', '多给餐具', '不要香菜', '放门口别敲门', '微辣多醋', '打包结实点', '调料另放'];
 const TIP_CHOICES = [0, 2, 5, 8];
@@ -72,6 +74,10 @@ type StoreTab = 'menu' | 'reviews' | 'info';
 interface CartLine {
     key: string; dishId: string; name: string; emoji?: string;
     basePrice: number; unitPrice: number; qty: number; spec?: string; addons?: string[];
+}
+interface AddressDraft {
+    id?: string; label: string; tag: string; receiverName: string; contactHint: string;
+    city: string; addressLine: string; doorplate: string; deliveryNote: string; isDefault: boolean;
 }
 
 const paperInput: React.CSSProperties = {
@@ -205,14 +211,15 @@ const TakeoutApp: React.FC = () => {
     const [recipient, setRecipient] = useState('me');
     const [payer, setPayer] = useState('me');
     const [intentCharId, setIntentCharId] = useState<string | null>(null);
-    const [addresses, setAddresses] = useState<string[]>(() => getAddresses());
-    const [address, setAddress] = useState(() => getAddresses()[0] || '城南花园 3 栋 502');
+    const [addressCards, setAddressCards] = useState<TakeoutAddressCard[]>(() => getAddressCards('me'));
+    const [addressCardId, setAddressCardId] = useState<string>(() => getDefaultAddressCard('me')?.id || '');
     const [addrSheetOpen, setAddrSheetOpen] = useState(false);
-    const [newAddr, setNewAddr] = useState('');
+    const [addressDraft, setAddressDraft] = useState<AddressDraft | null>(null);
     const [note, setNote] = useState('');
     const [tip, setTip] = useState(0);
     const [slot, setSlot] = useState<DeliverySlot>({ label: '尽快送达', at: null });
     const [tableware, setTableware] = useState(1);
+    const [tasteTags, setTasteTags] = useState<string[]>(() => getTasteTags('me'));
 
     // 跟跑腿 / 铺子 / 平台对话
     const [chatTarget, setChatTarget] = useState<ChatTarget>('rider');
@@ -266,6 +273,16 @@ const TakeoutApp: React.FC = () => {
             setRecipient(intent.recipientCharId);
         }
     }, [characters]);
+    useEffect(() => { setTasteTags(getTasteTags(recipient)); }, [recipient]);
+    const addressOwnerType = recipient === 'me' ? 'me' : 'char';
+    const addressOwnerId = recipient === 'me' ? undefined : recipient;
+    useEffect(() => {
+        ensureCharacterAddressSeeds(characters);
+        const cards = getAddressCards(addressOwnerType, addressOwnerId);
+        const next = getDefaultAddressCard(addressOwnerType, addressOwnerId) || cards[0] || null;
+        setAddressCards(cards);
+        setAddressCardId(next?.id || '');
+    }, [characters, addressOwnerType, addressOwnerId]);
 
     const loadStoresAI = async (q?: string) => {
         if (!aiReady || aiLoading) return;
@@ -301,6 +318,9 @@ const TakeoutApp: React.FC = () => {
     }, []);
 
     const activeOrder = orders.find(o => o.id === activeOrderId) || null;
+    const selectedAddressCard = useMemo(() => addressCards.find(a => a.id === addressCardId) || addressCards[0] || null, [addressCards, addressCardId]);
+    const selectedAddressText = selectedAddressCard ? formatAddressCard(selectedAddressCard) : '';
+    const homeAddressText = getDefaultTakeoutAddressLine();
 
     // 美团式：排序 / 筛选 / 平台红包
     const [sort, setSort] = useState<StoreSort>('recommend');
@@ -320,6 +340,8 @@ const TakeoutApp: React.FC = () => {
         return sortStores(filterStores(base, filter), sort);
     }, [stores, cat, query, filter, sort]);
     const recommended = useMemo(() => recommendStores(stores, 6), [stores]);
+    const historyStats = useMemo(() => takeoutHistoryStats(orders, now), [orders, now]);
+    const quickReorders = useMemo(() => orders.filter(o => !o.cancelledByStore && (o.items || []).length > 0).slice(0, 5), [orders]);
 
     const cartItems = useMemo((): TakeoutOrderItem[] =>
         Object.values(cart).filter(l => l.qty > 0).map(l => ({ dishId: l.dishId, name: l.name, price: l.unitPrice, qty: l.qty, emoji: l.emoji, spec: l.spec, addons: l.addons })),
@@ -396,20 +418,87 @@ const TakeoutApp: React.FC = () => {
     };
 
     const addNoteChip = (t: string) => setNote(prev => prev.includes(t) ? prev : (prev ? `${prev}；${t}` : t));
-
-    // 收货地址簿
-    const chooseAddress = (a: string) => { setAddress(a); setAddrSheetOpen(false); };
-    const saveNewAddress = () => {
-        const v = newAddr.trim();
-        if (!v) return;
-        const next = addAddress(v);
-        setAddresses(next); setAddress(v); setNewAddr(''); setAddrSheetOpen(false);
-        addToast('新地址记好啦', 'success');
+    const toggleTaste = (tag: string) => {
+        const next = toggleTasteTag(recipient, tag);
+        setTasteTags(next);
     };
-    const deleteAddress = (a: string) => {
-        const next = removeAddress(a);
-        setAddresses(next);
-        if (!next.includes(address)) setAddress(next[0]);
+    const addTasteToNote = () => setNote(prev => mergeNoteWithTaste(prev, tasteTags));
+
+    // 收货地址卡
+    const addressOwnerName = recipient === 'me' ? '我' : (nameOf(recipient) || 'TA');
+    const refreshAddressCards = (preferredId?: string) => {
+        const cards = getAddressCards(addressOwnerType, addressOwnerId);
+        const next = (preferredId ? cards.find(c => c.id === preferredId) : null) || getDefaultAddressCard(addressOwnerType, addressOwnerId) || cards[0] || null;
+        setAddressCards(cards);
+        setAddressCardId(next?.id || '');
+    };
+    const blankAddressDraft = (): AddressDraft => ({
+        label: '家',
+        tag: '家',
+        receiverName: addressOwnerName,
+        contactHint: recipient === 'me' ? '' : '来往私信',
+        city: selectedAddressCard?.city || '',
+        addressLine: '',
+        doorplate: '',
+        deliveryNote: recipient === 'me' ? '' : '到门口发消息',
+        isDefault: addressCards.length === 0,
+    });
+    const openAddressEditor = (card?: TakeoutAddressCard) => {
+        setAddressDraft(card ? {
+            id: card.id,
+            label: card.label,
+            tag: card.tag || '自定义',
+            receiverName: card.receiverName,
+            contactHint: card.contactHint || '',
+            city: card.city || '',
+            addressLine: card.addressLine,
+            doorplate: card.doorplate || '',
+            deliveryNote: card.deliveryNote || '',
+            isDefault: card.isDefault,
+        } : blankAddressDraft());
+        setAddrSheetOpen(true);
+    };
+    const chooseAddressCard = (card: TakeoutAddressCard) => { setAddressCardId(card.id); setAddrSheetOpen(false); };
+    const saveAddressDraft = () => {
+        if (!addressDraft?.addressLine.trim()) return;
+        const saved = saveAddressCard({
+            id: addressDraft.id,
+            ownerType: addressOwnerType,
+            ownerId: addressOwnerId,
+            label: addressDraft.label.trim() || addressDraft.tag || '地址',
+            tag: addressDraft.tag || '自定义',
+            receiverName: addressDraft.receiverName.trim() || addressOwnerName,
+            contactHint: addressDraft.contactHint.trim() || undefined,
+            city: addressDraft.city.trim() || undefined,
+            addressLine: addressDraft.addressLine.trim(),
+            doorplate: addressDraft.doorplate.trim() || undefined,
+            deliveryNote: addressDraft.deliveryNote.trim() || undefined,
+            isDefault: addressDraft.isDefault,
+        });
+        refreshAddressCards(saved.id);
+        setAddressDraft(null);
+        setAddrSheetOpen(false);
+        addToast('收货点记好啦', 'success');
+    };
+    const patchAddressDraft = (patch: Partial<AddressDraft>) => setAddressDraft(prev => prev ? { ...prev, ...patch } : prev);
+    const removeAddressCard = (card: TakeoutAddressCard) => {
+        deleteAddressCard(card.id);
+        refreshAddressCards();
+        if (addressDraft?.id === card.id) setAddressDraft(null);
+    };
+    const makeDefaultAddress = (card: TakeoutAddressCard) => {
+        setDefaultAddressCard(card.id);
+        refreshAddressCards(card.id);
+        addToast('默认收货点换好啦', 'success');
+    };
+    const openMyAddressBook = () => {
+        const cards = getAddressCards('me');
+        const next = getDefaultAddressCard('me') || cards[0] || null;
+        setRecipient('me');
+        setAddressCards(cards);
+        setAddressCardId(next?.id || '');
+        setAddressDraft(null);
+        setAddrSheetOpen(true);
     };
 
     const goCheckout = () => {
@@ -455,8 +544,14 @@ const TakeoutApp: React.FC = () => {
         const total = Math.max(0, cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip - orderDiscount);
         const payByMe = payer === 'me';
         if (payByMe && wallet < total) { addToast(`饭钱不够：钱包 ¥${wallet} / 这张票要 ¥${total}`, 'error'); return; }
-        try { localStorage.setItem(ADDR_KEY, address); } catch { /* ignore */ }
-        if (recipient === 'me') setAddresses(addAddress(address)); // 下过单的地址进地址簿
+        if (recipient !== 'me' && !selectedAddressCard) {
+            addToast(`先给 ${nameOf(recipient) || 'TA'} 添一个收货点`, 'info');
+            openAddressEditor();
+            return;
+        }
+        const addressLine = selectedAddressCard ? formatAddressCard(selectedAddressCard) : getDefaultTakeoutAddressLine();
+        const addressSnapshot = recipient !== 'me' ? `送给 ${nameOf(recipient)} · ${addressLine}` : addressLine;
+        const finalNote = mergeNoteWithTaste(note, tasteTags);
 
         const rider = newRider();
         const placedAt = Date.now();
@@ -484,8 +579,10 @@ const TakeoutApp: React.FC = () => {
             status: 'preparing',
             riderName: rider.name, riderEmoji: rider.emoji,
             riderReliability: roll.riderReliability,
-            address: recipient !== 'me' ? `送给 ${nameOf(recipient)}` : address,
-            note: note.trim() || undefined,
+            address: addressSnapshot,
+            addressCardId: selectedAddressCard?.id,
+            addressLabel: selectedAddressCard?.label,
+            note: finalNote || undefined,
             placedAt, etaAt,
             scheduledAt: slot.at ?? undefined,
             tableware,
@@ -634,6 +731,78 @@ const TakeoutApp: React.FC = () => {
         return hasPriced ? `¥${d.price} 起` : `¥${d.price}`;
     };
 
+    const addressBookSheet = (
+        <PaperSheet open={addrSheetOpen} onClose={() => { setAddrSheetOpen(false); setAddressDraft(null); }} title={`${addressOwnerName}的收货点`} tape="sage">
+            {!addressDraft && (
+                <>
+                    <div className="space-y-2 max-h-[42vh] overflow-y-auto no-scrollbar mb-3">
+                        {addressCards.map(card => {
+                            const on = card.id === addressCardId;
+                            return (
+                                <div key={card.id} className="flex items-start gap-2 px-3 py-2.5 rounded-[10px]" style={{ background: on ? INK : 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                    <button onClick={() => chooseAddressCard(card)} className="flex-1 flex items-start gap-2 min-w-0 text-left">
+                                        <MapPin size={15} weight="fill" color={on ? PAPER : INK} className="mt-0.5 shrink-0" />
+                                        <span className="min-w-0">
+                                            <span className="flex items-center gap-1">
+                                                <span className="text-[12.5px] font-black truncate" style={{ color: on ? PAPER : INK }}>{card.label}</span>
+                                                <span className="text-[9px] px-1.5 py-px rounded-[4px]" style={on ? { background: 'rgba(255,255,255,0.16)', color: PAPER } : { background: '#efeae0', color: INK_SOFT }}>{card.tag}</span>
+                                                {card.isDefault && <span className="text-[9px] font-bold" style={{ color: on ? PAPER : '#d2452f' }}>默认</span>}
+                                            </span>
+                                            <span className="block text-[11.5px] truncate mt-0.5" style={{ color: on ? 'rgba(255,253,247,0.86)' : '#5a554c' }}>{formatAddressCard(card)}</span>
+                                            <span className="block text-[10px] truncate mt-0.5" style={{ color: on ? 'rgba(255,253,247,0.68)' : INK_SOFT }}>收货：{card.receiverName}{card.deliveryNote ? ` · ${card.deliveryNote}` : ''}</span>
+                                        </span>
+                                        {on && <SealCheck size={14} weight="fill" color={PAPER} className="mt-0.5 shrink-0" />}
+                                    </button>
+                                    <div className="flex flex-col gap-1 shrink-0">
+                                        {!card.isDefault && <button onClick={() => makeDefaultAddress(card)} className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={on ? { color: PAPER, border: '1px dashed rgba(255,255,255,0.45)' } : { color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.65)' }}>默认</button>}
+                                        <button onClick={() => openAddressEditor(card)} className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={on ? { color: PAPER, border: '1px dashed rgba(255,255,255,0.45)' } : { color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.65)' }}>改</button>
+                                        <button onClick={() => removeAddressCard(card)} className="active:scale-90" title="删掉"><Trash size={14} color={on ? PAPER : INK_SOFT} /></button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {addressCards.length === 0 && (
+                            <div className="text-center text-[12px] py-8" style={{ color: INK_SOFT }}>
+                                {recipient === 'me' ? '还没保存自己的收货点。' : `还没给 ${addressOwnerName} 记收货点。`}
+                            </div>
+                        )}
+                    </div>
+                    <ScrapButton variant="ink" onClick={() => openAddressEditor()} className="w-full py-2.5 text-[13px]" icon={<Plus size={14} weight="bold" />}>添一个收货点</ScrapButton>
+                </>
+            )}
+            {addressDraft && (
+                <div className="space-y-3">
+                    <div>
+                        <div className="text-[10.5px] font-black mb-1" style={{ color: INK_SOFT }}>地址标签</div>
+                        <div className="flex flex-wrap gap-2">
+                            {TAKEOUT_ADDRESS_TAGS.map(t => (
+                                <ChoiceChip key={t} on={addressDraft.tag === t} onClick={() => patchAddressDraft({ tag: t, label: addressDraft.label === addressDraft.tag || !addressDraft.label ? t : addressDraft.label })}>{t}</ChoiceChip>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <input value={addressDraft.label} onChange={e => patchAddressDraft({ label: e.target.value })} placeholder="标题，如 家/公司" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                        <input value={addressDraft.receiverName} onChange={e => patchAddressDraft({ receiverName: e.target.value })} placeholder="收货名" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <input value={addressDraft.city} onChange={e => patchAddressDraft({ city: e.target.value })} placeholder="城市 / 区域（可选）" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                        <input value={addressDraft.contactHint} onChange={e => patchAddressDraft({ contactHint: e.target.value })} placeholder="虚拟电话 / 暗号" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    </div>
+                    <input value={addressDraft.addressLine} onChange={e => patchAddressDraft({ addressLine: e.target.value })} placeholder="街道、小区、学校、公司或常去处" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    <input value={addressDraft.doorplate} onChange={e => patchAddressDraft({ doorplate: e.target.value })} placeholder="门牌 / 楼层 / 取餐点（可选）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    <input value={addressDraft.deliveryNote} onChange={e => patchAddressDraft({ deliveryNote: e.target.value })} placeholder="配送备注，如 放门口、到楼下发消息" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    <button onClick={() => patchAddressDraft({ isDefault: !addressDraft.isDefault })} className="inline-flex items-center gap-1.5 text-[11.5px] font-bold active:scale-95 transition-transform" style={{ color: addressDraft.isDefault ? INK : INK_SOFT }}>
+                        <SealCheck size={14} weight={addressDraft.isDefault ? 'fill' : 'regular'} />设为默认收货点
+                    </button>
+                    <div className="flex gap-2.5 pt-1">
+                        <ScrapButton variant="ghost" onClick={() => setAddressDraft(null)} className="flex-1 py-3 text-[14px]">返回列表</ScrapButton>
+                        <ScrapButton variant="ink" onClick={saveAddressDraft} disabled={!addressDraft.addressLine.trim()} className="flex-1 py-3 text-[14px]" icon={<SealCheck size={15} weight="fill" />}>存下</ScrapButton>
+                    </div>
+                </div>
+            )}
+        </PaperSheet>
+    );
+
     // ════════════════════════ 首页·饭票簿 ════════════════════════
     if (view === 'home') {
         return (
@@ -648,11 +817,13 @@ const TakeoutApp: React.FC = () => {
 
                 {/* 地址 + 钱袋 */}
                 <div className="relative z-10 px-5 flex items-center justify-between gap-2">
-                    <StickyNote color="butter" rotate={-1.5} className="px-2.5 py-1 flex items-center gap-1 min-w-0">
-                        <MapPin size={13} weight="fill" />
-                        <span className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>送到</span>
-                        <span className="text-[11.5px] font-bold truncate max-w-[150px]" style={{ color: '#3a362f' }}>{address}</span>
-                    </StickyNote>
+                    <button onClick={openMyAddressBook} className="min-w-0 text-left active:scale-[0.98] transition-transform" title="我的地址簿">
+                        <StickyNote color="butter" rotate={-1.5} className="px-2.5 py-1 flex items-center gap-1 min-w-0">
+                            <MapPin size={13} weight="fill" />
+                            <span className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>送到</span>
+                            <span className="text-[11.5px] font-bold truncate max-w-[150px]" style={{ color: '#3a362f' }}>{homeAddressText}</span>
+                        </StickyNote>
+                    </button>
                     {walletChip}
                 </div>
 
@@ -734,6 +905,44 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* 本月饭票 + 常点票根 */}
+                {(historyStats.monthCount > 0 || quickReorders.length > 0) && (
+                    <div className="relative z-10 px-5 pt-3">
+                        <PaperCard tilt={0.35} className="px-3.5 py-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <div>
+                                    <div className="text-[8.5px] tracking-[0.3em] mb-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>THIS MONTH</div>
+                                    <div className="text-[14px] font-black" style={{ color: INK }}>本月撕了 {historyStats.monthCount} 张饭票</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>合计</div>
+                                    <div className="text-[16px] font-black" style={{ color: INK }}>¥{historyStats.monthTotal}</div>
+                                </div>
+                            </div>
+                            {(historyStats.topStore || historyStats.topDish) && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {historyStats.topStore && <span className="text-[10.5px] font-bold px-2 py-1 rounded-[6px]" style={{ background: '#efeae0', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.65)' }}>常去：{historyStats.topStore.name} ×{historyStats.topStore.count}</span>}
+                                    {historyStats.topDish && <span className="text-[10.5px] font-bold px-2 py-1 rounded-[6px]" style={{ background: '#efeae0', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.65)' }}>常点：{historyStats.topDish.name} ×{historyStats.topDish.count}</span>}
+                                </div>
+                            )}
+                            {quickReorders.length > 0 && (
+                                <div className="mt-2.5">
+                                    <div className="text-[8.5px] tracking-[0.3em] mb-1.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>AGAIN?</div>
+                                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                                        {quickReorders.map(o => (
+                                            <button key={o.id} onClick={() => reorder(o)} className="shrink-0 w-[116px] text-left px-2.5 py-2 rounded-[9px] active:scale-[0.97] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                                <div className="text-[12px] font-black truncate" style={{ color: INK }}><Emo e={o.storeEmoji} size={14} /> {o.storeName}</div>
+                                                <div className="text-[9.5px] truncate mt-0.5" style={{ color: INK_SOFT }}>{o.items.map(i => i.name).join('、')}</div>
+                                                <div className="text-[10px] font-bold mt-1" style={{ color: '#d2452f' }}>照着再撕</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </PaperCard>
+                    </div>
+                )}
 
                 {/* 钉在墙上的常去铺子 */}
                 {pinned.length > 0 && (
@@ -831,6 +1040,8 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     )}
                 </ScrapScroll>
+
+                {addressBookSheet}
             </PaperShell>
         );
     }
@@ -840,6 +1051,10 @@ const TakeoutApp: React.FC = () => {
         const isPinned = pinned.includes(activeStore.name);
         const promoParsed = parseStorePromo(activeStore.promo);
         const promoGap = promoParsed && cartSubtotal > 0 && cartSubtotal < promoParsed.threshold ? promoParsed.threshold - cartSubtotal : 0;
+        const minOrderGap = cartSubtotal > 0 && cartSubtotal < activeStore.minOrder ? activeStore.minOrder - cartSubtotal : 0;
+        const addOnGap = minOrderGap || promoGap || 0;
+        const addOnSuggestions = cartCount > 0 ? recommendAddOnDishes(activeStore.dishes, cartItems.map(i => i.dishId), addOnGap, 4) : [];
+        const addOnTitle = minOrderGap > 0 ? `还差 ¥${minOrderGap} 起送` : promoGap > 0 ? `还差 ¥${promoGap} 享满减` : '顺手加一口';
         const storeTabs: { id: StoreTab; label: string }[] = [
             { id: 'menu', label: '点餐' }, { id: 'reviews', label: `评价 ${storeReviews.length || ''}`.trim() }, { id: 'info', label: '商家' },
         ];
@@ -884,6 +1099,31 @@ const TakeoutApp: React.FC = () => {
                     {storeTab === 'menu' && (
                         <>
                             <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
+                            {addOnSuggestions.length > 0 && (
+                                <PaperCard tilt={-0.2} className="px-3 py-2.5 mb-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[12px] font-black" style={{ color: INK }}>{addOnTitle}</span>
+                                        <span className="text-[9px] tracking-[0.24em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>ADD-ON</span>
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                                        {addOnSuggestions.map(d => {
+                                            const hasOpts = dishHasOptions(d);
+                                            return (
+                                                <button key={d.id} onClick={() => hasOpts ? openSku(d) : addSimple(d, 1)} className="shrink-0 w-[104px] text-left rounded-[9px] px-2.5 py-2 active:scale-[0.97] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <Emo e={d.emoji} size={17} />
+                                                        <span className="text-[11.5px] font-black truncate" style={{ color: INK }}>{d.name}</span>
+                                                    </div>
+                                                    <div className="text-[10px] mt-1 flex items-center justify-between" style={{ color: INK_SOFT }}>
+                                                        <span>¥{d.price}</span>
+                                                        <span style={{ color: '#d2452f' }}>{hasOpts ? '选规格' : '+加入'}</span>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </PaperCard>
+                            )}
                             {/* 美团式菜单分组（招牌/主食/饮品/小食…） */}
                             <div className="space-y-3.5">
                                 {groupDishes(activeStore.dishes).map(({ group, dishes }) => (
@@ -1097,6 +1337,8 @@ const TakeoutApp: React.FC = () => {
         const payByMe = payer === 'me';
         const notEnough = payByMe && wallet < total;
         const slots = deliveryTimeSlots(activeStore.deliveryMinutes, now);
+        const tasteOwner = recipient === 'me' ? '我' : (nameOf(recipient) || 'TA');
+        const tastePreview = buildTasteNote(tasteTags);
         return (
             <PaperShell key="checkout">
                 <ScrapHeader title="写一张饭票" en="FILL THE TICKET" onBack={() => setView('store')} backLabel="回铺子" right={walletChip} />
@@ -1109,12 +1351,32 @@ const TakeoutApp: React.FC = () => {
                         </div>
                         <div className="mt-2.5 flex items-center gap-2">
                             <MapPin size={15} color={INK} weight="fill" />
-                            {recipient === 'me'
-                                ? <button onClick={() => setAddrSheetOpen(true)} className="flex-1 flex items-center justify-between rounded-[8px] px-2.5 py-2 text-[12.5px] active:scale-[0.99] transition-transform" style={paperInput}>
-                                    <span className="truncate text-left" style={{ color: '#36322b' }}>{address}</span>
-                                    <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-bold" style={{ color: INK_SOFT }}>更换<CaretRight size={12} weight="bold" /></span>
-                                </button>
-                                : <span className="text-[12.5px]" style={{ color: '#5a554c' }}>径直送到 {nameOf(recipient)} 那儿</span>}
+                            <button onClick={() => { setAddressDraft(null); setAddrSheetOpen(true); }} className="flex-1 flex items-center justify-between gap-2 rounded-[8px] px-2.5 py-2 text-[12.5px] active:scale-[0.99] transition-transform" style={paperInput}>
+                                <span className="min-w-0 text-left">
+                                    <span className="block text-[10px] font-black" style={{ color: INK_SOFT }}>{selectedAddressCard ? `${selectedAddressCard.label}${selectedAddressCard.isDefault ? ' · 默认' : ''}` : '还没有收货点'}</span>
+                                    <span className="block truncate" style={{ color: '#36322b' }}>
+                                        {selectedAddressCard ? selectedAddressText : (recipient === 'me' ? getDefaultTakeoutAddressLine() : `给 ${nameOf(recipient) || 'TA'} 添一个收货点`)}
+                                    </span>
+                                </span>
+                                <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-bold" style={{ color: INK_SOFT }}>管理<CaretRight size={12} weight="bold" /></span>
+                            </button>
+                        </div>
+                    </PaperCard>
+
+                    {/* 口味小纸条 */}
+                    <PaperCard tilt={-0.25} className="px-4 py-3.5">
+                        <div className="flex items-center justify-between gap-2 mb-2.5">
+                            <SectionTag en="TASTE NOTE">口味小纸条</SectionTag>
+                            {tastePreview && <button onClick={addTasteToNote} className="text-[11px] font-black px-2.5 py-1 rounded-[6px] active:scale-95 transition-transform" style={{ background: INK, color: PAPER }}>写进备注</button>}
+                        </div>
+                        <div className="text-[11px] mb-2.5" style={{ color: INK_SOFT }}>给 {tasteOwner} 记一份常用偏好，下次送给同一个人还会带出来。</div>
+                        <div className="flex flex-wrap gap-2">
+                            {TAKEOUT_TASTE_TAGS.map(t => (
+                                <ChoiceChip key={t} on={tasteTags.includes(t)} onClick={() => toggleTaste(t)}>{t}</ChoiceChip>
+                            ))}
+                        </div>
+                        <div className="mt-2.5 text-[11px] rounded-[8px] px-2.5 py-2" style={{ background: '#efeae0', color: tastePreview ? '#3a362f' : INK_SOFT, border: '1px dashed rgba(150,144,132,0.55)' }}>
+                            {tastePreview || '还没记口味；选几个常用忌口或偏好，盖章下单时会自动带进小票备注。'}
                         </div>
                     </PaperCard>
 
@@ -1207,25 +1469,7 @@ const TakeoutApp: React.FC = () => {
                     </div>
                 </div>
 
-                {/* 收货地址簿 */}
-                <PaperSheet open={addrSheetOpen} onClose={() => setAddrSheetOpen(false)} title="送到哪儿" tape="sage">
-                    <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar mb-3">
-                        {addresses.map(a => (
-                            <div key={a} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px]" style={{ background: a === address ? INK : 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
-                                <button onClick={() => chooseAddress(a)} className="flex-1 flex items-center gap-2 min-w-0 text-left">
-                                    <MapPin size={15} weight="fill" color={a === address ? PAPER : INK} />
-                                    <span className="text-[12.5px] font-bold truncate" style={{ color: a === address ? PAPER : '#36322b' }}>{a}</span>
-                                    {a === address && <SealCheck size={14} weight="fill" color={PAPER} />}
-                                </button>
-                                {addresses.length > 1 && <button onClick={() => deleteAddress(a)} className="shrink-0 active:scale-90" title="删掉"><Trash size={14} color={a === address ? PAPER : INK_SOFT} /></button>}
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <input value={newAddr} onChange={e => setNewAddr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveNewAddress(); }} placeholder="写个新地址，回车存下…" className="flex-1 rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
-                        <ScrapButton variant="ink" onClick={saveNewAddress} disabled={!newAddr.trim()} className="px-4 py-2 text-[12.5px]" icon={<Plus size={14} weight="bold" />}>存下</ScrapButton>
-                    </div>
-                </PaperSheet>
+                {addressBookSheet}
             </PaperShell>
         );
     }
@@ -1395,7 +1639,7 @@ const TakeoutApp: React.FC = () => {
                             {!!o.tip && <div className="flex justify-between"><span>跑腿小费</span><span>¥{o.tip}</span></div>}
                             <div className="flex justify-between text-[13px] font-black" style={{ color: INK }}><span>实付</span><span>¥{o.total}</span></div>
                             {!!o.complaint?.refunded && <div className="flex justify-between font-bold" style={{ color: INK }}><span>已退回</span><span>-¥{o.complaint.refunded}</span></div>}
-                            <div className="flex justify-between"><span>收货</span><span>{o.recipient !== 'me' ? nameOf(o.recipient) : o.address}</span></div>
+                            <div className="flex justify-between"><span>收货</span><span className="text-right max-w-[64%]">{o.address}</span></div>
                             {schedText && <div className="flex justify-between"><span>送达</span><span>{schedText}</span></div>}
                             <div className="flex justify-between"><span>餐具</span><span>{o.tableware === 0 ? '无需餐具🌱' : `${o.tableware ?? 1} 份`}</span></div>
                             <div className="flex justify-between"><span>付款</span><span>{o.payer !== 'me' ? `${nameOf(o.payer)}请客` : '我自己掏'} · {o.cancelledByStore ? '已退款' : '已付'}</span></div>

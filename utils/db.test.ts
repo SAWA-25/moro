@@ -4,7 +4,7 @@ import { makeChatAlarm, prepareAlarmForSave } from './chatAlarms';
 import { preparePeriodReminderSettings } from './periodReminders';
 import { makeHealthPlan, makeHealthRecord, normalizeHealthReminder, prepareHealthModuleSettings, summarizeHealthDay } from './health';
 import { createDefaultDesktopPetState } from './desktopPet';
-import type { CharacterProfile, ChatAlarm, CollectionItem, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage, TheaterFauxPiece, TheaterReflectionSession } from '../types';
+import type { CharacterProfile, ChatAlarm, ChatFollowup, ChatHubDigest, CollectionItem, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage, SocialPost, TheaterFauxPiece, TheaterReflectionSession, XhsFeedPost } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -131,6 +131,96 @@ describe('chat timeline recent messages', () => {
   });
 });
 
+describe('social post indexes and unread helpers', () => {
+  const makePost = (id: string, patch: Partial<SocialPost> = {}): SocialPost => ({
+    id,
+    authorName: '角色',
+    authorAvatar: '',
+    title: '',
+    content: id,
+    images: [],
+    likes: 0,
+    isCollected: false,
+    isLiked: false,
+    comments: [],
+    timestamp: Date.now(),
+    tags: [],
+    authorType: 'character',
+    authorCharId: 'char-a',
+    visibility: 'public',
+    lastActivityAt: Date.now(),
+    ...patch,
+  });
+
+  it('creates moments indexes and can query/clear unread social posts', async () => {
+    await DB.deleteDB();
+    const db = await openDB();
+    const store = db.transaction('social_posts', 'readonly').objectStore('social_posts');
+    expect(Array.from(store.indexNames)).toEqual(expect.arrayContaining([
+      'timestamp',
+      'authorCharId',
+      'authorType',
+      'visibility',
+      'lastActivityAt',
+      'unreadForUser',
+    ]));
+
+    await DB.saveSocialPost(makePost('read', { unreadForUser: false, lastActivityAt: 1 }));
+    await DB.saveSocialPost(makePost('unread', { unreadForUser: true, lastActivityAt: 2 }));
+
+    expect((await DB.getUnreadSocialPosts()).map(p => p.id)).toEqual(['unread']);
+    await expect(DB.markSocialPostsSeen(['unread'])).resolves.toBe(1);
+    expect(await DB.getUnreadSocialPosts()).toEqual([]);
+    expect((await DB.getSocialPostsByAuthorChar('char-a')).map(p => p.id).sort()).toEqual(['read', 'unread']);
+  });
+});
+
+describe('chat hub dashboard stores', () => {
+  it('saves followups and digests, then includes them in full backup restore', async () => {
+    await DB.deleteDB();
+    const followup: ChatFollowup = {
+      id: 'cf-test',
+      source: 'private_message',
+      targetKind: 'char',
+      targetId: 'c1',
+      messageId: 1,
+      title: '回这句',
+      note: '稍后处理',
+      status: 'open',
+      createdAt: 10,
+      updatedAt: 10,
+    };
+    const digest: ChatHubDigest = {
+      id: 'chat_digest_2026-07-03',
+      date: '2026-07-03',
+      range: { from: 1, to: 2 },
+      sourceItemIds: ['cf-test'],
+      summary: '今天有一条待办。',
+      highlights: ['回这句'],
+      createdAt: 20,
+    };
+
+    await DB.saveChatFollowup(followup);
+    await DB.saveChatHubDigest(digest);
+    expect(await DB.updateChatFollowupStatus('cf-test', 'done')).toMatchObject({ status: 'done' });
+
+    const exported = await DB.exportFullData();
+    expect(exported.chatFollowups?.[0].id).toBe('cf-test');
+    expect(exported.chatHubDigests?.[0].date).toBe('2026-07-03');
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: Date.now(),
+      version: 1,
+      chatFollowups: exported.chatFollowups,
+      chatHubDigests: exported.chatHubDigests,
+    } as FullBackupData);
+
+    expect((await DB.getAllChatFollowups())[0]).toMatchObject({ id: 'cf-test', status: 'done' });
+    expect(await DB.getChatHubDigestByDate('2026-07-03')).toMatchObject({ id: 'chat_digest_2026-07-03' });
+  });
+});
+
 // blocked-then-unblocked 连接泄漏: onblocked 先 reject, 但底层 open request 还活着 ——
 // 占用方关闭后 onsuccess 仍会触发。修复前那条迟到的连接没人持有也没缓存, 开着会 block
 // 后续升级/删库; 修复后 settled 守卫让它被 close。这里复现整条链路, 用「事后 deleteDatabase
@@ -180,6 +270,41 @@ describe('character identity persistence', () => {
 
     const chars = await DB.getAllCharacters();
     expect(chars.find(c => c.id === 'legacy-char')?.modelId).toBe('legacy-char');
+  });
+});
+
+describe('xhs feed backup', () => {
+  it('exports and restores local 见闻簿 cards', async () => {
+    await DB.deleteDB();
+    const post: XhsFeedPost = {
+      id: 'xhs-feed-backup-1',
+      authorType: 'user',
+      author: 'User',
+      title: '本地见闻',
+      body: '这是一条需要随完整备份保存的见闻簿卡片。',
+      tags: ['备份', '见闻簿'],
+      likes: 3,
+      favs: 1,
+      faved: true,
+      comments: [],
+      createdAt: 123,
+      source: 'user',
+      category: 'life',
+    };
+
+    await DB.saveXhsFeedPost(post);
+    const exported = await DB.exportFullData();
+
+    expect(exported.xhsFeedPosts?.[0]).toMatchObject({ id: post.id, title: post.title, category: 'life' });
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: Date.now(),
+      version: 1,
+      xhsFeedPosts: exported.xhsFeedPosts,
+    } as FullBackupData);
+
+    expect((await DB.getXhsFeedPosts())[0]).toMatchObject({ id: post.id, source: 'user', category: 'life' });
   });
 });
 

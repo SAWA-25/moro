@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeOrder, orderProgress, orderReceivePayload, getShopItem } from './shop';
+import { makeOrder, orderProgress, orderReceivePayload, getShopItem, recommendGiftsForCharacter, itemGiftSignals } from './shop';
 
 const rose = getShopItem('rose')!;
 const cake = getShopItem('cake')!;
@@ -54,5 +54,26 @@ describe('orderReceivePayload', () => {
         expect(r.userReceipts[0].action).toBe('receive');
         expect(r.charReceipts[0].action).toBe('gift');
         expect(r.charReceipts[0].counterpartName).toBe('我');
+    });
+});
+
+describe('gift advisor', () => {
+    it('按预算过滤并返回可解释推荐', () => {
+        const picks = recommendGiftsForCharacter([rose, cake], {
+            charName: '阿白',
+            affection: 40,
+            occasion: 'daily',
+            budget: 20,
+        }, 4);
+        expect(picks.length).toBeGreaterThan(0);
+        expect(picks[0].item.price).toBeLessThanOrEqual(20);
+        expect(picks[0].reason).toContain('阿白');
+        expect(picks[0].tags).toContain('预算内');
+    });
+
+    it('商品送礼信号包含关系尺度和场景', () => {
+        const signals = itemGiftSignals(rose);
+        expect(signals.relationLabel.length).toBeGreaterThan(0);
+        expect(signals.scenes.length).toBeGreaterThan(0);
     });
 });

@@ -439,6 +439,11 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     const sendButtonStyle = theme.chatSendButtonStyle || defaults.chatSendButtonStyle;
     const pendingIndicator = theme.chatPendingIndicator !== false;
     const showHeaderBuffs = theme.chatHideHeaderBuffs !== true;
+    const buffPreviewGuardCss = `
+.moro-chat-root [data-moro-protected="emotion-buffs"]{display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;min-height:16px!important;height:auto!important;max-height:none!important;overflow:visible!important;}
+.moro-chat-root [data-moro-protected="emotion-buffs"] [data-moro-buff-row="true"]{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}
+.moro-chat-root [data-moro-buff-chip="true"]{display:inline-flex!important;align-items:center!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}
+.moro-chat-root .moro-chat-header[data-moro-has-buffs="true"]{overflow:visible!important;}`;
 
     const headerClass =
         headerStyle === 'minimal'
@@ -513,7 +518,8 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                     {/* 实时套用「白框自定义」CSS：预览各零件挂了同样的 .moro-chat-* 钩子，故能即时反映。
                         注意：预览外壳 overflow-hidden 会裁掉溢出效果（如波浪下沿），真聊天里完整可见。 */}
                     {theme.chatChromeCustomCss && <style>{theme.chatChromeCustomCss}</style>}
-                    <div className={`moro-chat-header relative ${headerClass} ${previewPad}`}>
+                    {showHeaderBuffs && <style>{buffPreviewGuardCss}</style>}
+                    <div className={`moro-chat-header relative ${headerClass} ${previewPad}`} data-moro-has-buffs={showHeaderBuffs ? 'true' : undefined}>
                         <div className={`flex items-center gap-3 ${headerAlign === 'center' ? 'justify-center text-center' : 'justify-between text-left'}`}>
                             <div className={`flex items-center gap-3 ${headerAlign === 'center' ? 'justify-center' : ''}`}>
                                 <div
@@ -528,6 +534,14 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                                     {statusStyle === 'pill' && <div className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${headerStyle === 'discord' ? 'bg-emerald-500/20 text-emerald-200' : headerStyle === 'pixel' ? 'bg-[#fff7ed] text-[#8f674a]' : 'bg-emerald-50 text-emerald-500'}`}>online</div>}
                                     {statusStyle === 'dot' && <div className={`flex items-center gap-1 text-[9px] ${headerStyle === 'discord' ? 'text-slate-300' : headerStyle === 'pixel' ? 'text-[#f3ddc7]' : 'text-slate-400'}`}><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />online</div>}
                                     {statusStyle === 'subtle' && <div className={`text-[9px] uppercase ${headerStyle === 'discord' ? 'text-slate-400' : headerStyle === 'pixel' ? 'text-[#f3ddc7]' : 'text-slate-400'}`}>online</div>}
+                                    {showHeaderBuffs && (
+                                        <div className="moro-chat-buffs mt-1 w-full max-w-[12rem]" data-moro-protected="emotion-buffs">
+                                            <div className={`flex items-center gap-1 overflow-hidden whitespace-nowrap ${headerAlign === 'center' ? 'justify-center' : ''}`} data-moro-buff-row="true">
+                                                <button className="shrink-0 rounded-[10px] border border-pink-200 bg-pink-50 px-1.5 py-[3px] text-[8px] font-bold leading-none text-pink-600" data-moro-buff-chip="true">心软</button>
+                                                <button className="shrink-0 rounded-[10px] border border-slate-200 bg-slate-100 px-1.5 py-[3px] text-[8px] font-bold leading-none text-slate-500" data-moro-buff-chip="true">+1</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             {headerAlign !== 'center' && <div className={`moro-chat-token text-[9px] font-mono ${headerStyle === 'discord' ? 'text-slate-400' : headerStyle === 'pixel' ? 'text-[#f3ddc7]' : 'text-slate-400'}`}>42 tok</div>}

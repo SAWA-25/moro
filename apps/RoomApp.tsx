@@ -7,8 +7,10 @@ import ScheduleCard from '../components/schedule/ScheduleCard';
 import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processImage } from '../utils/file';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { FURNITURE_ICONS } from '../utils/furnitureIcons';
 import PixelHomeView from './pixelHome/PixelHomeView';
 
@@ -435,20 +437,22 @@ const RoomApp: React.FC = () => {
             const baseContext = ContextBuilder.buildCoreContext(c, userProfile, false);
             const fallbackPrompt = `${baseContext}\n\nTask: User entered your room. Just say hello. JSON: { "welcomeMessage": "..." }`;
             
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ 
-                    model: auxApi.model, 
-                    messages: [{ role: "user", content: fallbackPrompt }], 
-                    temperature: 0.5,
-                    max_tokens: 8000 // Keep it tiny
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: "user", content: fallbackPrompt }],
+                temperature: 0.5,
+                max_tokens: 8000 // Keep it tiny
+            }, {
+                meta: makeApiUsageMeta('room.generate', {
+                    charId: c.id,
+                    charName: c.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || 'Room',
+                }),
             });
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                let content = data.choices?.[0]?.message?.content || '{"welcomeMessage": "..."}';
+            {
+                let content = extractContent(data) || '{"welcomeMessage": "..."}';
                 content = content.replace(/```json/g, '').replace(/```/g, '').trim();
                 
                 try {
@@ -484,7 +488,7 @@ const RoomApp: React.FC = () => {
     };
 
     const initializeRoomState = async (c: CharacterProfile, currentItems: RoomItem[], force: boolean = false) => {
-        if (!auxApi.apiKey) return;
+        if (!auxApi.baseUrl || !auxApi.model) return;
 
         setIsInitializing(true);
         const loadingTexts = [`正在替 ${c.name} 拂去桌上的灰…`, "正在把今天的心事贴进本子…", "正在裁剪一页新的居所…", "正在为每件物什写下注脚…"];
@@ -582,27 +586,28 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
             // CONSOLE LOG REMOVED FOR PRODUCTION CLEANUP
 
             // FIX: Add Safety Settings & Lower Temperature
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ 
-                    model: auxApi.model, 
-                    messages: [{ role: "user", content: prompt }], 
-                    temperature: 0.5, // Lower temp for stability
-                    max_tokens: 8000,
-                    // Safety Settings injection for Gemini-based proxies
-                    safetySettings: [
-                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                    ]
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.5, // Lower temp for stability
+                max_tokens: 8000,
+                // Safety Settings injection for Gemini-based proxies
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ]
+            }, {
+                meta: makeApiUsageMeta('room.generate', {
+                    charId: c.id,
+                    charName: c.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || 'Room',
+                }),
             });
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                let content = data.choices?.[0]?.message?.content || "";
+            let content = extractContent(data) || "";
                 
                 // CRITICAL FIX: Empty content check triggers fallback
                 if (!content) {
@@ -650,31 +655,29 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                     });
                 }
 
-                // 3. Handle Notebook
-                if (result.notebookEntry) {
-                    // Create message first to get ID
-                    const msgContent = `[系统: ${c.name} 在记事本上写道: \n"${result.notebookEntry.content}"]`;
-                    
-                    const msgId = await DB.saveMessage({
-                        charId: c.id,
-                        role: 'system',
-                        type: 'text',
-                        content: msgContent
-                    });
+            // 3. Handle Notebook
+            if (result.notebookEntry) {
+                // Create message first to get ID
+                const msgContent = `[系统: ${c.name} 在记事本上写道: \n"${result.notebookEntry.content}"]`;
 
-                    const newNote: RoomNote = {
-                        id: `note-${Date.now()}`,
-                        charId: c.id,
-                        timestamp: Date.now(),
-                        content: result.notebookEntry.content,
-                        type: result.notebookEntry.type || 'thought',
-                        relatedMessageId: msgId
-                    };
-                    await DB.saveRoomNote(newNote);
-                    setNotebookEntries(prev => [newNote, ...prev]);
-                }
+                const msgId = await DB.saveMessage({
+                    charId: c.id,
+                    role: 'system',
+                    type: 'text',
+                    content: msgContent
+                });
 
-            } else { throw new Error(`API Error ${response.status}`); }
+                const newNote: RoomNote = {
+                    id: `note-${Date.now()}`,
+                    charId: c.id,
+                    timestamp: Date.now(),
+                    content: result.notebookEntry.content,
+                    type: result.notebookEntry.type || 'thought',
+                    relatedMessageId: msgId
+                };
+                await DB.saveRoomNote(newNote);
+                setNotebookEntries(prev => [newNote, ...prev]);
+            }
 
         } catch (e: any) { 
             console.error("Room Init Failed, switching to Fallback", e); 

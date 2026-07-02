@@ -29,6 +29,7 @@
 | 持久化 | `utils/dateStore.ts`：localStorage 按角色存多条世界线（list/save/create/fork/delete/rename） |
 | UI | `apps/lifesim/DateView.tsx`：场景选择 / 世界线**分叉树**（`buildForest` + `WorldlineNode` 递归缩进展示血缘）/ 约会会话（消息流 + 话·动作分输入 + 🎤语音输入 + BGM/语音/分叉）|
 | 入口 | `apps/LifeSimApp.tsx`：顶栏 ♥ 按钮 → `showDate` 覆盖层 |
+| 情侣空间联动 | `components/couple/CoupleSpace.tsx` 写入 `moro_date_intent_v1` 后打开 `LifeSim`，`apps/LifeSimApp.tsx` 消费 intent 直接进入约会；`apps/lifesim/DateView.tsx` 可把当前世界线摘要「收进情侣空间」为 `CoupleMemoryCard(kind:'date')` |
 
 ## 几个有意的设计点
 
@@ -45,5 +46,5 @@
 
 ## 后续可扩展
 
-- 把约会里的高光沉淀进回忆标本馆（记忆宫殿）；
+- 把约会里的高光继续沉淀进情侣空间记忆卡 / 回忆标本馆；
 - 分叉树的可视化连线再精细些（目前是缩进 + 血缘标注）。

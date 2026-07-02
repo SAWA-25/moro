@@ -15,6 +15,7 @@ interface MomentCardProps {
     onShareToChat: (post: SocialPost) => void;
     onDeletePost: (post: SocialPost) => void;
     onDeleteComment: (post: SocialPost, comment: SocialComment) => void;
+    onOpenCommentInChat: (post: SocialPost, comment: SocialComment) => void;
     onPreviewImage: (src: string) => void;
 }
 
@@ -47,7 +48,7 @@ const ImageGrid: React.FC<{ images: string[]; onPreview: (src: string) => void }
 /** 单条「此刻」动态：纸卡拼贴风（原创排版——圆头像 + 墨色名字 + 常驻图标操作行） */
 const MomentCard: React.FC<MomentCardProps> = ({
     post, userName, isReacting,
-    onToggleLike, onComment, onRepost, onShareToChat, onDeletePost, onDeleteComment, onPreviewImage,
+    onToggleLike, onComment, onRepost, onShareToChat, onDeletePost, onDeleteComment, onOpenCommentInChat, onPreviewImage,
 }) => {
     const isOwn = post.authorType === 'user';
     const images = displayableImages(post);
@@ -85,6 +86,7 @@ const MomentCard: React.FC<MomentCardProps> = ({
                 {/* 名字 + 时间（墨色名字，时间右对齐小字） */}
                 <div className="flex items-baseline justify-between gap-2">
                     <div className="text-[14px] font-bold text-slate-800 leading-tight flex items-center gap-1.5 min-w-0">
+                        {post.unreadForUser && <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" title="新动态" />}
                         <span className="truncate">{post.authorName}</span>
                         {post.visibility === 'private' && <Lock size={12} className="text-slate-300 shrink-0" />}
                     </div>
@@ -169,20 +171,30 @@ const MomentCard: React.FC<MomentCardProps> = ({
                         {comments.length > 0 && (
                             <div className="px-3 py-1.5">
                                 {comments.map(c => (
-                                    <button
-                                        key={c.id}
-                                        onClick={() => handleCommentTap(c)}
-                                        className="block w-full text-left text-[12px] leading-relaxed py-0.5 active:bg-slate-100 rounded break-words"
-                                    >
-                                        <span className="font-bold text-slate-700">{c.authorName}</span>
-                                        {c.replyTo && (
-                                            <>
-                                                <span className="text-slate-500"> 回 </span>
-                                                <span className="font-bold text-slate-700">{c.replyTo.name}</span>
-                                            </>
+                                    <div key={c.id} className="group flex items-start gap-1 py-0.5">
+                                        <button
+                                            onClick={() => handleCommentTap(c)}
+                                            className="flex-1 text-left text-[12px] leading-relaxed active:bg-slate-100 rounded break-words"
+                                        >
+                                            <span className="font-bold text-slate-700">{c.authorName}</span>
+                                            {c.replyTo && (
+                                                <>
+                                                    <span className="text-slate-500"> 回 </span>
+                                                    <span className="font-bold text-slate-700">{c.replyTo.name}</span>
+                                                </>
+                                            )}
+                                            <span className="text-slate-600">：{c.content}</span>
+                                        </button>
+                                        {c.authorCharId && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onOpenCommentInChat(post, c); }}
+                                                className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-slate-300 bg-white/70 border border-slate-100 active:scale-95"
+                                                title="带着这句去聊"
+                                            >
+                                                去聊
+                                            </button>
                                         )}
-                                        <span className="text-slate-600">：{c.content}</span>
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         )}

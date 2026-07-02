@@ -8,9 +8,11 @@ import { ChatPrompts } from '../utils/chatPrompts';
 import { injectMemoryPalace, processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
-import { safeResponseJson } from '../utils/safeApi';
+import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { callChatCompletion } from '../utils/llmClient';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import Modal from '../components/os/Modal';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
@@ -216,23 +218,23 @@ const DateApp: React.FC = () => {
 2. **状态一致性**: ${gapHint.includes('很久') ? '因为很久没见，可能在发呆、忙碌或者有点落寞。' : '根据最近的聊天内容和情绪来决定当前状态。如果刚聊完，角色的状态应该与聊天内容相呼应。'}
 3. **描写风格**: 电影感，沉浸式，细节丰富。不要输出任何前缀，直接输出描写内容。`;
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({
-                    model: auxApi.model,
-                    messages: [
-                        { role: "system", content: baseContext },
-                        { role: "user", content: `[最近记录 (Previous Context)]:${recentMsgs}${contextSeparator}${peekInstructions}\n\n(Start sensing...)` }
-                    ],
-                    temperature: apiConfig.temperature ?? 0.85,
-                    stream: apiConfig.stream ?? false,
-                })
+            const data = await callChatCompletion(auxApi, {
+                model: auxApi.model,
+                messages: [
+                    { role: "system", content: baseContext },
+                    { role: "user", content: `[最近记录 (Previous Context)]:${recentMsgs}${contextSeparator}${peekInstructions}\n\n(Start sensing...)` }
+                ],
+                temperature: apiConfig.temperature ?? 0.85,
+                stream: apiConfig.stream ?? false,
+            }, {
+                meta: makeApiUsageMeta('date.scene', {
+                    charId: c.id,
+                    charName: c.name,
+                    apiRole: auxApi.apiRole || 'aux',
+                    apiBinding: auxApi.apiBinding || '约会感知',
+                }),
             });
-
-            if (!response.ok) throw new Error('Failed to sense presence');
-            const data = await safeResponseJson(response);
-            const content = data.choices[0].message.content;
+            const content = extractContent(data) || '';
             setPeekStatus(content);
 
         } catch (e: any) {
@@ -396,24 +398,24 @@ const DateApp: React.FC = () => {
 2. **Context**: 参考历史记录。如果刚刚才看到开场白（Opening），请自然接话。
 `;
 
-        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-            body: JSON.stringify({
-                model: auxApi.model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    ...historyMsgs,
-                    { role: 'user', content: `${text}\n\n(System Note: 严格遵守 VN 格式。每一行都要以 [emotion] 开头，根据内容逐行切换情绪标签，不要整段只用同一个。叙述行写出场景的呼吸感，不要罗列动作。)` }
-                ],
-                temperature: apiConfig.temperature ?? 0.85,
-                stream: apiConfig.stream ?? false,
-            })
+        const data = await callChatCompletion(auxApi, {
+            model: auxApi.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                ...historyMsgs,
+                { role: 'user', content: `${text}\n\n(System Note: 严格遵守 VN 格式。每一行都要以 [emotion] 开头，根据内容逐行切换情绪标签，不要整段只用同一个。叙述行写出场景的呼吸感，不要罗列动作。)` }
+            ],
+            temperature: apiConfig.temperature ?? 0.85,
+            stream: apiConfig.stream ?? false,
+        }, {
+            meta: makeApiUsageMeta('date.reply', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: auxApi.apiRole || 'aux',
+                apiBinding: auxApi.apiBinding || '约会回复',
+            }),
         });
-
-        if (!response.ok) throw new Error('API Error');
-        const data = await safeResponseJson(response);
-        const content = data.choices[0].message.content;
+        const content = extractContent(data) || '';
 
         // 3. Save AI Response
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: content, metadata: { source: 'date' } });
@@ -469,25 +471,25 @@ const DateApp: React.FC = () => {
 用细微的肢体语言暗示情绪，不要直接说"开心""紧张"。
 `;
 
-        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-            body: JSON.stringify({
-                model: auxApi.model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    ...historyMsgs,
-                    { role: 'user', content: `${lastUserMsg.content}\n\n(System Note: Reroll. 用不同的角度重写，叙述行保持场景感。)` }
-                ],
-                // Reroll 略调高温度求多样性，但绝不低于用户配置的基线。
-                temperature: Math.max(apiConfig.temperature ?? 0.85, 0.9),
-                stream: apiConfig.stream ?? false,
-            })
+        const data = await callChatCompletion(auxApi, {
+            model: auxApi.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                ...historyMsgs,
+                { role: 'user', content: `${lastUserMsg.content}\n\n(System Note: Reroll. 用不同的角度重写，叙述行保持场景感。)` }
+            ],
+            // Reroll 略调高温度求多样性，但绝不低于用户配置的基线。
+            temperature: Math.max(apiConfig.temperature ?? 0.85, 0.9),
+            stream: apiConfig.stream ?? false,
+        }, {
+            meta: makeApiUsageMeta('date.reply', {
+                charId: char.id,
+                charName: char.name,
+                apiRole: auxApi.apiRole || 'aux',
+                apiBinding: auxApi.apiBinding || '约会重掷',
+            }),
         });
-
-        if (!response.ok) throw new Error('API Error');
-        const data = await safeResponseJson(response);
-        const content = data.choices[0].message.content;
+        const content = extractContent(data) || '';
 
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: content, metadata: { source: 'date' } });
 

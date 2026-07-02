@@ -19,7 +19,7 @@
 |------|------|-------------|
 | **[1] 关系与感情** | 好感 / 关系推进([[REL]]) / 求婚([[PROPOSE]]) / 婚姻筹备([[WEDDING_PLAN]]) 注入块 | `utils/context.ts` |
 | **[2] 情侣空间** | 上下文注入块 + 角色主动互动（评论/回悄悄话/反应互动/冒泡发动态）的 LLM 文案 | `utils/coupleSpace.ts` |
-| **[3] 自主生活** | 离线/主动取材：单条 `AUTONOMOUS_SINGLE_SYSTEM` / 批量 `AUTONOMOUS_BATCH_SYSTEM` / 主动消息 hint / **`recentLifeContextIntro`（把近来线下生活注入线上聊天的引导语）** | `utils/autonomousLife.ts` |
+| **[3] 自主生活** | 离线/主动取材 v2：单条 `AUTONOMOUS_SINGLE_SYSTEM` / 批量 `AUTONOMOUS_BATCH_SYSTEM` / 主动消息 hint / **`recentLifeContextIntro`（把近来线下生活注入线上聊天的引导语）**。JSON 字段包含 `activity`/`mood`/`location`/`summary` 以及可选的 `eventKind`/`energy`/`intensity`/`shareWillingness`/`thread`/`proactiveAngle` | `utils/autonomousLife.ts` |
 | **[4] 回神** | 长聊跑味后的自我校准 system | `utils/recenter.ts` |
 | **[5] 思考链** | `<think>` 阶段「角色脑内活动」规则 | `utils/thinkingChainPrompt.ts` |
 | **[6] 行动建议** | 「帮我想想接下来说啥」候选生成 system + user | `utils/userActionSuggest.ts` |

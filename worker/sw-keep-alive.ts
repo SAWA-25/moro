@@ -1,7 +1,7 @@
 /// <reference lib="WebWorker" />
 
 import { installReiSW } from '@rei-standard/amsg-sw';
-import { swReadSnapshot, swBuildMessages, swCallLLM, swCleanProactiveText, swMarkGenerated } from '../utils/swProactiveBridge';
+import { swReadSnapshot, swBuildMessages, swCallLLM, swCleanProactiveText, swMarkGenerated, swShouldGenerateProactive } from '../utils/swProactiveBridge';
 
 /**
  * SW_VERSION: 改 SW 实质行为时（push handler / message protocol / 通知策略 / IDB 升级）
@@ -223,6 +223,11 @@ async function generateProactiveInSW(charId: string): Promise<void> {
   try {
     const snap = await swReadSnapshot(charId);
     if (!snap || !snap.enabled || !snap.api?.baseUrl || !snap.api?.model) return;
+    const guard = swShouldGenerateProactive(snap, now);
+    if (!guard.ok) {
+      traceSw('proactive-sw-skipped', undefined, { charId, reason: guard.reason });
+      return;
+    }
     const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
     if (!text) return;
     const ts = Date.now();

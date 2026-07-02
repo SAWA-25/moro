@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     parseDatingProfiles, fallbackDatingProfiles, buildDatingPrompt, intentMeta,
-    DATING_INTENTS, isMatch, fallbackDatingReply, type CharBrief,
+    DATING_INTENTS, isMatch, fallbackDatingReply, datingProfileToAmbientContact, type CharBrief,
 } from './socialDating';
 
 const chars: CharBrief[] = [{ id: 'c1', name: '林夏', persona: '高冷御姐', avatar: 'a.png' }];
@@ -75,5 +75,23 @@ describe('socialDating · 兜底 / prompt', () => {
     it('fallbackDatingReply 永远给一句非空回应', () => {
         expect(fallbackDatingReply({ intent: 'gamemate', name: 'A' }).length).toBeGreaterThan(0);
         expect(fallbackDatingReply({ intent: 'date', name: 'B' }).length).toBeGreaterThan(0);
+    });
+    it('datingProfileToAmbientContact 把匹配路人转成可导入的社交联系人', () => {
+        const entry = datingProfileToAmbientContact({
+            id: 'p1',
+            name: '饭搭子',
+            intent: 'mealmate',
+            distanceKm: 1.6,
+            tags: ['探店', 'AA'],
+            bio: '想找一个周末一起吃饭的人。',
+        }, { name: '用户' }, 123);
+
+        expect(entry.id).toBe('dating-p1');
+        expect(entry.kind).toBe('contact');
+        expect(entry.relation).toBe('friend');
+        expect(entry.relationLabel).toContain('饭搭子');
+        expect(entry.note).toContain('见闻簿·交友');
+        expect(entry.note).toContain('想找一个周末一起吃饭的人');
+        expect(entry.createdAt).toBe(123);
     });
 });

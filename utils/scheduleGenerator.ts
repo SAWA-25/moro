@@ -2,9 +2,9 @@
 import { CharacterProfile, UserProfile, DailySchedule, ScheduleSlot, Message } from '../types';
 import { ContextBuilder } from './context';
 import { DB } from './db';
-import { safeResponseJson } from './safeApi';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { callChatCompletion } from './llmClient';
 
 /**
  * Attempt to repair truncated JSON from LLM output.
@@ -368,28 +368,19 @@ export async function generateDailyScheduleForChar(
         : buildLifestylePrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock);
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.85,
-                max_tokens: 8000
-            }),
-            __moroMeta: makeApiUsageMeta('almanac.scheduleGenerate', {
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.85,
+            max_tokens: 8000
+        }, {
+            meta: makeApiUsageMeta('almanac.scheduleGenerate', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'aux',
             }),
-        } as RequestInit & { __moroMeta?: unknown });
+        });
 
-        if (!response.ok) {
-            console.error('[Schedule] API error:', response.status);
-            return null;
-        }
-
-        const data = await safeResponseJson(response);
         let content = data.choices?.[0]?.message?.content || '';
         content = content.replace(/```json/g, '').replace(/```/g, '').trim();
 
@@ -560,26 +551,18 @@ ${chatBlock}
 仅输出 JSON，不要其他内容。`;
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.5,
-                max_tokens: 4000,
-            }),
-            __moroMeta: makeApiUsageMeta('almanac.scheduleReconcile', {
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5,
+            max_tokens: 4000,
+        }, {
+            meta: makeApiUsageMeta('almanac.scheduleReconcile', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'aux',
             }),
-        } as RequestInit & { __moroMeta?: unknown });
-        if (!response.ok) {
-            console.error('[Schedule/Reconcile] API error:', response.status);
-            return null;
-        }
-        const data = await safeResponseJson(response);
+        });
         let content = data.choices?.[0]?.message?.content || '';
         content = content.replace(/```json/g, '').replace(/```/g, '').trim();
 
@@ -696,28 +679,19 @@ ${chatSummary}
 直接输出独白文本，不要JSON，不要任何包裹。`;
 
     try {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.85,
-                max_tokens: 500
-            }),
-            __moroMeta: makeApiUsageMeta('almanac.flowNarrative', {
+        const data = await callChatCompletion(apiConfig, {
+            model: apiConfig.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.85,
+            max_tokens: 500
+        }, {
+            meta: makeApiUsageMeta('almanac.flowNarrative', {
                 charId: char.id,
                 charName: char.name,
                 apiRole: 'aux',
             }),
-        } as RequestInit & { __moroMeta?: unknown });
+        });
 
-        if (!response.ok) {
-            console.error('[Schedule/Evolve] API error:', response.status);
-            return null;
-        }
-
-        const data = await safeResponseJson(response);
         let content = data.choices?.[0]?.message?.content || '';
         // 清理可能的引号包裹
         content = content.trim().replace(/^["']|["']$/g, '').trim();

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CharacterProfile, UserProfile } from '../types';
-import { buildFeedSystemPrompt, resolveXhsAuthorCharacter } from './xhsFeed';
+import {
+  buildCharacterLifePostPrompt,
+  buildFeedSystemPrompt,
+  chooseXhsCoverUrl,
+  classifyXhsFeedCategory,
+  FEED_BATCH_SIZE,
+  getXhsCharacterPostQuota,
+  resolveXhsAuthorCharacter,
+} from './xhsFeed';
 
 const sameNameChars = [
   { id: 'char-a', modelId: 'model-a', name: 'Same Name', systemPrompt: 'First persona.' },
@@ -10,6 +18,15 @@ const sameNameChars = [
 const user = { name: 'User', avatar: '', bio: 'tester' } as UserProfile;
 
 describe('xhs character identity', () => {
+  it('scales character post quota with roster size', () => {
+    expect(getXhsCharacterPostQuota(0)).toBe(0);
+    expect(getXhsCharacterPostQuota(1)).toBe(1);
+    expect(getXhsCharacterPostQuota(4)).toBe(4);
+    expect(getXhsCharacterPostQuota(8)).toBeGreaterThan(getXhsCharacterPostQuota(4));
+    expect(getXhsCharacterPostQuota(20)).toBeGreaterThan(getXhsCharacterPostQuota(8));
+    expect(getXhsCharacterPostQuota(100)).toBe(Math.floor(FEED_BATCH_SIZE * 0.6));
+  });
+
   it('lists same-name posters with distinct charIds in the prompt', () => {
     const prompt = buildFeedSystemPrompt(sameNameChars, user);
 
@@ -17,6 +34,7 @@ describe('xhs character identity', () => {
     expect(prompt).toContain('Same Name (ID: char-b)');
     expect(prompt).toContain('charId="model-a"');
     expect(prompt).toContain('charId="char-b"');
+    expect(prompt).toContain('角色帖目标 2 条');
     expect(prompt).toContain('真正归属以 charId 为准');
   });
 
@@ -46,5 +64,30 @@ describe('xhs character identity', () => {
 
     expect(first?.id).toBe('char-a');
     expect(duplicate).toBeUndefined();
+  });
+
+  it('classifies generated posts into stable local categories', () => {
+    expect(classifyXhsFeedCategory(['探店', '咖啡'], '周末咖啡店', '拿铁还不错')).toBe('food');
+    expect(classifyXhsFeedCategory(['考研倒计时'], '图书馆自习', '今天刷完一套题')).toBe('study');
+    expect(classifyXhsFeedCategory(['乱写'], '没有明显关键词', '只是路过')).toBe('other');
+  });
+
+  it('chooses stock covers by matching post tags first', () => {
+    const used = new Set<string>();
+    const url = chooseXhsCoverUrl([
+      { id: 'a', url: 'https://img.test/food.jpg', tags: ['咖啡', '探店'], addedAt: 1, usedCount: 0 },
+      { id: 'b', url: 'https://img.test/work.jpg', tags: ['工位'], addedAt: 2, usedCount: 0 },
+    ], ['探店', '甜品'], used, () => 0);
+
+    expect(url).toBe('https://img.test/food.jpg');
+    expect(used.has('https://img.test/food.jpg')).toBe(true);
+  });
+
+  it('builds single-character life post prompts with identity anchor and category contract', () => {
+    const prompt = buildCharacterLifePostPrompt(sameNameChars[0], user);
+
+    expect(prompt).toContain('charId="model-a"');
+    expect(prompt).toContain('category');
+    expect(prompt).toContain('只保存在本地');
   });
 });
