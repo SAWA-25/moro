@@ -3572,6 +3572,27 @@ export interface ConvoSettings {
 }
 
 /** 群公告（QQ 式）：一条当前生效的公告，群主/管理员可发布、修改或撤下。 */
+export interface GroupConvoSettings {
+    bubbleStyleMode?: 'split' | 'whole' | 'freeform';
+    personaDrivenMessageLength?: boolean;
+    liveChatOverride?: LiveChatOverride;
+    autoReplyEachUserMessage?: boolean;
+    narrationMode?: boolean;
+    innerVoiceEnabled?: boolean;
+    translationEnabled?: boolean;
+    translateSourceLang?: string;
+    translateTargetLang?: string;
+    translateStyle?: string;
+    emojiAssociation?: boolean;
+    allowedEmojiCategoryIds?: string[];
+    headerDecorText?: string;
+    footerDecorText?: string;
+    inputPlaceholderText?: string;
+    hideTimestamp?: boolean;
+    contextLimit?: number;
+    mountedWorldbookIds?: string[];
+}
+
 export interface GroupAnnouncement {
     /** 公告正文 */
     text: string;
@@ -3602,6 +3623,7 @@ export interface GroupProfile {
     members: string[];
     avatar?: string;
     createdAt: number;
+    convoSettings?: GroupConvoSettings;
     /**
      * 私聊里"近期群活动"上下文从这个群最多取最后多少条消息。
      * 不设默认 80。设大点能让活跃群更完整，设小点节省 token、避免某个活跃群把其他群挤掉。
@@ -5218,6 +5240,8 @@ export interface InnerVoiceEntry {
     charId: string;
     content: string;
     timestamp: number;
+    groupId?: string;
+    groupName?: string;
 }
 
 export interface EmojiCategory {

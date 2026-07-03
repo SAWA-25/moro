@@ -782,6 +782,30 @@ export function liveGroupModePromptBlock(): string {
 当前群开启了实时聊天模式：成员不必等用户空输入手动触发才接话。大家可以回应用户，也可以互相接话、岔开话题、忽然提别的事，或者短暂沉默。重点是像正经群聊一样“看到了就回”，但不要每轮都强迫所有人围着用户转；多数时候 1-2 个合适的人接一下就够了。`;
 }
 
+export interface GroupVoiceStylePromptParams {
+    bubbleMode: 'split' | 'whole';
+    personaDrivenMessageLength: boolean;
+    narrationMode: boolean;
+    translationActive: boolean;
+    translateSourceLang: string;
+    translateTargetLang: string;
+    translateStyle?: string;
+    emojiAssociation: boolean;
+    emojiContext: string;
+}
+
+/** 群聊「说话的样子」：群级消息形态、旁白、双语与表情权限提示块。 */
+export function groupVoiceStylePromptBlock(p: GroupVoiceStylePromptParams): string {
+    return `### 本群「说话的样子」设置
+- 群友打字的习惯：${p.bubbleMode === 'whole' ? '偏向一大段说完；每位成员本轮尽量把完整意思放在一条 content 里。' : '偏向一句一句蹦；长话可以拆成几条短 content。'}
+- 按人设随意：${p.personaDrivenMessageLength ? '开启。每位成员按自己人设、情绪、关系和话题决定本轮说长说短。' : '关闭。默认保持轻量自然，别让每个人都长篇大论。'}
+- 舞台旁白：${p.narrationMode ? '开启。允许少量输出 {"charId":"narrator","content":"（动作/场景旁白）"}，旁白必须是独立气泡，不归属任何成员，不要滥用。' : '关闭。禁止输出 narrator/system 旁白，只让群成员发言。'}
+- 双语对照：${p.translationActive ? `开启。普通文本 content 请先用「${p.translateSourceLang}」写气泡正文，再追加一段「${p.translateTargetLang}」译文；格式必须是：气泡正文\\n[译文] 译文内容。${p.translateStyle ? `译文笔调：${p.translateStyle}。` : ''}` : '关闭。不要主动追加译文。'}
+- 斗图的兴致：${p.emojiAssociation ? '开启。情绪对上时可低频使用 [[SEND_EMOJI: 表情名称]]。' : '关闭。不要输出 [[SEND_EMOJI: ...]]。'}
+- 表情包权限：${p.emojiAssociation ? `最终可用范围 = 本群允许分类 ∩ 说话成员原本可见分类。候选：${p.emojiContext}` : '本群关闭斗图。'}
+`;
+}
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ [6c] 音视频呼叫 (Call Decisions + Video Call Replies)                    ║
 // ║   聊天内发起通话：先由角色按人设判断接不接；接通后视频页自然回应。       ║

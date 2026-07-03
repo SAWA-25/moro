@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { APIConfig, AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact, PresetScopeKey, LiveChatOverride } from '../types';
+import { APIConfig, AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, GroupConvoSettings, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact, PresetScopeKey, LiveChatOverride, InnerVoiceEntry } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { callChatCompletion, fetchModelList } from '../utils/llmClient';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
@@ -12,6 +12,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
 import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
+import { ChatParser } from '../utils/chatParser';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
@@ -42,7 +43,7 @@ import { substituteMacros } from '../utils/macros';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { ORDER_CHAR_ID_GROUP, PresetRuntime, applyPresetToMessages } from '../utils/presets';
 import { normalizeLiveChatSettings, resolveLiveChatEnabled, shouldTriggerLiveDraft } from '../utils/liveChat';
-import { liveGroupDraftPromptBody, liveGroupModePromptBlock } from '../utils/laiwangPrompts';
+import { groupVoiceStylePromptBlock, innerVoicePromptBody, liveGroupDraftPromptBody, liveGroupModePromptBlock } from '../utils/laiwangPrompts';
 import { createMessageFollowup } from '../utils/chatFollowups';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
@@ -95,9 +96,12 @@ type GroupDirectorPreparedContext = {
 };
 type GroupDirectorAction = { charId: string; content: string };
 type GroupOpeningBubble = { charId: string; content: string };
+type GroupInnerVoicePeek = { charId: string; charName: string; content: string; timestamp: number };
 
 const GROUP_JSON_ARRAY_GUARD = `[本轮最高优先级输出守卫]
 只输出 JSON Array，不要 Markdown，不要解释，不要前后缀。每个元素必须包含 "charId" 和 "content" 字段；charId 必须使用本轮花名册中的角色 ID。`;
+const DEFAULT_GROUP_CONTEXT_LIMIT = 30;
+const LANG_OPTIONS = ['中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español'];
 
 const splitPresetSystemContent = (content: any): { systemText: string; mediaUserContent: any | null } => {
     if (!Array.isArray(content)) return { systemText: String(content ?? ''), mediaUserContent: null };
@@ -257,6 +261,13 @@ const GROUP_SETTINGS_MONO: React.CSSProperties = { fontFamily: '"SFMono-Regular"
 const CONVO_SWIPE_ACTION_WIDTH = 216;
 const CONVO_HIDDEN_WINDOWS_KEY = 'moro_chathub_hidden_windows_v1';
 const GROUP_CHAT_LOAD_BATCH_SIZE = 30;
+const GROUP_ASSISTANT_REVEAL_FIRST_DELAY_MS = 900;
+const GROUP_ASSISTANT_REVEAL_TYPING_MIN_MS = 800;
+const GROUP_ASSISTANT_REVEAL_TYPING_MAX_MS = 2600;
+const GROUP_ASSISTANT_REVEAL_BETWEEN_MIN_MS = 650;
+const GROUP_ASSISTANT_REVEAL_BETWEEN_MAX_MS = 1800;
+const GROUP_ASSISTANT_REVEAL_CHAR_MS = 32;
+const GROUP_ASSISTANT_REVEAL_CHAR_MAX_MS = 2600;
 
 type ConvoKind = 'char' | 'group' | 'ambient';
 type ConvoHiddenWindows = Record<string, number>;
@@ -276,6 +287,27 @@ type ConvoListItem = {
     /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
     lifeStatus?: { activity: string; mood?: string; eventKind?: string; surfacedAsMsg?: boolean };
 };
+
+const groupRevealRandomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+
+const isGroupAssistantRevealMessage = (message: Message) => (
+    message.role === 'assistant'
+    && Number.isFinite(message.id)
+    && message.metadata?.source !== 'group_call'
+);
+
+const groupAssistantRevealTypingMs = (msg: Message) => {
+    if (msg.type === 'emoji') return groupRevealRandomBetween(900, 2200);
+    if (msg.type !== 'text') return groupRevealRandomBetween(1000, 2600);
+    const textLength = typeof msg.content === 'string' ? msg.content.trim().length : 0;
+    return groupRevealRandomBetween(GROUP_ASSISTANT_REVEAL_TYPING_MIN_MS, GROUP_ASSISTANT_REVEAL_TYPING_MAX_MS)
+        + Math.min(GROUP_ASSISTANT_REVEAL_CHAR_MAX_MS, textLength * GROUP_ASSISTANT_REVEAL_CHAR_MS);
+};
+
+const groupAssistantRevealBetweenMs = () => groupRevealRandomBetween(
+    GROUP_ASSISTANT_REVEAL_BETWEEN_MIN_MS,
+    GROUP_ASSISTANT_REVEAL_BETWEEN_MAX_MS,
+);
 type PendingUnblockAppeal = {
     charId: string;
     message: Message;
@@ -401,6 +433,65 @@ const resolveGroupMemberStorageId = (
     return byModelId && group.members.includes(byModelId.id) ? byModelId.id : undefined;
 };
 
+const readLegacyGroupContextLimit = (): number => {
+    try {
+        const parsed = parseInt(localStorage.getItem('groupchat_context_limit') || '', 10);
+        return Number.isFinite(parsed) ? Math.max(20, Math.min(5000, parsed)) : DEFAULT_GROUP_CONTEXT_LIMIT;
+    } catch {
+        return DEFAULT_GROUP_CONTEXT_LIMIT;
+    }
+};
+
+const resolveGroupLiveOverride = (group?: GroupProfile | null): LiveChatOverride => (
+    group?.convoSettings?.liveChatOverride || group?.liveChatOverride || 'inherit'
+);
+
+const normalizeGroupConvoPatch = (patch: Partial<GroupConvoSettings>): Partial<GroupConvoSettings> => {
+    const next: Partial<GroupConvoSettings> = { ...patch };
+    if (next.bubbleStyleMode === 'freeform') next.bubbleStyleMode = 'split';
+    if (typeof next.contextLimit === 'number') next.contextLimit = Math.max(20, Math.min(5000, Math.round(next.contextLimit)));
+    (['translateSourceLang', 'translateTargetLang', 'translateStyle', 'headerDecorText', 'footerDecorText', 'inputPlaceholderText'] as const).forEach(key => {
+        if (typeof next[key] === 'string') {
+            const trimmed = next[key]?.trim();
+            next[key] = trimmed || undefined;
+        }
+    });
+    if (next.liveChatOverride === 'inherit') next.liveChatOverride = undefined;
+    if (Array.isArray(next.allowedEmojiCategoryIds)) next.allowedEmojiCategoryIds = [...new Set(next.allowedEmojiCategoryIds)].filter(Boolean);
+    if (Array.isArray(next.mountedWorldbookIds)) next.mountedWorldbookIds = [...new Set(next.mountedWorldbookIds)].filter(Boolean);
+    return next;
+};
+
+const resolveGroupConvo = (group?: GroupProfile | null): GroupConvoSettings => {
+    const raw = group?.convoSettings || {};
+    const bubbleStyleMode = raw.bubbleStyleMode === 'whole' ? 'whole' : 'split';
+    return {
+        bubbleStyleMode,
+        personaDrivenMessageLength: !!raw.personaDrivenMessageLength || raw.bubbleStyleMode === 'freeform',
+        liveChatOverride: resolveGroupLiveOverride(group),
+        autoReplyEachUserMessage: !!raw.autoReplyEachUserMessage,
+        narrationMode: !!raw.narrationMode,
+        innerVoiceEnabled: raw.innerVoiceEnabled !== false,
+        translationEnabled: !!raw.translationEnabled,
+        translateSourceLang: raw.translateSourceLang || '中文',
+        translateTargetLang: raw.translateTargetLang || 'English',
+        translateStyle: raw.translateStyle,
+        emojiAssociation: !!raw.emojiAssociation,
+        allowedEmojiCategoryIds: Array.isArray(raw.allowedEmojiCategoryIds) ? raw.allowedEmojiCategoryIds.filter(Boolean) : undefined,
+        headerDecorText: raw.headerDecorText,
+        footerDecorText: raw.footerDecorText,
+        inputPlaceholderText: raw.inputPlaceholderText,
+        hideTimestamp: !!raw.hideTimestamp,
+        contextLimit: raw.contextLimit || readLegacyGroupContextLimit(),
+        mountedWorldbookIds: Array.isArray(raw.mountedWorldbookIds) ? raw.mountedWorldbookIds.filter(Boolean) : undefined,
+    };
+};
+
+const resolveGroupContextLimit = (group?: GroupProfile | null, fallback = DEFAULT_GROUP_CONTEXT_LIMIT): number => {
+    const limit = group?.convoSettings?.contextLimit ?? fallback;
+    return Math.max(20, Math.min(5000, Math.round(limit || DEFAULT_GROUP_CONTEXT_LIMIT)));
+};
+
 const loadHiddenConvoWindows = (): ConvoHiddenWindows => {
     try {
         const raw = localStorage.getItem(CONVO_HIDDEN_WINDOWS_KEY);
@@ -433,6 +524,29 @@ const GroupSettingsPage: React.FC<{ no: string; title: string; en: string; child
         </div>
         <div className="px-4 pb-5 pt-1">{children}</div>
     </section>
+);
+
+const GroupConvoEntry: React.FC<{ title: string; note?: React.ReactNode; side?: React.ReactNode; children?: React.ReactNode }> = ({ title, note, side, children }) => (
+    <div className="py-4 border-b last:border-b-0" style={{ borderColor: '#f0ece4' }}>
+        <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-black text-slate-800">{title}</div>
+                {note && <div className="mt-1 text-[11px] text-slate-500 leading-relaxed">{note}</div>}
+            </div>
+            {side && <div className="shrink-0">{side}</div>}
+        </div>
+        {children && <div className="mt-3">{children}</div>}
+    </div>
+);
+
+const GroupConvoToggle: React.FC<{ on: boolean; onToggle: () => void }> = ({ on, onToggle }) => (
+    <button
+        type="button"
+        onClick={onToggle}
+        className={`w-12 h-7 rounded-full p-1 flex items-center transition ${on ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}
+    >
+        <span className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${on ? 'translate-x-5' : ''}`} />
+    </button>
 );
 
 const SwipeConvoRow: React.FC<{
@@ -584,7 +698,9 @@ const GroupMessageItem = React.memo(({
     onRelayClick,
     onCheckinClick,
     specialCare,
-    groupMembers = []
+    groupMembers = [],
+    hideTimestamp = false,
+    translationEnabled = false,
 }: {
     msg: Message,
     isUser: boolean,
@@ -629,6 +745,8 @@ const GroupMessageItem = React.memo(({
     /** 本成员是本群特别关心对象时，在消息上做轻量提醒。 */
     specialCare?: boolean
     groupMembers?: CharacterProfile[]
+    hideTimestamp?: boolean
+    translationEnabled?: boolean
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? (userName || '我') : displayName || char?.name || '未知成员';
@@ -636,6 +754,13 @@ const GroupMessageItem = React.memo(({
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     const [forumDetailOpen, setForumDetailOpen] = useState(false);
+    const [showTranslated, setShowTranslated] = useState(false);
+    const translationMatch = translationEnabled && typeof msg.content === 'string'
+        ? String(msg.content).match(/^([\s\S]*?)\n\s*(?:\[译文\]|\[Translation\]|译文[:：]|Translation[:：])\s*([\s\S]+)$/i)
+        : null;
+    const displayContent = translationMatch
+        ? (showTranslated ? translationMatch[2].trim() : translationMatch[1].trim())
+        : msg.content;
     // 头像单击/双击区分：260ms 内第二次点击 = 戳一戳
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleAvatarClick = (e: React.MouseEvent) => {
@@ -665,6 +790,16 @@ const GroupMessageItem = React.memo(({
             }}>
                 <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${revealable ? 'cursor-pointer hover:bg-slate-300/70 active:scale-95 transition' : ''} ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
                     {msg.content}{nickThought ? ' 💭' : ''}
+                </span>
+            </div>
+        );
+    }
+
+    if (msg.metadata?.groupNarration) {
+        return (
+            <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
+                <span className={`px-3.5 py-2 rounded-2xl bg-white/72 border border-slate-200/70 text-slate-500 text-[12px] leading-relaxed text-center italic max-w-[82%] shadow-sm ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
+                    {displayContent}
                 </span>
             </div>
         );
@@ -1123,7 +1258,7 @@ const GroupMessageItem = React.memo(({
                         className="px-5 py-3 rounded-[22px] text-[15px] leading-relaxed whitespace-pre-wrap break-all active:scale-[0.98] transition-transform"
                         style={{ backgroundColor: styleConfig.backgroundColor, color: styleConfig.textColor, opacity: styleConfig.opacity }}
                     >
-                        {renderTextWithMentions(msg.content)}
+                        {renderTextWithMentions(String(displayContent || ''))}
                     </div>
                 );
         }
@@ -1148,22 +1283,25 @@ const GroupMessageItem = React.memo(({
                 </div>
             )}
 
-            <div className={`flex flex-col ${isUser ? 'items-end mr-3' : 'items-start ml-1'} max-w-[72%] min-w-0 ${selectionMode ? 'pointer-events-none' : ''}`}>
-                {isFirstInGroup && (
+            {!isUser && (
+                <div
+                    className={`relative shrink-0 mr-2 mb-0.5 rounded-full self-end ${specialCare ? 'ring-1 ring-rose-300 ring-offset-1 ring-offset-[#ededed]' : ''} ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
+                    onClick={handleAvatarClick}
+                >
+                    {avatar ? (
+                        <img src={avatar} className="w-9 h-9 rounded-full object-cover ring-1 ring-black/5 shadow-sm" loading="lazy" alt="" draggable={false} />
+                    ) : (
+                        <span className="w-9 h-9 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[12px] font-bold ring-1 ring-black/5 shadow-sm">
+                            {name.slice(0, 1)}
+                        </span>
+                    )}
+                    {specialCare && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center border border-white"><BellRinging size={8} weight="fill" /></span>}
+                </div>
+            )}
+
+            <div className={`flex flex-col ${isUser ? 'items-end mr-3' : 'items-start'} max-w-[72%] min-w-0 ${selectionMode ? 'pointer-events-none' : ''}`}>
+                {(!isUser || isFirstInGroup) && (
                     <div className={`text-[10px] text-slate-400 mb-1 flex items-center gap-1.5 px-0.5 ${isUser ? 'mr-1 justify-end' : 'ml-0'}`}>
-                        {!isUser && avatar && (
-                            <span className={`relative shrink-0 rounded-full ${specialCare ? 'ring-1 ring-rose-300 ring-offset-1 ring-offset-[#ededed]' : ''}`}>
-                                <img
-                                    src={avatar}
-                                    className={`w-6 h-6 rounded-full object-cover ring-1 ring-black/5 ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
-                                    loading="lazy"
-                                    onClick={handleAvatarClick}
-                                    alt=""
-                                    draggable={false}
-                                />
-                                {specialCare && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center border border-white"><BellRinging size={8} weight="fill" /></span>}
-                            </span>
-                        )}
                         {specialCare && !isUser && (
                             <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
                         )}
@@ -1171,10 +1309,22 @@ const GroupMessageItem = React.memo(({
                             <span className="px-1 py-px rounded bg-[#f8f8f8] text-slate-500 border border-slate-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
                         )}
                         {!isUser && <span className="truncate max-w-[140px] bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{name}</span>}
-                        <span className="text-slate-300 shrink-0">{timeStr}</span>
+                        {!hideTimestamp && <span className="text-slate-300 shrink-0">{timeStr}</span>}
                     </div>
                 )}
                 {renderContent()}
+                {translationMatch && msg.type === 'text' && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTranslated(v => !v);
+                        }}
+                        className={`mt-1 text-[10px] px-2 py-0.5 rounded-full bg-white/75 text-slate-400 border border-slate-200 active:scale-95 transition ${isUser ? 'mr-1' : 'ml-1'}`}
+                    >
+                        {showTranslated ? '原' : '译'}
+                    </button>
+                )}
                 {/* 表情回应小药丸（QQ/微信 tap-to-react） */}
                 {Array.isArray(msg.metadata?.reactions) && msg.metadata.reactions.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -1273,6 +1423,10 @@ const ChatHub: React.FC = () => {
     const [tempAutoContinueEnabled, setTempAutoContinueEnabled] = useState(false);
     const [tempAutoContinueRounds, setTempAutoContinueRounds] = useState(2);
     const [tempLiveChatOverride, setTempLiveChatOverride] = useState<LiveChatOverride>('inherit');
+    const [tempGroupConvo, setTempGroupConvo] = useState<GroupConvoSettings>(() => resolveGroupConvo(null));
+    const [groupInnerVoiceTargetId, setGroupInnerVoiceTargetId] = useState('');
+    const [groupInnerVoicePeek, setGroupInnerVoicePeek] = useState<GroupInnerVoicePeek | null>(null);
+    const [groupInnerVoiceLoading, setGroupInnerVoiceLoading] = useState(false);
     const [tempGroupApi, setTempGroupApi] = useState<GroupApiDraft>({ baseUrl: '', apiKey: '', model: '' });
     const [tempMemberApis, setTempMemberApis] = useState<Record<string, GroupApiDraft>>({});
     const [tempOpeningGreetings, setTempOpeningGreetings] = useState<string[]>([]);
@@ -1288,6 +1442,7 @@ const ChatHub: React.FC = () => {
     // 群聊表情抽屉搜索
     const [emojiSearch, setEmojiSearch] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
+    const [revealedGroupAssistantIds, setRevealedGroupAssistantIds] = useState<Set<number>>(() => new Set());
     const [totalMsgCount, setTotalMsgCount] = useState(0);
     const [visibleCount, setVisibleCount] = useState(30);
     const [loadingGroupHistory, setLoadingGroupHistory] = useState(false);
@@ -1316,6 +1471,8 @@ const ChatHub: React.FC = () => {
     // 的最新状态——闭包里的 characters 还是发消息那一刻捕获的旧值，会让关闭后还触发一次
     const charactersRef = useRef(characters);
     charactersRef.current = characters;
+    const activeGroupRef = useRef<GroupProfile | null>(activeGroup);
+    activeGroupRef.current = activeGroup;
 
     // Token 统计 — 对齐私聊 ChatHeader 的 token badge
     const [lastTokenUsage, setLastTokenUsage] = useState<number | null>(null);
@@ -1357,7 +1514,7 @@ const ChatHub: React.FC = () => {
 
     // Context limit (like Chat app's settingsContextLimit)
     const [contextLimit, setContextLimit] = useState<number>(() => {
-        try { return parseInt(localStorage.getItem('groupchat_context_limit') || '30'); } catch { return 30; }
+        return readLegacyGroupContextLimit();
     });
     const ambientSocialEnabled = userProfile.ambientSocialEnabled !== false;
     const ambientSocialHideConverted = userProfile.ambientSocialHideConverted !== false;
@@ -1366,7 +1523,8 @@ const ChatHub: React.FC = () => {
         [userProfile.liveChatSettings],
     );
     const liveChatGlobalEnabled = liveChatSettings.enabled;
-    const liveGroupEnabled = activeGroup ? resolveLiveChatEnabled(userProfile, activeGroup.liveChatOverride) : false;
+    const activeGroupConvo = useMemo(() => resolveGroupConvo(activeGroup), [activeGroup]);
+    const liveGroupEnabled = activeGroup ? resolveLiveChatEnabled(userProfile, resolveGroupLiveOverride(activeGroup)) : false;
     
     // Selection Mode
     const [selectionMode, setSelectionMode] = useState(false);
@@ -1514,6 +1672,17 @@ const ChatHub: React.FC = () => {
     const liveGroupDraftLastTextRef = useRef<string>('');
     const liveGroupPendingSendTriggerRef = useRef(false);
     const liveGroupPrevTypingRef = useRef(false);
+    const groupAutoReplyQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const groupRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const groupRevealKnownIdsRef = useRef<Set<number>>(new Set());
+    const groupRevealNextAtRef = useRef(0);
+    const groupRevealHydratedRef = useRef(false);
+
+    const clearGroupRevealTimers = useCallback(() => {
+        groupRevealTimersRef.current.forEach(timer => clearTimeout(timer));
+        groupRevealTimersRef.current = [];
+        groupRevealNextAtRef.current = 0;
+    }, []);
 
     const hydrateGroupSettingsDraft = (group: GroupProfile | null) => {
         if (!group) return;
@@ -1529,7 +1698,15 @@ const ChatHub: React.FC = () => {
         setTempReplyIndividually(!!group.replyIndividually);
         setTempAutoContinueEnabled(!!group.autoContinueEnabled);
         setTempAutoContinueRounds(Math.max(1, Math.min(8, group.autoContinueRounds || 2)));
-        setTempLiveChatOverride(group.liveChatOverride || 'inherit');
+        const nextConvo = {
+            ...resolveGroupConvo(group),
+            contextLimit: resolveGroupContextLimit(group, contextLimit),
+        };
+        setTempGroupConvo(nextConvo);
+        setTempLiveChatOverride(nextConvo.liveChatOverride || 'inherit');
+        setContextLimit(nextConvo.contextLimit || DEFAULT_GROUP_CONTEXT_LIMIT);
+        setGroupInnerVoiceTargetId(group.members?.[0] || '');
+        setGroupInnerVoicePeek(null);
         setTempOpeningGreetings(normalizeGroupOpeningGreetings(group.openingGreetings));
         setGroupOpeningIdx(0);
         setTempGroupApi(normalizeGroupApiDraft(group.groupApi));
@@ -1837,7 +2014,92 @@ const ChatHub: React.FC = () => {
         groupCallScrollRef.current?.scrollTo({ top: groupCallScrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [groupCallBubbles.length, groupCallState]);
 
-    const displayMessages = useMemo(() => messages.filter(m => m.metadata?.source !== 'group_call').slice(-visibleCount), [messages, visibleCount]);
+    const displayMessages = useMemo(() => messages
+        .filter(m => m.metadata?.source !== 'group_call')
+        .slice(-visibleCount), [messages, visibleCount]);
+
+    useEffect(() => () => clearGroupRevealTimers(), [clearGroupRevealTimers]);
+
+    useEffect(() => {
+        clearGroupRevealTimers();
+        groupRevealKnownIdsRef.current = new Set();
+        groupRevealHydratedRef.current = false;
+        setRevealedGroupAssistantIds(new Set());
+    }, [activeGroup?.id, clearGroupRevealTimers]);
+
+    useEffect(() => {
+        const currentIds = new Set(displayMessages.map(m => m.id));
+        const currentAssistantIds = displayMessages.filter(isGroupAssistantRevealMessage).map(m => m.id);
+
+        if (selectionMode || jumpTargetRef.current != null) {
+            clearGroupRevealTimers();
+            groupRevealKnownIdsRef.current = currentIds;
+            groupRevealHydratedRef.current = true;
+            setRevealedGroupAssistantIds(new Set(currentAssistantIds));
+            return;
+        }
+
+        if (!groupRevealHydratedRef.current) {
+            groupRevealKnownIdsRef.current = currentIds;
+            groupRevealHydratedRef.current = true;
+            setRevealedGroupAssistantIds(new Set(currentAssistantIds));
+            return;
+        }
+
+        const knownIds = groupRevealKnownIdsRef.current;
+        const numericKnownIds = Array.from(knownIds).filter(id => Number.isFinite(id));
+        const maxKnownId = numericKnownIds.length ? Math.max(...numericKnownIds) : 0;
+        const historyAssistantIds = new Set(
+            displayMessages
+                .filter(m => isGroupAssistantRevealMessage(m) && !knownIds.has(m.id) && m.id <= maxKnownId)
+                .map(m => m.id)
+        );
+        const freshAssistantMessages = displayMessages.filter(
+            m => isGroupAssistantRevealMessage(m) && !knownIds.has(m.id) && m.id > maxKnownId
+        );
+        groupRevealKnownIdsRef.current = currentIds;
+
+        setRevealedGroupAssistantIds(prev => {
+            const next = new Set<number>();
+            currentAssistantIds.forEach(id => {
+                if (prev.has(id) || historyAssistantIds.has(id)) next.add(id);
+            });
+            return next;
+        });
+
+        if (!freshAssistantMessages.length) return;
+
+        const now = Date.now();
+        let nextRevealAt = Math.max(
+            groupRevealNextAtRef.current,
+            now + GROUP_ASSISTANT_REVEAL_FIRST_DELAY_MS,
+        );
+        freshAssistantMessages.forEach(msg => {
+            nextRevealAt += groupAssistantRevealTypingMs(msg);
+            const delay = Math.max(0, nextRevealAt - Date.now());
+            const timer = setTimeout(() => {
+                setRevealedGroupAssistantIds(prev => {
+                    if (prev.has(msg.id)) return prev;
+                    const next = new Set(prev);
+                    next.add(msg.id);
+                    return next;
+                });
+                if (!selectionMode) {
+                    requestAnimationFrame(() => {
+                        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+                    });
+                }
+            }, delay);
+            groupRevealTimersRef.current.push(timer);
+            nextRevealAt += groupAssistantRevealBetweenMs();
+        });
+        groupRevealNextAtRef.current = nextRevealAt;
+    }, [displayMessages, selectionMode, clearGroupRevealTimers]);
+
+    const renderMessages = useMemo(() => {
+        if (selectionMode || highlightMsgId != null) return displayMessages;
+        return displayMessages.filter(m => !isGroupAssistantRevealMessage(m) || revealedGroupAssistantIds.has(m.id));
+    }, [displayMessages, revealedGroupAssistantIds, selectionMode, highlightMsgId]);
 
     // ── 群聊天记录查找 ───────────────────────────────────────────────
     /** 打开查找浮层：拉全量群消息做快照（聊天列表是分页的，搜索要搜全部） */
@@ -3001,6 +3263,11 @@ const ChatHub: React.FC = () => {
             specialCareNotify: tempSpecialCareNotify,
             replyIndividually: tempReplyIndividually,
             liveChatOverride: tempLiveChatOverride === 'inherit' ? undefined : tempLiveChatOverride,
+            convoSettings: {
+                ...(activeGroup.convoSettings || {}),
+                ...normalizeGroupConvoPatch(tempGroupConvo),
+                liveChatOverride: tempLiveChatOverride === 'inherit' ? undefined : tempLiveChatOverride,
+            },
             groupApi: sanitizeGroupApi(tempGroupApi),
             memberApis: pruneGroupMemberApis(tempMemberApis, activeGroup.members),
             autoContinueEnabled: tempAutoContinueEnabled,
@@ -3028,6 +3295,34 @@ const ChatHub: React.FC = () => {
     };
     const handleUpdateGroupInfo = async () => { await saveGroupSettingsDraft({ close: true, toast: true }); };
 
+    const saveGroupConvoDraft = async (patch: Partial<GroupConvoSettings>) => {
+        if (!activeGroup) return null;
+        const normalizedPatch = normalizeGroupConvoPatch(patch);
+        const nextConvo = {
+            ...resolveGroupConvo(activeGroup),
+            ...tempGroupConvo,
+            ...normalizedPatch,
+        };
+        if (normalizedPatch.liveChatOverride === undefined && 'liveChatOverride' in normalizedPatch) {
+            delete nextConvo.liveChatOverride;
+        }
+        if (typeof nextConvo.contextLimit === 'number') {
+            nextConvo.contextLimit = Math.max(20, Math.min(5000, Math.round(nextConvo.contextLimit)));
+            setContextLimit(nextConvo.contextLimit);
+        }
+        setTempGroupConvo(nextConvo);
+        const nextLiveOverride = nextConvo.liveChatOverride || 'inherit';
+        setTempLiveChatOverride(nextLiveOverride);
+        return applyGroupUpdate({
+            liveChatOverride: nextLiveOverride === 'inherit' ? undefined : nextLiveOverride,
+            convoSettings: {
+                ...(activeGroup.convoSettings || {}),
+                ...nextConvo,
+                liveChatOverride: nextLiveOverride === 'inherit' ? undefined : nextLiveOverride,
+            },
+        });
+    };
+
     const updateMemberLensDraft = (viewerId: string, targetId: string, value: string) => {
         if (!activeGroup) return;
         setTempMemberLenses(prev => {
@@ -3045,6 +3340,112 @@ const ChatHub: React.FC = () => {
         const memberLenses = pruneGroupMemberLenses(tempMemberLenses, activeGroup.members);
         setTempMemberLenses(memberLenses);
         return applyGroupUpdate({ memberLenses });
+    };
+
+    const generateGroupInnerVoice = async () => {
+        if (!activeGroup || groupInnerVoiceLoading) return;
+        const groupConvo = resolveGroupConvo(activeGroup);
+        if (groupConvo.innerVoiceEnabled === false) {
+            addToast('本群已关闭偷听小心思', 'info');
+            return;
+        }
+        const targetId = groupInnerVoiceTargetId || activeGroup.members[0];
+        const target = characters.find(c => c.id === targetId);
+        if (!target) {
+            addToast('先选一位群成员', 'info');
+            return;
+        }
+        const innerVoiceApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!innerVoiceApi.baseUrl?.trim() || !innerVoiceApi.model?.trim()) {
+            addToast('请先在「文具盒」里配置 API', 'error');
+            return;
+        }
+        setGroupInnerVoiceLoading(true);
+        try {
+            try { await injectMemoryPalace(target); } catch { /* optional */ }
+            const context = ContextBuilder.buildCoreContext(target, userProfile, true);
+            const roster = activeGroup.members
+                .map(id => {
+                    const member = characters.find(c => c.id === id);
+                    return member ? `- ${formatCharacterWithId(member, displayNameOf(activeGroup, id))}` : '';
+                })
+                .filter(Boolean)
+                .join('\n');
+            const recent = messages
+                .filter(m => m.type === 'text' || m.type === 'system' || m.type === 'emoji')
+                .slice(-30)
+                .map(m => {
+                    const who = m.role === 'user'
+                        ? displayNameOf(activeGroup, 'user')
+                        : (m.role === 'system' ? '系统通知' : displayNameOf(activeGroup, m.charId));
+                    const text = m.type === 'emoji' ? '[表情包]' : String(m.content || '').replace(/\s+/g, ' ').slice(0, 220);
+                    return `${who}: ${text}`;
+                })
+                .join('\n');
+            const rel = target.relationship;
+            const fullPrompt = `${context}
+
+你正在生成群聊里的「偷听小心思」。这段内容只给用户看，会保存到心声历史，但绝对不会写入群聊消息，也不会进入后续聊天上下文。
+
+当前群：${activeGroup.name}
+群成员花名册：
+${roster || '暂无'}
+
+最近群聊片段：
+${recent || '暂无'}
+
+请只写 ${displayNameOf(activeGroup, target.id)} 此刻没有说出口的一小段内心话，80 字以内，贴近 TA 的人设、关系和刚刚的群聊现场。不要解释任务，不要写 JSON，不要替其他成员说话。
+
+${innerVoicePromptBody({
+                charName: target.name,
+                recent,
+                currentAffection: typeof target.affection === 'number' ? Math.round(target.affection) : null,
+                relLine: rel ? `你和用户当前的关系是「${rel.label}」（${rel.stage}）。` : '你和用户还没有明确的关系定位。',
+                curStage: rel?.stage || 'friend',
+                curLabel: rel?.label || '朋友',
+            })}`;
+            const data = await callChatCompletion(innerVoiceApi, {
+                model: innerVoiceApi.model,
+                messages: [{ role: 'user', content: fullPrompt }],
+                temperature: 0.85,
+                max_tokens: 600,
+            }, {
+                meta: makeApiUsageMeta('chat.coupleSpace.innerVoice', {
+                    charId: target.id,
+                    charName: target.name,
+                    apiRole: innerVoiceApi.apiRole || 'aux',
+                    apiBinding: `Group inner voice · ${activeGroup.name}`,
+                }),
+            });
+            const raw = (extractContent(data) || '').trim();
+            const content = raw
+                .replace(/```(?:json)?/gi, '')
+                .replace(/```/g, '')
+                .replace(/^["'“”]+|["'“”]+$/g, '')
+                .trim();
+            if (!content) throw new Error('empty inner voice');
+            const entry: InnerVoiceEntry = {
+                id: `ivg-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+                charId: target.id,
+                content,
+                timestamp: Date.now(),
+                groupId: activeGroup.id,
+                groupName: activeGroup.name,
+            };
+            await DB.saveInnerVoice(entry);
+            setGroupInnerVoicePeek({
+                charId: target.id,
+                charName: displayNameOf(activeGroup, target.id),
+                content,
+                timestamp: entry.timestamp,
+            });
+            addToast('小心思生成好了', 'success');
+        } catch (err) {
+            console.warn('[GroupInnerVoice] generate failed', err);
+            addToast('偷听失败，请稍后再试', 'error');
+        } finally {
+            setGroupInnerVoiceLoading(false);
+        }
     };
 
     const buildMemberLensGenerationPrompt = (group: GroupProfile, viewer: CharacterProfile, targets: CharacterProfile[]): string => {
@@ -3918,7 +4319,19 @@ ${logText.substring(0, 10000)}
         setInput('');
         clearLiveGroupDraftTimer();
 
-        if (liveGroupEnabled && (type === 'text' || type === 'image' || type === 'voice')) {
+        const sendGroupConvo = resolveGroupConvo(activeGroup);
+        if (liveGroupEnabled && type === 'text' && sendGroupConvo.autoReplyEachUserMessage) {
+            const groupId = activeGroup.id;
+            groupAutoReplyQueueRef.current = groupAutoReplyQueueRef.current
+                .catch(() => undefined)
+                .then(async () => {
+                    if (activeGroupRef.current?.id !== groupId) return;
+                    const fresh = await DB.getGroupMessages(groupId);
+                    if (activeGroupRef.current?.id !== groupId) return;
+                    await triggerDirector(fresh, { allowAutoContinue: true, liveMode: 'sent' });
+                });
+            void groupAutoReplyQueueRef.current.catch(err => console.warn('[GroupChat] auto reply queue failed', err));
+        } else if (liveGroupEnabled && (type === 'text' || type === 'image' || type === 'voice')) {
             if (isTyping) {
                 liveGroupPendingSendTriggerRef.current = true;
             } else {
@@ -4876,6 +5289,11 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         const liveDraftText = (options.liveDraftText || '').trim();
         const liveMode = options.liveMode || (liveDraftText ? 'draft' : undefined);
         const isLiveDraftRun = liveMode === 'draft' || !!liveDraftText;
+        const groupConvo = resolveGroupConvo(activeGroup);
+        const groupContextLimit = resolveGroupContextLimit(activeGroup, contextLimit);
+        const groupBubbleMode = groupConvo.bubbleStyleMode === 'whole' ? 'whole' : 'split';
+        const groupEmojiAssociation = !!groupConvo.emojiAssociation;
+        const groupTranslationActive = !!groupConvo.translationEnabled && !!groupConvo.translateSourceLang && !!groupConvo.translateTargetLang;
         const hasMainApi = isCompleteGroupApi(apiConfig);
         const hasGroupApi = isCompleteGroupApi(activeGroup.groupApi);
         const hasMemberApi = activeGroup.members.some(id => isCompleteGroupApi(activeGroup.memberApis?.[id]));
@@ -5006,7 +5424,7 @@ ${recentPrivate || '(暂无私聊)'}
             // 卡片等富类型同理只留占位符。但导演要能"看见"图才能合理反应，所以仿照
             // 私聊 buildMessageHistory 的做法：把最近 N 张图片走结构化 image_url 字段
             // 附在 user 消息里，文本里用 [图片#k] 占位互相对齐。
-            const recentMsgsWindow = currentMsgs.slice(-contextLimit);
+            const recentMsgsWindow = currentMsgs.slice(-groupContextLimit);
             const MAX_ATTACHED_IMAGES = 3;
             const validImageWindowIdx: number[] = [];
             recentMsgsWindow.forEach((m, i) => {
@@ -5104,16 +5522,24 @@ ${recentPrivate || '(暂无私聊)'}
 
             // NEW: Build Categorized Emoji Context (filtered by group member visibility)
             const emojiContextStr = (() => {
+                if (!groupEmojiAssociation) return '本群已关闭斗图的兴致';
                 if (emojis.length === 0) return '无';
 
                 const memberIds = activeGroup?.members || [];
+                const groupAllowed = groupConvo.allowedEmojiCategoryIds?.length
+                    ? new Set(groupConvo.allowedEmojiCategoryIds)
+                    : null;
                 // Filter categories: include if no restriction, or if at least one group member is allowed
                 const visibleCats = categories.filter(c => {
+                    if (groupAllowed && !groupAllowed.has(c.id)) return false;
                     if (!c.allowedCharacterIds || c.allowedCharacterIds.length === 0) return true;
                     return c.allowedCharacterIds.some(id => memberIds.includes(id));
                 });
                 const hiddenCatIds = new Set(categories.filter(c => !visibleCats.some(vc => vc.id === c.id)).map(c => c.id));
-                const visibleEmojis = hiddenCatIds.size === 0 ? emojis : emojis.filter(e => !e.categoryId || !hiddenCatIds.has(e.categoryId));
+                const visibleEmojis = emojis.filter(e => {
+                    if (!e.categoryId) return !groupAllowed;
+                    return !hiddenCatIds.has(e.categoryId);
+                });
 
                 const grouped: Record<string, string[]> = {};
                 const catMap: Record<string, string> = { 'default': '通用' };
@@ -5141,6 +5567,17 @@ ${recentPrivate || '(暂无私聊)'}
                 }
                 return blocks.join('\n\n');
             })();
+            const groupVoiceStyleBlock = groupVoiceStylePromptBlock({
+                bubbleMode: groupBubbleMode,
+                personaDrivenMessageLength: !!groupConvo.personaDrivenMessageLength,
+                narrationMode: !!groupConvo.narrationMode,
+                translationActive: groupTranslationActive,
+                translateSourceLang: groupConvo.translateSourceLang || '中文',
+                translateTargetLang: groupConvo.translateTargetLang || 'English',
+                translateStyle: groupConvo.translateStyle,
+                emojiAssociation: groupEmojiAssociation,
+                emojiContext: emojiContextStr,
+            });
 
             const prompt = `${context}
 
@@ -5148,6 +5585,7 @@ ${recentPrivate || '(暂无私聊)'}
 当前场景：大家正在群里聊天。
 ${isAutoRound ? '自动接话状态：这轮不是用户新发言，用户正在旁观。请承接最近几条角色发言，让成员之间自然聊下去，不要假装用户刚说了新话，也不要每句话都把用户拉回中心。\n' : ''}
 ${liveInstructionBlock ? `${liveInstructionBlock}\n` : ''}
+${groupVoiceStyleBlock}
 最近聊天记录：
 ${recentGroupMsgs}
 ${attachedImagesNote}
@@ -5201,8 +5639,9 @@ ${attachedImagesNote}
 - 格式: \`[[PRIVATE: 私聊内容]]\`。这条消息只进私聊频道，不在群里显示。
 
 #### 六、表情和气泡
-- **表情包**: 必须使用格式 \`[[SEND_EMOJI: 表情名称]]\`。**可用表情 (按分类)**: ${emojiContextStr}
-- **气泡分段**: 在一条内容里用换行符分隔不同的气泡——一行一个气泡。短句多发几条 > 长句一坨。
+- **表情包**: ${groupEmojiAssociation ? `允许低频使用格式 [[SEND_EMOJI: 表情名称]]。**可用表情 (按分类)**: ${emojiContextStr}` : '本群关闭斗图的兴致，严禁输出 [[SEND_EMOJI: ...]]。'}
+- **气泡分段**: ${groupBubbleMode === 'whole' ? '本群偏向一大段说完；不要故意把一个人的一句完整意思拆得很碎。' : '本群偏向一句一句蹦；在一条内容里可用换行符分隔不同气泡，一行一个气泡。'}
+- **舞台旁白**: ${groupConvo.narrationMode ? '允许偶尔输出 {"charId":"narrator","content":"（动作/场景旁白）"} 作为独立旁白气泡。旁白只写场景、动作、气氛，不替成员说心里话。' : '本群关闭舞台旁白，严禁输出 narrator/system 旁白。'}
 
 #### 六点五、群事件感知与群名片
 - 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片、发布/撤下群公告等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶、响应或讨论刚发布的群公告等——按各自性格来，也允许无视。
@@ -5221,11 +5660,11 @@ ${attachedImagesNote}
 - 但参考"对话质量"——不要因为私聊状态就给出套路化反应。
 
 ### 输出格式 (JSON Array)
-每条消息的 "charId" 必须精确使用上方群成员花名册中 "(ID: ...)" 里的角色ID；不要用角色名、群名片、头衔或自己编造的ID。
+每条消息的 "charId" 必须精确使用上方群成员花名册中 "(ID: ...)" 里的角色ID；不要用角色名、群名片、头衔或自己编造的ID。${groupConvo.narrationMode ? ' 只有舞台旁白可以使用 "narrator"。' : ''}
 [
   {
     "charId": "角色的ID",
-    "content": "发言内容... (可以是文本、[[SEND_EMOJI: name]] 或 [[PRIVATE: content]])"
+    "content": "发言内容... (可以是文本${groupEmojiAssociation ? '、[[SEND_EMOJI: name]]' : ''} 或 [[PRIVATE: content]])"
   },
   ...
 ]
@@ -5356,12 +5795,32 @@ ${attachedImagesNote}
             const todayCheckinKey = todayKey();
             const latestCheckinMsg = [...currentMsgs].reverse().find(m => m.type === 'checkin_card' && (m.metadata as any)?.date === todayCheckinKey);
             for (const action of actions) {
+                if (typeof action.content !== 'string') action.content = '';
+                const rawActionCharId = String(action.charId || '').trim().toLowerCase();
+                if ((rawActionCharId === 'narrator' || rawActionCharId === 'system') && groupConvo.narrationMode) {
+                    const narrationText = action.content
+                        .replace(/\[\[SEND_EMOJI:.*?\]\]/g, '')
+                        .replace(/\[\[PRIVATE\s*[:：][\s\S]*?\]\]/g, '')
+                        .trim();
+                    if (narrationText) {
+                        await DB.saveMessage({
+                            charId: 'narrator',
+                            groupId: activeGroup.id,
+                            role: 'assistant',
+                            type: 'text',
+                            content: narrationText,
+                            metadata: { groupNarration: true },
+                        } as any);
+                        setMessages(await DB.getGroupMessages(activeGroup.id));
+                        await new Promise(r => setTimeout(r, Math.max(350, narrationText.length * 25)));
+                    }
+                    continue;
+                }
                 const targetId = resolveGroupMemberStorageId(activeGroup, groupMembers, action.charId);
                 if (!targetId) continue;
                 // 防御：导演偶尔给「本轮沉默的成员」只返回 {charId} 而不带 content（或 content 非字符串）。
                 // 不归一化的话，下面对 action.content 调 .replace/.exec 会抛 TypeError，被外层 catch 吞掉，
                 // 中断 for 循环 → 该 action 之后所有合法成员的发言被静默丢弃（群聊只渲染出前半截）。
-                if (typeof action.content !== 'string') action.content = '';
                 const charName = characters.find(c => c.id === targetId)?.name || '成员';
 
                 // 禁言强制执行：模型不听话也拦下来，被禁言成员本轮的输出全部丢弃
@@ -5498,13 +5957,20 @@ ${attachedImagesNote}
                 // 1. Check for Emoji Commands (handle multiple emojis)
                 // Filter emojis by character visibility to prevent using hidden emoji packs
                 const charVisibleEmojis = (() => {
+                    if (!groupEmojiAssociation) return [];
+                    const groupAllowed = groupConvo.allowedEmojiCategoryIds?.length
+                        ? new Set(groupConvo.allowedEmojiCategoryIds)
+                        : null;
                     const visibleCats = categories.filter(c => {
+                        if (groupAllowed && !groupAllowed.has(c.id)) return false;
                         if (!c.allowedCharacterIds || c.allowedCharacterIds.length === 0) return true;
                         return c.allowedCharacterIds.includes(targetId);
                     });
                     const hiddenCatIds = new Set(categories.filter(c => !visibleCats.some(vc => vc.id === c.id)).map(c => c.id));
-                    if (hiddenCatIds.size === 0) return emojis;
-                    return emojis.filter(e => !e.categoryId || !hiddenCatIds.has(e.categoryId));
+                    return emojis.filter(e => {
+                        if (!e.categoryId) return !groupAllowed;
+                        return !hiddenCatIds.has(e.categoryId);
+                    });
                 })();
                 const emojiRegex = /\[\[SEND_EMOJI:\s*(.*?)\]\]/g;
                 let emojiMatch;
@@ -5572,27 +6038,11 @@ ${attachedImagesNote}
                 let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '').trim();
                 
                 if (textContent) {
-                    // Primary: split on line breaks
-                    let chunks = textContent.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/)
-                        .map((c: string) => c.trim())
-                        .filter((c: string) => c.length > 0);
-
-                    // Fallback: split on spaces between CJK characters (中文里空格=AI想换行)
-                    if (chunks.length <= 1 && textContent.trim().length > 50) {
-                        // No lookbehind (?<=): iOS Safari <16.4 JSC doesn't support it; old
-                        // devices throw "invalid group specifier name" at new RegExp. Capture the
-                        // left char (full punct set) + zero-width lookahead on the right (Han only),
-                        // mark split points with \x01, restore left char via $1. Left/right sets
-                        // differ, so they can't be merged. Byte-equivalent (see lookbehindFree.test.ts).
-                        const SPLIT = String.fromCharCode(1);
-                        chunks = textContent
-                            .replace(/([\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef\u2000-\u206f\u2e80-\u2eff\u3001-\u3003\u2018-\u201f\u300a-\u300f\uff01-\uff0f\uff1a-\uff20])\s+(?=[\u4e00-\u9fff\u3400-\u4dbf])/g, `$1${SPLIT}`)
-                            .split(SPLIT)
-                            .map((c: string) => c.trim())
-                            .filter((c: string) => c.length > 0);
-                    }
-
-                    if (chunks.length === 0) chunks.push(textContent); // Fallback
+                    const chunks = ChatParser.chunkTextByBubbleMode(textContent, groupBubbleMode)
+                        .map((chunk: string) => ChatParser.sanitize(chunk).trim())
+                        .filter((chunk: string) => ChatParser.hasDisplayContent(chunk));
+                    const fallbackChunk = ChatParser.sanitize(textContent).trim();
+                    if (chunks.length === 0 && ChatParser.hasDisplayContent(fallbackChunk)) chunks.push(fallbackChunk);
 
                     for (const chunk of chunks) {
                         // Typing delay
@@ -6832,11 +7282,11 @@ ${attachedImagesNote}
                         </div>
                     </div>
                 )}
-                {displayMessages.map((m, i) => {
+                {renderMessages.map((m, i) => {
                     const isUser = m.role === 'user';
                     const char = characters.find(c => c.id === m.charId);
-                    const prevMessage = i > 0 ? displayMessages[i - 1] : null;
-                    const nextMessage = i < displayMessages.length - 1 ? displayMessages[i + 1] : null;
+                    const prevMessage = i > 0 ? renderMessages[i - 1] : null;
+                    const nextMessage = i < renderMessages.length - 1 ? renderMessages[i + 1] : null;
                     const messageGroupGapMs = 30 * 60 * 1000;
                     const senderKey = (msg: Message) => `${msg.role}:${msg.charId || (msg.role === 'user' ? 'user' : 'system')}`;
                     const isFirstInGroup =
@@ -6883,6 +7333,8 @@ ${attachedImagesNote}
                                 onCheckinClick={setCheckinDetailMsg}
                                 specialCare={!isUser && activeGroup?.specialCareNotify !== false && !!char && (activeGroup?.specialCareMemberIds || []).includes(char.id)}
                                 groupMembers={characters.filter(c => activeGroup?.members.includes(c.id))}
+                                hideTimestamp={!!activeGroupConvo.hideTimestamp}
+                                translationEnabled={!!activeGroupConvo.translationEnabled}
                             />
                         </div>
                     );
@@ -6923,7 +7375,13 @@ ${attachedImagesNote}
                         </button>
                     </div>
                 ) : (
-                    <div className="px-4 py-3 flex items-end gap-3 rounded-t-[1.75rem] bg-white/95 backdrop-blur-2xl shadow-[0_-14px_30px_-18px_rgba(50,48,60,0.3)]">
+                    <div className="px-4 py-3 rounded-t-[1.75rem] bg-white/95 backdrop-blur-2xl shadow-[0_-14px_30px_-18px_rgba(50,48,60,0.3)]">
+                        {activeGroupConvo.headerDecorText && (
+                            <div className="mb-2 text-center text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
+                                {activeGroupConvo.headerDecorText}
+                            </div>
+                        )}
+                        <div className="flex items-end gap-3">
                         {/* 左外侧：贴纸册入口（与单聊一致） */}
                         <button
                             onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowActions(false); }}
@@ -6958,7 +7416,7 @@ ${attachedImagesNote}
                                     }
                                 }}
                                 className="flex-1 min-w-0 bg-transparent px-3 py-3 text-[15px] outline-none resize-none max-h-28 text-[#2e2c36] placeholder:text-slate-400"
-                                placeholder="ʕ•ﻌ•ʔ 说点什么…"
+                                placeholder={activeGroupConvo.inputPlaceholderText || 'ʕ•ﻌ•ʔ 说点什么…'}
                                 style={{ height: 'auto', minHeight: '24px' }}
                             />
                             {/* 输入框内右侧：回形针 = 别上点什么（功能抽屉） */}
@@ -6985,6 +7443,12 @@ ${attachedImagesNote}
                         >
                             {input.trim() ? '寄出' : <Heart className="w-7 h-7" weight="fill" />}
                         </button>
+                        </div>
+                        {activeGroupConvo.footerDecorText && (
+                            <div className="mt-2 text-center text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
+                                {activeGroupConvo.footerDecorText}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -7469,7 +7933,179 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="04" title="公告与成员" en="Members">
+                <GroupSettingsPage no="04" title="说话的样子" en="Voice and Words">
+                    {(() => {
+                        const groupConvo = tempGroupConvo;
+                        const liveOverride = groupConvo.liveChatOverride || 'inherit';
+                        const liveEffective = resolveLiveChatEnabled(userProfile, liveOverride);
+                        const emojiCounts = emojis.reduce((acc, emoji) => {
+                            const key = emoji.categoryId || 'default';
+                            acc[key] = (acc[key] || 0) + 1;
+                            return acc;
+                        }, {} as Record<string, number>);
+                        const toggleAllowedEmojiCategory = (catId: string) => {
+                            const current = new Set(groupConvo.allowedEmojiCategoryIds || []);
+                            if (current.has(catId)) current.delete(catId);
+                            else current.add(catId);
+                            void saveGroupConvoDraft({ allowedEmojiCategoryIds: Array.from(current) });
+                        };
+                        const allCategoryIds = categories.map(cat => cat.id);
+                        const selectedCategoryCount = groupConvo.allowedEmojiCategoryIds?.length || 0;
+                        const pillStyle = (active: boolean): React.CSSProperties => active
+                            ? { background: '#fff4f7', color: '#5a3140', border: '1px solid #d8a5b7' }
+                            : { background: '#fffdfa', color: INK_SOFT, border: '1px solid #eed6df' };
+                        return (
+                            <div className="divide-y" style={{ borderColor: '#f0ece4' }}>
+                                <GroupConvoEntry title="群友打字的习惯" note="选择本群成员生成消息时更常用的形式：一句一句分条，或一大段说完。">
+                                    <div className="flex flex-wrap gap-2">
+                                        {([['split', '一句一句蹦'], ['whole', '一大段说完']] as const).map(([mode, label]) => {
+                                            const on = (groupConvo.bubbleStyleMode === 'whole' ? 'whole' : 'split') === mode;
+                                            return (
+                                                <button key={mode} type="button" onClick={() => void saveGroupConvoDraft({ bubbleStyleMode: mode })} className="px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 transition-transform" style={pillStyle(on)}>
+                                                    {label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry
+                                    title="按人设随意"
+                                    note="打开后，群成员按各自人设、情绪、关系和话题决定这一轮说长说短；只管长短，不改变上面的分条形式。"
+                                    side={<GroupConvoToggle on={!!groupConvo.personaDrivenMessageLength} onToggle={() => void saveGroupConvoDraft({ personaDrivenMessageLength: !groupConvo.personaDrivenMessageLength })} />}
+                                />
+
+                                <GroupConvoEntry title="实时聊天模式" note={`发出文字后群成员会自动接话；停顿打字时，也可能看见未发送草稿并插一句。当前：${liveEffective ? '开启' : '关闭'}；全局默认：${liveChatGlobalEnabled ? '开启' : '关闭'}。`}>
+                                    <div className="flex flex-wrap gap-2">
+                                        {([['inherit', '跟随全局'], ['on', '本群开启'], ['off', '本群关闭']] as const).map(([value, label]) => {
+                                            const on = liveOverride === value;
+                                            return (
+                                                <button key={value} type="button" onClick={() => void saveGroupConvoDraft({ liveChatOverride: value === 'inherit' ? undefined : value })} className="px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 transition-transform" style={pillStyle(on)}>
+                                                    {label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry
+                                    title="连发也逐条回"
+                                    note="打开后，你连续发几条文字时，本群会按顺序一条一条回应；每条都会单独调用一次 API，消耗也会增加。"
+                                    side={<GroupConvoToggle on={!!groupConvo.autoReplyEachUserMessage} onToggle={() => void saveGroupConvoDraft({ autoReplyEachUserMessage: !groupConvo.autoReplyEachUserMessage })} />}
+                                />
+
+                                <GroupConvoEntry
+                                    title="舞台旁白"
+                                    note="打开后，模型能单独发一条动作/场景旁白气泡，写此刻神态、动作和环境；不会归属某个成员。"
+                                    side={<GroupConvoToggle on={!!groupConvo.narrationMode} onToggle={() => void saveGroupConvoDraft({ narrationMode: !groupConvo.narrationMode })} />}
+                                />
+
+                                <GroupConvoEntry
+                                    title="偷听小心思"
+                                    note="允许在群里对某位成员生成一次性心声；结果只保存到心声历史，不写入群消息，也不会注入后续聊天上下文。"
+                                    side={<GroupConvoToggle on={groupConvo.innerVoiceEnabled !== false} onToggle={() => void saveGroupConvoDraft({ innerVoiceEnabled: groupConvo.innerVoiceEnabled === false })} />}
+                                >
+                                    <div className="space-y-2">
+                                        <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                                            <select value={groupInnerVoiceTargetId} onChange={e => setGroupInnerVoiceTargetId(e.target.value)} className="min-w-0 rounded-[14px] px-3 py-2 text-[12px] outline-none" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK }}>
+                                                {(activeGroup.members || []).map(mid => (
+                                                    <option key={mid} value={mid}>{displayNameOf(activeGroup, mid)}</option>
+                                                ))}
+                                            </select>
+                                            <ScrapBtn variant="paper" full={false} className="text-[11px] px-3 py-2" disabled={groupConvo.innerVoiceEnabled === false || groupInnerVoiceLoading} onClick={() => void generateGroupInnerVoice()}>
+                                                {groupInnerVoiceLoading ? '偷听中' : '听一下'}
+                                            </ScrapBtn>
+                                        </div>
+                                        {groupInnerVoicePeek && (
+                                            <div className="rounded-[14px] px-3 py-2" style={{ background: '#fff4f7', border: '1px solid #eed6df', color: '#5a3140' }}>
+                                                <div className="text-[10px] font-black mb-1">{groupInnerVoicePeek.charName} 没说出口的</div>
+                                                <div className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{groupInnerVoicePeek.content}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry
+                                    title="双语对照"
+                                    note="打开后，群消息先显示气泡语言，点「译」切到目标语言。"
+                                    side={<GroupConvoToggle on={!!groupConvo.translationEnabled} onToggle={() => void saveGroupConvoDraft({ translationEnabled: !groupConvo.translationEnabled })} />}
+                                >
+                                    {groupConvo.translationEnabled && (
+                                        <div className="space-y-3">
+                                            <div>
+                                                <div className="text-[9px] mb-1 tracking-wider" style={{ ...GROUP_SETTINGS_MONO, color: INK_SOFT }}>气泡先显示</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {LANG_OPTIONS.map(lang => (
+                                                        <button key={`source-${lang}`} type="button" onClick={() => void saveGroupConvoDraft({ translateSourceLang: lang })} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={groupConvo.translateSourceLang === lang ? { background: INK, color: '#fffdfa', border: `1px solid ${INK}` } : pillStyle(false)}>
+                                                            {lang}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] mb-1 tracking-wider" style={{ ...GROUP_SETTINGS_MONO, color: INK_SOFT }}>点「译」后变成</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {LANG_OPTIONS.map(lang => (
+                                                        <button key={`target-${lang}`} type="button" onClick={() => void saveGroupConvoDraft({ translateTargetLang: lang })} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={groupConvo.translateTargetLang === lang ? { background: '#d8a5b7', color: '#fff', border: '1px solid #d8a5b7' } : pillStyle(false)}>
+                                                            {lang}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <ScrapInput value={groupConvo.translateStyle || ''} onChange={e => setTempGroupConvo(prev => ({ ...prev, translateStyle: e.target.value }))} onBlur={e => void saveGroupConvoDraft({ translateStyle: e.target.value })} placeholder="译文笔调，比如：口语化 / 保留语气词…" />
+                                        </div>
+                                    )}
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry
+                                    title="斗图的兴致"
+                                    note="打开后，群成员会在情绪对上的时候自己联想着发表情包。"
+                                    side={<GroupConvoToggle on={!!groupConvo.emojiAssociation} onToggle={() => void saveGroupConvoDraft({ emojiAssociation: !groupConvo.emojiAssociation })} />}
+                                />
+
+                                <GroupConvoEntry title="表情包权限" note="选择当前群可用的表情分类；最终仍会尊重分类原本的角色可见权限。">
+                                    <div className="flex flex-wrap gap-2">
+                                        {categories.length === 0 && <span className="text-[10px]" style={{ color: INK_SOFT }}>还没建过表情分类</span>}
+                                        {categories.map(cat => {
+                                            const selected = selectedCategoryCount === 0 || !!groupConvo.allowedEmojiCategoryIds?.includes(cat.id);
+                                            const restricted = !!cat.allowedCharacterIds?.length;
+                                            return (
+                                                <button key={cat.id} type="button" onClick={() => toggleAllowedEmojiCategory(cat.id)} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={selected ? pillStyle(true) : { background: '#fffdfa', color: '#b9a6af', border: '1px solid #eed6df', textDecoration: 'line-through' }}>
+                                                    {cat.name} · {emojiCounts[cat.id] || 0} 张{restricted ? ' · 限角色' : ''}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <button type="button" className="text-[10px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle(false)} onClick={() => void saveGroupConvoDraft({ allowedEmojiCategoryIds: undefined })}>允许全部分类</button>
+                                        <button type="button" className="text-[10px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle(false)} onClick={() => void saveGroupConvoDraft({ allowedEmojiCategoryIds: allCategoryIds })}>只按已列分类</button>
+                                    </div>
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry title="输入框小装饰" note="这些只改变本群聊天界面的显示，不影响成员个人设置。">
+                                    <div className="space-y-2">
+                                        <ScrapInput value={groupConvo.headerDecorText || ''} onChange={e => setTempGroupConvo(prev => ({ ...prev, headerDecorText: e.target.value }))} onBlur={e => void saveGroupConvoDraft({ headerDecorText: e.target.value })} placeholder="输入框上方提示（可留空）" />
+                                        <ScrapInput value={groupConvo.footerDecorText || ''} onChange={e => setTempGroupConvo(prev => ({ ...prev, footerDecorText: e.target.value }))} onBlur={e => void saveGroupConvoDraft({ footerDecorText: e.target.value })} placeholder="输入框下方提示（可留空）" />
+                                        <ScrapInput value={groupConvo.inputPlaceholderText || ''} onChange={e => setTempGroupConvo(prev => ({ ...prev, inputPlaceholderText: e.target.value }))} onBlur={e => void saveGroupConvoDraft({ inputPlaceholderText: e.target.value })} placeholder="输入框占位文字（可留空）" />
+                                    </div>
+                                </GroupConvoEntry>
+
+                                <GroupConvoEntry
+                                    title="隐藏时间戳"
+                                    note="打开后，本群消息上方不显示具体发送时间。"
+                                    side={<GroupConvoToggle on={!!groupConvo.hideTimestamp} onToggle={() => void saveGroupConvoDraft({ hideTimestamp: !groupConvo.hideTimestamp })} />}
+                                />
+
+                                <GroupConvoEntry title="导演能翻多少条" note="只影响本群导演生成时读取的最近聊天条数；旧的全局本地值只作为没有群设置时的首次兜底。">
+                                    <ScrapLabel en="CONTEXT">最近 {groupConvo.contextLimit || DEFAULT_GROUP_CONTEXT_LIMIT} 条</ScrapLabel>
+                                    <input type="range" min="20" max="5000" step="10" value={groupConvo.contextLimit || DEFAULT_GROUP_CONTEXT_LIMIT} onChange={e => void saveGroupConvoDraft({ contextLimit: parseInt(e.target.value, 10) })} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
+                                </GroupConvoEntry>
+                            </div>
+                        );
+                    })()}
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="05" title="公告与成员" en="Members">
                     {/* 群公告：群主/管理员可发布，所有成员可查看 */}
                     <div>
                         <ScrapLabel en="NOTICE">群里公告</ScrapLabel>
@@ -7537,7 +8173,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="05" title="角色之间的关系" en="Perspective">
+                <GroupSettingsPage no="06" title="角色之间的关系" en="Perspective">
                     {(() => {
                         const memberList = (activeGroup?.members || [])
                             .map(id => characters.find(ch => ch.id === id))
@@ -7671,7 +8307,7 @@ ${attachedImagesNote}
                     })()}
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="06" title="特别关心" en="Special Care">
+                <GroupSettingsPage no="07" title="特别关心" en="Special Care">
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <div className="flex items-center justify-between gap-3">
@@ -7718,7 +8354,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="07" title="背景与记忆" en="Background Memory">
+                <GroupSettingsPage no="08" title="背景与记忆" en="Background Memory">
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <ScrapLabel en="AI REPLIES">角色怎么接话</ScrapLabel>
@@ -7801,33 +8437,6 @@ ${attachedImagesNote}
                                 </div>
                             </div>
 
-                            <div className="space-y-2 py-1">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="text-[13px] font-black flex items-center gap-1.5" style={{ color: INK }}><ChatsTeardrop size={14} weight="bold" style={{ color: INK_SOFT }} />实时聊天模式</div>
-                                        <ScrapNote className="mt-0.5">开启后，你发文字、图片或语音会自动让群成员接话；停顿打字时，成员也可能看见未发送草稿插一句。当前：{(tempLiveChatOverride === 'on' || (tempLiveChatOverride === 'inherit' && liveChatGlobalEnabled)) ? '开启' : '关闭'}。</ScrapNote>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {([
-                                        ['inherit', `跟随全局（${liveChatGlobalEnabled ? '开' : '关'}）`],
-                                        ['on', '本群开启'],
-                                        ['off', '本群关闭'],
-                                    ] as Array<[LiveChatOverride, string]>).map(([value, label]) => (
-                                        <ScrapChip
-                                            key={value}
-                                            selected={tempLiveChatOverride === value}
-                                            onClick={() => {
-                                                setTempLiveChatOverride(value);
-                                                void applyGroupUpdate({ liveChatOverride: value === 'inherit' ? undefined : value });
-                                            }}
-                                        >
-                                            {label}
-                                        </ScrapChip>
-                                    ))}
-                                </div>
-                            </div>
-
                             <div className="flex items-center justify-between gap-3 py-1">
                                 <div className="min-w-0">
                                     <div className="text-[13px] font-black flex items-center gap-1.5" style={{ color: INK }}><ListNumbers size={14} weight="bold" style={{ color: INK_SOFT }} />让角色自动接话</div>
@@ -7902,15 +8511,6 @@ ${attachedImagesNote}
                         <input type="file" ref={groupBackgroundInputRef} className="hidden" accept="image/*" onChange={handleGroupBackgroundUpload} />
                     </div>
 
-                    {/* Context Limit */}
-                    <div className="pt-3">
-                        <ScrapDivider className="mb-3" />
-                        <ScrapLabel en="CONTEXT">导演能翻多少条 · {contextLimit}</ScrapLabel>
-                        <input type="range" min="20" max="5000" step="10" value={contextLimit} onChange={e => { const v = parseInt(e.target.value); setContextLimit(v); localStorage.setItem('groupchat_context_limit', String(v)); }} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
-                        <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>20 · 省着用</span><span>5000 · 记得牢</span></div>
-                        <ScrapNote className="mt-1">每次叫 AI 导演，往里塞多少条群历史。塞得多更懂上下文，也更费 token。</ScrapNote>
-                    </div>
-
                     {/* Private Chat Group Context Cap */}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
@@ -7921,7 +8521,7 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="08" title="数据管理" en="Data">
+                <GroupSettingsPage no="09" title="数据管理" en="Data">
                     {/* Memory & Context Management */}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />

@@ -71,6 +71,41 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-03-group-chat-staggered-replies',
+    date: '2026-07-03',
+    title: '群聊回复会一条一条冒出来',
+    kind: 'improvement',
+    summary: '群成员一次生成多条回复时，聊天界面会像私聊一样按打字节奏逐条显示，中间留出短暂停顿。',
+    items: [
+      '刚打开旧群聊时历史消息仍会直接显示，不会从头慢慢播放。',
+      '新生成的文字、表情和其他群成员消息会排队出现，减少一下子刷满屏的感觉。',
+      '查找、跳转或批量选择消息时会临时显示完整列表，避免找不到目标消息。',
+    ],
+  },
+  {
+    id: '2026-07-03-group-chat-member-avatars',
+    date: '2026-07-03',
+    title: '群聊消息头像更清楚了',
+    kind: 'fix',
+    summary: '絮语群聊里，群成员发言会像单聊一样在消息左侧显示各自头像，连续多条消息也不会只挤成一个头像。',
+    items: [
+      '每条群成员消息都会显示对应成员头像和名字，方便分辨是谁在说话。',
+      '特别关心标记仍会保留在头像旁，群名片和头衔也继续显示在消息上方。',
+    ],
+  },
+  {
+    id: '2026-07-03-group-chat-voice-settings',
+    date: '2026-07-03',
+    title: '群聊也有“说话的样子”了',
+    kind: 'improvement',
+    summary: '絮语群聊设置新增“说话的样子”页，把单聊里的分条/整段、实时聊天、连发逐条回、旁白、心声、双语和表情包权限同步到当前群。',
+    items: [
+      '入口在群聊右上角齿轮 → 04 说话的样子；设置只影响当前群，不会改其他群或成员自己的单聊设置。',
+      '实时接话、连发逐条回、双语对照、偷听小心思和角色各自回复都可能增加 API 调用，热闹群建议先小范围试。',
+      '群表情包权限会先看本群允许分类，再继续尊重每个表情分类原本的角色可见权限。',
+    ],
+  },
+  {
     id: '2026-07-03-couple-space-social-circle-filter',
     date: '2026-07-03',
     title: '情侣空间会跟随絮语社交圈开关了',
@@ -2516,20 +2551,21 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
     app: '絮语·群聊设置',
     en: 'Group Chat Settings',
     category: 'social',
-    summary: '群聊右上角齿轮里的管理页。它决定群名、成员权限、公告、接话方式和群记录怎么保存。',
+    summary: '群聊右上角齿轮里的管理页。它决定群名、成员权限、公告、说话方式、接话方式和群记录怎么保存。',
     features: [
       '群信息：修改群名、群头像、群聊背景、你的群名片和当前群聊记录标题。',
       '群聊档案：同一个群可保留多份聊天，支持新聊天、搜索、导入、导出、改名、置顶和删除。',
       '成员管理：群主 / 管理员可改群名片、头衔、禁言、移除成员和转让群主。',
       '特别关心：把你最想追的成员标出来，TA 发言时会更醒目。',
       '开场白：给空白群聊准备多组自定义开场，可切换选择后再正式开始。',
-      '角色接话：可开启实时聊天模式、角色各自回复或自动接话，控制群友何时接话、继续聊几轮；各自回复时可给本群或单个成员单独设置 API，并拉取 / 选择模型后保存。',
+      '说话的样子：控制当前群的一句一句蹦 / 一大段说完、按人设随意、实时聊天、连发逐条回、舞台旁白、偷听小心思、双语对照、斗图兴致、表情包权限和输入框小装饰。',
+      '角色接话：可开启角色各自回复或自动接话，控制群友继续聊几轮；各自回复时可给本群或单个成员单独设置 API，并拉取 / 选择模型后保存。',
       '群归档：把群聊总结成记忆，分发给群成员。',
       '群版回形针：支持发图片、红包、AA 收款、投票、接龙、签到、群电话、赴约、成员查岗、成员主动消息、成员日常、成员回神和幕后指令。',
     ],
     beginnerSteps: [
       '先从絮语新建群，加入两位以上角色，再进入群聊右上角齿轮。',
-      '刚开始保持默认手动节奏即可；想发出文字、图片或语音后大家立刻接话，再开启实时聊天模式。',
+      '刚开始保持默认手动节奏即可；想发出文字、图片或语音后大家立刻接话，再到“说话的样子”开启实时聊天模式。',
       '群友太吵时，先关实时聊天或降低自动接话轮数；需要暂停全群时再禁言。',
       '长剧情群聊建议定期做群归档，让成员以后能记得群里发生过的大事。',
     ],
@@ -2543,6 +2579,10 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
         answer: '不是必需。只有当你想让多人并发回复走不同模型，或把群聊成本和单聊分开时，再配置群聊专属 API。',
       },
       {
+        title: '群聊“说话的样子”和单聊设置有什么区别？',
+        answer: '群设置只管当前群整体能表达的习惯，比如分条、旁白、双语、表情分类和实时接话；成员自己的头像、通话立绘、主动消息、作息、主动点外卖等仍按该成员自己的单聊或角色设置走。',
+      },
+      {
         title: '群聊档案和群归档是一回事吗？',
         answer: '不是。群聊档案是保存多份“可打开的聊天记录”；群归档是把一段群聊总结成记忆，写给群成员以后参考。',
       },
@@ -2553,7 +2593,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
     ],
     tips: [
       '群设置里的改名、禁言、公告、移除成员等操作会变成系统通知，角色下一轮会“看到”这些变化。',
-      '群聊专属 API 只影响这个群的“角色各自回复”；普通导演统筹、私聊和其他群仍按原来的 API 设置走。',
+      '“说话的样子”里的实时接话、连发逐条回、双语、心声和各自回复都可能多用 API；热闹群建议先少开几项。',
     ],
     settingSections: [
       {
@@ -2640,7 +2680,29 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '特别关心', description: '被标记的成员消息会更醒目，适合你重点追的角色；它不强迫 TA 每轮发言。' },
               { label: '转让群主', description: '把群主身份交给另一位成员，操作前会二次确认。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '04 公告与成员'],
+            path: ['絮语', '群聊', '右上角齿轮', '05 公告与成员'],
+            deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
+          },
+          {
+            id: 'group-voice-and-words',
+            title: '说话的样子',
+            description: '当前群整体的说话习惯页。适合放“这个群能不能旁白、能不能双语、能不能斗图、实时模式怎么跟随”等群级规则。',
+            defaultBehavior: '默认继承旧群节奏：分条、跟随全局实时模式、不开旁白/双语/斗图；成员个人专属设置仍在成员自己的单聊或角色设置里。',
+            options: [
+              { label: '群友打字的习惯', description: '控制群消息切泡泡：一句一句蹦，或尽量一大段说完。' },
+              { label: '按人设随意', description: '让成员按各自人设、情绪、关系和话题决定本轮说长说短。' },
+              { label: '实时聊天模式', description: '可跟随全局，也可只对本群开启或关闭。开启后发送消息会自动触发群友接话。' },
+              { label: '连发也逐条回', description: '连续发多条文字时，群按顺序逐条回应；每条会单独调用 API。' },
+              { label: '舞台旁白', description: '允许模型生成独立场景 / 动作旁白气泡，不归属某个成员。' },
+              { label: '偷听小心思', description: '可选择某位群成员生成一次性心声；只进心声历史，不写入群消息上下文。' },
+              { label: '双语对照', description: '群消息先显示气泡语言，点“译”切到目标语言，可补充译文笔调。' },
+              { label: '斗图的兴致', description: '允许成员按情绪联想发送表情包。关闭后群导演不会使用发图指令。' },
+              { label: '表情包权限', description: '本群可选允许哪些表情分类；实际可用范围还会继续尊重分类原本的角色可见权限。' },
+              { label: '输入框小装饰 / 隐藏时间戳', description: '只改变当前群聊天界面显示，不改变角色卡或其他群。' },
+              { label: '导演能翻多少条', description: '控制当前群生成回复时读取最近多少条群历史；越多越懂上下文，也越费 token。' },
+              { label: '费用提醒', description: '实时模式、连发逐条回、双语、心声和各自回复都可能增加 API 调用。' },
+            ],
+            path: ['絮语', '群聊', '右上角齿轮', '04 说话的样子'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -2654,7 +2716,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '适合用法', description: '群里人多时，把主线角色、恋人、重要 NPC 标出来，方便追消息。' },
               { label: '不是发言优先级', description: '它会让 TA 的消息更醒目，但不会让 TA 每轮都必须发言。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '06 特别关心'],
+            path: ['絮语', '群聊', '右上角齿轮', '07 特别关心'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -2672,7 +2734,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '保存 API', description: '把当前填写内容保存到群或成员设置里。没保存就可能不生效。' },
               { label: '费用提醒', description: '各自回复通常比导演统一回复更费请求和余额；多人群建议先小规模测试。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '07 背景与记忆', '角色怎么接话'],
+            path: ['絮语', '群聊', '右上角齿轮', '08 背景与记忆', '角色怎么接话'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -2688,7 +2750,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '草稿触发', description: '草稿只可能触发一次轻量插话，不会把你的未发送内容落库，也不会自动续聊。' },
               { label: '费用提醒', description: '实时发送、草稿感知和角色各自回复叠加时会增加 API 请求，热闹群建议先小范围测试。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '07 背景与记忆', '实时聊天模式'],
+            path: ['絮语', '群聊', '右上角齿轮', '04 说话的样子', '实时聊天模式'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -2705,7 +2767,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '和实时模式区别', description: '实时模式决定“发出后要不要立刻触发”；自动接话决定“触发后要不要继续多聊几轮”。' },
               { label: '不要围着用户转', description: '自动接话时用户像旁观者，成员会承接最近话题，不一定每句都问你。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '07 背景与记忆', '自动接话'],
+            path: ['絮语', '群聊', '右上角齿轮', '08 背景与记忆', '自动接话'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -2721,7 +2783,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '和群聊档案区别', description: '群归档生成摘要记忆；群聊档案保存原聊天记录。两者可以同时使用。' },
               { label: '成员没记住', description: '检查该成员是否开启记忆、归档是否成功，以及单聊设置是否允许带入群里的事。' },
             ],
-            path: ['絮语', '群聊', '右上角齿轮', '07 背景与记忆', '群归档'],
+            path: ['絮语', '群聊', '右上角齿轮', '08 背景与记忆', '群归档'],
             deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
           },
           {
@@ -9062,7 +9124,7 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '絮语·群聊设置': {
     appId: AppID.GroupChat,
     path: ['絮语', '群聊', '右上角齿轮'],
-    details: ['优先打开当前群设置；没有当前群时跳到群聊列表。背景与记忆里的“实时聊天模式”可让本群发送后自动接话。'],
+    details: ['优先打开当前群设置；没有当前群时跳到群聊列表。“说话的样子”里可设置本群实时聊天、连发逐条回、旁白、双语和表情包权限。'],
     jumpText: '打开群设置',
     deepLink: chatHubLink('manual-chathub-group-settings', 'group-settings'),
   },
