@@ -71,6 +71,18 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-03-mobile-screen-adaptation',
+    date: '2026-07-03',
+    title: '手机小屏上的所有软件更顺了',
+    kind: 'fix',
+    summary: '优化不同手机屏幕高度和宽度下的全局界面适配，所有软件都会获得更稳定的滚动、弹层和小屏收纳表现。',
+    items: [
+      '所有 App 外壳都补上了手机端滚动和防溢出兜底，列表、表单、弹层和长内容在窄屏或矮屏上更不容易卡住。',
+      '饭票、心意铺、见闻簿、相册、岁时记、剪报夹、学习和折子戏等常用界面套件也同步优化了滚动区和底部抽屉。',
+      '手机桌面的图标、网格间距、底栏和页码点会按屏幕尺寸轻微压缩；这次不会重置你的桌面布局，也不会改动任何 App 数据。',
+    ],
+  },
+  {
     id: '2026-07-03-music-qq-member-playback',
     date: '2026-07-03',
     title: 'QQ 音乐会员曲播放修复',

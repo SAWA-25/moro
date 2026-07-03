@@ -100,6 +100,18 @@ const paperInput: React.CSSProperties = {
     border: '1px solid rgba(176,170,158,0.7)', outline: '1px dashed rgba(150,144,132,0.4)', outlineOffset: -4,
 };
 
+const TakeoutShell: React.FC<React.ComponentProps<typeof PaperShell>> = ({ className = '', style, ...props }) => (
+    <PaperShell
+        {...props}
+        className={`moro-takeout-shell ${className}`}
+        style={{
+            paddingTop: 'var(--safe-top)',
+            paddingBottom: 'var(--safe-bottom)',
+            ...style,
+        }}
+    />
+);
+
 // 是否是可作 <img> 的头像（URL/data），否则当 emoji 文字
 const isImg = (s?: string) => !!s && /^(https?:|data:|blob:)/.test(s);
 
@@ -986,7 +998,7 @@ const TakeoutApp: React.FC = () => {
     // ════════════════════════ 首页·饭票簿 ════════════════════════
     if (view === 'home') {
         return (
-            <PaperShell key="home">
+            <TakeoutShell key="home">
                 <ScrapHeader
                     title="饭票" en="MEAL TICKET" onBack={closeApp} backLabel="回桌面"
                     right={<button onClick={() => setView('orders')} className="relative inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }} title="票根夹">
@@ -1238,7 +1250,7 @@ const TakeoutApp: React.FC = () => {
                 </ScrapScroll>
 
                 {addressBookSheet}
-            </PaperShell>
+            </TakeoutShell>
         );
     }
 
@@ -1255,7 +1267,7 @@ const TakeoutApp: React.FC = () => {
             { id: 'menu', label: '点餐' }, { id: 'reviews', label: `评价 ${storeReviews.length || ''}`.trim() }, { id: 'info', label: '商家' },
         ];
         return (
-            <PaperShell key="store">
+            <TakeoutShell key="store">
                 <ScrapHeader
                     title={activeStore.name} en="THE SHOP" onBack={() => setView('home')} backLabel="回街上"
                     right={<div className="flex items-center gap-1.5">
@@ -1451,7 +1463,7 @@ const TakeoutApp: React.FC = () => {
                 </ScrapScroll>
 
                 {/* 菜篮搁板 */}
-                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(var(--safe-bottom), 12px)' }}>
                     {promoGap > 0 && <div className="text-[10.5px] font-bold mb-1.5 text-center" style={{ color: '#d2452f' }}>再买 ¥{promoGap} 享「{activeStore.promo}」</div>}
                     {promoGap === 0 && promoDisc > 0 && <div className="text-[10.5px] font-bold mb-1.5 text-center" style={{ color: '#d2452f' }}>已享「{activeStore.promo}」，省 ¥{promoDisc}</div>}
                     <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px]" style={{ background: PAPER, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 -10px 22px -16px rgba(31,29,26,0.5)' }}>
@@ -1673,7 +1685,7 @@ const TakeoutApp: React.FC = () => {
                         </ScrapButton>
                     </div>
                 </PaperSheet>
-            </PaperShell>
+            </TakeoutShell>
         );
     }
 
@@ -1686,7 +1698,7 @@ const TakeoutApp: React.FC = () => {
         const tasteOwner = recipient === 'me' ? '我' : (nameOf(recipient) || 'TA');
         const tastePreview = buildTasteNote(tasteTags);
         return (
-            <PaperShell key="checkout">
+            <TakeoutShell key="checkout">
                 <ScrapHeader title="写一张饭票" en="FILL THE TICKET" onBack={() => setView('store')} backLabel="回铺子" right={walletChip} />
                 <ScrapScroll className="px-5 pt-2 pb-28 space-y-4">
                     {/* 这一份送给 */}
@@ -1806,7 +1818,7 @@ const TakeoutApp: React.FC = () => {
                     </PaperCard>
                 </ScrapScroll>
 
-                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(var(--safe-bottom), 12px)' }}>
                     <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px]" style={{ background: PAPER, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 -10px 22px -16px rgba(31,29,26,0.5)' }}>
                         <div className="flex-1"><span className="text-[11px]" style={{ color: INK_SOFT }}>一共 </span><span className="text-[19px] font-black" style={{ color: INK }}>¥{total}</span></div>
                         <ScrapButton variant="ink" onClick={() => void placeOrder()} disabled={notEnough} className="px-6 py-3 text-[14px]" icon={<SealCheck size={16} weight="fill" />}>
@@ -1816,14 +1828,14 @@ const TakeoutApp: React.FC = () => {
                 </div>
 
                 {addressBookSheet}
-            </PaperShell>
+            </TakeoutShell>
         );
     }
 
     // ════════════════════════ 票根夹·订单列表 ════════════════════════
     if (view === 'orders') {
         return (
-            <PaperShell key="orders">
+            <TakeoutShell key="orders">
                 <ScrapHeader title="票根夹" en="TICKET STUBS" onBack={() => setView('home')} backLabel="回街上" right={walletChip} />
                 <ScrapScroll className="px-5 pt-2 pb-10">
                     {orders.length === 0 && <div className="text-center text-[12px] py-16" style={{ color: INK_SOFT }}>票根夹还空着，去街上撕一张吧～</div>}
@@ -1858,7 +1870,7 @@ const TakeoutApp: React.FC = () => {
                         })}
                     </div>
                 </ScrapScroll>
-            </PaperShell>
+            </TakeoutShell>
         );
     }
 
@@ -1884,7 +1896,7 @@ const TakeoutApp: React.FC = () => {
         ];
         const targetZh = chatTarget === 'rider' ? '跑腿' : chatTarget === 'store' ? '铺子' : '平台';
         return (
-            <PaperShell key="detail">
+            <TakeoutShell key="detail">
                 <ScrapHeader title="这张饭票" en="THE TICKET" onBack={() => setView('orders')} backLabel="票根夹" right={walletChip} />
                 <ScrapScroll className="px-5 pt-2 pb-10 space-y-4">
                     {/* 进度 / 撂挑子 */}
@@ -2068,18 +2080,18 @@ const TakeoutApp: React.FC = () => {
                         <ScrapButton variant="ink" onClick={() => void submitReview()} className="flex-1 py-3 text-[14px]">贴上墙</ScrapButton>
                     </div>
                 </PaperSheet>
-            </PaperShell>
+            </TakeoutShell>
         );
     }
 
     // 兜底
     return (
-        <PaperShell key="fallback">
+        <TakeoutShell key="fallback">
             <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-3">
                 <Stamp size={56} color="ink"><Storefront size={28} weight="duotone" /></Stamp>
                 <ScrapButton variant="ink" onClick={() => setView('home')} icon={<Receipt size={15} weight="bold" />} className="px-4 py-2 text-[13px]">回饭票簿</ScrapButton>
             </div>
-        </PaperShell>
+        </TakeoutShell>
     );
 };
 

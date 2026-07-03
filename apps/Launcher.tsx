@@ -1048,7 +1048,7 @@ const Launcher: React.FC = () => {
       };
   // 已迁移 App 外壳已收回到可见 viewport 底边，dock 仅需自留视觉间距，无需再 + safe-bottom
   // （否则会比 home 条上方多让 34px，dock 看起来悬空）。
-  const launcherBottomInset = '1.25rem';
+  const launcherBottomInset = 'var(--moro-launcher-bottom-inset, 1.25rem)';
 
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;
@@ -1238,6 +1238,10 @@ const Launcher: React.FC = () => {
                 data-page-index={idx}
                 className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--chrome-top)+2.35rem)] pb-7 h-full relative overflow-hidden"
                 style={{
+                    paddingLeft: 'var(--moro-desktop-page-x, 1.25rem)',
+                    paddingRight: 'var(--moro-desktop-page-x, 1.25rem)',
+                    paddingTop: 'var(--moro-desktop-page-top, calc(var(--chrome-top) + 2.35rem))',
+                    paddingBottom: 'var(--moro-desktop-page-bottom, 1.75rem)',
                     transform: 'translateZ(0)',
                     backfaceVisibility: 'hidden',
                     WebkitBackfaceVisibility: 'hidden',
@@ -1270,7 +1274,11 @@ const Launcher: React.FC = () => {
                   <div
                       data-desk-grid="true"
                       className="moro-desktop-grid w-full h-full grid grid-cols-4 gap-x-3 gap-y-3"
-                      style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
+                      style={{
+                          gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))`,
+                          columnGap: 'var(--moro-desktop-grid-gap-x, 0.75rem)',
+                          rowGap: 'var(--moro-desktop-grid-gap-y, 0.75rem)',
+                      }}
                   >
                       {placed.map(({ item, col, row }, itemIndex) => (
                           <div
@@ -1321,7 +1329,14 @@ const Launcher: React.FC = () => {
       >
            <div
              className="moro-dock glass-pill rounded-full px-8 py-3.5 flex gap-7 sm:gap-10 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu transition-[background,border-color,box-shadow] duration-300"
-             style={dockShellStyle}
+             style={{
+                 ...dockShellStyle,
+                 gap: 'var(--moro-dock-gap, 1.75rem)',
+                 paddingLeft: 'var(--moro-dock-pad-x, 2rem)',
+                 paddingRight: 'var(--moro-dock-pad-x, 2rem)',
+                 paddingTop: 'var(--moro-dock-pad-y, 0.875rem)',
+                 paddingBottom: 'var(--moro-dock-pad-y, 0.875rem)',
+             }}
             >
                {dockAppsConfig.map(app => (
                    <div key={app.id} className="relative">

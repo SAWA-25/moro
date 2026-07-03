@@ -331,6 +331,64 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
+      /* All-App mobile viewport guardrails: every app shell gets sane shrink/scroll behavior.
+         This catches screens that are narrower/shorter than the original desktop-like mockup
+         without resetting app-specific layouts or stored data. */
+      .moro-app-shell,
+      .moro-app-shell > * {
+        min-width: 0;
+        min-height: 0;
+      }
+      .moro-app-shell {
+        overflow: hidden;
+        isolation: isolate;
+      }
+      .moro-app-shell :where(*) {
+        min-width: 0;
+      }
+      .moro-app-shell :where(.overflow-y-auto, .overflow-auto) {
+        min-height: 0;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .moro-app-shell :where(img, video, canvas, svg, iframe) {
+        max-width: 100%;
+      }
+      .moro-app-shell :where(input, textarea, select, button) {
+        max-width: 100%;
+      }
+      @media (max-width: 480px), (max-height: 760px) {
+        .moro-app-shell :where(.p-6) {
+          padding: 1.25rem !important;
+        }
+        .moro-app-shell :where(.px-6) {
+          padding-left: 1.25rem !important;
+          padding-right: 1.25rem !important;
+        }
+        .moro-app-shell :where(.py-6) {
+          padding-top: 1.25rem !important;
+          padding-bottom: 1.25rem !important;
+        }
+        .moro-app-shell :where(.gap-6) {
+          gap: 1.25rem !important;
+        }
+      }
+      @media (max-width: 360px), (max-height: 700px) {
+        .moro-app-shell :where(.p-5, .p-6) {
+          padding: 1rem !important;
+        }
+        .moro-app-shell :where(.px-5, .px-6) {
+          padding-left: 1rem !important;
+          padding-right: 1rem !important;
+        }
+        .moro-app-shell :where(.py-5, .py-6) {
+          padding-top: 1rem !important;
+          padding-bottom: 1rem !important;
+        }
+        .moro-app-shell :where(.gap-5, .gap-6) {
+          gap: 1rem !important;
+        }
+      }
       /* 阅读器细滚动条（明暗主题通用，半透明） */
       .vr-reader-scroll {
         scrollbar-width: thin;
@@ -709,6 +767,18 @@
         --moro-desk-paper: rgba(255, 255, 250, 0.74);
         --moro-desk-border: rgba(255, 255, 255, 0.62);
         --moro-desk-shadow: 0 18px 34px -28px rgba(58, 62, 56, 0.42);
+        --moro-desktop-page-x: 1.25rem;
+        --moro-desktop-page-top: calc(var(--chrome-top) + 2.35rem);
+        --moro-desktop-page-bottom: 1.75rem;
+        --moro-desktop-grid-gap-x: 0.75rem;
+        --moro-desktop-grid-gap-y: 0.75rem;
+        --moro-desktop-icon-size: 3.5rem;
+        --moro-desktop-label-size: 9px;
+        --moro-launcher-bottom-inset: 1.25rem;
+        --moro-dock-icon-size: 3.5rem;
+        --moro-dock-gap: 1.75rem;
+        --moro-dock-pad-x: 2rem;
+        --moro-dock-pad-y: 0.875rem;
         background:
           radial-gradient(ellipse at 18% 18%, rgba(119,174,218,0.2), transparent 36%),
           radial-gradient(ellipse at 86% 78%, rgba(218,200,235,0.22), transparent 34%),
@@ -716,6 +786,49 @@
           linear-gradient(180deg, #fbfdff 0%, #eef6fb 42%, #faf5fb 100%);
         background-size: 100% 100%;
         color: var(--moro-desk-ink);
+      }
+      .moro-desktop-root .moro-desk-app-cell .moro-app-tile {
+        width: var(--moro-desktop-icon-size) !important;
+        height: var(--moro-desktop-icon-size) !important;
+      }
+      .moro-desktop-root .moro-desk-app-cell .moro-app-label {
+        font-size: var(--moro-desktop-label-size) !important;
+      }
+      .moro-desktop-root .moro-dock .moro-dock-icon {
+        width: var(--moro-dock-icon-size) !important;
+        height: var(--moro-dock-icon-size) !important;
+      }
+      @media (max-width: 480px), (max-height: 760px) {
+        .moro-desktop-root {
+          --moro-desktop-page-x: 1rem;
+          --moro-desktop-page-top: calc(var(--chrome-top) + 1.45rem);
+          --moro-desktop-page-bottom: 1.35rem;
+          --moro-desktop-grid-gap-x: 0.72rem;
+          --moro-desktop-grid-gap-y: 0.6rem;
+          --moro-desktop-icon-size: 3.25rem;
+          --moro-desktop-label-size: 8px;
+          --moro-launcher-bottom-inset: 0.95rem;
+          --moro-dock-icon-size: 3.25rem;
+          --moro-dock-gap: 1.25rem;
+          --moro-dock-pad-x: 1.35rem;
+          --moro-dock-pad-y: 0.68rem;
+        }
+      }
+      @media (max-width: 360px), (max-height: 700px) {
+        .moro-desktop-root {
+          --moro-desktop-page-x: 0.82rem;
+          --moro-desktop-page-top: calc(var(--chrome-top) + 1rem);
+          --moro-desktop-page-bottom: 1.05rem;
+          --moro-desktop-grid-gap-x: 0.54rem;
+          --moro-desktop-grid-gap-y: 0.46rem;
+          --moro-desktop-icon-size: 3rem;
+          --moro-desktop-label-size: 7.5px;
+          --moro-launcher-bottom-inset: 0.78rem;
+          --moro-dock-icon-size: 3rem;
+          --moro-dock-gap: 1rem;
+          --moro-dock-pad-x: 1rem;
+          --moro-dock-pad-y: 0.58rem;
+        }
       }
       /* 用户设了自定义桌面壁纸时，桌面让出这层不透明底色 + 收掉网格/光晕，
          让 PhoneShell 底下那张壁纸透出来（否则「设了壁纸却看不见」）。 */
@@ -1530,12 +1643,26 @@
       .moro-routine-widget--compact .moro-routine-tick i {
         display: none;
       }
+      html.moro-native-app .moro-native-shell .moro-desktop-root {
+        --moro-desktop-page-x: 1rem;
+        --moro-desktop-page-top: calc(var(--chrome-top) + 1.45rem);
+        --moro-desktop-page-bottom: 5.55rem;
+        --moro-desktop-grid-gap-x: 0.72rem;
+        --moro-desktop-grid-gap-y: 0.68rem;
+        --moro-desktop-icon-size: 3.25rem;
+        --moro-desktop-label-size: 8px;
+        --moro-launcher-bottom-inset: 0.95rem;
+        --moro-dock-icon-size: 3.25rem;
+        --moro-dock-gap: 1.25rem;
+        --moro-dock-pad-x: 1.35rem;
+        --moro-dock-pad-y: 0.68rem;
+      }
       html.moro-native-app .moro-native-shell .moro-desktop-page {
-        padding: calc(var(--chrome-top) + 1.45rem) 1rem 5.55rem !important;
+        padding: var(--moro-desktop-page-top) var(--moro-desktop-page-x) var(--moro-desktop-page-bottom) !important;
       }
       html.moro-native-app .moro-native-shell .moro-desktop-grid {
-        column-gap: 0.72rem !important;
-        row-gap: 0.68rem !important;
+        column-gap: var(--moro-desktop-grid-gap-x) !important;
+        row-gap: var(--moro-desktop-grid-gap-y) !important;
       }
       html.moro-native-app .moro-native-shell .moro-widget-schedule .moro-routine-widget {
         border-radius: 1.25rem;
@@ -1598,12 +1725,26 @@
         display: none !important;
       }
       @media (max-height: 760px) {
-        html.moro-native-app .moro-native-shell .moro-desktop-page {
-          padding-top: calc(var(--chrome-top) + 1.15rem) !important;
-          padding-bottom: 5.2rem !important;
+        html.moro-native-app .moro-native-shell .moro-desktop-root {
+          --moro-desktop-page-top: calc(var(--chrome-top) + 1.15rem);
+          --moro-desktop-page-bottom: 5.2rem;
+          --moro-desktop-grid-gap-y: 0.5rem;
         }
-        html.moro-native-app .moro-native-shell .moro-desktop-grid {
-          row-gap: 0.5rem !important;
+      }
+      @media (max-width: 360px), (max-height: 700px) {
+        html.moro-native-app .moro-native-shell .moro-desktop-root {
+          --moro-desktop-page-x: 0.82rem;
+          --moro-desktop-page-top: calc(var(--chrome-top) + 1rem);
+          --moro-desktop-page-bottom: 4.95rem;
+          --moro-desktop-grid-gap-x: 0.54rem;
+          --moro-desktop-grid-gap-y: 0.46rem;
+          --moro-desktop-icon-size: 3rem;
+          --moro-desktop-label-size: 7.5px;
+          --moro-launcher-bottom-inset: 0.78rem;
+          --moro-dock-icon-size: 3rem;
+          --moro-dock-gap: 1rem;
+          --moro-dock-pad-x: 1rem;
+          --moro-dock-pad-y: 0.58rem;
         }
       }
       .moro-desktop-root .moro-widget-music > div {

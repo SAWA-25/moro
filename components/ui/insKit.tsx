@@ -69,7 +69,7 @@ export const InsShell: React.FC<{
   const a = accent(ac);
   return (
     <div
-      className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`}
+      className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden animate-fade-in ${className}`}
       style={{ color: INK, background: CANVAS, ...style }}
     >
       {wash && (
@@ -86,7 +86,11 @@ export const InsShell: React.FC<{
 
 /** 滚动内容区 */
 export const InsScroll: React.FC<{ children: React.ReactNode; className?: string; innerRef?: React.Ref<HTMLDivElement> }> = ({ children, className = '', innerRef }) => (
-  <div ref={innerRef} className={`relative z-10 flex-1 overflow-y-auto no-scrollbar ${className}`}>
+  <div
+    ref={innerRef}
+    className={`relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar ${className}`}
+    style={{ WebkitOverflowScrolling: 'touch' }}
+  >
     {children}
   </div>
 );
@@ -367,7 +371,18 @@ export const InsSheet: React.FC<{
   return (
     <div className="fixed inset-0 z-[120] flex items-end justify-center animate-fade-in">
       <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
-      <div className="relative w-full animate-slide-up" style={{ maxWidth: 460, background: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, boxShadow: '0 -22px 60px -24px rgba(20,18,16,0.45)', paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
+      <div
+        className="relative w-full animate-slide-up flex flex-col min-h-0"
+        style={{
+          maxWidth: 460,
+          maxHeight: 'min(88vh, calc(var(--visual-viewport-height, 100vh) - var(--safe-top, 0px) - 12px))',
+          background: '#fff',
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          boxShadow: '0 -22px 60px -24px rgba(20,18,16,0.45)',
+          paddingBottom: 'max(var(--safe-bottom, 0px), 16px)',
+        }}
+      >
         <div className="flex justify-center pt-3"><span className="w-10 h-1.5 rounded-full" style={{ background: '#e3e0da' }} /></div>
         {(title || right) && (
           <div className="px-5 pt-3 flex items-center">
@@ -378,7 +393,7 @@ export const InsSheet: React.FC<{
             </div>
           </div>
         )}
-        <div className="px-5 pt-3 pb-4">{children}</div>
+        <div className="min-h-0 overflow-y-auto no-scrollbar px-5 pt-3 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
       </div>
     </div>
   );
