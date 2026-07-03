@@ -18,6 +18,7 @@ import {
   loadUserComments, addUserComment, addReplyToUserComment, removeUserComment,
   isCommentLiked, toggleCommentLike, fmtCommentTime, fmtLikeCount,
 } from '../../utils/musicComments';
+import { cleanLyricText } from '../../utils/musicLyricContext';
 import { C, Sparkle, MizuHeader, BokehBg, isMusicAvatarImage } from './MusicUI';
 import { Heart, PaperPlaneRight, ChatCircleText, MusicNote, Trash, PenNib } from '@phosphor-icons/react';
 
@@ -85,7 +86,9 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
 
   const songId = current?.id ?? null;
   const isLocal = !!current?.local;
-  const lyricSnippet = activeLyricIdx >= 0 && lyric[activeLyricIdx] ? lyric[activeLyricIdx].text : undefined;
+  const lyricSnippet = activeLyricIdx >= 0 && lyric[activeLyricIdx]
+    ? cleanLyricText(lyric[activeLyricIdx].text) || undefined
+    : undefined;
   const songMeta = current ? { name: current.name, artists: current.artists } : null;
 
   // ── 网易云评论 ──

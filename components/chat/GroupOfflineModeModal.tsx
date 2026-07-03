@@ -21,6 +21,7 @@ interface GroupOfflineModeModalProps {
     group: GroupProfile;
     members: CharacterProfile[];
     userProfile: UserProfile;
+    /** 群聊线下场景生成用的 API。宿主传文具盒主 API，让赴约现场跟主聊天模型保持一致。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
     onEnd: () => void;
     onSuspend: (entryCount: number) => void;

@@ -23,8 +23,7 @@ import { makeApiUsageMeta } from './apiUsageCatalog';
  *    这场见面承接线上聊到的话题/约定/心情，是同一段关系的延续；
  *  · 线下 → 线上：commitOfflineSessionToContext 把现场情景落成 system 记录，并提示角色
  *    回到线上后记得这次见面、可自然提起，于是收尾的线上消息能接住刚刚发生的事。
- * API：线下场景默认走副 API（宿主用 resolveAuxApi 传入），与线上聊天分线、省主 API 额度，
- *      和占卜/生活侧写等「主聊天以外的辅助任务」一致；副 API 没配时回退主 API。
+ * API：线下场景默认走文具盒主 API / 主模型，让面对面现场和主聊天保持同一套角色声音。
  */
 
 export const OFFLINE_START_RE = /\[\[\s*OFFLINE_START\s*\]\]/gi;
@@ -139,7 +138,7 @@ const callLLM = async (api: OfflineApi, prompt: string, temperature = 0.9): Prom
         temperature,
     }, {
         meta: makeApiUsageMeta('chat.offlineMode', {
-            apiRole: api.apiRole || 'aux',
+            apiRole: api.apiRole || 'main',
             apiBinding: api.apiBinding,
         }),
     });

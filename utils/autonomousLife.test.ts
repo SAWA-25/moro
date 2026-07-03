@@ -7,6 +7,7 @@ import {
   catchUpOfflineLife,
   isAutonomousLifeEnabled,
   planAutonomousProactiveTurn,
+  sanitizeLifeText,
   scoreLifeEventForProactive,
   type LifeApi,
 } from './autonomousLife';
@@ -60,6 +61,33 @@ afterEach(async () => {
 });
 
 describe('autonomous life v2', () => {
+  it('hides prompt-leak life text instead of showing task instructions', () => {
+    const leaked = '我们被要求生成流浪者此刻正在经历的一件【切片小事】。时间是7月3日周五11:13（中午）。生活密度normal，主动强度balanced，来信口味natural。需要围绕流浪者最近生活的线索：左手中指指甲缝里的竹刺。';
+
+    expect(sanitizeLifeText(leaked)).toBe('');
+    expect(sanitizeLifeText(`{"activity":"${leaked}","mood":"困倦"}`)).toBe('');
+  });
+
+  it('does not save autonomous life events when the model echoes the prompt', async () => {
+    await DB.deleteDB();
+    const now = 1_788_000_000_000;
+    const leaked = {
+      activity: '我们被要求生成Life V2此刻正在经历的一件【切片小事】。生活密度normal，主动强度balanced，来信口味natural。需要围绕最近生活线索写。',
+      summary: '请生成 TA 此刻正在经历的小事，只返回 JSON。',
+      mood: '普通',
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(leaked) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(leaked) } }] }),
+    })));
+
+    const event = await advanceLife(mkChar(), API, { now });
+
+    expect(event).toBeNull();
+    expect(await DB.getLifeEvents('char-life-v2')).toHaveLength(0);
+  });
+
   it('scores low-share silence events below lively share events', () => {
     const quiet = mkEvent({ intensity: 30, shareWillingness: 10, proactiveAngle: 'silence', energy: 'low' });
     const lively = mkEvent({ intensity: 70, shareWillingness: 80, proactiveAngle: 'ask', energy: 'high' });

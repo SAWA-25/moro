@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { useMusic } from '../context/MusicContext';
+import { useUserScreenWatch } from '../context/UserScreenWatchContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, UserProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState, ScreenPeekCard, ChatAlarm, ChatAlarmChannel, ChatAlarmKind } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
@@ -47,10 +48,11 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
+import EmojiImportModal from '../components/chat/EmojiImportModal';
 import Modal, { ScrapBtn, ScrapRowBtn, ScrapNote, ScrapInput, ScrapTextarea, ScrapChip, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK } from '../components/handbook/paper';
-import { PhoneSlash } from '@phosphor-icons/react';
+import { Lightning, MonitorPlay, Pause, PhoneSlash, Play, Stop, X as XIcon } from '@phosphor-icons/react';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import LifeRecapModal, { countUnseenCatchup, markLifeRecapSeen } from '../components/chat/LifeRecapModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
@@ -66,9 +68,11 @@ import { ContextBuilder } from '../utils/context';
 import { substituteMacros } from '../utils/macros';
 import { PersonaRuntime } from '../utils/personas';
 import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
+import type { ParsedEmojiImport } from '../utils/emojiImport';
 import { InnerVoiceEntry } from '../types';
 import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import { generateXunjiScreenlifeRun } from '../utils/xunji';
+import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage } from '../utils/userScreenWatch';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
 import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
@@ -118,7 +122,7 @@ const ASSISTANT_REVEAL_CHAR_MS = 45;
 const ASSISTANT_REVEAL_CHAR_MAX_MS = 3200;
 const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'forum_card', 'chat_forward',
-    'screen_peek_card', 'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
+    'screen_peek_card', 'screen_watch_card', 'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
     'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
     'relay_card', 'checkin_card', 'gift_card',
 ]);
@@ -752,6 +756,7 @@ const parsePrivateChatArchiveImport = (fileName: string, rawText: string, char: 
 const Chat: React.FC = () => {
     const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
     const { cfg: musicCfg, current: musicCurrent, playing: musicPlaying, playSong: playMusicSong, togglePlay: toggleMusicPlay } = useMusic();
+    const userScreenWatch = useUserScreenWatch();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -850,6 +855,8 @@ const Chat: React.FC = () => {
     // ── 查岗（双向）──
     // 用户查角色手机：+ 号面板入口，内嵌 CheckPhone（原桌面独立 App）
     const [showCheckPhone, setShowCheckPhone] = useState(false);
+    const [showUserScreenWatchPanel, setShowUserScreenWatchPanel] = useState(false);
+    const [userScreenWatchDraftSettings, setUserScreenWatchDraftSettings] = useState(DEFAULT_USER_SCREEN_WATCH_SETTINGS);
     // 相机：用 TA 的手机拍下此刻给 TA 看（+ 号面板「拍张照」）
     const [showCamera, setShowCamera] = useState(false);
     // 角色查用户手机：「允许 char 看手机」开启时角色主动发起的全屏覆盖层
@@ -877,7 +884,6 @@ const Chat: React.FC = () => {
     const [innerVoiceLoading, setInnerVoiceLoading] = useState(false);
     const [innerVoiceCurrent, setInnerVoiceCurrent] = useState<InnerVoiceEntry | null>(null);
     const [innerVoiceHistory, setInnerVoiceHistory] = useState<InnerVoiceEntry[]>([]);
-    const [emojiImportText, setEmojiImportText] = useState('');
     const [settingsContextLimit, setSettingsContextLimit] = useState(500);
     const [settingsHtmlModeCustomPrompt, setSettingsHtmlModeCustomPrompt] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -3918,6 +3924,7 @@ ${privateCallDecisionPromptBody({
             }
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
             case 'screen-peek': void handleScreenPeek(); break;
+            case 'user-screen-watch': setShowPanel('none'); setShowUserScreenWatchPanel(true); break;
             case 'phone-lock':
                 setShowPanel('none');
                 setPhoneLockAttempt(null);
@@ -4524,36 +4531,15 @@ ${privateCallDecisionPromptBody({
         addToast('新的一页建好了', 'success');
     };
 
-    const handleImportEmoji = async () => {
-        if (!emojiImportText.trim()) return;
-        const lines = emojiImportText.split('\n');
-        const targetCatId = activeCategory === 'default' ? undefined : activeCategory;
-
-        for (const line of lines) {
-            const parts = line.split('--');
-            if (parts.length >= 2) {
-                const name = parts[0].trim();
-                // 第三段（如果最后一段不是 URL）当作描述：名字--URL--描述。
-                // URL 自身可能含 "--"，所以从尾部判断：最后一段不以协议/data: 开头才算描述。
-                let urlParts = parts.slice(1);
-                let description = '';
-                if (urlParts.length > 1) {
-                    const last = urlParts[urlParts.length - 1].trim();
-                    if (last && !/^(https?:|data:|\/\/)/i.test(last) && !/\.(png|jpe?g|gif|webp)$/i.test(last)) {
-                        description = last;
-                        urlParts = urlParts.slice(0, -1);
-                    }
-                }
-                const url = urlParts.join('--').trim();
-                if (name && url) {
-                    await DB.saveEmoji(name, url, targetCatId, description || undefined);
-                }
-            }
-        }
+    const handleSaveImportedEmojis = async (records: ParsedEmojiImport[]) => {
+        if (records.length === 0) return;
+        await Promise.all(records.map(record => (
+            DB.saveEmoji(record.name, record.url, record.categoryId || 'default', record.description)
+        )));
         await loadEmojiData();
+        setActiveCategory(records[0]?.categoryId || activeCategory || 'default');
         setModalType('none');
-        setEmojiImportText('');
-        addToast('贴纸收集好了', 'success');
+        addToast(`收集了 ${records.length} 张贴纸`, 'success');
     };
 
     const handleDeleteCategory = async () => {
@@ -7045,16 +7031,139 @@ ${privateCallDecisionPromptBody({
 
              {/* 浪漫求婚界面 */}
              {proposalTarget && char && (
-                 <ProposalOverlay
-                     message={proposalTarget}
-                     charName={displayCharName}
-                     charAvatar={displayCharAvatar}
-                     userName={userProfile.name || '我'}
-                     busy={proposalBusy}
-                     onRespond={(accept) => void respondToCharProposal(accept)}
-                     onClose={() => setProposalTarget(null)}
-                 />
-             )}
+             <ProposalOverlay
+                 message={proposalTarget}
+                 charName={displayCharName}
+                 charAvatar={displayCharAvatar}
+                 userName={userProfile.name || '我'}
+                 busy={proposalBusy}
+                 onRespond={(accept) => void respondToCharProposal(accept)}
+                 onClose={() => setProposalTarget(null)}
+             />
+         )}
+
+             {showUserScreenWatchPanel && char && (() => {
+                 const activeWatch = userScreenWatch.session;
+                 const settings = activeWatch?.settings || userScreenWatchDraftSettings;
+                 const latestComment = activeWatch?.comments?.slice(-1)[0]?.text || '';
+                 const sameChar = !activeWatch || activeWatch.charId === char.id;
+                 const toggleSetting = (key: 'captureFrames' | 'trackMoroUsage' | 'floatingEnabled') => {
+                     const value = !settings[key];
+                     setUserScreenWatchDraftSettings(prev => ({ ...prev, [key]: value }));
+                     if (activeWatch) void userScreenWatch.updateSettings({ [key]: value });
+                 };
+                 const statusText = !activeWatch
+                     ? '未开始'
+                     : activeWatch.status === 'paused'
+                     ? '采样暂停'
+                     : activeWatch.status === 'active'
+                     ? '共享进行中'
+                     : '已结束';
+                 return (
+                     <div className="absolute inset-0 z-[430] flex items-center justify-center bg-black/45 p-5 animate-fade-in" onClick={() => setShowUserScreenWatchPanel(false)}>
+                         <div className="w-[min(92vw,360px)] overflow-hidden rounded-3xl bg-white text-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+                             <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                                     <MonitorPlay size={23} weight="bold" />
+                                 </div>
+                                 <div className="min-w-0 flex-1">
+                                     <div className="text-[16px] font-black">观屏评论</div>
+                                     <div className="truncate text-[12px] text-slate-500">{sameChar ? `${displayCharName} · ${statusText}` : `${activeWatch?.charName || '其他角色'} · ${statusText}`}</div>
+                                 </div>
+                                 <button
+                                     type="button"
+                                     onClick={() => setShowUserScreenWatchPanel(false)}
+                                     className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 active:scale-95"
+                                     aria-label="关闭观屏评论面板"
+                                 >
+                                     <XIcon size={17} weight="bold" />
+                                 </button>
+                             </div>
+
+                             <div className="space-y-3 px-5 py-4">
+                                 <div className="rounded-2xl bg-slate-50 px-3.5 py-3 text-[12px] leading-relaxed text-slate-600">
+                                     网页端只在你主动选择共享屏幕、窗口或标签页后采样；浏览器每次都会重新确认，不读取真实系统后台 App 列表或系统使用统计。
+                                 </div>
+
+                                 {activeWatch && (
+                                     <div className="rounded-2xl border border-slate-100 px-3.5 py-3">
+                                         <div className="mb-1 text-[11px] font-black text-slate-400">最近短评</div>
+                                         <div className="text-[13px] leading-relaxed text-slate-800">{latestComment || '还没有短评，点“评这一眼”可以让 TA 立刻接一句。'}</div>
+                                         <div className="mt-2 text-[11px] text-slate-400">Moro 内部停留：{formatMoroUsage(activeWatch.usage || [], 3)}</div>
+                                     </div>
+                                 )}
+
+                                 <div className="grid grid-cols-3 gap-2">
+                                     {[
+                                         ['captureFrames', '截图', settings.captureFrames],
+                                         ['trackMoroUsage', '时长', settings.trackMoroUsage],
+                                         ['floatingEnabled', '浮窗', settings.floatingEnabled],
+                                     ].map(([key, label, enabled]) => (
+                                         <button
+                                             key={key as string}
+                                             type="button"
+                                             onClick={() => toggleSetting(key as 'captureFrames' | 'trackMoroUsage' | 'floatingEnabled')}
+                                             className={`h-10 rounded-2xl text-[12px] font-black active:scale-95 ${enabled ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+                                         >
+                                             {label as string}{enabled ? '开' : '关'}
+                                         </button>
+                                     ))}
+                                 </div>
+
+                                 {!userScreenWatch.isSupported && (
+                                     <div className="rounded-2xl bg-amber-50 px-3.5 py-3 text-[12px] leading-relaxed text-amber-700">
+                                         当前浏览器不支持屏幕共享。可以继续聊天，但观屏抽帧不可用。
+                                     </div>
+                                 )}
+
+                                 {userScreenWatch.lastError && (
+                                     <div className="rounded-2xl bg-rose-50 px-3.5 py-3 text-[12px] leading-relaxed text-rose-700">
+                                         {userScreenWatch.lastError}
+                                     </div>
+                                 )}
+                             </div>
+
+                             <div className="grid grid-cols-4 gap-2 border-t border-slate-100 px-5 py-4">
+                                 <button
+                                     type="button"
+                                     onClick={() => void userScreenWatch.startWatch(char.id, userScreenWatchDraftSettings)}
+                                     disabled={!userScreenWatch.isSupported || userScreenWatch.isBusy}
+                                     className="col-span-4 h-11 rounded-2xl bg-slate-950 text-[14px] font-black text-white active:scale-[0.98] disabled:opacity-45"
+                                 >
+                                     {activeWatch ? `重新选择共享给 ${displayCharName}` : `开始共享给 ${displayCharName}`}
+                                 </button>
+                                 <button
+                                     type="button"
+                                     onClick={() => void (activeWatch?.status === 'paused' ? userScreenWatch.resumeSampling() : userScreenWatch.pauseSampling())}
+                                     disabled={!activeWatch}
+                                     className="flex h-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-800 active:scale-95 disabled:opacity-45"
+                                     title={activeWatch?.status === 'paused' ? '继续采样' : '暂停采样'}
+                                 >
+                                     {activeWatch?.status === 'paused' ? <Play size={18} weight="bold" /> : <Pause size={18} weight="bold" />}
+                                 </button>
+                                 <button
+                                     type="button"
+                                     onClick={() => void userScreenWatch.requestCommentNow()}
+                                     disabled={!activeWatch || userScreenWatch.isCommenting}
+                                     className="flex h-10 items-center justify-center rounded-2xl bg-emerald-500 text-white active:scale-95 disabled:opacity-45"
+                                     title="评这一眼"
+                                 >
+                                     <Lightning size={18} weight="bold" />
+                                 </button>
+                                 <button
+                                     type="button"
+                                     onClick={() => void userScreenWatch.stopWatch()}
+                                     disabled={!activeWatch}
+                                     className="col-span-2 flex h-10 items-center justify-center gap-1.5 rounded-2xl bg-rose-50 text-[12px] font-black text-rose-600 active:scale-95 disabled:opacity-45"
+                                 >
+                                     <Stop size={16} weight="fill" />
+                                     停止
+                                 </button>
+                             </div>
+                         </div>
+                     </div>
+                 );
+             })()}
 
              <ChatModals
                 modalType={modalType} setModalType={setModalType}
@@ -7063,7 +7172,6 @@ ${privateCallDecisionPromptBody({
                 transferNote={transferNote} setTransferNote={setTransferNote}
                 transferPassword={transferPassword} setTransferPassword={setTransferPassword}
                 walletBalance={userProfile.balance || 0}
-                emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
                 preserveContext={preserveContext} setPreserveContext={setPreserveContext}
                 editContent={editContent} setEditContent={setEditContent}
@@ -7109,7 +7217,6 @@ ${privateCallDecisionPromptBody({
                     setTransferNote('');
                     setTransferPassword('');
                 }}
-                onImportEmoji={handleImportEmoji}
                 onSaveSettings={saveSettings} onBgUpload={handleBgUpload} onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
                 onClearHistory={handleClearHistory} onClearChatContextOnly={handleClearChatContextOnly} onArchive={handleFullArchive}
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
@@ -7167,6 +7274,16 @@ ${privateCallDecisionPromptBody({
                     updateCharacter(char.id, { activeBuffs: [], buffInjection: '' });
                     addToast('情绪状态已清除', 'info');
                 }}
+             />
+
+             <EmojiImportModal
+                isOpen={modalType === 'emoji-import'}
+                onClose={() => setModalType('none')}
+                categories={visibleCategories}
+                defaultCategoryId={activeCategory}
+                existingEmojis={emojis}
+                onSave={handleSaveImportedEmojis}
+                addToast={addToast}
              />
              
              <ChatHeader
@@ -8289,13 +8406,12 @@ ${privateCallDecisionPromptBody({
                 />
             )}
 
-            {/* 线下模式弹窗：默认走副 API（与「线下功能默认走副 API」的约定一致，
-                不与线上聊天抢同一根线、也省主 API 额度；副 API 没配则回退主 API） */}
+            {/* 线下模式弹窗：使用文具盒主 API / 主模型，和当前聊天的主模型保持同一套现场口吻。 */}
             {showOfflineMode && char && (
                 <OfflineModeModal
                     char={char}
                     userProfile={userProfile}
-                    apiConfig={resolveAuxApi(auxApiConfig, apiConfig)}
+                    apiConfig={apiConfig}
                     addToast={addToast}
                     onEnd={handleOfflineEnd}
                     onSuspend={handleOfflineSuspend}

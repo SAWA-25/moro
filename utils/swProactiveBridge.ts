@@ -177,8 +177,34 @@ export function swShouldGenerateProactive(snap: SwProactiveSnapshot, now = Date.
 }
 
 function formatLifeEventsForPrompt(events: SwLifeEventSnapshot[] | undefined): string {
+  const cleanLifeText = (raw: string | undefined): string => {
+    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (/^(我们被要求|被要求|任务是|要求是|现在请|请生成|请按时间顺序生成)/.test(t)) return '';
+    if (/【切片小事】/.test(t) && /(生成|生活密度|主动强度|来信口味|需要围绕)/.test(t)) return '';
+    const hits = [
+      /(?:我们)?被要求生成/,
+      /生活密度\s*[:：]?\s*(?:sparse|normal|busy)/i,
+      /主动强度\s*[:：]?\s*(?:quiet|balanced|chatty|unfiltered)/i,
+      /来信口味\s*[:：]?\s*(?:natural|moody|teasing|caring)/i,
+      /需要围绕.*(?:最近生活|生活线索|线索)/,
+      /返回\s*JSON|只(?:返回|输出)\s*JSON/i,
+    ].filter(re => re.test(t)).length;
+    return hits >= 2 ? '' : t;
+  };
   const picked = (events || [])
-    .filter(e => e && e.activity)
+    .map(e => {
+      const activity = cleanLifeText(e?.activity) || cleanLifeText(e?.summary);
+      if (!e || !activity) return null;
+      return {
+        ...e,
+        activity,
+        mood: cleanLifeText(e.mood),
+        location: cleanLifeText(e.location),
+        thread: cleanLifeText(e.thread),
+      };
+    })
+    .filter((e): e is SwLifeEventSnapshot => !!e)
     .slice(-5);
   if (picked.length === 0) return '';
   const lines = picked.map(e => {

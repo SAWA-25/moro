@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeOrder, orderProgress, orderReceivePayload, getShopItem, recommendGiftsForCharacter, itemGiftSignals } from './shop';
+import { makeOrder, makeReceipt, orderProgress, orderReceivePayload, getShopItem, recommendGiftsForCharacter, itemGiftSignals } from './shop';
 
 const rose = getShopItem('rose')!;
 const cake = getShopItem('cake')!;
@@ -54,6 +54,16 @@ describe('orderReceivePayload', () => {
         expect(r.userReceipts[0].action).toBe('receive');
         expect(r.charReceipts[0].action).toBe('gift');
         expect(r.charReceipts[0].counterpartName).toBe('我');
+    });
+
+    it('陪逛自动付款沿用 self 订单和用户小票形态', () => {
+        const o = makeOrder([{ item: rose, qty: 1 }], 'self');
+        const r = makeReceipt(rose, 'user', 'gift', 'char-1', '阿白', '陪逛自动买下');
+        expect(o.paidBy).toBe('self');
+        expect(o.items[0].itemId).toBe('rose');
+        expect(r.by).toBe('user');
+        expect(r.action).toBe('gift');
+        expect(r.note).toBe('陪逛自动买下');
     });
 });
 

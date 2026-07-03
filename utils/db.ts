@@ -10,7 +10,7 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings, PhoneCheckSession,
+    XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings, PhoneCheckSession, UserScreenWatchSession,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
     TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession, TheaterFauxPiece,
     TheaterReflectionSession,
@@ -24,7 +24,7 @@ import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffi
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 90; // Bumped: v90 moments audience/unread indexes
+const DB_VERSION = 91; // Bumped: v91 user screen watch sessions
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -99,6 +99,7 @@ const STORE_VR_SETTINGS = 'vr_settings';          // 页外设置单例：独立
 const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 后台流水单例（id='log'，保留近 5 天）
 const STORE_PHONE_CALL_LOGS = 'phone_call_logs';  // 电话 App 通话记录（拨出/接听/未接，轻量条目）
 const STORE_PHONE_CHECK_SESSIONS = 'phone_check_sessions'; // 絮语查岗档案（用户查 TA / TA 查用户）
+const STORE_USER_SCREEN_WATCH = 'user_screen_watch_sessions'; // 絮语观屏评论：用户授权共享屏幕后，角色实时评论
 const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交换日记本（entries 内联在 book 里）
 const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-char，不进聊天上下文）
 const STORE_LLM_PRESETS = 'llm_presets';          // 预设 App：SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数）
@@ -898,6 +899,27 @@ export const openDB = (): Promise<IDBDatabase> => {
               try { pcsStore.createIndex('status', 'status', { unique: false }); } catch { /* ignore */ }
           }
       }
+      if (!db.objectStoreNames.contains(STORE_USER_SCREEN_WATCH)) {
+          const uswStore = db.createObjectStore(STORE_USER_SCREEN_WATCH, { keyPath: 'id' });
+          uswStore.createIndex('charId', 'charId', { unique: false });
+          uswStore.createIndex('startedAt', 'startedAt', { unique: false });
+          uswStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          uswStore.createIndex('status', 'status', { unique: false });
+      } else {
+          const uswStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_USER_SCREEN_WATCH);
+          if (uswStore && !uswStore.indexNames.contains('charId')) {
+              try { uswStore.createIndex('charId', 'charId', { unique: false }); } catch { /* ignore */ }
+          }
+          if (uswStore && !uswStore.indexNames.contains('startedAt')) {
+              try { uswStore.createIndex('startedAt', 'startedAt', { unique: false }); } catch { /* ignore */ }
+          }
+          if (uswStore && !uswStore.indexNames.contains('updatedAt')) {
+              try { uswStore.createIndex('updatedAt', 'updatedAt', { unique: false }); } catch { /* ignore */ }
+          }
+          if (uswStore && !uswStore.indexNames.contains('status')) {
+              try { uswStore.createIndex('status', 'status', { unique: false }); } catch { /* ignore */ }
+          }
+      }
       createStore(STORE_EXCHANGE_DIARY, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(STORE_INNER_VOICES)) {
           const ivStore = db.createObjectStore(STORE_INNER_VOICES, { keyPath: 'id' });
@@ -1192,14 +1214,27 @@ export const DB = {
 
   deleteCharacter: async (id: string): Promise<void> => {
     const db = await openDB();
-    const stores = db.objectStoreNames.contains(STORE_CHAT_ALARMS)
-        ? [STORE_CHARACTERS, STORE_CHAT_ALARMS]
-        : [STORE_CHARACTERS];
+    const stores = [
+        STORE_CHARACTERS,
+        ...(db.objectStoreNames.contains(STORE_CHAT_ALARMS) ? [STORE_CHAT_ALARMS] : []),
+        ...(db.objectStoreNames.contains(STORE_USER_SCREEN_WATCH) ? [STORE_USER_SCREEN_WATCH] : []),
+    ];
     const transaction = db.transaction(stores, 'readwrite');
     transaction.objectStore(STORE_CHARACTERS).delete(id);
     if (db.objectStoreNames.contains(STORE_CHAT_ALARMS)) {
         const alarmStore = transaction.objectStore(STORE_CHAT_ALARMS);
         const idx = alarmStore.index('charId');
+        const req = idx.openCursor(IDBKeyRange.only(id));
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+    }
+    if (db.objectStoreNames.contains(STORE_USER_SCREEN_WATCH)) {
+        const watchStore = transaction.objectStore(STORE_USER_SCREEN_WATCH);
+        const idx = watchStore.index('charId');
         const req = idx.openCursor(IDBKeyRange.only(id));
         req.onsuccess = () => {
             const cursor = req.result;
@@ -3873,6 +3908,55 @@ export const DB = {
       });
   },
 
+  // --- 絮语观屏评论会话 ---
+  saveUserScreenWatchSession: async (session: UserScreenWatchSession, keepN = 30): Promise<void> => {
+      const clean: UserScreenWatchSession = {
+          ...session,
+          frames: (session.frames || []).slice(-20),
+          comments: (session.comments || []).slice(-80),
+          updatedAt: session.updatedAt || Date.now(),
+      };
+      await putStoreItem(STORE_USER_SCREEN_WATCH, clean);
+      await DB.pruneUserScreenWatchSessions(clean.charId, keepN);
+  },
+
+  getUserScreenWatchSession: (id: string): Promise<UserScreenWatchSession | null> =>
+      getStoreItem<UserScreenWatchSession>(STORE_USER_SCREEN_WATCH, id),
+
+  getUserScreenWatchSessions: async (charId?: string, limit?: number): Promise<UserScreenWatchSession[]> => {
+      const all = await getAllStoreItems<UserScreenWatchSession>(STORE_USER_SCREEN_WATCH);
+      const filtered = charId ? all.filter(session => session.charId === charId) : all;
+      const sorted = filtered.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+      return limit && limit > 0 ? sorted.slice(0, limit) : sorted;
+  },
+
+  getLatestUserScreenWatchSession: async (charId: string): Promise<UserScreenWatchSession | undefined> => {
+      const sessions = await DB.getUserScreenWatchSessions(charId, 1);
+      return sessions[0];
+  },
+
+  deleteUserScreenWatchSession: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_USER_SCREEN_WATCH, id),
+
+  deleteUserScreenWatchSessionsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_USER_SCREEN_WATCH, 'charId', charId),
+
+  pruneUserScreenWatchSessions: async (charId: string, keepN = 30): Promise<void> => {
+      const sessions = await DB.getUserScreenWatchSessions(charId);
+      if (sessions.length <= keepN) return;
+      const toDelete = sessions.slice(keepN);
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_USER_SCREEN_WATCH)) return;
+      const tx = db.transaction(STORE_USER_SCREEN_WATCH, 'readwrite');
+      const store = tx.objectStore(STORE_USER_SCREEN_WATCH);
+      toDelete.forEach(session => store.delete(session.id));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
   // --- 日记社：多角色交换日记本 ---
   saveExchangeDiaryBook: async (book: ExchangeDiaryBook): Promise<void> => {
       const db = await openDB();
@@ -5114,7 +5198,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -5188,6 +5272,7 @@ export const DB = {
           getAllFromStore(STORE_VR_SETTINGS),
           getAllFromStore(STORE_PHONE_CALL_LOGS),
           getAllFromStore(STORE_PHONE_CHECK_SESSIONS),
+          getAllFromStore(STORE_USER_SCREEN_WATCH),
           getAllFromStore(STORE_EXCHANGE_DIARY),
           getAllFromStore(STORE_INNER_VOICES),
           getAllFromStore(STORE_LLM_PRESETS),
@@ -5256,6 +5341,7 @@ export const DB = {
           vrPostOffice: exportPostOfficeLocal(), // 邮局本机配置（身份/后端地址，存 localStorage）
           phoneCallLogs,
           phoneCheckSessions,
+          userScreenWatchSessions,
           exchangeDiaryBooks,
           innerVoices,
           llmPresets,
@@ -5311,7 +5397,7 @@ export const DB = {
           STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
-          STORE_PHONE_CALL_LOGS, STORE_PHONE_CHECK_SESSIONS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
+          STORE_PHONE_CALL_LOGS, STORE_PHONE_CHECK_SESSIONS, STORE_USER_SCREEN_WATCH, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
           STORE_LLM_PRESETS, STORE_PERSONAS, STORE_DESKTOP_PET,
           STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS,
       ].filter(name => db.objectStoreNames.contains(name));
@@ -5433,6 +5519,7 @@ export const DB = {
           data.bankState !== undefined || data.bankDollhouse !== undefined,
           data.phoneCallLogs !== undefined,
           data.phoneCheckSessions !== undefined,
+          data.userScreenWatchSessions !== undefined,
           data.exchangeDiaryBooks !== undefined,
           data.innerVoices !== undefined,
           data.relationshipNetworkEdges !== undefined,
@@ -5712,6 +5799,10 @@ export const DB = {
           await clearAndAdd(STORE_PHONE_CHECK_SESSIONS, data.phoneCheckSessions, '查岗档案', false);
           data.phoneCheckSessions = undefined as any;
       }, data.phoneCheckSessions?.length || 0);
+      await runSection('观屏评论', data.userScreenWatchSessions !== undefined, async () => {
+          await clearAndAdd(STORE_USER_SCREEN_WATCH, data.userScreenWatchSessions, '观屏评论', false);
+          data.userScreenWatchSessions = undefined as any;
+      }, data.userScreenWatchSessions?.length || 0);
       await runSection('日记社', data.exchangeDiaryBooks !== undefined, async () => {
           await clearAndAdd(STORE_EXCHANGE_DIARY, data.exchangeDiaryBooks, '日记社', false);
           data.exchangeDiaryBooks = undefined as any;

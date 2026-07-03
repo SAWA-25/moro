@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { APIConfig, AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, GroupConvoSettings, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact, PresetScopeKey, LiveChatOverride, InnerVoiceEntry } from '../types';
+import { APIConfig, AppID, Message, GroupProfile, GroupChatRecord, GroupApiConfig, GroupConvoSettings, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, Emoji, OSTheme, AmbientSocialEntry, AmbientSocialContact, PresetScopeKey, LiveChatOverride, InnerVoiceEntry } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { callChatCompletion, fetchModelList } from '../utils/llmClient';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
@@ -24,6 +24,7 @@ import ChatHubDashboard from '../components/chat/ChatHubDashboard';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import UnblockAppealModal from '../components/chat/UnblockAppealModal';
 import GroupOfflineModeModal from '../components/chat/GroupOfflineModeModal';
+import EmojiImportModal from '../components/chat/EmojiImportModal';
 import { hasOfflineSession } from '../utils/offlineMode';
 import { hasGroupOfflineSession } from '../utils/groupOfflineMode';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
@@ -45,6 +46,7 @@ import { ORDER_CHAR_ID_GROUP, PresetRuntime, applyPresetToMessages } from '../ut
 import { normalizeLiveChatSettings, resolveLiveChatEnabled, shouldTriggerLiveDraft } from '../utils/liveChat';
 import { groupVoiceStylePromptBlock, innerVoicePromptBody, liveGroupDraftPromptBody, liveGroupModePromptBlock } from '../utils/laiwangPrompts';
 import { createMessageFollowup } from '../utils/chatFollowups';
+import type { ParsedEmojiImport } from '../utils/emojiImport';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -1482,6 +1484,7 @@ const ChatHub: React.FC = () => {
     const [showActions, setShowActions] = useState(false);
     const [showGroupOfflineMode, setShowGroupOfflineMode] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [showEmojiImportModal, setShowEmojiImportModal] = useState(false);
     const [groupCall, setGroupCall] = useState<GroupCallSession | null>(null);
     const [groupCallSecs, setGroupCallSecs] = useState(0);
     const [groupCallMuted, setGroupCallMuted] = useState(false);
@@ -1531,7 +1534,7 @@ const ChatHub: React.FC = () => {
     const [selectedMsgIds, setSelectedMsgIds] = useState<Set<number>>(new Set());
 
     // Data State
-    const [emojis, setEmojis] = useState<{name: string, url: string, categoryId?: string}[]>([]);
+    const [emojis, setEmojis] = useState<Emoji[]>([]);
     const [categories, setCategories] = useState<EmojiCategory[]>([]); // New
     
     // Create/Edit Group State
@@ -1845,6 +1848,13 @@ const ChatHub: React.FC = () => {
         auxApiConfig.model,
     ]);
 
+    const reloadEmojiData = useCallback(async () => {
+        await DB.initializeEmojiData();
+        const [es, cats] = await Promise.all([DB.getEmojis(), DB.getEmojiCategories()]);
+        setEmojis(es);
+        setCategories(cats);
+    }, []);
+
     // Initial Load
     useEffect(() => {
         if (activeGroup) {
@@ -1865,11 +1875,13 @@ const ChatHub: React.FC = () => {
                 setTotalMsgCount(totalCount);
             });
             // Fetch emojis AND categories
-            Promise.all([DB.getEmojis(), DB.getEmojiCategories()]).then(([es, cats]) => {
+            (async () => {
+                await DB.initializeEmojiData();
+                const [es, cats] = await Promise.all([DB.getEmojis(), DB.getEmojiCategories()]);
                 if (cancelled) return;
                 setEmojis(es);
                 setCategories(cats);
-            });
+            })();
             return () => { cancelled = true; };
         }
     }, [activeGroup]);
@@ -4285,6 +4297,17 @@ ${logText.substring(0, 10000)}
         }
     }
 
+    const handleSaveGroupImportedEmojis = async (records: ParsedEmojiImport[]) => {
+        if (records.length === 0) return;
+        await Promise.all(records.map(record => (
+            DB.saveEmoji(record.name, record.url, record.categoryId || 'default', record.description)
+        )));
+        await reloadEmojiData();
+        setShowEmojiImportModal(false);
+        setShowEmojiPicker(true);
+        addToast(`收集了 ${records.length} 张群聊贴纸`, 'success');
+    };
+
     const handleSendMessage = async (content: string, type: MessageType = 'text', metadata?: any) => {
         if (!activeGroup) return;
         if (type === 'text' && !content.trim()) return;
@@ -5548,7 +5571,7 @@ ${recentPrivate || '(暂无私聊)'}
                 visibleEmojis.forEach(e => {
                     const cid = e.categoryId || 'default';
                     if (!grouped[cid]) grouped[cid] = [];
-                    grouped[cid].push(e.name);
+                    grouped[cid].push(e.description ? `${e.name}（${e.description}）` : e.name);
                 });
 
                 return Object.entries(grouped).map(([cid, names]) => {
@@ -7508,12 +7531,21 @@ ${attachedImagesNote}
                         </div>
                         <div className="flex-1 p-4 pt-2 overflow-y-auto no-scrollbar">
                             <div className="grid grid-cols-5 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEmojiImportModal(true)}
+                                    className="scrap-card aspect-square rounded-xl p-2 active:scale-95 flex flex-col items-center justify-center border-dashed gap-1"
+                                    title="收集图片表情"
+                                >
+                                    <Sticker size={26} weight="bold" />
+                                    <span className="text-[9px] font-black tracking-widest text-slate-500">收集</span>
+                                </button>
                                 {emojis.filter(e => {
                                     const term = emojiSearch.trim().toLowerCase();
                                     if (!term) return true;
-                                    return e.name.toLowerCase().includes(term) || ((e as any).description || '').toLowerCase().includes(term);
+                                    return e.name.toLowerCase().includes(term) || (e.description || '').toLowerCase().includes(term);
                                 }).map((e, i) => (
-                                    <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="scrap-card aspect-square rounded-xl p-2 active:scale-95 flex flex-col items-center justify-center" title={e.name}>
+                                    <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="scrap-card aspect-square rounded-xl p-2 active:scale-95 flex flex-col items-center justify-center" title={e.description ? `${e.name}：${e.description}` : e.name}>
                                         <img src={stickerImageSrc(e.url)} className="w-full h-full object-contain pointer-events-none" />
                                     </button>
                                 ))}
@@ -7525,12 +7557,23 @@ ${attachedImagesNote}
 
             {/* --- Modals --- */}
 
+            <EmojiImportModal
+                isOpen={showEmojiImportModal}
+                onClose={() => setShowEmojiImportModal(false)}
+                categories={categories}
+                defaultCategoryId="default"
+                existingEmojis={emojis}
+                onSave={handleSaveGroupImportedEmojis}
+                addToast={addToast}
+                title="收集群聊表情"
+            />
+
             {showGroupOfflineMode && activeGroup && (
                 <GroupOfflineModeModal
                     group={activeGroup}
                     members={characters.filter(c => activeGroup.members.includes(c.id))}
                     userProfile={userProfile}
-                    apiConfig={resolveAuxApi(auxApiConfig, apiConfig)}
+                    apiConfig={apiConfig}
                     addToast={addToast}
                     onEnd={() => { void handleGroupOfflineEnd(); }}
                     onSuspend={handleGroupOfflineSuspend}

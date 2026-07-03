@@ -350,13 +350,17 @@ function personaBrief(char: CharacterProfile): string {
 
 function recentEventsBrief(events: CharLifeEvent[]): string {
   if (events.length === 0) return '（还没有记录，这是今天的第一件事）';
-  return events
+  const lines = events
     .slice(-RECENT_EVENTS_FOR_CONTEXT)
     .map(e => {
+      const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
+      if (!activity) return '';
+      const mood = e.mood ? sanitizeLifeText(e.mood) : '';
       const t = describeTime(new Date(e.timestamp));
-      return `- ${t}：${e.activity}${e.mood ? `（${e.mood}）` : ''}`;
+      return `- ${t}：${activity}${mood ? `（${mood}）` : ''}`;
     })
-    .join('\n');
+    .filter(Boolean);
+  return lines.length ? lines.join('\n') : '（最近的生活记录格式异常，已跳过）';
 }
 
 // ── LLM 调用 ────────────────────────────────────────────────────
@@ -489,7 +493,8 @@ export function sanitizeLifeText(raw: string): string {
   let t = stripFences(raw);
   // 仍是 JSON 残骸：优先抠 activity / summary 字段
   const field = looseField(t, 'activity') || looseField(t, 'summary');
-  if (field) return field.trim();
+  if (field) return looksLikeLifePromptLeak(field) ? '' : field.trim();
+  if (looksLikeLifePromptLeak(t)) return '';
   // 否则去掉 JSON 标点与已知键名，留下可读文字
   t = t
     .replace(/^[\s{[]+/, '')
@@ -498,7 +503,7 @@ export function sanitizeLifeText(raw: string): string {
     .replace(/^["']+|["']+$/g, '')
     .replace(/[{}\[\]]/g, '')
     .trim();
-  return t;
+  return looksLikeLifePromptLeak(t) ? '' : t;
 }
 
 /** 一个值若仍带围栏 / 像 JSON 残骸，再洗一遍；正常文本原样返回。 */
@@ -506,10 +511,27 @@ function cleanField(v: string | undefined): string | undefined {
   if (!v) return undefined;
   const s = v.trim();
   if (!s) return undefined;
+  if (looksLikeLifePromptLeak(s)) return undefined;
   if (s.includes('```') || /^[{\[]/.test(s) || /^"?(activity|summary)"?\s*:/i.test(s)) {
     return sanitizeLifeText(s) || undefined;
   }
   return s;
+}
+
+function looksLikeLifePromptLeak(raw: string): boolean {
+  const t = raw.replace(/\s+/g, ' ').trim();
+  if (!t) return false;
+  if (/^(我们被要求|被要求|任务是|要求是|现在请|请生成|请按时间顺序生成)/.test(t)) return true;
+  if (/【切片小事】/.test(t) && /(生成|生活密度|主动强度|来信口味|需要围绕)/.test(t)) return true;
+  const hits = [
+    /(?:我们)?被要求生成/,
+    /生活密度\s*[:：]?\s*(?:sparse|normal|busy)/i,
+    /主动强度\s*[:：]?\s*(?:quiet|balanced|chatty|unfiltered)/i,
+    /来信口味\s*[:：]?\s*(?:natural|moody|teasing|caring)/i,
+    /需要围绕.*(?:最近生活|生活线索|线索)/,
+    /返回\s*JSON|只(?:返回|输出)\s*JSON/i,
+  ].filter(re => re.test(t)).length;
+  return hits >= 2;
 }
 
 interface LifeEventDraft {
@@ -548,6 +570,7 @@ function draftToEvent(
 ): CharLifeEvent | null {
   const activity = cleanField(draft.activity) || cleanField(draft.summary) || '';
   if (!activity) return null;
+  const summary = cleanField(draft.summary) || activity;
   const eventKind = pickEnum(draft.eventKind || draft.kind, LIFE_EVENT_KINDS);
   const energy = pickEnum(draft.energy, LIFE_EVENT_ENERGIES);
   const proactiveAngle = pickEnum(draft.proactiveAngle || draft.angle, LIFE_EVENT_ANGLES);
@@ -558,7 +581,7 @@ function draftToEvent(
     activity,
     mood: cleanField(draft.mood),
     location: cleanField(draft.location),
-    summary: cleanField(draft.summary) || activity,
+    summary,
     source,
     eventKind,
     energy,
@@ -732,6 +755,7 @@ export async function catchUpOfflineLife(
 function pickReusableLifeEvent(events: CharLifeEvent[], now: number): CharLifeEvent | null {
   const candidates = events
     .filter(e => e.timestamp <= now && !e.surfacedAsMsg)
+    .filter(e => !!sanitizeLifeText(e.activity))
     .filter(e => now - e.timestamp <= 8 * 60 * 60 * 1000)
     .sort((a, b) => {
       const scoreDiff = scoreLifeEventForProactive(b) - scoreLifeEventForProactive(a);
@@ -848,11 +872,16 @@ export async function buildRecentLifeContextBlock(
     if (recent.length === 0) return '';
     const lines = recent.map(e => {
       const t = describeTime(new Date(e.timestamp));
-      const where = e.location ? `（在${e.location}）` : '';
-      const mood = e.mood ? `，${e.mood}` : '';
+      const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
+      if (!activity) return '';
+      const location = e.location ? sanitizeLifeText(e.location) : '';
+      const moodText = e.mood ? sanitizeLifeText(e.mood) : '';
+      const where = location ? `（在${location}）` : '';
+      const mood = moodText ? `，${moodText}` : '';
       const tags = [e.eventKind, e.energy, e.thread ? `线索:${sanitizeLifeText(e.thread)}` : ''].filter(Boolean).join(' / ');
-      return `- ${t}${where}：${sanitizeLifeText(e.activity)}${mood}${tags ? `（${tags}）` : ''}`;
-    }).join('\n');
+      return `- ${t}${where}：${activity}${mood}${tags ? `（${tags}）` : ''}`;
+    }).filter(Boolean).join('\n');
+    if (!lines) return '';
     return `\n${recentLifeContextIntro(userName)}\n${lines}\n`;
   } catch (e) {
     console.warn('[AutonomousLife] buildRecentLifeContextBlock failed:', e);
@@ -878,9 +907,12 @@ export function buildAutonomousProactiveHint(args: {
   proactiveCallAllowed?: boolean;
 }): string {
   const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed } = args;
-  const where = event.location ? `（在${event.location}）` : '';
-  const mood = event.mood ? `，此刻的心情是「${event.mood}」` : '';
+  const location = event.location ? sanitizeLifeText(event.location) : '';
+  const moodText = event.mood ? sanitizeLifeText(event.mood) : '';
+  const where = location ? `（在${location}）` : '';
+  const mood = moodText ? `，此刻的心情是「${moodText}」` : '';
   const thread = event.thread ? sanitizeLifeText(event.thread) : '';
+  const activity = sanitizeLifeText(event.activity) || sanitizeLifeText(event.summary) || '刚刚经历了一件很小的日常插曲';
   const gapNote = timeSinceUser
     ? `${userName}已经 ${timeSinceUser} 没找你了，但你有你自己的生活，不必一直围着 ${userName} 转。`
     : '';
@@ -888,7 +920,7 @@ export function buildAutonomousProactiveHint(args: {
   return autonomousProactiveHint({
     userName,
     timeStr,
-    activity: event.activity,
+    activity,
     where,
     mood,
     gapNote,

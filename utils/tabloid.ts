@@ -3,6 +3,7 @@ import { DB } from './db';
 import { extractContent } from './safeApi';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { sanitizeLifeText } from './autonomousLife';
 
 /**
  * 回顾摘要（日回顾 / 周回顾 / 月回顾）。
@@ -92,7 +93,14 @@ const gatherDigest = async (char: CharacterProfile, user: UserProfile, from: num
 
     const events = (lifeEvents || [])
         .filter((e: any) => inRange(e.timestamp))
-        .map((e: any) => `· ${e.activity || e.summary || ''}${e.mood ? `（心情：${e.mood}）` : ''}${e.location ? ` @${e.location}` : ''}`)
+        .map((e: any) => {
+            const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
+            if (!activity) return '';
+            const mood = e.mood ? sanitizeLifeText(e.mood) : '';
+            const location = e.location ? sanitizeLifeText(e.location) : '';
+            return `· ${activity}${mood ? `（心情：${mood}）` : ''}${location ? ` @${location}` : ''}`;
+        })
+        .filter(Boolean)
         .slice(0, 30);
 
     const diaryLines = (diaries || [])

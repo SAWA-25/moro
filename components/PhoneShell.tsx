@@ -163,6 +163,7 @@ import IncomingCallOverlay from './os/IncomingCallOverlay';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
+import UserScreenWatchOverlay from './os/UserScreenWatchOverlay';
 import DesktopPetOverlay from './desktopPet/DesktopPetOverlay';
 import { setAppPayloadWarmer } from './os/appPreload';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
@@ -922,6 +923,8 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: 悬浮窗快捷菜单（可拖动悬浮球 → 常用 App 快捷入口；锁屏时隐藏，拼贴册可关） */}
           {theme.floatingQuickMenu !== false && !isLocked && <FloatingQuickMenu />}
+
+          <UserScreenWatchOverlay />
 
           <DesktopPetOverlay />
 

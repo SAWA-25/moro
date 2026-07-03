@@ -448,8 +448,9 @@ async function assembleNodes(
         afterNodes = (events || [])
             .filter(e => e.timestamp > firstMetTs)
             .map(e => {
-                const activity = sanitizeLifeText(e.activity) || e.activity || '';
-                const summary = sanitizeLifeText(e.summary || '') || e.summary || '';
+                const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
+                const summary = sanitizeLifeText(e.summary || '');
+                if (!activity && !summary) return null;
                 return {
                     id: e.id,
                     ts: e.timestamp,
@@ -462,7 +463,8 @@ async function assembleNodes(
                     tags: ['相遇之后', e.source === 'catchup' ? '离线生活' : '主动生活'].filter(Boolean),
                     source: 'lifeEvent' as const,
                 };
-            });
+            })
+            .filter((node): node is TrajectoryNode => !!node);
     } catch { /* 没有自主生活事件也没关系 */ }
 
     return [...beforeNodes, meeting, ...afterNodes].sort((a, b) => a.ts - b.ts);

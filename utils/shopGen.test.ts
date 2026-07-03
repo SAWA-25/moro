@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGeneratedItems, parseGeneratedReviews, registerShopItems, getShopItem } from './shop';
+import { parseGeneratedItems, parseGeneratedReviews, registerShopItems, getShopItem, sanitizeShopItemDraft, saveCustomShopItem, searchShopItems } from './shop';
 
 describe('parseGeneratedItems', () => {
     it('解析数组、补 id、校验分类/价格/emoji，去重', () => {
@@ -52,5 +52,61 @@ describe('parseGeneratedReviews', () => {
     });
     it('非 JSON 返回空', () => {
         expect(parseGeneratedReviews('nope')).toEqual([]);
+    });
+});
+
+describe('custom shop items', () => {
+    it('保存自定义商品后 getShopItem/searchShopItems 能解析', () => {
+        const item = saveCustomShopItem({
+            name: '自定义月光杯',
+            emoji: '🌙',
+            price: '19.9',
+            category: 'life',
+            blurb: '自己写上货架的小礼物',
+            image: 'https://example.com/cup.png',
+            rating: '4.6',
+        });
+        expect(item?.id.startsWith('custom_')).toBe(true);
+        expect(item?.custom).toBe(true);
+        expect(getShopItem(item!.id)?.name).toBe('自定义月光杯');
+        expect(searchShopItems('月光杯').some(x => x.id === item!.id)).toBe(true);
+    });
+
+    it('清洗非法字段，空名称拒绝保存', () => {
+        expect(sanitizeShopItemDraft({ name: ' ', price: 12 })).toBeNull();
+        const item = sanitizeShopItemDraft({
+            name: '  乱价商品  ',
+            emoji: '',
+            price: -8,
+            category: 'bad-cat',
+            blurb: '',
+            image: 'ftp://bad.example/a.png',
+            rating: 9,
+        });
+        expect(item?.name).toBe('乱价商品');
+        expect(item?.emoji).toBe('🎁');
+        expect(item?.price).toBe(0.1);
+        expect(item?.category).toBe('life');
+        expect(item?.image).toBeUndefined();
+        expect(item?.rating).toBe(5);
+    });
+
+    it('编辑已有商品保留 id 并覆盖价格、图片和评分', () => {
+        const base = saveCustomShopItem({ name: '旧款手账', emoji: '📓', price: 12, category: 'life', blurb: '旧描述' })!;
+        const edited = saveCustomShopItem({
+            id: base.id,
+            name: '新款手账',
+            emoji: '📔',
+            price: 18,
+            category: 'romance',
+            blurb: '新描述',
+            image: 'https://example.com/notebook.png',
+            rating: 4.8,
+        }, base)!;
+        expect(edited.id).toBe(base.id);
+        expect(getShopItem(base.id)?.name).toBe('新款手账');
+        expect(getShopItem(base.id)?.price).toBe(18);
+        expect(getShopItem(base.id)?.image).toBe('https://example.com/notebook.png');
+        expect(getShopItem(base.id)?.rating).toBe(4.8);
     });
 });

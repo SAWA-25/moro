@@ -29,6 +29,7 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -288,7 +289,7 @@ export function dishUnitPrice(
         if (opt) p += opt.priceDelta;
     }
     for (const a of addons || []) if (addonLabels.includes(a.label)) p += a.price;
-    return Math.max(1, Math.round(p));
+    return Math.max(0, Math.round(p));
 }
 
 /** 规格 + 加料合并成一句人话（「大份·微辣 / 加蛋·加肠」），存进订单项的 spec 字段。 */
@@ -310,6 +311,167 @@ export function formatSpecAddon(
 /** 购物车行 key：同一道菜不同规格/加料各占一行。 */
 export function cartLineKey(dishId: string, spec?: string, addons?: string[]): string {
     return [dishId, spec || '', (addons || []).slice().sort().join(',')].join('|');
+}
+
+// ── 自定义菜库 / 铺子（local-first，保存在当前浏览器）──────────────────
+const CUSTOM_DISHES_KEY = 'moro_takeout_custom_dishes_v1';
+const CUSTOM_STORES_KEY = 'moro_takeout_custom_stores_v1';
+
+const asText = (v: unknown, fallback = '', max = 80): string => {
+    const s = String(v ?? '').trim();
+    return (s || fallback).slice(0, max);
+};
+const asMoney = (v: unknown, fallback = 0, max = 9999): number => {
+    const n = Number(v);
+    return round2(clamp(Number.isFinite(n) ? n : fallback, 0, max));
+};
+const asIntRange = (v: unknown, fallback: number, min: number, max: number): number => {
+    const n = Number(v);
+    return Math.round(clamp(Number.isFinite(n) ? n : fallback, min, max));
+};
+const asNumRange = (v: unknown, fallback: number, min: number, max: number): number => {
+    const n = Number(v);
+    return round1(clamp(Number.isFinite(n) ? n : fallback, min, max));
+};
+
+function readArray<T>(key: string): T[] {
+    try {
+        const raw = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(raw) ? raw : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeArray<T>(key: string, value: T[]): void {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+export function sanitizeTakeoutDish(raw: Partial<TakeoutDish> | any, fallback?: Partial<TakeoutDish>): TakeoutDish | null {
+    const name = asText(raw?.name, fallback?.name || '', 24);
+    if (!name) return null;
+    const now = Date.now();
+    const specs: TakeoutDishSpec[] = Array.isArray(raw?.specs)
+        ? raw.specs.map((g: any) => {
+            const groupName = asText(g?.name, '', 12);
+            const options = Array.isArray(g?.options)
+                ? g.options.map((o: any) => ({
+                    label: asText(o?.label, '', 16),
+                    priceDelta: asMoney(o?.priceDelta, 0, 999),
+                })).filter((o: TakeoutDishSpec['options'][number]) => !!o.label)
+                : [];
+            return groupName && options.length ? { name: groupName, options } : null;
+        }).filter((g: TakeoutDishSpec | null): g is TakeoutDishSpec => !!g)
+        : [];
+    const addons: TakeoutDishAddon[] = Array.isArray(raw?.addons)
+        ? raw.addons.map((a: any) => ({
+            label: asText(a?.label, '', 16),
+            price: asMoney(a?.price, 0, 999),
+        })).filter((a: TakeoutDishAddon) => !!a.label)
+        : [];
+    return {
+        id: asText(raw?.id, fallback?.id || genId('dish'), 80),
+        name,
+        desc: asText(raw?.desc, '', 40) || undefined,
+        price: asMoney(raw?.price, fallback?.price ?? 0, 9999),
+        emoji: asText(raw?.emoji, fallback?.emoji || '🍽️', 4) || '🍽️',
+        popular: !!raw?.popular,
+        monthlySales: raw?.monthlySales === undefined || raw?.monthlySales === '' ? undefined : asIntRange(raw.monthlySales, fallback?.monthlySales || 0, 0, 99999),
+        specs: specs.length ? specs : undefined,
+        addons: addons.length ? addons : undefined,
+        userCustom: !!raw?.userCustom || !!fallback?.userCustom,
+        userEdited: !!raw?.userEdited || !!fallback?.userEdited,
+        libraryDishId: asText(raw?.libraryDishId, fallback?.libraryDishId || '', 80) || undefined,
+        updatedAt: asIntRange(raw?.updatedAt, fallback?.updatedAt || now, 0, now),
+    };
+}
+
+export function sanitizeTakeoutStore(raw: Partial<TakeoutStore> | any, fallback?: Partial<TakeoutStore>): TakeoutStore | null {
+    const name = asText(raw?.name, fallback?.name || '', 24);
+    if (!name) return null;
+    const categoryRaw = asText(raw?.category, fallback?.category || '中餐', 16);
+    const integrityRaw = Number(raw?.integrity);
+    const dishesRaw = Array.isArray(raw?.dishes) ? raw.dishes : (Array.isArray(fallback?.dishes) ? fallback?.dishes : []);
+    const dishes = (dishesRaw || []).map((d: any) => sanitizeTakeoutDish(d)).filter((d: TakeoutDish | null): d is TakeoutDish => !!d);
+    const now = Date.now();
+    return {
+        id: asText(raw?.id, fallback?.id || genId('store'), 80),
+        name,
+        emoji: asText(raw?.emoji, fallback?.emoji || '🍴', 4) || '🍴',
+        category: categoryRaw || '中餐',
+        rating: asNumRange(raw?.rating, fallback?.rating ?? 4.6, 1, 5),
+        monthlySales: asIntRange(raw?.monthlySales, fallback?.monthlySales ?? 0, 0, 999999),
+        deliveryMinutes: asIntRange(raw?.deliveryMinutes, fallback?.deliveryMinutes ?? 30, 1, 240),
+        deliveryFee: asMoney(raw?.deliveryFee, fallback?.deliveryFee ?? 0, 999),
+        minOrder: asMoney(raw?.minOrder, fallback?.minOrder ?? 0, 9999),
+        distanceKm: asNumRange(raw?.distanceKm, fallback?.distanceKm ?? 1, 0, 999),
+        promo: asText(raw?.promo, '', 24) || undefined,
+        dishes,
+        blurb: asText(raw?.blurb, '', 40) || undefined,
+        integrity: raw?.integrity === undefined || raw?.integrity === '' || !Number.isFinite(integrityRaw) ? fallback?.integrity : clamp01(integrityRaw),
+        warning: asText(raw?.warning, '', 40) || undefined,
+        aiGenerated: !!raw?.aiGenerated,
+        userCustom: !!raw?.userCustom || !!fallback?.userCustom,
+        userEdited: !!raw?.userEdited || !!fallback?.userEdited,
+        updatedAt: asIntRange(raw?.updatedAt, fallback?.updatedAt || now, 0, now),
+    };
+}
+
+export function getCustomDishes(): TakeoutDish[] {
+    return readArray<any>(CUSTOM_DISHES_KEY).map(d => sanitizeTakeoutDish(d)).filter((d): d is TakeoutDish => !!d);
+}
+
+export function saveCustomDish(input: Partial<TakeoutDish>): TakeoutDish | null {
+    const saved = sanitizeTakeoutDish({ ...input, userCustom: true, userEdited: true, updatedAt: Date.now() });
+    if (!saved) return null;
+    const next = [saved, ...getCustomDishes().filter(d => d.id !== saved.id && d.name !== saved.name)].slice(0, 200);
+    writeArray(CUSTOM_DISHES_KEY, next);
+    return saved;
+}
+
+export function deleteCustomDish(id: string): TakeoutDish[] {
+    const next = getCustomDishes().filter(d => d.id !== id);
+    writeArray(CUSTOM_DISHES_KEY, next);
+    return next;
+}
+
+export function getCustomStores(): TakeoutStore[] {
+    return readArray<any>(CUSTOM_STORES_KEY).map(s => sanitizeTakeoutStore(s)).filter((s): s is TakeoutStore => !!s);
+}
+
+export function saveCustomStore(input: Partial<TakeoutStore>): TakeoutStore | null {
+    const saved = sanitizeTakeoutStore({ ...input, userEdited: true, updatedAt: Date.now() });
+    if (!saved) return null;
+    const next = [saved, ...getCustomStores().filter(s => s.id !== saved.id)].slice(0, 100);
+    writeArray(CUSTOM_STORES_KEY, next);
+    return saved;
+}
+
+export function deleteCustomStore(id: string): TakeoutStore[] {
+    const next = getCustomStores().filter(s => s.id !== id);
+    writeArray(CUSTOM_STORES_KEY, next);
+    return next;
+}
+
+export function mergeCustomStores(stores: TakeoutStore[]): TakeoutStore[] {
+    const custom = getCustomStores();
+    if (!custom.length) return stores;
+    const customById = new Map(custom.map(s => [s.id, s]));
+    const merged = stores.map(s => customById.get(s.id) || s);
+    const ids = new Set(merged.map(s => s.id));
+    return [...custom.filter(s => !ids.has(s.id)), ...merged];
+}
+
+export function cloneDishForStore(dish: TakeoutDish): TakeoutDish {
+    const cloned = sanitizeTakeoutDish({
+        ...dish,
+        id: genId('dish'),
+        libraryDishId: dish.libraryDishId || dish.id,
+        userCustom: true,
+        userEdited: true,
+        updatedAt: Date.now(),
+    });
+    return cloned || { id: genId('dish'), name: '自定义菜', price: 0, emoji: '🍽️', userCustom: true, userEdited: true, updatedAt: Date.now() };
 }
 
 // ── 搜索：热门搜索 + 搜索历史（对标美团搜索页）──────────────────────

@@ -7,6 +7,7 @@ import type {
   Message,
   SocialPost,
 } from '../types';
+import { sanitizeLifeText } from './autonomousLife';
 
 export type ChatTimelineSource =
   | 'private'
@@ -166,13 +167,17 @@ export function buildChatTimelineItems(input: BuildChatTimelineInput): ChatTimel
   });
 
   (input.lifeEvents || []).forEach(event => {
+    const activity = sanitizeLifeText(event.activity) || sanitizeLifeText(event.summary || '');
+    if (!activity) return;
+    const mood = event.mood ? sanitizeLifeText(event.mood) : '';
+    const location = event.location ? sanitizeLifeText(event.location) : '';
     items.push({
       id: `life:${event.id}`,
       source: 'life',
       kind: event.eventKind || 'life',
       targetId: event.charId,
       title: `${charNameOf(chars, event.charId)} 此刻的生活`,
-      summary: clip([event.activity, event.mood, event.location].filter(Boolean).join(' · ') || event.summary),
+      summary: clip([activity, mood, location].filter(Boolean).join(' · ')),
       at: event.timestamp || 0,
       openTarget: { kind: 'char', id: event.charId },
       weight: event.surfacedAt ? 44 : 62,

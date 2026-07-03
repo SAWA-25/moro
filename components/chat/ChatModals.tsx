@@ -25,8 +25,6 @@ interface ChatModalsProps {
     setTransferPassword: (v: string) => void;
     /** 钱包余额（来自存钱罐营业所得），转账/红包从这里扣 */
     walletBalance?: number;
-    emojiImportText: string;
-    setEmojiImportText: (v: string) => void;
     settingsContextLimit: number;
     setSettingsContextLimit: (v: number) => void;
     preserveContext: boolean;
@@ -58,7 +56,6 @@ interface ChatModalsProps {
 
     // Handlers
     onTransfer: () => void;
-    onImportEmoji: () => void;
     onSaveSettings: () => void;
     onBgUpload: (file: File) => void;
     onRemoveBg: () => void;
@@ -143,7 +140,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     transferAmt, setTransferAmt,
     transferMode, setTransferMode, transferNote, setTransferNote, transferPassword, setTransferPassword,
     walletBalance = 0,
-    emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
     preserveContext, setPreserveContext,
     editContent, setEditContent,
@@ -152,7 +148,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     editingPrompt, setEditingPrompt, isSummarizing, archiveProgress,
     selectedMessage, selectedEmoji, selectedCategory, activeCharacter, messages,
     allHistoryMessages = [],
-    onTransfer, onImportEmoji, onSaveSettings,
+    onTransfer, onSaveSettings,
     onBgUpload, onRemoveBg, onClearHistory,
     onClearChatContextOnly,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
@@ -384,16 +380,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     className="text-base font-bold"
                     autoFocus
                 />
-            </Modal>
-
-            <Modal
-                isOpen={modalType === 'emoji-import'} title="导入表情" en="IMPORT" icon={<ScrapStamp><span className="text-[13px]">＋</span></ScrapStamp>} onClose={() => setModalType('none')}
-                footer={<ScrapBtn onClick={onImportEmoji}>导入到分组</ScrapBtn>}
-            >
-                <div className="space-y-3">
-                    <ScrapNote>表情会加入当前选中的分组。末尾能补一句描述（用来搜索，AI 选择表情时也看得到）。</ScrapNote>
-                    <ScrapTextarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL（每行一个）\n名字--URL--描述（描述可选）"} className="h-40" />
-                </div>
             </Modal>
 
             {/* 旧版聊天设置弹窗已由全屏 ConvoSettingsPanel（apps/Chat.tsx 渲染）取代；

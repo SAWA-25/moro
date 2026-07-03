@@ -150,4 +150,28 @@ describe('manual guide data', () => {
     expect(dashboard?.settingSections?.[0].settings.map(setting => setting.id)).toContain('chat-dashboard-followups');
     expect(MANUAL_DESTINATIONS['絮语·总览']?.deepLink?.route).toBe('dashboard');
   });
+
+  it('documents private chat user screen watch boundaries', () => {
+    const tools = MANUAL_ENTRIES.find(entry => entry.app === '絮语·单聊工具');
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-03-chat-user-screen-watch');
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      tools?.summary,
+      ...(tools?.features || []),
+      ...(tools?.settingSections || []).flatMap(section => section.settings.flatMap(setting => [
+        setting.title,
+        setting.description,
+        ...(setting.options || []).map(option => `${option.label}${option.description}`),
+      ])),
+      ...(MANUAL_DESTINATIONS['絮语·单聊工具']?.details || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(text).toContain('观屏评论');
+    expect(text).toContain('主动共享');
+    expect(text).toContain('Moro 内部');
+    expect(text).toContain('不会读取真实系统后台 App 列表');
+    expect(text).toContain('不会创建 Android 全局悬浮窗');
+  });
 });

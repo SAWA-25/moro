@@ -12,6 +12,7 @@ import ScreenPeekCardView from './ScreenPeekCardView';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
 import { stickerImageSrc } from '../../utils/stickerImage';
+import { formatMoroUsage } from '../../utils/userScreenWatch';
 
 /** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
 const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
@@ -118,6 +119,61 @@ const TakeoutCardView: React.FC<{
                 </div>
             </div>
         </div>
+    );
+};
+
+const UserScreenWatchSummaryCardView: React.FC<{
+    m: Message;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+}> = ({ m, commonLayout }) => {
+    const card: any = (() => {
+        if (m.metadata?.userScreenWatchSummary && typeof m.metadata.userScreenWatchSummary === 'object') return m.metadata.userScreenWatchSummary;
+        try { return JSON.parse(m.content); } catch { return null; }
+    })();
+    const summary = card?.summary || m.content || '观屏评论已结束。';
+    const comments: string[] = Array.isArray(card?.latestComments) ? card.latestComments.filter(Boolean).slice(-3) : [];
+    const usageLine = formatMoroUsage(card?.usage || [], 3);
+    const endedAt = Number(card?.endedAt || m.timestamp || Date.now());
+
+    return commonLayout(
+        <div className="w-[min(82vw,320px)] overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
+            <div className="flex items-center justify-between bg-emerald-50 px-4 py-3">
+                <div>
+                    <div className="text-[13px] font-black text-emerald-800">观屏评论总结</div>
+                    <div className="mt-0.5 text-[10px] text-emerald-600">{new Date(endedAt).toLocaleString('zh-CN', { hour12: false })}</div>
+                </div>
+                <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-emerald-700 shadow-sm">
+                    已停止
+                </div>
+            </div>
+            <div className="space-y-3 px-4 py-3.5">
+                <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">{summary}</div>
+                <div className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <div className="text-[10px] font-black text-slate-400">Moro 内部停留</div>
+                    <div className="mt-1 text-[12px] text-slate-700">{usageLine}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                    <div className="rounded-2xl bg-emerald-50 px-2 py-2">
+                        <div className="text-[15px] font-black text-emerald-700">{Number(card?.frameCount || 0)}</div>
+                        <div className="text-[10px] text-emerald-600">缩略帧</div>
+                    </div>
+                    <div className="rounded-2xl bg-emerald-50 px-2 py-2">
+                        <div className="text-[15px] font-black text-emerald-700">{Number(card?.commentCount || 0)}</div>
+                        <div className="text-[10px] text-emerald-600">短评</div>
+                    </div>
+                </div>
+                {comments.length > 0 && (
+                    <div className="space-y-1">
+                        <div className="text-[10px] font-black text-slate-400">最近短评</div>
+                        {comments.map((comment, index) => (
+                            <div key={`${index}-${comment}`} className="rounded-2xl bg-slate-50 px-3 py-2 text-[12px] leading-snug text-slate-700">
+                                {comment}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>,
     );
 };
 
@@ -1128,6 +1184,9 @@ const MessageItem = React.memo(({
         if (m.type === 'screen_peek_card') {
             return <ScreenPeekCardView m={m} commonLayout={systemCardLayout} />;
         }
+        if (m.type === 'screen_watch_card') {
+            return <UserScreenWatchSummaryCardView m={m} commonLayout={systemCardLayout} />;
+        }
 
         const isCallSummary = m.metadata?.source === 'call-end-popup';
 
@@ -1628,6 +1687,9 @@ const MessageItem = React.memo(({
 
     if (m.type === 'screen_peek_card') {
         return <ScreenPeekCardView m={m} commonLayout={systemCardLayout} />;
+    }
+    if (m.type === 'screen_watch_card') {
+        return <UserScreenWatchSummaryCardView m={m} commonLayout={systemCardLayout} />;
     }
 
     // [New] Social Card Rendering

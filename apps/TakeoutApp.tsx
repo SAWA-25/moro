@@ -25,6 +25,9 @@ import {
     deliveryTimeSlots, type DeliverySlot,
     TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
     recommendAddOnDishes, takeoutHistoryStats,
+    getCustomDishes, saveCustomDish, deleteCustomDish,
+    getCustomStores, saveCustomStore, mergeCustomStores, cloneDishForStore,
+    sanitizeTakeoutDish, sanitizeTakeoutStore,
 } from '../utils/takeout';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
@@ -78,6 +81,18 @@ interface CartLine {
 interface AddressDraft {
     id?: string; label: string; tag: string; receiverName: string; contactHint: string;
     city: string; addressLine: string; doorplate: string; deliveryNote: string; isDefault: boolean;
+}
+interface DishDraftOption { label: string; priceDelta: string; }
+interface DishDraftSpec { name: string; options: DishDraftOption[]; }
+interface DishDraft {
+    id?: string; libraryDishId?: string; name: string; emoji: string; desc: string; price: string;
+    popular: boolean; monthlySales: string; specs: DishDraftSpec[]; addons: { label: string; price: string }[];
+    saveToLibrary: boolean;
+}
+interface StoreDraft {
+    id: string; name: string; emoji: string; category: string; rating: string; monthlySales: string;
+    deliveryMinutes: string; deliveryFee: string; minOrder: string; distanceKm: string;
+    promo: string; blurb: string; warning: string; integrity: string;
 }
 
 const paperInput: React.CSSProperties = {
@@ -181,9 +196,9 @@ const TakeoutApp: React.FC = () => {
     const [stores, setStores] = useState<TakeoutStore[]>(() => {
         try {
             const cached = JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null');
-            if (Array.isArray(cached) && cached.length) return cached;
+            if (Array.isArray(cached) && cached.length) return mergeCustomStores(cached);
         } catch { /* ignore */ }
-        return generateStores(20);
+        return mergeCustomStores(generateStores(20));
     });
     const [aiLoading, setAiLoading] = useState(false);
     const [cat, setCat] = useState('全部');
@@ -196,6 +211,11 @@ const TakeoutApp: React.FC = () => {
     const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
     const [pinned, setPinned] = useState<string[]>(() => getPinnedStores());
+    const [customDishes, setCustomDishes] = useState<TakeoutDish[]>(() => getCustomDishes());
+    const [customStores, setCustomStores] = useState<TakeoutStore[]>(() => getCustomStores());
+    const [dishDraft, setDishDraft] = useState<DishDraft | null>(null);
+    const [dishLibraryOpen, setDishLibraryOpen] = useState(false);
+    const [storeDraft, setStoreDraft] = useState<StoreDraft | null>(null);
 
     // 搜索：聚焦时弹历史 + 热门搜索
     const [searchFocused, setSearchFocused] = useState(false);
@@ -284,13 +304,21 @@ const TakeoutApp: React.FC = () => {
         setAddressCardId(next?.id || '');
     }, [characters, addressOwnerType, addressOwnerId]);
 
+    const writeStores = (next: TakeoutStore[]) => {
+        setStores(next);
+        try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    };
+    const refreshCustomMenus = () => {
+        setCustomDishes(getCustomDishes());
+        setCustomStores(getCustomStores());
+    };
+
     const loadStoresAI = async (q?: string) => {
         if (!aiReady || aiLoading) return;
         setAiLoading(true);
         try {
-            const next = await generateStoresAI(api, 20, q); // 每批至少 20 家，实时生成（q 时紧扣搜索词）
-            setStores(next);
-            try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            const next = mergeCustomStores(await generateStoresAI(api, 20, q)); // 每批至少 20 家，实时生成（q 时紧扣搜索词）
+            writeStores(next);
             addToast(q ? `为「${q}」现搜到 ${next.length} 家` : `现写了 ${next.length} 家店`, 'success');
         } catch {
             // 失败明确提示并保留现有列表（不静默回退离线种子冒充成功）
@@ -353,7 +381,7 @@ const TakeoutApp: React.FC = () => {
     // ── 操作 ──
     const refresh = () => {
         if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
-        else { const s = generateStores(20); setStores(s); try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(s)); } catch { /* ignore */ } addToast('翻到另一条街啦～', 'info'); }
+        else { const s = mergeCustomStores(generateStores(20)); writeStores(s); addToast('翻到另一条街啦～', 'info'); }
     };
     const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setStoreTab('menu'); setView('store'); };
 
@@ -388,6 +416,158 @@ const TakeoutApp: React.FC = () => {
         const { spec, addons } = formatSpecAddon(skuDish.specs, skuSpec, skuAddons);
         addLine({ key: cartLineKey(skuDish.id, spec, addons), dishId: skuDish.id, name: skuDish.name, emoji: skuDish.emoji, basePrice: skuDish.price, unitPrice: skuUnitPrice, spec, addons }, skuQty);
         setSkuDish(null);
+    };
+
+    const upsertActiveStore = (store: TakeoutStore) => {
+        const saved = saveCustomStore({ ...store, userEdited: true }) || store;
+        const base = stores.some(s => s.id === saved.id) ? stores.map(s => s.id === saved.id ? saved : s) : [saved, ...stores];
+        const next = mergeCustomStores(base);
+        writeStores(next);
+        setActiveStore(saved);
+        refreshCustomMenus();
+        return saved;
+    };
+
+    const storeToDraft = (s: TakeoutStore): StoreDraft => ({
+        id: s.id,
+        name: s.name,
+        emoji: s.emoji || '🍴',
+        category: s.category || '中餐',
+        rating: String(s.rating ?? 4.6),
+        monthlySales: String(s.monthlySales ?? 0),
+        deliveryMinutes: String(s.deliveryMinutes ?? 30),
+        deliveryFee: String(s.deliveryFee ?? 0),
+        minOrder: String(s.minOrder ?? 0),
+        distanceKm: String(s.distanceKm ?? 1),
+        promo: s.promo || '',
+        blurb: s.blurb || '',
+        warning: s.warning || '',
+        integrity: s.integrity === undefined ? '' : String(s.integrity),
+    });
+    const openStoreEditor = () => { if (activeStore) setStoreDraft(storeToDraft(activeStore)); };
+    const patchStoreDraft = (patch: Partial<StoreDraft>) => setStoreDraft(prev => prev ? { ...prev, ...patch } : prev);
+    const saveStoreDraft = () => {
+        if (!activeStore || !storeDraft) return;
+        const clean = sanitizeTakeoutStore({
+            ...activeStore,
+            ...storeDraft,
+            dishes: activeStore.dishes,
+            userEdited: true,
+        });
+        if (!clean) { addToast('铺子名不能为空', 'error'); return; }
+        upsertActiveStore(clean);
+        setStoreDraft(null);
+        addToast('铺子资料贴好啦', 'success');
+    };
+
+    const dishToDraft = (d?: TakeoutDish): DishDraft => ({
+        id: d?.id,
+        libraryDishId: d?.libraryDishId,
+        name: d?.name || '自定义菜',
+        emoji: d?.emoji || '🍽️',
+        desc: d?.desc || '',
+        price: String(d?.price ?? 0),
+        popular: !!d?.popular,
+        monthlySales: d?.monthlySales === undefined ? '' : String(d.monthlySales),
+        specs: (d?.specs || []).map(g => ({
+            name: g.name,
+            options: g.options.map(o => ({ label: o.label, priceDelta: String(o.priceDelta ?? 0) })),
+        })),
+        addons: (d?.addons || []).map(a => ({ label: a.label, price: String(a.price ?? 0) })),
+        saveToLibrary: true,
+    });
+    const openDishEditor = (d?: TakeoutDish) => setDishDraft(dishToDraft(d));
+    const patchDishDraft = (patch: Partial<DishDraft>) => setDishDraft(prev => prev ? { ...prev, ...patch } : prev);
+    const patchSpec = (idx: number, patch: Partial<DishDraftSpec>) => setDishDraft(prev => prev ? { ...prev, specs: prev.specs.map((g, i) => i === idx ? { ...g, ...patch } : g) } : prev);
+    const patchSpecOption = (gi: number, oi: number, patch: Partial<DishDraftOption>) => setDishDraft(prev => prev ? {
+        ...prev,
+        specs: prev.specs.map((g, i) => i === gi ? { ...g, options: g.options.map((o, j) => j === oi ? { ...o, ...patch } : o) } : g),
+    } : prev);
+    const patchAddon = (idx: number, patch: Partial<{ label: string; price: string }>) => setDishDraft(prev => prev ? { ...prev, addons: prev.addons.map((a, i) => i === idx ? { ...a, ...patch } : a) } : prev);
+
+    const syncCartDish = (dish: TakeoutDish) => setCart(prev => {
+        const next: Record<string, CartLine> = {};
+        const put = (line: CartLine) => {
+            const old = next[line.key];
+            next[line.key] = old ? { ...line, qty: old.qty + line.qty } : line;
+        };
+        Object.values(prev).forEach(line => {
+            if (line.dishId !== dish.id) { put(line); return; }
+            const specLabels = (line.spec || '').split('·').filter(Boolean);
+            const specChoice: Record<string, string> = {};
+            const keptSpec: string[] = [];
+            (dish.specs || []).forEach(g => {
+                const found = g.options.find(o => specLabels.includes(o.label));
+                if (found) { specChoice[g.name] = found.label; keptSpec.push(found.label); }
+                else if (g.options[0]) specChoice[g.name] = g.options[0].label;
+            });
+            const validAddons = (line.addons || []).filter(label => (dish.addons || []).some(a => a.label === label));
+            const spec = keptSpec.length ? keptSpec.join('·') : undefined;
+            const key = cartLineKey(dish.id, spec, validAddons);
+            put({
+                ...line,
+                key,
+                name: dish.name,
+                emoji: dish.emoji,
+                basePrice: dish.price,
+                unitPrice: dishUnitPrice(dish.price, dish.specs, specChoice, dish.addons, validAddons),
+                spec,
+                addons: validAddons.length ? validAddons : undefined,
+            });
+        });
+        return next;
+    });
+
+    const removeCartDish = (dishId: string) => setCart(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(k => { if (next[k]?.dishId === dishId) delete next[k]; });
+        return next;
+    });
+
+    const saveDishDraft = () => {
+        if (!activeStore || !dishDraft) return;
+        const exists = !!(dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id));
+        const clean = sanitizeTakeoutDish({
+            id: dishDraft.id || genId('dish'),
+            libraryDishId: dishDraft.libraryDishId,
+            name: dishDraft.name,
+            emoji: dishDraft.emoji,
+            desc: dishDraft.desc,
+            price: dishDraft.price,
+            popular: dishDraft.popular,
+            monthlySales: dishDraft.monthlySales,
+            specs: dishDraft.specs,
+            addons: dishDraft.addons,
+            userCustom: !exists || !!dishDraft.libraryDishId,
+            userEdited: true,
+        });
+        if (!clean) { addToast('菜名不能为空', 'error'); return; }
+        const nextDishes = exists ? activeStore.dishes.map(d => d.id === clean.id ? clean : d) : [clean, ...activeStore.dishes];
+        upsertActiveStore({ ...activeStore, dishes: nextDishes, userEdited: true });
+        syncCartDish(clean);
+        if (dishDraft.saveToLibrary) {
+            saveCustomDish({ ...clean, id: clean.libraryDishId || clean.id, libraryDishId: undefined });
+            refreshCustomMenus();
+        }
+        setDishDraft(null);
+        addToast(exists ? '菜牌改好啦' : '新菜贴到菜牌上啦', 'success');
+    };
+
+    const removeDishFromStore = (dish: TakeoutDish) => {
+        if (!activeStore) return;
+        if (!window.confirm(`从菜牌移除「${dish.name}」？饭篮里的同款也会拿掉。`)) return;
+        const nextDishes = activeStore.dishes.filter(d => d.id !== dish.id);
+        upsertActiveStore({ ...activeStore, dishes: nextDishes, userEdited: true });
+        removeCartDish(dish.id);
+        setDishDraft(null);
+        addToast('这道菜从菜牌上揭下来了', 'info');
+    };
+
+    const addLibraryDishToStore = (dish: TakeoutDish) => {
+        if (!activeStore) return;
+        const cloned = cloneDishForStore(dish);
+        upsertActiveStore({ ...activeStore, dishes: [cloned, ...activeStore.dishes], userEdited: true });
+        addToast(`「${dish.name}」贴进这家菜牌了`, 'success');
     };
 
     // 抽张饭票：命运替你翻一家进去
@@ -956,6 +1136,21 @@ const TakeoutApp: React.FC = () => {
                     </div>
                 )}
 
+                {customStores.length > 0 && (
+                    <div className="relative z-10 px-5 pt-3">
+                        <div className="text-[8.5px] tracking-[0.3em] mb-1.5 flex items-center gap-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}><Storefront size={10} weight="fill" />我的铺子 · MY SHOPS</div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                            {customStores.slice(0, 8).map(s => (
+                                <button key={s.id} onClick={() => openStore(s)} className="shrink-0 w-[116px] text-left px-2.5 py-2 rounded-[9px] active:scale-[0.97] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                    <div className="text-[12px] font-black truncate" style={{ color: INK }}><Emo e={s.emoji} size={14} /> {s.name}</div>
+                                    <div className="text-[9.5px] truncate mt-0.5" style={{ color: INK_SOFT }}>{s.category} · {s.dishes.length} 道菜</div>
+                                    <div className="text-[10px] font-bold mt-1" style={{ color: '#d2452f' }}>{s.userCustom ? '我的铺子' : '改过菜牌'}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* 品类纸标签 */}
                 <div className="relative z-10 shrink-0 flex gap-2 overflow-x-auto no-scrollbar px-5 pt-3 pb-1">
                     {CATS.map(c => (
@@ -1001,6 +1196,7 @@ const TakeoutApp: React.FC = () => {
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[15px] font-black truncate" style={{ color: INK }}>{s.name}</span>
                                                 {s.aiGenerated && <WashiTape color="ink" rotate={-4} className="px-1 py-px text-[7px] tracking-[0.2em] rounded-[2px]" style={{ fontFamily: 'var(--font-label)' }}>现写</WashiTape>}
+                                                {(s.userCustom || s.userEdited) && <WashiTape color="sage" rotate={3} className="px-1 py-px text-[7px] tracking-[0.2em] rounded-[2px]" style={{ fontFamily: 'var(--font-label)' }}>{s.userCustom ? '我的' : '改过'}</WashiTape>}
                                             </div>
                                             <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: '#6b665c' }}>
                                                 <span className="flex items-center gap-0.5"><Stars n={s.rating} size={10} /><b style={{ color: INK }}>{s.rating}</b></span>
@@ -1062,9 +1258,14 @@ const TakeoutApp: React.FC = () => {
             <PaperShell key="store">
                 <ScrapHeader
                     title={activeStore.name} en="THE SHOP" onBack={() => setView('home')} backLabel="回街上"
-                    right={<button onClick={() => togglePin(activeStore.name)} className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: isPinned ? PAPER : '#36322b', background: isPinned ? INK : 'transparent', borderRadius: 6, border: isPinned ? 'none' : '1px dashed rgba(150,144,132,0.7)' }} title="钉住常去">
-                        <PushPin size={13} weight={isPinned ? 'fill' : 'bold'} />{isPinned ? '已钉' : '钉住'}
-                    </button>}
+                    right={<div className="flex items-center gap-1.5">
+                        <button onClick={openStoreEditor} className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b', background: 'transparent', borderRadius: 6, border: '1px dashed rgba(150,144,132,0.7)' }} title="编辑铺子">
+                            <NotePencil size={13} weight="bold" />改铺子
+                        </button>
+                        <button onClick={() => togglePin(activeStore.name)} className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: isPinned ? PAPER : '#36322b', background: isPinned ? INK : 'transparent', borderRadius: 6, border: isPinned ? 'none' : '1px dashed rgba(150,144,132,0.7)' }} title="钉住常去">
+                            <PushPin size={13} weight={isPinned ? 'fill' : 'bold'} />{isPinned ? '已钉' : '钉住'}
+                        </button>
+                    </div>}
                 />
                 <div className="relative z-10 px-5">
                     <PaperCard tilt={-0.5} className="px-4 py-3.5 flex items-center gap-3 overflow-hidden">
@@ -1098,7 +1299,17 @@ const TakeoutApp: React.FC = () => {
                 <ScrapScroll className="px-5 pt-3 pb-28">
                     {storeTab === 'menu' && (
                         <>
-                            <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                                <SectionTag en="THE MENU">菜牌</SectionTag>
+                                <div className="flex items-center gap-1.5">
+                                    <button onClick={() => openDishEditor()} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[7px] text-[11px] font-black active:scale-95 transition-transform" style={{ background: INK, color: PAPER }}>
+                                        <Plus size={12} weight="bold" />添菜
+                                    </button>
+                                    <button onClick={() => { refreshCustomMenus(); setDishLibraryOpen(true); }} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[7px] text-[11px] font-black active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.7)' }}>
+                                        <ShoppingBag size={12} weight="bold" />菜库
+                                    </button>
+                                </div>
+                            </div>
                             {addOnSuggestions.length > 0 && (
                                 <PaperCard tilt={-0.2} className="px-3 py-2.5 mb-3">
                                     <div className="flex items-center justify-between mb-2">
@@ -1141,6 +1352,10 @@ const TakeoutApp: React.FC = () => {
                                                         <div className="flex-1 min-w-0">
                                                             <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
                                                                 {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
+                                                                {(d.userCustom || d.userEdited) && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: '#efeae0', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.55)' }}>{d.userCustom ? '自定' : '改'}</span>}
+                                                                <button onClick={(e) => { e.stopPropagation(); openDishEditor(d); }} className="w-5 h-5 rounded-full inline-flex items-center justify-center active:scale-90 shrink-0" style={{ border: '1px dashed rgba(150,144,132,0.7)', color: INK_SOFT }} title="编辑菜品">
+                                                                    <NotePencil size={11} weight="bold" />
+                                                                </button>
                                                             </div>
                                                             {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
                                                             <div className="text-[9.5px] mt-0.5" style={{ color: INK_SOFT }}>{d.monthlySales ? `月售 ${d.monthlySales}` : ''}{hasOpts ? ' · 可选规格' : ''}</div>
@@ -1253,6 +1468,137 @@ const TakeoutApp: React.FC = () => {
                         </ScrapButton>
                     </div>
                 </div>
+
+                {/* 编辑铺子资料 */}
+                <PaperSheet open={!!storeDraft} onClose={() => setStoreDraft(null)} title="改这家铺子" tape="sage">
+                    {storeDraft && (
+                        <div className="space-y-3 max-h-[68vh] overflow-y-auto no-scrollbar pr-1">
+                            <div className="grid grid-cols-[72px_1fr] gap-2">
+                                <input value={storeDraft.emoji} onChange={e => patchStoreDraft({ emoji: e.target.value })} placeholder="🍴" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none text-center" style={paperInput} />
+                                <input value={storeDraft.name} onChange={e => patchStoreDraft({ name: e.target.value })} placeholder="铺子名" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            </div>
+                            <input value={storeDraft.category} onChange={e => patchStoreDraft({ category: e.target.value })} placeholder="品类，如 中餐 / 奶茶饮品 / 我的私房菜" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <div className="grid grid-cols-2 gap-2">
+                                <input value={storeDraft.rating} onChange={e => patchStoreDraft({ rating: e.target.value })} placeholder="评分 1-5" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={storeDraft.monthlySales} onChange={e => patchStoreDraft({ monthlySales: e.target.value })} placeholder="月售" type="number" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={storeDraft.deliveryMinutes} onChange={e => patchStoreDraft({ deliveryMinutes: e.target.value })} placeholder="送达分钟" type="number" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={storeDraft.distanceKm} onChange={e => patchStoreDraft({ distanceKm: e.target.value })} placeholder="距离 km" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={storeDraft.deliveryFee} onChange={e => patchStoreDraft({ deliveryFee: e.target.value })} placeholder="跑腿费" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={storeDraft.minOrder} onChange={e => patchStoreDraft({ minOrder: e.target.value })} placeholder="起送价" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            </div>
+                            <input value={storeDraft.promo} onChange={e => patchStoreDraft({ promo: e.target.value })} placeholder="优惠，如 满30减5" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <input value={storeDraft.blurb} onChange={e => patchStoreDraft({ blurb: e.target.value })} placeholder="店铺公告 / 招牌一句话" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <input value={storeDraft.warning} onChange={e => patchStoreDraft({ warning: e.target.value })} placeholder="街坊提醒（可空）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <input value={storeDraft.integrity} onChange={e => patchStoreDraft({ integrity: e.target.value })} placeholder="靠谱程度 0-1（可空）" type="number" step="0.01" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <div className="text-[10.5px]" style={{ color: INK_SOFT }}>这些都是 Moro 内虚拟资料，只影响饭票演出和后续订单快照。</div>
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                                <ScrapButton variant="ghost" onClick={() => setStoreDraft(null)} className="px-4 py-2 text-[12px]">取消</ScrapButton>
+                                <ScrapButton variant="ink" onClick={saveStoreDraft} className="px-5 py-2.5 text-[13px]" icon={<SealCheck size={14} weight="fill" />}>保存铺子</ScrapButton>
+                            </div>
+                        </div>
+                    )}
+                </PaperSheet>
+
+                {/* 编辑 / 新增菜品 */}
+                <PaperSheet open={!!dishDraft} onClose={() => setDishDraft(null)} title={dishDraft?.id ? '改这道菜' : '添自定义菜'} tape="butter">
+                    {dishDraft && (
+                        <div className="space-y-3 max-h-[70vh] overflow-y-auto no-scrollbar pr-1">
+                            <div className="grid grid-cols-[72px_1fr] gap-2">
+                                <input value={dishDraft.emoji} onChange={e => patchDishDraft({ emoji: e.target.value })} placeholder="🍽️" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none text-center" style={paperInput} />
+                                <input value={dishDraft.name} onChange={e => patchDishDraft({ name: e.target.value })} placeholder="菜名" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <input value={dishDraft.price} onChange={e => patchDishDraft({ price: e.target.value })} placeholder="基础价，可填 0" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                                <input value={dishDraft.monthlySales} onChange={e => patchDishDraft({ monthlySales: e.target.value })} placeholder="月售（可空）" type="number" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            </div>
+                            <input value={dishDraft.desc} onChange={e => patchDishDraft({ desc: e.target.value })} placeholder="描述 / 卖点（可空）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                            <div className="flex flex-wrap gap-2">
+                                <ChoiceChip on={dishDraft.popular} onClick={() => patchDishDraft({ popular: !dishDraft.popular })}>镇店招牌</ChoiceChip>
+                                <ChoiceChip on={dishDraft.saveToLibrary} onClick={() => patchDishDraft({ saveToLibrary: !dishDraft.saveToLibrary })}>保存进我的菜库</ChoiceChip>
+                            </div>
+
+                            <DashedRule className="my-2" />
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTag en="SPECS">规格</SectionTag>
+                                    <button onClick={() => patchDishDraft({ specs: [...dishDraft.specs, { name: '规格', options: [{ label: '默认', priceDelta: '0' }] }] })} className="text-[11px] font-black px-2 py-1 rounded-[6px] active:scale-95" style={{ background: INK, color: PAPER }}>＋规格组</button>
+                                </div>
+                                <div className="space-y-2">
+                                    {dishDraft.specs.map((g, gi) => (
+                                        <div key={gi} className="rounded-[10px] px-2.5 py-2" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                            <div className="flex gap-2 mb-2">
+                                                <input value={g.name} onChange={e => patchSpec(gi, { name: e.target.value })} placeholder="规格名，如 辣度" className="flex-1 min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                                <button onClick={() => patchDishDraft({ specs: dishDraft.specs.filter((_, i) => i !== gi) })} className="active:scale-90" title="删规格组"><Trash size={15} color={INK_SOFT} /></button>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {g.options.map((o, oi) => (
+                                                    <div key={oi} className="grid grid-cols-[1fr_86px_24px] gap-1.5 items-center">
+                                                        <input value={o.label} onChange={e => patchSpecOption(gi, oi, { label: e.target.value })} placeholder="选项名" className="min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                                        <input value={o.priceDelta} onChange={e => patchSpecOption(gi, oi, { priceDelta: e.target.value })} placeholder="加价" type="number" step="0.1" className="rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                                        <button onClick={() => patchSpec(gi, { options: g.options.filter((_, i) => i !== oi) })} className="active:scale-90" title="删选项"><Trash size={14} color={INK_SOFT} /></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button onClick={() => patchSpec(gi, { options: [...g.options, { label: '新选项', priceDelta: '0' }] })} className="mt-2 text-[10.5px] font-bold px-2 py-1 rounded-[6px] active:scale-95" style={{ color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.7)' }}>＋加选项</button>
+                                        </div>
+                                    ))}
+                                    {dishDraft.specs.length === 0 && <div className="text-[11.5px] px-2 py-2 rounded-[8px]" style={{ color: INK_SOFT, background: '#efeae0' }}>不设规格时，点菜会直接按基础价加入饭篮。</div>}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTag en="ADDONS">加料</SectionTag>
+                                    <button onClick={() => patchDishDraft({ addons: [...dishDraft.addons, { label: '加料', price: '0' }] })} className="text-[11px] font-black px-2 py-1 rounded-[6px] active:scale-95" style={{ background: INK, color: PAPER }}>＋加料</button>
+                                </div>
+                                <div className="space-y-1.5">
+                                    {dishDraft.addons.map((a, i) => (
+                                        <div key={i} className="grid grid-cols-[1fr_86px_24px] gap-1.5 items-center">
+                                            <input value={a.label} onChange={e => patchAddon(i, { label: e.target.value })} placeholder="加料名" className="min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                            <input value={a.price} onChange={e => patchAddon(i, { price: e.target.value })} placeholder="价格" type="number" step="0.1" className="rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                            <button onClick={() => patchDishDraft({ addons: dishDraft.addons.filter((_, x) => x !== i) })} className="active:scale-90" title="删加料"><Trash size={14} color={INK_SOFT} /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="text-[10.5px]" style={{ color: INK_SOFT }}>价格和加价可填 0，但不能为负数；下单后的小票会固定当时价格。</div>
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                                {dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id) ? <button onClick={() => {
+                                    const target = activeStore.dishes.find(d => d.id === dishDraft.id);
+                                    if (target) removeDishFromStore(target);
+                                }} className="inline-flex items-center gap-1 text-[11px] font-bold active:scale-95" style={{ color: '#d2452f' }}><Trash size={12} />从菜牌移除</button> : <span />}
+                                <div className="flex items-center gap-2">
+                                    <ScrapButton variant="ghost" onClick={() => setDishDraft(null)} className="px-4 py-2 text-[12px]">取消</ScrapButton>
+                                    <ScrapButton variant="ink" onClick={saveDishDraft} className="px-5 py-2.5 text-[13px]" icon={<SealCheck size={14} weight="fill" />}>保存菜品</ScrapButton>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </PaperSheet>
+
+                {/* 我的菜库 */}
+                <PaperSheet open={dishLibraryOpen} onClose={() => setDishLibraryOpen(false)} title="我的菜库" tape="amber">
+                    <div className="space-y-2.5 max-h-[58vh] overflow-y-auto no-scrollbar pr-1">
+                        {customDishes.map(d => (
+                            <div key={d.id} className="flex gap-2.5 items-center px-2.5 py-2 rounded-[10px]" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                <Emo e={d.emoji} size={20} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[12.5px] font-bold truncate" style={{ color: INK }}>{d.name}</div>
+                                    <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>
+                                        ¥{d.price}{d.specs?.length ? ` · ${d.specs.length} 组规格` : ''}{d.addons?.length ? ` · ${d.addons.length} 个加料` : ''}
+                                    </div>
+                                </div>
+                                <button onClick={() => addLibraryDishToStore(d)} className="text-[11px] font-black px-2.5 py-1.5 rounded-[7px] active:scale-95" style={{ background: INK, color: PAPER }}>贴进菜牌</button>
+                                <button onClick={() => { setCustomDishes(deleteCustomDish(d.id)); }} className="active:scale-90" title="从菜库删除"><Trash size={15} color={INK_SOFT} /></button>
+                            </div>
+                        ))}
+                        {customDishes.length === 0 && <div className="text-center text-[12px] py-8" style={{ color: INK_SOFT }}>菜库还空着，先添一道自定义菜。</div>}
+                    </div>
+                    <div className="flex justify-end mt-3">
+                        <ScrapButton variant="ink" onClick={() => { setDishLibraryOpen(false); openDishEditor(); }} className="px-5 py-2.5 text-[13px]" icon={<Plus size={14} weight="bold" />}>添自定义菜</ScrapButton>
+                    </div>
+                </PaperSheet>
 
                 {/* 选规格 / 加料弹层 */}
                 <PaperSheet open={!!skuDish} onClose={() => setSkuDish(null)} title={skuDish ? `${skuDish.emoji || '🍽️'} ${skuDish.name}` : ''} tape="ink">

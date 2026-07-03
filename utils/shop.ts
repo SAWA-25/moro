@@ -103,9 +103,73 @@ export const registerShopItems = (items: ShopItem[]): void => {
     persistDynamicItems();
 };
 
-/** 先查内置兜底目录，再查动态注册表（AI 生成商品）。 */
-export const getShopItem = (id: string): ShopItem | undefined =>
-    SHOP_ITEMS.find(i => i.id === id) || loadDynamicItems().get(id);
+/** 列出用户手动新增/编辑过的本地商品。 */
+export const getCustomShopItems = (): ShopItem[] =>
+    Array.from(loadDynamicItems().values()).filter(it => !!it.custom);
+
+export interface ShopItemDraft {
+    id?: string;
+    name?: string;
+    emoji?: string;
+    price?: number | string;
+    category?: string;
+    blurb?: string;
+    image?: string;
+    rating?: number | string | null;
+}
+
+const validShopCategory = (category: unknown): string =>
+    SHOP_CATEGORIES.some(c => c.key === category) ? String(category) : 'life';
+
+const customItemId = (name: string, category: string): string =>
+    `custom_${Date.now().toString(36)}_${hashStr(`${name}|${category}|${Math.random()}`).toString(36)}`;
+
+/** 校验并清洗手动新增/编辑商品草稿；空名称会返回 null。 */
+export const sanitizeShopItemDraft = (draft: ShopItemDraft, base?: ShopItem): ShopItem | null => {
+    const name = String(draft.name ?? base?.name ?? '').trim().slice(0, 28);
+    if (!name) return null;
+    const category = validShopCategory(draft.category ?? base?.category);
+    let price = Number(draft.price ?? base?.price ?? 9.9);
+    if (!Number.isFinite(price) || price <= 0) price = 0.1;
+    price = Math.min(999999, Math.round(price * 10) / 10);
+    const emoji = String(draft.emoji ?? base?.emoji ?? '🎁').trim().slice(0, 4) || '🎁';
+    const blurb = String(draft.blurb ?? base?.blurb ?? '').trim().slice(0, 60) || '一份自己写进心意铺的小礼物。';
+    const rawImage = String(draft.image ?? base?.image ?? '').trim();
+    const image = /^https?:\/\//i.test(rawImage) ? rawImage.slice(0, 500) : undefined;
+    const rawRating = draft.rating ?? base?.rating;
+    let rating = rawRating == null || rawRating === '' ? undefined : Number(rawRating);
+    rating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating * 10) / 10)) : undefined;
+    const { image: _oldImage, rating: _oldRating, ...baseRest } = base || {};
+    return {
+        ...baseRest,
+        id: draft.id || base?.id || customItemId(name, category),
+        name,
+        emoji,
+        price,
+        category,
+        blurb,
+        ...(image ? { image } : {}),
+        ...(rating != null ? { rating } : {}),
+        custom: true,
+        updatedAt: Date.now(),
+    };
+};
+
+/** 保存手动新增/编辑商品到本地动态商品表。编辑已有商品时保留原 id。 */
+export const saveCustomShopItem = (draft: ShopItemDraft, base?: ShopItem): ShopItem | null => {
+    const item = sanitizeShopItemDraft(draft, base);
+    if (!item) return null;
+    registerShopItems([item]);
+    return item;
+};
+
+/** 自定义编辑可覆盖内置同 id 商品；普通动态商品只补充内置目录之外的 id。 */
+export const getShopItem = (id: string): ShopItem | undefined => {
+    const dynamic = loadDynamicItems().get(id);
+    const builtin = SHOP_ITEMS.find(i => i.id === id);
+    if (dynamic?.custom || !builtin) return dynamic || builtin;
+    return builtin;
+};
 
 export const formatPrice = (n: number): string =>
     Number.isInteger(n) ? String(n) : n.toFixed(1);
@@ -303,9 +367,10 @@ export const getItemReviews = (itemId: string): ShopReview[] => {
 /** 搜索商品：按名称 / 描述 / 分类名（含 emoji）模糊匹配。 */
 export const searchShopItems = (query: string): ShopItem[] => {
     const q = (query || '').trim().toLowerCase();
-    if (!q) return SHOP_ITEMS;
+    const all = [...SHOP_ITEMS.map(i => getShopItem(i.id) || i), ...getCustomShopItems().filter(i => !SHOP_ITEMS.some(b => b.id === i.id))];
+    if (!q) return all;
     const catLabel = (key: string) => SHOP_CATEGORIES.find(c => c.key === key)?.label || '';
-    return SHOP_ITEMS.filter(i =>
+    return all.filter(i =>
         i.name.toLowerCase().includes(q) ||
         i.blurb.toLowerCase().includes(q) ||
         catLabel(i.category).toLowerCase().includes(q) ||
@@ -751,7 +816,18 @@ export function parseCharShopDecision(raw: string): CharShopDecision | null {
 // ── 陪伴逛心意铺（角色能看见当前界面并即时反应）──────────────────────────────
 
 export type ShopCompanionSurface = 'home' | 'category' | 'item' | 'cart' | 'order' | 'my';
-export type ShopCompanionAction = 'comment' | 'want' | 'ask_user_pay' | 'char_pay';
+export type ShopCompanionAction =
+    | 'comment'
+    | 'say'
+    | 'point'
+    | 'scroll_to_item'
+    | 'open_item'
+    | 'add_user_cart'
+    | 'want'
+    | 'ask_user_pay'
+    | 'auto_user_pay'
+    | 'char_pay';
+export type ShopCompanionStepAction = Exclude<ShopCompanionAction, 'comment'>;
 
 export interface ShopCompanionContext {
     surface: ShopCompanionSurface;
@@ -760,6 +836,7 @@ export interface ShopCompanionContext {
     cart?: ShopCartLine[];
     userAction?: string;
     budget?: number;
+    userBalance?: number;
 }
 
 export interface ShopCompanionReaction {
@@ -768,7 +845,27 @@ export interface ShopCompanionReaction {
     speech: string;
 }
 
-const COMPANION_ACTIONS = new Set<ShopCompanionAction>(['comment', 'want', 'ask_user_pay', 'char_pay']);
+export interface ShopCompanionScriptStep {
+    action: ShopCompanionStepAction;
+    itemId?: string;
+    speech?: string;
+    qty?: number;
+    delayMs?: number;
+}
+
+export interface ShopCompanionScript {
+    steps: ShopCompanionScriptStep[];
+}
+
+const COMPANION_ACTIONS = new Set<ShopCompanionAction>([
+    'comment', 'say', 'point', 'scroll_to_item', 'open_item', 'add_user_cart', 'want', 'ask_user_pay', 'auto_user_pay', 'char_pay',
+]);
+const COMPANION_STEP_ACTIONS = new Set<ShopCompanionStepAction>([
+    'say', 'point', 'scroll_to_item', 'open_item', 'add_user_cart', 'want', 'ask_user_pay', 'auto_user_pay', 'char_pay',
+]);
+const COMPANION_ITEM_ACTIONS = new Set<ShopCompanionStepAction>([
+    'point', 'scroll_to_item', 'open_item', 'add_user_cart', 'want', 'ask_user_pay', 'auto_user_pay', 'char_pay',
+]);
 
 const compactShelf = (items: ShopItem[]): string =>
     items.slice(0, 18).map(i => `- ${i.id} | ${i.emoji}${i.name} | ¥${formatPrice(i.price)} | ${i.blurb}`).join('\n');
@@ -784,23 +881,30 @@ export function buildShopCompanionPrompt(
     const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
     const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
     const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
-    const system = `你是「${char.name}」，正在陪 ${userName} 逛虚拟礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作。请完全按你的人设、关系亲疏、预算感和当下心情反应。\n${persona ? `【人设】\n${persona}\n` : ''}`;
+    const balanceLine = ctx.userBalance != null ? `用户虚拟余额：¥${formatPrice(ctx.userBalance)}\n` : '';
+    const system = `你是「${char.name}」，正在陪 ${userName} 逛虚拟礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或触发虚拟购买。所有付款都只是 Moro 虚拟余额和虚拟订单，不涉及现实支付。请完全按你的人设、关系亲疏、预算感和当下心情行动。\n${persona ? `【人设】\n${persona}\n` : ''}`;
     const user = `当前界面：${ctx.surface}
 用户刚做的事：${ctx.userAction || '正在浏览'}
 你的大致预算感：¥${formatPrice(budget)}
+${balanceLine}自动付款边界：允许你在非常想推进、金额合理、符合关系和人设时使用 "auto_user_pay" 帮 ${userName} 用虚拟余额买下；若余额不足系统会自动改成请求确认。
 正在看的商品：${itemLine}
 购物车：${cartLines}
 屏幕上可见商品：
 ${compactShelf(visible)}
 
-请选择一个动作：
-- "comment"：只说一句陪逛反应，不触发购买。
-- "want"：你明显喜欢某件商品，想先记进自己的心愿单。
+请输出一个 1~5 步的短脚本，像你真的在旁边一起逛。可用动作：
+- "say"：只说一句话，不触发界面动作。
+- "point"：高亮指出某件商品。
+- "scroll_to_item"：把界面带到某件商品。
+- "open_item"：模拟点开某件商品详情。
+- "add_user_cart"：模拟把商品放进 ${userName} 的篮子。
+- "want"：你明显喜欢某件商品，先记进自己的心愿单。
 - "ask_user_pay"：你想要某件商品，并向 ${userName} 撒娇/认真请求帮你付款；系统会弹出请求窗口。
+- "auto_user_pay"：你主动推进，让 ${userName} 用虚拟余额直接买下某件商品；只在你很确定时使用。
 - "char_pay"：你决定直接付款买给 ${userName}（适合你很想送、金额不离谱、关系/性格允许时）。
 
 只输出 JSON，不要多余文字：
-{"action":"comment / want / ask_user_pay / char_pay","itemId":"若动作涉及商品，必须是上面某个 id","speech":"你对 ${userName} 说的一句话，第一人称，6~36字，贴人设"}`;
+{"steps":[{"action":"say / point / scroll_to_item / open_item / add_user_cart / want / ask_user_pay / auto_user_pay / char_pay","itemId":"若动作涉及商品，必须是上面某个 id","speech":"你对 ${userName} 说的一句话，第一人称，6~36字，贴人设"}]}`;
     return { system, user };
 }
 
@@ -816,10 +920,56 @@ export function parseShopCompanionReaction(raw: string, fallbackItemId?: string)
         const action: ShopCompanionAction = COMPANION_ACTIONS.has(obj.action) ? obj.action : 'comment';
         const rawItemId = String(obj.itemId || fallbackItemId || '').trim();
         const item = rawItemId ? getShopItem(rawItemId) : undefined;
-        const needsItem = action !== 'comment';
+        const needsItem = action !== 'comment' && action !== 'say';
         if (needsItem && !item) return null;
         const speech = String(obj.speech || obj.note || '').trim().slice(0, 80) || '这个挺有意思。';
         return { action, ...(item ? { itemId: item.id } : {}), speech };
+    } catch {
+        return null;
+    }
+}
+
+const normalizeCompanionStep = (input: any, fallbackItemId?: string): ShopCompanionScriptStep | null => {
+    if (!input || typeof input !== 'object') return null;
+    const rawAction = String(input.action || '').trim();
+    const action: ShopCompanionStepAction =
+        rawAction === 'comment'
+            ? 'say'
+            : COMPANION_STEP_ACTIONS.has(rawAction as ShopCompanionStepAction)
+                ? rawAction as ShopCompanionStepAction
+                : 'say';
+    const rawItemId = String(input.itemId || fallbackItemId || '').trim();
+    const item = rawItemId ? getShopItem(rawItemId) : undefined;
+    if (COMPANION_ITEM_ACTIONS.has(action) && !item) return null;
+    const speech = String(input.speech || input.note || '').trim().slice(0, 80);
+    const qtyRaw = Math.round(Number(input.qty || 1));
+    const qty = Math.max(1, Math.min(3, isFinite(qtyRaw) ? qtyRaw : 1));
+    const delayRaw = Math.round(Number(input.delayMs || 0));
+    const delayMs = Math.max(0, Math.min(1800, isFinite(delayRaw) ? delayRaw : 0));
+    return {
+        action,
+        ...(item ? { itemId: item.id } : {}),
+        ...(speech ? { speech } : {}),
+        ...(qty !== 1 ? { qty } : {}),
+        ...(delayMs ? { delayMs } : {}),
+    };
+};
+
+/** 解析沉浸陪逛脚本；兼容旧的单动作 JSON，并过滤非法商品/过长步骤。 */
+export function parseShopCompanionScript(raw: string, fallbackItemId?: string): ShopCompanionScript | null {
+    if (!raw) return null;
+    let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+        const obj = JSON.parse(txt.slice(start, end + 1));
+        const source = Array.isArray(obj.steps) ? obj.steps : [obj];
+        const steps = source
+            .map((step: any) => normalizeCompanionStep(step, fallbackItemId))
+            .filter((step: ShopCompanionScriptStep | null): step is ShopCompanionScriptStep => !!step)
+            .slice(0, 5);
+        return steps.length ? { steps } : null;
     } catch {
         return null;
     }

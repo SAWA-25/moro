@@ -62,20 +62,26 @@ async function currentActivity(charId: string): Promise<string> {
 async function recentLifeEvents(char: CharacterProfile): Promise<NonNullable<SwProactiveSnapshot['lifeEvents']>> {
   try {
     const events = await DB.getLifeEvents(char.id, 8);
-    return events.map(e => ({
-      timestamp: e.timestamp,
-      activity: sanitizeLifeText(e.activity) || e.activity,
-      mood: e.mood ? sanitizeLifeText(e.mood) : undefined,
-      location: e.location ? sanitizeLifeText(e.location) : undefined,
-      summary: e.summary ? sanitizeLifeText(e.summary) : undefined,
-      surfacedAsMsg: !!e.surfacedAsMsg,
-      eventKind: e.eventKind,
-      energy: e.energy,
-      intensity: e.intensity,
-      shareWillingness: e.shareWillingness,
-      thread: e.thread ? sanitizeLifeText(e.thread) : undefined,
-      proactiveAngle: e.proactiveAngle,
-    }));
+    return events
+      .map(e => {
+        const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
+        if (!activity) return null;
+        return {
+          timestamp: e.timestamp,
+          activity,
+          mood: e.mood ? sanitizeLifeText(e.mood) : undefined,
+          location: e.location ? sanitizeLifeText(e.location) : undefined,
+          summary: e.summary ? sanitizeLifeText(e.summary) : undefined,
+          surfacedAsMsg: !!e.surfacedAsMsg,
+          eventKind: e.eventKind,
+          energy: e.energy,
+          intensity: e.intensity,
+          shareWillingness: e.shareWillingness,
+          thread: e.thread ? sanitizeLifeText(e.thread) : undefined,
+          proactiveAngle: e.proactiveAngle,
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => !!e);
   } catch {
     return [];
   }

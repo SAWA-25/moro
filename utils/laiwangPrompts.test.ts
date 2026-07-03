@@ -18,6 +18,8 @@ import {
   livePrivateInterjectPromptBody,
   proactiveFallbackHint,
   swOfflineProactiveSystemPrompt,
+  userScreenWatchCommentSystemPrompt,
+  userScreenWatchContextBlock,
 } from './laiwangPrompts';
 
 describe('laiwang prompt copy', () => {
@@ -200,5 +202,28 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('严格只输出 JSON');
     expect(text).toContain('不要无来源地写重大承诺');
     expect(text).toContain('不要编造重大事件');
+  });
+
+  it('keeps user screen watch prompts bounded to active user sharing', () => {
+    const text = [
+      userScreenWatchCommentSystemPrompt({
+        charName: '阿迟',
+        userName: '小夏',
+        frameText: 'Moro 内部使用：絮语 1分钟',
+        hasImage: true,
+      }),
+      userScreenWatchContextBlock({
+        charName: '阿迟',
+        userName: '小夏',
+        lines: ['- 观屏状态：正在共享。', '- Moro 内部 App 停留：絮语 1分钟。'],
+      }),
+    ].join('\n');
+
+    expect(text).toContain('主动');
+    expect(text).toContain('共享');
+    expect(text).toContain('Moro 内部');
+    expect(text).toContain('不代表你能在共享结束后继续看见');
+    expect(text).not.toContain('后台监控');
+    expect(text).not.toContain('无限权限');
   });
 });

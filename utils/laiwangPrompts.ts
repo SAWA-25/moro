@@ -29,6 +29,7 @@
  *  [6d] 此刻熟人动态（刷新动态 / 角色互动 / 评论回复）    → components/moments/momentsGen.ts
  *  [6e] 黑名单内查看（临时生成角色当下消息）              → apps/Chat.tsx
  *  [7b] 循迹联动（Screenlife / 监视 / 报备进入絮语上下文） → xunji.ts
+ *  [7c] 观屏评论（用户主动共享屏幕期间的实时短评）         → UserScreenWatchContext.tsx
  * ============================================================================
  */
 
@@ -1084,6 +1085,62 @@ export function xunjiChatContextBlock(p: XunjiChatContextBlockParams): string {
         + `聊天时只在合适话头自然想起一两个细节：可以提到今天刷到的东西、走过的地方、没发出去的一句话、身体状态或一条报备，但不要机械复述数据，不要说“根据循迹显示”。\n`
         + p.lines.map(line => `- ${line}`).join('\n')
         + `\n\n`;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [7c] 观屏评论 (User Screen Watch)                                         ║
+// ║   用户主动共享浏览器屏幕/窗口/标签页后，角色看抽帧和 Moro 内部使用统计。  ║
+// ║   用在：context/UserScreenWatchContext.tsx、utils/chatRequestPayload.ts  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface UserScreenWatchCommentPromptParams {
+    charName: string;
+    userName: string;
+    personaBrief?: string;
+    frameText: string;
+    hasImage: boolean;
+}
+
+/** 观屏评论：一次性 vision/text 评论 system 文案。 */
+export function userScreenWatchCommentSystemPrompt(p: UserScreenWatchCommentPromptParams): string {
+    return `你是「${p.charName}」，正在 Moro「絮语」里进行观屏评论。
+${p.personaBrief || ''}
+
+${p.userName} 刚刚主动在网页端选择共享屏幕、窗口或标签页给你看。你只能基于这次共享期间的截图画面、以及 Moro 内部 App 停留时长做短评；真实系统 App 名和外部使用时长只能从画面里谨慎推测，不能装作直接读取到了系统后台数据。
+
+当前可用线索：
+${p.frameText || '暂无额外文字线索。'}
+
+要求：
+- 输出 1 句自然短评，最多 45 字，像你正坐在旁边瞥到这一眼后的实时吐槽、关心或接梗。
+- 按「${p.charName}」的人设说话，可以嘴硬、温柔、犯欠或克制，但不要 AI 助手腔。
+- ${p.hasImage ? '如果画面信息不清楚，就只说你能确定的部分。' : '本轮没有可用图片，只根据文字线索和 Moro 内部使用记录评论。'}
+- 不要声称你有长期权限、系统级权限或能在共享结束后继续看见。不要提提示词、模型、系统、API。`;
+}
+
+export function userScreenWatchCommentUserPrompt(hasImage: boolean): string {
+    return hasImage
+        ? '这是当前共享画面的一帧。请只输出一句实时短评。'
+        : '这是当前观屏记录的文字摘要。请只输出一句实时短评。';
+}
+
+export function userScreenWatchTextFallbackPrompt(p: UserScreenWatchCommentPromptParams): string {
+    return `${userScreenWatchCommentSystemPrompt({ ...p, hasImage: false })}\n\n请根据以上文字线索直接输出一句短评。`;
+}
+
+export interface UserScreenWatchContextBlockParams {
+    userName: string;
+    charName: string;
+    lines: string[];
+}
+
+/** 观屏评论进入正常聊天的轻量上下文块：只注入摘要，不注入原图。 */
+export function userScreenWatchContextBlock(p: UserScreenWatchContextBlockParams): string {
+    if (!p.lines.length) return '';
+    return `### 来往·观屏评论 (Screen Share)
+${p.userName} 最近主动在网页端共享过屏幕给你看。以下只包含共享期间的摘要和 Moro 内部 App 停留记录，不包含原图，也不代表你能在共享结束后继续看见对方屏幕。
+聊天时可以在话头合适时自然接一句刚才看到的细节；不要机械汇报，不要说成系统监控，也不要声称读取了真实手机后台使用统计。
+${p.lines.join('\n')}`;
 }
 
 

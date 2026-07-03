@@ -19,7 +19,7 @@ import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
-import type { MusicCfg, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
+import type { MusicCfg, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
 import { renderMesExampleBlock } from './context';
 import { WorldbookRuntime } from './worldbookRuntime';
@@ -42,6 +42,9 @@ import {
     shouldAutoAdvanceXunji,
 } from './xunji';
 import { buildRelationshipNetworkContextBlock } from './relationshipNetwork';
+import { buildLyricWindow } from './musicLyricContext';
+import { buildUserScreenWatchContextLines } from './userScreenWatch';
+import { userScreenWatchContextBlock } from './laiwangPrompts';
 
 export interface UserListeningContext {
     songName: string;
@@ -120,17 +123,13 @@ function deriveListeningFromSnapshot(
     const { current, playing, lyric, activeLyricIdx, listeningTogetherWith, cfg } = snap;
     let userListeningContext: UserListeningContext | null = null;
     if (current && playing && lyric.length > 0) {
-        const idx = activeLyricIdx;
-        if (idx >= 0) {
-            const from = Math.max(0, idx - 2);
-            const to = Math.min(lyric.length, idx + 2 + 1);
-            const window = lyric.slice(from, to).map((l: LyricLine) => l.text);
-            const activeIdx = idx - from;
+        const window = buildLyricWindow(lyric, activeLyricIdx, { before: 2, after: 2 });
+        if (window.lines.length > 0) {
             userListeningContext = {
                 songName: current.name,
                 artists: current.artists,
-                lyricWindow: window,
-                activeIdx,
+                lyricWindow: window.lines,
+                activeIdx: window.activeIdx,
             };
         }
     } else if (current && playing) {
@@ -343,6 +342,22 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         }
     } catch (error) {
         console.warn('[Xunji] chat context injection skipped:', error);
+    }
+
+    // ── 3.6 观屏评论：只注入最近摘要和 Moro 内部使用统计，不注入原图 ──
+    try {
+        const latestUserScreenWatch = await DB.getLatestUserScreenWatchSession(char.id);
+        if (latestUserScreenWatch) {
+            const lines = buildUserScreenWatchContextLines(latestUserScreenWatch);
+            const block = userScreenWatchContextBlock({
+                userName: macroCtx.userName,
+                charName: char.name,
+                lines,
+            });
+            if (block) systemPrompt += `\n\n${block}`;
+        }
+    } catch (error) {
+        console.warn('[UserScreenWatch] chat context injection skipped:', error);
     }
 
     try {

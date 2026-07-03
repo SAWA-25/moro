@@ -28,6 +28,11 @@ function timeLabel(ts: number): string {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function displayLifeText(raw: string | undefined): string {
+    const clean = sanitizeLifeText(raw || '');
+    return clean || '这条日常记录混入了生成指令，已自动隐藏。';
+}
+
 const LIFE_KIND_LABELS: Record<string, string> = {
     routine: '日常',
     work: '工作',
@@ -131,7 +136,11 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                             </div>
                             {/* 时间线 */}
                             <div className="pl-1 space-y-2.5">
-                                {group.items.map(ev => (
+                                {group.items.map(ev => {
+                                    const activityText = displayLifeText(ev.activity || ev.summary);
+                                    const moodText = ev.mood ? sanitizeLifeText(ev.mood) : '';
+                                    const locationText = ev.location ? sanitizeLifeText(ev.location) : '';
+                                    return (
                                     <div key={ev.id} className="flex items-start gap-2.5">
                                         {/* 时间轴节点 + 竖线 */}
                                         <div className="flex flex-col items-center pt-1 shrink-0" style={{ width: 38 }}>
@@ -141,7 +150,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                         {/* 内容卡 */}
                                         <div className="flex-1 min-w-0 rounded-[9px] px-3 py-2"
                                             style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
-                                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...CUTE_STACK, color: PAPER_TONES.ink, overflowWrap: 'anywhere' }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
+                                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...CUTE_STACK, color: PAPER_TONES.ink, overflowWrap: 'anywhere' }}>{activityText}</p>
                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                                 {ev.eventKind && (
                                                     <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{LIFE_KIND_LABELS[ev.eventKind] || '生活'}</span>
@@ -152,11 +161,11 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                                 {ev.proactiveAngle && (
                                                     <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fffdfa', border: '1px solid #eed6df' }}>{ANGLE_LABELS[ev.proactiveAngle] || '顺手说'}</span>
                                                 )}
-                                                {ev.mood && (
-                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{ev.mood}</span>
+                                                {moodText && (
+                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{moodText}</span>
                                                 )}
-                                                {ev.location && (
-                                                    <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>位置：{ev.location}</span>
+                                                {locationText && (
+                                                    <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>位置：{locationText}</span>
                                                 )}
                                                 {ev.surfacedAsMsg && (
                                                     <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#a892a3', background: '#fff4f7', border: '1px solid #eed6df' }}>已跟你说过{ev.surfacedAt ? ` ${timeLabel(ev.surfacedAt)}` : ''}</span>
@@ -164,7 +173,8 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                             </div>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}

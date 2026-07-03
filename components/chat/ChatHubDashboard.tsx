@@ -17,6 +17,7 @@ import { useOS } from '../../context/OSContext';
 import type { ChatFollowup, ChatHubDigest, CharLifeEvent, GroupProfile, Message, SocialPost } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { sanitizeLifeText } from '../../utils/autonomousLife';
 import { buildChatTimelineItems, timelineItemsForDigest, type ChatTimelineItem } from '../../utils/chatTimeline';
 import { completeChatFollowup, dismissChatFollowup } from '../../utils/chatFollowups';
 import { generateChatHubDigest } from '../../utils/chatHubDigest';
@@ -165,7 +166,10 @@ const ChatHubDashboard: React.FC<Props> = ({ onClose, onOpenPrivate, onOpenGroup
     + groups.filter(g => (g.specialCareMemberIds || []).length > 0).length
   ), [characters, groups]);
   const verificationCount = useMemo(() => characters.filter(c => c.charBlock?.active || c.unblockAppeal?.awaiting).length, [characters]);
-  const latestLife = useMemo(() => [...lifeEvents].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 4), [lifeEvents]);
+  const latestLife = useMemo(() => [...lifeEvents]
+    .filter(e => sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || ''))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, 4), [lifeEvents]);
   const recentTimeline = useMemo(() => [...timeline].sort((a, b) => b.at - a.at).slice(0, 32), [timeline]);
 
   const openTimelineTarget = (item: ChatTimelineItem) => {
@@ -406,11 +410,15 @@ const ChatHubDashboard: React.FC<Props> = ({ onClose, onOpenPrivate, onOpenGroup
           <div className="mt-3 bg-white rounded-[8px] border border-[#f0dce4] p-3">
             <div className="flex items-center gap-2 text-[13px] font-black text-slate-800"><ClockCounterClockwise size={17} weight="fill" className="text-[#4c8f6b]" />角色近况</div>
             <div className="mt-2 space-y-1.5">
-              {latestLife.map(event => (
-                <div key={event.id} className="text-[11px] text-slate-500 bg-[#f7fbf8] rounded-[6px] px-2 py-1.5">
-                  {event.activity}{event.mood ? ` · ${event.mood}` : ''}
-                </div>
-              ))}
+              {latestLife.map(event => {
+                const activity = sanitizeLifeText(event.activity) || sanitizeLifeText(event.summary || '');
+                const mood = event.mood ? sanitizeLifeText(event.mood) : '';
+                return (
+                  <div key={event.id} className="text-[11px] text-slate-500 bg-[#f7fbf8] rounded-[6px] px-2 py-1.5">
+                    {activity}{mood ? ` · ${mood}` : ''}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

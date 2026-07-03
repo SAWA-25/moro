@@ -1,6 +1,7 @@
 import type { MusicCfg, Song } from '../context/MusicContext';
 import { musicApi, parseLyric } from '../context/MusicContext';
 import { getCharLyricSnippet } from './charLyricCache';
+import { lyricLinesFromRaw, lyricLinesFromTimedLines } from './musicLyricContext';
 
 export const MUSIC_PENDING_CHAT_SHARE_KEY = 'moro_music_pending_chat_share_v1';
 
@@ -211,12 +212,6 @@ export function normalizeMusicPendingChatSharePayload(
     };
 }
 
-const plainLyricLines = (raw: string, lineCount: number): string[] => raw
-    .split(/\r?\n/)
-    .map(line => line.replace(/\[[0-9:.]+\]/g, '').trim())
-    .filter(line => line && !/^\[[^\]]+\]$/.test(line))
-    .slice(0, Math.max(0, lineCount));
-
 export async function lyricPreviewFromMusicShareSong(
     songInput: Song | MusicShareSongSnapshot | unknown,
     cfg?: MusicCfg | null,
@@ -228,7 +223,7 @@ export async function lyricPreviewFromMusicShareSong(
     if (lineCount <= 0) return [];
 
     if (song.localLyrics) {
-        return plainLyricLines(song.localLyrics, lineCount);
+        return lyricLinesFromRaw(song.localLyrics, { lineCount });
     }
 
     if (!cfg) return [];
@@ -239,8 +234,8 @@ export async function lyricPreviewFromMusicShareSong(
         try {
             const res = await musicApi.qqLyric(cfg, songmid);
             const raw = res?.data?.lyric || res?.lyric || '';
-            const parsed = parseLyric(raw).map(l => l.text).filter(Boolean);
-            return (parsed.length ? parsed : plainLyricLines(raw, lineCount)).slice(0, lineCount);
+            const parsed = lyricLinesFromTimedLines(parseLyric(raw), { lineCount });
+            return parsed.length ? parsed : lyricLinesFromRaw(raw, { lineCount });
         } catch {
             return [];
         }
@@ -248,7 +243,8 @@ export async function lyricPreviewFromMusicShareSong(
 
     if (song.source === 'local') return [];
     try {
-        return await getCharLyricSnippet(cfg, song.id, options.seed || `music-share-${song.id}`, lineCount);
+        const snippet = await getCharLyricSnippet(cfg, song.id, options.seed || `music-share-${song.id}`, lineCount);
+        return lyricLinesFromTimedLines(snippet, { lineCount });
     } catch {
         return [];
     }

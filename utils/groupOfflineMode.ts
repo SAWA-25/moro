@@ -105,6 +105,7 @@ interface GroupOfflineApi {
   apiBinding?: string;
 }
 
+// 群聊线下赴约默认走文具盒主 API / 主模型，让群体现场和主聊天保持同一套角色声音。
 const callGroupOfflineLLM = async (api: GroupOfflineApi, prompt: string, temperature = 0.9): Promise<string> => {
   const data = await callChatCompletion(api, {
     model: api.model,
@@ -112,7 +113,7 @@ const callGroupOfflineLLM = async (api: GroupOfflineApi, prompt: string, tempera
     temperature,
   }, {
     meta: makeApiUsageMeta('chat.groupOfflineMode', {
-      apiRole: api.apiRole || 'aux',
+      apiRole: api.apiRole || 'main',
       apiBinding: api.apiBinding,
     }),
   });

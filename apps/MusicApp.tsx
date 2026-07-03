@@ -4,8 +4,15 @@ import { useOS } from '../context/OSContext';
 import { useMusic, musicApi, normalizeCookie, toHttps, Song } from '../context/MusicContext';
 import { AppID } from '../types';
 import { DB } from '../utils/db';
-import { discussMusic, ListenAction, ListenMsg } from '../utils/listenTogether';
+import { discussMusic, type ListenAction, type ListenMsg, type ListenSongContext } from '../utils/listenTogether';
 import { MUSIC_PENDING_CHAT_SHARE_KEY, buildMusicPendingChatSharePayload, songToMusicShareMetadata } from '../utils/musicShare';
+import {
+  buildLyricWindow,
+  lyricLinesFromRaw,
+  lyricLinesFromTimedLines,
+  mergeTranslatedLyricLines,
+  type MusicLyricSource,
+} from '../utils/musicLyricContext';
 import {
   buildListenActionNotice,
   clearListenTogetherSession,
@@ -44,7 +51,7 @@ type View = 'discover' | 'library' | 'search' | 'settings' | 'player' | 'profile
 const MusicApp: React.FC = () => {
   const { closeApp, addToast, characters, userProfile, apiConfig, auxApiConfig, openApp, setActiveCharacterId } = useOS();
   // 一起听·角色乐评属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
-  const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
+  const auxApi = useMemo(() => ({ ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }), [apiConfig, auxApiConfig]);
   const {
     cfg, setCfg,
     queue, idx,
@@ -238,6 +245,37 @@ const MusicApp: React.FC = () => {
 
   const songSnapshot = useCallback((s: Song) => songToMusicShareMetadata(s), []);
 
+  const buildListenSongContext = useCallback((): ListenSongContext | null => {
+    if (!current) return null;
+    const mergedLyrics = mergeTranslatedLyricLines(lyric, tlyric);
+    const lyricWindow = buildLyricWindow(mergedLyrics, activeLyricIdx, { before: 2, after: 2 });
+    let lyricPreview = lyricLinesFromTimedLines(mergedLyrics, { lineCount: 8 });
+    let lyricSource: MusicLyricSource = lyricPreview.length > 0
+      ? (current.localLyrics ? 'local' : 'synced')
+      : 'none';
+
+    if (lyricPreview.length === 0 && current.localLyrics) {
+      lyricPreview = lyricLinesFromRaw(current.localLyrics, { lineCount: 8 });
+      lyricSource = lyricPreview.length > 0 ? 'local' : 'none';
+    } else if (lyricWindow.lines.length === 0 && lyricPreview.length > 0) {
+      lyricSource = 'preview';
+    }
+
+    return {
+      name: current.name,
+      artists: current.artists,
+      album: current.album,
+      duration: duration || current.duration,
+      progress,
+      playing,
+      lyricCurrent: lyricWindow.activeLine,
+      lyricWindow: lyricWindow.lines,
+      lyricActiveIdx: lyricWindow.activeIdx,
+      lyricPreview,
+      lyricSource,
+    };
+  }, [activeLyricIdx, current, duration, lyric, playing, progress, tlyric]);
+
   useEffect(() => {
     if (listenCharId || listeningTogetherWith.length === 0) return;
     restoreListenSession(listeningTogetherWith);
@@ -329,11 +367,10 @@ const MusicApp: React.FC = () => {
     if (!char) return;
     setListenBusy(true);
     try {
-      const snap = current ? { name: current.name, artists: current.artists } : null;
-      const lyricSnippet = activeLyricIdx >= 0 && lyric[activeLyricIdx] ? lyric[activeLyricIdx].text : undefined;
+      const snap = buildListenSongContext();
       const { reply, action } = await discussMusic({
         char, user: userProfile, api: auxApi,
-        song: snap, playing, lyricSnippet,
+        song: snap, playing,
         history: historyOverride ?? listenMsgs, userMsg, trigger,
       });
       setListenMsgs(prev => [...prev, { role: 'char', text: reply, action, at: Date.now() }]);
@@ -343,7 +380,7 @@ const MusicApp: React.FC = () => {
     } finally {
       setListenBusy(false);
     }
-  }, [characters, listenCharId, current, activeLyricIdx, lyric, userProfile, apiConfig, playing, listenMsgs, executeListenAction, addToast]);
+  }, [characters, listenCharId, buildListenSongContext, userProfile, auxApi, playing, listenMsgs, executeListenAction, addToast]);
 
   // 分享当前歌给某角色 → 落一张「一起听」卡片到该角色聊天 + 标记伴听 + 进入一起听界面
   const shareAndListen = useCallback(async (charId: string) => {

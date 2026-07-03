@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
+import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, MonitorPlay, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
@@ -796,8 +796,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <Detective className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
-                            <ActionStrip label="窥屏" hint="生成 TA 此刻手机屏幕截图" dark={isDiscordStyle} onClick={() => onPanelAction('screen-peek')}>
+                            <ActionStrip label="窥屏" hint="看 TA 的虚拟手机屏幕" dark={isDiscordStyle} onClick={() => onPanelAction('screen-peek')}>
                                 <ImageSquare className="w-5 h-5" weight="duotone" />
+                            </ActionStrip>
+
+                            <ActionStrip label="观屏评论" hint="让 TA 看我的屏幕并短评" dark={isDiscordStyle} onClick={() => onPanelAction('user-screen-watch')}>
+                                <MonitorPlay className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             <ActionStrip label="锁机" hint="远程锁住 TA 的屏幕，看 TA 怎么解" dark={isDiscordStyle} onClick={() => onPanelAction('phone-lock')}>

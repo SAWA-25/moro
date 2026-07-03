@@ -8,8 +8,10 @@ import {
     formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
     TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
     recommendAddOnDishes, takeoutHistoryStats,
+    sanitizeTakeoutDish, saveCustomDish, getCustomDishes, deleteCustomDish,
+    saveCustomStore, getCustomStores, deleteCustomStore, mergeCustomStores, cloneDishForStore,
 } from './takeout';
-import type { CharacterProfile, TakeoutDish, TakeoutOrder } from '../types';
+import type { CharacterProfile, TakeoutDish, TakeoutOrder, TakeoutStore } from '../types';
 
 describe('菜品规格 / 加料（选规格）', () => {
     it('饮品给甜度/冰量；奶茶额外有加料', () => {
@@ -55,6 +57,7 @@ describe('SKU 定价 / 描述 / 行 key', () => {
     it('dishUnitPrice 叠加规格差价与加料', () => {
         expect(dishUnitPrice(20, specs, { 份量: '标准份', 辣度: '不辣' }, addons, [])).toBe(20);
         expect(dishUnitPrice(20, specs, { 份量: '大份', 辣度: '微辣' }, addons, ['加蛋', '加肠'])).toBe(30);
+        expect(dishUnitPrice(0, undefined, {}, undefined, [])).toBe(0);
     });
     it('formatSpecAddon 过滤默认项（标准份/不辣等）', () => {
         expect(formatSpecAddon(specs, { 份量: '标准份', 辣度: '不辣' }, [])).toEqual({ spec: undefined, addons: undefined });
@@ -63,6 +66,66 @@ describe('SKU 定价 / 描述 / 行 key', () => {
     it('cartLineKey 同菜不同规格分行；加料顺序无关', () => {
         expect(cartLineKey('d1', '大份', ['加蛋'])).not.toBe(cartLineKey('d1', '标准份', ['加蛋']));
         expect(cartLineKey('d1', '大份', ['加蛋', '加肠'])).toBe(cartLineKey('d1', '大份', ['加肠', '加蛋']));
+    });
+});
+
+describe('自定义菜库 / 我的铺子', () => {
+    beforeEach(() => {
+        localStorage.removeItem('moro_takeout_custom_dishes_v1');
+        localStorage.removeItem('moro_takeout_custom_stores_v1');
+    });
+
+    it('自定义菜保存时清洗字段、去重并可删除', () => {
+        const saved = saveCustomDish({
+            id: 'dish-custom',
+            name: '  手写牛肉饭  ',
+            price: -8,
+            emoji: '🍚',
+            specs: [{ name: '  份量  ', options: [{ label: '大份', priceDelta: -3 }, { label: '', priceDelta: 9 }] }],
+            addons: [{ label: '加蛋', price: -2 }],
+        })!;
+        expect(saved.name).toBe('手写牛肉饭');
+        expect(saved.price).toBe(0);
+        expect(saved.specs?.[0].name).toBe('份量');
+        expect(saved.specs?.[0].options).toEqual([{ label: '大份', priceDelta: 0 }]);
+        expect(saved.addons).toEqual([{ label: '加蛋', price: 0 }]);
+
+        saveCustomDish({ ...saved, price: 18 });
+        expect(getCustomDishes()).toHaveLength(1);
+        expect(getCustomDishes()[0].price).toBe(18);
+        expect(deleteCustomDish(saved.id)).toEqual([]);
+    });
+
+    it('空菜名和坏 JSON 安全回退', () => {
+        expect(sanitizeTakeoutDish({ name: ' ', price: 12 })).toBeNull();
+        localStorage.setItem('moro_takeout_custom_dishes_v1', '{bad json');
+        localStorage.setItem('moro_takeout_custom_stores_v1', '{bad json');
+        expect(getCustomDishes()).toEqual([]);
+        expect(getCustomStores()).toEqual([]);
+    });
+
+    it('自定义铺子会覆盖同 id 店铺，并在换街后保留', () => {
+        const base: TakeoutStore = {
+            id: 'store-base', name: '旧铺子', emoji: '🍜', category: '中餐',
+            rating: 4.5, monthlySales: 100, deliveryMinutes: 30, deliveryFee: 3,
+            minOrder: 20, distanceKm: 1.2, dishes: [{ id: 'd1', name: '面', price: 12 }],
+        };
+        const edited = saveCustomStore({ ...base, name: '改过的铺子', deliveryFee: -1 })!;
+        const mine = saveCustomStore({ ...base, id: 'store-mine', name: '我的铺子', userCustom: true })!;
+        const merged = mergeCustomStores([base]);
+        expect(merged[0].id).toBe(mine.id);
+        expect(merged.find(s => s.id === base.id)?.name).toBe(edited.name);
+        expect(merged.find(s => s.id === base.id)?.deliveryFee).toBe(0);
+        expect(deleteCustomStore(mine.id).map(s => s.id)).toEqual([base.id]);
+    });
+
+    it('从菜库加入店铺会复制新菜品锚', () => {
+        const dish = saveCustomDish({ id: 'lib-dish', name: '库里的粥', price: 0, specs: [{ name: '温度', options: [{ label: '热', priceDelta: 0 }] }] })!;
+        const cloned = cloneDishForStore(dish);
+        expect(cloned.id).not.toBe(dish.id);
+        expect(cloned.libraryDishId).toBe(dish.id);
+        expect(cloned.price).toBe(0);
+        expect(dishUnitPrice(cloned.price, cloned.specs, { 温度: '热' }, cloned.addons, [])).toBe(0);
     });
 });
 

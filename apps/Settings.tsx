@@ -148,6 +148,13 @@ const POLAROID_SCOPE_CSS = `
   user-select: text;
   touch-action: manipulation;
 }
+.settings-polaroid input:not([type="checkbox"]):not([type="range"]):not([type="file"]),
+.settings-polaroid textarea,
+.settings-polaroid select {
+  /* iOS/WebView pans the visual viewport when focused inputs render below 16px. */
+  font-size: 16px;
+  line-height: 1.35;
+}
 .settings-polaroid input[type="range"] { accent-color: #7fa8b3; }
 `;
 
