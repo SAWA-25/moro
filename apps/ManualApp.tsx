@@ -285,6 +285,60 @@ type ManualMapCluster = {
 
 const parentNameOf = (entry: ManualEntry) => entry.app.split('·')[0] || entry.app;
 
+const MANUAL_RESPONSIVE_STYLE = `
+.moro-manual-detail-grid {
+  grid-template-columns: clamp(96px, 31vw, 122px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: clamp(0.5rem, 2.8vw, 0.75rem);
+}
+.moro-manual-detail-panel {
+  container-type: inline-size;
+}
+.moro-manual-setting-copy,
+.moro-manual-section-copy,
+.moro-manual-entry-title {
+  flex: 1 1 9rem;
+  min-width: min(100%, 9rem);
+  overflow-wrap: anywhere;
+}
+.moro-manual-setting-action,
+.moro-manual-entry-actions {
+  flex: 0 0 auto;
+}
+@container (max-width: 220px) {
+  .moro-manual-detail-panel .moro-manual-entry-header,
+  .moro-manual-detail-panel .moro-manual-setting-head,
+  .moro-manual-detail-panel .moro-manual-section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .moro-manual-detail-panel .moro-manual-entry-actions {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 350px) {
+  .moro-manual-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .moro-manual-entry-list {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 0;
+    padding-bottom: 0.25rem;
+  }
+  .moro-manual-entry-list > * {
+    flex: 0 0 clamp(104px, 44vw, 132px);
+  }
+  .moro-manual-entry-list > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+}
+`;
+
 const ManualAppMap: React.FC<{
   clusters: ManualMapCluster[];
   nativeRuntime: boolean;
@@ -305,7 +359,7 @@ const ManualAppMap: React.FC<{
   const renderEntryActions = (entry: ManualEntry, compact = false) => {
     const destination = MANUAL_DESTINATIONS[entry.app];
     return (
-      <div className={['flex items-center gap-2', compact ? 'mt-2' : 'mt-3'].join(' ')}>
+      <div className={['flex flex-wrap items-center gap-2', compact ? 'mt-2' : 'mt-3'].join(' ')}>
         <button
           onClick={() => onShowEntry(entry)}
           className="h-8 px-3 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black active:scale-95 transition-transform"
@@ -718,6 +772,7 @@ const ManualApp: React.FC = () => {
         paddingTop: 'var(--safe-top)',
       }}
     >
+      <style>{MANUAL_RESPONSIVE_STYLE}</style>
       <div className="shrink-0 px-4 pt-3 pb-3">
         <div className="flex items-center justify-between gap-3">
           <button
@@ -813,8 +868,8 @@ const ManualApp: React.FC = () => {
           onOpenEntry={openEntryDestination}
         />
       ) : (
-      <div className="flex-1 min-h-0 px-4 pb-5 grid grid-cols-[122px_minmax(0,1fr)] gap-3">
-        <div className="min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
+      <div className="moro-manual-detail-grid flex-1 min-h-0 px-4 pb-5 grid">
+        <div className="moro-manual-entry-list min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
           {filteredEntries.length === 0 ? (
             <div className="rounded-[16px] bg-white/78 border border-black/10 px-3 py-5 text-center text-[11px] leading-relaxed text-[#7b705f]">
               没搜到。换个词试试，比如“主动点外卖”“锁屏密码”“聊天气泡”。
@@ -855,7 +910,7 @@ const ManualApp: React.FC = () => {
           })}
         </div>
 
-        <div className="min-h-0 overflow-y-auto no-scrollbar">
+        <div className="moro-manual-detail-panel min-h-0 overflow-y-auto no-scrollbar">
           {activeEntry && (
             <article
               className="relative overflow-hidden rounded-[22px] bg-[#fffdf8] border border-black/10 shadow-[0_18px_42px_-30px_rgba(35,33,29,0.55)]"
@@ -871,15 +926,15 @@ const ManualApp: React.FC = () => {
                 }}
               />
               <div className="relative px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="moro-manual-entry-header flex flex-wrap items-start justify-between gap-3">
+                  <div className="moro-manual-entry-title min-w-0">
                     <div className="label-mono text-[9px] tracking-[0.28em] text-[#9a8c75]">
                       {CATEGORY_META[activeEntry.category].en}
                     </div>
                     <h2 className="text-[27px] font-black leading-tight tracking-wide mt-1">{activeEntry.app}</h2>
                     <div className="label-mono text-[9px] text-[#9a8c75] mt-1">{activeEntry.en}</div>
                   </div>
-                  <div className="shrink-0 flex flex-col items-end gap-2">
+                  <div className="moro-manual-entry-actions shrink-0 flex flex-col items-end gap-2">
                     <div className="w-10 h-10 rounded-full bg-[#23211d] text-white flex items-center justify-center">
                       {ActiveAppIcon
                         ? <ActiveAppIcon className="w-5 h-5" />
@@ -980,8 +1035,8 @@ const ManualApp: React.FC = () => {
                           className="rounded-[18px] bg-white/80 border border-black/[0.06] px-3 py-3"
                           data-manual-anchor={sectionAnchor(activeEntry, section.id)}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
+                          <div className="moro-manual-section-head flex flex-wrap items-start justify-between gap-2">
+                            <div className="moro-manual-section-copy min-w-0">
                               <h3 className="text-[13px] font-black text-[#342f28]">{section.title}</h3>
                               {section.description && <p className="text-[11px] leading-relaxed text-[#7b705f] mt-0.5">{section.description}</p>}
                             </div>
@@ -994,15 +1049,15 @@ const ManualApp: React.FC = () => {
                                 className="rounded-[15px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-3"
                                 data-manual-anchor={settingAnchor(activeEntry, setting.id)}
                               >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
+                                <div className="moro-manual-setting-head flex flex-wrap items-start justify-between gap-3">
+                                  <div className="moro-manual-setting-copy min-w-0">
                                     <h4 className="text-[12.5px] font-black text-[#3d362e] leading-snug">{setting.title}</h4>
                                     <p className="mt-1 text-[11.5px] leading-relaxed text-[#5c5143]">{setting.description}</p>
                                   </div>
                                   {(setting.deepLink || activeDestination?.deepLink) && (
                                     <button
                                       onClick={() => jumpTo(setting.deepLink || activeDestination?.deepLink || null)}
-                                      className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black active:scale-95 transition-transform"
+                                      className="moro-manual-setting-action shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black active:scale-95 transition-transform"
                                     >
                                       跳到这里
                                       <CaretRight size={10} weight="bold" />

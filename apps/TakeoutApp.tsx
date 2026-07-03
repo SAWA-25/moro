@@ -1006,6 +1006,7 @@ const TakeoutApp: React.FC = () => {
                         <span className="relative z-10 flex items-center gap-1"><Receipt size={13} weight="bold" />票根夹</span>
                     </button>}
                 />
+                <ScrapScroll className="pt-0">
 
                 {/* 地址 + 钱袋 */}
                 <div className="relative z-10 px-5 flex items-center justify-between gap-2">
@@ -1187,7 +1188,7 @@ const TakeoutApp: React.FC = () => {
                 </div>
 
                 {/* 铺子列表 */}
-                <ScrapScroll className="px-5 pt-2 pb-10">
+                <div className="relative z-10 px-5 pt-2 pb-10">
                     <SectionTag en="THE STREET" className="mb-3">这条街上的铺子</SectionTag>
                     {aiLoading && stores.length === 0 && <div className="text-center text-[12px] py-12 flex items-center justify-center gap-1.5" style={{ color: INK_SOFT }}><Sparkle size={16} weight="fill" className="animate-pulse" />正在一笔笔现写这条街…</div>}
                     {filteredStores.length === 0 && !aiLoading && (
@@ -1247,6 +1248,7 @@ const TakeoutApp: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </div>
                 </ScrapScroll>
 
                 {addressBookSheet}
@@ -1279,7 +1281,8 @@ const TakeoutApp: React.FC = () => {
                         </button>
                     </div>}
                 />
-                <div className="relative z-10 px-5">
+                <ScrapScroll className="px-5 pt-0 pb-28">
+                <div className="relative z-10">
                     <PaperCard tilt={-0.5} className="px-4 py-3.5 flex items-center gap-3 overflow-hidden">
                         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
                         <Shopfront e={activeStore.emoji} size={30} box={54} />
@@ -1308,7 +1311,7 @@ const TakeoutApp: React.FC = () => {
                     </div>
                 </div>
 
-                <ScrapScroll className="px-5 pt-3 pb-28">
+                <div className="relative z-10 pt-3">
                     {storeTab === 'menu' && (
                         <>
                             <div className="flex items-center justify-between gap-2 mb-3">
@@ -1460,6 +1463,7 @@ const TakeoutApp: React.FC = () => {
                             </PaperCard>
                         </>
                     )}
+                </div>
                 </ScrapScroll>
 
                 {/* 菜篮搁板 */}
