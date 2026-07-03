@@ -71,6 +71,18 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-03-music-qq-member-playback',
+    date: '2026-07-03',
+    title: 'QQ 音乐会员曲播放修复',
+    kind: 'fix',
+    summary: '修复已连接 QQ 音乐且账号有会员时，部分会员歌曲仍然拿不到播放地址的问题。',
+    items: [
+      'QQ 音乐播放地址会按歌曲真实媒体编号请求，避免会员歌曲被误判为暂无播放地址。',
+      '已连接的 QQ 音乐账号不用重新扫码；进入音乐 App 后直接重试播放即可。',
+      '如果单首歌仍提示受限，通常是歌曲版权、地区或账号权限限制，不会影响其他可播歌曲。',
+    ],
+  },
+  {
     id: '2026-07-03-offline-mode-main-model',
     date: '2026-07-03',
     title: '线下见面改用主模型生成',

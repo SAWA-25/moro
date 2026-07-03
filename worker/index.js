@@ -1448,13 +1448,14 @@ async function handleQQMusicApi(pathname, body) {
     const mediaMid = String(body.mediaMid || songmid).trim();
     if (!songmid) return { status: "error", message: "缺少 QQ 音乐 songmid" };
     const key = jar.qqmusic_key || jar.qm_keyst || jar.p_skey || '';
+    const fileMid = mediaMid || songmid;
     const types = [
       { s: "M800", e: ".mp3" },
       { s: "M500", e: ".mp3" },
       { s: "C400", e: ".m4a" },
     ];
     for (const type of types) {
-      const file = `${type.s}${songmid}${mediaMid}${type.e}`;
+      const file = `${type.s}${fileMid}${type.e}`;
       const guid = String(Math.floor(Math.random() * 10000000));
       const payload = {
         req_0: {

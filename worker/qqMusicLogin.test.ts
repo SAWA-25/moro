@@ -30,6 +30,16 @@ const postQrCreate = () => worker.fetch(
   {},
 );
 
+const postQQSongUrl = (body: Record<string, unknown>) => worker.fetch(
+  new Request('https://moro.test/qqmusic/song/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }),
+  {},
+  {},
+);
+
 const decodeTicket = (ticket: string): any => {
   const b64 = ticket.replace(/-/g, '+').replace(/_/g, '/');
   const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
@@ -113,5 +123,40 @@ describe('QQ Music login worker', () => {
     expect(body.status).toBe('error');
     expect(body.message).toContain('非图片内容');
     expect(body.qrImg).toBeUndefined();
+  });
+
+  it('requests QQ Music vkey with media_mid filename for logged-in members', async () => {
+    const filenames: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://u.y.qq.com/cgi-bin/musicu.fcg')) {
+        const parsed = new URL(url);
+        const payload = JSON.parse(String(parsed.searchParams.get('data') || '{}'));
+        const filename = String(payload?.req_0?.param?.filename?.[0] || '');
+        filenames.push(filename);
+        return new Response(JSON.stringify({
+          req_0: {
+            data: {
+              sip: ['https://dl.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: filename === 'M800MEDIA999.mp3' ? 'M800MEDIA999.mp3?vkey=ok' : '' }],
+            },
+          },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    const res = await postQQSongUrl({
+      cookie: 'uin=10001; qm_keyst=member-token',
+      uin: '10001',
+      songmid: 'SONG123',
+      mediaMid: 'MEDIA999',
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe('success');
+    expect(body.data.url).toBe('https://dl.stream.qqmusic.qq.com/M800MEDIA999.mp3?vkey=ok');
+    expect(filenames).toEqual(['M800MEDIA999.mp3']);
   });
 });
