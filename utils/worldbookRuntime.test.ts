@@ -148,6 +148,8 @@ describe('buildPromptSections 位置与顺序', () => {
         expect(iL1).toBeGreaterThan(-1);
         expect(iL1).toBeLessThan(iL2);
         expect(iL2).toBeLessThan(iG1);
+        expect(afterChar).toContain('<moro-hidden-context kind="worldbook-local">');
+        expect(afterChar).toContain('<moro-hidden-context kind="worldbook-global">');
         expect(afterChar).toContain('### 扩展设定集 (Worldbooks)');
         expect(afterChar).toContain('### 全局扩展设定 (Global Worldbooks)');
     });
@@ -208,7 +210,11 @@ describe('spliceDepthMessages @Depth 注入', () => {
             entry('tail', 'depth_system', 0, 'TAIL'),
             entry('mid', 'depth_assistant', 2, 'MID'),
         ]);
-        expect(msgs.map(m => m.content)).toEqual(['SYS', 'm1', 'MID', 'm2', 'm3', 'TAIL']);
+        expect(msgs.map(m => m.content === 'SYS' || m.content === 'm1' || m.content === 'm2' || m.content === 'm3' ? m.content : 'WB'))
+            .toEqual(['SYS', 'm1', 'WB', 'm2', 'm3', 'WB']);
+        expect(msgs[2].content).toContain('<moro-hidden-context kind="worldbook-depth-global">');
+        expect(msgs[2].content).toContain('MID');
+        expect(msgs[5].content).toContain('TAIL');
         expect(msgs[2].role).toBe('assistant');
         expect(msgs[5].role).toBe('system');
     });
@@ -220,7 +226,11 @@ describe('spliceDepthMessages @Depth 注入', () => {
             entry('b', 'depth_user', 99, 'B'),
         ]);
         expect(msgs).toHaveLength(5);
-        expect(msgs[1]).toEqual({ role: 'user', content: 'A\n\nB' });
+        expect(msgs[1].role).toBe('user');
+        expect(msgs[1].content).toContain('A');
+        expect(msgs[1].content).toContain('B');
+        expect(msgs[1].content.indexOf('A')).toBeLessThan(msgs[1].content.indexOf('B'));
+        expect(msgs[1].content.match(/<moro-hidden-context/g) || []).toHaveLength(2);
     });
 });
 

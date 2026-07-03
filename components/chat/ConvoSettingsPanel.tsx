@@ -7,7 +7,7 @@ import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
 import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../../utils/scheduleGenerator';
-import { isAuxApiOn, resolveAuxApi } from '../../utils/auxApi';
+import { resolveAuxApi } from '../../utils/auxApi';
 import { scrollToManualAnchor, useManualDeepLink } from '../../utils/manualDeepLink';
 import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
 import { normalizeLiveChatSettings, resolveLiveChatEnabled } from '../../utils/liveChat';
@@ -1021,9 +1021,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                     style={{ background: '#fff', border: '1.5px solid #bfa3dd', color: '#7a5aa0', boxShadow: '2px 2px 0 #ddccef', ...CUTE_STACK }}
                                 >打开今日日程</button>
                                 <p className="text-[9.5px] leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
-                                    {isAuxApiOn(auxApiConfig)
-                                        ? '已接副 API：聊到约定/变更（“晚上八点一起看电影”“今天不去公司了”…）时，TA 会主动把日程调过来。'
-                                        : '想让 TA 照着聊天主动调整日程？去「文具盒 → 副线盒（副 API）」开启副 API。'}
+                                    聊到约定/变更时，TA 会用「今日日程」底部的日程 / 心情 API 主动协调；不填则使用主 API。
                                 </p>
                                 <div className="flex items-start justify-between gap-3 rounded-[12px] px-3 py-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                     <div className="min-w-0">
@@ -1050,13 +1048,20 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-force-reply"
+                        mark="☘" title="强制你回话"
+                        note="开启后，TA 在强控制欲、占有欲、吃醋、担心、急事或关系拉扯上头时，可以低频要求你立刻回到这段单聊。触发后不提供稍后关闭，直到你发出一条可见回复。"
+                        side={<CandyToggle candy="#e85f7a" on={!!cs.forceReplyEnabled} onToggle={() => updateConvo({ forceReplyEnabled: !cs.forceReplyEnabled })} />}
+                    />
+
+                    <Entry
                         manualAnchor="manual-chat-takeout"
                         mark="☘" title="TA 会主动给你撕饭票"
                         note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默在「饭票」里替你点一单并代付，在聊天里生成一张能点开看的饭票小票。关掉则永远不会触发。"
                         side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
                     />
 
-                    <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">
+                    <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」会低频判断，只有真有小事或表达欲时才发；TA 聊天时也会提起自己发过的动态。">
                         <div className="flex flex-wrap gap-2 items-center">
                             <StickerChip seed="mp-off" active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'off' })}>不发</StickerChip>
                             <StickerChip seed="mp-rnd" active={cs.momentsAutoPost === 'random'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'random' })}>看心情</StickerChip>
@@ -1079,15 +1084,22 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     <Entry
                         manualAnchor="manual-chat-check-phone"
                         mark="☘" title="允许 TA 查岗"
-                        note="TA 会不定期主动拿走你的手机翻一翻（屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人、锁住手机）。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢；被锁住时还可以向 TA 要口令。关着的话 TA 不会动你手机。"
+                        note="TA 只会在有具体情绪或剧情借口时偶尔拿走你的手机翻一翻，例如怀疑、吃醋、担心或保护欲上头；屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人、锁住手机。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢；被锁住时还可以向 TA 要口令。关着的话 TA 不会动你手机。"
                         side={<CandyToggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-long-distance"
+                        mark="☘" title="异地模式"
+                        note="适合纯网聊、远距离或暂时见不到面的设定。开启后 TA 会默认按线上聊天、电话、视频、照片和未来约定相处，不会自己把想念推进成线下小窗；你手动点“见面 / 赴个约”仍可进入。"
+                        side={<CandyToggle candy="#9fb7d8" on={!!cs.longDistanceMode} onToggle={() => updateConvo(cs.longDistanceMode ? { longDistanceMode: false } : { longDistanceMode: true, autoOffline: false })} />}
                     />
 
                     <Entry
                         manualAnchor="manual-chat-auto-meet"
                         mark="☘" title="聊着聊着就见面"
-                        note="对话发展到要见面的情境时，TA 会自己进入线下模式：弹出现场小窗记录情景，你能在窗里说话、行动。退出后这段情景会进上下文，TA 还会主动发消息收个尾。关着则不会触发。"
-                        side={<CandyToggle on={!!cs.autoOffline} onToggle={() => updateConvo({ autoOffline: !cs.autoOffline })} />}
+                        note="对话发展到要见面的情境时，TA 会自己进入线下模式：弹出现场小窗记录情景，你能在窗里说话、行动。退出后这段情景会进上下文；如果几分钟内没有新的聊天或事件，TA 才可能在线上自然收个尾。开启它会关闭异地模式；关着则不会触发。"
+                        side={<CandyToggle on={!!cs.autoOffline && !cs.longDistanceMode} onToggle={() => updateConvo((cs.autoOffline && !cs.longDistanceMode) ? { autoOffline: false } : { autoOffline: true, longDistanceMode: false })} />}
                     />
 
                     <Entry

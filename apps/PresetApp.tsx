@@ -13,20 +13,31 @@ import {
     CHAT_HISTORY_MARKER,
     INJECTION_POSITION,
     MARKER_HINTS,
-    ORDER_CHAR_ID_SINGLE,
+    ORDER_CHAR_ID_GROUP,
     PRESET_SCOPE_KEYS,
     PRESET_SCOPE_META,
     PresetRuntime,
+    applyPresetToMessages,
+    applySafePresetFixes,
     createDefaultPreset,
     createPresetLocalId,
+    createPresetSnapshot,
+    diagnosePreset,
+    diffPresetSnapshot,
     ensureDefaultPresetSeed,
     estimateTokens,
     exportTavernPreset,
+    getFallbackOrderCharacterIdForScope,
+    getPresetOrderForScope,
+    getPresetOrderSource,
     importTavernPreset,
     normalizePresetScopes,
+    restorePresetSnapshotAsCopy,
+    setPresetScopeOrder,
 } from '../utils/presets';
+import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import { setPresetRegexScripts } from '../utils/regex/store';
-import type { PresetPrompt, PresetPromptOrderEntry, PresetScopeKey, TavernPreset } from '../types';
+import type { Message, PresetPrompt, PresetPromptOrderEntry, PresetScopeKey, TavernPreset } from '../types';
 import { InsSheet } from '../components/ui/insKit';
 import { MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
 import {
@@ -85,7 +96,7 @@ const savePinnedPresetIds = (ids: string[]) => {
 };
 
 const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: () => void; status?: string }> = ({ title, en, sub, onBack, status }) => (
-    <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: '#ffffff', borderBottom: '1px solid #ededed' }}>
+    <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ background: '#ffffff', borderBottom: '1px solid #ededed' }}>
         <button
             onClick={onBack}
             className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
@@ -339,6 +350,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
     const [position, setPosition] = useState(prompt.injection_position ?? INJECTION_POSITION.RELATIVE);
     const [depth, setDepth] = useState(prompt.injection_depth ?? 4);
     const [order, setOrder] = useState(prompt.injection_order ?? 100);
+    const [triggerText, setTriggerText] = useState((prompt.injection_trigger || []).join(', '));
     const markerHint = MARKER_HINTS[prompt.identifier]?.hint;
 
     const save = () => {
@@ -349,6 +361,12 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
             next.injection_position = position;
             next.injection_depth = depth;
             next.injection_order = order;
+            const triggers = triggerText
+                .split(/[,\n]/)
+                .map(item => item.trim())
+                .filter(Boolean);
+            if (triggers.length > 0) next.injection_trigger = Array.from(new Set(triggers));
+            else delete next.injection_trigger;
         }
         onSave(next);
     };
@@ -365,6 +383,14 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-10 space-y-8">
                 <Page title="基础信息" en="Name">
+                    <Entry mark="KEY" title="唯一标识" note="identifier 会参与 prompt_order 和酒馆往返；这里只读，避免改名后顺序悬空。">
+                        <input
+                            value={prompt.identifier}
+                            readOnly
+                            className="w-full px-4 py-3 text-xs font-mono outline-none opacity-70"
+                            style={FIELD_STYLE}
+                        />
+                    </Entry>
                     <Entry mark="ID" title="提示词名称" note={isMarker ? '系统占位名称用于在列表中识别，内容由发送流程自动填充。' : '名称只影响管理界面，不会直接写入发送内容。'}>
                     <input
                         value={name}
@@ -443,6 +469,20 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                     </div>
                                 </div>
                             )}
+
+                            <div>
+                                <label className="text-[11px] font-bold mb-1.5 block" style={{ ...CUTE_STACK, color: INK }}>触发类型 injection_trigger</label>
+                                <input
+                                    value={triggerText}
+                                    onChange={e => setTriggerText(e.target.value)}
+                                    placeholder="留空 = normal/全部；多个用逗号或换行分隔"
+                                    className="w-full px-3 py-3 text-xs outline-none"
+                                    style={FIELD_STYLE}
+                                />
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INS_SOFT }}>
+                                    保留 SillyTavern 原字段；Moro 运行时会按 generation type 过滤。
+                                </p>
+                            </div>
                         </Page>
 
                         <Page title="提示词内容" en="Content">
@@ -474,7 +514,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 // 主组件
 
 const PresetApp: React.FC = () => {
-    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig } = useOS();
+    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig, characters, activeCharacterId, groups, userProfile, realtimeConfig } = useOS();
     const [presets, setPresets] = useState<TavernPreset[]>([]);
     const [activeId, setActiveId] = useState<string | null>(PresetRuntime.getActiveId());
     const [enabled, setEnabled] = useState(PresetRuntime.isEnabled());
@@ -486,6 +526,16 @@ const PresetApp: React.FC = () => {
     const [showInsert, setShowInsert] = useState(false);
     const [presetSearch, setPresetSearch] = useState('');
     const [pinnedPresetIds, setPinnedPresetIds] = useState<string[]>(() => readPinnedPresetIds());
+    const [activeScope, setActiveScope] = useState<PresetScopeKey>('chat.private');
+    const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>([]);
+    const [batchRole, setBatchRole] = useState<PresetPrompt['role']>('system');
+    const [batchTrigger, setBatchTrigger] = useState('');
+    const [snapshotId, setSnapshotId] = useState('');
+    const [previewTargetId, setPreviewTargetId] = useState('');
+    const [previewInput, setPreviewInput] = useState('你好，帮我确认现在会怎么组装上下文。');
+    const [previewBusy, setPreviewBusy] = useState(false);
+    const [previewError, setPreviewError] = useState('');
+    const [previewMessages, setPreviewMessages] = useState<Array<{ role: string; content: any }> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // 拖拽排序状态
@@ -494,6 +544,12 @@ const PresetApp: React.FC = () => {
     const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
 
     const active = useMemo(() => presets.find(p => p.id === activeId) || null, [presets, activeId]);
+
+    useEffect(() => {
+        setSelectedPromptIds([]);
+        setPreviewMessages(null);
+        setPreviewError('');
+    }, [activeId, activeScope]);
 
     useEffect(() => {
         let cancelled = false;
@@ -628,6 +684,7 @@ const PresetApp: React.FC = () => {
             const text = await file.text();
             const data = JSON.parse(text);
             const preset = importTavernPreset(data, file.name.replace(/\.json$/i, ''));
+            preset.moroSnapshots = [createPresetSnapshot(preset, '导入初始快照', '导入 JSON')];
             setPresets(prev => [...prev, preset]);
             await DB.savePreset(preset);
             selectPreset(preset.id);
@@ -667,23 +724,28 @@ const PresetApp: React.FC = () => {
     };
 
     // ── 提示词顺序 ──────────────────────────────────────
+    const orderSource = useMemo(() => active ? getPresetOrderSource(active, activeScope) : null, [active, activeScope]);
+
     const orderEntries: PresetPromptOrderEntry[] = useMemo(() => {
         if (!active) return [];
-        const po = active.prompt_order.find(p => p.character_id === ORDER_CHAR_ID_SINGLE) || active.prompt_order[0];
-        return po?.order ?? [];
-    }, [active]);
+        return getPresetOrderForScope(active, activeScope);
+    }, [active, activeScope]);
 
     const promptById = useMemo(() => new Map((active?.prompts ?? []).map(p => [p.identifier, p])), [active]);
 
     const mutateOrder = (fn: (order: PresetPromptOrderEntry[]) => void) => {
         mutateActive(d => {
-            // 单聊 / 群聊两份 order 同步改：Moro 的群聊走独立链路，保持两份一致最不意外。
-            for (const po of d.prompt_order) fn(po.order);
-            if (d.prompt_order.length === 0) {
-                const order: PresetPromptOrderEntry[] = [];
-                fn(order);
-                d.prompt_order.push({ character_id: ORDER_CHAR_ID_SINGLE, order });
+            if (d.moroPromptOrdersByScope?.[activeScope]?.length) {
+                fn(d.moroPromptOrdersByScope[activeScope]!);
+                return;
             }
+            const characterId = getFallbackOrderCharacterIdForScope(activeScope);
+            let po = d.prompt_order.find(p => p.character_id === characterId);
+            if (!po) {
+                po = { character_id: characterId, order: [] };
+                d.prompt_order.push(po);
+            }
+            fn(po.order);
         });
     };
 
@@ -706,7 +768,17 @@ const PresetApp: React.FC = () => {
         const identifier = createPresetLocalId('prompt');
         mutateActive(d => {
             d.prompts.push({ identifier, name: '新提示词', role: 'system', content: '', system_prompt: false });
-            for (const po of d.prompt_order) po.order.push({ identifier, enabled: true });
+            if (d.moroPromptOrdersByScope?.[activeScope]?.length) {
+                d.moroPromptOrdersByScope[activeScope]!.push({ identifier, enabled: true });
+            } else {
+                const characterId = getFallbackOrderCharacterIdForScope(activeScope);
+                let po = d.prompt_order.find(p => p.character_id === characterId);
+                if (!po) {
+                    po = { character_id: characterId, order: [] };
+                    d.prompt_order.push(po);
+                }
+                po.order.push({ identifier, enabled: true });
+            }
         });
         setEditingId(identifier);
     };
@@ -726,6 +798,10 @@ const PresetApp: React.FC = () => {
             d.prompts = d.prompts.filter(p => p.identifier !== identifier);
             for (const po of d.prompt_order) {
                 po.order = po.order.filter(e => e.identifier !== identifier);
+            }
+            for (const key of PRESET_SCOPE_KEYS) {
+                const order = d.moroPromptOrdersByScope?.[key];
+                if (order) d.moroPromptOrdersByScope![key] = order.filter(e => e.identifier !== identifier);
             }
         });
         setEditingId(null);
@@ -768,9 +844,20 @@ const PresetApp: React.FC = () => {
                 setPresets(prev => prev.map(p => {
                     if (p.id !== activeId) return p;
                     const copy: TavernPreset = JSON.parse(JSON.stringify(p));
-                    for (const po of copy.prompt_order) {
-                        const [moved] = po.order.splice(from, 1);
-                        if (moved) po.order.splice(to, 0, moved);
+                    const order = copy.moroPromptOrdersByScope?.[activeScope]?.length
+                        ? copy.moroPromptOrdersByScope[activeScope]!
+                        : (() => {
+                            const characterId = getFallbackOrderCharacterIdForScope(activeScope);
+                            let po = copy.prompt_order.find(item => item.character_id === characterId);
+                            if (!po) {
+                                po = { character_id: characterId, order: [] };
+                                copy.prompt_order.push(po);
+                            }
+                            return po.order;
+                        })();
+                    const [moved] = order.splice(from, 1);
+                    if (moved) {
+                        order.splice(to, 0, moved);
                     }
                     return copy;
                 }));
@@ -846,6 +933,207 @@ const PresetApp: React.FC = () => {
         if (!apiConfig.baseUrl) return '';
         try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; }
     }, [apiConfig.baseUrl]);
+    const selectedPromptSet = useMemo(() => new Set(selectedPromptIds), [selectedPromptIds]);
+    const diagnostics = useMemo(() => active ? diagnosePreset(active, activeScope) : [], [active, activeScope]);
+    const currentSnapshot = useMemo(
+        () => active?.moroSnapshots?.find(s => s.id === snapshotId) || active?.moroSnapshots?.[0] || null,
+        [active, snapshotId],
+    );
+    const snapshotDiff = useMemo(
+        () => active && currentSnapshot ? diffPresetSnapshot(currentSnapshot, active) : null,
+        [active, currentSnapshot],
+    );
+    const previewTargets = useMemo(() => {
+        if (activeScope === 'chat.groupText' || activeScope === 'chat.groupVoice') {
+            return groups.map(g => ({ id: g.id, name: g.name || '未命名群聊' }));
+        }
+        return characters.map(c => ({ id: c.id, name: c.name || '未命名角色' }));
+    }, [activeScope, characters, groups]);
+
+    const addSnapshotToDraft = (draft: TavernPreset, name: string, reason: string) => {
+        const snap = createPresetSnapshot(draft, name, reason);
+        draft.moroSnapshots = [snap, ...(draft.moroSnapshots || [])].slice(0, 24);
+        return snap;
+    };
+
+    const handleCreateScopeOrder = () => {
+        if (!active) return;
+        mutateActive(d => {
+            addSnapshotToDraft(d, `复制 ${PRESET_SCOPE_META[activeScope].title} 顺序前`, '创建 scope 专用顺序');
+            setPresetScopeOrder(d, activeScope, getPresetOrderForScope(d, activeScope));
+        });
+        addToast('已复制为当前 scope 专用顺序', 'success');
+    };
+
+    const handleResetScopeOrder = () => {
+        if (!active) return;
+        if (!window.confirm(`重置「${PRESET_SCOPE_META[activeScope].title}」的专用顺序，改为继承默认？`)) return;
+        mutateActive(d => {
+            addSnapshotToDraft(d, `重置 ${PRESET_SCOPE_META[activeScope].title} 顺序前`, '重置 scope 专用顺序');
+            setPresetScopeOrder(d, activeScope, null);
+        });
+        setSelectedPromptIds([]);
+        addToast('已重置为继承默认顺序', 'success');
+    };
+
+    const togglePromptSelected = (identifier: string) => {
+        setSelectedPromptIds(prev => prev.includes(identifier) ? prev.filter(id => id !== identifier) : [...prev, identifier]);
+    };
+
+    const batchMutate = (label: string, fn: (draft: TavernPreset) => void) => {
+        if (!active || selectedPromptIds.length === 0) return;
+        mutateActive(d => {
+            addSnapshotToDraft(d, `${label}前`, label);
+            fn(d);
+        });
+        addToast(`已执行：${label}`, 'success');
+    };
+
+    const batchSetEnabled = (on: boolean) => batchMutate(on ? '批量启用提示词' : '批量停用提示词', d => {
+        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
+            ? d.moroPromptOrdersByScope[activeScope]!
+            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        for (const entry of order) if (selectedPromptSet.has(entry.identifier)) entry.enabled = on;
+    });
+
+    const batchMove = (where: 'top' | 'bottom') => batchMutate(where === 'top' ? '批量移到顶部' : '批量移到底部', d => {
+        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
+            ? d.moroPromptOrdersByScope[activeScope]!
+            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        const moving = order.filter(e => selectedPromptSet.has(e.identifier));
+        const rest = order.filter(e => !selectedPromptSet.has(e.identifier));
+        order.splice(0, order.length, ...(where === 'top' ? [...moving, ...rest] : [...rest, ...moving]));
+    });
+
+    const batchSetRole = () => batchMutate('批量设置 role', d => {
+        for (const prompt of d.prompts) {
+            if (selectedPromptSet.has(prompt.identifier) && !prompt.marker) prompt.role = batchRole;
+        }
+    });
+
+    const batchSetTriggers = () => batchMutate('批量设置 trigger', d => {
+        const triggers = batchTrigger.split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+        for (const prompt of d.prompts) {
+            if (!selectedPromptSet.has(prompt.identifier) || prompt.marker) continue;
+            if (triggers.length > 0) prompt.injection_trigger = Array.from(new Set(triggers));
+            else delete prompt.injection_trigger;
+        }
+    });
+
+    const batchDetach = () => batchMutate('批量从当前顺序移除', d => {
+        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
+            ? d.moroPromptOrdersByScope[activeScope]!
+            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        const removable = new Set(selectedPromptIds.filter(id => !CORE_CONTEXT_MARKERS.has(id) && id !== CHAT_HISTORY_MARKER));
+        const next = order.filter(e => !removable.has(e.identifier));
+        order.splice(0, order.length, ...next);
+    });
+
+    const batchDeletePrompts = () => {
+        if (!active || selectedPromptIds.length === 0) return;
+        const deletable = new Set(active.prompts
+            .filter(p => selectedPromptSet.has(p.identifier) && !p.system_prompt && !p.marker)
+            .map(p => p.identifier));
+        if (deletable.size === 0) {
+            addToast('选中的条目里没有可删除的用户提示词', 'info');
+            return;
+        }
+        if (!window.confirm(`彻底删除 ${deletable.size} 条用户提示词？`)) return;
+        batchMutate('批量删除用户提示词', d => {
+            d.prompts = d.prompts.filter(p => !deletable.has(p.identifier));
+            for (const po of d.prompt_order) po.order = po.order.filter(e => !deletable.has(e.identifier));
+            for (const key of PRESET_SCOPE_KEYS) {
+                const order = d.moroPromptOrdersByScope?.[key];
+                if (order) d.moroPromptOrdersByScope![key] = order.filter(e => !deletable.has(e.identifier));
+            }
+        });
+        setSelectedPromptIds([]);
+    };
+
+    const handleApplySafeFixes = () => {
+        if (!active) return;
+        const result = applySafePresetFixes(active, activeScope);
+        if (result.fixed.length === 0) {
+            addToast('没有需要自动修复的问题', 'info');
+            return;
+        }
+        result.preset.moroSnapshots = [
+            createPresetSnapshot(active, '自动修复前', '诊断安全修复'),
+            ...(active.moroSnapshots || []),
+        ].slice(0, 24);
+        persistPreset(result.preset);
+        addToast(`已修复 ${result.fixed.length} 项`, 'success');
+    };
+
+    const handleManualSnapshot = () => {
+        if (!active) return;
+        mutateActive(d => {
+            addSnapshotToDraft(d, '手动快照', '用户手动创建');
+        });
+        addToast('已创建快照', 'success');
+    };
+
+    const handleRestoreSnapshot = () => {
+        if (!currentSnapshot) return;
+        const restored = restorePresetSnapshotAsCopy(currentSnapshot);
+        setPresets(prev => [...prev, restored]);
+        DB.savePreset(restored).catch(() => addToast('快照恢复保存失败', 'error'));
+        selectPreset(restored.id);
+        addToast('已从快照恢复为新预设副本', 'success');
+    };
+
+    const handleRunPreview = async () => {
+        if (!active) return;
+        setPreviewBusy(true);
+        setPreviewError('');
+        setPreviewMessages(null);
+        try {
+            const isGroupScope = activeScope === 'chat.groupText' || activeScope === 'chat.groupVoice';
+            if (isGroupScope) {
+                const group = groups.find(g => g.id === previewTargetId) || groups[0];
+                const preset = await PresetRuntime.getActivePresetForScope(activeScope);
+                const baseMessages = [{ role: 'system', content: `[群聊预览]\n群名：${group?.name || '群聊'}\n任务：${previewInput || '请根据当前群聊生成回复。'}` }];
+                const messages = preset
+                    ? applyPresetToMessages(baseMessages, preset, {
+                        presetScope: activeScope,
+                        orderCharacterId: ORDER_CHAR_ID_GROUP,
+                        macros: { charName: group?.name || '群聊', userName: userProfile.name || '用户' },
+                        tailMessages: [{ role: 'system', content: '只输出本轮群聊所需内容；若任务要求 JSON，保持可解析格式。' }],
+                    })
+                    : baseMessages;
+                setPreviewMessages(messages);
+                return;
+            }
+            const char = characters.find(c => c.id === previewTargetId) || characters.find(c => c.id === activeCharacterId) || characters[0];
+            if (!char) throw new Error('没有可用于预览的角色');
+            const [emojis, categories, history] = await Promise.all([
+                DB.getEmojis(),
+                DB.getEmojiCategories(),
+                DB.getRecentMessagesByCharId(char.id, Math.max(20, Math.min(char.contextLimit || 80, 120))).catch(() => [] as Message[]),
+            ]);
+            const input = previewInput.trim();
+            const previewHistory: Message[] = input
+                ? [...history, { id: -Date.now(), charId: char.id, role: 'user', type: 'text', content: input, timestamp: Date.now() }]
+                : history;
+            const payload = await buildChatRequestPayload({
+                char,
+                userProfile,
+                groups,
+                emojis,
+                categories,
+                historyMsgs: previewHistory,
+                contextLimit: Math.max(20, Math.min(char.contextLimit || 80, 120)),
+                realtimeConfig,
+                presetScope: activeScope,
+                previewMode: true,
+            });
+            setPreviewMessages(payload.fullMessages);
+        } catch (e: any) {
+            setPreviewError(e?.message || String(e));
+        } finally {
+            setPreviewBusy(false);
+        }
+    };
 
     // ── 渲染 ────────────────────────────────────────────
     return (
@@ -1106,6 +1394,52 @@ const PresetApp: React.FC = () => {
 
                         <Page title="提示词顺序" en="Order" anchor="manual-presets-prompts">
                             <Entry mark="ORDER" title="发送顺序" note="拖动左侧图标调整顺序；关闭条目后，该条不会写入聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
+                                <div className="space-y-2 mb-3">
+                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                        <div className="relative min-w-0">
+                                            <select
+                                                value={activeScope}
+                                                onChange={e => setActiveScope(e.target.value as PresetScopeKey)}
+                                                className="w-full appearance-none px-4 py-3 pr-9 text-xs font-bold outline-none"
+                                                style={FIELD_STYLE}
+                                            >
+                                                {PRESET_SCOPE_KEYS.map(scope => (
+                                                    <option key={scope} value={scope}>{PRESET_SCOPE_META[scope].title} · {scope}</option>
+                                                ))}
+                                            </select>
+                                            <CaretDown
+                                                aria-hidden
+                                                size={14}
+                                                weight="bold"
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                                                style={{ color: INS_SOFT }}
+                                            />
+                                        </div>
+                                        <PressChip active={!orderSource?.inherited} tone={orderSource?.inherited ? 'plain' : 'active'}>
+                                            {orderSource?.inherited ? `继承 ${orderSource.characterId}` : 'scope 专用'}
+                                        </PressChip>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <PressButton
+                                            onClick={handleCreateScopeOrder}
+                                            disabled={!orderSource?.inherited}
+                                            tone="copper"
+                                            className="py-2"
+                                            icon={<StackPlus size={14} weight="bold" />}
+                                        >
+                                            复制为本 scope 专用
+                                        </PressButton>
+                                        <PressButton
+                                            onClick={handleResetScopeOrder}
+                                            disabled={!!orderSource?.inherited}
+                                            tone="plain"
+                                            className="py-2"
+                                            icon={<Eject size={14} weight="bold" />}
+                                        >
+                                            重置继承默认
+                                        </PressButton>
+                                    </div>
+                                </div>
                                 <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
                                     {orderEntries.map((entry, idx) => {
                                         const prompt = promptById.get(entry.identifier);
@@ -1133,12 +1467,26 @@ const PresetApp: React.FC = () => {
                                                 >
                                                     <List size={16} weight="bold" />
                                                 </div>
+                                                <button
+                                                    onClick={() => togglePromptSelected(entry.identifier)}
+                                                    className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
+                                                    style={{
+                                                        background: selectedPromptSet.has(entry.identifier) ? ACTIVE_TONE.soft : '#fff',
+                                                        border: `1px solid ${selectedPromptSet.has(entry.identifier) ? `${ACTIVE_TONE.solid}66` : LINE}`,
+                                                        color: selectedPromptSet.has(entry.identifier) ? ACTIVE_TONE.ink : INS_SOFT,
+                                                    }}
+                                                    aria-label="选择提示词"
+                                                    title="选择提示词"
+                                                >
+                                                    <span className="text-[11px] font-black">{selectedPromptSet.has(entry.identifier) ? '✓' : ''}</span>
+                                                </button>
                                                 <button onClick={() => setEditingId(entry.identifier)} className="flex-1 min-w-0 text-left">
                                                     <div className="flex items-center gap-1.5">
                                                         {isMarker && <Placeholder size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
                                                         {isAbsolute && <ArrowElbowDownRight size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
                                                         <span className={`text-sm font-bold truncate ${entry.enabled ? '' : 'line-through decoration-2'}`} style={{ ...CUTE_STACK, color: INK }}>{prompt.name}</span>
                                                         {isAbsolute && <span className="label-mono text-[8px] shrink-0" style={{ color: INS_SOFT }}>@{prompt.injection_depth ?? 4}</span>}
+                                                        {prompt.injection_trigger?.length ? <span className="label-mono text-[8px] shrink-0" style={{ color: COPPER_TONE.ink }}>trigger</span> : null}
                                                     </div>
                                                     <div className="flex items-center gap-1.5 mt-1 min-w-0">
                                                         <VoiceStamp role={prompt.role} />
@@ -1172,6 +1520,146 @@ const PresetApp: React.FC = () => {
                                         插入未使用
                                     </PressButton>
                                 </div>
+                            </Entry>
+
+                            <Entry mark="BATCH" title={`批量编辑（已选 ${selectedPromptIds.length} 条）`} note="批量操作会先留快照；移除只影响当前 scope 顺序，删除只允许用户自建提示词。">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={() => batchSetEnabled(true)} className="py-2" tone="active">启用</PressButton>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={() => batchSetEnabled(false)} className="py-2" tone="plain">停用</PressButton>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={() => batchMove('top')} className="py-2" tone="plain">移到顶部</PressButton>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={() => batchMove('bottom')} className="py-2" tone="plain">移到底部</PressButton>
+                                </div>
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 mt-2">
+                                    <select
+                                        value={batchRole}
+                                        onChange={e => setBatchRole(e.target.value as PresetPrompt['role'])}
+                                        className="px-3 py-2 text-xs font-bold outline-none"
+                                        style={FIELD_STYLE}
+                                    >
+                                        <option value="system">system</option>
+                                        <option value="user">user</option>
+                                        <option value="assistant">assistant</option>
+                                    </select>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={batchSetRole} className="px-3" tone="copper">设 role</PressButton>
+                                </div>
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 mt-2">
+                                    <input
+                                        value={batchTrigger}
+                                        onChange={e => setBatchTrigger(e.target.value)}
+                                        placeholder="trigger：留空=清除，多个用逗号"
+                                        className="px-3 py-2 text-xs outline-none"
+                                        style={FIELD_STYLE}
+                                    />
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={batchSetTriggers} className="px-3" tone="copper">设 trigger</PressButton>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 mt-2">
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={batchDetach} className="py-2" tone="plain">从本顺序移除</PressButton>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={batchDeletePrompts} className="py-2" tone="danger">删除用户词</PressButton>
+                                    <PressButton disabled={selectedPromptIds.length === 0} onClick={() => setSelectedPromptIds([])} className="py-2" tone="plain">清空选择</PressButton>
+                                </div>
+                            </Entry>
+                        </Page>
+
+                        <Page title="诊断与修复" en="Doctor">
+                            <Entry mark="CHECK" title="当前 scope 结构检查" note="自动修复只处理低风险项目：补回 marker、去重、关闭空提示词、补齐悬空定义。">
+                                <div className="space-y-2">
+                                    {diagnostics.length === 0 ? (
+                                        <div className="rounded-[14px] px-3 py-3 text-[12px]" style={{ background: ACTIVE_TONE.soft, color: ACTIVE_TONE.ink, border: `1px solid ${ACTIVE_TONE.solid}35` }}>
+                                            当前 scope 没有发现明显结构问题。
+                                        </div>
+                                    ) : diagnostics.map((issue, idx) => (
+                                        <div key={`${issue.code}-${issue.identifier || issue.scope || idx}`} className="rounded-[14px] px-3 py-2.5" style={{ background: issue.severity === 'error' ? WARN_TONE.soft : PAPER, border: `1px solid ${issue.severity === 'error' ? `${WARN_TONE.solid}40` : LINE}` }}>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: issue.severity === 'error' ? WARN_TONE.ink : INK }}>{issue.title}</span>
+                                                <span className="label-mono text-[8px]" style={{ color: issue.fixable ? ACTIVE_TONE.ink : INS_SOFT }}>{issue.fixable ? '可修复' : '提示'}</span>
+                                            </div>
+                                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INS_SOFT }}>{issue.detail}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <PressButton disabled={!diagnostics.some(issue => issue.fixable)} onClick={handleApplySafeFixes} className="mt-3 py-2.5 w-full" tone="active" icon={<Stamp size={14} weight="bold" />}>安全修复可修复项</PressButton>
+                            </Entry>
+                        </Page>
+
+                        <Page title="快照与对比" en="Snapshots">
+                            <Entry mark="SAVE" title="编辑快照" note="快照只存在本机预设里；恢复时会创建新预设副本，不覆盖当前预设。">
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <select
+                                        value={currentSnapshot?.id || ''}
+                                        onChange={e => setSnapshotId(e.target.value)}
+                                        className="px-3 py-2 text-xs font-bold outline-none"
+                                        style={FIELD_STYLE}
+                                    >
+                                        {(active.moroSnapshots || []).map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                    <PressButton onClick={handleManualSnapshot} className="px-3" tone="copper" icon={<Stamp size={14} weight="bold" />}>留快照</PressButton>
+                                </div>
+                                {currentSnapshot ? (
+                                    <div className="mt-3 space-y-2">
+                                        <div className="text-[10px]" style={{ color: INS_SOFT }}>
+                                            {new Date(currentSnapshot.createdAt).toLocaleString('zh-CN')} · {currentSnapshot.reason || '无备注'}
+                                        </div>
+                                        <div className="rounded-[14px] px-3 py-2.5 max-h-40 overflow-y-auto no-scrollbar" style={{ background: PAPER, border: `1px solid ${LINE}` }}>
+                                            {snapshotDiff?.changed ? snapshotDiff.items.slice(0, 12).map((item, idx) => (
+                                                <div key={idx} className="text-[10px] leading-relaxed" style={{ color: INK }}>· {item}</div>
+                                            )) : <div className="text-[10px]" style={{ color: INS_SOFT }}>当前预设与该快照没有可见差异。</div>}
+                                        </div>
+                                        <PressButton onClick={handleRestoreSnapshot} className="py-2.5 w-full" tone="active">恢复为新预设副本</PressButton>
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 text-[11px]" style={{ color: INS_SOFT }}>还没有快照。执行批量操作、重置 scope 顺序或手动留快照后会显示在这里。</div>
+                                )}
+                            </Entry>
+                        </Page>
+
+                        <Page title="完整预览" en="Preview">
+                            <Entry mark="RUN" title="不发 API 的消息预览" note="预览会读取本地角色、群聊、世界书和最近聊天，但不会调用模型，也不会写入新消息。">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select
+                                        value={activeScope}
+                                        onChange={e => setActiveScope(e.target.value as PresetScopeKey)}
+                                        className="px-3 py-2 text-xs font-bold outline-none"
+                                        style={FIELD_STYLE}
+                                    >
+                                        {PRESET_SCOPE_KEYS.map(scope => <option key={scope} value={scope}>{PRESET_SCOPE_META[scope].title}</option>)}
+                                    </select>
+                                    <select
+                                        value={previewTargetId}
+                                        onChange={e => setPreviewTargetId(e.target.value)}
+                                        className="px-3 py-2 text-xs font-bold outline-none"
+                                        style={FIELD_STYLE}
+                                    >
+                                        <option value="">自动选择</option>
+                                        {previewTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
+                                    </select>
+                                </div>
+                                <textarea
+                                    value={previewInput}
+                                    onChange={e => setPreviewInput(e.target.value)}
+                                    className="w-full h-24 mt-2 px-3 py-2 text-xs leading-5 resize-none outline-none"
+                                    style={{ ...FIELD_STYLE, ...RULED_BG }}
+                                    placeholder="追加一条预览用用户输入"
+                                />
+                                <PressButton onClick={handleRunPreview} disabled={previewBusy} className="mt-2 py-2.5 w-full" tone="active" icon={<MagnifyingGlass size={14} weight="bold" />}>{previewBusy ? '生成中' : '生成预览'}</PressButton>
+                                {previewError && <div className="mt-2 rounded-[14px] px-3 py-2 text-[11px]" style={{ background: WARN_TONE.soft, color: WARN_TONE.ink, border: `1px solid ${WARN_TONE.solid}35` }}>{previewError}</div>}
+                                {previewMessages && (
+                                    <div className="mt-3 space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar">
+                                        {previewMessages.map((msg, idx) => {
+                                            const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+                                            return (
+                                                <div key={idx} className="rounded-[14px] px-3 py-2.5" style={{ background: PAPER, border: `1px solid ${LINE}` }}>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <VoiceStamp role={msg.role} />
+                                                        <span className="label-mono text-[8px]" style={{ color: INS_SOFT }}>#{idx + 1} · ≈ {estimateTokens(text)} tokens</span>
+                                                    </div>
+                                                    <pre className="mt-2 whitespace-pre-wrap break-words text-[10px] leading-relaxed max-h-44 overflow-y-auto no-scrollbar" style={{ color: INK }}>{text}</pre>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </Entry>
                         </Page>
 

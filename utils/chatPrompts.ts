@@ -18,6 +18,8 @@ import { buildRecentLifeContextBlock } from './autonomousLife';
 import { formatCharacterWithId } from './characterIdentity';
 import { buildChatHubV2ContextBlock } from './chatHubDigest';
 import { buildMomentsChatContextBlock } from './momentsContext';
+import { formatCharPhoneCheckRecordForContext } from './checkPhone';
+import { isAmbientSocialCharacterForUser, isAmbientSocialGroupForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -65,6 +67,15 @@ function summarizeGroupMsgContent(m: Message): string {
             return c.length > GROUP_MSG_TEXT_CAP ? c.slice(0, GROUP_MSG_TEXT_CAP) + '…' : c;
         }
     }
+}
+
+export function isMessageBlockedByPromptSwitch(m: Message, char: CharacterProfile): boolean {
+    // Feature switches are prompt gates too: disabled feature cards stay visible
+    // in chat UI but must not keep feeding the model hidden/context material.
+    const type = m.type as string;
+    if (type === 'vr_card' && !char.vrState?.enabled) return true;
+    if (type === 'html_card' && char.htmlModeEnabled === false) return true;
+    return false;
 }
 
 export const ChatPrompts = {
@@ -158,6 +169,7 @@ export const ChatPrompts = {
         // 原来是 7 段串行 await，总耗时 = 各段之和；现在取 max。
         const config = realtimeConfig || defaultRealtimeConfig;
         const today = new Date().toISOString().split('T')[0];
+        const hideAmbientSocialRecords = shouldHideAmbientSocialRecordForUser(userProfile);
 
         // 1. 实时世界信息（天气/新闻/时间）
         // 真实城市角色：天气按 TA 自己的城市取（虚拟城市不暴露原型给天气块，由城市块接地）
@@ -207,6 +219,7 @@ export const ChatPrompts = {
                 const linked = char.convoSettings?.linkedGroupIds || [];
                 const memberGroups = groups.filter(g =>
                     g.members.includes(char.id)
+                    && (!hideAmbientSocialRecords || !isAmbientSocialGroupForUser(g, userProfile))
                     && (gmMode === 'all' || linked.includes(g.id))
                 );
                 if (memberGroups.length === 0) return '';
@@ -229,11 +242,13 @@ export const ChatPrompts = {
                 const groupLogStr = recentGroupMsgs.map(m => {
                     const dateStr = new Date(m.timestamp).toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
                     const speakerChar = charById.get(m.charId || '');
+                    if (speakerChar && hideAmbientSocialRecords && isAmbientSocialCharacterForUser(speakerChar, userProfile)) return '';
                     const speaker = m.role === 'user'
                         ? userProfile.name
                         : (speakerChar ? formatCharacterWithId(speakerChar) : 'Member');
                     return `[${dateStr}] [Group: ${m.groupName}] ${speaker}: ${summarizeGroupMsgContent(m)}`;
-                }).join('\n');
+                }).filter(Boolean).join('\n');
+                if (!groupLogStr) return '';
                 return `\n### [Background Context: Recent Group Activities]\n(注意：你是以下群聊的成员...)\n${groupLogStr}\n`;
             } catch (e) {
                 console.error("Failed to load group context", e);
@@ -321,7 +336,7 @@ export const ChatPrompts = {
                 return '';
             }
         })();
-        const momentsContextPromise: Promise<string> = buildMomentsChatContextBlock(char).catch(() => '');
+        const momentsContextPromise: Promise<string> = buildMomentsChatContextBlock(char, userProfile).catch(() => '');
 
         const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, recentLifeText, chatHubV2Text, momentsContextText] =
             await Promise.all([
@@ -379,6 +394,7 @@ export const ChatPrompts = {
 
             // 在线一起听开关（per-char，默认开）：关掉后不再宣称"一起听"、也不提供 join 选项
             const listenTogetherEnabled = char.musicProfile?.listenTogetherEnabled !== false;
+            const canReadUserMusic = char.musicProfile?.canReadUserMusic ?? true;
             const musicBlock = ContextBuilder.buildMusicAtmosphere(
                 char,
                 userProfile.name,
@@ -388,7 +404,7 @@ export const ChatPrompts = {
             );
             if (musicBlock) {
                 baseSystemPrompt += `\n${musicBlock}\n`;
-                if (userListeningContext) {
+                if (userListeningContext && canReadUserMusic) {
                     baseSystemPrompt += `\n${ContextBuilder.buildMusicActionGuide(isListeningTogether, listenTogetherEnabled)}\n`;
                 }
             }
@@ -827,6 +843,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         let effectiveHistory = messages
             .filter(m => !m.metadata?.excludeFromContext)
             .filter(m => !m.metadata?.blockPeek)
+            .filter(m => !isMessageBlockedByPromptSwitch(m, char))
             .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
         // Memory Palace: 过滤已被记忆宫殿处理过的消息（由向量记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
@@ -992,12 +1009,10 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                 }
                 else if ((m.type as string) === 'vr_card') {
                     // vr_card：你自己进入 VR 社交游戏《页外》时留下的动态。
-                    // 启用了页外的角色已在系统提示里常驻"《页外》是什么"的设定，这里就不再逐卡重复，
-                    // 只留一句极简标记省 token；没启用页外的角色（可能是旧卡片）才补完整框定兜底。
+                    // 启用了页外的角色已在系统提示里常驻"《页外》是什么"的设定，这里只留极简标记省 token。
+                    // 关闭页外时，effectiveHistory 已把 vr_card 整条过滤掉：关闭等于不注入。
                     const body = typeof m.content === 'string' ? m.content : '';
-                    content = char.vrState?.enabled
-                        ? `${timeStr}（你在《页外》里的动态）\n${body}`
-                        : `${timeStr}（系统记录：这是你之前自己进入 VR 社交游戏《页外》(功能上类似 VRChat) 时留下的动态——你确实进入并参与了这款游戏，只是事情发生在游戏世界里。聊到时就当成"我在《页外》里做的事"来讲，别说成现实里发生的经历。）\n${body}`;
+                    content = `${timeStr}（你在《页外》里的动态）\n${body}`;
                 }
                 else if ((m.type as string) === 'html_card') {
                     // html_card：上下文里只塞纯文字摘要，剥离掉所有 HTML，省 token、不污染 LLM 思考
@@ -1113,6 +1128,9 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                         outcomeText = '已接通';
                     }
                     content = `${timeStr} [${recordLabel}: ${dir}，${outcomeText}]`;
+                }
+                else if (m.role === 'system' && m.metadata?.charPhoneCheck) {
+                    content = `${timeStr} ${formatCharPhoneCheckRecordForContext(m.content, char?.name || '你', userProfile?.name || '用户')}`;
                 }
                 else if (m.role === 'system' && m.metadata?.systemCommand) {
                     // 系统命令：用户以系统身份下达的最高优先级指令。

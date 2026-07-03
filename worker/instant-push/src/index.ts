@@ -399,7 +399,7 @@ const cfWorker = createCloudflareWorker((env: Env) => {
 });
 
 /**
- * 副 API 情绪评估 (worker 端). 框架的 onLLMOutput hook 故意不暴露 apiKey、也不允许自己发 LLM/push
+ * 情绪评估 (worker 端). 框架的 onLLMOutput hook 故意不暴露 apiKey、也不允许自己发 LLM/push
  * (见 amsg-instant SessionContext 文档), 所以情绪评估的第二次 LLM 调用
  * 在 onBeforeLoop 并行启动，在 onAfterLoop 里用 deliver (SSE/Push) 追加推送.
  *
@@ -407,7 +407,7 @@ const cfWorker = createCloudflareWorker((env: Env) => {
  */
 async function runEmotionEval(body: any): Promise<string> {
   const ee = body?.emotionEval;
-  if (!ee?.prompt || !ee?.api?.baseUrl || !ee?.api?.apiKey || !ee?.api?.model) {
+  if (!ee?.prompt || !ee?.api?.baseUrl || !ee?.api?.model) {
     return '';
   }
 
@@ -480,7 +480,7 @@ async function runEmotionEval(body: any): Promise<string> {
  * 并顺手定期清理过期 blob row; scheduled 保留为可选的额外清理入口.
  *
  * fetch 在框架处理之外包了一层: 先把请求体克隆出来 (拿 emotionEval / pushSubscription),
- * 并行调度副 API 情绪评估 + 推 emotion_update. 主回复的 LLM 生成 + 切段 + 推送
+ * 并行调度情绪评估 + 推 emotion_update. 主回复的 LLM 生成 + 切段 + 推送
  * 由 amsg-instant Cloudflare adapter 接收 ctx 后自己挂进 waitUntil.
  */
 export default {

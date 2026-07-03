@@ -60,7 +60,7 @@ export const parseEmojiImportText = (text: string, categoryId?: string): ParsedE
         .split('\n')
         .map(line => line.trim())
         .filter(Boolean)
-        .map(line => {
+        .map((line): ParsedEmojiImport | null => {
             const parts = line.split('--');
             if (parts.length < 2) return null;
             const name = cleanEmojiText(parts[0]);

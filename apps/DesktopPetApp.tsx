@@ -15,6 +15,8 @@ import {
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { useDesktopPet } from '../context/DesktopPetContext';
+import { AppID, type DesktopPetAutoBehavior } from '../types';
+import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import DesktopPetSprite from '../components/desktopPet/DesktopPetSprite';
 import DesktopPetFoodEffect from '../components/desktopPet/DesktopPetFoodEffect';
 import {
@@ -25,11 +27,26 @@ import {
   DESKTOP_PET_PROMPT_LIMIT,
   clampDesktopPetOverlay,
   getDesktopPetActionHoldLoops,
+  getDesktopPetMood,
+  getDesktopPetMoodMeta,
   getDesktopPetRoleState,
+  listDesktopPetManualActions,
 } from '../utils/desktopPet';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const FOOD_GRID_LIMIT = 24;
+const AUTO_BEHAVIOR_OPTIONS: Array<{ id: DesktopPetAutoBehavior; label: string; description: string }> = [
+  { id: 'gentle', label: '温和活跃', description: '偶尔走动和换动作，尽量不打扰操作。' },
+  { id: 'quiet', label: '安静驻留', description: '少自动行动，主要等你摸摸或喂食。' },
+  { id: 'lively', label: '明显活泼', description: '更常走动和换动作，陪伴感更强。' },
+];
+const MOOD_BADGE_CLASS: Record<string, string> = {
+  hungry: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  lonely: 'bg-sky-50 text-sky-700 border-sky-100',
+  happy: 'bg-pink-50 text-pink-700 border-pink-100',
+  sleepy: 'bg-violet-50 text-violet-700 border-violet-100',
+  calm: 'bg-slate-50 text-slate-700 border-slate-100',
+};
 
 const toInputDateTime = (ts: number) => {
   const date = new Date(ts);
@@ -59,10 +76,13 @@ const DesktopPetApp: React.FC = () => {
     talkToActivePet,
     clearPetDialogue,
     setRolePrompt,
+    setAiEnabled,
+    setAutoBehavior,
     setFloatingEnabled,
     updateOverlay,
     setFallSpeed,
     setNotificationsEnabled,
+    triggerTestReminder,
     addReminder,
     updateReminder,
     deleteReminder,
@@ -82,6 +102,8 @@ const DesktopPetApp: React.FC = () => {
   const roleIds = useMemo(() => Object.keys(manifest?.roles || {}), [manifest]);
   const role = manifest?.roles[activeRoleId];
   const roleState = getDesktopPetRoleState(state, activeRoleId);
+  const mood = getDesktopPetMood(state, activeRoleId);
+  const moodMeta = getDesktopPetMoodMeta(mood);
   const hpPercent = Math.round((roleState.hp / DESKTOP_PET_HP_MAX) * 100);
   const fvPercent = Math.round((roleState.fv / DESKTOP_PET_FV_MAX) * 100);
   const dialogue = state.dialogueLog || [];
@@ -90,6 +112,8 @@ const DesktopPetApp: React.FC = () => {
     : undefined;
   const activeRolePrompt = state.rolePrompts?.[activeRoleId] || '';
   const selectedFoodItem = foods.find(food => food.id === selectedFood) || foods[0];
+  const manualActions = useMemo(() => listDesktopPetManualActions(role), [role]);
+  const selectedAutoBehavior = AUTO_BEHAVIOR_OPTIONS.find(option => option.id === state.autoBehavior) || AUTO_BEHAVIOR_OPTIONS[0];
   const handlePreviewLoop = useCallback(() => {
     if (!role || currentActionId === role.defaultAction) return;
     previewActionLoopRef.current += 1;
@@ -105,6 +129,12 @@ const DesktopPetApp: React.FC = () => {
   useEffect(() => {
     setPromptDraft(activeRolePrompt);
   }, [activeRoleId, activeRolePrompt]);
+
+  useManualDeepLink(AppID.DesktopPet, useCallback((target) => {
+    window.setTimeout(() => {
+      if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-pet-root');
+    }, 120);
+  }, []));
 
   useEffect(() => {
     if (!foods.length) {
@@ -176,7 +206,7 @@ const DesktopPetApp: React.FC = () => {
 
   if (!isReady) {
     return (
-      <div className="w-full h-full bg-[#f8fafc] grid place-items-center text-slate-500 text-sm font-bold">
+      <div data-manual-anchor="manual-pet-root" className="w-full h-full bg-[#f8fafc] grid place-items-center text-slate-500 text-sm font-bold">
         正在唤醒桌宠...
       </div>
     );
@@ -184,7 +214,7 @@ const DesktopPetApp: React.FC = () => {
 
   if (loadError || !manifest || !role) {
     return (
-      <div className="w-full h-full bg-[#f8fafc] flex flex-col">
+      <div data-manual-anchor="manual-pet-root" className="w-full h-full bg-[#f8fafc] flex flex-col">
         <div className="h-14 px-4 flex items-center gap-3 border-b border-slate-200 bg-white">
           <button onClick={closeApp} className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center active:scale-95">
             <ArrowLeft size={20} weight="bold" />
@@ -205,7 +235,7 @@ const DesktopPetApp: React.FC = () => {
   }
 
   return (
-    <div className="w-full h-full bg-[#eef2f7] text-slate-900 flex flex-col overflow-hidden">
+    <div data-manual-anchor="manual-pet-root" className="w-full h-full bg-[#eef2f7] text-slate-900 flex flex-col overflow-hidden">
       <div className="shrink-0 h-14 px-4 flex items-center justify-between border-b border-slate-200 bg-white/92 backdrop-blur">
         <div className="flex items-center gap-3 min-w-0">
           <button onClick={closeApp} className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center active:scale-95">
@@ -229,7 +259,7 @@ const DesktopPetApp: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <section className="relative min-h-[380px] px-4 pt-5 pb-4 bg-gradient-to-b from-[#dfe8f8] via-[#eef4fb] to-[#eef2f7] overflow-hidden">
+        <section data-manual-anchor="manual-pet-profile" className="relative min-h-[380px] px-4 pt-5 pb-4 bg-gradient-to-b from-[#dfe8f8] via-[#eef4fb] to-[#eef2f7] overflow-hidden">
           <div className="max-w-md mx-auto">
             <div className="flex items-center justify-between gap-2 mb-4">
               <div className="flex gap-2 overflow-x-auto no-scrollbar">
@@ -246,6 +276,16 @@ const DesktopPetApp: React.FC = () => {
               <button onClick={playRandomAction} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center active:scale-95" title="随机动作">
                 <Sparkle size={18} weight="fill" />
               </button>
+            </div>
+
+            <div className={`mb-3 rounded-lg border px-3 py-2 flex items-center justify-between gap-3 ${MOOD_BADGE_CLASS[mood] || MOOD_BADGE_CLASS.calm}`}>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black opacity-70">当前心情</div>
+                <div className="text-sm font-black truncate">{moodMeta.label}</div>
+              </div>
+              <div className="text-right text-[10px] leading-snug font-bold opacity-80 max-w-[190px]">
+                {moodMeta.description}
+              </div>
             </div>
 
             <div className="relative flex justify-center pt-1 pb-2">
@@ -389,8 +429,20 @@ const DesktopPetApp: React.FC = () => {
                   <Sparkle size={20} weight="fill" />
                   <div className="font-black truncate">{role.name} 的设定</div>
                 </div>
-                <div className="text-[11px] font-black text-slate-400 shrink-0">
-                  {promptDraft.length}/{DESKTOP_PET_PROMPT_LIMIT}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={async () => {
+                      const next = state.aiEnabled === false;
+                      await setAiEnabled(next);
+                      addToast(next ? 'AI 回应已开启' : 'AI 回应已关闭', 'success');
+                    }}
+                    className={`h-7 px-2 rounded-full text-[10px] font-black border active:scale-95 ${state.aiEnabled === false ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-slate-950 text-white border-slate-950'}`}
+                  >
+                    {state.aiEnabled === false ? 'AI 关' : 'AI 开'}
+                  </button>
+                  <div className="text-[11px] font-black text-slate-400">
+                    {promptDraft.length}/{DESKTOP_PET_PROMPT_LIMIT}
+                  </div>
                 </div>
               </div>
               <textarea
@@ -417,6 +469,28 @@ const DesktopPetApp: React.FC = () => {
                   清空
                 </button>
               </div>
+            </div>
+
+            <div className="rounded-lg bg-white border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkle size={20} weight="fill" />
+                <div className="font-black">动作</div>
+              </div>
+              {manualActions.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {manualActions.map(action => (
+                    <button
+                      key={action.id}
+                      onClick={() => { playAction(action.id); }}
+                      className={`h-10 rounded-lg border text-[12px] font-black active:scale-[0.98] ${currentActionId === action.id ? 'bg-slate-950 text-white border-slate-950' : 'bg-slate-50 border-slate-100 text-slate-700'}`}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-xs text-slate-400 font-bold">当前桌宠没有可手动播放的动作</div>
+              )}
             </div>
 
             <div className="rounded-lg bg-white border border-slate-200 shadow-sm p-4">
@@ -484,6 +558,29 @@ const DesktopPetApp: React.FC = () => {
                 <ArrowsOut size={20} weight="bold" />
                 <div className="font-black">悬浮设置</div>
               </div>
+              <label data-manual-anchor="manual-pet-floating" className="block mb-4">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <span className="text-sm font-black text-slate-700">自动活跃度</span>
+                  <span className="text-[11px] font-black text-slate-400">{selectedAutoBehavior.label}</span>
+                </div>
+                <select
+                  value={state.autoBehavior || 'gentle'}
+                  onChange={async (event) => {
+                    const value = event.target.value as DesktopPetAutoBehavior;
+                    await setAutoBehavior(value);
+                    const label = AUTO_BEHAVIOR_OPTIONS.find(option => option.id === value)?.label || '温和活跃';
+                    addToast(`自动活跃度：${label}`, 'success');
+                  }}
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none"
+                >
+                  {AUTO_BEHAVIOR_OPTIONS.map(option => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+                <div className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                  {selectedAutoBehavior.description}
+                </div>
+              </label>
               <label className="block">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <span className="text-sm font-black text-slate-700">桌宠大小</span>
@@ -531,10 +628,21 @@ const DesktopPetApp: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-lg bg-white border border-slate-200 shadow-sm p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Alarm size={20} weight="bold" />
-                <div className="font-black">提醒</div>
+            <div data-manual-anchor="manual-pet-reminders" className="rounded-lg bg-white border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Alarm size={20} weight="bold" />
+                  <div className="font-black">提醒</div>
+                </div>
+                <button
+                  onClick={async () => {
+                    const result = await triggerTestReminder();
+                    addToast(result.notified ? '测试提醒已发出' : '测试提醒已显示在桌宠里', 'success');
+                  }}
+                  className="h-8 px-3 rounded-full bg-slate-100 text-slate-600 text-[11px] font-black active:scale-95"
+                >
+                  测试
+                </button>
               </div>
               <div className="space-y-2">
                 <input

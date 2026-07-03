@@ -25,7 +25,8 @@ import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import UnblockAppealModal from '../components/chat/UnblockAppealModal';
 import GroupOfflineModeModal from '../components/chat/GroupOfflineModeModal';
 import EmojiImportModal from '../components/chat/EmojiImportModal';
-import { hasOfflineSession } from '../utils/offlineMode';
+import LocationMapCard from '../components/chat/LocationMapCard';
+import { OFFLINE_FOLLOWUP_DELAY_MS, hasOfflineSession, type OfflineCommitInfo } from '../utils/offlineMode';
 import { hasGroupOfflineSession } from '../utils/groupOfflineMode';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { resolveUnblockAppealDecision, type UnblockAppealDecision } from '../utils/unblockAppealActions';
@@ -34,7 +35,7 @@ import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, build
 import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
-import { ambientSocialToCharacter, ensureAmbientSocialState, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter, isAmbientSocialGroup, patchAmbientSocialEntry } from '../utils/ambientSocial';
+import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialCharacterForUser as isAmbientSocialCharacterForProfile, isAmbientSocialGroupForUser as isAmbientSocialGroupForProfile, isRejectedAmbientGeneratedName, patchAmbientSocialEntry, removeAmbientSocialEntry, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
@@ -47,6 +48,7 @@ import { normalizeLiveChatSettings, resolveLiveChatEnabled, shouldTriggerLiveDra
 import { groupVoiceStylePromptBlock, innerVoicePromptBody, liveGroupDraftPromptBody, liveGroupModePromptBlock } from '../utils/laiwangPrompts';
 import { createMessageFollowup } from '../utils/chatFollowups';
 import type { ParsedEmojiImport } from '../utils/emojiImport';
+import { buildChatLocationMap } from '../utils/chatLocationMap';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -80,6 +82,7 @@ type GroupDirectorRunOptions = {
     mode?: GroupDirectorMode;
     liveMode?: 'sent' | 'draft';
     liveDraftText?: string;
+    ephemeralSystemPrompt?: string;
     maxAutoRounds?: number;
     remainingAutoRounds?: number;
     isAutoRound?: boolean;
@@ -135,6 +138,7 @@ const buildScopedGroupCompletionMessages = async (
     if (mediaUserContent) baseMessages.push({ role: 'user', content: mediaUserContent });
     return applyPresetToMessages(baseMessages, preset, {
         orderCharacterId: ORDER_CHAR_ID_GROUP,
+        presetScope: scope,
         macros: { charName: groupName || '群聊', userName },
         tailMessages: [{ role: 'system', content: GROUP_JSON_ARRAY_GUARD }],
     });
@@ -1092,15 +1096,7 @@ const GroupMessageItem = React.memo(({
             case 'location': {
                 const meta = (msg.metadata as any) || {};
                 return (
-                    <div className="w-56 rounded-2xl overflow-hidden border bg-[#fffdfa] active:scale-95 transition-transform" style={{ borderColor: '#eed6df' }}>
-                        <div className="h-20 bg-[#fff4f7] flex items-center justify-center">
-                            <svg viewBox="0 0 24 24" fill="#d8a5b7" className="w-8 h-8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" /></svg>
-                        </div>
-                        <div className="p-2.5">
-                            <div className="text-[13px] font-bold text-[#5a3140] truncate">{msg.content}</div>
-                            {meta.address && <div className="text-[11px] text-[#a892a3] truncate mt-0.5">{meta.address}</div>}
-                        </div>
-                    </div>
+                    <LocationMapCard name={msg.content || '位置'} address={meta.address} locationMap={meta.locationMap} />
                 );
             }
             case 'forum_card': {
@@ -1457,6 +1453,8 @@ const ChatHub: React.FC = () => {
     const [jumpNonce, setJumpNonce] = useState(0);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const isTypingRef = useRef(isTyping);
+    isTypingRef.current = isTyping;
     /** 群记忆宫殿"提取中"状态文本——非空时显示顶部胶囊状态条 */
     const [groupPalaceStatus, setGroupPalaceStatus] = useState<string>('');
 
@@ -1475,6 +1473,7 @@ const ChatHub: React.FC = () => {
     charactersRef.current = characters;
     const activeGroupRef = useRef<GroupProfile | null>(activeGroup);
     activeGroupRef.current = activeGroup;
+    const groupOfflineFollowupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Token 统计 — 对齐私聊 ChatHeader 的 token badge
     const [lastTokenUsage, setLastTokenUsage] = useState<number | null>(null);
@@ -1577,38 +1576,37 @@ const ChatHub: React.FC = () => {
     const [memberPicker, setMemberPicker] = useState<{ action: string; title: string; hint?: string } | null>(null);
     const [locName, setLocName] = useState('');
     const [locDetail, setLocDetail] = useState('');
+    const locPreviewName = locName.trim() || '群里准备分享的地方';
+    const locPreviewAddress = locDetail.trim();
+    const locMapPreview = useMemo(
+        () => buildChatLocationMap(locPreviewName, locPreviewAddress),
+        [locPreviewName, locPreviewAddress]
+    );
     const [imgPrompt, setImgPrompt] = useState('');
     const [imgModel, setImgModel] = useState(() => { try { return localStorage.getItem('moro_image_gen_model') || ''; } catch { return ''; } });
     const [imgPreview, setImgPreview] = useState<string | null>(null);
     const [imgBusy, setImgBusy] = useState(false);
     const [sysCmd, setSysCmd] = useState('');
-    const ambientSocialLinkedCharacterIds = useMemo(
-        () => getAmbientSocialLinkedCharacterIds(userProfile.ambientSocial?.entries || []),
-        [userProfile.ambientSocial]
-    );
-    const ambientSocialLinkedGroupIds = useMemo(
-        () => getAmbientSocialLinkedGroupIds(userProfile.ambientSocial?.entries || []),
-        [userProfile.ambientSocial]
-    );
     const isAmbientSocialCharacterForUser = useCallback((char: CharacterProfile | null | undefined): boolean => (
-        !!char && (isAmbientSocialCharacter(char) || ambientSocialLinkedCharacterIds.has(char.id))
-    ), [ambientSocialLinkedCharacterIds]);
+        isAmbientSocialCharacterForProfile(char, userProfile)
+    ), [userProfile]);
     const isAmbientSocialGroupForUser = useCallback((group: GroupProfile | null | undefined): boolean => (
-        !!group && (isAmbientSocialGroup(group) || ambientSocialLinkedGroupIds.has(group.id))
-    ), [ambientSocialLinkedGroupIds]);
+        isAmbientSocialGroupForProfile(group, userProfile)
+    ), [userProfile]);
+    const hideAmbientSocialRecords = shouldHideAmbientSocialRecordForUser(userProfile, ambientSocialHideConverted);
     const shouldKeepConvoWhenAmbientSocialOff = useCallback((cv: ConvoListItem): boolean => {
         if (cv.kind === 'ambient') return false;
-        if (!ambientSocialHideConverted) return true;
+        if (!hideAmbientSocialRecords) return true;
         if (cv.kind === 'char') return !isAmbientSocialCharacterForUser(characters.find(c => c.id === cv.id));
         if (cv.kind === 'group') return !isAmbientSocialGroupForUser(groups.find(g => g.id === cv.id));
         return true;
-    }, [ambientSocialHideConverted, characters, groups, isAmbientSocialCharacterForUser, isAmbientSocialGroupForUser]);
+    }, [hideAmbientSocialRecords, characters, groups, isAmbientSocialCharacterForUser, isAmbientSocialGroupForUser]);
     const visibleCharacters = useMemo(() => characters.filter(char => (
-        !ambientSocialHideConverted || !isAmbientSocialCharacterForUser(char)
-    )), [characters, ambientSocialHideConverted, isAmbientSocialCharacterForUser]);
+        !hideAmbientSocialRecords || !isAmbientSocialCharacterForUser(char)
+    )), [characters, hideAmbientSocialRecords, isAmbientSocialCharacterForUser]);
     const visibleGroups = useMemo(() => groups.filter(group => (
-        isVisibleGroup(group) && (!ambientSocialHideConverted || !isAmbientSocialGroupForUser(group))
-    )), [groups, ambientSocialHideConverted, isAmbientSocialGroupForUser]);
+        isVisibleGroup(group) && (!hideAmbientSocialRecords || !isAmbientSocialGroupForUser(group))
+    )), [groups, hideAmbientSocialRecords, isAmbientSocialGroupForUser]);
     const pendingUnblockAppealByCharId = useMemo(() => {
         const map = new Map<string, PendingUnblockAppeal>();
         pendingUnblockAppeals.forEach(item => map.set(item.charId, item));
@@ -1810,7 +1808,12 @@ const ChatHub: React.FC = () => {
         }
         let cancelled = false;
         const showActiveEntries = (entries: AmbientSocialEntry[] = []) => {
-            setAmbientEntries(entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+            setAmbientEntries(entries.filter(e => (
+                !e.hidden
+                && !isRejectedAmbientGeneratedName(e.name)
+                && !(e.kind === 'contact' && e.linkedCharId)
+                && !(e.kind === 'group' && e.linkedGroupId)
+            )));
         };
         showActiveEntries(userProfile.ambientSocial?.entries || []);
         (async () => {
@@ -1961,7 +1964,13 @@ const ChatHub: React.FC = () => {
     const saveAmbientSocialEntry = (id: string, updates: Partial<AmbientSocialEntry>) => {
         const next = patchAmbientSocialEntry(userProfile.ambientSocial, id, updates);
         updateUserProfile({ ambientSocial: next });
-        setAmbientEntries(next.entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+        setAmbientEntries(next.entries.filter(e => !e.hidden && !isRejectedAmbientGeneratedName(e.name) && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+    };
+    const deleteAmbientSocialEntry = (id: string) => {
+        const next = removeAmbientSocialEntry(userProfile.ambientSocial, id);
+        updateUserProfile({ ambientSocial: next });
+        setAmbientEntries(next.entries.filter(e => !e.hidden && !isRejectedAmbientGeneratedName(e.name) && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+        setConvos(prev => prev.filter(cv => !(cv.kind === 'ambient' && cv.id === id)));
     };
     const handleToggleConvoPinned = async (kind: ConvoKind, id: string) => {
         if (kind === 'char') {
@@ -2004,8 +2013,8 @@ const ChatHub: React.FC = () => {
             try { localStorage.removeItem(`moro_group_unread_${id}`); } catch { /* ignore */ }
             addToast('已从往来收起，群聊仍在名册', 'success');
         } else {
-            saveAmbientSocialEntry(id, { hidden: true, unread: 0 } as Partial<AmbientSocialEntry>);
-            addToast('已从往来里收起', 'success');
+            deleteAmbientSocialEntry(id);
+            addToast('已删除联系人', 'success');
         }
         setQuickConvoId(null);
         refreshConvoList();
@@ -2864,6 +2873,11 @@ const ChatHub: React.FC = () => {
 
     const openAmbientEntry = (entry?: AmbientSocialEntry) => {
         if (!entry) return;
+        if (isRejectedAmbientGeneratedName(entry.name)) {
+            addToast('这个占位联系人已被清理，不会再接入聊天', 'info');
+            deleteAmbientSocialEntry(entry.id);
+            return;
+        }
         if (entry.kind === 'contact') void openAmbientContact(entry);
         else void openAmbientGroup(entry);
     };
@@ -2895,7 +2909,7 @@ const ChatHub: React.FC = () => {
             const LIFE_STATUS_FRESH_MS = 5 * 60 * 60 * 1000; // 5 小时
             const nowTs = Date.now();
             for (const c of characters) {
-                if (ambientSocialHideConverted && isAmbientSocialCharacterForUser(c)) continue;
+                if (hideAmbientSocialRecords && isAmbientSocialCharacterForUser(c)) continue;
                 const { messages: recentMsgs } = await DB.getRecentMessagesWithCount(c.id, 50);
                 const visibleMsgs = recentMsgs.filter(isConvoPreviewMessage);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
@@ -2909,7 +2923,11 @@ const ChatHub: React.FC = () => {
                     try {
                         const ev = (await DB.getLifeEvents(c.id, 1))[0];
                         if (ev && nowTs - ev.timestamp <= LIFE_STATUS_FRESH_MS) {
-                            const activity = sanitizeLifeText(ev.activity);
+                            const activityText = sanitizeLifeText(ev.activity);
+                            const summaryText = ev.summary ? sanitizeLifeText(ev.summary) : '';
+                            const activity = (!activityText || (activityText.length <= 2 && summaryText.length > 2 && summaryText.length > activityText.length))
+                                ? summaryText
+                                : activityText;
                             if (activity) lifeStatus = {
                                 activity,
                                 mood: ev.mood ? sanitizeLifeText(ev.mood) : undefined,
@@ -2962,7 +2980,7 @@ const ChatHub: React.FC = () => {
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
-    }, [view, visibleGroups, characters, ambientEntries, ambientSocialEnabled, ambientSocialHideConverted, isAmbientSocialCharacterForUser, hiddenConvoWindows, convoRefreshTick]);
+    }, [view, visibleGroups, characters, ambientEntries, ambientSocialEnabled, hideAmbientSocialRecords, isAmbientSocialCharacterForUser, hiddenConvoWindows, convoRefreshTick]);
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
@@ -4671,7 +4689,11 @@ ${logText.substring(0, 10000)}
     const sendGroupLocation = () => {
         const name = locName.trim();
         if (!name) { addToast('填一下地点名称', 'info'); return; }
-        void handleSendMessage(name, 'location', { address: locDetail.trim() || undefined });
+        const address = locDetail.trim();
+        void handleSendMessage(name, 'location', {
+            address: address || undefined,
+            locationMap: buildChatLocationMap(name, address),
+        });
         setActionModal('none'); setLocName(''); setLocDetail('');
     };
 
@@ -4701,15 +4723,54 @@ ${logText.substring(0, 10000)}
         setActionModal('none'); setSysCmd('');
     };
 
-    const handleGroupOfflineEnd = async () => {
+    useEffect(() => () => {
+        if (groupOfflineFollowupTimerRef.current) {
+            clearTimeout(groupOfflineFollowupTimerRef.current);
+            groupOfflineFollowupTimerRef.current = null;
+        }
+    }, [activeGroup?.id]);
+
+    const clearGroupOfflineFollowupTimer = () => {
+        if (groupOfflineFollowupTimerRef.current) {
+            clearTimeout(groupOfflineFollowupTimerRef.current);
+            groupOfflineFollowupTimerRef.current = null;
+        }
+    };
+
+    const scheduleGroupOfflineFollowup = (groupId: string, commitInfo: OfflineCommitInfo | null) => {
+        clearGroupOfflineFollowupTimer();
+        if (!commitInfo) return;
+        groupOfflineFollowupTimerRef.current = setTimeout(() => {
+            groupOfflineFollowupTimerRef.current = null;
+            void (async () => {
+                const liveGroup = activeGroupRef.current;
+                if (!liveGroup || liveGroup.id !== groupId || liveGroup.dissolved || liveGroup.mutedAll) return;
+                if (isTypingRef.current) return;
+                const fresh = await DB.getGroupMessages(groupId).catch(() => [] as Message[]);
+                const hasVisibleAfterOffline = fresh.some(m =>
+                    m.groupId === groupId &&
+                    !m.metadata?.hidden &&
+                    !m.metadata?.proactiveHint &&
+                    (m.timestamp > commitInfo.timestamp || (m.timestamp === commitInfo.timestamp && m.id > commitInfo.messageId))
+                );
+                if (hasVisibleAfterOffline) return;
+                await triggerDirector(fresh, {
+                    ephemeralSystemPrompt:
+                        '这是一轮群聊线下赴约结束数分钟后的自然线上收尾。可以让一两位最合适的成员轻轻回味刚才线下现场的细节或情绪，但不要强行全员轮流，也不要立刻推进新的现实事件。尤其是外卖、快递、电话、约定等，只有线下记录或群聊里明确写明已经发生，才能说成已经发生；如果只是正在等，就保持“还在等”的时间状态。',
+                });
+            })();
+        }, OFFLINE_FOLLOWUP_DELAY_MS);
+    };
+
+    const handleGroupOfflineEnd = async (commitInfo: OfflineCommitInfo | null) => {
         if (!activeGroup) return;
         if (suspendedOfflineSession?.kind === 'group' && suspendedOfflineSession.groupId === activeGroup.id) {
             clearSuspendedOfflineSession();
         }
         setShowGroupOfflineMode(false);
-        const fresh = await refreshGroupMessagesState(activeGroup.id);
+        await refreshGroupMessagesState(activeGroup.id);
         addToast('群聊赴约已结束，回到线上聊天', 'info');
-        setTimeout(() => { void triggerDirector(fresh); }, 800);
+        scheduleGroupOfflineFollowup(activeGroup.id, commitInfo);
     };
 
     const handleGroupOfflineSuspend = (entryCount: number) => {
@@ -5306,8 +5367,17 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
 
     const triggerDirector = async (currentMsgs: Message[], options: GroupDirectorRunOptions = {}) => {
         if (!activeGroup) return;
-        if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
-        if (activeGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
+        const runGroup = activeGroup;
+        const runGroupId = runGroup.id;
+        const isCurrentGroupRun = () => activeGroupRef.current?.id === runGroupId;
+        const refreshRunGroupMessages = async () => {
+            const fresh = await DB.getGroupMessages(runGroupId);
+            if (isCurrentGroupRun()) setMessages(fresh);
+            return fresh;
+        };
+        if (runGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
+        if (hideAmbientSocialRecords && isAmbientSocialGroupForUser(runGroup)) { addToast('用户社交圈已关闭，这个群暂时不会发言', 'info'); return; }
+        if (runGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
         const directorMode: GroupDirectorMode = options.mode || (activeGroup.replyIndividually ? 'individual' : 'director');
         const liveDraftText = (options.liveDraftText || '').trim();
         const liveMode = options.liveMode || (liveDraftText ? 'draft' : undefined);
@@ -5335,7 +5405,11 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
 
         try {
             // 1. Prepare Group Context
-            const groupMembers = characters.filter(c => activeGroup.members.includes(c.id));
+            const groupMembers = characters.filter(c => (
+                activeGroup.members.includes(c.id)
+                && (!hideAmbientSocialRecords || !isAmbientSocialCharacterForUser(c))
+            ));
+            if (groupMembers.length === 0) { addToast('当前没有可发言的群成员', 'info'); return; }
             
             // Calculate Time Context
             const lastMsg = currentMsgs[currentMsgs.length - 1];
@@ -5394,6 +5468,9 @@ ${userRosterLine}
 ${rosterLines}
 
 ${sharedScene.text}`;
+            if (options.ephemeralSystemPrompt?.trim()) {
+                context += `\n\n[本轮临时提示]\n${options.ephemeralSystemPrompt.trim()}`;
+            }
 
             // 2. Inject Member Context (Strict Isolation via ContextBuilder)
             await WorldbookRuntime.withContext({ scanMessages: groupScanMessages }, async () => {
@@ -5601,6 +5678,20 @@ ${recentPrivate || '(暂无私聊)'}
                 emojiAssociation: groupEmojiAssociation,
                 emojiContext: emojiContextStr,
             });
+            const groupPrivateRuleBlock = liveMode
+                ? `#### 五、私聊（PRIVATE）—— 实时模式禁用
+- 当前是实时聊天模式，本轮所有输出都必须留在当前群聊里。
+- 严禁输出 \`[[PRIVATE: ...]]\`，严禁把当前群聊触发转成任何成员的私聊消息。
+- 如果某个成员真的想私下说，改成在群里克制地沉默、岔开话题，或等用户手动打开对应私聊。`
+                : `#### 五、私聊（PRIVATE）—— 罕见特例，默认 0 条
+- **绝大多数轮次本轮 PRIVATE 数量 = 0**。这是默认值。不要每轮都给 PRIVATE 找借口。
+- 只有以下情况才考虑发 1 条 PRIVATE（**整轮全员加起来最多 1 条**）：
+  · 角色真的有重大、不便公开的事要单独告诉用户（涉及隐私、涉及群里某人但不能当面说的关切）
+  · 用户刚才在群里明显状态不对，某个最关心ta的角色想私下确认一下
+  · 角色想给用户一个独处空间（比如约去某地、说一句私下的话）
+- **严禁**把 PRIVATE 当"吐槽群友"的工具——这是低成本制造修罗场的来源，禁止。
+- **严禁**多个角色同一轮都发 PRIVATE。最多一个。
+- 格式: \`[[PRIVATE: 私聊内容]]\`。这条消息只进私聊频道，不在群里显示。`;
 
             const prompt = `${context}
 
@@ -5651,15 +5742,7 @@ ${attachedImagesNote}
 - **去中心化**: 角色之间可以互相接话、回应、起哄，不要每个人都只对着用户说话。但**不强制 A 说了 B 必须回**——真群聊里有人发完没人接是常态。
 - **多轮对话**: 请一次性生成 **1 到 6 条** 消息。**少即是多**——如果本轮氛围是"安静摸鱼"，1-2 条就够。
 
-#### 五、私聊（PRIVATE）—— 罕见特例，默认 0 条
-- **绝大多数轮次本轮 PRIVATE 数量 = 0**。这是默认值。不要每轮都给 PRIVATE 找借口。
-- 只有以下情况才考虑发 1 条 PRIVATE（**整轮全员加起来最多 1 条**）：
-  · 角色真的有重大、不便公开的事要单独告诉用户（涉及隐私、涉及群里某人但不能当面说的关切）
-  · 用户刚才在群里明显状态不对，某个最关心ta的角色想私下确认一下
-  · 角色想给用户一个独处空间（比如约去某地、说一句私下的话）
-- **严禁**把 PRIVATE 当"吐槽群友"的工具——这是低成本制造修罗场的来源，禁止。
-- **严禁**多个角色同一轮都发 PRIVATE。最多一个。
-- 格式: \`[[PRIVATE: 私聊内容]]\`。这条消息只进私聊频道，不在群里显示。
+${groupPrivateRuleBlock}
 
 #### 六、表情和气泡
 - **表情包**: ${groupEmojiAssociation ? `允许低频使用格式 [[SEND_EMOJI: 表情名称]]。**可用表情 (按分类)**: ${emojiContextStr}` : '本群关闭斗图的兴致，严禁输出 [[SEND_EMOJI: ...]]。'}
@@ -5834,7 +5917,7 @@ ${attachedImagesNote}
                             content: narrationText,
                             metadata: { groupNarration: true },
                         } as any);
-                        setMessages(await DB.getGroupMessages(activeGroup.id));
+                        await refreshRunGroupMessages();
                         await new Promise(r => setTimeout(r, Math.max(350, narrationText.length * 25)));
                     }
                     continue;
@@ -5875,7 +5958,7 @@ ${attachedImagesNote}
                         };
                         groupChanged = true;
                         await DB.saveGroup(liveGroup);
-                        setActiveGroup(liveGroup);
+                        if (isCurrentGroupRun()) setActiveGroup(liveGroup);
                         await DB.saveMessage({
                             charId: 'system',
                             groupId: liveGroup.id,
@@ -5885,7 +5968,7 @@ ${attachedImagesNote}
                             // 改名小心思：存进 metadata，点系统提示即可查看（见 GroupMessageItem）
                             ...(thought ? { metadata: { nicknameThought: thought, nicknameChar: charName, nicknameNew: newNick } } : {}),
                         } as any);
-                        setMessages(await DB.getGroupMessages(liveGroup.id));
+                        await refreshRunGroupMessages();
                     }
                 }
 
@@ -5906,7 +5989,7 @@ ${attachedImagesNote}
                                 if (reason) reasons[targetId] = reason;
                                 return { ...prev, options, reasons };
                             });
-                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                            await refreshRunGroupMessages();
                         }
                     }
                 }
@@ -5923,7 +6006,7 @@ ${attachedImagesNote}
                                 ...prev,
                                 entries: [...(prev?.entries || []), { by: targetId, name: entryName, text: entryText, at: Date.now() }],
                             }));
-                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                            await refreshRunGroupMessages();
                         }
                     }
                 }
@@ -5941,7 +6024,7 @@ ${attachedImagesNote}
                                 ...prev,
                                 entries: [...(prev?.entries || []), { by: targetId, name: entryName, mood, at: Date.now() }],
                             }));
-                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                            await refreshRunGroupMessages();
                         }
                     }
                 }
@@ -5958,7 +6041,7 @@ ${attachedImagesNote}
                 if (privateMatches.length > 0) {
                     for (const m of privateMatches) {
                         const privateContent = m[1].trim();
-                        if (privateContent) {
+                        if (privateContent && !liveMode) {
                             // Save to private chat (no groupId)
                             await DB.saveMessage({
                                 charId: targetId,
@@ -6008,7 +6091,7 @@ ${attachedImagesNote}
                             type: 'emoji',
                             content: foundEmoji.url
                         });
-                        setMessages(await DB.getGroupMessages(activeGroup.id));
+                        await refreshRunGroupMessages();
                         await new Promise(r => setTimeout(r, 800)); // Delay after emoji
                     }
                 }
@@ -6031,7 +6114,7 @@ ${attachedImagesNote}
                                 break;
                             }
                         }
-                        setMessages(await DB.getGroupMessages(activeGroup.id));
+                        await refreshRunGroupMessages();
                     }
                 }
 
@@ -6051,7 +6134,7 @@ ${attachedImagesNote}
                                     break;
                                 }
                             }
-                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                            await refreshRunGroupMessages();
                         }
                     }
                 }
@@ -6079,7 +6162,7 @@ ${attachedImagesNote}
                             type: 'text',
                             content: chunk
                         });
-                        setMessages(await DB.getGroupMessages(activeGroup.id));
+                        await refreshRunGroupMessages();
                     }
                 }
             }
@@ -6087,10 +6170,10 @@ ${attachedImagesNote}
             // 群名片有变更时把最新群资料刷进全局 groups state（DB 在循环里已写入）
             if (groupChanged) {
                 await updateGroup(liveGroup.id, liveGroup);
-                setActiveGroup(liveGroup);
+                if (isCurrentGroupRun()) setActiveGroup(liveGroup);
             }
 
-            const freshAfterRound = await DB.getGroupMessages(activeGroup.id);
+            const freshAfterRound = await DB.getGroupMessages(runGroupId);
             const hasGroupProgress = freshAfterRound.length > currentMsgs.length || groupChanged;
             if (remainingAutoRounds > 0 && hasGroupProgress) {
                 await new Promise(r => setTimeout(r, 650));
@@ -6109,7 +6192,7 @@ ${attachedImagesNote}
             if (!options.suppressMemoryPalace) {
                 setIsTyping(false);
                 // 群记忆宫殿：fire-and-forget，水位线/阈值/异常都在内部 swallow，不影响主流程
-                kickGroupMemoryPalace(activeGroup);
+                kickGroupMemoryPalace(runGroup);
             }
         }
     };
@@ -6546,7 +6629,7 @@ ${attachedImagesNote}
                                         style={{ animationDelay: enterDelay }}
                                         className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
                                         actions={[
-                                            { label: '收起', tone: 'danger', onClick: () => handleDeleteConvo('ambient', cv.id) },
+                                            { label: '删除', tone: 'danger', onClick: () => handleDeleteConvo('ambient', cv.id) },
                                             { label: cv.starred ? '取消置顶' : '置顶', tone: 'pin', onClick: () => handleToggleConvoPinned('ambient', cv.id) },
                                             { label: '未读', tone: 'muted', onClick: () => handleMarkConvoUnread('ambient', cv.id) },
                                         ]}
@@ -6574,6 +6657,15 @@ ${attachedImagesNote}
                                     </SwipeConvoRow>
                                 );
                             }
+                            const lifeStatusText = cv.lifeStatus
+                                ? [
+                                    '此刻',
+                                    cv.lifeStatus.eventKind ? (LIFE_KIND_LABELS[cv.lifeStatus.eventKind] || '生活') : '',
+                                    cv.lifeStatus.activity,
+                                    cv.lifeStatus.mood || '',
+                                    cv.lifeStatus.surfacedAsMsg ? '已说过' : '',
+                                ].filter(Boolean).join(' · ')
+                                : '';
                             return (
                                 <SwipeConvoRow
                                     key={`c-${cv.id}`}
@@ -6603,13 +6695,13 @@ ${attachedImagesNote}
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
                                         {/* 「此刻」TA 的线下生活状态：把线下自主生活带进列表，线上线下一眼关联 */}
                                         {cv.lifeStatus && (
-                                            <div className="flex items-start gap-1.5 mt-1">
+                                            <div className="w-full min-w-0 flex items-start gap-1.5 mt-1" title={lifeStatusText}>
                                                 <span className="relative flex h-1.5 w-1.5 shrink-0 mt-[5px]" aria-hidden>
                                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ background: 'rgba(216,165,183,0.36)' }} />
                                                     <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: '#d8a5b7' }} />
                                                 </span>
-                                                <span className="text-[10px] leading-snug min-w-0 break-words" style={{ color: '#9c5e74' }}>
-                                                    此刻 · {cv.lifeStatus.eventKind ? `${LIFE_KIND_LABELS[cv.lifeStatus.eventKind] || '生活'} · ` : ''}{cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}{cv.lifeStatus.surfacedAsMsg ? ' · 已说过' : ''}
+                                                <span className="block flex-1 min-w-0 max-w-full text-[10px] leading-snug line-clamp-2 break-words" style={{ color: '#9c5e74' }}>
+                                                    {lifeStatusText}
                                                 </span>
                                             </div>
                                         )}
@@ -7575,7 +7667,7 @@ ${attachedImagesNote}
                     userProfile={userProfile}
                     apiConfig={apiConfig}
                     addToast={addToast}
-                    onEnd={() => { void handleGroupOfflineEnd(); }}
+                    onEnd={(info) => { void handleGroupOfflineEnd(info); }}
                     onSuspend={handleGroupOfflineSuspend}
                 />
             )}
@@ -8018,7 +8110,7 @@ ${attachedImagesNote}
                                     side={<GroupConvoToggle on={!!groupConvo.personaDrivenMessageLength} onToggle={() => void saveGroupConvoDraft({ personaDrivenMessageLength: !groupConvo.personaDrivenMessageLength })} />}
                                 />
 
-                                <GroupConvoEntry title="实时聊天模式" note={`发出文字后群成员会自动接话；停顿打字时，也可能看见未发送草稿并插一句。当前：${liveEffective ? '开启' : '关闭'}；全局默认：${liveChatGlobalEnabled ? '开启' : '关闭'}。`}>
+                                <GroupConvoEntry title="实时聊天模式" note={`发出文字后当前群成员会在本群自动接话；停顿打字时，也可能看见未发送草稿并插一句。当前：${liveEffective ? '开启' : '关闭'}；全局默认：${liveChatGlobalEnabled ? '开启' : '关闭'}。`}>
                                     <div className="flex flex-wrap gap-2">
                                         {([['inherit', '跟随全局'], ['on', '本群开启'], ['off', '本群关闭']] as const).map(([value, label]) => {
                                             const on = liveOverride === value;
@@ -9040,8 +9132,15 @@ ${attachedImagesNote}
             {/* 落脚点 / 位置分享 */}
             <Modal isOpen={actionModal === 'location'} title="发个落脚点" en="LOCATION" icon={<ScrapStamp><MapPin size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={sendGroupLocation} icon={<MapPin size={16} weight="bold" />}>把位置寄出去</ScrapBtn>}>
                 <div className="space-y-3">
+                    <LocationMapCard
+                        variant="preview"
+                        name={locPreviewName}
+                        address={locPreviewAddress}
+                        locationMap={locMapPreview}
+                    />
                     <ScrapInput value={locName} onChange={e => setLocName(e.target.value)} placeholder="地方叫啥，比如「街角咖啡馆」" autoFocus />
                     <ScrapInput value={locDetail} onChange={e => setLocDetail(e.target.value)} placeholder="具体在哪儿（选填）" />
+                    <ScrapNote center>小地图只在 Moro 本地生成，不会请求真实定位。</ScrapNote>
                 </div>
             </Modal>
 

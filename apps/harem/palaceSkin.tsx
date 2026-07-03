@@ -34,14 +34,20 @@ export const PaperBackdrop: React.FC<{ corners?: boolean }> = () => (
 );
 
 export const PaperShell: React.FC<{ children: React.ReactNode; className?: string; style?: React.CSSProperties }> = ({ children, className = '', style }) => (
-    <div className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`} style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG, ...style }}>
+    <div className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden animate-fade-in ${className}`} style={{ color: INK, background: PAGE_BG, ...style }}>
         <PaperBackdrop />
         {children}
     </div>
 );
 
 export const ScrapScroll: React.FC<{ children: React.ReactNode; className?: string; innerRef?: React.Ref<HTMLDivElement> }> = ({ children, className = '', innerRef }) => (
-    <div ref={innerRef} className={`relative z-10 flex-1 overflow-y-auto no-scrollbar ${className}`}>{children}</div>
+    <div
+        ref={innerRef}
+        className={`relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar ${className}`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
+    >
+        {children}
+    </div>
 );
 
 export const WashiTape: React.FC<{ color?: WashiColor; rotate?: number; className?: string; style?: React.CSSProperties; children?: React.ReactNode }> = ({ color = 'amber', rotate = -3, className = '', style, children }) => {
@@ -158,10 +164,22 @@ export const PaperSheet: React.FC<{ open: boolean; onClose?: () => void; title?:
     return (
         <div className="fixed inset-0 z-[120] flex items-end justify-center animate-fade-in">
             <div className="absolute inset-0" style={{ background: 'rgba(25,5,9,0.62)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
-            <div className="relative w-full animate-slide-up" style={{ maxWidth: 460, background: 'linear-gradient(180deg, #fffaf0, #efd5a2)', borderTopLeftRadius: 24, borderTopRightRadius: 24, border: GOLD_BORDER, boxShadow: '0 -22px 60px -24px rgba(20,4,8,0.7)', paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
+            <div
+                className="relative w-full animate-slide-up flex min-h-0 flex-col"
+                style={{
+                    maxWidth: 460,
+                    maxHeight: 'min(88vh, calc(var(--visual-viewport-height, 100vh) - var(--safe-top, 0px) - 12px))',
+                    background: 'linear-gradient(180deg, #fffaf0, #efd5a2)',
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    border: GOLD_BORDER,
+                    boxShadow: '0 -22px 60px -24px rgba(20,4,8,0.7)',
+                    paddingBottom: 'max(var(--safe-bottom, 0px), 16px)',
+                }}
+            >
                 <div className="flex justify-center pt-3"><span className="w-10 h-1.5 rounded-full" style={{ background: 'rgba(138,31,43,0.3)' }} /></div>
                 {title && <div className="px-6 pt-3 text-center text-[15px] font-extrabold" style={{ color: INK }}>{title}</div>}
-                <div className="px-5 pt-3 pb-4">{children}</div>
+                <div className="min-h-0 overflow-y-auto no-scrollbar px-5 pt-3 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
             </div>
         </div>
     );

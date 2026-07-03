@@ -2,14 +2,27 @@ import {
     BankBusinessTemplate,
     BankFullState,
     BankJobApplication,
+    BankJobApplicationStage,
     BankJobApplicationStatus,
     BankJobEmployment,
     BankJobPosting,
+    BankJobStageAiDraft,
+    BankJobStageResult,
+    BankJobStageTodo,
     BankLifeDailyPlanItem,
     BankLifeEvent,
     BankLifeState,
     BankLoan,
     BankLoanChannel,
+    BankLoanActionResult,
+    BankCompanyActionResult,
+    BankLifeActionCategory,
+    BankLifeActionMetric,
+    BankLifeActionRecord,
+    BankLifeActionResult,
+    BankLifeActionTone,
+    BankShopActionResult,
+    BankStockOrderResult,
     BankStockHolding,
     BankStockQuote,
     BankCompanyState,
@@ -18,7 +31,7 @@ import {
     BankResumeProfile,
 } from '../types';
 
-export const BANK_LIFE_VERSION = 2;
+export const BANK_LIFE_VERSION = 3;
 export const SHOP_UNLOCK_COST = 10000;
 export const COMPANY_FOUND_COST = 100000;
 
@@ -92,6 +105,76 @@ function defaultCreditProfile(dateStr = todayStr()): BankLoanCreditProfile {
     };
 }
 
+const actionToneForAmount = (amount?: number): BankLifeActionTone => {
+    if (!amount) return 'info';
+    return amount >= 0 ? 'good' : 'warn';
+};
+
+function compactMetrics(metrics?: BankLifeActionMetric[]): BankLifeActionMetric[] | undefined {
+    const clean = (metrics || [])
+        .map(m => ({ ...m, label: String(m.label || '').trim(), value: String(m.value || '').trim() }))
+        .filter(m => m.label && m.value)
+        .slice(0, 8);
+    return clean.length ? clean : undefined;
+}
+
+export function createBankActionResult(input: {
+    category: BankLifeActionCategory;
+    kind: string;
+    title: string;
+    summary: string;
+    dateStr?: string;
+    tone?: BankLifeActionTone;
+    amount?: number;
+    riskTags?: string[];
+    aiSummary?: string;
+    metrics?: BankLifeActionMetric[];
+    lines?: BankLifeActionMetric[];
+    nextActions?: string[];
+    payload?: Record<string, unknown>;
+}): BankLifeActionResult {
+    return {
+        id: genId('action'),
+        category: input.category,
+        kind: input.kind,
+        title: input.title,
+        summary: input.summary,
+        tone: input.tone || actionToneForAmount(input.amount),
+        amount: input.amount,
+        riskTags: (input.riskTags || []).filter(Boolean).slice(0, 8),
+        aiSummary: input.aiSummary,
+        metrics: compactMetrics(input.metrics),
+        lines: compactMetrics(input.lines),
+        nextActions: (input.nextActions || []).filter(Boolean).slice(0, 4),
+        payload: input.payload,
+    };
+}
+
+function actionRecordFromResult(result: BankLifeActionResult, dateStr: string): BankLifeActionRecord {
+    return {
+        id: result.id,
+        category: result.category,
+        kind: result.kind,
+        title: result.title,
+        summary: result.summary,
+        dateStr,
+        at: new Date().toISOString(),
+        tone: result.tone,
+        amount: result.amount,
+        riskTags: result.riskTags,
+        aiSummary: result.aiSummary,
+        metrics: result.metrics,
+        payload: result.payload,
+    };
+}
+
+export function appendBankActionRecord(life: BankLifeState, result: BankLifeActionResult): BankLifeState {
+    return {
+        ...life,
+        actionHistory: [actionRecordFromResult(result, life.dateStr), ...(life.actionHistory || [])].slice(0, 120),
+    };
+}
+
 
 export function canUnlockLifeShop(balance: number): boolean {
     return balance >= SHOP_UNLOCK_COST;
@@ -111,7 +194,7 @@ function seededNoise(seed: string): number {
 }
 
 export const JOB_CATEGORIES = [
-    '全部', '服务业', '餐饮', '安保', '技术', '设计', '文职', '销售', '教育', '医疗辅助', '物流', '自由职业', '兼职', '灰色/黑心岗位',
+    '全部', '服务业', '餐饮', '安保', '技术', '设计', '文职', '销售', '教育', '医疗辅助', '物流', '自由职业', '兼职', '快招专区',
 ];
 
 const RAW_JOB_POSTINGS: BankJobPosting[] = [
@@ -126,8 +209,8 @@ const RAW_JOB_POSTINGS: BankJobPosting[] = [
     { id: 'job-clerk', category: '文职', title: '行政文员', employer: '晨野商贸', salaryMin: 5500, salaryMax: 8200, payCycle: 'monthly', payDay: 10, intensity: 2, requirements: ['表格', '细心'], benefits: ['稳定', '朝九晚六'], riskTags: ['琐事多'], description: '处理报销、资料、会议和流程，稳定但成长慢。', successBias: 0.18 },
     { id: 'job-care', category: '医疗辅助', title: '陪诊助理', employer: '暖灯健康', salaryMin: 220, salaryMax: 460, payCycle: 'daily', intensity: 3, requirements: ['耐心', '熟悉流程'], benefits: ['日结', '需求稳定'], riskTags: ['情绪劳动'], description: '陪同挂号、检查、取药，细心和共情很重要。', successBias: 0.1 },
     { id: 'job-streamer', category: '自由职业', title: '直播运营兼职', employer: '浪花MCN', salaryMin: 260, salaryMax: 900, payCycle: 'daily', intensity: 4, requirements: ['网感', '剪辑'], benefits: ['日结', '有爆发'], riskTags: ['熬夜', '收入波动'], description: '帮主播排品、切片和复盘，做得好会有额外奖金。', successBias: 0.03 },
-    { id: 'job-shady-deposit', category: '灰色/黑心岗位', title: '高薪试岗店员', employer: '金拱门外包部', salaryMin: 9000, salaryMax: 16000, payCycle: 'monthly', payDay: 28, intensity: 5, requirements: ['先交服装押金'], benefits: ['号称包过'], riskTags: ['押金', '无薪试岗', '拖欠'], description: '招聘页写得很好看，但细则里藏着押金和无薪试岗。', black: true, successBias: -0.22 },
-    { id: 'job-shady-click', category: '灰色/黑心岗位', title: '居家数据标注', employer: '快赚互联', salaryMin: 300, salaryMax: 1200, payCycle: 'daily', intensity: 2, requirements: ['自备电脑', '先培训'], benefits: ['在家做'], riskTags: ['培训费', '结算不明'], description: '看似轻松，可能会被收培训费或拖延结算。', black: true, successBias: -0.18 },
+    { id: 'job-shady-deposit', category: '快招专区', title: '高薪试岗店员', employer: '金拱门外包部', salaryMin: 9000, salaryMax: 16000, payCycle: 'monthly', payDay: 28, intensity: 5, requirements: ['到岗物料确认'], benefits: ['流程快'], riskTags: ['物料费用口径', '试岗计薪口径', '月底结算'], description: '薪资写得很亮眼，入职流程催得快；物料、试岗计薪和月底结算几处口径需要逐句问清。', black: true, successBias: -0.22 },
+    { id: 'job-shady-click', category: '快招专区', title: '居家数据标注', employer: '快赚互联', salaryMin: 300, salaryMax: 1200, payCycle: 'daily', intensity: 2, requirements: ['自备电脑', '先上培训'], benefits: ['居家接单'], riskTags: ['培训门槛', '接单规则', '结算周期'], description: '主打居家轻松，培训、派单门槛和到账周期写得很省字，适合把规则问具体再决定。', black: true, successBias: -0.18 },
 ];
 
 const JOB_DETAIL_PRESETS: Record<string, Partial<BankJobPosting>> = {
@@ -142,17 +225,166 @@ const JOB_DETAIL_PRESETS: Record<string, Partial<BankJobPosting>> = {
     '医疗辅助': { location: '本市 · 医院周边', education: '不限', experienceRequired: '熟悉就医流程优先', workTime: '预约制', companySize: '20-99人', bossTitle: '服务主管', tags: ['日结', '陪诊', '情绪劳动'] },
     '物流': { location: '本市 · 配送站', education: '不限', experienceRequired: '路线熟优先', workTime: '多劳多得', companySize: '1000人以上', bossTitle: '站长', tags: ['日结', '高强度', '接单自由'] },
     '自由职业': { location: '远程/本市', education: '不限', experienceRequired: '案例优先', workTime: '项目制', companySize: '20-99人', bossTitle: '运营负责人', tags: ['日结', '灵活', '波动'] },
-    '灰色/黑心岗位': { location: '地址模糊', education: '不限', experienceRequired: '号称无门槛', workTime: '说法不一', companySize: '信息不透明', bossTitle: '招聘专员', tags: ['高风险', '押金风险', '条款不清'] },
+    '兼职': { location: '本市 · 多商圈', education: '不限', experienceRequired: '经验不限', workTime: '按班次预约', companySize: '20-99人', bossTitle: '兼职招聘专员', tags: ['短期', '排班灵活', '日结优先'] },
+    '快招专区': { location: '地址待确认', education: '不限', experienceRequired: '号称无门槛', workTime: '说法不一', companySize: '信息待补充', bossTitle: '招聘专员', tags: ['到岗快', '条款需问清', '结算需确认'] },
+};
+
+const JOB_REALISTIC_DETAIL_PRESETS: Record<string, Partial<BankJobPosting>> = {
+    '服务业': {
+        companyIndustry: '物业/生活服务',
+        companyStage: '区域连锁',
+        salaryDetail: { socialInsurance: '五险一金', bonusSubsidies: ['全勤奖', '餐补', '节日福利'], note: '底薪按月发放，节假日排班另计补贴。' },
+        responsibilities: ['负责公共区域清洁、物品补充和日常巡检。', '按楼层任务单完成消杀、垃圾清运和异常上报。', '配合主管处理临时会议、访客和活动后的现场恢复。'],
+        requirementDetails: ['能接受早班或轮班，做事细致，守时。', '无需相关经验，入职会安排区域流程培训。'],
+        employeeBenefits: ['五险一金', '包工作餐', '带薪年假', '节日福利', '全勤奖'],
+        recruiterStats: { responseTime: '10分钟内回复', replyRate: '回复率高', todayReplies: '今日回复6次' },
+        publishNote: '该职位7日内发布',
+    },
+    '餐饮': {
+        companyIndustry: '餐饮/门店服务',
+        companyStage: '社区门店',
+        salaryDetail: { socialInsurance: '五险一金', bonusSubsidies: ['包餐', '夜班补贴', '门店奖金'], note: '高峰班次和节假日可叠加门店奖金。' },
+        responsibilities: ['负责点单、上菜、收台和基础顾客接待。', '按门店标准完成备餐、卫生和交接班记录。', '高峰期配合后厨和收银台处理催单与加单。'],
+        requirementDetails: ['能站班，沟通自然，愿意学习门店流程。', '经验不限，有餐饮、奶茶或便利店经历优先。'],
+        employeeBenefits: ['包餐', '绩效奖金', '晋升通道', '调休', '节日福利'],
+        recruiterStats: { responseTime: '3分钟内回复', replyRate: '今日回复10+次', todayReplies: '回复率高' },
+        publishNote: '该职位3日内发布',
+    },
+    '安保': {
+        companyIndustry: '安保/社区服务',
+        companyStage: '项目外包',
+        salaryDetail: { socialInsurance: '五险', bonusSubsidies: ['住宿补贴', '夜班补助', '全勤奖'], note: '固定项目按月结算，夜班补助随当月排班发放。' },
+        responsibilities: ['负责门岗登记、巡逻、监控室值守和突发情况上报。', '维护小区或园区出入秩序，协助处理访客和快递车辆。'],
+        requirementDetails: ['守时，能接受轮班和夜班。', '无经验可培训，有安保、物业或客服经验优先。'],
+        employeeBenefits: ['住宿补贴', '夜班补助', '五险', '全勤奖', '稳定排班'],
+        recruiterStats: { responseTime: '15分钟内回复', replyRate: '回复率较高', todayReplies: '今日回复5次' },
+        publishNote: '该职位7日内发布',
+    },
+    '技术': {
+        companyIndustry: '计算机软件',
+        companyStage: '成长型团队',
+        salaryDetail: { socialInsurance: '五险一金', bonusSubsidies: ['项目奖金', '年终奖', '餐补'], note: '薪资按能力定级，试用期不打折。' },
+        responsibilities: ['负责 Web 产品页面、后台工具和组件的开发维护。', '与产品、设计和后端协作，处理需求评审、联调和线上问题。', '持续优化性能、可维护性和用户体验。'],
+        requirementDetails: ['熟悉 React、TypeScript 和常见工程化流程。', '有完整项目经验，能说明遇到的问题和解决方式。', '重视代码质量，能接受需求变化和阶段性加班。'],
+        employeeBenefits: ['五险一金', '双休', '项目奖金', '年终奖', '弹性上班'],
+        recruiterStats: { responseTime: '1小时内回复', replyRate: '回复率高', todayReplies: '今日回复8次' },
+        publishNote: '该职位本周活跃',
+    },
+    '设计': {
+        companyIndustry: '广告/创意设计',
+        companyStage: '创意工作室',
+        salaryDetail: { socialInsurance: '五险一金', bonusSubsidies: ['项目奖金', '加班餐补', '作品奖金'], note: '根据作品集和试稿表现确定薪资档位。' },
+        responsibilities: ['负责品牌物料、活动海报、页面视觉和日常设计支持。', '跟进需求沟通、改稿反馈和素材归档。', '协助建立可复用的视觉组件和模板。'],
+        requirementDetails: ['需要提供作品集，审美稳定，能理解需求目标。', '熟悉 Figma、PS 或同类设计工具。', '能接受合理改稿，沟通反馈清晰。'],
+        employeeBenefits: ['五险一金', '弹性工作', '项目奖金', '下午茶', '作品署名'],
+        recruiterStats: { responseTime: '30分钟内回复', replyRate: '回复率中高', todayReplies: '今日回复4次' },
+        publishNote: '该职位7日内发布',
+    },
+    '文职': {
+        companyIndustry: '商贸/行政服务',
+        companyStage: '稳定经营',
+        salaryDetail: { socialInsurance: '五险一金', bonusSubsidies: ['全勤奖', '年终奖', '下午茶'], note: '固定底薪为主，少量绩效与出勤挂钩。' },
+        responsibilities: ['负责资料整理、报销登记、会议通知和日常行政支持。', '维护表格台账，协助对接供应商、快递和办公用品采购。'],
+        requirementDetails: ['细心，熟悉基础办公软件，能按流程推进事务。', '经验不限，能稳定到岗、沟通礼貌即可投递。'],
+        employeeBenefits: ['五险一金', '双休', '全勤奖', '年终奖', '下午茶'],
+        recruiterStats: { responseTime: '5分钟内回复', replyRate: '今日回复10+次', todayReplies: '回复率高' },
+        publishNote: '该职位3日内发布',
+    },
+    '销售': {
+        companyIndustry: '家装/本地生活',
+        companyStage: '区域直营网点',
+        salaryDetail: { socialInsurance: '五险', bonusSubsidies: ['高提成', '开单奖', '交通补贴'], note: '底薪加提成，收入随线索转化波动。' },
+        responsibilities: ['跟进门店和线上线索，介绍方案、报价和活动政策。', '维护客户关系，协助量房、签约和售后沟通。'],
+        requirementDetails: ['表达清楚，愿意主动沟通，能接受业绩目标。', '无经验可培训，有销售、客服或家装经验优先。'],
+        employeeBenefits: ['五险', '高提成', '开单奖', '交通补贴', '带薪培训'],
+        recruiterStats: { responseTime: '刚刚活跃', replyRate: '回复率高', todayReplies: '今日回复12次' },
+        publishNote: '该职位今日活跃',
+    },
+    '教育': {
+        companyIndustry: '教育培训/托辅',
+        companyStage: '社区校区',
+        salaryDetail: { socialInsurance: '灵活结算', bonusSubsidies: ['课时费', '续班奖励', '交通补贴'], note: '按课时或班次结算，临时取消会提前通知。' },
+        responsibilities: ['辅导学生完成作业、复习基础知识和整理错题。', '记录学生表现，按要求向家长或校区负责人反馈。'],
+        requirementDetails: ['有耐心，表达清楚，基础学科掌握扎实。', '能固定晚间或周末时段优先。'],
+        employeeBenefits: ['日结/周结', '课时奖励', '短时排班', '交通补贴', '带教培训'],
+        recruiterStats: { responseTime: '20分钟内回复', replyRate: '回复率中高', todayReplies: '今日回复3次' },
+        publishNote: '该职位本周活跃',
+    },
+    '医疗辅助': {
+        companyIndustry: '健康服务/陪诊',
+        companyStage: '本地服务团队',
+        salaryDetail: { socialInsurance: '灵活结算', bonusSubsidies: ['服务奖励', '交通补贴', '好评奖'], note: '按单或按天结算，复杂订单会提前确认补贴。' },
+        responsibilities: ['陪同用户挂号、检查、缴费、取药并整理流程提醒。', '帮助用户记录注意事项，必要时联系家属或客服。'],
+        requirementDetails: ['熟悉医院基础流程，细心、耐心，能处理焦虑沟通。', '可接受预约制排班，守时可靠。'],
+        employeeBenefits: ['日结', '交通补贴', '好评奖励', '弹性接单', '流程培训'],
+        recruiterStats: { responseTime: '30分钟内回复', replyRate: '回复率中高', todayReplies: '今日回复4次' },
+        publishNote: '该职位7日内发布',
+    },
+    '物流': {
+        companyIndustry: '物流/即时配送',
+        companyStage: '站点直营',
+        salaryDetail: { socialInsurance: '商业险', bonusSubsidies: ['高峰补贴', '天气补贴', '冲单奖励'], note: '多劳多得，恶劣天气和高峰时段另有补贴。' },
+        responsibilities: ['按系统派单完成取货、配送和异常上报。', '维护配送工具，保证餐品或包裹准时送达。'],
+        requirementDetails: ['路线熟悉，体力较好，能接受天气和高峰压力。', '需自备或租用合规交通工具，注意安全。'],
+        employeeBenefits: ['日结', '高峰补贴', '天气补贴', '商业险', '接单自由'],
+        recruiterStats: { responseTime: '刚刚活跃', replyRate: '今日回复10+次', todayReplies: '回复率高' },
+        publishNote: '该职位今日活跃',
+    },
+    '自由职业': {
+        companyIndustry: '内容/运营服务',
+        companyStage: '项目制团队',
+        salaryDetail: { socialInsurance: '项目结算', bonusSubsidies: ['项目奖金', '爆款奖励', '夜班补贴'], note: '按项目、天或单量结算，收益波动较大。' },
+        responsibilities: ['协助内容选题、素材整理、剪辑发布和数据复盘。', '根据项目目标跟进排期，及时同步进度和风险。'],
+        requirementDetails: ['有案例或作品优先，能独立推进小任务。', '接受项目制节奏，能提前沟通可用时间。'],
+        employeeBenefits: ['日结/项目结', '远程协作', '项目奖金', '弹性排期', '爆款奖励'],
+        recruiterStats: { responseTime: '1小时内回复', replyRate: '回复率中等', todayReplies: '今日回复2次' },
+        publishNote: '该职位本周活跃',
+    },
+    '兼职': {
+        companyIndustry: '兼职/灵活用工',
+        companyStage: '本地合作商户',
+        salaryDetail: { socialInsurance: '灵活结算', bonusSubsidies: ['日结', '班次补贴', '临时加班费'], note: '具体班次和结算方式以沟通确认后为准。' },
+        responsibilities: ['按班次完成门店、活动或临时项目的基础工作。', '到岗后听从现场负责人安排，完成签到和交接。'],
+        requirementDetails: ['时间匹配，能按约定到岗，不临时爽约。', '经验不限，提前确认地点、时长和结算。'],
+        employeeBenefits: ['日结优先', '短期班次', '排班灵活', '临时补贴', '就近安排'],
+        recruiterStats: { responseTime: '刚刚活跃', replyRate: '回复率高', todayReplies: '今日回复9次' },
+        publishNote: '该职位今日活跃',
+    },
+    '快招专区': {
+        companyIndustry: '灵活用工/门店外包',
+        companyStage: '资料待补充',
+        salaryDetail: { socialInsurance: '沟通后确认', bonusSubsidies: ['高薪空间', '绩效另算'], note: '薪资、物料、培训、试岗和结算口径写得比较松，沟通时要落到文字里。' },
+        responsibilities: ['招聘描述把轻松高薪写得很满，实际任务、排班和结算口径需要再确认。', '到岗前可能先谈物料、培训或试岗安排，别只听口头一句话。'],
+        requirementDetails: ['费用名目、试岗计薪、合同主体和到账时间都要落到文字里。', '联系人催得急或地址说法变来变去时，先停一停再推进。'],
+        employeeBenefits: ['入职很快', '高薪空间', '短期可谈'],
+        recruiterStats: { responseTime: '回复很快', replyRate: '信息待确认', todayReplies: '催到岗较多' },
+        publishNote: '该职位细节待确认',
+    },
 };
 
 function enrichJobPosting(job: BankJobPosting): BankJobPosting {
-    const preset = JOB_DETAIL_PRESETS[job.category] || JOB_DETAIL_PRESETS['服务业'];
+    const preset = {
+        ...(JOB_DETAIL_PRESETS[job.category] || JOB_DETAIL_PRESETS['服务业']),
+        ...(JOB_REALISTIC_DETAIL_PRESETS[job.category] || JOB_REALISTIC_DETAIL_PRESETS['服务业']),
+    };
+    const salaryDetail = {
+        ...preset.salaryDetail,
+        baseSalary: preset.salaryDetail?.baseSalary ?? (job.payCycle === 'monthly' ? Math.round(job.salaryMin * 0.72) : undefined),
+        bonusSubsidies: Array.from(new Set([...(preset.salaryDetail?.bonusSubsidies || []), ...job.benefits])).slice(0, 6),
+    };
+    const tags = Array.from(new Set([
+        ...(preset.tags || []),
+        ...job.requirements,
+        ...job.benefits,
+        ...(preset.employeeBenefits || []),
+    ])).slice(0, 8);
     return {
         ...job,
         ...preset,
-        tags: Array.from(new Set([...(preset.tags || []), ...job.requirements, ...job.benefits])).slice(0, 6),
-        bossName: job.black ? '匿名HR' : `${job.employer.slice(0, 1)}主管`,
-        companyIntro: `${job.employer} 正在招聘「${job.title}」，主要看重${job.requirements.join('、')}。${job.description}`,
+        salaryDetail,
+        tags,
+        bossName: job.black ? '陈专员' : `${job.employer.slice(0, 1)}主管`,
+        companyIntro: `${job.employer} 是${preset.companyIndustry || job.category}方向的招聘方，当前招聘「${job.title}」。岗位主要看重${job.requirements.join('、')}，${job.description}`,
     };
 }
 
@@ -410,6 +642,7 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         watchlist: ['MORO', 'CAFE'],
         loans: [],
         events: [{ id: genId('life'), dateStr, title: '人生拟启动', detail: '你的虚拟人生账本翻开了第一页。', tone: 'info' }],
+        actionHistory: [],
         aiEvents: [],
         resume: defaultResume(dateStr),
         jobSearchSessions: [],
@@ -446,7 +679,7 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             energy: state.life.energy ?? 70,
             health: state.life.health ?? 88,
             shopEvents: state.life.shopEvents || [],
-            jobHistory: state.life.jobHistory || [],
+            jobHistory: (state.life.jobHistory || []).map(app => normalizeJobApplication(app, state.life?.dateStr || state.lastLoginDate || todayStr())),
             pendingWages: state.life.pendingWages || [],
             experience: state.life.experience || {},
             stockMarket: ensureMarketDetail(state.life.stockMarket?.length ? state.life.stockMarket : BASE_STOCKS, state.life.dateStr || state.lastLoginDate || todayStr()),
@@ -454,6 +687,7 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             watchlist: state.life.watchlist || ['MORO', 'CAFE'],
             loans: state.life.loans || [],
             events: state.life.events || [],
+            actionHistory: state.life.actionHistory || [],
             aiEvents: state.life.aiEvents || [],
             resume: state.life.resume || defaultResume(state.life.dateStr || state.lastLoginDate || todayStr()),
             jobSearchSessions: state.life.jobSearchSessions || [],
@@ -474,7 +708,27 @@ function buildShopProducts(businessTypeId: string) {
 export function openLifeShop(life: BankLifeState, businessTypeId: string, shopName: string): BankLifeState {
     const tpl = BUSINESS_TEMPLATES.find(b => b.id === businessTypeId) || BUSINESS_TEMPLATES[0];
     const name = shopName.trim() || tpl.name;
-    return {
+    const result: BankShopActionResult = {
+        ...createBankActionResult({
+            category: 'shop',
+            kind: 'shop-open',
+            title: '开店确认',
+            summary: `${name} 已经完成开业准备，第一批货架会自动上架。`,
+            tone: 'good',
+            amount: -SHOP_UNLOCK_COST,
+            metrics: [
+                { label: '业态', value: tpl.name },
+                { label: '启动金', value: `¥${SHOP_UNLOCK_COST}`, tone: 'warn' },
+                { label: '初始商品', value: `${tpl.products.length} 种` },
+                { label: '风险', value: `${tpl.risk}/5`, tone: tpl.risk >= 4 ? 'warn' : 'info' },
+            ],
+            riskTags: tpl.risk >= 4 ? ['高波动客流'] : [],
+            payload: { businessTypeId: tpl.id, shopName: name },
+        }),
+        category: 'shop',
+        productName: tpl.name,
+    };
+    return appendBankActionRecord({
         ...life,
         shopUnlocked: true,
         shopBusinessType: tpl.id,
@@ -483,7 +737,7 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
         shopCustomers: tpl.customerGroups,
         shopEvents: [{ id: genId('life'), dateStr: life.dateStr, title: '准备开张', detail: `${name} 的第一批货已经上架。`, tone: 'good' }],
         events: pushEvent(life.events, { dateStr: life.dateStr, title: '小店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good', amount: -SHOP_UNLOCK_COST }),
-    };
+    }, result);
 }
 
 function ensureMarketDetail(market: BankStockQuote[], dateStr: string): BankStockQuote[] {
@@ -498,6 +752,190 @@ export function getJobsByCategory(category: string): BankJobPosting[] {
     return JOB_POSTINGS.filter(j => j.category === category);
 }
 
+export const BANK_JOB_STAGE_LABELS: Record<BankJobApplicationStage, string> = {
+    submitted: '已投递',
+    screening: '简历筛选',
+    recruiter_chat: 'HR 沟通',
+    assessment: '测评 / 试岗',
+    interview: '面试',
+    negotiation: '薪资谈判',
+    offer: 'Offer 确认',
+    hired: '已入职',
+    trial: '试用中',
+    rejected: '未通过',
+    scammed: '已中止',
+    declined: '已放弃',
+};
+
+const TERMINAL_JOB_STAGES = new Set<BankJobApplicationStage>(['hired', 'trial', 'rejected', 'scammed', 'declined']);
+
+const JOB_STAGE_FLOW: Record<BankJobApplicationStage, BankJobApplicationStage[]> = {
+    submitted: ['screening', 'rejected'],
+    screening: ['recruiter_chat', 'assessment', 'rejected', 'scammed'],
+    recruiter_chat: ['assessment', 'rejected', 'scammed'],
+    assessment: ['interview', 'rejected', 'scammed'],
+    interview: ['negotiation', 'offer', 'trial', 'rejected', 'scammed'],
+    negotiation: ['offer', 'hired', 'trial', 'rejected', 'declined'],
+    offer: ['hired', 'trial', 'declined'],
+    hired: [],
+    trial: [],
+    rejected: [],
+    scammed: [],
+    declined: [],
+};
+
+function isTerminalJobStage(stage?: BankJobApplicationStage): boolean {
+    return !!stage && TERMINAL_JOB_STAGES.has(stage);
+}
+
+function statusForJobStage(stage: BankJobApplicationStage): BankJobApplicationStatus {
+    if (stage === 'hired' || stage === 'trial' || stage === 'rejected' || stage === 'scammed' || stage === 'declined') return stage;
+    return 'active';
+}
+
+function jobStageTone(stage: BankJobApplicationStage): BankJobStageResult['tone'] {
+    if (stage === 'hired' || stage === 'trial' || stage === 'offer') return 'good';
+    if (stage === 'rejected' || stage === 'declined' || stage === 'scammed') return stage === 'scammed' ? 'bad' : 'warn';
+    if (stage === 'negotiation' || stage === 'assessment') return 'warn';
+    return 'info';
+}
+
+function jobStageNextActionLabel(stage: BankJobApplicationStage): string | undefined {
+    const labels: Partial<Record<BankJobApplicationStage, string>> = {
+        submitted: '查看筛选结果',
+        screening: '进入 HR 沟通',
+        recruiter_chat: '提交沟通印象',
+        assessment: '提交测评 / 试岗',
+        interview: '提交面试回答',
+        negotiation: '确认谈判结果',
+        offer: '接受 Offer',
+    };
+    return labels[stage];
+}
+
+function findPostingForApplication(life: BankLifeState, app: BankJobApplication): BankJobPosting | undefined {
+    return [app.postingSnapshot, ...(life.aiJobPostings || []), ...JOB_POSTINGS].find(j => j?.id === app.postingId);
+}
+
+function buildJobOfferTerms(posting: BankJobPosting, salary: number, aiDraft?: BankJobStageAiDraft): NonNullable<BankJobApplication['offerTerms']> {
+    const raw = aiDraft?.offerTerms || {};
+    const trialDays = typeof raw.trialDays === 'number'
+        ? clamp(Math.round(raw.trialDays), 0, 30)
+        : (posting.black ? 3 : 0);
+    return {
+        salary: clamp(Math.round(raw.salary || aiDraft?.offerSalary || salary), Math.max(80, posting.salaryMin), Math.max(posting.salaryMin, posting.salaryMax)),
+        payCycle: raw.payCycle === 'daily' || raw.payCycle === 'monthly' ? raw.payCycle : posting.payCycle,
+        payDay: posting.payCycle === 'monthly' ? clamp(Math.round(raw.payDay || posting.payDay || 10), 1, 28) : undefined,
+        workTime: String(raw.workTime || posting.workTime || '排班制').slice(0, 40),
+        trialDays,
+        benefits: Array.from(new Set([...(Array.isArray(raw.benefits) ? raw.benefits.map(String) : []), ...posting.benefits])).slice(0, 6),
+        risks: Array.from(new Set([...(Array.isArray(raw.risks) ? raw.risks.map(String) : []), ...posting.riskTags])).slice(0, 6),
+        negotiable: raw.negotiable !== false && !posting.black,
+    };
+}
+
+function buildJobTodos(stage: BankJobApplicationStage, posting?: BankJobPosting): BankJobStageTodo[] {
+    const byStage: Partial<Record<BankJobApplicationStage, BankJobStageTodo[]>> = {
+        submitted: [
+            { id: 'resume-snapshot', kind: 'resume', label: '等简历进入筛选池', detail: '这次投递已保存当前简历快照。' },
+        ],
+        screening: [
+            { id: 'read-requirements', kind: 'resume', label: '对照岗位要求', detail: posting?.requirements?.join('、') || '先确认岗位看重什么。' },
+        ],
+        recruiter_chat: [
+            { id: 'reply-hr', kind: 'chat', label: '和 HR 说清期待', detail: '可问排班、薪资结构、试用期和结算方式。' },
+            { id: 'watch-risk', kind: 'risk', label: '留意条款细节', detail: posting?.riskTags?.length ? posting.riskTags.join('、') : '费用、合同和结算都先问清。' },
+        ],
+        assessment: [
+            { id: 'finish-assessment', kind: 'assessment', label: '完成测评或试岗', detail: '提交一段表现描述，系统会给出阶段反馈。' },
+        ],
+        interview: [
+            { id: 'answer-interview', kind: 'interview', label: '回答面试问题', detail: '说明经验、稳定性和遇到问题时的处理方式。' },
+        ],
+        negotiation: [
+            { id: 'negotiate-offer', kind: 'negotiation', label: '确认薪资和条款', detail: '可以谈薪资、发薪日、试用期和工作时间。' },
+        ],
+        offer: [
+            { id: 'read-offer', kind: 'offer', label: '核对 Offer', detail: '确认薪资、结算周期、试用期和额外条款后再接受。' },
+        ],
+        hired: [{ id: 'done', kind: 'done', label: '明天开始计算收入', detail: '这份工作已经进入人生拟现金流。', done: true }],
+        trial: [{ id: 'trial-watch', kind: 'risk', label: '盯紧试用条款', detail: '试用期里留意计薪、结算和转正口径。' }],
+        rejected: [{ id: 'next-search', kind: 'done', label: '换个方向继续投', detail: '这次未通过，可以调整简历或岗位方向。', done: true }],
+        scammed: [{ id: 'risk-review', kind: 'risk', label: '记下这次教训', detail: '把费用名目、聊天口径和到账日期记下来，下次先问清再排班。', done: true }],
+        declined: [{ id: 'declined', kind: 'done', label: '已放弃这份机会', detail: '申请保留在历史里，便于回看。', done: true }],
+    };
+    return byStage[stage] || [];
+}
+
+function createJobStageResult(
+    stage: BankJobApplicationStage,
+    posting: BankJobPosting,
+    summary: string,
+    input?: {
+        tone?: BankJobStageResult['tone'];
+        highlights?: string[];
+        balanceDelta?: number;
+        scoreDelta?: number;
+        riskFlags?: string[];
+        nextActionLabel?: string;
+    },
+): BankJobStageResult {
+    return {
+        id: genId('jobstage'),
+        stage,
+        title: BANK_JOB_STAGE_LABELS[stage] || posting.title,
+        summary,
+        tone: input?.tone || jobStageTone(stage),
+        highlights: (input?.highlights?.length ? input.highlights : [
+            `${posting.employer} · ${posting.title}`,
+            posting.payCycle === 'daily' ? '日结岗位' : `${posting.payDay || 10} 号发薪`,
+        ]).slice(0, 5),
+        nextActionLabel: input?.nextActionLabel || jobStageNextActionLabel(stage),
+        balanceDelta: input?.balanceDelta,
+        scoreDelta: input?.scoreDelta,
+        riskFlags: input?.riskFlags?.slice(0, 6),
+    };
+}
+
+function appendJobStageHistory(app: BankJobApplication, result: BankJobStageResult, life: BankLifeState): NonNullable<BankJobApplication['stageHistory']> {
+    const entry = {
+        id: result.id,
+        stage: result.stage,
+        title: result.title,
+        detail: result.summary,
+        at: `${life.dateStr} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        tone: result.tone,
+        score: app.score,
+        balanceDelta: result.balanceDelta,
+    };
+    return [entry, ...(app.stageHistory || [])].slice(0, 40);
+}
+
+function normalizeJobApplication(app: BankJobApplication, fallbackDateStr: string): BankJobApplication {
+    const stage = (app.stage || (app.status as BankJobApplicationStage) || 'submitted') as BankJobApplicationStage;
+    const safeStage = BANK_JOB_STAGE_LABELS[stage] ? stage : 'submitted';
+    const status = isTerminalJobStage(safeStage) ? statusForJobStage(safeStage) : 'active';
+    const result = app.stageResult;
+    return {
+        ...app,
+        stage: safeStage,
+        status,
+        score: typeof app.score === 'number' ? app.score : 0,
+        stageHistory: app.stageHistory?.length ? app.stageHistory : [{
+            id: genId('jobhist'),
+            stage: safeStage,
+            title: BANK_JOB_STAGE_LABELS[safeStage],
+            detail: app.message || '求职进度已迁移。',
+            at: app.dateStr || fallbackDateStr,
+            tone: jobStageTone(safeStage),
+            score: app.score || 0,
+        }],
+        todos: app.todos?.length ? app.todos : buildJobTodos(safeStage, app.postingSnapshot),
+        stageResult: result,
+        lastUpdatedAt: app.lastUpdatedAt || app.dateStr || fallbackDateStr,
+    };
+}
+
 function buildInterviewQuestions(posting: BankJobPosting, seedKey: string): NonNullable<BankJobApplication['questions']> {
     const base = [
         `为什么想做「${posting.title}」？`,
@@ -507,7 +945,7 @@ function buildInterviewQuestions(posting: BankJobPosting, seedKey: string): NonN
     if (posting.category === '技术') base[1] = '如果线上页面突然白屏，你会先检查什么？';
     if (posting.category === '餐饮') base[1] = '高峰期同时有三桌催单，你会怎么排优先级？';
     if (posting.category === '销售') base[1] = '客户只看不买时，你会怎么继续跟进？';
-    if (posting.black) base[1] = '对方要求先交费用或无薪试岗，你准备怎么判断？';
+    if (posting.black) base[1] = '对方把费用、试岗和结算说得很快，你准备先确认哪几件事？';
     return base.map((question, idx) => ({
         id: `q-${idx + 1}`,
         question,
@@ -517,21 +955,41 @@ function buildInterviewQuestions(posting: BankJobPosting, seedKey: string): NonN
 
 export function startJobApplication(life: BankLifeState, posting: BankJobPosting): { life: BankLifeState; application: BankJobApplication } {
     const at = `${life.dateStr} 09:00`;
+    const result = createJobStageResult('submitted', posting, `简历已投给 ${posting.employer}，招聘方会先看岗位匹配度和基本要求。`, {
+        highlights: [
+            `岗位：${posting.title}`,
+            `薪资：¥${posting.salaryMin}-${posting.salaryMax}${posting.payCycle === 'daily' ? '/天' : '/月'}`,
+            `要求：${posting.requirements.slice(0, 3).join('、')}`,
+        ],
+    });
     const app: BankJobApplication = {
         id: genId('jobapp'),
         postingId: posting.id,
         title: posting.title,
         employer: posting.employer,
-        status: 'rejected',
+        status: 'active',
         stage: 'submitted',
         score: 0,
         dateStr: life.dateStr,
         questions: buildInterviewQuestions(posting, `${life.dateStr}:${posting.id}:${life.jobHistory.length}`),
         chatMessages: [
-            { role: 'boss', content: `你好，我是${posting.employer}的${posting.bossName || posting.bossTitle || '招聘负责人'}，这边在招「${posting.title}」。`, at },
-            { role: 'system', content: `${posting.location || '本市'} · ${posting.workTime || '排班制'} · ${posting.companySize || '规模未披露'}`, at },
+            { role: 'boss', content: `你好，我是${posting.employer}的${posting.bossName || posting.bossTitle || '招聘负责人'}，这边在招「${posting.title}」。可以先说下你的到岗时间、排班偏好和期望薪资，我也会把社保、结算和试用期讲清楚。`, at },
+            { role: 'system', content: `${posting.location || '本市'} · ${posting.workTime || '排班制'} · ${posting.companySize || '规模未披露'} · ${posting.salaryDetail?.socialInsurance || (posting.payCycle === 'monthly' ? '五险一金' : '灵活结算')}`, at },
         ],
         resumeSnapshot: life.resume,
+        postingSnapshot: posting,
+        stageHistory: [{
+            id: result.id,
+            stage: 'submitted',
+            title: result.title,
+            detail: result.summary,
+            at,
+            tone: result.tone,
+            score: 0,
+        }],
+        todos: buildJobTodos('submitted', posting),
+        stageResult: result,
+        lastUpdatedAt: at,
         message: `简历已投给 ${posting.employer}，等待筛选。`,
     };
     return {
@@ -545,61 +1003,177 @@ export function startJobApplication(life: BankLifeState, posting: BankJobPosting
 }
 
 export function advanceJobApplicationStage(life: BankLifeState, applicationId: string, answer = '', walletBalance = 0): { life: BankLifeState; application?: BankJobApplication; balanceDelta: number } {
-    const app = life.jobHistory.find(a => a.id === applicationId);
-    const posting = app ? JOB_POSTINGS.find(j => j.id === app.postingId) : undefined;
-    if (!app || !posting) return { life, balanceDelta: 0 };
-    const seed = seededNoise(`${life.dateStr}:${app.id}:${app.stage}:${answer.length}`);
+    return advanceJobApplicationStageWithAi(life, applicationId, answer, walletBalance);
+}
+
+export function advanceJobApplicationStageWithAi(life: BankLifeState, applicationId: string, answer = '', walletBalance = 0, aiDraft?: BankJobStageAiDraft): { life: BankLifeState; application?: BankJobApplication; balanceDelta: number } {
+    const rawApp = life.jobHistory.find(a => a.id === applicationId);
+    if (!rawApp) return { life, balanceDelta: 0 };
+    const app = normalizeJobApplication(rawApp, life.dateStr);
+    const posting = findPostingForApplication(life, app);
+    if (!posting) return { life, application: app, balanceDelta: 0 };
+    const stage = (app.stage || 'submitted') as BankJobApplicationStage;
+    if (isTerminalJobStage(stage)) return { life, application: app, balanceDelta: 0 };
+
+    const seed = seededNoise(`${life.dateStr}:${app.id}:${stage}:${answer.length}:${app.stageHistory?.length || 0}`);
     const exp = life.experience[posting.category] || 0;
     const answerBonus = clamp(answer.trim().length / 120, 0, 0.16);
     const baseChance = clamp(0.52 + (posting.successBias || 0) + exp * 0.018 + answerBonus - (life.fatigue > 78 ? 0.1 : 0), 0.1, 0.94);
-    const score = Math.round(clamp((app.score || 45) + 18 + answerBonus * 100 + (seed - 0.5) * 22, 0, 100));
+    const defaultScoreDelta = Math.round(12 + answerBonus * 70 + (seed - 0.5) * 18);
+    const aiScoreDelta = typeof aiDraft?.scoreDelta === 'number' ? clamp(Math.round(aiDraft.scoreDelta), -25, 30) : undefined;
+    const scoreDelta = aiScoreDelta ?? defaultScoreDelta;
+    const score = Math.round(clamp((app.score || app.aiReview?.score || 45) + scoreDelta, 0, 100));
     let balanceDelta = 0;
-    let nextApp: BankJobApplication = { ...app, score };
-    const questions = nextApp.questions || buildInterviewQuestions(posting, app.id);
-    const updateHistory = (updated: BankJobApplication) => life.jobHistory.map(a => a.id === updated.id ? updated : a);
+    let nextStage: BankJobApplicationStage = stage;
+    let message = app.message;
+    const questions = app.questions || buildInterviewQuestions(posting, app.id);
+    let nextQuestions = questions;
 
-    if (app.stage === 'submitted' || !app.stage) {
-        nextApp = { ...nextApp, stage: 'screening', message: `${posting.employer} 正在看你的简历，关键要求是：${posting.requirements.join('、')}。` };
-    } else if (app.stage === 'screening') {
+    if (stage === 'submitted') {
+        nextStage = 'screening';
+        message = `${posting.employer} 正在看你的简历，关键要求是：${posting.requirements.join('、')}。`;
+    } else if (stage === 'screening') {
         if (posting.black && seed < 0.2) {
             balanceDelta = -Math.min(walletBalance, Math.round(posting.salaryMin * 0.12));
-            nextApp = { ...nextApp, stage: 'scammed', status: 'scammed', riskNote: '对方先收费用后失联。', message: '这次踩坑了，先交的费用没能追回。' };
+            nextStage = 'scammed';
+            message = '对方把到岗物料和培训说成必要流程，先扣走一笔费用，后面没再给明确答复。';
         } else if (seed > baseChance + 0.16) {
-            nextApp = { ...nextApp, stage: 'rejected', status: 'rejected', message: `${posting.employer} 没有约面，先换个方向继续找。` };
+            nextStage = 'rejected';
+            message = `${posting.employer} 没有约面，先换个方向继续找。`;
         } else {
-            nextApp = { ...nextApp, stage: 'assessment', message: posting.payCycle === 'daily' ? '对方约你试岗半天，表现好就能当天排班。' : '进入笔试/能力测试，答完再等面试。' };
+            nextStage = 'recruiter_chat';
+            message = '简历通过初筛，HR 想先聊聊排班、经验和到岗时间。';
         }
-    } else if (app.stage === 'assessment') {
+    } else if (stage === 'recruiter_chat') {
+        if (posting.black && seed < 0.16) {
+            balanceDelta = -Math.min(walletBalance, Math.round(posting.salaryMin * 0.1));
+            nextStage = 'scammed';
+            message = '沟通里费用名目、试岗计薪和结算日期一直绕来绕去，对方随后不再回复。';
+        } else if (seed > baseChance + 0.2) {
+            nextStage = 'rejected';
+            message = `${posting.employer} 沟通后觉得期待不太匹配，没有继续约测评。`;
+        } else {
+            nextStage = 'assessment';
+            message = posting.payCycle === 'daily' ? '对方约你试岗半天，表现好就能当天排班。' : '进入笔试/能力测试，答完再等面试。';
+        }
+    } else if (stage === 'assessment') {
         const idx = questions.findIndex(q => !q.answer);
-        const nextQuestions = idx >= 0
+        nextQuestions = idx >= 0
             ? questions.map((q, i) => i === idx ? { ...q, answer: answer || '现场完成了基础测试。', score: Math.round(score) } : q)
             : questions;
-        nextApp = { ...nextApp, questions: nextQuestions, stage: 'interview', message: '测评通过，进入面试。' };
-    } else if (app.stage === 'interview') {
+        if (posting.black && seed < 0.12) {
+            balanceDelta = -Math.min(walletBalance, Math.round(posting.salaryMin * 0.08));
+            nextStage = 'scammed';
+            message = '试岗后对方又追加了几项费用，结算日期也往后推，先停在这里更稳。';
+        } else if (seed > baseChance + 0.28) {
+            nextStage = 'rejected';
+            message = '测评表现没有达到对方预期，这轮先到这里。';
+        } else {
+            nextStage = 'interview';
+            message = '测评通过，进入面试。';
+        }
+    } else if (stage === 'interview') {
+        const idx = questions.findIndex(q => !q.answer);
+        nextQuestions = idx >= 0
+            ? questions.map((q, i) => i === idx ? { ...q, answer: answer || '我会稳定排班，也会先把问题拆清楚再处理。', score: Math.round(score) } : q)
+            : questions;
         const answered = questions.filter(q => q.answer).length;
         const finalChance = clamp(baseChance + answered * 0.04 + (score - 60) / 260, 0.08, 0.96);
         if (posting.black && seed < 0.32) {
-            nextApp = { ...nextApp, stage: 'trial', status: 'trial', riskNote: '条款里有押金、拖欠或无薪试岗风险。', message: `${posting.employer} 给了试用机会，但条款要盯紧。` };
+            nextStage = 'trial';
+            message = `${posting.employer} 给了试用机会，但条款要盯紧。`;
         } else if (seed < finalChance) {
-            const offerSalary = posting.payCycle === 'daily'
-                ? Math.round((posting.salaryMin + posting.salaryMax) / 2)
-                : Math.round(posting.salaryMin + (posting.salaryMax - posting.salaryMin) * clamp(score / 100, 0.25, 0.9));
-            nextApp = { ...nextApp, stage: 'offer', status: 'hired', offerSalary, message: `${posting.employer} 发来 Offer，薪资约 ¥${offerSalary}${posting.payCycle === 'daily' ? '/天' : '/月'}。` };
+            nextStage = seed < finalChance * 0.72 ? 'negotiation' : 'offer';
+            message = nextStage === 'negotiation'
+                ? `${posting.employer} 认可面试表现，开始谈薪资和试用条款。`
+                : `${posting.employer} 发来 Offer，可以核对条款后决定是否入职。`;
         } else {
-            nextApp = { ...nextApp, stage: 'rejected', status: 'rejected', message: `面试结束后，${posting.employer} 选择了其他候选人。` };
+            nextStage = 'rejected';
+            message = `面试结束后，${posting.employer} 选择了其他候选人。`;
         }
-    } else if (app.stage === 'offer') {
-        nextApp = { ...nextApp, stage: 'hired', status: 'hired', message: `${posting.title} 已入职，明天开始计算收入。` };
+    } else if (stage === 'negotiation') {
+        if (seed > baseChance + 0.35) {
+            nextStage = 'rejected';
+            message = '双方在薪资或排班上没有谈拢，这份机会先放下。';
+        } else {
+            nextStage = 'offer';
+            message = `${posting.employer} 更新了 Offer 条款，请最后核对。`;
+        }
+    } else if (stage === 'offer') {
+        nextStage = posting.black && (app.offerTerms?.risks?.length || 0) > 1 ? 'trial' : 'hired';
+        message = nextStage === 'trial'
+            ? `${posting.title} 进入试用，先盯紧条款和结算。`
+            : `${posting.title} 已入职，明天开始计算收入。`;
     }
 
-    const hired = nextApp.stage === 'hired' || nextApp.stage === 'trial';
+    const allowed = JOB_STAGE_FLOW[stage] || [];
+    const aiStage = aiDraft?.nextStage;
+    if (aiStage && allowed.includes(aiStage)) {
+        nextStage = aiStage;
+        if (aiDraft.summary) message = aiDraft.summary;
+    }
+    if (nextStage === 'scammed' && balanceDelta === 0) {
+        balanceDelta = -Math.min(walletBalance, Math.max(0, Math.round(posting.salaryMin * 0.1)));
+    }
+
+    const offerSalary = app.offerSalary || aiDraft?.offerSalary || (posting.payCycle === 'daily'
+        ? Math.round((posting.salaryMin + posting.salaryMax) / 2)
+        : Math.round(posting.salaryMin + (posting.salaryMax - posting.salaryMin) * clamp(score / 100, 0.25, 0.9)));
+    const nextOfferTerms = (nextStage === 'negotiation' || nextStage === 'offer' || nextStage === 'hired' || nextStage === 'trial')
+        ? buildJobOfferTerms(posting, offerSalary, aiDraft)
+        : app.offerTerms;
+    const status = statusForJobStage(nextStage);
+    const riskFlags = Array.from(new Set([...(aiDraft?.riskFlags || []), ...(nextStage === 'scammed' || posting.black ? posting.riskTags : [])])).slice(0, 6);
+    const result = createJobStageResult(nextStage, posting, aiDraft?.summary || message, {
+        tone: aiDraft?.tone,
+        highlights: aiDraft?.highlights,
+        balanceDelta,
+        scoreDelta,
+        riskFlags,
+        nextActionLabel: aiDraft?.nextActionLabel,
+    });
+    let nextApp: BankJobApplication = {
+        ...app,
+        score,
+        stage: nextStage,
+        status,
+        questions: nextQuestions,
+        offerSalary: nextOfferTerms?.salary,
+        offerTerms: nextOfferTerms,
+        riskNote: riskFlags.length ? riskFlags.join('、') : app.riskNote,
+        message,
+        todos: buildJobTodos(nextStage, posting),
+        stageResult: result,
+        stageHistory: appendJobStageHistory({ ...app, score }, result, life),
+        lastUpdatedAt: `${life.dateStr} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    };
+    if (aiDraft?.bossMessage) {
+        const bossMessage = { role: 'boss' as const, content: String(aiDraft.bossMessage).slice(0, 220), at: nextApp.lastUpdatedAt || life.dateStr };
+        nextApp = {
+            ...nextApp,
+            chatMessages: [...(nextApp.chatMessages || []), bossMessage].slice(-80),
+        };
+    }
+
+    const hired = nextStage === 'hired' || nextStage === 'trial';
     const nextLife: BankLifeState = {
         ...life,
-        currentJob: hired ? { ...posting, startedAt: life.dateStr, accruedWage: 0, daysWorked: 0, trialUntil: nextApp.stage === 'trial' ? addDays(life.dateStr, 3) : undefined } : life.currentJob,
-        fatigue: clamp(life.fatigue + (nextApp.stage === 'scammed' ? 12 : nextApp.stage === 'rejected' ? 4 : 2), 0, 100),
-        reputation: clamp(life.reputation + (hired ? 2 : nextApp.stage === 'scammed' ? -2 : 0), 0, 100),
-        jobHistory: updateHistory(nextApp).slice(0, 60),
-        events: pushEvent(life.events, { dateStr: life.dateStr, title: nextApp.stage === 'scammed' ? '求职踩坑' : '求职进展', detail: nextApp.message, tone: hired ? 'good' : nextApp.stage === 'scammed' ? 'bad' : nextApp.stage === 'rejected' ? 'warn' : 'info', amount: balanceDelta || undefined }),
+        currentJob: hired ? {
+            ...posting,
+            salaryMin: nextOfferTerms?.salary || posting.salaryMin,
+            salaryMax: nextOfferTerms?.salary || posting.salaryMax,
+            payCycle: nextOfferTerms?.payCycle || posting.payCycle,
+            payDay: nextOfferTerms?.payDay || posting.payDay,
+            startedAt: life.dateStr,
+            accruedWage: 0,
+            daysWorked: 0,
+            trialUntil: nextStage === 'trial' ? addDays(life.dateStr, nextOfferTerms?.trialDays || 3) : undefined,
+        } : life.currentJob,
+        fatigue: clamp(life.fatigue + (nextStage === 'scammed' ? 12 : nextStage === 'rejected' ? 4 : hired ? 3 : 2), 0, 100),
+        reputation: clamp(life.reputation + (hired ? 2 : nextStage === 'scammed' ? -2 : 0), 0, 100),
+        experience: hired ? { ...life.experience, [posting.category]: (life.experience[posting.category] || 0) + 1 } : life.experience,
+        jobHistory: life.jobHistory.map(a => a.id === nextApp.id ? nextApp : a).slice(0, 60),
+        events: pushEvent(life.events, { dateStr: life.dateStr, title: nextStage === 'scammed' ? '求职中止' : '求职进展', detail: nextApp.message, tone: hired ? 'good' : nextStage === 'scammed' ? 'bad' : nextStage === 'rejected' || nextStage === 'declined' ? 'warn' : 'info', amount: balanceDelta || undefined }),
     };
     return { life: nextLife, application: nextApp, balanceDelta };
 }
@@ -620,27 +1194,50 @@ export function applyForJob(life: BankLifeState, posting: BankJobPosting, wallet
         if (seed < 0.28) {
             status = 'scammed';
             balanceDelta = -Math.min(walletBalance, Math.round((posting.salaryMin || 3000) * 0.18));
-            message = `这份「${posting.title}」踩坑了，押金/培训费被扣走，先记一笔教训。`;
+            message = `这份「${posting.title}」最后没走稳，到岗前的费用被扣走，先把这次记录下来。`;
         } else if (seed < 0.48) {
             status = 'trial';
-            message = `${posting.employer} 只给了试用机会，条款含糊，要小心拖欠工资。`;
+            message = `${posting.employer} 只给了试用机会，计薪和转正口径还没说透。`;
         }
     } else if (status === 'hired' && seed > 0.82) {
         status = 'trial';
         message = `${posting.employer} 愿意让你试用三天，表现好就转正式。`;
     }
 
+    const stage = status as BankJobApplicationStage;
+    const offerTerms = (status === 'hired' || status === 'trial')
+        ? buildJobOfferTerms(posting, Math.round((posting.salaryMin + posting.salaryMax) / 2))
+        : undefined;
+    const stageResult = createJobStageResult(stage, posting, message, {
+        balanceDelta,
+        riskFlags: status === 'scammed' || posting.black ? posting.riskTags : undefined,
+    });
     const application: BankJobApplication = {
         id: genId('jobapp'),
         postingId: posting.id,
         title: posting.title,
         employer: posting.employer,
         status,
-        stage: status,
+        stage,
         score: Math.round(chance * 100),
         questions: buildInterviewQuestions(posting, `${life.dateStr}:${posting.id}:${life.jobHistory.length}`),
-        offerSalary: status === 'hired' || status === 'trial' ? Math.round((posting.salaryMin + posting.salaryMax) / 2) : undefined,
-        riskNote: status === 'scammed' ? '押金或培训费用损失。' : posting.black ? '条款需要逐条看清。' : undefined,
+        offerSalary: offerTerms?.salary,
+        offerTerms,
+        riskNote: status === 'scammed' ? '到岗前费用损失。' : posting.black ? '条款需要逐条看清。' : undefined,
+        postingSnapshot: posting,
+        stageHistory: [{
+            id: stageResult.id,
+            stage,
+            title: stageResult.title,
+            detail: stageResult.summary,
+            at: life.dateStr,
+            tone: stageResult.tone,
+            score: Math.round(chance * 100),
+            balanceDelta,
+        }],
+        todos: buildJobTodos(stage, posting),
+        stageResult,
+        lastUpdatedAt: life.dateStr,
         dateStr: life.dateStr,
         message,
     };
@@ -652,7 +1249,7 @@ export function applyForJob(life: BankLifeState, posting: BankJobPosting, wallet
         fatigue: clamp(life.fatigue + (status === 'scammed' ? 12 : status === 'rejected' ? 5 : 2), 0, 100),
         reputation: clamp(life.reputation + (status === 'hired' ? 2 : status === 'scammed' ? -2 : 0), 0, 100),
         jobHistory: [application, ...life.jobHistory].slice(0, 60),
-        events: pushEvent(life.events, { dateStr: life.dateStr, title: status === 'scammed' ? '求职踩坑' : '求职结果', detail: message, tone: status === 'hired' ? 'good' : status === 'scammed' ? 'bad' : 'info', amount: balanceDelta || undefined }),
+        events: pushEvent(life.events, { dateStr: life.dateStr, title: status === 'scammed' ? '求职中止' : '求职结果', detail: message, tone: status === 'hired' ? 'good' : status === 'scammed' ? 'bad' : 'info', amount: balanceDelta || undefined }),
     };
     return { life: next, application, balanceDelta };
 }
@@ -690,6 +1287,36 @@ export function appendJobChatMessage(life: BankLifeState, applicationId: string,
             ? { ...app, chatMessages: [...(app.chatMessages || []), message].slice(-80) }
             : app),
     };
+}
+
+export function declineJobApplication(life: BankLifeState, applicationId: string, reason = '这份机会先不继续了。'): { life: BankLifeState; application?: BankJobApplication } {
+    const rawApp = life.jobHistory.find(a => a.id === applicationId);
+    if (!rawApp) return { life };
+    const app = normalizeJobApplication(rawApp, life.dateStr);
+    if (isTerminalJobStage(app.stage)) return { life, application: app };
+    const posting = findPostingForApplication(life, app) || app.postingSnapshot || JOB_POSTINGS[0];
+    const message = reason.trim().slice(0, 160) || '这份机会先不继续了。';
+    const result = createJobStageResult('declined', posting, message, {
+        tone: 'warn',
+        highlights: [`已放弃：${app.title}`, '不会影响当前工作收入'],
+    });
+    const nextApp: BankJobApplication = {
+        ...app,
+        stage: 'declined',
+        status: 'declined',
+        declinedReason: message,
+        message,
+        todos: buildJobTodos('declined', posting),
+        stageResult: result,
+        stageHistory: appendJobStageHistory(app, result, life),
+        lastUpdatedAt: `${life.dateStr} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    };
+    const nextLife = {
+        ...life,
+        jobHistory: life.jobHistory.map(a => a.id === nextApp.id ? nextApp : a).slice(0, 60),
+        events: pushEvent(life.events, { dateStr: life.dateStr, title: '放弃求职机会', detail: `${app.employer} · ${app.title}：${message}`, tone: 'warn' }),
+    };
+    return { life: nextLife, application: nextApp };
 }
 
 export function leaveJob(life: BankLifeState): BankLifeState {
@@ -967,7 +1594,7 @@ export function loanTotal(life: BankLifeState): number {
     return life.loans.reduce((sum, l) => sum + l.outstanding + l.interestDue, 0);
 }
 
-export function buyStock(life: BankLifeState, symbol: string, amount: number): { life: BankLifeState; cost: number; shares: number } {
+export function buyStock(life: BankLifeState, symbol: string, amount: number): { life: BankLifeState; cost: number; shares: number; actionResult?: BankStockOrderResult } {
     const quote = life.stockMarket.find(s => s.symbol === symbol);
     if (!quote || amount <= 0) return { life, cost: 0, shares: 0 };
     const fee = Math.max(1, Math.round(amount * 0.003));
@@ -981,25 +1608,97 @@ export function buyStock(life: BankLifeState, symbol: string, amount: number): {
         ? roundMoney(((prev.avgCost * prev.shares) + (quote.price * shares)) / nextShares)
         : quote.price;
     const holding: BankStockHolding = { symbol, shares: nextShares, avgCost: nextAvg };
+    const actionResult: BankStockOrderResult = {
+        ...createBankActionResult({
+            category: 'invest',
+            kind: 'stock-buy',
+            title: `买入 ${quote.name}`,
+            summary: `按 ¥${quote.price} 成交 ${shares} 股，手续费 ¥${fee}。`,
+            tone: quote.risk >= 4 ? 'warn' : 'good',
+            amount: -cost,
+            riskTags: quote.risk >= 4 ? ['高波动', '虚拟投资'] : ['虚拟投资'],
+            metrics: [
+                { label: '代码', value: quote.symbol },
+                { label: '成交价', value: `¥${quote.price}` },
+                { label: '买入份额', value: `${shares} 股` },
+                { label: '手续费', value: `¥${fee}`, tone: 'warn' },
+                { label: '持仓均价', value: `¥${nextAvg}` },
+            ],
+            nextActions: ['观察自选新闻', '设置卖出纪律'],
+            payload: { symbol, amount, price: quote.price, fee, shares, cost },
+        }),
+        category: 'invest',
+        kind: 'stock-buy',
+        symbol,
+        shares,
+        price: quote.price,
+        fee,
+        cost,
+    };
+    const nextLife = appendBankActionRecord({
+        ...life,
+        holdings: { ...life.holdings, [symbol]: holding },
+        watchlist: Array.from(new Set([symbol, ...life.watchlist])),
+        events: pushEvent(life.events, { dateStr: life.dateStr, title: '股票买入', detail: `${quote.name} 成交 ${shares} 股，成本 ¥${cost}。`, tone: quote.risk >= 4 ? 'warn' : 'good', amount: -cost }),
+    }, actionResult);
     return {
-        life: { ...life, holdings: { ...life.holdings, [symbol]: holding }, watchlist: Array.from(new Set([symbol, ...life.watchlist])) },
+        life: nextLife,
         cost,
         shares,
+        actionResult,
     };
 }
 
-export function sellStock(life: BankLifeState, symbol: string, shares: number): { life: BankLifeState; revenue: number; soldShares: number } {
+export function sellStock(life: BankLifeState, symbol: string, shares: number): { life: BankLifeState; revenue: number; soldShares: number; actionResult?: BankStockOrderResult } {
     const quote = life.stockMarket.find(s => s.symbol === symbol);
     const prev = life.holdings[symbol];
     if (!quote || !prev || shares <= 0) return { life, revenue: 0, soldShares: 0 };
     const soldShares = Math.min(prev.shares, shares);
     const fee = Math.max(1, Math.round(soldShares * quote.price * 0.003));
     const revenue = roundMoney(soldShares * quote.price - fee);
+    const pnl = roundMoney((quote.price - prev.avgCost) * soldShares - fee);
     const remain = roundMoney(prev.shares - soldShares);
     const holdings = { ...life.holdings };
     if (remain <= 0) delete holdings[symbol];
     else holdings[symbol] = { ...prev, shares: remain };
-    return { life: { ...life, holdings }, revenue, soldShares };
+    const actionResult: BankStockOrderResult = {
+        ...createBankActionResult({
+            category: 'invest',
+            kind: 'stock-sell',
+            title: `卖出 ${quote.name}`,
+            summary: `按 ¥${quote.price} 卖出 ${soldShares} 股，${pnl >= 0 ? '浮盈' : '浮亏'}约 ¥${Math.abs(pnl)}。`,
+            tone: pnl >= 0 ? 'good' : 'warn',
+            amount: revenue,
+            riskTags: ['虚拟投资'],
+            metrics: [
+                { label: '代码', value: quote.symbol },
+                { label: '成交价', value: `¥${quote.price}` },
+                { label: '卖出份额', value: `${soldShares} 股` },
+                { label: '手续费', value: `¥${fee}`, tone: 'warn' },
+                { label: '本次盈亏', value: `${pnl >= 0 ? '+' : '-'}¥${Math.abs(pnl)}`, tone: pnl >= 0 ? 'good' : 'warn' },
+            ],
+            nextActions: remain > 0 ? ['继续观察剩余仓位'] : ['复盘这笔交易'],
+            payload: { symbol, requestedShares: shares, soldShares, price: quote.price, fee, revenue, pnl, remain },
+        }),
+        category: 'invest',
+        kind: 'stock-sell',
+        symbol,
+        shares: soldShares,
+        price: quote.price,
+        fee,
+        revenue,
+        pnl,
+    };
+    return {
+        life: appendBankActionRecord({
+            ...life,
+            holdings,
+            events: pushEvent(life.events, { dateStr: life.dateStr, title: '股票卖出', detail: `${quote.name} 卖出 ${soldShares} 股，到账 ¥${revenue}。`, tone: pnl >= 0 ? 'good' : 'warn', amount: revenue }),
+        }, actionResult),
+        revenue,
+        soldShares,
+        actionResult,
+    };
 }
 
 export function foundCompany(life: BankLifeState, name: string, direction: string): BankLifeState {
@@ -1028,17 +1727,40 @@ export function foundCompany(life: BankLifeState, name: string, direction: strin
         risks: ['现金流', '获客', '交付'],
     };
     company.pendingIssue = buildCompanyIssue(company, life.dateStr);
-    return {
+    const actionResult: BankCompanyActionResult = {
+        ...createBankActionResult({
+            category: 'company',
+            kind: 'company-found',
+            title: '公司成立',
+            summary: `${company.name} 已成立，方向是${direction}，第一笔启动资金进入公司现金池。`,
+            tone: 'good',
+            amount: -COMPANY_FOUND_COST,
+            riskTags: ['现金流', '获客', '交付'],
+            metrics: [
+                { label: '方向', value: direction },
+                { label: '启动资金', value: `¥${COMPANY_FOUND_COST}`, tone: 'warn' },
+                { label: '声誉', value: `${company.reputation}/100` },
+                { label: '首个订单', value: starterOrder.title },
+            ],
+            nextActions: ['处理公司第一件事务', '观察现金流'],
+            payload: { companyId: id, direction, starterOrder },
+        }),
+        category: 'company',
+        cashDelta: COMPANY_FOUND_COST,
+        reputationDelta: 0,
+        stressDelta: company.stress,
+    };
+    return appendBankActionRecord({
         ...life,
         company,
         events: pushEvent(life.events, { dateStr: life.dateStr, title: '公司成立', detail: `${company.name} 开张了，方向是${direction}。`, tone: 'good', amount: -COMPANY_FOUND_COST }),
-    };
+    }, actionResult);
 }
 
-export function applyCompanyIssue(life: BankLifeState, optionId: string): BankLifeState {
+export function applyCompanyIssueWithResult(life: BankLifeState, optionId: string): { life: BankLifeState; actionResult?: BankCompanyActionResult } {
     const company = life.company;
     const issue = company?.pendingIssue;
-    if (!company || !issue) return life;
+    if (!company || !issue) return { life };
     const opt = issue.options.find(o => o.id === optionId) || issue.options[0];
     const orders = opt.orderId
         ? ((company.orders || []).map(o => o.id === opt.orderId ? { ...o, status: opt.id === 'take-order' ? 'active' as const : 'lost' as const } : o).slice(0, 8))
@@ -1053,10 +1775,76 @@ export function applyCompanyIssue(life: BankLifeState, optionId: string): BankLi
         cashflow: [{ dateStr: life.dateStr, revenue: Math.max(0, opt.cashDelta), cost: Math.max(0, -opt.cashDelta), profit: opt.cashDelta, note: opt.label }, ...(company.cashflow || [])].slice(0, 45),
         pendingIssue: undefined,
     };
+    const actionResult: BankCompanyActionResult = {
+        ...createBankActionResult({
+            category: 'company',
+            kind: 'company-issue',
+            title: issue.title,
+            summary: `你选择了「${opt.label}」，公司现金${opt.cashDelta >= 0 ? '增加' : '减少'} ¥${Math.abs(opt.cashDelta)}。`,
+            tone: opt.cashDelta >= 0 ? 'good' : opt.stressDelta > 8 ? 'warn' : 'info',
+            amount: opt.cashDelta,
+            riskTags: opt.stressDelta > 8 ? ['压力升高'] : [],
+            metrics: [
+                { label: '选择', value: opt.label },
+                { label: '现金变化', value: `${opt.cashDelta >= 0 ? '+' : '-'}¥${Math.abs(opt.cashDelta)}`, tone: opt.cashDelta >= 0 ? 'good' : 'warn' },
+                { label: '声誉变化', value: `${opt.reputationDelta >= 0 ? '+' : ''}${opt.reputationDelta}` },
+                { label: '压力变化', value: `${opt.stressDelta >= 0 ? '+' : ''}${opt.stressDelta}`, tone: opt.stressDelta > 0 ? 'warn' : 'good' },
+            ],
+            nextActions: ['等待下一天刷新公司事项'],
+            payload: { issueId: issue.id, optionId: opt.id, companyId: company.id },
+        }),
+        category: 'company',
+        cashDelta: opt.cashDelta,
+        reputationDelta: opt.reputationDelta,
+        stressDelta: opt.stressDelta,
+    };
     return {
-        ...life,
-        company: nextCompany,
-        events: pushEvent(life.events, { dateStr: life.dateStr, title: issue.title, detail: `你选择了「${opt.label}」。`, tone: opt.cashDelta >= 0 ? 'good' : 'info', amount: opt.cashDelta }),
+        life: appendBankActionRecord({
+            ...life,
+            company: nextCompany,
+            events: pushEvent(life.events, { dateStr: life.dateStr, title: issue.title, detail: `你选择了「${opt.label}」。`, tone: opt.cashDelta >= 0 ? 'good' : 'info', amount: opt.cashDelta }),
+        }, actionResult),
+        actionResult,
+    };
+}
+
+export function applyCompanyIssue(life: BankLifeState, optionId: string): BankLifeState {
+    return applyCompanyIssueWithResult(life, optionId).life;
+}
+
+export function withdrawCompanyDividend(life: BankLifeState): { life: BankLifeState; amount: number; actionResult?: BankCompanyActionResult } {
+    const company = life.company;
+    if (!company || company.cash <= COMPANY_FOUND_COST) return { life, amount: 0 };
+    const amount = Math.floor((company.cash - COMPANY_FOUND_COST) * 0.35);
+    if (amount <= 0) return { life, amount: 0 };
+    const nextCompany = { ...company, cash: roundMoney(company.cash - amount), cumulativeProfit: Math.max(company.cumulativeProfit, 0) };
+    const actionResult: BankCompanyActionResult = {
+        ...createBankActionResult({
+            category: 'company',
+            kind: 'company-dividend',
+            title: '公司分红',
+            summary: `${company.name} 可分配利润中转出 ¥${amount}，公司保留现金 ¥${Math.round(nextCompany.cash)}。`,
+            tone: 'good',
+            amount,
+            metrics: [
+                { label: '到账', value: `¥${amount}`, tone: 'good' },
+                { label: '公司现金', value: `¥${Math.round(nextCompany.cash)}` },
+                { label: '安全垫', value: `¥${COMPANY_FOUND_COST}` },
+            ],
+            nextActions: ['继续观察公司现金流'],
+            payload: { companyId: company.id, beforeCash: company.cash, afterCash: nextCompany.cash },
+        }),
+        category: 'company',
+        cashDelta: -amount,
+    };
+    return {
+        amount,
+        actionResult,
+        life: appendBankActionRecord({
+            ...life,
+            company: nextCompany,
+            events: pushEvent(life.events, { dateStr: life.dateStr, title: '公司分红', detail: `${company.name} 分红到账 ¥${amount}。`, tone: 'good', amount }),
+        }, actionResult),
     };
 }
 
@@ -1140,14 +1928,16 @@ function buildRepaymentPlan(amount: number, startDate: string, days: number) {
     }));
 }
 
-export function borrowLoan(life: BankLifeState, channel: BankLoanChannel, amount: number): { life: BankLifeState; loan: BankLoan } {
+export function borrowLoan(life: BankLifeState, channel: BankLoanChannel, amount: number): { life: BankLifeState; loan: BankLoan; actionResult?: BankLoanActionResult } {
     const product = LOAN_PRODUCTS[channel];
+    const clampedAmount = clamp(Math.round(amount), product.min, product.max);
+    const serviceFee = channel === 'shady' ? Math.min(500, Math.round(clampedAmount * 0.06)) : 0;
     const loan: BankLoan = {
         id: genId('loan'),
         channel,
         productName: product.name,
-        principal: amount,
-        outstanding: amount,
+        principal: clampedAmount,
+        outstanding: clampedAmount,
         interestDue: 0,
         dailyRate: product.dailyRate,
         borrowedAt: life.dateStr,
@@ -1156,20 +1946,51 @@ export function borrowLoan(life: BankLifeState, channel: BankLoanChannel, amount
         note: product.name,
         reviewStatus: 'approved',
         contractTerms: product.terms,
-        repaymentPlan: buildRepaymentPlan(amount, life.dateStr, product.days),
+        repaymentPlan: buildRepaymentPlan(clampedAmount, life.dateStr, product.days),
         creditProfile: life.creditProfile,
+        serviceFee,
+        collectionRisk: channel === 'shady' ? '催收风险高，建议只做短期周转并尽快结清。' : undefined,
+    };
+    const actionResult: BankLoanActionResult = {
+        ...createBankActionResult({
+            category: 'loan',
+            kind: 'loan-borrow',
+            title: `${product.name} 到账`,
+            summary: `虚拟借款 ¥${clampedAmount} 已到账，日息 ${(product.dailyRate * 100).toFixed(3)}%，到期日 ${loan.dueDate}。`,
+            tone: channel === 'shady' ? 'warn' : 'good',
+            amount: clampedAmount,
+            riskTags: [
+                '虚拟借款',
+                ...(channel === 'shady' ? ['高利息', '催收风险', `服务费封顶 ¥${serviceFee}`] : []),
+            ],
+            metrics: [
+                { label: '到账金额', value: `¥${clampedAmount}`, tone: 'good' },
+                { label: '日息', value: `${(product.dailyRate * 100).toFixed(3)}%`, tone: channel === 'shady' ? 'warn' : 'info' },
+                { label: '期限', value: `${product.days} 天` },
+                { label: '到期日', value: loan.dueDate },
+                ...(serviceFee ? [{ label: '服务费上限', value: `¥${serviceFee}`, tone: 'warn' as const }] : []),
+            ],
+            nextActions: ['查看还款计划', '避免逾期滚息'],
+            payload: { loanId: loan.id, channel, amount: clampedAmount, dailyRate: product.dailyRate, dueDate: loan.dueDate, serviceFee },
+        }),
+        category: 'loan',
+        loanId: loan.id,
+        channel,
+        principal: clampedAmount,
+        dueDate: loan.dueDate,
     };
     return {
         loan,
-        life: {
+        actionResult,
+        life: appendBankActionRecord({
             ...life,
             loans: [loan, ...life.loans],
-            events: pushEvent(life.events, { dateStr: life.dateStr, title: '借款到账', detail: `${loan.note} ¥${amount} 已到账。`, tone: channel === 'shady' ? 'warn' : 'good', amount }),
-        },
+            events: pushEvent(life.events, { dateStr: life.dateStr, title: '借款到账', detail: `${loan.note} ¥${clampedAmount} 已到账。`, tone: channel === 'shady' ? 'warn' : 'good', amount: clampedAmount }),
+        }, actionResult),
     };
 }
 
-export function repayLoan(life: BankLifeState, loanId: string, amount: number): { life: BankLifeState; paid: number } {
+export function repayLoan(life: BankLifeState, loanId: string, amount: number): { life: BankLifeState; paid: number; actionResult?: BankLoanActionResult } {
     const loan = life.loans.find(l => l.id === loanId);
     if (!loan || amount <= 0) return { life, paid: 0 };
     const total = roundMoney(loan.outstanding + loan.interestDue);
@@ -1194,13 +2015,37 @@ export function repayLoan(life: BankLifeState, loanId: string, amount: number): 
             return { ...l, interestDue: newInterest, outstanding: Math.max(0, roundMoney(l.outstanding - principalPaid)), repaymentPlan };
         })
         .filter(l => l.outstanding + l.interestDue > 0.01);
+    const actionResult: BankLoanActionResult = {
+        ...createBankActionResult({
+            category: 'loan',
+            kind: 'loan-repay',
+            title: remain <= 0 ? '借款结清' : '还款成功',
+            summary: remain <= 0 ? `${loan.note} 已结清，本地账本不会继续滚息。` : `${loan.note} 已还 ¥${paid}，剩余约 ¥${remain}。`,
+            tone: 'good',
+            amount: -paid,
+            riskTags: remain > 0 && loan.overdueDays > 0 ? ['仍有逾期'] : [],
+            metrics: [
+                { label: '本次还款', value: `¥${paid}`, tone: 'good' },
+                { label: '剩余应还', value: `¥${Math.max(0, remain)}`, tone: remain > 0 ? 'warn' : 'good' },
+                { label: '到期日', value: loan.dueDate },
+            ],
+            nextActions: remain > 0 ? ['按计划继续还款'] : ['复盘负债压力'],
+            payload: { loanId, paid, remain, totalBefore: total },
+        }),
+        category: 'loan',
+        loanId,
+        channel: loan.channel,
+        paid,
+        dueDate: loan.dueDate,
+    };
     return {
         paid,
-        life: {
+        actionResult,
+        life: appendBankActionRecord({
             ...life,
             loans,
             events: pushEvent(life.events, { dateStr: life.dateStr, title: remain <= 0 ? '贷款结清' : '还了一笔贷款', detail: remain <= 0 ? `${loan.note} 已结清。` : `${loan.note} 剩余约 ¥${remain}。`, tone: 'good', amount: -paid }),
-        },
+        }, actionResult),
     };
 }
 

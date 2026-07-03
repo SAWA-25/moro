@@ -47,7 +47,7 @@ export const PaperBackdrop: React.FC<{ corners?: boolean }> = () => (
 );
 
 export const PaperShell: React.FC<{ children: React.ReactNode; className?: string; style?: React.CSSProperties }> = ({ children, className = '', style }) => (
-    <div className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`} style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG, ...style }}>
+    <div className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden animate-fade-in ${className}`} style={{ color: INK, background: PAGE_BG, ...style }}>
         <PaperBackdrop />
         {children}
     </div>

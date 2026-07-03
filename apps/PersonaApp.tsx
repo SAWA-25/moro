@@ -364,7 +364,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     return (
         <div
             className="h-full w-full text-[#2f3432] flex flex-col animate-fade-in"
-            style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}
+            style={DOT_BG}
         >
             {/* ── 顶栏 ── */}
             <div className="relative shrink-0 px-4 pt-3 pb-3 bg-[#f5f7f4]/95 backdrop-blur border-b border-[#e6ece8]">

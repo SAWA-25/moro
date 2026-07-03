@@ -116,7 +116,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
             {/* 顶栏：取消 / 发表 */}
             <div
                 className="flex items-center justify-between px-4 border-b border-slate-50 shrink-0"
-                style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
+                style={{ paddingTop: 12, paddingBottom: 10 }}
             >
                 <button onClick={onCancel} className="text-slate-600 text-sm px-1 py-1 active:opacity-60">取消</button>
                 <span className="text-sm font-bold text-slate-800">{isRepost ? '转贴' : '贴一条瞬间'}</span>

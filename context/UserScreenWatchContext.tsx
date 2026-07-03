@@ -17,6 +17,7 @@ import {
   makeUserScreenWatchTextFrameSummary,
   normalizeUserScreenWatchSettings,
   recordUserScreenWatchUsage,
+  sanitizeUserScreenWatchComment,
   USER_SCREEN_WATCH_MAX_SESSIONS,
 } from '../utils/userScreenWatch';
 import {
@@ -43,15 +44,6 @@ const UserScreenWatchContext = createContext<UserScreenWatchContextValue | null>
 
 const appNameOf = (appId: AppID): string =>
   INSTALLED_APPS.find(app => app.id === appId)?.name || fallbackAppName(appId);
-
-const cleanComment = (text: string): string => {
-  const cleaned = (text || '')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/^[「"']|[」"']$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.slice(0, 90);
-};
 
 const isVisionUnsupported = (message: string): boolean =>
   /vision|image|图片|图像|多模态|multimodal|unsupported|不支持|invalid.*content/i.test(message || '');
@@ -147,7 +139,7 @@ export const UserScreenWatchProvider: React.FC<{ children: React.ReactNode }> = 
     frame?: UserScreenWatchFrame,
   ) => {
     const current = sessionRef.current;
-    const cleaned = cleanComment(text);
+    const cleaned = sanitizeUserScreenWatchComment(text);
     if (!current || !cleaned) return;
     const next = appendUserScreenWatchComment(current, {
       frameId: frame?.id,
@@ -228,7 +220,8 @@ export const UserScreenWatchProvider: React.FC<{ children: React.ReactNode }> = 
         text = extractContent(data) || '';
         source = 'text';
       }
-      await appendComment(text || '这一眼我记下了，但有点看不清。', source, frame);
+      const cleanedText = sanitizeUserScreenWatchComment(text);
+      await appendComment(cleanedText || '这一眼我先记下了。', source, frame);
     } catch (err: any) {
       const message = err?.message || '观屏评论生成失败';
       setLastError(message);
@@ -296,8 +289,16 @@ export const UserScreenWatchProvider: React.FC<{ children: React.ReactNode }> = 
         summary,
         usage: next.usage || [],
         frameCount: (next.frames || []).length,
-        commentCount: (next.comments || []).filter(c => c.source !== 'summary').length,
-        latestComments: (next.comments || []).filter(c => c.source !== 'summary').slice(-3).map(c => c.text),
+        commentCount: (next.comments || [])
+          .filter(c => c.source !== 'summary')
+          .map(c => sanitizeUserScreenWatchComment(c.text))
+          .filter(Boolean)
+          .length,
+        latestComments: (next.comments || [])
+          .filter(c => c.source !== 'summary')
+          .map(c => sanitizeUserScreenWatchComment(c.text))
+          .filter(Boolean)
+          .slice(-3),
       };
       await DB.saveMessage({
         charId: next.charId,

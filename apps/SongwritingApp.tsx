@@ -1542,14 +1542,14 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             <div className="absolute inset-0 flex flex-col text-[#1c1b1a] overflow-hidden" style={{ background: PAPER }}>
                 {/* 封面 / 扉页 —— 主题色横幅 + 钉上去的标题纸 */}
                 <div className={`relative shrink-0 border-b-2 border-[#1c1b1a] ${style.className} ${style.textClass}`} style={{ ...style.style, minHeight: '212px' }}>
-                    <button onClick={() => { setView('shelf'); setActiveSong(null); }} className="absolute left-4 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" style={{ top: 'calc(var(--safe-top) + 0.75rem)' }}>
+                    <button onClick={() => { setView('shelf'); setActiveSong(null); }} className="absolute left-4 top-3 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
                     </button>
-                    <button onClick={() => { setShowShareModal(true); }} className="absolute right-4 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" style={{ top: 'calc(var(--safe-top) + 0.75rem)' }}>
+                    <button onClick={() => { setShowShareModal(true); }} className="absolute right-4 top-3 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
                         <ShareNetwork size={16} weight="bold" />
                     </button>
                     {/* 钉在封面上的标题纸（任意底色都看得清） */}
-                    <div className="flex flex-col items-center justify-end h-full px-8 pb-7" style={{ paddingTop: 'calc(var(--safe-top) + 3.5rem)' }}>
+                    <div className="flex flex-col items-center justify-end h-full px-8 pb-7 pt-14">
                         <div className="relative bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] px-6 py-5 text-center rotate-[-1deg] max-w-[85%]">
                             <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg] w-20" />
                             <div className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5">{genreInfo?.label} · {moodInfo?.icon} {moodInfo?.label}</div>
@@ -1868,7 +1868,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                 {/* 顶栏 */}
                 <div className="shrink-0 z-20 border-b-2 border-[#1c1b1a]" style={{ background: PAPER }}>
-                    <div className="relative flex items-center gap-2 px-4 pb-2" style={{ paddingTop: 'calc(var(--safe-top) + 0.6rem)' }}>
+                    <div className="relative flex items-center gap-2 px-4 pt-2.5 pb-2">
                         <BackSticker onClick={handlePause} label="暂存" />
                         <div className="flex-1 min-w-0 text-center">
                             <div className="font-black text-base text-[#1c1b1a] truncate" style={BRUSH}>{activeSong.title}</div>

@@ -15,12 +15,62 @@
  */
 
 import { CharacterProfile, RegexScriptData } from '../../types';
-import { getRegexedString, getScriptFindRegex, normalizeRegexScript, regex_placement, substitute_find_regex, RegexApplyParams } from './engine';
+import { getRegexedString, getScriptFindRegex, looksLikeWrapMisconfig, normalizeRegexScript, regex_placement, substitute_find_regex, RegexApplyParams } from './engine';
 
 const LS_KEY = 'moro_global_regex_scripts';
 
 /** 全局脚本变更广播（补丁铺保存后发出，聊天页可监听刷新） */
 export const REGEX_SCRIPTS_UPDATED_EVENT = 'moro-regex-scripts-updated';
+export const REGEX_DEBUG_EVENT = 'moro-regex-debug-event';
+
+export interface RegexDebugEventDetail {
+    placement: number;
+    scriptCount: number;
+    inputPreview: string;
+    outputPreview: string;
+    isMarkdown: boolean;
+    isPrompt: boolean;
+    mode: 'raw' | 'prompt' | 'markdown';
+    timestamp: number;
+}
+
+let regexDebugEventEnabled = false;
+
+export const setRegexDebugEventEnabled = (enabled: boolean): void => {
+    regexDebugEventEnabled = !!enabled;
+};
+
+export const isRegexDebugEventEnabled = (): boolean => regexDebugEventEnabled;
+
+const DEBUG_PREVIEW_LIMIT = 48;
+
+const shortPreview = (text: string): string => {
+    const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+    return clean.length > DEBUG_PREVIEW_LIMIT ? `${clean.slice(0, DEBUG_PREVIEW_LIMIT)}...` : clean;
+};
+
+const dispatchRegexDebugEvent = (
+    text: string,
+    out: string,
+    placement: number,
+    scripts: RegexScriptData[],
+    params: Omit<ApplyRegexOptions, 'char' | 'userName'>,
+) => {
+    if (!regexDebugEventEnabled || typeof window === 'undefined' || out === text) return;
+    const isMarkdown = !!params.isMarkdown;
+    const isPrompt = !!params.isPrompt;
+    const detail: RegexDebugEventDetail = {
+        placement,
+        scriptCount: scripts.length,
+        inputPreview: shortPreview(text),
+        outputPreview: shortPreview(out),
+        isMarkdown,
+        isPrompt,
+        mode: isMarkdown ? 'markdown' : isPrompt ? 'prompt' : 'raw',
+        timestamp: Date.now(),
+    };
+    window.dispatchEvent(new CustomEvent<RegexDebugEventDetail>(REGEX_DEBUG_EVENT, { detail }));
+};
 
 let globalCache: RegexScriptData[] | null = null;
 
@@ -152,6 +202,7 @@ export const applyRegexToText = (
             const preview = (s: string) => s.length > 30 ? s.slice(0, 30) + '…' : s;
             console.debug('[Regex]', { placement, scripts: scripts.length, in: preview(text), out: preview(out), isMarkdown: !!params.isMarkdown, isPrompt: !!params.isPrompt });
         }
+        dispatchRegexDebugEvent(text, out, placement, scripts, params);
         return out;
     } catch (e) {
         console.warn('[Regex] 执行失败，返回原文:', e);
@@ -239,6 +290,35 @@ export const splitOutDisplayRegexSegments = (
 
 // ── 导入 / 导出 ────────────────────────────────────────────────────────────
 
+export interface RegexImportPreviewItem {
+    script: RegexScriptData;
+    duplicate: boolean;
+    duplicateInImport: boolean;
+    riskFlags: string[];
+}
+
+export interface RegexImportPreview {
+    items: RegexImportPreviewItem[];
+    total: number;
+    newCount: number;
+    overwriteCount: number;
+    duplicateInImportCount: number;
+    riskyCount: number;
+}
+
+export const getRegexScriptRiskFlags = (script: RegexScriptData): string[] => {
+    const flags: string[] = [];
+    const rewritesOriginal = !script.markdownOnly && !script.promptOnly;
+    if (rewritesOriginal && script.placement?.some(p => p === regex_placement.USER_INPUT || p === regex_placement.AI_OUTPUT)) {
+        flags.push('会改写聊天原文');
+    }
+    if (looksLikeWrapMisconfig(script)) flags.push('疑似提示词包裹误配');
+    if (rewritesOriginal && String(script.replaceString ?? '') === '') flags.push('命中后会删除内容');
+    if (/(?:\.\*|\[\\s\\S\]\*|\(\?:\.\|\\n\)\*)/.test(script.findRegex || '')) flags.push('匹配范围较宽');
+    if (script.markdownOnly && /<\s*(script|iframe|style)\b/i.test(script.replaceString || '')) flags.push('显示层会注入富内容');
+    return Array.from(new Set(flags));
+};
+
 /** 解析酒馆正则 JSON（单条对象或数组），返回规范化脚本列表 */
 export const parseRegexImportJson = (jsonText: string): RegexScriptData[] => {
     const data = JSON.parse(jsonText);
@@ -246,6 +326,43 @@ export const parseRegexImportJson = (jsonText: string): RegexScriptData[] => {
     const scripts = list.map(normalizeRegexScript).filter((s): s is RegexScriptData => !!s);
     if (scripts.length === 0) throw new Error('文件里没有可识别的正则脚本');
     return scripts;
+};
+
+export const buildRegexImportPreview = (
+    jsonText: string,
+    existingScripts: RegexScriptData[] = [],
+): RegexImportPreview => {
+    const scripts = parseRegexImportJson(jsonText);
+    const existingIds = new Set(existingScripts.map(s => s.id));
+    const importIdCounts = scripts.reduce((map, s) => {
+        map.set(s.id, (map.get(s.id) || 0) + 1);
+        return map;
+    }, new Map<string, number>());
+    const items = scripts.map(script => ({
+        script,
+        duplicate: existingIds.has(script.id),
+        duplicateInImport: (importIdCounts.get(script.id) || 0) > 1,
+        riskFlags: getRegexScriptRiskFlags(script),
+    }));
+    return {
+        items,
+        total: items.length,
+        newCount: items.filter(i => !i.duplicate).length,
+        overwriteCount: items.filter(i => i.duplicate).length,
+        duplicateInImportCount: items.filter(i => i.duplicateInImport).length,
+        riskyCount: items.filter(i => i.riskFlags.length > 0).length,
+    };
+};
+
+export const pickRegexImportScripts = (
+    preview: RegexImportPreview,
+    selectedIndexes: number[],
+    { disableImported = true }: { disableImported?: boolean } = {},
+): RegexScriptData[] => {
+    const selected = new Set(selectedIndexes);
+    return preview.items
+        .filter((_, idx) => selected.has(idx))
+        .map(item => disableImported ? { ...item.script, disabled: true } : item.script);
 };
 
 /** 导出为酒馆兼容 JSON（数组） */

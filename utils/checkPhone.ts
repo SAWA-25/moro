@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { buildPhoneCityHint } from './charCity';
 import { xunjiDurationMinutes, xunjiFormatClock } from './xunji';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 export interface CheckPhoneAppDefinition {
   key: string;
@@ -65,6 +66,8 @@ export interface CheckPhonePromptResult {
 
 const MAX_DETAIL = 1200;
 const RISK_VALUES: PhoneEvidenceRisk[] = ['normal', 'private', 'suspicious'];
+const cleanRoleplayText = (value: unknown, maxLen: number): string =>
+  sanitizeAssistantVisibleText(asText(value)).slice(0, maxLen).trim();
 
 export const CHECK_PHONE_MODE_LABELS: Record<PhoneCheckMode, string> = {
   quick: '快速看一眼',
@@ -125,6 +128,13 @@ export const CHECK_PHONE_APP_DEFS: CheckPhoneAppDefinition[] = [
     name: '备忘录',
     logPrefix: '备忘录',
     instruction: '生成 3 条该角色备忘录/便签里的内容（待办、随手记、藏起来的心事、清单等，贴人设）。',
+  },
+  {
+    key: 'secret_space',
+    type: 'secret_space',
+    name: '秘密空间',
+    logPrefix: '秘密空间',
+    instruction: '生成 2~4 条该角色手机「秘密空间」里的私密记录，必须贴合人设、近期聊天和 Screenlife：可以是未发送草稿、草稿箱残句、私密笔记、藏起来的小心愿、未公开清单或不敢说出口的备忘。每条都要像 TA 真会留在手机里的短记录，避免空泛告白；普通私密内容 meta.risk 填 private，只有暧昧、撒谎、删除、冲突等可能引发对峙的线索才填 suspicious。',
   },
   {
     key: 'wallet',
@@ -195,12 +205,16 @@ const normalizeTags = (value: unknown): string[] | undefined => {
   return tags.length ? tags : undefined;
 };
 
-const normalizeRisk = (value: unknown, text: string): PhoneEvidenceRisk => {
+const normalizeRisk = (value: unknown, text: string, fallback: PhoneEvidenceRisk = 'normal'): PhoneEvidenceRisk => {
   const risk = asText(value).toLowerCase() as PhoneEvidenceRisk;
   if (RISK_VALUES.includes(risk)) return risk;
+  if (fallback === 'private') {
+    if (/暧昧|删除|撒谎|转账|定位|酒店|药|前任|拉黑|投诉|冲突/.test(text)) return 'suspicious';
+    return 'private';
+  }
   if (/暧昧|删除|藏|秘密|撒谎|转账|定位|酒店|药|前任|拉黑|投诉/.test(text)) return 'suspicious';
   if (/心事|私密|不想让|没发出|草稿|账单|余额|健康|睡眠|地址/.test(text)) return 'private';
-  return 'normal';
+  return fallback;
 };
 
 const normalizeSource = (value: unknown, fallback: PhoneEvidenceSource): PhoneEvidenceSource => {
@@ -270,7 +284,7 @@ export function normalizePhoneEvidence(item: unknown, opts: {
     source: normalizeSource(metaObj.source ?? obj.source, opts.source || 'generated'),
     appName: asText(metaObj.appName, opts.appName || getCheckPhoneAppDefinition(opts.type)?.name || opts.type),
     tags: normalizeTags(metaObj.tags ?? obj.tags),
-    risk: normalizeRisk(metaObj.risk ?? obj.risk, textForRisk),
+    risk: normalizeRisk(metaObj.risk ?? obj.risk, textForRisk, opts.type === 'secret_space' ? 'private' : 'normal'),
     participants: participants.length ? participants : Array.isArray(metaObj.participants) ? (metaObj.participants as unknown[]).map(v => asText(v)).filter(Boolean) : undefined,
     locationLabel: asText(metaObj.locationLabel, asText(obj.location, asText(obj.address, ''))) || undefined,
     amount: asText(metaObj.amount, asText(obj.amount, '')) || undefined,
@@ -324,13 +338,13 @@ export function normalizePhoneCheckStep(value: unknown, fallbackAt = Date.now())
     app: asText(obj.app) || undefined,
     title: asText(obj.title) || undefined,
     targetName: asText(obj.targetName) || undefined,
-    thought: asText(obj.thought).slice(0, 300) || undefined,
-    intent: asText(obj.intent).slice(0, 80) || undefined,
+    thought: cleanRoleplayText(obj.thought, 300) || undefined,
+    intent: cleanRoleplayText(obj.intent, 80) || undefined,
     emotion: asText(obj.emotion).slice(0, 40) || undefined,
     risk: RISK_VALUES.includes(asText(obj.risk).toLowerCase() as PhoneEvidenceRisk) ? asText(obj.risk).toLowerCase() as PhoneEvidenceRisk : undefined,
-    visibleClue: asText(obj.visibleClue).slice(0, 240) || undefined,
-    actionReason: asText(obj.actionReason).slice(0, 240) || undefined,
-    detail: asText(obj.detail).slice(0, 400) || undefined,
+    visibleClue: cleanRoleplayText(obj.visibleClue, 240) || undefined,
+    actionReason: cleanRoleplayText(obj.actionReason, 240) || undefined,
+    detail: cleanRoleplayText(obj.detail, 400) || undefined,
   };
 }
 
@@ -466,15 +480,41 @@ export function buildPhoneCheckSessionSummary(session: PhoneCheckSession, fallba
   const parts = [
     `${actor}查了${owner}的手机（${CHECK_PHONE_MODE_LABELS[session.mode]}）。`,
     session.statusSnapshot?.phoneModel ? `开场手机状态：${session.statusSnapshot.phoneModel}，电量 ${session.statusSnapshot.batteryLevel ?? '--'}%，屏幕 ${session.statusSnapshot.screenTimeMinutes ?? '--'} 分钟。` : '',
-    session.steps.length ? `浏览过程：${session.steps.slice(0, 5).map(step => step.title || step.app || step.visibleClue || step.thought).filter(Boolean).join('；')}。` : '',
+    session.steps.length ? `浏览过程：${session.steps.slice(0, 5).map(step => sanitizeAssistantVisibleText(step.title || step.app || step.visibleClue || step.thought || '')).filter(Boolean).join('；')}。` : '',
     session.evidence.length ? `收集线索：${session.evidence.slice(0, 4).map(record => `${record.meta?.appName || record.type}「${record.title}」`).join('；')}。` : '',
     session.actions.filter(action => action.type !== 'start' && action.type !== 'browse_step').length
       ? `发生动作：${session.actions.filter(action => action.type !== 'start' && action.type !== 'browse_step').slice(0, 5).map(action => action.label).join('；')}。`
       : '',
     session.exitMode ? `结局：${session.exitMode}。` : '',
-    session.moodAfter ? `余波：${session.moodAfter}` : '',
+    session.moodAfter ? `余波：${sanitizeAssistantVisibleText(session.moodAfter)}` : '',
   ].filter(Boolean);
   return parts.join('\n');
+}
+
+export function formatCharPhoneCheckRecordForContext(raw: unknown, charName = 'TA', userName = '用户'): string {
+  const text = String(raw ?? '');
+  const stepLines = [...text.matchAll(/^\s*\d+\.\s*([^\n，]+)(?:，心想：([^\n]+))?/gm)]
+    .map(match => sanitizeAssistantVisibleText(match[1]))
+    .filter(Boolean)
+    .slice(0, 6);
+  const actionBlock = text.match(new RegExp(`${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} 翻手机期间做的事：\\n([\\s\\S]*?)(?:\\n[^-]|$)`));
+  const actions = actionBlock?.[1]
+    ?.split(/\r?\n/)
+    .map(line => sanitizeAssistantVisibleText(line.replace(/^-\s*/, '').trim()))
+    .filter(Boolean)
+    .slice(0, 4) || [];
+  const exit = sanitizeAssistantVisibleText(
+    text.match(/((?:自己翻完了，把手机还了回去|开口请求拿回手机[^。\n]*|回答了[^。\n]*拿回了手机|强行抢回了手机)[^。\n]*。?)/)?.[1] || '',
+  );
+  const mood = sanitizeAssistantVisibleText(text.match(/心情基调：([^\n]+)/)?.[1] || '');
+  return [
+    `[查岗记录] 刚才 ${charName} 拿走了 ${userName} 的手机翻看。`,
+    stepLines.length ? `浏览过：${stepLines.join('；')}。` : '刚拿到手机就被打断了。',
+    actions.length ? `做过的事：${actions.join('；')}。` : '',
+    exit ? `结局：${exit}` : '',
+    mood ? `余波：${mood}` : '',
+    `这是真实发生在你们之间的查岗经历；可以自然提到看到的人和内容，但只说${charName}会真正发给${userName}的话，不要复述内心分析、脚本说明或系统记录。`,
+  ].filter(Boolean).join('\n');
 }
 
 export function buildCheckPhoneStatusSummary(snapshot?: XunjiMonitorSnapshot | null): CheckPhoneStatusSummary | null {
@@ -575,6 +615,7 @@ export function buildCheckPhoneRecordPrompt(args: CheckPhonePromptArgs): CheckPh
 }
 
 function inferRecordType(appName = ''): string {
+  if (/秘密空间|私密空间|草稿箱|未发送|没发出|私密笔记|私密笔|心愿|愿望|秘密清单/.test(appName)) return 'secret_space';
   if (/外卖|美团|饿了么|饭|餐|咖啡|奶茶/.test(appName)) return 'delivery';
   if (/淘宝|京东|购物|拼多多|订单/.test(appName)) return 'order';
   if (/微信|QQ|消息|Line|聊天|私信|絮语/.test(appName)) return 'chat';
@@ -608,15 +649,18 @@ export function mapXunjiToPhoneEvidence(args: {
     timestamp: chat.time,
     meta: { appName: '信息', relatedXunjiRunId: args.run!.id, participants: [chat.target], risk: normalizeRisk(undefined, chat.summary) },
   }));
-  args.run?.browsed.slice(0, 8).forEach(item => push({
-    id: `xunji-${args.run!.id}-browse-${item.id}`,
-    type: inferRecordType(item.appName),
-    title: item.title,
-    detail: `${item.appName} · ${item.summary}`,
-    value: xunjiFormatClock(item.time),
-    timestamp: item.time,
-    meta: { appName: getCheckPhoneAppDefinition(inferRecordType(item.appName))?.name || item.appName, relatedXunjiRunId: args.run!.id, tags: [item.appName], risk: normalizeRisk(undefined, item.summary) },
-  }));
+  args.run?.browsed.slice(0, 8).forEach(item => {
+    const type = inferRecordType(item.appName);
+    push({
+      id: `xunji-${args.run!.id}-browse-${item.id}`,
+      type,
+      title: item.title,
+      detail: `${item.appName} · ${item.summary}`,
+      value: xunjiFormatClock(item.time),
+      timestamp: item.time,
+      meta: { appName: getCheckPhoneAppDefinition(type)?.name || item.appName, relatedXunjiRunId: args.run!.id, tags: [item.appName], risk: normalizeRisk(undefined, item.summary, type === 'secret_space' ? 'private' : 'normal') },
+    });
+  });
   args.run?.notes.slice(0, 5).forEach(note => push({
     id: `xunji-${args.run!.id}-note-${note.id}`,
     type: 'notes',
@@ -654,15 +698,18 @@ export function mapXunjiToPhoneEvidence(args: {
     timestamp: loc.arrivedAt,
     meta: { appName: '地图', relatedXunjiSnapshotId: args.snapshot!.id, locationLabel: loc.label, risk: 'private' },
   }));
-  args.snapshot?.appUsage.slice(0, 6).forEach(session => push({
-    id: `xunji-${args.snapshot!.id}-app-${session.id}`,
-    type: inferRecordType(session.appName),
-    title: session.appName,
-    detail: session.note || `使用了 ${xunjiDurationMinutes(session)} 分钟。`,
-    value: `${xunjiDurationMinutes(session)} 分钟`,
-    timestamp: session.startedAt,
-    meta: { appName: getCheckPhoneAppDefinition(inferRecordType(session.appName))?.name || session.appName, relatedXunjiSnapshotId: args.snapshot!.id, tags: [session.category || '屏幕时间'], risk: normalizeRisk(undefined, session.note || session.appName) },
-  }));
+  args.snapshot?.appUsage.slice(0, 6).forEach(session => {
+    const type = inferRecordType(session.appName);
+    push({
+      id: `xunji-${args.snapshot!.id}-app-${session.id}`,
+      type,
+      title: session.appName,
+      detail: session.note || `使用了 ${xunjiDurationMinutes(session)} 分钟。`,
+      value: `${xunjiDurationMinutes(session)} 分钟`,
+      timestamp: session.startedAt,
+      meta: { appName: getCheckPhoneAppDefinition(type)?.name || session.appName, relatedXunjiSnapshotId: args.snapshot!.id, tags: [session.category || '屏幕时间'], risk: normalizeRisk(undefined, session.note || session.appName, type === 'secret_space' ? 'private' : 'normal') },
+    });
+  });
   if (args.snapshot?.health) {
     const h = args.snapshot.health;
     push({
@@ -675,15 +722,18 @@ export function mapXunjiToPhoneEvidence(args: {
       meta: { appName: '健康', relatedXunjiSnapshotId: args.snapshot.id, risk: 'private' },
     });
   }
-  args.reports?.slice(0, 6).forEach(report => push({
-    id: `xunji-report-${report.id}`,
-    type: report.relatedApp ? inferRecordType(report.relatedApp) : report.type.startsWith('call') ? 'call' : report.type.startsWith('sleep') ? 'health' : report.type.includes('move') || report.type.includes('stay') || report.type.includes('arrive') ? 'map' : 'notes',
-    title: report.title,
-    detail: report.body,
-    value: xunjiFormatClock(report.timestamp),
-    timestamp: report.timestamp,
-    meta: { appName: report.relatedApp || '循迹提醒', relatedReportId: report.id, tags: [report.type], risk: report.severity === 'warning' ? 'suspicious' : 'normal' },
-  }));
+  args.reports?.slice(0, 6).forEach(report => {
+    const type = report.relatedApp ? inferRecordType(report.relatedApp) : report.type.startsWith('call') ? 'call' : report.type.startsWith('sleep') ? 'health' : report.type.includes('move') || report.type.includes('stay') || report.type.includes('arrive') ? 'map' : 'notes';
+    push({
+      id: `xunji-report-${report.id}`,
+      type,
+      title: report.title,
+      detail: report.body,
+      value: xunjiFormatClock(report.timestamp),
+      timestamp: report.timestamp,
+      meta: { appName: report.relatedApp || '循迹提醒', relatedReportId: report.id, tags: [report.type], risk: report.severity === 'warning' ? 'suspicious' : type === 'secret_space' ? 'private' : 'normal' },
+    });
+  });
   return records;
 }
 

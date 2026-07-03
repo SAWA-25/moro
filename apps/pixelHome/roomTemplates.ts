@@ -88,13 +88,13 @@ export const ROOM_META: Record<MemoryRoom, { name: string; emoji: string; color:
 // ─── 默认墙壁/地板颜色 ─────────────────────────────
 
 export const DEFAULT_ROOM_COLORS: Record<MemoryRoom, { wall: string; floor: string }> = {
-  living_room: { wall: '#fef3c7', floor: '#d6b88a' },
-  bedroom:     { wall: '#ede9fe', floor: '#c4b5a0' },
-  study:       { wall: '#dbeafe', floor: '#8b7355' },
-  attic:       { wall: '#4b5563', floor: '#374151' },
-  self_room:   { wall: '#fce7f3', floor: '#d4a8c0' },
-  user_room:   { wall: '#d1fae5', floor: '#a8c4b0' },
-  windowsill:  { wall: '#cffafe', floor: '#92a89c' },
+  living_room: { wall: '', floor: '' },
+  bedroom:     { wall: '', floor: '' },
+  study:       { wall: '', floor: '' },
+  attic:       { wall: '', floor: '' },
+  self_room:   { wall: '', floor: '' },
+  user_room:   { wall: '', floor: '' },
+  windowsill:  { wall: '', floor: '' },
 };
 
 // ─── 所有房间 ID 列表（保持渲染顺序）─────────────

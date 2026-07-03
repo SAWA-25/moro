@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageSquare, Sticker, Trash } from '@phosphor-icons/react';
-import { Emoji, EmojiCategory } from '../../types';
+import { Emoji, EmojiCategory, Toast } from '../../types';
 import { processImage } from '../../utils/file';
 import {
     ParsedEmojiImport,
@@ -27,7 +27,7 @@ export interface EmojiImportModalProps {
     defaultCategoryId?: string;
     existingEmojis: Emoji[];
     onSave: (records: ParsedEmojiImport[]) => Promise<void> | void;
-    addToast?: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+    addToast?: (msg: string, type?: Toast['type']) => void;
     title?: string;
 }
 

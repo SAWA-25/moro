@@ -262,7 +262,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
 
         return (
             <div key={`table-${index}`} className="my-4 overflow-x-auto rounded-xl border border-white/10 bg-black/25">
-                <table className="w-full min-w-[360px] border-collapse text-sm text-left">
+                <table className="w-full min-w-[320px] border-collapse text-sm text-left">
                     <thead className="bg-white/10">
                         <tr>
                             {header.map((cell, i) => (
@@ -1597,7 +1597,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
                 {/* Header */}
-                <div className="backdrop-blur-md p-4 flex items-center justify-between z-30 border-b border-white/10" style={{ background: 'rgba(0,0,0,0.35)', paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+                <div className="backdrop-blur-md p-4 flex items-center justify-between z-30 border-b border-white/10" style={{ background: 'rgba(0,0,0,0.35)' }}>
                     <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="p-2 rounded-full transition-colors border border-white/10" style={{ background: 'rgba(0,0,0,0.3)', color: CHALK_SOFT }}>
                         <CaretLeft size={18} weight="bold" />
                     </button>
@@ -2138,7 +2138,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
             {/* Header Overlay */}
-            <div className="absolute top-0 w-full p-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+            <div className="absolute top-0 w-full p-4 flex justify-between z-30 pointer-events-none">
                 <button onClick={() => setMode('bookshelf')} className="p-2 rounded-full backdrop-blur-md transition-colors pointer-events-auto border border-white/10" style={{ background: 'rgba(0,0,0,0.3)', color: CHALK_SOFT }}>
                     <CaretLeft size={18} weight="bold" />
                 </button>
@@ -2158,7 +2158,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             {showChapterMenu && (
                 <div className="absolute inset-0 z-50 flex">
                     <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowChapterMenu(false)}></div>
-                    <div className="w-64 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right" style={{ background: '#16140f', paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+                    <div className="w-[min(16rem,82vw)] max-w-full border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right" style={{ background: '#16140f' }}>
                         <h3 className="font-bold text-sm mb-4 uppercase tracking-widest" style={{ color: CHALK, fontFamily: 'var(--font-label)' }}>课程目录</h3>
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                             {activeCourse?.chapters.map((ch, idx) => {
@@ -2280,7 +2280,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 // ── 顶栏：胶带返回钮 + 招牌（中文 + 英文小标）+ 右槽 ──
 const StudyHeader: React.FC<{ title: string; en?: string; onBack: () => void; right?: React.ReactNode }> = ({ title, en, onBack, right }) => (
     <div className="relative z-20 shrink-0">
-        <div style={{ height: 'var(--safe-top)' }} />
         <div className="flex items-center px-3 pt-2 pb-2.5 gap-2">
             <button onClick={onBack} className="relative inline-flex items-center gap-1 px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }}>
                 <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-2deg)', boxShadow: '0 3px 7px -3px rgba(31,29,26,0.5)' }} />

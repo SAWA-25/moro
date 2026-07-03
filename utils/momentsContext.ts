@@ -1,7 +1,8 @@
-import type { CharacterProfile, SocialComment, SocialPost } from '../types';
+import type { CharacterProfile, SocialComment, SocialPost, UserProfile } from '../types';
 import { DB } from './db';
 import { canCharacterViewMoment, shouldNotifyCharacterForMoment } from './momentsAccess';
 import { momentsChatContextIntro } from './laiwangPrompts';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 
 const MOMENTS_CONTEXT_WINDOW_MS = 72 * 60 * 60 * 1000;
 
@@ -19,8 +20,10 @@ const relevantComments = (post: SocialPost, charId: string): SocialComment[] =>
         || (comment.replyTo && (post.comments || []).some(c => c.id === comment.replyTo?.commentId && c.authorCharId === charId))
     ));
 
-function describeMomentForChar(post: SocialPost, char: CharacterProfile): string | null {
+function describeMomentForChar(post: SocialPost, char: CharacterProfile, userProfile?: UserProfile): string | null {
+    if (userProfile && shouldHideAmbientSocialRecordForUser(userProfile) && isAmbientSocialCharacterForUser(char, userProfile)) return null;
     if (!canCharacterViewMoment(post, char.id)) return null;
+    if (userProfile?.ambientSocialEnabled === false && post.authorType === 'stranger') return null;
     const parts: string[] = [];
     const own = post.authorCharId === char.id;
     const mentioned = shouldNotifyCharacterForMoment(post, char.id);
@@ -35,13 +38,14 @@ function describeMomentForChar(post: SocialPost, char: CharacterProfile): string
     return `- ${parts.join('；')}`;
 }
 
-export async function buildMomentsChatContextBlock(char: CharacterProfile, now = Date.now()): Promise<string> {
+export async function buildMomentsChatContextBlock(char: CharacterProfile, userProfile?: UserProfile, now = Date.now()): Promise<string> {
     try {
         const posts = await DB.getSocialPosts();
+        if (userProfile && shouldHideAmbientSocialRecordForUser(userProfile) && isAmbientSocialCharacterForUser(char, userProfile)) return '';
         const lines = posts
             .filter(post => now - (post.lastActivityAt || post.timestamp || 0) <= MOMENTS_CONTEXT_WINDOW_MS)
             .sort((a, b) => (b.lastActivityAt || b.timestamp || 0) - (a.lastActivityAt || a.timestamp || 0))
-            .map(post => describeMomentForChar(post, char))
+            .map(post => describeMomentForChar(post, char, userProfile))
             .filter((line): line is string => !!line)
             .slice(0, 5);
         if (lines.length === 0) return '';

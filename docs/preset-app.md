@@ -154,6 +154,21 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 - `os_preset_apply_sampling`：采样参数是否随请求下发（缺省开）
 - `os_preset_global_scopes`：全局允许哪些任务 scope 被活字盘影响（缺省见上表）
 - `TavernPreset.moroScopes`：当前预设自己的任务 scope，本地字段，不随酒馆 JSON 导出
+- `TavernPreset.moroPromptOrdersByScope`：Moro 本地增强。按任务 scope 保存专用提示词顺序；
+  未设置时 `chat.groupText` / `chat.groupVoice` 继承 ST 群聊 `100001`，其它 scope 继承单聊 `100000`。
+  只在本机生效，不随酒馆 JSON 导出。
+- `TavernPreset.moroSnapshots`：Moro 本地增强。活字盘高级编辑用的快照 / diff / 恢复副本数据；
+  只在本机生效，不随酒馆 JSON 导出。
 
 预设本体存 IndexedDB `llm_presets` store，App 内所有改动即时落库（没有 ST 的
 「设置区 vs 预设文件」双层，故无手动「更新预设」按钮）。
+
+## 高级编辑与预览
+
+- 活字盘 UI 可在「提示词顺序」里切换任务 scope，并把继承顺序复制成该 scope 的专用
+  order；运行时 `applyPresetToMessages` 会优先读取 scope 专用 order，再按上面的 ST
+  `100001` / `100000` 规则回退。
+- 诊断 / 安全修复逻辑在 `utils/presets.ts`：检查缺失或关闭 `chatHistory`、核心 marker
+  全关、空启用提示词、重复 order、悬空引用、未使用提示词和风险 scope。自动修复只做低风险项。
+- 完整预览走 `buildChatRequestPayload({ previewMode: true })` 或同一套 `applyPresetToMessages`
+  组装逻辑；预览不调用模型、不写消息、不刷新预设正则缓存，也不会自动推进循迹记录。

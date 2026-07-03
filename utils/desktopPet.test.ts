@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { DesktopPetManifest } from './desktopPet';
 import {
   DESKTOP_PET_DIALOGUE_LIMIT,
+  DESKTOP_PET_DEFAULT_AUTO_BEHAVIOR,
   DESKTOP_PET_FALL_SPEED_DEFAULT,
   DESKTOP_PET_FALL_SPEED_MAX,
   DESKTOP_PET_PROMPT_LIMIT,
+  applyDesktopPetCareTick,
   advanceDesktopPetFallOverlay,
   advanceDesktopPetWalkOverlay,
   appendDesktopPetDialogue,
+  buildDesktopPetReminderSpeech,
   buildDesktopPetFallbackSpeech,
   canDesktopPetAutoWalkDuringAction,
   clampDesktopPetOverlay,
@@ -19,6 +22,9 @@ import {
   feedDesktopPet,
   getDesktopPetActionHoldLoops,
   getDesktopPetFallTargetY,
+  getDesktopPetMood,
+  listDesktopPetManualActions,
+  markDesktopPetTalked,
   markDueDesktopPetRemindersFired,
   setDesktopPetRolePrompt,
   shouldPlaceDesktopPetControlsOnLeft,
@@ -49,6 +55,11 @@ const manifest: DesktopPetManifest = {
         feed_1: { id: 'feed_1', images: 'happy', actNum: 1, frameRefresh: 0.08, frames: [] },
         feed_2: { id: 'feed_2', images: 'pat', actNum: 1, frameRefresh: 0.08, frames: [] },
         feed_3: { id: 'feed_3', images: 'mad', actNum: 1, frameRefresh: 0.08, frames: [] },
+        left_walk: { id: 'left_walk', images: 'walk', actNum: 1, frameRefresh: 0.08, frames: [] },
+        drag: { id: 'drag', images: 'drag', actNum: 1, frameRefresh: 0.08, frames: [] },
+        sleep: { id: 'sleep', images: 'sleep', actNum: 1, frameRefresh: 0.08, frames: [] },
+        sit: { id: 'sit', images: 'sit', actNum: 1, frameRefresh: 0.08, frames: [] },
+        wavehand: { id: 'wavehand', images: 'wave', actNum: 1, frameRefresh: 0.08, frames: [] },
       },
     },
   },
@@ -218,6 +229,77 @@ describe('desktop pet core', () => {
     expect(createDefaultDesktopPetState(1).fallSpeed).toBe(150);
     expect(createDefaultDesktopPetState(1).fallSpeed).toBeLessThan(DESKTOP_PET_FALL_SPEED_MAX);
     expect(ensureDesktopPetState({ ...createDefaultDesktopPetState(1), fallSpeed: 999 }).fallSpeed).toBe(DESKTOP_PET_FALL_SPEED_MAX);
+  });
+
+  it('migrates auto behavior and tracks care ticks by default', () => {
+    const state = ensureDesktopPetState({
+      ...createDefaultDesktopPetState(1),
+      autoBehavior: 'wild' as any,
+      lastCareTickAt: undefined,
+    }, 50);
+    expect(state.autoBehavior).toBe(DESKTOP_PET_DEFAULT_AUTO_BEHAVIOR);
+    expect(state.lastCareTickAt).toBe(50);
+
+    const lively = ensureDesktopPetState({ ...state, autoBehavior: 'lively' }, 60);
+    expect(lively.autoBehavior).toBe('lively');
+  });
+
+  it('decays satiety gently with a catch-up cap and preserves affection', () => {
+    const base = {
+      ...createDefaultDesktopPetState(1),
+      activeRoleId: '流浪者',
+      lastCareTickAt: 1,
+      roleStates: {
+        流浪者: { hp: 100, fv: 70 },
+      },
+    };
+    const next = applyDesktopPetCareTick(base, 25 * 60 * 60 * 1000 + 1);
+    expect(next.roleStates['流浪者'].hp).toBe(76);
+    expect(next.roleStates['流浪者'].fv).toBe(70);
+    expect(next.lastCareTickAt).toBe(25 * 60 * 60 * 1000 + 1);
+  });
+
+  it('derives pet mood from hunger, time and recent interaction', () => {
+    const day = new Date('2026-07-04T12:00:00+08:00').getTime();
+    const night = new Date('2026-07-04T23:30:00+08:00').getTime();
+    expect(getDesktopPetMood({
+      ...createDefaultDesktopPetState(day),
+      roleStates: { 流浪者: { hp: 20, fv: 300 } },
+    }, '流浪者', day)).toBe('hungry');
+    expect(getDesktopPetMood({
+      ...createDefaultDesktopPetState(night),
+      roleStates: { 流浪者: { hp: 100, fv: 300 } },
+    }, '流浪者', night)).toBe('sleepy');
+    expect(getDesktopPetMood({
+      ...createDefaultDesktopPetState(day),
+      roleStates: { 流浪者: { hp: 100, fv: 60, lastInteractedAt: day - 30 * 60 * 1000 } },
+    }, '流浪者', day)).toBe('happy');
+    expect(getDesktopPetMood({
+      ...createDefaultDesktopPetState(day),
+      roleStates: { 流浪者: { hp: 100, fv: 10, lastInteractedAt: day - 72 * 60 * 60 * 1000 } },
+    }, '流浪者', day)).toBe('lonely');
+  });
+
+  it('marks desktop pet chat as an interaction', () => {
+    const next = markDesktopPetTalked(createDefaultDesktopPetState(1), '流浪者', 2);
+    expect(next.roleStates['流浪者'].lastTalkedAt).toBe(2);
+    expect(next.roleStates['流浪者'].lastInteractedAt).toBe(2);
+  });
+
+  it('filters internal actions out of the manual action list', () => {
+    const actions = listDesktopPetManualActions(manifest.roles['流浪者']);
+    const ids = actions.map(action => action.id);
+    expect(ids).toContain('sleep');
+    expect(ids).toContain('wavehand');
+    expect(ids).not.toContain('drag');
+    expect(ids).not.toContain('left_walk');
+    expect(ids).not.toContain('feed_1');
+  });
+
+  it('builds reminder speech for in-app bubbles', () => {
+    expect(buildDesktopPetReminderSpeech('纳西妲', { title: '喝水', note: '顺手站起来。' }))
+      .toBe('纳西妲轻轻敲了敲屏幕：喝水。顺手站起来。');
+    expect(buildDesktopPetReminderSpeech('流浪者', { title: '休息' })).toContain('休息');
   });
 
   it('falls overlay downward for a short target distance only', () => {

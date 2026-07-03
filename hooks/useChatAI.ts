@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect, MutableRefObject } from 'react';
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, AuxApiConfig } from '../types';
-import { resolveAuxApi } from '../utils/auxApi';
+import { resolveOptionalCustomApi } from '../utils/auxApi';
 import { DB } from '../utils/db';
 import { KeepAlive } from '../utils/keepAlive';
 import { ProactiveChat } from '../utils/proactiveChat';
@@ -10,7 +10,7 @@ import { useMusic, loadMusicHooks } from '../context/MusicContext';
 import { processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
-// evolveFlowNarrative 保留为低频深刷新备用，日常意识流由副 API 的情绪评估同轮产出（innerState 字段）
+// evolveFlowNarrative 保留为低频深刷新备用，日常意识流由日程 / 心情 API 的情绪评估同轮产出（innerState 字段）
 // import { evolveFlowNarrative } from '../utils/scheduleGenerator';
 import { isEmotionBuffFeatureOn } from '../utils/scheduleGenerator';
 import type { DigestResult } from '../utils/memoryPalace';
@@ -37,8 +37,10 @@ import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { replyQueuedUserMessageHint } from '../utils/laiwangPrompts';
 import { callChatCompletion } from '../utils/llmClient';
 import { buildOpenAiEndpoint, buildOpenAiHeaders } from '../utils/openAiCompat';
+import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 
-// ─── 情绪评估（副API，fire & forget）───
+// ─── 情绪评估（今日作息底部 API；留空走主 API，fire & forget）───
 
 function buildEmotionEvalPrompt(
     char: CharacterProfile,
@@ -290,7 +292,7 @@ export async function evaluateEmotionBackground(
     userProfile: UserProfile,
     mainSystemPrompt: string,
     apiMessages: Array<{ role: string; content: any }>,
-    api: { baseUrl: string; apiKey: string; model: string }
+    api: { baseUrl: string; apiKey: string; model: string; apiRole?: 'main' | 'aux' | 'custom'; apiBinding?: string }
 ): Promise<string | null> {
     try {
         const budgetedContext = budgetChatMessages(
@@ -323,8 +325,8 @@ export async function evaluateEmotionBackground(
         }, { meta: makeApiUsageMeta('chat.postProcess.emotionEval', {
             charId: charData.id,
             charName: charData.name,
-            apiRole: 'aux',
-            apiBinding: '情绪评估',
+            apiRole: api.apiRole || 'custom',
+            apiBinding: api.apiBinding || '日程 / 心情 API',
             isBackgroundTask: true,
         }) });
 
@@ -340,7 +342,7 @@ interface UseChatAIProps {
     char: CharacterProfile | undefined;
     userProfile: UserProfile;
     apiConfig: any;
-    /** 副 API（聊天以外的辅助任务，如后台情绪评估）。缺省时回落主 API。 */
+    /** 副 API（聊天以外的辅助任务，如记忆整理）。情绪评估另走日程 / 心情 API。 */
     auxApiConfig?: AuxApiConfig;
     groups: GroupProfile[];
     emojis: Emoji[];
@@ -371,6 +373,8 @@ interface TriggerAIOptions {
     apiUsageContext?: Record<string, unknown>;
     /** Queue mode: this generation should answer exactly this user message. */
     targetUserMessage?: Pick<Message, 'id' | 'content' | 'timestamp'>;
+    /** One-shot guard for special flows that must not persist roleplay/meta analysis as chat bubbles. */
+    roleplayMetaLeakGuard?: boolean;
 }
 
 export const useChatAI = ({
@@ -431,7 +435,7 @@ export const useChatAI = ({
     const [tokenBreakdown, setTokenBreakdown] = useState<{ prompt: number; completion: number; total: number; msgCount: number; pass: string } | null>(null);
     const [lastSystemPrompt, setLastSystemPrompt] = useState<string>('');
 
-    // 意识流：由副 API 的情绪评估同轮产出（innerState 字段）
+    // 意识流：由日程 / 心情 API 的情绪评估同轮产出（innerState 字段）
     // 下一轮 system prompt 会把它作为角色的内心状态注入
     const [evolvedNarrative, setEvolvedNarrative] = useState<string>('');
 
@@ -498,11 +502,11 @@ export const useChatAI = ({
                 try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
                 return;
             }
-            // 后台情绪评估属「聊天以外」的辅助任务：角色自带情绪 API 优先，否则走副 API（回落主 API）
-            const configuredEmotionApi = currentChar.emotionConfig?.api;
-            const emotionApi = (configuredEmotionApi?.baseUrl)
-                ? configuredEmotionApi
-                : resolveAuxApi(deps.auxApiConfig, deps.apiConfig);
+            // 后台情绪评估：今日作息底部 API 优先；留空直接走主 API。
+            const emotionApi = resolveOptionalCustomApi(currentChar.emotionConfig?.api, deps.apiConfig, {
+                customBinding: '今日作息日程 / 心情 API',
+                mainBinding: '今日作息 API 留空，使用主 API',
+            });
 
             try {
                 // 重新从 DB 拉 history (push msg 此刻已经在 DB 里, activeMsgRuntime 在 dispatch
@@ -565,7 +569,7 @@ export const useChatAI = ({
         };
         window.addEventListener('post-push-emotion-eval', handler);
 
-        // 1b. instant 模式: 情绪评估在 worker 跑 (副 API), 结果走 emotion_update push → activeMsgRuntime
+        // 1b. instant 模式: 情绪评估在 worker 跑（日程 / 心情 API，留空走主 API）, 结果走 emotion_update push → activeMsgRuntime
         //     flush 时 applyEmotionEvalRaw 落 buff 并广播 innerState. 这里只把 innerState 喂回 evolvedNarrative
         //     (下一轮 system prompt 用), buff 已在 activeMsgRuntime 落库.
         const innerStateHandler = (e: Event) => {
@@ -635,6 +639,10 @@ export const useChatAI = ({
         options?: TriggerAIOptions,
     ): Promise<boolean> => {
         if (isTyping || !char) return false;
+        if (shouldHideAmbientSocialRecordForUser(userProfile) && isAmbientSocialCharacterForUser(char, userProfile)) {
+            console.warn('[AmbientSocial] Suppressed chat trigger for hidden/disabled ambient social character.');
+            return false;
+        }
         const effectiveApi = overrideApiConfig || apiConfig;
         if (!effectiveApi.baseUrl) { alert("请先在「文具盒」里配置 API URL"); return false; }
 
@@ -788,19 +796,21 @@ export const useChatAI = ({
             // Save for dev debug viewer
             setLastSystemPrompt(systemPrompt);
 
-            // 3. 情绪评估 (副 API). 直接复用已 build 好的 systemPrompt 和 cleanedApiMessages，确保情绪
+            // 3. 情绪评估（日程 / 心情 API，留空走主 API）。直接复用已 build 好的 systemPrompt 和 cleanedApiMessages，确保情绪
             //    评估和主 API 看到的上下文完全一致；同时产出 innerState（意识流），注入下一轮 system prompt。
-            //    未单独配置情绪 API 时回退到主 apiConfig。
+            //    未单独配置日程 / 心情 API 时回退到主 apiConfig。
             //    ── 路径分叉 ──
             //    - 本地 fetch 模式: 客户端 fire-and-forget 跑 eval (前端活着).
-            //    - instant 模式: 不在客户端跑, 改把 eval prompt + 副 API 凭据塞进 instant 请求 (emotionEval 字段),
+            //    - instant 模式: 不在客户端跑, 改把 eval prompt + 日程 / 心情 API 凭据塞进 instant 请求 (emotionEval 字段),
             //      worker 跑完主回复后跑 eval 并推 emotion_update 回来, 客户端 flush 时落 buff —— 这样前端被杀也算数,
             //      且不会跟客户端 eval 双跑双扣费. 见下方 instant 分支 + worker/instant-push + activeMsgRuntime.
             const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffFeatureOn);
             const instantOn = !options?.suppressNotificationEvent && isInstantConfigReady();
-            const configuredEmotionApi = char.emotionConfig?.api;
             const emotionApi = emotionEvalEnabled
-                ? (configuredEmotionApi?.baseUrl ? configuredEmotionApi : resolveAuxApi(auxApiConfig, apiConfig))
+                ? resolveOptionalCustomApi(char.emotionConfig?.api, apiConfig, {
+                    customBinding: '今日作息日程 / 心情 API',
+                    mainBinding: '今日作息 API 留空，使用主 API',
+                })
                 : null;
             if (emotionEvalEnabled && !instantOn && emotionApi) {
                 setEmotionStatus('evaluating');
@@ -817,11 +827,17 @@ export const useChatAI = ({
                     // includeContext=false: 不嵌 system prompt + 对话历史 (worker 复用本次请求的 messages 作前文),
                     // 把 emotionEval 块压到最小, 让请求体留在 keepalive 64KB 上限内 (关前端也能跑完).
                     prompt: buildEmotionEvalPrompt(char, userProfile, systemPrompt, cleanedApiMessages, false),
-                    api: { baseUrl: emotionApi.baseUrl, apiKey: emotionApi.apiKey, model: emotionApi.model },
+                    api: {
+                        baseUrl: emotionApi.baseUrl,
+                        apiKey: emotionApi.apiKey,
+                        model: emotionApi.model,
+                        apiRole: emotionApi.apiRole,
+                        apiBinding: emotionApi.apiBinding,
+                    },
                 }
                 : undefined;
 
-            // instant 情绪评估在 worker 跑 (副 API), 客户端看不到 LLM 调用时机, 但仍要给用户一个
+            // instant 情绪评估在 worker 跑（日程 / 心情 API，留空走主 API）, 客户端看不到 LLM 调用时机, 但仍要给用户一个
             // "情绪更新中" 的可见信号 (header 徽章, 跟本地模式一致), 否则 "发送中" 消失后一片空白像死了.
             // 从这里点亮, 到 worker 推回 emotion_update (activeMsgRuntime fire 'instant-emotion-done')
             // 或安全超时 (worker 旧/失败/前端被杀) 时熄灭.
@@ -914,8 +930,8 @@ export const useChatAI = ({
                         charId: char.id,
                         ...(targetReplyTo ? { queuedReplyTarget: targetReplyTo } : {}),
                     },
-                    // 副 API 情绪评估: worker 跑完主回复后用这套跑 eval, 推 emotion_update 回来 (见 worker 包装层).
-                    // 放顶层字段, 不进 metadata —— 框架不会回显它, 副 API apiKey 不会泄进 push.
+                    // 情绪评估: worker 跑完主回复后用这套日程 / 心情 API 跑 eval, 推 emotion_update 回来 (见 worker 包装层).
+                    // 放顶层字段, 不进 metadata —— 框架不会回显它, API key 不会泄进 push.
                     ...(instantEmotionEval ? { emotionEval: instantEmotionEval } : {}),
                 }, char.id, undefined, onInstantPosted);
                 if (!instantResult.ok && instantResult.outcome !== 'cancelled') {
@@ -1099,7 +1115,8 @@ export const useChatAI = ({
             // 详见 utils/applyAssistantPostProcessing.ts。Phase 0 行为字节级不变;
             // Phase 1 会让 instant push 路径也调它 (skipSecondPassLLM=true);
             // Phase 2 会让 worker 端把识别的副作用打包成 directives 传过来重放。
-            const rawAiContent = flattenContent(data.choices?.[0]?.message?.content);
+            let rawAiContent = flattenContent(data.choices?.[0]?.message?.content);
+            rawAiContent = sanitizeAssistantVisibleText(rawAiContent) || options?.emptyReplyFallback || '';
             const xhsCaches: XhsCaches = {
                 xsecTokenCache: xsecTokenCacheRef.current,
                 noteTitleCache: noteTitleCacheRef.current,
@@ -1305,7 +1322,7 @@ export const useChatAI = ({
                     });
             }
 
-            // 意识流进化现在由副 API 的情绪评估同轮产出（innerState 字段），
+            // 意识流进化现在由日程 / 心情 API 的情绪评估同轮产出（innerState 字段），
             // 不再需要独立的后台 API 调用，也不再分散主 API 注意力。
         }
     };

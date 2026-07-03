@@ -407,7 +407,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
             className="h-full w-full flex flex-col relative overflow-hidden font-sans text-slate-900 scrap-panel"
             style={{
                 background: '#fafafa',
-                paddingTop: embedded ? '0px' : 'max(8px, var(--safe-top))',
+                paddingTop: embedded ? '0px' : 8,
             }}
         >
             {/* 独立模式顶栏：返回 + 页签字标 */}

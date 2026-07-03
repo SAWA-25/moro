@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CaretDown, CaretUp, Lightning, MonitorPlay, Pause, Play, Stop } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { useUserScreenWatch } from '../../context/UserScreenWatchContext';
+import { sanitizeUserScreenWatchComment } from '../../utils/userScreenWatch';
 
 const POS_KEY = 'moro_user_screen_watch_overlay_pos';
 const WIDTH = 288;
@@ -34,7 +35,11 @@ const UserScreenWatchOverlay: React.FC = () => {
 
   const visible = !!session && session.settings.floatingEnabled;
   const char = session ? characters.find(c => c.id === session.charId) : undefined;
-  const latest = session?.comments?.slice(-1)[0]?.text || (session?.status === 'paused' ? '采样暂停中。' : '我在看。');
+  const latestComment = [...(session?.comments || [])]
+    .reverse()
+    .map(comment => sanitizeUserScreenWatchComment(comment.text))
+    .find(Boolean) || '';
+  const latest = latestComment || (session?.status === 'paused' ? '采样暂停中。' : '我在看。');
   const isPaused = session?.status === 'paused';
 
   useEffect(() => {
@@ -113,7 +118,7 @@ const UserScreenWatchOverlay: React.FC = () => {
 
         {!collapsed && (
           <div className="border-t border-slate-200/70 px-3 pb-3 pt-2">
-            <div className="min-h-[44px] rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-snug text-slate-800">
+            <div className="max-h-[78px] min-h-[44px] overflow-hidden break-words rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-snug text-slate-800">
               {latest}
             </div>
             <div className="mt-2 grid grid-cols-4 gap-2">

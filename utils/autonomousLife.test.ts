@@ -189,6 +189,47 @@ describe('autonomous life v2', () => {
     expect(userPrompt).toContain('不要让 TA 在同一时间出现在两个地点');
   });
 
+  it('syncs catch-up life events with planned daily schedule slots', async () => {
+    await DB.deleteDB();
+    const now = new Date(2026, 6, 3, 18, 0).getTime();
+    const gapStart = new Date(2026, 6, 3, 12, 0).getTime();
+    const date = '2026-07-03';
+    const char = mkChar({ id: 'catchup-schedule', scheduleFeatureEnabled: true, scheduleStyle: 'lifestyle' });
+    await DB.saveDailySchedule({
+      id: `${char.id}_${date}`,
+      charId: char.id,
+      date,
+      generatedAt: Date.now(),
+      slots: [
+        { startTime: '12:00', endTime: '15:00', activity: '午后整理', location: '家里' },
+        { startTime: '15:00', endTime: '18:00', activity: '出门采购', location: '超市' },
+      ],
+    });
+    const raw = [
+      { activity: '把桌上的文件按颜色重新分了一遍', summary: '整理桌面', eventKind: 'routine' },
+      { activity: '在超市货架前犹豫要不要买同款杯子', summary: '挑杯子', eventKind: 'errand' },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+    })));
+
+    const events = await catchUpOfflineLife(char, API, gapStart, { now });
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      scheduleDate: date,
+      scheduleSlotStartTime: '12:00',
+      scheduleSlotActivity: '午后整理',
+    });
+    expect(events[1]).toMatchObject({
+      scheduleDate: date,
+      scheduleSlotStartTime: '15:00',
+      scheduleSlotActivity: '出门采购',
+    });
+  });
+
   it('marks surfaced events with the actual sent time', async () => {
     await DB.deleteDB();
     const ev = mkEvent({ id: 'life-surfaced', surfacedAsMsg: false });

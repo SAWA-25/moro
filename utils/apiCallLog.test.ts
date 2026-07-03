@@ -73,7 +73,6 @@ const CORE_ANNOTATED_FILES: Record<string, string[]> = {
     'apps/Chat.tsx': [
         'chat.privateReply',
         'chat.parallelReply',
-        'chat.livePrivateInterject',
         'chat.translation',
         'chat.phoneTextReply',
         'chat.lockScreen',
@@ -196,6 +195,17 @@ describe('LLM 调用静态扫描', () => {
                 expect(text, `${file} 缺少 ${featureId}`).toContain(featureId);
             }
         }
+    });
+
+    it('实时私聊不再触发已停用的串门流水', () => {
+        const text = fs.readFileSync(path.join(ROOT, 'apps/Chat.tsx'), 'utf8');
+        expect(text).not.toContain('chat.livePrivateInterject');
+    });
+
+    it('实时群聊不执行 PRIVATE 私聊侧写入', () => {
+        const text = fs.readFileSync(path.join(ROOT, 'apps/ChatHub.tsx'), 'utf8');
+        expect(text).toContain('privateContent && !liveMode');
+        expect(text).toContain('实时模式禁用');
     });
 
     it('OpenAI-compatible 原始端点字符串只留在中心 helper、测试和 worker 协议代码', () => {

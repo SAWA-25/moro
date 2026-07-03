@@ -5,9 +5,20 @@ import {
     WechatLogo, Camera, Megaphone, ImagesSquare, Scroll, Trash, ClockCounterClockwise,
     UsersThree, User, ChatTeardropText, CheckCircle, Play, MicrophoneStage, Presentation,
     Notebook, EnvelopeOpen, NewspaperClipping, CalendarDots, FileMagnifyingGlass, ClipboardText,
+    PlugsConnected, FileArrowUp,
 } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import { DB } from '../../utils/db';
+import { fetchModelList, testChatConnection } from '../../utils/llmClient';
+import {
+    clearLocalApiOverride,
+    isLocalApiOverrideComplete,
+    loadLocalApiOverride,
+    resolveScopedLocalApi,
+    saveLocalApiOverride,
+    type LocalApiOverrideConfig,
+} from '../../utils/localApiOverride';
 import {
     inferQuestionCount, genNextQuestion, genCharAnswer, genCharComment, genQuizHostNote, genCharPeerReview, genQuizResult,
     normalizeTheaterQuizSession, DEFAULT_THEATER_QUIZ_SETTINGS,
@@ -19,6 +30,7 @@ import {
     bankQuizNames, bankQuizNamesByTag, bankQuizTags, getBankQuestions, isBankQuiz, quizBankMeta,
     instructionsForKind, pickInstruction, EXTRA_INSTRUCTIONS, type ExtraBankKind,
 } from '../../utils/theaterExtraBank';
+import { parseTheaterCustomLibraryJson } from '../../utils/theaterCustomLibrary';
 import {
     WeChatScreenshot, MomentsCard, XhsCard, ForumThread,
     WeiboHotCard, QzoneCard, DoubanThread, CampusWallCard,
@@ -32,6 +44,7 @@ import type {
     CharacterProfile, TheaterFauxPiece, TheaterQuizAnswer, TheaterQuizComment, TheaterQuizItem, TheaterQuizSession,
     FauxWeChat, FauxMoments, FauxXhs, FauxForum,
     FauxWeibo, FauxQzone, FauxDouban, FauxCampus, FauxMemo, FauxSchedule, FauxReceipt, FauxBrowser,
+    TheaterCustomLibraryItem, TheaterCustomPiecePreset, TheaterCustomQuizPreset,
 } from '../../types';
 
 /**
@@ -205,17 +218,31 @@ const renderFauxPreview = (kind: FauxKind, data: TheaterFauxPiece['data'], avata
 
 const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast } = useOS();
-    const api = resolveAuxApi(auxApiConfig, apiConfig);
+    const [theaterApiOverride, setTheaterApiOverride] = useState<LocalApiOverrideConfig>(() => loadLocalApiOverride('theaterExtra'));
+    const api = useMemo(
+        () => resolveScopedLocalApi('theaterExtra', auxApiConfig, apiConfig),
+        [apiConfig, auxApiConfig, theaterApiOverride],
+    );
     const apiReady = !!(api.baseUrl && api.model);
+    const theaterApiOverrideOn = isLocalApiOverrideComplete(theaterApiOverride);
     const userName = (userProfile?.name || '').trim() || '你';
 
     const [mode, setMode] = useState<Mode>('home');
     const [pickCharId, setPickCharId] = useState('');
     const char = characters.find(c => c.id === pickCharId);
+    const customLibraryInputRef = useRef<HTMLInputElement>(null);
+    const [customLibrary, setCustomLibrary] = useState<TheaterCustomLibraryItem[]>([]);
 
     const [topic, setTopic] = useState('');
     const [busy, setBusy] = useState(false);
     const [busyLabel, setBusyLabel] = useState('');
+    const [showTheaterApiDialog, setShowTheaterApiDialog] = useState(false);
+    const [theaterApiDraft, setTheaterApiDraft] = useState<LocalApiOverrideConfig>(theaterApiOverride);
+    const [theaterApiStatus, setTheaterApiStatus] = useState('');
+    const [testingTheaterApi, setTestingTheaterApi] = useState(false);
+    const [fetchingTheaterModels, setFetchingTheaterModels] = useState(false);
+    const [theaterApiModels, setTheaterApiModels] = useState<string[]>([]);
+    const [showTheaterApiModels, setShowTheaterApiModels] = useState(false);
 
     const [quizPlayMode, setQuizPlayMode] = useState<QuizPlayMode>('single');
     const [quizParticipantIds, setQuizParticipantIds] = useState<Set<string>>(new Set());
@@ -253,6 +280,15 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         setFauxHistory(list);
     };
 
+    const refreshCustomLibrary = async () => {
+        const list = await DB.getAllTheaterCustomLibraryItems().catch(() => []);
+        setCustomLibrary(list);
+    };
+
+    useEffect(() => {
+        void refreshCustomLibrary();
+    }, []);
+
     useEffect(() => {
         if (mode === 'quiz') void refreshQuizHistory();
     }, [mode]);
@@ -261,9 +297,329 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         if (mode === 'faux') void refreshFauxHistory();
     }, [mode]);
 
-    const quizTags = useMemo(() => [QUIZ_TAG_ALL, ...bankQuizTags()], []);
-    const quizPresets = useMemo(() => [...new Set([...bankQuizNamesByTag(quizTag), ...QUIZ_FALLBACK_PRESETS])], [quizTag]);
-    const selectedQuizMeta = useMemo(() => topic.trim() && isBankQuiz(topic) ? quizBankMeta(topic) : null, [topic]);
+    const setTheaterApiDraftField = (field: keyof LocalApiOverrideConfig, value: string) => {
+        setTheaterApiDraft(prev => ({ ...prev, [field]: value }));
+    };
+
+    const openTheaterApiDialog = () => {
+        const saved = loadLocalApiOverride('theaterExtra');
+        setTheaterApiOverride(saved);
+        setTheaterApiDraft(saved);
+        setTheaterApiStatus('');
+        setShowTheaterApiDialog(true);
+    };
+
+    const copyMainToTheaterApi = () => {
+        setTheaterApiDraft({
+            baseUrl: apiConfig.baseUrl || '',
+            apiKey: apiConfig.apiKey || '',
+            model: apiConfig.model || '',
+        });
+        setTheaterApiStatus('已复制主 API，保存后生效');
+    };
+
+    const copyAuxToTheaterApi = () => {
+        const aux = resolveAuxApi(auxApiConfig, apiConfig);
+        setTheaterApiDraft({
+            baseUrl: aux.baseUrl || '',
+            apiKey: aux.apiKey || '',
+            model: aux.model || '',
+        });
+        setTheaterApiStatus('已复制副 API 当前线路，保存后生效');
+    };
+
+    const saveTheaterApi = () => {
+        try {
+            const saved = saveLocalApiOverride('theaterExtra', theaterApiDraft);
+            setTheaterApiOverride(saved);
+            setTheaterApiDraft(saved);
+            setTheaterApiStatus(saved.baseUrl ? '折子戏番外专用 API 已保存' : '折子戏番外专用 API 已清除');
+            addToast(saved.baseUrl ? '番外会优先使用这条专用 API' : '番外已回到文具盒副 API / 主 API', 'success');
+        } catch (e: any) {
+            const msg = e?.message || '保存失败';
+            setTheaterApiStatus(msg);
+            addToast(msg, 'error');
+        }
+    };
+
+    const clearTheaterApi = () => {
+        clearLocalApiOverride('theaterExtra');
+        const empty = loadLocalApiOverride('theaterExtra');
+        setTheaterApiOverride(empty);
+        setTheaterApiDraft(empty);
+        setTheaterApiStatus('已清除，之后回退文具盒副 API / 主 API');
+        addToast('折子戏番外专用 API 已清除', 'success');
+    };
+
+    const testTheaterApi = async () => {
+        const baseUrl = theaterApiDraft.baseUrl.trim();
+        const model = theaterApiDraft.model.trim();
+        if (!baseUrl || !model) {
+            setTheaterApiStatus('测试前需要填写 Base URL 和模型名');
+            return;
+        }
+        setTestingTheaterApi(true);
+        setTheaterApiStatus('正在测试连接…');
+        try {
+            const reply = await testChatConnection(
+                { baseUrl, apiKey: theaterApiDraft.apiKey.trim(), model },
+                {
+                    stream: false,
+                    meta: makeApiUsageMeta('theater.extra', {
+                        apiRole: 'custom',
+                        apiBinding: '折子戏番外专用 API',
+                        isBackgroundTask: false,
+                    }),
+                },
+            );
+            setTheaterApiStatus(`连接成功：${reply.slice(0, 30) || '模型已响应'}`);
+        } catch (e: any) {
+            setTheaterApiStatus(`连接失败：${e?.message || '请检查地址、Key 和模型名'}`);
+        } finally {
+            setTestingTheaterApi(false);
+        }
+    };
+
+    const fetchTheaterApiModels = async () => {
+        const baseUrl = theaterApiDraft.baseUrl.trim();
+        if (!baseUrl) {
+            setTheaterApiStatus('拉取模型前需要填写 Base URL');
+            addToast('请先填写番外专用 API 的 Base URL', 'info');
+            return;
+        }
+        setFetchingTheaterModels(true);
+        setTheaterApiStatus('正在拉取模型列表…');
+        try {
+            const models = await fetchModelList(
+                { baseUrl, apiKey: theaterApiDraft.apiKey.trim() },
+                {
+                    meta: makeApiUsageMeta('theater.extraApi.fetchModels', {
+                        apiRole: 'custom',
+                        apiBinding: '折子戏番外专用 API',
+                        isBackgroundTask: false,
+                    }),
+                },
+            );
+            if (!models.length) {
+                setTheaterApiStatus('没有识别到模型列表，可以继续手动填写模型名');
+                addToast('没有识别到模型列表，可以手动填写模型名', 'info');
+                return;
+            }
+            setTheaterApiModels(models);
+            setShowTheaterApiModels(true);
+            setTheaterApiDraft(prev => models.includes(prev.model.trim()) ? prev : { ...prev, model: models[0] });
+            setTheaterApiStatus(`已拉取 ${models.length} 个模型，选好后记得保存`);
+            addToast(`已拉取 ${models.length} 个模型，请保存番外专用 API`, 'success');
+        } catch (e: any) {
+            const msg = e?.message || '请检查地址和密钥';
+            setTheaterApiStatus(`拉取模型失败：${msg}`);
+            addToast(`拉取模型失败：${msg}`, 'error');
+        } finally {
+            setFetchingTheaterModels(false);
+        }
+    };
+
+    const customPieces = useMemo(
+        () => customLibrary.filter((item): item is TheaterCustomPiecePreset => item.kind === 'piece'),
+        [customLibrary],
+    );
+    const customQuizzes = useMemo(
+        () => customLibrary.filter((item): item is TheaterCustomQuizPreset => item.kind === 'quiz'),
+        [customLibrary],
+    );
+    const customQuizForTopic = (name: string) => customQuizzes.find(q => q.title.trim() === name.trim());
+    const customQuizTags = useMemo(() => [...new Set(customQuizzes.flatMap(q => q.tags || []))], [customQuizzes]);
+    const quizTags = useMemo(() => [...new Set([QUIZ_TAG_ALL, ...bankQuizTags(), ...customQuizTags])], [customQuizTags]);
+    const customQuizNamesByTag = useMemo(() => {
+        if (!quizTag || quizTag === QUIZ_TAG_ALL) return customQuizzes.map(q => q.title);
+        return customQuizzes.filter(q => (q.tags || []).includes(quizTag)).map(q => q.title);
+    }, [customQuizzes, quizTag]);
+    const quizPresets = useMemo(() => [...new Set([...customQuizNamesByTag, ...bankQuizNamesByTag(quizTag), ...QUIZ_FALLBACK_PRESETS])], [customQuizNamesByTag, quizTag]);
+    const selectedQuizMeta = useMemo(() => {
+        const t = topic.trim();
+        const custom = customQuizForTopic(t);
+        if (custom) {
+            return {
+                title: custom.title,
+                tags: custom.tags || ['问卷'],
+                description: custom.description || '你导入的自定义问卷，会按顺序出题。',
+                recommendedParticipants: custom.recommendedParticipants || '1-6 位',
+                questionCount: custom.questions.length,
+                imported: true,
+            };
+        }
+        return t && isBankQuiz(t) ? { ...quizBankMeta(t), imported: false } : null;
+    }, [topic, customQuizzes]);
+    const readTextFile = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+        reader.readAsText(file);
+    });
+    const handleCustomLibraryImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await readTextFile(file);
+            const parsed = parseTheaterCustomLibraryJson(text, { sourceName: file.name });
+            const existingById = new Map(customLibrary.map(item => [item.id, item]));
+            const items = parsed.items.map(item => {
+                const existing = existingById.get(item.id);
+                return existing ? { ...item, createdAt: existing.createdAt } : item;
+            });
+            await DB.bulkSaveTheaterCustomLibraryItems(items);
+            setCustomLibrary(prev => {
+                const next = new Map(prev.map(item => [item.id, item]));
+                items.forEach(item => next.set(item.id, item));
+                return [...next.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            });
+            addToast(`已导入 ${parsed.pieceCount} 个小剧场、${parsed.quizCount} 份问卷`, 'success');
+        } catch (err: any) {
+            addToast(err?.message || '导入失败', 'error');
+        } finally {
+            e.target.value = '';
+        }
+    };
+    const deleteCustomLibraryItem = async (item: TheaterCustomLibraryItem) => {
+        try {
+            await DB.deleteTheaterCustomLibraryItem(item.id);
+            setCustomLibrary(prev => prev.filter(x => x.id !== item.id));
+            if (item.kind === 'quiz' && topic.trim() === item.title) setTopic('');
+            addToast(`已删除「${item.title}」`, 'success');
+        } catch {
+            addToast('删除失败', 'error');
+        }
+    };
+    const customLibraryInput = (
+        <input
+            ref={customLibraryInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleCustomLibraryImport}
+        />
+    );
+    const customLibraryImportButton = (
+        <button
+            onClick={() => customLibraryInputRef.current?.click()}
+            title="导入自定义小剧场 / 问卷 JSON"
+            className="shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center active:scale-95"
+            style={{ background: '#fff', color: INK, border: '1px solid rgba(31,29,26,0.12)' }}
+        >
+            <FileArrowUp size={17} weight="bold" />
+        </button>
+    );
+    const theaterApiButton = (
+        <button
+            onClick={openTheaterApiDialog}
+            title={theaterApiOverrideOn ? '折子戏番外专用 API 已启用' : '折子戏番外专用 API'}
+            className="shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center active:scale-95"
+            style={theaterApiOverrideOn ? { background: INK, color: '#f6f3ec' } : { background: '#fff', color: INK, border: '1px solid rgba(31,29,26,0.12)' }}
+        >
+            <PlugsConnected size={17} weight={theaterApiOverrideOn ? 'fill' : 'bold'} />
+        </button>
+    );
+    const theaterApiDialog = (
+        <PaperDialog
+            open={showTheaterApiDialog}
+            onClose={() => setShowTheaterApiDialog(false)}
+            title="番外专用 API"
+            en="LOCAL API"
+            actions={(
+                <>
+                    <ScrapButton variant="paper" className="flex-1 py-2 text-[12px]" disabled={testingTheaterApi} onClick={() => void testTheaterApi()}>
+                        {testingTheaterApi ? '测试中' : '测试'}
+                    </ScrapButton>
+                    <ScrapButton variant="paper" className="flex-1 py-2 text-[12px]" onClick={clearTheaterApi}>清除</ScrapButton>
+                    <ScrapButton variant="ink" className="flex-1 py-2 text-[12px]" onClick={saveTheaterApi}>保存</ScrapButton>
+                </>
+            )}
+        >
+            <div className="space-y-3 text-left">
+                <div className="rounded-xl p-3 text-[11px] leading-relaxed" style={{ background: 'rgba(31,29,26,0.06)', color: '#5f594f' }}>
+                    填完整后，问卷番外、番外工坊和仿真图文都会优先使用这里；清除后自动回到文具盒副 API / 主 API。
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    <ScrapButton variant="paper" className="py-2 text-[12px]" onClick={copyMainToTheaterApi}>复制主 API</ScrapButton>
+                    <ScrapButton variant="paper" className="py-2 text-[12px]" onClick={copyAuxToTheaterApi}>复制副 API</ScrapButton>
+                    <ScrapButton variant="paper" className="py-2 text-[12px]" disabled={fetchingTheaterModels} onClick={() => void fetchTheaterApiModels()}>
+                        {fetchingTheaterModels ? '拉取中' : '拉取模型'}
+                    </ScrapButton>
+                </div>
+                <div>
+                    <label className="text-[10px] font-black" style={{ color: INK_SOFT }}>BASE URL · 接口地址</label>
+                    <input
+                        value={theaterApiDraft.baseUrl}
+                        onChange={e => setTheaterApiDraftField('baseUrl', e.target.value)}
+                        placeholder="https://your-api.example.com/v1"
+                        className="mt-1 w-full rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+                        style={paperInput}
+                    />
+                </div>
+                <div>
+                    <label className="text-[10px] font-black" style={{ color: INK_SOFT }}>API KEY · 密钥</label>
+                    <input
+                        type="password"
+                        value={theaterApiDraft.apiKey}
+                        onChange={e => setTheaterApiDraftField('apiKey', e.target.value)}
+                        placeholder="可留空，本地接口会自动用免鉴权兜底"
+                        className="mt-1 w-full rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+                        style={paperInput}
+                    />
+                </div>
+                <div>
+                    <label className="text-[10px] font-black" style={{ color: INK_SOFT }}>MODEL · 模型名</label>
+                    <input
+                        value={theaterApiDraft.model}
+                        onChange={e => setTheaterApiDraftField('model', e.target.value)}
+                        placeholder="模型名"
+                        className="mt-1 w-full rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+                        style={paperInput}
+                    />
+                    {theaterApiModels.length > 0 && (
+                        <div className="mt-2 rounded-xl overflow-hidden" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                            <button
+                                type="button"
+                                onClick={() => setShowTheaterApiModels(v => !v)}
+                                className="w-full px-3 py-2 flex items-center justify-between text-[11px] font-black"
+                                style={{ color: INK }}
+                            >
+                                <span>已拉取 {theaterApiModels.length} 个模型</span>
+                                <span>{showTheaterApiModels ? '收起' : '选择'}</span>
+                            </button>
+                            {showTheaterApiModels && (
+                                <div className="max-h-44 overflow-y-auto p-1.5 space-y-1">
+                                    {theaterApiModels.map(model => (
+                                        <button
+                                            key={model}
+                                            type="button"
+                                            onClick={() => {
+                                                setTheaterApiDraftField('model', model);
+                                                setShowTheaterApiModels(false);
+                                                setTheaterApiStatus('已选择模型，保存后生效');
+                                            }}
+                                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-mono break-all"
+                                            style={{
+                                                background: theaterApiDraft.model.trim() === model ? 'rgba(31,29,26,0.1)' : 'transparent',
+                                                color: theaterApiDraft.model.trim() === model ? INK : INK_SOFT,
+                                            }}
+                                        >
+                                            {model}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                {theaterApiStatus && (
+                    <div className="rounded-xl px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.55)', color: '#5f594f' }}>
+                        {theaterApiStatus}
+                    </div>
+                )}
+            </div>
+        </PaperDialog>
+    );
 
     const participantChars = useMemo(
         () => characters.filter(c => quizParticipantIds.has(c.id)),
@@ -398,7 +754,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const createNextQuizItem = async (base: TheaterQuizSession, itemIndex: number): Promise<TheaterQuizSession> => {
         const charsForItem = sessionChars(base);
         const asked = base.items.map(it => it.question);
-        const bank = getBankQuestions(base.topic);
+        const bank = customQuizForTopic(base.topic)?.questions || getBankQuestions(base.topic);
         const q = await genNextQuestion({ api, topic: base.topic, index: itemIndex, total: base.total, asked, bankQuestions: bank ?? undefined });
         const item = makeQuestionItem(q, itemIndex + 1, charsForItem);
         if (base.settings?.hostEnabled) {
@@ -435,7 +791,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
         if (selected.length > 6) { addToast('多角色问卷最多 6 位', 'info'); return; }
 
-        const bank = getBankQuestions(t);
+        const bank = customQuizForTopic(t)?.questions || getBankQuestions(t);
         const n = bank ? bank.length : inferQuestionCount(t);
         const now = Date.now();
         const titleNames = selected.slice(0, 2).map(c => c.name).join('、') + (selected.length > 2 ? `等 ${selected.length} 人` : '');
@@ -905,7 +1261,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
             const selectedCount = quizParticipantIds.size;
             const canStart = selectedCount > 0 && !!topic.trim() && apiReady && !busy;
             return (
-                <Page title="问卷番外" en="THE QUIZ" onBack={() => setMode('home')}>
+                <Page
+                    title="问卷番外"
+                    en="THE QUIZ"
+                    onBack={() => setMode('home')}
+                    right={<div className="flex items-center gap-2">{customLibraryImportButton}{theaterApiButton}</div>}
+                >
+                    {theaterApiDialog}
+                    {customLibraryInput}
                     {!apiReady && (
                         <PaperCard tilt={-0.4} className="p-3 text-[12px]" style={{ color: '#7a3b2e' }}>
                             还没配置 API。去「文具盒」填好主/副 API，角色才能答题和评论。
@@ -938,7 +1301,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         <div className="flex flex-wrap gap-1.5">
                             {quizPresets.map(p => (
                                 <button key={p} onClick={() => setTopic(p)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 inline-flex items-center gap-1" style={tabStyle(false)}>
-                                    {p}{isBankQuiz(p) && <span className="text-[8px] px-1 rounded-[3px]" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>题库</span>}
+                                    {p}{customQuizForTopic(p) ? <span className="text-[8px] px-1 rounded-[3px]" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>导入</span> : (isBankQuiz(p) && <span className="text-[8px] px-1 rounded-[3px]" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>题库</span>)}
                                 </button>
                             ))}
                         </div>
@@ -948,10 +1311,31 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                                 <div className="text-[11px] leading-relaxed" style={{ color: '#6b6558' }}>{selectedQuizMeta.description}</div>
                                 <div className="flex flex-wrap gap-1.5 text-[10px]">
                                     <span className="px-2 py-0.5 rounded-full" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>{selectedQuizMeta.questionCount} 题</span>
+                                    {selectedQuizMeta.imported && <span className="px-2 py-0.5 rounded-full" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>导入</span>}
                                     <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>推荐 {selectedQuizMeta.recommendedParticipants}</span>
                                     {selectedQuizMeta.tags.map(tag => <span key={tag} className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(31,29,26,0.08)', color: INK_SOFT }}>{tag}</span>)}
                                 </div>
                             </PaperCard>
+                        )}
+                        {customQuizzes.length > 0 && (
+                            <div className="space-y-2">
+                                <SectionTag en="IMPORTED">导入问卷</SectionTag>
+                                <div className="space-y-2">
+                                    {customQuizzes.slice(0, 12).map(q => (
+                                        <div key={q.id} className="rounded-xl px-3 py-2.5 flex items-center gap-2" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                            <button onClick={() => setTopic(q.title)} className="flex-1 min-w-0 text-left active:scale-[0.99]">
+                                                <div className="text-[12px] font-black truncate" style={{ color: INK }}>{q.title}</div>
+                                                <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>
+                                                    {q.questions.length} 题{q.description ? ` · ${q.description}` : ''}
+                                                </div>
+                                            </button>
+                                            <button onClick={() => void deleteCustomLibraryItem(q)} className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center active:scale-90" style={{ color: INK_SOFT }} title="删除导入问卷">
+                                                <Trash size={14} weight="bold" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         )}
                         <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={!canStart} onClick={() => void startQuiz()} icon={<Play size={15} weight="fill" />}>
                             {busy ? busyLabel || '准备中…' : `开始答题${selectedCount ? ` · ${selectedCount} 位` : ''}`}
@@ -995,8 +1379,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                 en={isFinished ? 'FINISHED' : `${quizSession.currentIndex + 1}/${quizSession.total}`}
                 onBack={() => { setQuizSession(null); quizSessionRef.current = null; setQuizInput(''); void refreshQuizHistory(); }}
                 backLabel="问卷册"
-                right={<button onClick={() => { setExportTargetId(quizSession.participantIds[0] || ''); setExportOpen(true); }} className="text-[11px] font-black px-3 py-1.5 rounded-full active:scale-95" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>导出</button>}
+                right={(
+                    <div className="flex items-center gap-2">
+                        {theaterApiButton}
+                        <button onClick={() => { setExportTargetId(quizSession.participantIds[0] || ''); setExportOpen(true); }} className="text-[11px] font-black px-3 py-1.5 rounded-full active:scale-95" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>导出</button>
+                    </div>
+                )}
             >
+                {theaterApiDialog}
                 <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(31,29,26,0.1)' }}>
                         <div className="h-full" style={{ width: `${progress}%`, background: '#1f1d1a' }} />
@@ -1217,7 +1607,8 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         const previewFallback = fauxActivePiece?.fallbackText ?? fauxResult?.fallbackText ?? '';
         const previewChar = characters.find(c => c.id === fauxActivePiece?.charId) || char;
         return (
-            <Page title="仿真图文" en="FAUX SCREENS" onBack={() => { setFauxResult(null); setFauxActivePiece(null); setMode('home'); }}>
+            <Page title="仿真图文" en="FAUX SCREENS" onBack={() => { setFauxResult(null); setFauxActivePiece(null); setMode('home'); }} right={theaterApiButton}>
+                {theaterApiDialog}
                 <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
 
                 <div className="space-y-3">
@@ -1315,7 +1706,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     if (mode === 'piece') {
         const tab = PIECE_TABS.find(t => t.kind === pieceKind)!;
         return (
-            <Page title="番外工坊" en="THE WORKSHOP" onBack={() => { setPiece(''); setMode('home'); }}>
+            <Page
+                title="番外工坊"
+                en="THE WORKSHOP"
+                onBack={() => { setPiece(''); setMode('home'); }}
+                right={<div className="flex items-center gap-2">{customLibraryImportButton}{theaterApiButton}</div>}
+            >
+                {theaterApiDialog}
+                {customLibraryInput}
                 <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
                 <div className="grid grid-cols-4 gap-2">
                     {PIECE_TABS.map(t => (
@@ -1352,6 +1750,37 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         </div>
                     </div>
                 </PaperCard>
+                {pieceKind === 'custom' && (
+                    <PaperCard tilt={-0.25} className="p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                            <SectionTag en="LIBRARY">小剧场库</SectionTag>
+                            <button onClick={() => customLibraryInputRef.current?.click()} className="shrink-0 text-[11px] font-black inline-flex items-center gap-1 active:scale-95" style={{ color: INK }}>
+                                <FileArrowUp size={13} weight="bold" />导入
+                            </button>
+                        </div>
+                        {customPieces.length === 0 ? (
+                            <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                导入 JSON 后，小剧场指令会出现在这里；点一下就能填入自定义番外。
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {customPieces.slice(0, 12).map(p => (
+                                    <div key={p.id} className="rounded-xl px-3 py-2.5 flex items-center gap-2" style={{ background: 'rgba(255,253,247,0.72)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                        <button onClick={() => setPiecePrompt(p.instruction)} className="flex-1 min-w-0 text-left active:scale-[0.99]">
+                                            <div className="text-[12px] font-black truncate" style={{ color: INK }}>{p.title}</div>
+                                            <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>
+                                                {(p.tags || []).join(' / ') || '小剧场'}{p.description ? ` · ${p.description}` : ''}
+                                            </div>
+                                        </button>
+                                        <button onClick={() => void deleteCustomLibraryItem(p)} className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center active:scale-90" style={{ color: INK_SOFT }} title="删除导入小剧场">
+                                            <Trash size={14} weight="bold" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </PaperCard>
+                )}
                 <textarea value={piecePrompt} onChange={e => setPiecePrompt(e.target.value)} placeholder={tab.ph}
                     rows={pieceKind === 'custom' ? 5 : 3} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
                 <InstructionRow kind={pieceKind} onPick={setPiecePrompt} />
@@ -1377,7 +1806,8 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     ];
     return (
         <PaperShell>
-            <ScrapHeader title="番外" en="SIDE LEAVES" onBack={onExit} backLabel="回戏单" />
+            <ScrapHeader title="番外" en="SIDE LEAVES" onBack={onExit} backLabel="回戏单" right={theaterApiButton} />
+            {theaterApiDialog}
             <ScrapScroll className="px-5 pb-10 space-y-4 pt-1">
                 <PaperCard tilt={-0.8} tape="ink" className="px-6 py-6 overflow-hidden">
                     <div className="text-[9px] tracking-[0.36em] mb-1.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>SIDE LEAVES · 番 外 篇</div>

@@ -57,6 +57,20 @@ export interface RegexApplyParams extends RegexEnvironment {
     depth?: number;
 }
 
+export type RegexPreviewMode = 'raw' | 'prompt' | 'markdown';
+
+export interface RegexRunDiagnostic {
+    output: string;
+    matched: boolean;
+    changed: boolean;
+    outputEmpty: boolean;
+    validRegex: boolean;
+    skippedByMode: boolean;
+    skippedByPlacement: boolean;
+    skippedByDepth: boolean;
+    error?: string;
+}
+
 /**
  * "/pattern/flags" → RegExp；不是斜杠包裹格式则按裸 pattern 处理。
  * 与 ST utils.js regexFromString 行为一致（非法 flags 时整串当 pattern）。
@@ -225,6 +239,108 @@ export function getRegexedString(
         }
     }
     return finalString;
+}
+
+const regexMatchesText = (re: RegExp, text: string): boolean => {
+    try {
+        const flags = re.flags.includes('g') || re.flags.includes('y') ? re.flags : re.flags + 'g';
+        const testRe = new RegExp(re.source, flags);
+        return testRe.test(text);
+    } catch {
+        return false;
+    }
+};
+
+export function diagnoseRegexScriptRun(
+    script: RegexScriptData,
+    rawString: string,
+    {
+        userName,
+        charName,
+        mode = 'raw',
+        placement = script?.placement?.[0] ?? regex_placement.AI_OUTPUT,
+        depth,
+    }: RegexEnvironment & { mode?: RegexPreviewMode; placement?: number; depth?: number } = {},
+): RegexRunDiagnostic {
+    const text = typeof rawString === 'string' ? rawString : '';
+    if (!script?.findRegex) {
+        return {
+            output: text,
+            matched: false,
+            changed: false,
+            outputEmpty: false,
+            validRegex: false,
+            skippedByMode: false,
+            skippedByPlacement: false,
+            skippedByDepth: false,
+            error: '查找正则为空',
+        };
+    }
+
+    const re = getScriptFindRegex(script, { userName, charName });
+    if (!re) {
+        return {
+            output: text,
+            matched: false,
+            changed: false,
+            outputEmpty: false,
+            validRegex: false,
+            skippedByMode: false,
+            skippedByPlacement: false,
+            skippedByDepth: false,
+            error: '查找正则无法编译',
+        };
+    }
+
+    const isMarkdown = mode === 'markdown';
+    const isPrompt = mode === 'prompt';
+    const previewScript = { ...script, disabled: false };
+    const modeApplies =
+        (previewScript.markdownOnly && isMarkdown) ||
+        (previewScript.promptOnly && isPrompt) ||
+        (!previewScript.markdownOnly && !previewScript.promptOnly && !isMarkdown && !isPrompt);
+    const placementApplies = Array.isArray(previewScript.placement) && previewScript.placement.includes(placement);
+    let depthApplies = true;
+    if (typeof depth === 'number') {
+        const minDepth = previewScript.minDepth;
+        const maxDepth = previewScript.maxDepth;
+        if (typeof minDepth === 'number' && !isNaN(minDepth) && minDepth >= -1 && depth < minDepth) depthApplies = false;
+        if (typeof maxDepth === 'number' && !isNaN(maxDepth) && maxDepth >= 0 && depth > maxDepth) depthApplies = false;
+    }
+
+    let output = text;
+    try {
+        output = getRegexedString(text, placement, [previewScript], {
+            userName,
+            charName,
+            isMarkdown,
+            isPrompt,
+            depth,
+        });
+    } catch (e: any) {
+        return {
+            output: text,
+            matched: false,
+            changed: false,
+            outputEmpty: false,
+            validRegex: true,
+            skippedByMode: !modeApplies,
+            skippedByPlacement: !placementApplies,
+            skippedByDepth: !depthApplies,
+            error: e?.message || String(e),
+        };
+    }
+
+    return {
+        output,
+        matched: !!text && regexMatchesText(re, text),
+        changed: output !== text,
+        outputEmpty: text.length > 0 && output.length === 0,
+        validRegex: true,
+        skippedByMode: !modeApplies,
+        skippedByPlacement: !placementApplies,
+        skippedByDepth: !depthApplies,
+    };
 }
 
 const newScriptId = (): string =>

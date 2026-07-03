@@ -8,6 +8,7 @@ import { buildCoupleSpacePromptBlock } from './coupleSpace';
 import { relationshipBlock, coreText, characterDialogueGuidance, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
 import { readTwitterContextSummary } from './twitterFeed';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
+import { PROMPT_PRIVACY_RULE, wrapHiddenPromptBlock } from './promptPrivacy';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -39,13 +40,19 @@ function buildRelationshipPromptBlock(char: CharacterProfile, userName: string):
 export const renderMesExampleBlock = (mesExample?: string): string => {
     const text = (mesExample || '').trim();
     if (!text) return '';
-    return `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的样张，<START> 表示一段新示例的开始。只学习其中的语气、节奏、称呼、停顿、措辞和情绪走向；它们不是真实发生过的历史，不要当成共同记忆引用，也不要机械照抄原句。）\n${text}\n\n`;
+    return wrapHiddenPromptBlock(
+        'dialogue-examples',
+        `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的样张，<START> 表示一段新示例的开始。只学习其中的语气、节奏、称呼、停顿、措辞和情绪走向；它们不是真实发生过的历史，不要当成共同记忆引用，也不要机械照抄原句。）\n${text}`,
+    );
 };
 
 const characterIdentityRule = (char: CharacterProfile): string => {
     const id = getCharacterModelId(char);
     if (!id) return '';
-    return `### 角色身份锚 (Hidden Character ID)\n- 角色ID: ${id}\n- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。\n- 这个ID只用于你在内部区分身份；日常对话里不要主动把角色ID念给用户听，除非用户明确询问识别码。\n\n`;
+    return wrapHiddenPromptBlock(
+        'character-identity-anchor',
+        `### 角色身份锚 (Hidden Character ID)\n- 角色ID: ${id}\n- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。\n- 这个ID只用于你在内部区分身份；日常对话里不要主动把角色ID念给用户听，除非用户明确询问识别码。`,
+    );
 };
 
 export const ContextBuilder = {
@@ -57,7 +64,7 @@ export const ContextBuilder = {
      * @param options.skipMemories 跳过月度总结和日度记录（开启记忆宫殿时用向量记忆替代）
      */
     buildRoleSettingsContext: (char: CharacterProfile, options?: { skipMemories?: boolean }): string => {
-        let context = `[System: Character Role Settings]\n\n`;
+        let context = `[System: Character Role Settings]\n\n${PROMPT_PRIVACY_RULE}\n\n`;
 
         // 1. 角色名
         context += `### 角色名\n`;
@@ -166,7 +173,7 @@ export const ContextBuilder = {
             omitMesExample?: boolean;
         },
     ): string => {
-        let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
+        let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n${PROMPT_PRIVACY_RULE}\n\n`;
 
         // 世界书分段（局部 = 挂载生效 / 全局 = 注册表内全局条目，开关与位置见 worldbookRuntime）
         // 群聊场景（传了 skipWorldbookIds）下全局条目由 buildGroupSharedScene 统一渲染一次，
@@ -184,51 +191,53 @@ export const ContextBuilder = {
         }
 
         // 1. 核心身份 (Identity)
-        context += `### 你的身份 (Character)\n`;
-        context += `- 名字: ${char.name}\n`;
+        let identityBlock = `### 你的身份 (Character)\n`;
+        identityBlock += `- 名字: ${char.name}\n`;
         const modelId = getCharacterModelId(char);
         if (modelId) {
-            context += `- 角色ID: ${modelId}\n`;
+            identityBlock += `- 角色ID: ${modelId}\n`;
         }
-        context += `- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。这个ID只用于内部区分身份，日常对话里不要主动念给用户听。\n`;
-        context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
-        context += characterDialogueGuidance(user.name);
+        identityBlock += `- 身份锚: ${formatCharacterWithId(char)} 是你唯一对应的角色记录。即使群里出现同名、设定相似或关系相近的其他角色，也必须按这个角色ID保持自己的设定、记忆、关系和说话方式，不要与其他角色合并、串台或互相借用经历。这个ID只用于内部区分身份，日常对话里不要主动念给用户听。\n`;
+        identityBlock += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        identityBlock += characterDialogueGuidance(user.name);
+        context += wrapHiddenPromptBlock('character-core', identityBlock);
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知
         // 像情绪底色一样影响角色的行为和感受，注入在角色设定紧下方
         if (char.selfInsights && char.selfInsights.length > 0) {
-            context += `### 内在认知 (Self Insights)\n`;
-            context += `${coreText.selfInsightsIntro}\n`;
+            let block = `### 内在认知 (Self Insights)\n`;
+            block += `${coreText.selfInsightsIntro}\n`;
             char.selfInsights.forEach(insight => {
-                context += `- ${insight}\n`;
+                block += `- ${insight}\n`;
             });
-            context += `\n`;
+            context += wrapHiddenPromptBlock('self-insights', block);
         }
 
         // 1b2. 生活侧写 (Life Profile) — 帮角色「更了解自己」的生活速写（日常节奏 / 习惯 /
         // 在意的事 / 与用户关系底色 / 情绪走向）。像自我认知一样垫在设定下方，稳住角色对自己的把握。
         if (char.lifeProfile?.content && char.lifeProfile.content.trim()) {
-            context += `### 你的生活侧写 (Life Profile)\n`;
-            context += `${lifeProfileIntro(user.name)}\n`;
-            context += `${char.lifeProfile.content.trim()}\n\n`;
+            context += wrapHiddenPromptBlock(
+                'life-profile',
+                `### 你的生活侧写 (Life Profile)\n${lifeProfileIntro(user.name)}\n${char.lifeProfile.content.trim()}`,
+            );
         }
 
         // 1c. 回神校准 (Recenter) — 用户触发回神后、角色完成自我审视得到的校准方向。
         // 在接下来几轮回复里悄悄把"说话的味道"调回本来的样子；不解释、不提"回神"本身。
         const rc = char.recenterCalibration;
         if (rc && rc.turnsLeft > 0 && rc.note) {
-            context += recenterCalibrationBlock({ drift: rc.drift, note: rc.note });
+            context += wrapHiddenPromptBlock('recenter-calibration', recenterCalibrationBlock({ drift: rc.drift, note: rc.note }));
         }
 
         // 1d. 柔顺奉养 (Soft Devotion Chat) — 角色设置里开启后，大幅提升共情与接纳，
         // 让 TA 更偏爱、更耐心地接住用户的敏感、撒娇与不安（不改人设底色，只调"接住"的方式）。
         if (char.softDevotionChatEnabled) {
-            context += softDevotionBlock(user.name);
+            context += wrapHiddenPromptBlock('soft-devotion', softDevotionBlock(user.name));
         }
 
         // 2. 世界观 (Worldview) - New Centralized Logic
         if (char.worldview && char.worldview.trim() && !groupOptions?.skipWorldview) {
-            context += `### 世界观与设定 (World Settings)\n${char.worldview}\n\n`;
+            context += wrapHiddenPromptBlock('world-settings', `### 世界观与设定 (World Settings)\n${char.worldview}`);
         }
 
         // 挂载的世界书（局部，先写）+ 全局世界书（后写）— position='after_char' 的条目
@@ -247,9 +256,10 @@ export const ContextBuilder = {
         // 3. 用户画像 (User Profile)
         // 群聊场景下：用户画像已在共享场景块顶部，这里跳过避免重复
         if (!groupOptions?.skipUserProfile) {
-            context += `### 互动对象 (User)\n`;
-            context += `- 名字: ${user.name}\n`;
-            context += `- 设定/备注: ${user.bio || '无'}\n\n`;
+            context += wrapHiddenPromptBlock(
+                'user-profile',
+                `### 互动对象 (User)\n- 名字: ${user.name}\n- 设定/备注: ${user.bio || '无'}`,
+            );
         }
 
         const twitterRecent = readTwitterContextSummary(char.id, 5);
@@ -275,7 +285,9 @@ export const ContextBuilder = {
                 if (cs.narrationMode) {
                     lines.push(convoLines.narration);
                 }
-                if (cs.autoOffline) {
+                if (cs.longDistanceMode) {
+                    lines.push(convoLines.longDistanceMode);
+                } else if (cs.autoOffline) {
                     lines.push(convoLines.autoOffline);
                 }
                 const personaDrivenMessageLength = !!cs.personaDrivenMessageLength || cs.bubbleStyleMode === 'freeform';
@@ -292,6 +304,9 @@ export const ContextBuilder = {
                 }
                 if (cs.proactiveLookup) {
                     lines.push(convoLines.proactiveLookup);
+                }
+                if (cs.forceReplyEnabled) {
+                    lines.push(convoLines.forceReply(user.name));
                 }
                 if (cs.allowPhoneBrowse) {
                     lines.push(convoLines.allowPhoneBrowse);
@@ -659,6 +674,7 @@ export const ContextBuilder = {
 
         // —— 块 1: user 正在听什么 ——
         const canRead = char.musicProfile?.canReadUserMusic ?? true;
+        const hasReadableUserMusic = canRead && !!(userListening && userListening.songName);
         if (canRead && userListening && userListening.songName) {
             lines.push(`### 【此刻的对话氛围】`);
             if (isListeningTogether) {
@@ -721,7 +737,7 @@ export const ContextBuilder = {
         // 只在**有音乐上下文**（user 在听 OR char 自己在 schedule 里听）时注入。
         // 没音乐上下文时不往 prompt 里塞这段 — 避免普通聊天被无关信息污染、
         // 也避免 LLM 在没提示 add 语法的场合主动联想去操作歌单。
-        const hasMusicContext = !!(userListening && userListening.songName) || !!charListening?.songName;
+        const hasMusicContext = hasReadableUserMusic || !!charListening?.songName;
         const profile = char.musicProfile;
         if (hasMusicContext && profile && profile.playlists.length > 0) {
             lines.push(`### 【你的歌单】`);

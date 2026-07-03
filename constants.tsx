@@ -47,6 +47,7 @@ import {
   FilmSlate,
   CalendarHeart,
   Scissors,
+  Eye,
   ForkKnife,
   Question,
   XLogo,
@@ -75,6 +76,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Worldbook: ({ className }) => <NewspaperClipping className={className} weight="bold" />,
   Novel: ({ className }) => <PenNib className={className} weight="bold" />,
   Bank: ({ className }) => <ChartLineUp className={className} weight="bold" />,
+  CoView: ({ className }) => <Eye className={className} weight="bold" />,
   XhsFreeRoam: ({ className }) => <Compass className={className} weight="bold" />,
   Xunji: ({ className }) => <Compass className={className} weight="fill" />,
   XhsStock: ({ className }) => <Camera className={className} weight="bold" />,
@@ -141,7 +143,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   // 「折子戏」：一个图标、一张戏单，七折各自保留玩法与名字
   //（攻略本 / 番外 / 占卜 / 谈心 / TRPG / 轨迹 / 对影）。黑白拼贴手账皮肤。
-  { id: AppID.Theater, name: '折子戏', icon: 'Theater', color: 'orange' },
+  { id: AppID.Theater, name: '幕间集', icon: 'Theater', color: 'orange' },
   // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
   { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '页外', icon: 'VRWorld', color: 'indigo' },
@@ -156,7 +158,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Forum, name: '茶话亭', icon: 'Forum', color: 'blue' },
   { id: AppID.Twitter, name: '推特', icon: 'Twitter', color: 'slate' },
   { id: AppID.DesktopPet, name: '桌宠', icon: 'DesktopPet', color: 'emerald' },
-  { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
+  { id: AppID.CoView, name: '共览', icon: 'CoView', color: 'blue' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
   { id: AppID.Manual, name: '说明书', icon: 'Manual', color: 'amber' },

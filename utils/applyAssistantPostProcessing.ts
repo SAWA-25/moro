@@ -38,7 +38,7 @@ import { splitOutRichBlocks } from './chatRichContent';
 import { extractThinkingChainFromCompletion } from './llmReasoning';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
-import { TAKEOUT_ORDER_EVENT } from './takeout';
+import { TAKEOUT_ORDER_EVENT, extractTakeoutOrderDirective } from './takeout';
 import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
 import { extractCharAvatarDirective, CHAR_AVATAR_FROM_USER_IMAGE_EVENT } from './charAvatarSystem';
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
@@ -48,6 +48,8 @@ import { extractWithdrawDirective, stripFakeWithdrawNotice, CHAR_WITHDRAW_EVENT 
 import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
 import { extractPatSuffixDirective, extractPatDirective, CHAR_PAT_SUFFIX_EVENT, CHAR_PAT_EVENT } from './patSuffix';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
+import { dispatchForceReplyRequest, extractForceReplyDirective } from './forceReply';
 import {
     AgenticToolCtx,
     resolveXhsConfig,
@@ -343,7 +345,7 @@ export interface PostProcessCtx {
 export async function applyAssistantPostProcessing(
     rawAiContent: string,
     ctx: PostProcessCtx,
-): Promise<void> {
+): Promise<number> {
     const {
         char,
         userProfile,
@@ -511,6 +513,27 @@ export async function applyAssistantPostProcessing(
         }
     }
 
+    // ─── Step 1.58: [[FORCE_REPLY: reason]] 强制回话指令 ───
+    // 先剥离隐藏指令，气泡和通知永远不展示；只有当前单聊开关开启时才交给 OS 层弹全局阻塞窗。
+    {
+        const forceReplyExtract = extractForceReplyDirective(aiContent);
+        if (forceReplyExtract.forceReply) {
+            aiContent = forceReplyExtract.content;
+            if (char.convoSettings?.forceReplyEnabled && typeof window !== 'undefined') {
+                const body = sanitizeAssistantVisibleText(ChatParser.sanitize(forceReplyExtract.content))
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 180);
+                dispatchForceReplyRequest({
+                    charId: char.id,
+                    reason: forceReplyExtract.reason,
+                    body,
+                    source: 'assistant-post-processing',
+                });
+            }
+        }
+    }
+
     // ─── Step 1.6: [[OFFLINE_START]] 线下模式指令 ───
     // 自动线下开启时角色在见面情境输出该指令。先剥后播：Chat.tsx 监听事件弹线下窗口；
     // 用户不在该角色聊天页时落 pending 标记，下次进聊天兜底弹。
@@ -518,7 +541,7 @@ export async function applyAssistantPostProcessing(
         const offlineExtract = extractOfflineStartDirective(aiContent);
         if (offlineExtract.offline) {
             aiContent = offlineExtract.content;
-            if (char.convoSettings?.autoOffline && typeof window !== 'undefined') {
+            if (char.convoSettings?.autoOffline && !char.convoSettings?.longDistanceMode && typeof window !== 'undefined') {
                 setOfflinePending(char.id);
                 window.dispatchEvent(new CustomEvent(OFFLINE_START_EVENT, { detail: { charId: char.id } }));
             }
@@ -607,10 +630,10 @@ export async function applyAssistantPostProcessing(
         }
         // [[TAKEOUT_ORDER: 菜品/店铺描述]]  角色主动为用户点外卖（需会话开关）
         {
-            const m = aiContent.match(/\[\[TAKEOUT_ORDER[：:]\s*([\s\S]*?)\]\]/);
-            if (m) {
-                aiContent = aiContent.replace(/\[\[TAKEOUT_ORDER[：:][\s\S]*?\]\]/g, '').trim();
-                window.dispatchEvent(new CustomEvent(TAKEOUT_ORDER_EVENT, { detail: { charId: char.id, desc: (m[1] || '').trim() } }));
+            const takeoutExtract = extractTakeoutOrderDirective(aiContent);
+            if (takeoutExtract.desc !== undefined) {
+                aiContent = takeoutExtract.content;
+                window.dispatchEvent(new CustomEvent(TAKEOUT_ORDER_EVENT, { detail: { charId: char.id, desc: takeoutExtract.desc } }));
             }
         }
         // [[WEDDING_PLAN: kind | date | note]]  婚事推进（plan/register/wedding/custom）
@@ -825,9 +848,10 @@ export async function applyAssistantPostProcessing(
                         // 不跑引用/二次 sanitize，避免反引号、标签被剥导致渲染不出来
                         const resolved = resolveRichChunk(chunk);
                         if (resolved.rich) {
-                            if (resolved.text) {
+                            const richText = sanitizeAssistantVisibleText(resolved.text);
+                            if (richText) {
                                 const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
-                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: resolved.text, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: richText, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
                                 savedCount++;
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
@@ -1964,14 +1988,15 @@ export async function applyAssistantPostProcessing(
         const { blocks, cleanedContent } = extractHtmlBlocks(aiContent);
         for (const blk of blocks) {
             try {
+                const textPreview = sanitizeAssistantVisibleText(blk.textPreview);
                 await DB.saveMessage({
                     charId: char.id,
                     role: 'assistant',
                     type: 'html_card',
-                    content: blk.textPreview ? `[HTML卡片] ${blk.textPreview}` : '[HTML卡片]',
+                    content: textPreview ? `[HTML卡片] ${textPreview}` : '[HTML卡片]',
                     metadata: mergeAssistantMeta({
                         htmlSource: blk.html,
-                        htmlTextPreview: blk.textPreview,
+                        htmlTextPreview: textPreview,
                         ...(mcdInheritMeta || {}),
                     }),
                 } as any);
@@ -2014,4 +2039,6 @@ export async function applyAssistantPostProcessing(
             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
         }
     }
+
+    return visibleAssistantSavedCount;
 }

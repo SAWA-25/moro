@@ -39,6 +39,7 @@ import {
 import {
     User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
     NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
+    Vault,
 } from '@phosphor-icons/react';
 
 // ── 角色专属手机皮肤：按 char.id 确定性派生一套配色（千人千面，无需联网） ──
@@ -65,6 +66,7 @@ const APP_UI: Record<string, { Icon: React.FC<any>; tint: string }> = {
     delivery: { Icon: Hamburger, tint: '#f59e0b' },
     social: { Icon: CircleNotch, tint: '#f472b6' },
     notes: { Icon: NotePencil, tint: '#fbbf24' },
+    secret_space: { Icon: Vault, tint: '#818cf8' },
     wallet: { Icon: Wallet, tint: '#4ade80' },
     album: { Icon: ImageSquare, tint: '#22d3ee' },
     music: { Icon: MusicNotes, tint: '#a78bfa' },

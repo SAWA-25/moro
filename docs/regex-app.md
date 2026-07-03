@@ -9,9 +9,9 @@ SillyTavern 正则脚本系统的完整移植：脚本数据结构、执行引�
 | 文件 | 职责 |
 |------|------|
 | `utils/regex/engine.ts` | 纯函数引擎：`regexFromString` / `runRegexScript` / `getRegexedString` / `normalizeRegexScript`，与 ST `extensions/regex/engine.js` 一一对应 |
-| `utils/regex/store.ts` | 全局脚本存取（localStorage `moro_global_regex_scripts`）、预设自带脚本运行时缓存（`presetCache` / `setPresetRegexScripts` / `getPresetRegexScripts`）、`applyRegexToText` 一站式入口、导入导出 |
-| `apps/RegexApp.tsx` | 补丁铺 App UI：全局/预设/角色三个作用域、增删改、启停、导入导出、实时测试 |
-| `components/regex/RegexEditor.tsx` | 共用正则编辑弹层：补丁铺的全局 / 预设 / 角色脚本统一用这一套 |
+| `utils/regex/store.ts` | 全局脚本存取（localStorage `moro_global_regex_scripts`）、预设自带脚本运行时缓存（`presetCache` / `setPresetRegexScripts` / `getPresetRegexScripts`）、`applyRegexToText` 一站式入口、导入导出、导入预览与调试事件 |
+| `apps/RegexApp.tsx` | 补丁铺 App UI：全局/预设/角色三个作用域、增删改、搜索筛选、批量管理、导入预览、会话调试日志 |
+| `components/regex/RegexEditor.tsx` | 共用正则编辑弹层：补丁铺的全局 / 预设 / 角色脚本统一用这一套，含三种运行模式的试运行诊断 |
 | `types.ts` | `RegexScriptData` 接口、`AppID.Regex`、`CharacterProfile.regexScripts` |
 
 ## 三个作用域（同 ST GLOBAL / PRESET / SCOPED）
@@ -81,6 +81,10 @@ iframe 渲染（脚本可执行，详见 `utils/chatRichContent.ts` 头注）。
     （USER_INPUT / AI_OUTPUT 落库前、prompt 组装、气泡渲染）有命中改写时
     `console.debug` 一行 `{ placement, scripts, in, out, isMarkdown, isPrompt }`，
     用于排查「脚本没生效 / 包裹没剥干净」类问题（更全的调试约定见 `docs/dev-debug.md`）
+  - 补丁铺内置「本次会话调试日志」使用 `REGEX_DEBUG_EVENT`，只在 UI 开关开启时派发短预览：
+    `{ placement, scriptCount, inputPreview, outputPreview, isMarkdown, isPrompt, mode, timestamp }`。
+    不持久化、不记录完整聊天正文。导入 JSON 时使用 `buildRegexImportPreview` 先展示新增 / 覆盖 /
+    文件内重复和风险标签，用户确认后才落库；默认可把选中的导入脚本全部停用。
 
 ## 界面命名（黑白拼贴手账重构）
 

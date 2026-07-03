@@ -905,8 +905,9 @@ export function buildAutonomousProactiveHint(args: {
   event: CharLifeEvent;
   randomMode?: boolean;
   proactiveCallAllowed?: boolean;
+  forceReplyAllowed?: boolean;
 }): string {
-  const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed } = args;
+  const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed, forceReplyAllowed } = args;
   const location = event.location ? sanitizeLifeText(event.location) : '';
   const moodText = event.mood ? sanitizeLifeText(event.mood) : '';
   const where = location ? `（在${location}）` : '';
@@ -926,6 +927,7 @@ export function buildAutonomousProactiveHint(args: {
     gapNote,
     randomMode,
     proactiveCallAllowed,
+    forceReplyAllowed,
     eventKind: event.eventKind,
     energy: event.energy,
     proactiveAngle: event.proactiveAngle,

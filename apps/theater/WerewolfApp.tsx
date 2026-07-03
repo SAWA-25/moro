@@ -8,13 +8,14 @@ import {
     WEREWOLF_ROLE_CN, WEREWOLF_ROLE_EMOJI,
     createWerewolfGame, playerBySeat, userPlayer, livingPlayers, livingWolves,
     checkWinner, mkLog, resolveNightAI, generateDaySpeeches, collectVotes, tallyVotes, hunterShotTarget,
+    normalizeWerewolfGame, guardablePlayers, voteTargetPlayers, resolveNightDeathReasons, applyVoteExile,
     type NightAIResult,
 } from '../../utils/theaterWerewolf';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
 
 /**
  * 折子戏·狼人杀（捌）：拉一桌熟人开一局。
- * user 与所选角色各占一座、随机发牌（狼/预言家/女巫/猎人/平民）。
+ * user 与所选角色各占一座、随机发牌（狼/预言家/女巫/守卫/白痴/猎人/平民）。
  * AI 玩家按各自隐藏身份夜里行动、白天发言、投票放逐——会伪装、会推理、贴人设说话。
  * 黑白拼贴手账皮肤。引擎在 utils/theaterWerewolf.ts，文案在 utils/theaterPrompts.ts（[捌]）。
  */
@@ -49,6 +50,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     // 夜晚 / 投票 / 猎人的临时态
     const [seerResult, setSeerResult] = useState<{ seat: number; isWolf: boolean } | null>(null);
     const [nightKill, setNightKill] = useState<number | null>(null);      // 女巫面板用：今晚被刀者
+    const [guardProtect, setGuardProtect] = useState<number | null>(null);
     const [witchHeal, setWitchHeal] = useState(false);
     const [witchPoison, setWitchPoison] = useState<number | null>(null);
     const [userVote, setUserVote] = useState<number | null>(null);
@@ -60,19 +62,26 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     const continueRef = useRef<((g: WerewolfGame) => void) | null>(null);
     const logRef = useRef<HTMLDivElement>(null);
 
-    const reload = useCallback(async () => { setHistory(await DB.getAllWerewolfGames().catch(() => [])); }, []);
+    const reload = useCallback(async () => { setHistory((await DB.getAllWerewolfGames().catch(() => [])).map(normalizeWerewolfGame)); }, []);
     useEffect(() => { void reload(); }, [reload]);
     useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [game?.log.length, step]);
 
     const userName = (userProfile?.name || '').trim() || '你';
-    const clone = (g: WerewolfGame): WerewolfGame => ({ ...g, lastActiveAt: Date.now(), players: g.players.map(p => ({ ...p })), log: [...g.log] });
-    const commit = (g: WerewolfGame) => { setGame(g); void DB.saveWerewolfGame(g).catch(() => {}); };
+    const clone = (g: WerewolfGame): WerewolfGame => {
+        const n = normalizeWerewolfGame(g);
+        return { ...n, lastActiveAt: Date.now(), players: n.players.map(p => ({ ...p })), log: [...n.log] };
+    };
+    const commit = (g: WerewolfGame) => {
+        const n = normalizeWerewolfGame(g);
+        setGame(n);
+        void DB.saveWerewolfGame(n).catch(() => {});
+    };
 
     // ── 开局 ──────────────────────────────────────────────────────────────
     const startGame = () => {
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
         const chosen = characters.filter(c => picked.has(c.id));
-        if (chosen.length < 3) { addToast('至少凑齐 3 位角色才好开一桌', 'info'); return; }
+        if (chosen.length < 5) { addToast('至少凑齐 5 位角色才好开扩展板子', 'info'); return; }
         if (chosen.length > 8) { addToast('一桌最多 8 位角色（加你共 9 人）', 'info'); return; }
         const g = createWerewolfGame(userName, userProfile?.avatar, chosen);
         g.log.push(mkLog(0, 'system', `开局！${g.players.length} 人入座，随机发牌。天黑请闭眼……`));
@@ -86,15 +95,16 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     };
 
     const resumeGame = (g: WerewolfGame) => {
-        setGame(g);
+        const n = normalizeWerewolfGame(g);
+        setGame(n);
         setView('play');
         setError('');
         processedHuntersRef.current = new Set();
         resetNightTransient();
-        if (g.phase === 'over' || g.winner) { setStep('over'); return; }
-        if (g.phase === 'vote') { setStep('voteCast'); return; }
-        if (g.phase === 'day') {
-            const hasSpeech = g.log.some(e => e.round === g.round && e.kind === 'speech');
+        if (n.phase === 'over' || n.winner) { setStep('over'); return; }
+        if (n.phase === 'vote') { setStep('voteCast'); return; }
+        if (n.phase === 'day') {
+            const hasSpeech = n.log.some(e => e.round === n.round && e.kind === 'speech');
             setStep(hasSpeech ? 'discuss' : 'dayReveal');
             return;
         }
@@ -104,7 +114,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     const deleteGame = async (id: string) => { await DB.deleteWerewolfGame(id); await reload(); if (game?.id === id) { setGame(null); setView('home'); } };
 
     const resetNightTransient = () => {
-        setSeerResult(null); setNightKill(null); setWitchHeal(false); setWitchPoison(null); setUserVote(null); setUserSpeech('');
+        setSeerResult(null); setNightKill(null); setGuardProtect(null); setWitchHeal(false); setWitchPoison(null); setUserVote(null); setUserSpeech('');
         aiNightRef.current = null;
     };
 
@@ -113,7 +123,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         // 返回需要 user 决策的猎人座位；AI 猎人就地开枪（可连锁）。
         while (true) {
             const h = g.players.find(p => !p.alive && p.role === 'hunter' && p.deadRound === g.round
-                && (p.deadReason === 'wolf' || p.deadReason === 'vote' || p.deadReason === 'shot') && !processed.has(p.seat));
+                && (p.deadReason === 'wolf' || p.deadReason === 'vote' || p.deadReason === 'shot' || p.deadReason === 'guard_heal_conflict') && !processed.has(p.seat));
             if (!h) return null;
             processed.add(h.seat);
             if (h.isUser) return h.seat;
@@ -140,24 +150,29 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     };
 
     // ── 夜晚结算 ──────────────────────────────────────────────────────────
-    const applyNight = (g0: WerewolfGame, finalKill: number | null, healed: boolean, poison: number | null, narration: string) => {
+    const applyNight = (g0: WerewolfGame, finalKill: number | null, healed: boolean, poison: number | null, protectedSeat: number | null, narration: string) => {
         const g = clone(g0);
         g.log.push(mkLog(g.round, 'narration', narration));
         if (healed) g.witchHealUsed = true;
         if (poison != null) g.witchPoisonUsed = true;
-        const killed = (finalKill != null && !healed) ? finalKill : null;
-        const dead = new Set<number>();
-        if (killed != null) dead.add(killed);
-        if (poison != null) dead.add(poison);
+        g.lastGuardedSeat = protectedSeat ?? null;
+        const meNow = userPlayer(g);
+        if (protectedSeat != null && meNow?.role === 'guard') {
+            const guarded = playerBySeat(g, protectedSeat);
+            g.log.push(mkLog(g.round, 'result', `🛡️ 第${g.round}夜你守护了 ${guarded?.seat}号 ${guarded?.name}。`, { privateToUser: true }));
+        }
+        const deathReasons = resolveNightDeathReasons({ wolfKill: finalKill, witchHeal: healed, witchPoison: poison, guardProtect: protectedSeat });
         const die = (seat: number, reason: WerewolfPlayer['deadReason']) => {
             const p = playerBySeat(g, seat);
             if (p && p.alive) {
                 p.alive = false; p.deadRound = g.round; p.deadReason = reason;
-                g.log.push(mkLog(g.round, 'death', `☠️ 第${g.round}夜，${p.seat}号 ${p.name} 倒下了（身份：${WEREWOLF_ROLE_CN[p.role]}）。`, { seat: p.seat, name: p.name }));
+                const extra = reason === 'guard_heal_conflict' ? '，同守同救' : '';
+                g.log.push(mkLog(g.round, 'death', `☠️ 第${g.round}夜，${p.seat}号 ${p.name} 倒下了（身份：${WEREWOLF_ROLE_CN[p.role]}${extra}）。`, { seat: p.seat, name: p.name }));
             }
         };
-        for (const seat of dead) die(seat, seat === killed ? 'wolf' : 'poison');
-        if (dead.size === 0) g.log.push(mkLog(g.round, 'death', `🌅 第${g.round}夜风平浪静——昨夜是个平安夜，无人离场。`));
+        const deadSeats = Object.keys(deathReasons).map(Number);
+        for (const seat of deadSeats) die(seat, deathReasons[seat]);
+        if (deadSeats.length === 0) g.log.push(mkLog(g.round, 'death', `🌅 第${g.round}夜风平浪静——昨夜是个平安夜，无人离场。`));
         g.phase = 'day'; g.pendingKill = null;
         settleDeaths(g, (gg) => { commit(gg); setStep('dayReveal'); });
     };
@@ -169,16 +184,18 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
 
     const witchPlayer = game ? game.players.find(p => p.alive && p.role === 'witch') : undefined;
     const seerPlayer = game ? game.players.find(p => p.alive && p.role === 'seer') : undefined;
+    const guardPlayer = game ? game.players.find(p => p.alive && p.role === 'guard') : undefined;
     const witchIsAI = !!witchPlayer && !witchPlayer.isUser;
     const seerIsAI = !!seerPlayer && !seerPlayer.isUser;
+    const guardIsAI = !!guardPlayer && !guardPlayer.isUser;
 
     // user 是狼：选刀后结算
     const submitWolfKill = async (target: number) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: false, needWitch: witchIsAI, needSeer: seerIsAI, knownKill: target });
-            applyNight(game, target, ai.witchHeal, ai.witchPoison, ai.narration);
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: false, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI, knownKill: target });
+            applyNight(game, target, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
     // user 是预言家：查验
@@ -196,8 +213,8 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: false });
-            applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.narration);
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: false, needGuard: guardIsAI });
+            applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('seerResult'); } finally { setBusy(false); }
     };
     // user 是女巫：先算出今晚刀谁，再决定用药
@@ -205,9 +222,10 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: false, needSeer: seerIsAI });
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: false, needSeer: seerIsAI, needGuard: guardIsAI });
             aiNightRef.current = ai;
             setNightKill(ai.wolfKill);
+            setGuardProtect(ai.guardProtect);
             setWitchHeal(false); setWitchPoison(null);
             setStep('witchDecide');
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
@@ -215,21 +233,31 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     const submitWitch = () => {
         if (!game) return;
         const ai = aiNightRef.current;
-        applyNight(game, nightKill, witchHeal, witchPoison, ai?.narration || '夜色深沉，药香在指间散开……');
+        applyNight(game, nightKill, witchHeal, witchPoison, ai?.guardProtect ?? guardProtect, ai?.narration || '夜色深沉，药香在指间散开……');
+    };
+    const submitGuard = async (target: number) => {
+        if (!game) return;
+        setStep('resolving'); setBusy(true); setError('');
+        try {
+            const ai = await resolveNightAI(game, characters, api, {
+                needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: false, knownGuardProtect: target,
+            });
+            applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, target, ai.narration);
+        } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
     // user 不是夜间角色（平民/猎人/已出局）：直接推演
     const passiveNight = async () => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI });
-            applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.narration);
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI });
+            applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
 
     // ── 白天发言 ──────────────────────────────────────────────────────────
     const composeDeathNote = (g: WerewolfGame): string => {
-        const deaths = g.players.filter(p => !p.alive && p.deadRound === g.round && (p.deadReason === 'wolf' || p.deadReason === 'poison' || p.deadReason === 'shot'));
+        const deaths = g.players.filter(p => !p.alive && p.deadRound === g.round && (p.deadReason === 'wolf' || p.deadReason === 'poison' || p.deadReason === 'shot' || p.deadReason === 'guard_heal_conflict'));
         if (!deaths.length) return '昨晚是个平安夜，没有人离场。';
         return '昨晚倒下的是：' + deaths.map(p => `${p.seat}号 ${p.name}`).join('、') + '。';
     };
@@ -266,7 +294,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
             const g = clone(game);
             const meNow = userPlayer(g);
             const allVotes = [...aiVotes];
-            if (meNow?.alive && userVote != null) allVotes.push({ seat: meNow.seat, target: userVote });
+            if (meNow?.alive && !meNow.idiotRevealed && userVote != null) allVotes.push({ seat: meNow.seat, target: userVote });
             const summary = allVotes.length
                 ? allVotes.map(v => { const t = playerBySeat(g, v.target); return `${v.seat}→${t?.seat}号${t?.name || ''}`; }).join('，')
                 : '无人投票';
@@ -275,8 +303,12 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
             if (target != null) {
                 const p = playerBySeat(g, target);
                 if (p) {
-                    p.alive = false; p.deadRound = g.round; p.deadReason = 'vote';
-                    g.log.push(mkLog(g.round, 'death', `🗳️ ${p.seat}号 ${p.name} 被票出，身份是【${WEREWOLF_ROLE_CN[p.role]}】。`, { seat: p.seat, name: p.name }));
+                    const result = applyVoteExile(g, target);
+                    if (result === 'idiot-revealed') {
+                        g.log.push(mkLog(g.round, 'result', `🃏 ${p.seat}号 ${p.name} 被投票放逐时翻开【白痴】身份，免除这次出局；之后不能投票，也不能再被投票。`, { seat: p.seat, name: p.name }));
+                    } else if (result === 'dead') {
+                        g.log.push(mkLog(g.round, 'death', `🗳️ ${p.seat}号 ${p.name} 被票出，身份是【${WEREWOLF_ROLE_CN[p.role]}】。`, { seat: p.seat, name: p.name }));
+                    }
                 }
             } else {
                 g.log.push(mkLog(g.round, 'result', '本轮平票，无人出局。'));
@@ -315,7 +347,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
 
     // ── 主页：选人 + 历史 ──
     function renderHome() {
-        const canStart = picked.size >= 3 && picked.size <= 8;
+        const canStart = picked.size >= 5 && picked.size <= 8;
         return (
             <PaperShell>
                 <ScrapHeader title="狼人杀" en="THE WOLF NIGHT" onBack={onExit} backLabel="回戏单" />
@@ -323,7 +355,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                     <div className="text-center mt-2 mb-5 select-none">
                         <PawPrint size={32} weight="fill" className="mx-auto" style={{ color: INK }} />
                         <div className="text-[28px] font-black mt-2" style={{ color: INK }}>狼人杀</div>
-                        <div className="text-[12px] mt-1.5 leading-relaxed" style={{ color: '#6b6558' }}>拉一桌熟人，天黑请闭眼。<br />狼/预言家/女巫/猎人/平民随机发牌，谁能笑到天亮？</div>
+                        <div className="text-[12px] mt-1.5 leading-relaxed" style={{ color: '#6b6558' }}>拉一桌熟人，天黑请闭眼。<br />狼/预言家/女巫/守卫/白痴/猎人随机发牌，谁能笑到天亮？</div>
                     </div>
 
                     {!apiReady && (
@@ -332,8 +364,8 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         </PaperCard>
                     )}
 
-                    <SectionTag en="THE TABLE" className="mb-3">入座（选 3–8 位角色）</SectionTag>
-                    {characters.length < 3 ? (
+                    <SectionTag en="THE TABLE" className="mb-3">入座（选 5–8 位角色）</SectionTag>
+                    {characters.length < 5 ? (
                         <div className="text-[12px] py-4" style={{ color: INK_SOFT }}>角色不够，先去多创建几个，才能凑一桌。</div>
                     ) : (
                         <div className="flex flex-wrap gap-3.5 pb-1">
@@ -345,7 +377,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         </div>
                     )}
 
-                    <div className="mt-3 text-[11px]" style={{ color: INK_SOFT }}>已选 {picked.size} 位 · 连你共 {picked.size + 1} 人</div>
+                    <div className="mt-3 text-[11px]" style={{ color: INK_SOFT }}>已选 {picked.size} 位 · 连你共 {picked.size + 1} 人 · 6 人起含守卫/白痴</div>
 
                     <ScrapButton variant="ink" className="w-full mt-5 h-12 text-[14px]" disabled={!canStart || !apiReady} onClick={startGame}
                         icon={<Moon size={16} weight="fill" />}>开局发牌 · 天黑请闭眼</ScrapButton>
@@ -395,7 +427,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                                 {dead && <span className="absolute -top-1 -right-1 text-[11px]"><Skull size={13} weight="fill" style={{ color: INK }} /></span>}
                             </div>
                             <span className="text-[9px] font-bold leading-none truncate w-full text-center" style={{ color: INK }}>{p.seat}{p.isUser ? '·你' : ''}</span>
-                            <span className="text-[8px] leading-none truncate w-full text-center" style={{ color: INK_SOFT }}>{dead ? WEREWOLF_ROLE_CN[p.role] : p.name.slice(0, 3)}</span>
+                            <span className="text-[8px] leading-none truncate w-full text-center" style={{ color: INK_SOFT }}>{dead ? WEREWOLF_ROLE_CN[p.role] : p.idiotRevealed ? '白痴翻牌' : p.name.slice(0, 3)}</span>
                         </div>
                     );
                 })}
@@ -416,6 +448,8 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         <div className="text-[12.5px] font-black" style={{ color: INK }}>你是 {m.seat}号 · {WEREWOLF_ROLE_CN[m.role]}{!m.alive && ' （已出局）'}</div>
                         {teammates.length > 0 && <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>狼队友：{teammates.map(t => `${t.seat}号${t.name}`).join('、')}</div>}
                         {m.role === 'witch' && <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>解药{g.witchHealUsed ? '已用' : '可用'} · 毒药{g.witchPoisonUsed ? '已用' : '可用'}</div>}
+                        {m.role === 'guard' && <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>{g.lastGuardedSeat ? `昨夜守过 ${g.lastGuardedSeat}号，今夜不能连守 TA` : '可守自己；守卫不知道今晚谁被刀'}</div>}
+                        {m.role === 'idiot' && m.idiotRevealed && <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>你已翻牌留场：可以发言，但不能投票 / 被投票。</div>}
                         {checks.length > 0 && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>查验：{checks.map(c => c.text.replace(/^🔮[^你]*你查验了\s*/, '')).slice(-3).join(' / ')}</div>}
                     </div>
                 </div>
@@ -519,7 +553,18 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                     <ScrapButton variant="ink" className="w-full h-11 text-[13px]" onClick={() => void witchPeek()}>睁眼·查看今夜</ScrapButton>
                 </div>
             );
-            // 平民 / 猎人
+            if (role === 'guard') {
+                const targets = guardablePlayers(g);
+                return (
+                    <div>
+                        <div className="text-[12px] font-bold mb-1.5" style={{ color: INK }}>🛡️ 守卫行动：今晚守护谁？</div>
+                        <div className="text-[10.5px] mb-2" style={{ color: INK_SOFT }}>{g.lastGuardedSeat ? `上一夜守过 ${g.lastGuardedSeat}号，本夜不能连续守 TA。` : '你不知道今晚狼刀和女巫用药，只能盲守。'}</div>
+                        {targetGrid(g, targets, guardProtect, s => setGuardProtect(s))}
+                        <ScrapButton variant="ink" className="w-full mt-3 h-11 text-[13px]" disabled={guardProtect == null} onClick={() => guardProtect != null && void submitGuard(guardProtect)}>守护</ScrapButton>
+                    </div>
+                );
+            }
+            // 平民 / 猎人 / 白痴
             return <ScrapButton variant="ink" className="w-full h-11 text-[13px]" onClick={() => void passiveNight()} icon={<Moon size={15} weight="fill" />}>安睡到天亮（{WEREWOLF_ROLE_CN[role!]}夜里无行动）</ScrapButton>;
         }
 
@@ -585,12 +630,13 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         }
 
         if (step === 'voteCast') {
+            const canVote = !!m?.alive && !m.idiotRevealed;
             return (
                 <div>
                     <div className="text-[12px] font-bold mb-2" style={{ color: INK }}>🗳️ 第{g.round}天投票：放逐谁？</div>
-                    {meAlive ? targetGrid(g, aliveOthers(g, m!.seat), userVote, s => setUserVote(userVote === s ? null : s)) : <div className="text-[11px] mb-2" style={{ color: INK_SOFT }}>你已出局，只能旁观这轮投票。</div>}
+                    {canVote ? targetGrid(g, voteTargetPlayers(g, m!.seat), userVote, s => setUserVote(userVote === s ? null : s)) : <div className="text-[11px] mb-2" style={{ color: INK_SOFT }}>{m?.idiotRevealed ? '你已翻牌留场，不能参与投票。' : '你已出局，只能旁观这轮投票。'}</div>}
                     <ScrapButton variant="ink" className="w-full mt-3 h-11 text-[13px]" onClick={() => void runVote()} icon={<Crosshair size={15} weight="bold" />}>
-                        {meAlive ? (userVote != null ? '投票并唱票' : '弃票并唱票') : '唱票'}
+                        {canVote ? (userVote != null ? '投票并唱票' : '弃票并唱票') : '唱票'}
                     </ScrapButton>
                 </div>
             );
@@ -630,7 +676,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                                 <span className="text-[20px]">{WEREWOLF_ROLE_EMOJI[p.role]}</span>
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[13px] font-black truncate" style={{ color: INK }}>{p.seat}号 {p.name}{p.isUser ? '（你）' : ''}</div>
-                                    <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>{WEREWOLF_ROLE_CN[p.role]} · {p.alive ? '存活到终局' : `第${p.deadRound}${p.deadReason === 'vote' ? '天被票' : p.deadReason === 'poison' ? '夜被毒' : p.deadReason === 'shot' ? '轮被枪' : '夜出局'}`}</div>
+                                    <div className="text-[10.5px] mt-0.5" style={{ color: INK_SOFT }}>{WEREWOLF_ROLE_CN[p.role]} · {p.alive ? (p.idiotRevealed ? '翻牌留场到终局' : '存活到终局') : `第${p.deadRound}${p.deadReason === 'vote' ? '天被票' : p.deadReason === 'poison' ? '夜被毒' : p.deadReason === 'shot' ? '轮被枪' : p.deadReason === 'guard_heal_conflict' ? '夜同守同救出局' : '夜出局'}`}</div>
                                 </div>
                                 {p.role === 'wolf' ? <PawPrint size={16} weight="fill" style={{ color: INK }} /> : null}
                             </PaperCard>

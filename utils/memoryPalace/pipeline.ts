@@ -59,7 +59,7 @@ import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
 
 /**
  * 轻量 LLM 配置，用于记忆提取等后台任务。
- * 来源是文具盒全局副 API，与情绪 API（emotionConfig.api）独立。
+ * 来源是文具盒全局副 API，与日程 / 心情 API（emotionConfig.api）独立。
  * 这样可以用便宜快速的小模型（如 DeepSeek-V2-Lite、GLM-4-Flash）
  * 而不是主聊天模型。
  */
@@ -983,6 +983,7 @@ export async function ingestDiaryToPalace(
         node.createdAt = createdAt;
         node.lastAccessedAt = createdAt;
         node.origin = 'system';
+        node.source = { kind: 'diary', label: `交换日记 ${dateStr}`, refId: dateStr };
     }
 
     const remoteConfig = getRemoteVectorConfig();
@@ -1027,11 +1028,70 @@ export function getMemoryPalaceHighWaterMark(charId: string): number {
 // ─── 缓冲区配置 ─────────────────────────────────────
 
 /** 热区大小：最近 N 条消息始终留在聊天上下文，不处理 */
-const HOT_ZONE_SIZE = 200;
+export const MEMORY_PALACE_HOT_ZONE_SIZE = 200;
 /** 缓冲区阈值：累积超过 N 条消息后触发处理 */
-const BUFFER_THRESHOLD = 100;
+export const MEMORY_PALACE_BUFFER_THRESHOLD = 100;
 /** 处理比例：取缓冲区前 85%，保留尾部 15% 作为下次总结的上下文 */
-const PROCESS_RATIO = 0.85;
+export const MEMORY_PALACE_PROCESS_RATIO = 0.85;
+/** 手动整理最低阈值：保留热区机制，但允许用户显式追平较小缓冲区 */
+export const MEMORY_PALACE_FORCE_MIN_THRESHOLD = 10;
+const HOT_ZONE_SIZE = MEMORY_PALACE_HOT_ZONE_SIZE;
+const BUFFER_THRESHOLD = MEMORY_PALACE_BUFFER_THRESHOLD;
+const PROCESS_RATIO = MEMORY_PALACE_PROCESS_RATIO;
+
+export interface MemoryPalaceProcessingStats {
+    totalSemanticMessages: number;
+    highWaterMark: number;
+    hotZoneSize: number;
+    hotZoneProtectedCount: number;
+    hotZoneStartId: number | null;
+    bufferCount: number;
+    processableCount: number;
+    autoThreshold: number;
+    forceThreshold: number;
+    autoEligible: boolean;
+    forceEligible: boolean;
+}
+
+export async function getMemoryPalaceProcessingStats(charId: string): Promise<MemoryPalaceProcessingStats> {
+    const allMessages = await DB.getMessagesByCharId(charId, true);
+    const semantic = allMessages
+        .filter(m => isMessageSemanticallyRelevant(m))
+        .sort((a, b) => a.id - b.id);
+    const highWaterMark = getLastProcessedId(charId);
+    if (semantic.length <= HOT_ZONE_SIZE) {
+        return {
+            totalSemanticMessages: semantic.length,
+            highWaterMark,
+            hotZoneSize: HOT_ZONE_SIZE,
+            hotZoneProtectedCount: semantic.length,
+            hotZoneStartId: semantic[0]?.id ?? null,
+            bufferCount: 0,
+            processableCount: 0,
+            autoThreshold: BUFFER_THRESHOLD,
+            forceThreshold: MEMORY_PALACE_FORCE_MIN_THRESHOLD,
+            autoEligible: false,
+            forceEligible: false,
+        };
+    }
+    const hotZoneStartId = semantic[semantic.length - HOT_ZONE_SIZE].id;
+    const buffer = semantic.filter(m => m.id > highWaterMark && m.id < hotZoneStartId);
+    return {
+        totalSemanticMessages: semantic.length,
+        highWaterMark,
+        hotZoneSize: HOT_ZONE_SIZE,
+        hotZoneProtectedCount: HOT_ZONE_SIZE,
+        hotZoneStartId,
+        bufferCount: buffer.length,
+        processableCount: buffer.length >= MEMORY_PALACE_FORCE_MIN_THRESHOLD
+            ? Math.ceil(buffer.length * PROCESS_RATIO)
+            : 0,
+        autoThreshold: BUFFER_THRESHOLD,
+        forceThreshold: MEMORY_PALACE_FORCE_MIN_THRESHOLD,
+        autoEligible: buffer.length >= BUFFER_THRESHOLD,
+        forceEligible: buffer.length >= MEMORY_PALACE_FORCE_MIN_THRESHOLD,
+    };
+}
 
 /**
  * 计算当前"真正可被 pipeline 处理"的缓冲区消息数。
@@ -1046,18 +1106,7 @@ const PROCESS_RATIO = 0.85;
  * （表现：弹窗说有几百条未同步，点立即追平却跑不出新 hwm）。
  */
 export async function getMemoryPalaceUnprocessedBufferCount(charId: string): Promise<number> {
-    const allMessages = await DB.getMessagesByCharId(charId, true);
-    const semantic = allMessages
-        .filter(m => isMessageSemanticallyRelevant(m))
-        .sort((a, b) => a.id - b.id);
-    if (semantic.length <= HOT_ZONE_SIZE) return 0;
-    const hotZoneStartId = semantic[semantic.length - HOT_ZONE_SIZE].id;
-    const hwm = getLastProcessedId(charId);
-    let count = 0;
-    for (const m of semantic) {
-        if (m.id > hwm && m.id < hotZoneStartId) count++;
-    }
-    return count;
+    return (await getMemoryPalaceProcessingStats(charId)).bufferCount;
 }
 
 /** 并发锁：防止多次 AI 回复同时触发 processNewMessages 产生竞态 */

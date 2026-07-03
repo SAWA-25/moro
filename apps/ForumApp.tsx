@@ -714,7 +714,7 @@ const ForumApp: React.FC = () => {
                     </div>
                 )}
                 {/* 回帖框 + 收藏/分享 */}
-                <div className="relative z-10 shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
+                <div className="relative z-10 shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'max(var(--safe-bottom, 0px), 10px)' }}>
                     <button onClick={() => setKaoOpen(v => !v)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: kaoOpen ? INK : INK_SOFT }}><Smiley size={22} weight={kaoOpen ? 'fill' : 'regular'} /></button>
                     <input value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addUserReply(); }} onFocus={() => setKaoOpen(false)}
                         placeholder="接句话，盖一层楼…" className="flex-1 px-3.5 py-2.5 rounded-full text-[13px] outline-none" style={paperInput} />
@@ -740,6 +740,7 @@ const ForumApp: React.FC = () => {
                         <ArrowsClockwise size={18} weight="bold" className={charBusy ? 'animate-spin' : ''} />
                     </button>
                 } />
+            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar">
             {/* 搜索栏 */}
             <div className="relative z-10 shrink-0 px-3 pb-2">
                 <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={paperInput}>
@@ -832,7 +833,7 @@ const ForumApp: React.FC = () => {
                     </button>
                 </div>
             )}
-            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar">
+            <div className="relative z-10">
                 {/* 热议榜（全部视图） */}
                 {board === 'all' && !query && hotList.length > 0 && (
                     <div className="relative mx-4 mb-3 px-4 py-3" style={PANEL}>
@@ -859,6 +860,7 @@ const ForumApp: React.FC = () => {
                 ) : list.map(p => <PostRow key={p.id} p={p} showBoard={board === 'all'} />)}
                 <div className="h-4" />
             </div>
+            </div>
         </>
     );
 
@@ -869,12 +871,13 @@ const ForumApp: React.FC = () => {
         <>
             <Header title="叩门" en="KNOCKS" onBack={closeApp}
                 right={unread > 0 ? <button onClick={readAll} className="text-[12px] font-bold active:scale-95 transition-transform px-2" style={{ color: INK }}>全部已读</button> : undefined} />
+            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar">
             <div className="relative z-10 shrink-0 flex gap-2 px-4 pb-2">
                 {([['all', '全部'], ['reply', '接话的'], ['like', '点赞的'], ['newpost', '常去更新']] as const).map(([k, label]) => (
                     <button key={k} onClick={() => setMsgFilter(k)} className="px-3 py-1 rounded-full text-[12px] font-bold transition-all active:scale-95" style={chip(msgFilter === k)}>{label}</button>
                 ))}
             </div>
-            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar">
+            <div className="relative z-10">
                 {shownNotifs.length === 0 ? (
                     <div className="text-center text-sm pt-24 flex flex-col items-center gap-2" style={{ color: INK_SOFT }}><BellSimple size={32} style={{ color: 'rgba(150,144,132,0.6)' }} />暂时没有人来叩门</div>
                 ) : shownNotifs.map(n => (
@@ -896,6 +899,7 @@ const ForumApp: React.FC = () => {
                     </button>
                 ))}
                 <div className="h-4" />
+            </div>
             </div>
         </>
     );
@@ -1003,7 +1007,7 @@ const ForumApp: React.FC = () => {
                 {tab === 'home' ? renderHome() : tab === 'msg' ? renderMsg() : renderMe()}
             </div>
             {/* 底部导航（纸面贴纸条） */}
-            <div className="relative z-10 shrink-0 flex items-stretch" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>
+            <div className="relative z-10 shrink-0 flex items-stretch" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'var(--safe-bottom, 0px)' }}>
                 {([['home', '亭子', House], ['msg', '叩门', BellSimple], ['me', '座位', User]] as const).map(([id, label, Icon]) => {
                     const active = tab === id;
                     return (

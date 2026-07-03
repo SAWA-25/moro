@@ -372,6 +372,7 @@ export async function formCognitions(
                 accessCount: 0,
                 sourceId: cluster[0]?.id ?? null,
                 origin: 'cognition',
+                source: { kind: 'digestion', label: '长期认知', refId: cluster[0]?.id },
             };
             await MemoryNodeDB.save(node);
             existingCognitions.push(node);

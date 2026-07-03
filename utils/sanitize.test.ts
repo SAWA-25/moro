@@ -57,6 +57,22 @@ describe('sanitizeForNotification', () => {
     expect(sanitizeForNotification(input)).toBe('abcd');
   });
 
+  it('A4+ 强制回话指令不残留在通知预览', () => {
+    expect(sanitizeForNotification('你看着我。[[FORCE_REPLY: 不准装没看到]]'))
+      .toBe('你看着我。');
+    expect(sanitizeForNotification('A[[force_reply：现在就回我]]B'))
+      .toBe('AB');
+  });
+
+  it('A4+ 行首心意铺标签只剥标签本身', () => {
+    expect(sanitizeForNotification('[心意铺] 我替你付了 🧋一杯奶茶，等包裹到了记得签收。'))
+      .toBe('我替你付了 🧋一杯奶茶，等包裹到了记得签收。');
+    expect(sanitizeForNotification('先看看。\n【心意铺陪逛】 你替 TA 付了 🌹玫瑰（¥9.9）'))
+      .toBe('先看看。\n你替 TA 付了 🌹玫瑰（¥9.9）');
+    expect(sanitizeForNotification('正文里提到[心意铺]不会被误删'))
+      .toBe('正文里提到[心意铺]不会被误删');
+  });
+
   it('A5 引用三变体 (keepCitations=false)', () => {
     expect(sanitizeForNotification('[[QUOTE：x]]a[QUOTE：y]b[回复 "z"]: c'))
       .toBe('abc');
@@ -163,6 +179,12 @@ describe('sanitizeForNotification', () => {
     expect(sanitizeForNotification('a[[READ_NOTE: key]]b[[XHS_LIKE: 1]]c[[XHS_MY_PROFILE]]d'))
       .toBe('abcd');
   });
+
+  it('notification 路径剥 prompt 泄露正文', () => {
+    expect(sanitizeForNotification('系统提示：只输出 JSON 对象，不要解释。')).toBe('');
+    expect(sanitizeForNotification('先抱一下。\n根据我的人设，我应该安慰你。'))
+      .toBe('先抱一下。');
+  });
 });
 
 // ─── sanitizeForBubble: byte-aligned to original chatParser.sanitize ──────
@@ -216,6 +238,15 @@ describe('bubble vs notification differences', () => {
     expect(sanitizeForBubble('[[XHS_LIKE: 1]] hi')).toBe('[[XHS_LIKE: 1]] hi');
     expect(sanitizeForBubble('[[READ_NOTE: key]] hi')).toBe('[[READ_NOTE: key]] hi');
   });
+
+  it('bubble 路径剥强制回话指令', () => {
+    expect(sanitizeForBubble('别躲。[[FORCE_REPLY: 现在回我]]')).toBe('别躲。');
+  });
+
+  it('bubble 路径剥行首心意铺标签', () => {
+    expect(sanitizeForBubble('顺手买的。\n[心意铺] 我替你付了 🧋一杯奶茶，等包裹到了记得签收。'))
+      .toBe('顺手买的。\n我替你付了 🧋一杯奶茶，等包裹到了记得签收。');
+  });
 });
 
 // ─── sanitizeIntoSegments (amsg-instant 0.8+ pushPayloads) ─────────────────
@@ -233,6 +264,15 @@ describe('sanitizeIntoSegments', () => {
       '看来昨天忙的还是机密啊。',
       '我没事的',
     ]);
+  });
+
+  it('行首心意铺标签先剥再分段', () => {
+    const segs = sanitizeIntoSegments('顺手买的。\n[心意铺] 我替你付了 🧋一杯奶茶，等包裹到了记得签收。');
+    expect(segs.map(s => s.raw)).toEqual([
+      '顺手买的。',
+      '我替你付了 🧋一杯奶茶，等包裹到了记得签收。',
+    ]);
+    expect(segs.map(s => s.sanitized)).toEqual(segs.map(s => s.raw));
   });
 
   it('SEND_EMOJI 单独成行 → 独立 segment, raw 是 raw tag, sanitized 是 [表情：x]', () => {
@@ -271,6 +311,11 @@ describe('sanitizeIntoSegments', () => {
   it('业务标签 + INNER_STATE 全 strip → 留下纯文字', () => {
     const segs = sanitizeIntoSegments('[[INNER_STATE: x]]你好[[ACTION:POKE]]\n再见');
     expect(segs.map((s) => s.raw)).toEqual(['你好', '再见']);
+  });
+
+  it('prompt 泄露先剥再分段', () => {
+    const segs = sanitizeIntoSegments('系统提示：只输出 JSON 对象。\n我在。');
+    expect(segs).toEqual([{ raw: '我在。', sanitized: '我在。' }]);
   });
 
   it('整段只有业务标签 → 空数组', () => {

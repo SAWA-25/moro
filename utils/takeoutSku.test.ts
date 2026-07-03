@@ -3,7 +3,7 @@ import {
     deriveDishOptions, decorateDishes, dishHasOptions, dishUnitPrice, formatSpecAddon, cartLineKey,
     getSearchHistory, pushSearchHistory, clearSearchHistory,
     getAddresses, addAddress, removeAddress,
-    deliveryTimeSlots, TAKEOUT_HOT_SEARCHES,
+    deliveryTimeSlots, effectiveTakeoutEtaAt, MIN_TAKEOUT_DELIVERY_MS, TAKEOUT_HOT_SEARCHES,
     getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard, getDefaultAddressCard,
     formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
     TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
@@ -219,6 +219,16 @@ describe('预约送达时段', () => {
         expect(slots.length).toBe(7);
         expect(slots[1].label).toMatch(/^\d{2}:\d{2}$/);
         expect(slots[1].at).toBeGreaterThan(0);
+    });
+
+    it('有效 ETA 会兜底尽快送达的最短时间，但尊重更晚的预约时间', () => {
+        const now = new Date('2026-06-24T12:05:00').getTime();
+        const slots = deliveryTimeSlots(1, now);
+        const soon = effectiveTakeoutEtaAt({ placedAt: now, etaAt: now + 60_000 });
+        expect(soon).toBe(now + MIN_TAKEOUT_DELIVERY_MS);
+
+        const scheduled = effectiveTakeoutEtaAt({ placedAt: now, etaAt: slots[1].at!, scheduledAt: slots[1].at! });
+        expect(scheduled).toBe(slots[1].at);
     });
 });
 

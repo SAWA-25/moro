@@ -9,10 +9,14 @@ import { DB } from '../../utils/db';
 import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 import McdCard from './McdCard';
 import ScreenPeekCardView from './ScreenPeekCardView';
+import LocationMapCard from './LocationMapCard';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
 import { stickerImageSrc } from '../../utils/stickerImage';
-import { formatMoroUsage } from '../../utils/userScreenWatch';
+import { formatMoroUsage, sanitizeUserScreenWatchComment } from '../../utils/userScreenWatch';
+
+const stripShopChatLineLabels = (text: string): string =>
+    text.replace(/^\s*[\[【]\s*心意铺(?:陪逛)?\s*[\]】]\s*/gm, '');
 
 /** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
 const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
@@ -130,8 +134,19 @@ const UserScreenWatchSummaryCardView: React.FC<{
         if (m.metadata?.userScreenWatchSummary && typeof m.metadata.userScreenWatchSummary === 'object') return m.metadata.userScreenWatchSummary;
         try { return JSON.parse(m.content); } catch { return null; }
     })();
-    const summary = card?.summary || m.content || '观屏评论已结束。';
-    const comments: string[] = Array.isArray(card?.latestComments) ? card.latestComments.filter(Boolean).slice(-3) : [];
+    const rawSummary = String(card?.summary || m.content || '观屏评论已结束。');
+    const summary = rawSummary
+        .split(/\r?\n/)
+        .map(line => {
+            if (!line.startsWith('最近短评：')) return line;
+            const text = sanitizeUserScreenWatchComment(line.replace(/^最近短评：/, ''), 180);
+            return text ? `最近短评：${text}` : '';
+        })
+        .filter(Boolean)
+        .join('\n') || '观屏评论已结束。';
+    const comments: string[] = Array.isArray(card?.latestComments)
+        ? card.latestComments.map((comment: unknown) => sanitizeUserScreenWatchComment(comment)).filter(Boolean).slice(-3)
+        : [];
     const usageLine = formatMoroUsage(card?.usage || [], 3);
     const endedAt = Number(card?.endedAt || m.timestamp || Date.now());
 
@@ -147,7 +162,7 @@ const UserScreenWatchSummaryCardView: React.FC<{
                 </div>
             </div>
             <div className="space-y-3 px-4 py-3.5">
-                <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">{summary}</div>
+                <div className="max-h-36 overflow-hidden whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-slate-700">{summary}</div>
                 <div className="rounded-2xl bg-slate-50 px-3 py-2">
                     <div className="text-[10px] font-black text-slate-400">Moro 内部停留</div>
                     <div className="mt-1 text-[12px] text-slate-700">{usageLine}</div>
@@ -166,7 +181,7 @@ const UserScreenWatchSummaryCardView: React.FC<{
                     <div className="space-y-1">
                         <div className="text-[10px] font-black text-slate-400">最近短评</div>
                         {comments.map((comment, index) => (
-                            <div key={`${index}-${comment}`} className="rounded-2xl bg-slate-50 px-3 py-2 text-[12px] leading-snug text-slate-700">
+                            <div key={`${index}-${comment}`} className="max-h-16 overflow-hidden break-words rounded-2xl bg-slate-50 px-3 py-2 text-[12px] leading-snug text-slate-700">
                                 {comment}
                             </div>
                         ))}
@@ -568,7 +583,7 @@ const ForwardCard: React.FC<{
                                         <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-all ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
                                             {msg.type === 'image' ? (msg.content ? <img src={msg.content} className="max-w-[200px] rounded-xl" /> : <span className="italic opacity-60">[图片已丢失]</span>) :
                                              msg.type === 'emoji' ? (msg.content ? <img src={stickerImageSrc(msg.content)} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
-                                             msg.content}
+                                             stripShopChatLineLabels(String(msg.content || ''))}
                                         </div>
                                     </div>
                                 </div>
@@ -1365,7 +1380,10 @@ const MessageItem = React.memo(({
         }
 
         // Clean up text: remove [System:] or [系统:] prefix for display
-        const displayText = m.content.replace(/^\[(System|系统|System Log|系统记录)\s*[:：]?\s*/i, '').replace(/\]$/, '').trim();
+        const displayText = stripShopChatLineLabels(m.content)
+            .replace(/^\[(System|系统|System Log|系统记录)\s*[:：]?\s*/i, '')
+            .replace(/\]$/, '')
+            .trim();
 
         if (isCallSummary) {
             const durationSec = Math.max(1, Number(m.metadata?.durationSec || 0));
@@ -2610,26 +2628,7 @@ const MessageItem = React.memo(({
     if (m.type === 'location') {
         const address = typeof m.metadata?.address === 'string' ? m.metadata.address : '';
         return commonLayout(
-            <div className="w-64 bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 active:scale-[0.98] transition-transform">
-                {/* 仿地图头图：网格 + 中心定位针（本地虚拟手机，不接真实地图服务） */}
-                <div className="h-24 relative bg-gradient-to-br from-emerald-50 to-sky-100"
-                    style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(100,116,139,0.08) 0 1px, transparent 1px 18px), repeating-linear-gradient(90deg, rgba(100,116,139,0.08) 0 1px, transparent 1px 18px)' }}
-                >
-                    <div className="absolute left-0 right-0 top-9 h-2.5 bg-amber-200/60 -rotate-6" />
-                    <div className="absolute top-2 bottom-2 left-16 w-2 bg-sky-200/70 rotate-12" />
-                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ef4444" className="w-8 h-8 drop-shadow-md"><path fillRule="evenodd" d="m11.54 22.351.07.04.028.016a.76.76 0 0 0 .723 0l.028-.015.071-.041a16.975 16.975 0 0 0 1.144-.742 19.58 19.58 0 0 0 2.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 0 0-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 0 0 2.682 2.282 16.975 16.975 0 0 0 1.145.742ZM12 13.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" /></svg>
-                    </div>
-                </div>
-                <div className="p-3">
-                    <div className="font-bold text-sm text-slate-800 truncate">{m.content || '位置'}</div>
-                    {address && <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{address}</div>}
-                    <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-1 text-[10px] text-emerald-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 1.04.572l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd" /></svg>
-                        落脚点 · 此刻在这
-                    </div>
-                </div>
-            </div>
+            <LocationMapCard name={m.content || '位置'} address={address} locationMap={m.metadata?.locationMap} />
         );
     }
 
@@ -2990,7 +2989,7 @@ const MessageItem = React.memo(({
     };
 
     // Robust content cleanup: strip legacy markers, separators, bilingual tags, stray formatting
-    const stripJunkPlain = (s: string) => s
+    const stripJunkPlain = (s: string) => stripShopChatLineLabels(s)
         .replace(/%%TRANS%%[\s\S]*/gi, '')           // legacy translation marker
         .replace(/%%BILINGUAL%%/gi, '\n')            // raw bilingual marker → newline
         .replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '')  // stray bilingual XML tags
@@ -3040,6 +3039,7 @@ const MessageItem = React.memo(({
     // Display: "选" language by default, "译" language when toggled
     const displayContent = (isShowingTarget && langBContent) ? langBContent : langAContent;
     const showTranslateButton = translationEnabled && hasBilingual && langBContent;
+    const replyPreviewContent = m.replyTo ? stripShopChatLineLabels(m.replyTo.content) : '';
 
     // Check if raw content has a <语音> tag (voice-only message that hasn't been TTS'd yet)
     const hasVoiceTag = !isUser && /<[语語]音>[\s\S]*?<\/[语語]音>/.test(m.content);
@@ -3090,7 +3090,7 @@ const MessageItem = React.memo(({
             {m.replyTo && (
                 <div className="relative z-10 mb-1 text-[10px] bg-black/5 p-1.5 rounded-md border-l-2 border-current opacity-60 flex flex-col gap-0.5 max-w-full overflow-hidden">
                     <span className="font-bold opacity-90 truncate">{m.replyTo.name}</span>
-                    <span className="truncate italic">"{m.replyTo.content.length > 10 ? m.replyTo.content.slice(0, 10) + '...' : m.replyTo.content}"</span>
+                    <span className="truncate italic">"{replyPreviewContent.length > 10 ? replyPreviewContent.slice(0, 10) + '...' : replyPreviewContent}"</span>
                 </div>
             )}
 

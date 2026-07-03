@@ -1009,7 +1009,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   return (
     <div className="h-full w-full text-[#2f3432] relative" style={DOT_BG}>
        {view === 'list' ? (
-           <div className="flex flex-col h-full animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
+           <div className="flex flex-col min-h-0 h-full animate-fade-in">
                {/* 顶栏 */}
                <div className="relative shrink-0 px-4 pt-3 pb-3 bg-[#f5f7f4]/95 backdrop-blur border-b border-[#e6ece8]">
                    <div className="flex items-center gap-3">
@@ -1034,7 +1034,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                </div>
 
                {/* 角色照片墙 */}
-               <div className="flex-1 overflow-y-auto px-4 py-4 pb-20 no-scrollbar">
+               <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 pb-20 no-scrollbar">
                    <div className="flex items-center gap-2 bg-white border rounded-[14px] px-3 mb-3" style={{ borderColor: BORDER }}>
                        <Binoculars size={15} color={INK} className="shrink-0 opacity-70" />
                        <input
@@ -1096,7 +1096,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                </div>
            </div>
        ) : formData && (
-           <div className="flex flex-col h-full animate-fade-in relative" style={{ paddingTop: 'var(--safe-top)' }}>
+           <div className="flex flex-col min-h-0 h-full animate-fade-in relative">
                {/* 角色详情页头 */}
                <div className="relative shrink-0 px-4 pt-3 pb-0 bg-[#f5f7f4]/95 z-40 sticky top-0 backdrop-blur border-b border-[#e6ece8]">
                    <div className="flex items-center gap-3 mb-3">

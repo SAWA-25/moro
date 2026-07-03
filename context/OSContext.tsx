@@ -7,14 +7,15 @@ import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, load
 import { ProactiveChat } from '../utils/proactiveChat';
 import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS, planAutonomousProactiveTurn } from '../utils/autonomousLife';
-import { proactiveFallbackHint } from '../utils/laiwangPrompts';
+import { proactiveFallbackHint, proactivePendingReplyHint } from '../utils/laiwangPrompts';
+import { findPendingProactiveReplyMessages, makeQueuedReplyTarget } from '../utils/proactivePendingReply';
 import { canCharContactUser, CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { isAppealDue, generateUnblockAppeal } from '../utils/unblockAppeal';
-import { resolveAuxApi } from '../utils/auxApi';
+import { resolveAuxApi, resolveOptionalCustomApi } from '../utils/auxApi';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
-import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine } from '../utils/takeout';
+import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine, shouldAutoReactToCharTakeout } from '../utils/takeout';
 import {
   applyCoupleAutoCareDraft,
   buildCoupleTakeoutMemoryCard,
@@ -42,6 +43,8 @@ import { PresetRuntime, ensureDefaultPresetSeed, refreshPresetRegexCache } from 
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
 import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { extractThinkingChainFromCompletion, flattenContent, stripThinkBlocks } from '../utils/llmReasoning';
+import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
+import { FORCE_REPLY_EVENT, FORCE_REPLY_STORAGE_KEY, extractForceReplyDirective, type ForceReplyEventDetail, type ForceReplyRequest } from '../utils/forceReply';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import {
@@ -57,8 +60,10 @@ import {
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
+import { collectLocalStorageSnapshot, isTemporaryLocalStorageKey, restoreLocalStorageSnapshot } from '../utils/localStorageBackup';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { showLocalNotification } from '../utils/browserNotify';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import {
   CHAT_ALARM_LOCK_MS,
   CHAT_ALARM_NATIVE_WINDOW_DAYS,
@@ -275,7 +280,7 @@ interface OSContextType {
   virtualTime: VirtualTime;
   apiConfig: APIConfig;
   updateApiConfig: (updates: Partial<APIConfig>) => void;
-  /** 副 API（全局）：处理主聊天以外的辅助 LLM 任务（日程、生活侧写……），在「文具盒」配置 */
+  /** 副 API（全局）：处理主聊天以外的辅助 LLM 任务（生活侧写、记忆整理……），在「文具盒」配置 */
   auxApiConfig: AuxApiConfig;
   updateAuxApiConfig: (updates: Partial<AuxApiConfig>) => void;
   isLocked: boolean;
@@ -349,7 +354,7 @@ interface OSContextType {
   memoryPalaceConfig: MemoryPalaceGlobalConfig;
   updateMemoryPalaceConfig: (updates: Partial<MemoryPalaceGlobalConfig>) => void;
 
-  // 情绪 API（所有角色同步；是否启用仍各自独立）
+  // 日程 / 心情 API（所有角色同步；心情 buff 是否启用仍各自独立）
   syncEmotionApiToAllCharacters: (api: { baseUrl: string; apiKey: string; model: string } | undefined) => void;
 
   // 远程向量存储配置 (Supabase pgvector)
@@ -390,6 +395,9 @@ interface OSContextType {
   unreadMessages: Record<string, number>; // New: Track unread counts per character
   clearUnread: (charId: string) => void; // New: Method to clear unread
   markUnread: (charId: string, count?: number) => void;
+  forceReplyRequest: ForceReplyRequest | null;
+  openForceReplyRequest: () => void;
+  clearForceReplyRequest: (charId?: string) => void;
 
   // Set of charIds whose proactive AI generation is currently in flight.
   // Chat UI subscribes to this to render a soft "正在送达消息…" indicator
@@ -716,6 +724,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
   const [activeCharacterId, setActiveCharacterId] = useState<string>('');
+  const charactersRef = useRef<CharacterProfile[]>([]);
 
   // 刷新后能恢复"上一次聊的角色"：所有调用方（聊天切换/通知 onclick/记忆宫殿 handleSwitchChar）
   // 都走裸 setActiveCharacterId，集中在这里同步到 localStorage，避免每个调用点各写一遍
@@ -739,6 +748,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [userProfile, setUserProfile] = useState<UserProfile>(defaultUserProfile);
   
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  useEffect(() => {
+      charactersRef.current = characters;
+  }, [characters]);
+
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [apiPresets, setApiPresets] = useState<ApiPreset[]>([]);
   const [realtimeConfig, setRealtimeConfig] = useState<RealtimeConfig>(defaultRealtimeConfig);
@@ -761,6 +775,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [lastMsgTimestamp, setLastMsgTimestamp] = useState<number>(0);
   const [unreadMessages, setUnreadMessages] = useState<Record<string, number>>({});
   const [proactiveComposingChars, setProactiveComposingChars] = useState<Record<string, true>>({});
+  const [forceReplyRequest, setForceReplyRequestState] = useState<ForceReplyRequest | null>(() => {
+      try {
+          const raw = localStorage.getItem(FORCE_REPLY_STORAGE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw) as ForceReplyRequest;
+          if (!parsed?.charId || !parsed?.charName) return null;
+          return {
+              ...parsed,
+              requestedAt: Number(parsed.requestedAt) || Date.now(),
+          };
+      } catch {
+          return null;
+      }
+  });
   const incrementUnread = useCallback((charId: string, count: number = 1) => {
       const inc = normalizeUnreadIncrement(count);
       setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
@@ -2073,8 +2101,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const proactiveInnerStateRef = useRef<Map<string, string>>(new Map());
 
   // Refs to avoid stale closures in proactive callback
-  const charactersRef = useRef(characters);
-  charactersRef.current = characters;
   const apiConfigRef = useRef(apiConfig);
   apiConfigRef.current = apiConfig;
   const auxApiConfigRef = useRef(auxApiConfig);
@@ -2093,6 +2119,69 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   realtimeConfigRef.current = realtimeConfig;
   const memoryPalaceConfigRef = useRef(memoryPalaceConfig);
   memoryPalaceConfigRef.current = memoryPalaceConfig;
+  const forceReplyRequestRef = useRef(forceReplyRequest);
+  forceReplyRequestRef.current = forceReplyRequest;
+
+  const persistForceReplyRequest = useCallback((next: ForceReplyRequest | null) => {
+      setForceReplyRequestState(next);
+      try {
+          if (next) localStorage.setItem(FORCE_REPLY_STORAGE_KEY, JSON.stringify(next));
+          else localStorage.removeItem(FORCE_REPLY_STORAGE_KEY);
+      } catch {
+          // localStorage failures should not block chat.
+      }
+  }, []);
+
+  const clearForceReplyRequest = useCallback((charId?: string) => {
+      const current = forceReplyRequestRef.current;
+      if (charId && current?.charId !== charId) return;
+      persistForceReplyRequest(null);
+  }, [persistForceReplyRequest]);
+
+  const openForceReplyRequest = useCallback(() => {
+      const current = forceReplyRequestRef.current;
+      if (!current?.charId) return;
+      setIsLocked(false);
+      setActiveCharacterId(current.charId);
+      setActiveApp(AppID.Chat);
+  }, []);
+
+  useEffect(() => {
+      if (!isDataLoaded) return;
+
+      const handler = (e: Event) => {
+          const detail = (e as CustomEvent<ForceReplyEventDetail>).detail;
+          const charId = detail?.charId;
+          if (!charId) return;
+          const char = charactersRef.current.find(c => c.id === charId);
+          if (!char || !char.convoSettings?.forceReplyEnabled || !canCharContactUser(char)) return;
+          if (shouldHideAmbientSocialRecordForUser(userProfileRef.current) && isAmbientSocialCharacterForUser(char, userProfileRef.current)) return;
+
+          const next: ForceReplyRequest = {
+              charId,
+              charName: char.convoSettings?.remarkName?.trim() || char.name,
+              avatar: char.convoSettings?.charAvatarOverride || char.avatar,
+              reason: detail.reason?.trim() || undefined,
+              body: detail.body?.trim() || undefined,
+              messageId: detail.messageId,
+              source: detail.source,
+              requestedAt: detail.requestedAt || Date.now(),
+          };
+          persistForceReplyRequest(next);
+      };
+
+      window.addEventListener(FORCE_REPLY_EVENT, handler);
+      return () => window.removeEventListener(FORCE_REPLY_EVENT, handler);
+  }, [isDataLoaded, persistForceReplyRequest]);
+
+  useEffect(() => {
+      const current = forceReplyRequestRef.current;
+      if (!current) return;
+      const char = characters.find(c => c.id === current.charId);
+      if (!char || !char.convoSettings?.forceReplyEnabled || !canCharContactUser(char)) {
+          persistForceReplyRequest(null);
+      }
+  }, [characters, persistForceReplyRequest]);
 
   useEffect(() => {
       if (!isDataLoaded) return;
@@ -2192,6 +2281,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               drainQueuedProactive();
               return;
           }
+          if (shouldHideAmbientSocialRecordForUser(currentUserProfile) && isAmbientSocialCharacterForUser(char, currentUserProfile)) {
+              drainQueuedProactive();
+              console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: ambient social hidden/disabled`);
+              return;
+          }
 
           // Respect per-character proactive config（事件驱动的反应 customHint 不受主动消息开关限制）
           if (!customHint && char.proactiveConfig && !char.proactiveConfig.enabled) {
@@ -2248,6 +2342,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           try {
               // 1. Calculate time gap
               const recentMsgs = await DB.getRecentMessagesByCharId(charId, 200);
+              const userName = currentUserProfile?.name || '对方';
+              const pendingReplyMessages = !customHint ? findPendingProactiveReplyMessages(recentMsgs) : [];
+              const pendingReplyIds = pendingReplyMessages.map(m => m.id);
+              const pendingReplyTo = makeQueuedReplyTarget(pendingReplyMessages[0], userName);
+              const hasPendingProactiveReply = pendingReplyMessages.length > 0;
               const lastRealUserMsg = [...recentMsgs].reverse().find(
                   m => m.role === 'user' && !m.metadata?.proactiveHint
               );
@@ -2271,15 +2370,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 随机时间模式：以「用户超过一段时间没回复」为前提——最近 1 小时内回过
               // 消息就这轮不打扰，等下一个随机间隔再说（finally 会正常释放运行锁）。
               // 事件驱动的反应（customHint）是对具体事件的即时回应，不受此限。
-              if (!customHint && pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
+              if (!customHint && !hasPendingProactiveReply && pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
                   console.log(`🔕 [Proactive/Global] Random mode: ${char.name} skipped (user replied recently)`);
                   return;
               }
 
               // 2. Save hidden system hint
-              const userName = currentUserProfile?.name || '对方';
               // 主动语音通话：开关打开时允许角色用 [[CALL_USER]] 指令直接拨电话（按人设自行决定）
               const proactiveCallAllowed = !!char.convoSettings?.proactiveCallEnabled;
+              const forceReplyAllowed = !!char.convoSettings?.forceReplyEnabled;
 
               // 离线自主生活：先让角色的生活往前走一格，主动消息就从 TA 此刻正在经历的事
               // 取材——分享自己的生活，而不是反复催用户回复（不每天围着用户转）。
@@ -2301,24 +2400,46 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       randomMode: pCfg?.randomMode,
                   });
                   lifeEvent = lifePlan.event;
-                  if (lifePlan.decision !== 'send') {
+                  if (lifePlan.decision !== 'send' && !hasPendingProactiveReply) {
                       console.log(`🌱 [Proactive/Global] ${char.name} v2 ${lifePlan.decision}: ${lifePlan.reason} (score=${lifePlan.score})`);
                       return;
                   }
               }
 
+              const pendingLifeContext = lifeEvent
+                  ? [
+                      lifeEvent.activity || lifeEvent.summary,
+                      lifeEvent.location ? `在${lifeEvent.location}` : '',
+                      lifeEvent.mood ? `心情：${lifeEvent.mood}` : '',
+                      lifeEvent.thread ? `线索：${lifeEvent.thread}` : '',
+                    ].filter(Boolean).join('；')
+                  : '';
               const hintContent = customHint
                   ? customHint
+                  : hasPendingProactiveReply
+                  ? proactivePendingReplyHint({
+                      userName,
+                      timeStr,
+                      messages: pendingReplyMessages,
+                      lifeContext: pendingLifeContext,
+                      randomMode: pCfg?.randomMode,
+                      proactiveCallAllowed,
+                      forceReplyAllowed,
+                    })
                   : lifeEvent
-                  ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed })
-                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed });
+                  ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed })
+                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed });
 
               await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
                   content: hintContent,
-                  metadata: { proactiveHint: true, hidden: true }
+                  metadata: {
+                      proactiveHint: true,
+                      hidden: true,
+                      ...(pendingReplyIds.length ? { pendingProactiveReplyIds: pendingReplyIds } : {}),
+                  }
               });
               // 3. Build prompt & message history — 走和 useChatAI / emotion eval 同一个 helper，
               //    保证三家拿到的"材料"完全一致；区别只在前面追加的"现在主动找用户"那条 hint。
@@ -2352,13 +2473,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const fullMessages = payload.fullMessages;
 
               // 3c. 情绪评估 fire-and-forget — 与主 API 并行，沿用 useChatAI 的 API 选择逻辑：
-              //     角色专属情绪 API > 主 apiConfig（与记忆宫殿副 API 完全独立）
+              //     今日作息底部 API > 主 apiConfig（与文具盒副 API / 记忆宫殿副 API 独立）
               if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffOn) {
-                  // 后台情绪评估走辅助任务通道：角色自带情绪 API 优先，否则副 API（回落主 API）
-                  const configuredEmotionApi = char.emotionConfig?.api;
-                  const emotionApi = (configuredEmotionApi?.baseUrl)
-                      ? configuredEmotionApi
-                      : resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current);
+                  const emotionApi = resolveOptionalCustomApi(char.emotionConfig?.api, apiConfigRef.current, {
+                      customBinding: '今日作息日程 / 心情 API',
+                      mainBinding: '今日作息 API 留空，使用主 API',
+                  });
                   if (emotionApi.baseUrl && currentUserProfile) {
                       evaluateEmotionBackground(char, currentUserProfile, systemPrompt, apiMessages, emotionApi)
                           .then((innerState) => {
@@ -2431,9 +2551,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
               }
 
+              let pendingForceReplyReason: string | undefined;
+              const forceReplyExtract = extractForceReplyDirective(aiContent);
+              if (forceReplyExtract.forceReply) {
+                  aiContent = forceReplyExtract.content;
+                  if (forceReplyAllowed) pendingForceReplyReason = forceReplyExtract.reason;
+              }
+
               const savedPreviewChunks: string[] = [];
               const baseTimestamp = Date.now();
               let offset = 0;
+              let pendingReplyToConsumed = false;
+              const consumePendingReplyTo = () => {
+                  if (!pendingReplyTo || pendingReplyToConsumed) return undefined;
+                  pendingReplyToConsumed = true;
+                  return pendingReplyTo;
+              };
               // 思考链只挂到本回合首条 assistant 消息上,避免每个气泡重复
               const consumeThinkingMeta = (): { thinkingChain: string } | undefined => {
                   if (!pendingThinkingChain) return undefined;
@@ -2449,19 +2582,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   for (const blk of blocks) {
                       try {
                           const meta = consumeThinkingMeta();
+                          const textPreview = sanitizeAssistantVisibleText(blk.textPreview);
                           await DB.saveMessage({
                               charId,
                               role: 'assistant',
                               type: 'html_card',
-                              content: blk.textPreview ? `[HTML卡片] ${blk.textPreview}` : '[HTML卡片]',
+                              content: textPreview ? `[HTML卡片] ${textPreview}` : '[HTML卡片]',
+                              replyTo: consumePendingReplyTo(),
                               timestamp: baseTimestamp + offset,
                               metadata: {
                                   htmlSource: blk.html,
-                                  htmlTextPreview: blk.textPreview,
+                                  htmlTextPreview: textPreview,
                                   ...(meta || {}),
                               },
                           } as any);
-                          if (blk.textPreview) savedPreviewChunks.push(blk.textPreview);
+                          if (textPreview) savedPreviewChunks.push(textPreview);
                           offset += 1;
                       } catch (e) {
                           console.error('[Proactive/HTML] 落库 html_card 失败', e);
@@ -2504,6 +2639,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                           role: 'assistant',
                                           type: 'text',
                                           content: chunk,
+                                          replyTo: consumePendingReplyTo(),
                                           timestamp: baseTimestamp + offset,
                                           ...(meta ? { metadata: meta } : {}),
                                       });
@@ -2525,6 +2661,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   role: 'assistant',
                                   type: 'text',
                                   content: biContent,
+                                  replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
                                   ...(meta ? { metadata: meta } : {}),
                               });
@@ -2547,6 +2684,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       role: 'assistant',
                                       type: 'text',
                                       content: chunk,
+                                      replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
                                       ...(meta ? { metadata: meta } : {}),
                                   });
@@ -2565,6 +2703,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   role: 'assistant',
                                   type: 'emoji',
                                   content: foundEmoji.url,
+                                  replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
                                   ...(meta ? { metadata: meta } : {}),
                               });
@@ -2585,6 +2724,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       role: 'assistant',
                                       type: 'emoji',
                                       content: foundEmoji.url,
+                                      replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
                                       ...(meta ? { metadata: meta } : {}),
                                   });
@@ -2596,6 +2736,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       role: 'assistant',
                                       type: 'text',
                                       content: fallbackText,
+                                      replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
                                       ...(meta ? { metadata: meta } : {}),
                                   });
@@ -2624,6 +2765,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   role: 'assistant',
                                   type: 'text',
                                   content: chunk,
+                                  replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
                                   ...(meta ? { metadata: meta } : {}),
                               });
@@ -2635,6 +2777,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               if (offset > 0) {
+                  if (pendingReplyIds.length) {
+                      try { await DB.setMessagesStatus(pendingReplyIds, 'read'); } catch { /* 回执失败不影响主动消息本体 */ }
+                  }
                   const previewSource = savedPreviewChunks.join(' ').trim();
                   const preview = previewSource.replace(/\s+/g, ' ').trim().slice(0, 120) || `${char.name} sent a proactive message`;
 
@@ -2653,6 +2798,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           skipSystemNotify: !!opts?.skipSystemNotify,
                       }
                   }));
+                  if (pendingForceReplyReason !== undefined || (forceReplyAllowed && forceReplyExtract.forceReply)) {
+                      window.dispatchEvent(new CustomEvent(FORCE_REPLY_EVENT, {
+                          detail: {
+                              charId,
+                              reason: pendingForceReplyReason,
+                              body: preview,
+                              source: opts?.eventSource || 'proactive-1.0',
+                              requestedAt: Date.now(),
+                          } satisfies ForceReplyEventDetail,
+                      }));
+                  }
                   // 这条生活事件确实生成了可见主动消息后，才在回顾里标注「已跟你说过」。
                   if (lifeEvent) {
                       void DB.markLifeEventSurfaced(lifeEvent.id, Date.now());
@@ -3217,19 +3373,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 若每单都从 char.affection 起算，后一次 updateCharacter 会覆盖前一次（多单只净 +2）。
               const affectionByChar = new Map<string, number>();
               for (const o of orders) {
-                  if (!o.charId || o.recipient !== o.charId) continue;      // 只处理「给角色点的」单
-                  if (o.deliveredAt || o.reactionPosted || o.status === 'cancelled') continue;
-                  if (now < o.etaAt) continue;                              // 还没到点
-                  const char = charactersRef.current.find(c => c.id === o.charId);
+                  if (!shouldAutoReactToCharTakeout(o, now)) continue;       // 只处理「给角色点的」且确实到有效 ETA 的单
+                  const charId = o.charId;
+                  if (!charId) continue;
+                  const char = charactersRef.current.find(c => c.id === charId);
                   if (!char) continue;
                   // 签收 + 打标，避免重复反应
                   await DB.saveTakeoutOrder({ ...o, status: 'delivered', deliveredAt: now, reactionPosted: true }).catch(() => {});
                   notifyTakeoutUpdated();
                   // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）。
                   // 基于「上一单算出的值」继续加，保证同批 N 单每单都生效。
-                  const baseAff = affectionByChar.get(o.charId) ?? char.affection;
+                  const baseAff = affectionByChar.get(charId) ?? char.affection;
                   const nextAff = applyAffectionDelta(baseAff, 2);
-                  affectionByChar.set(o.charId, nextAff);
+                  affectionByChar.set(charId, nextAff);
                   const updates: Partial<CharacterProfile> = { affection: nextAff };
                   if (char.coupleSpace) {
                       const cs = ensureCoupleSpace(char);
@@ -3243,15 +3399,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       });
                       updates.coupleSpace = { ...cs, memoryCards: [card, ...(cs.memoryCards || [])], updatedAt: now };
                   }
-                  updateCharacter(o.charId, updates);
+                  updateCharacter(charId, updates);
                   if (!canCharContactUser(char)) continue; // 拉黑期间不反应
-                  void runCoupleAutoCareForSource(o.charId, {
+                  void runCoupleAutoCareForSource(charId, {
                       source: 'takeout',
                       id: o.id,
                       at: now,
                       text: `${userName}给你点的${o.storeName}外卖送到了。`,
                   });
-                  await runProactive(o.charId, { customHint: buildTakeoutReceivedHint(o, userName) });
+                  await runProactive(charId, { customHint: buildTakeoutReceivedHint(o, userName) });
               }
           } catch (e) {
               console.warn('[Takeout] delivery react check failed', e);
@@ -3267,6 +3423,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const char = charactersRef.current.find(c => c.id === charId);
           if (!char || !char.vrState?.enabled) return;
           if (!userProfileRef.current) return;
+          if (shouldHideAmbientSocialRecordForUser(userProfileRef.current) && isAmbientSocialCharacterForUser(char, userProfileRef.current)) return;
           try {
               await runVRSession({
                   char,
@@ -3344,7 +3501,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       // 趁页面挂起前把请求发出去（best-effort）。这样「一离线 TA 就开始过自己的日子」，
       // 不必干等到 2 小时后回来才一次性补——回来时的 catchUpOfflineLife 仍会补齐更长的 gap。
       const runOnLeave = () => {
-          const chars = charactersRef.current.filter(c => isAutonomousLifeEnabled(c) && !c.charBlock?.active);
+          const profile = userProfileRef.current;
+          const chars = charactersRef.current.filter(c => (
+              isAutonomousLifeEnabled(c)
+              && !c.charBlock?.active
+              && !(shouldHideAmbientSocialRecordForUser(profile) && isAmbientSocialCharacterForUser(c, profile))
+          ));
           if (chars.length === 0) return;
           let stamps: Record<string, number> = {};
           try { stamps = JSON.parse(localStorage.getItem(LEAVE_GEN_KEY) || '{}') || {}; } catch { /* ignore */ }
@@ -3385,7 +3547,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const gapStart = lastSeen;
           markSeen(); // 先推进，保证这段 gap 不被重复补
 
-          const chars = charactersRef.current.filter(c => isAutonomousLifeEnabled(c) && !c.charBlock?.active);
+          const profile = userProfileRef.current;
+          const chars = charactersRef.current.filter(c => (
+              isAutonomousLifeEnabled(c)
+              && !c.charBlock?.active
+              && !(shouldHideAmbientSocialRecordForUser(profile) && isAmbientSocialCharacterForUser(c, profile))
+          ));
           for (const char of chars) {
               if (cancelled) break;
               const main = apiConfigRef.current;
@@ -3670,9 +3837,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     localStorage.setItem('os_memory_palace_config', JSON.stringify(newConfig));
   };
 
-  // 情绪 API 同步到所有角色：API 字段（baseUrl/apiKey/model）所有角色共用，
+  // 日程 / 心情 API 同步到所有角色：API 字段（baseUrl/apiKey/model）所有角色共用，
   // 各角色自身的心情 buff enabled 标志保持不变。
-  // 注意：与文具盒全局副 API 独立；情绪 API 是角色情绪感知的专用覆盖项。
+  // 注意：与文具盒全局副 API 独立；它覆盖今日日程生成 / 协调和心情 buff。
   const syncEmotionApiToAllCharacters = (api: { baseUrl: string; apiKey: string; model: string } | undefined) => {
     setCharacters(prev => {
       const updated = prev.map(c => {
@@ -4291,6 +4458,23 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return newObj;
           };
 
+          const transformLocalStorageSnapshotValues = (
+              snapshot: Record<string, string> | undefined,
+              transform: (value: any) => any
+          ): Record<string, string> | undefined => {
+              if (!snapshot) return undefined;
+              const next: Record<string, string> = {};
+              for (const [key, value] of Object.entries(snapshot)) {
+                  try {
+                      next[key] = JSON.stringify(transform(JSON.parse(value)));
+                  } catch {
+                      const wrapped = transform({ value });
+                      next[key] = typeof wrapped?.value === 'string' ? wrapped.value : value;
+                  }
+              }
+              return next;
+          };
+
           const isRedundantManagedAssetId = (id: string) => (
               id === 'wallpaper' ||
               id === 'lock_wallpaper' ||
@@ -4310,10 +4494,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const allStores = [
               'characters', 'messages', 'themes', 'emojis', 'emoji_categories', 'assets', 'gallery',
               'user_profile', 'diaries', 'tasks', 'anniversaries', 'room_todos',
-              'room_notes', 'groups', 'journal_stickers', 'social_posts', 'courses', 'games', 'worldbooks', 'llm_presets', 'personas', 'novels', 'songs',
+              'room_notes', 'groups', 'journal_stickers', 'social_posts', 'courses', 'games', 'worldbooks', 'llm_presets', 'personas', 'novels',
+              'coview_media', 'coview_books', 'coview_sessions', 'coview_messages', 'songs',
               'bank_transactions', 'bank_data',
               'xhs_activities', 'xhs_stock',
-              'quizzes', 'guidebook', 'scheduled_messages', 'life_sim',
+              'quizzes', 'guidebook', 'takeout_orders', 'scheduled_messages', 'life_sim',
               'handbook', 'trackers', 'tracker_entries', 'hotnews_snapshots',
               'desktop_pet',
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
@@ -4322,11 +4507,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 「页外」虚拟世界各房间 store —— 早期导出清单漏了，导致备份不含房间数据
               'vr_novels', 'vr_annotations', 'cc_custom_parts', 'vr_music', 'vr_guestbook', 'vr_letters', 'vr_settings'
           ];
+          const actualStores = await DB.getObjectStoreNames().catch(() => []);
+          const completeStores = actualStores.length > 0 ? actualStores : allStores;
 
           if (mode === 'full') {
-              storesToProcess = allStores; // Include everything
+              storesToProcess = completeStores; // Include everything
           } else if (mode === 'text_only') {
-              storesToProcess = allStores.filter(s => s !== 'assets'); // Exclude raw assets store
+              storesToProcess = completeStores.filter(s => s !== 'assets'); // Exclude raw assets store
           } else if (mode === 'media_only') {
               // media_only now includes themes/assets for complete media backup
               storesToProcess = ['gallery', 'emojis', 'emoji_categories', 'journal_stickers', 'user_profile', 'characters', 'messages', 'themes', 'assets', 'bank_data',
@@ -4458,12 +4645,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               })() : undefined,
               bm25Mode: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('bm25_mode') || undefined) : undefined,
               lastActiveCharId: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('os_last_active_char_id') || undefined) : undefined,
+              localStorageSnapshot: (mode === 'text_only' || mode === 'full') ? collectLocalStorageSnapshot() : undefined,
               eventNotifFlags: (mode === 'text_only' || mode === 'full') ? (() => {
                   const flags: Record<string, string> = {};
                   for (let i = 0; i < localStorage.length; i++) {
                       const key = localStorage.key(i);
                       if (!key) continue;
-                      if (key.startsWith('moro_')) {
+                      if (key.startsWith('moro_') && !isTemporaryLocalStorageKey(key)) {
                           flags[key] = localStorage.getItem(key) || '';
                       }
                   }
@@ -4482,6 +4670,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               if (backupData.theme) backupData.theme = processObject(backupData.theme);
               if (backupData.customIcons) backupData.customIcons = processObject(backupData.customIcons);
               if (backupData.appearancePresets) backupData.appearancePresets = processObject(backupData.appearancePresets);
+              if (backupData.localStorageSnapshot) backupData.localStorageSnapshot = transformLocalStorageSnapshotValues(backupData.localStorageSnapshot, processObject);
           } else {
               // Strip images for text only
               if (backupData.socialAppData?.userProfile) backupData.socialAppData.userProfile = stripBase64(backupData.socialAppData.userProfile);
@@ -4489,6 +4678,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               if (backupData.roomCustomAssets) backupData.roomCustomAssets = stripBase64(backupData.roomCustomAssets);
               if (backupData.customIcons) backupData.customIcons = stripBase64(backupData.customIcons);
               if (backupData.appearancePresets) backupData.appearancePresets = stripBase64(backupData.appearancePresets);
+              if (backupData.localStorageSnapshot) backupData.localStorageSnapshot = transformLocalStorageSnapshotValues(backupData.localStorageSnapshot, stripBase64);
               if (backupData.theme) {
                   // Save preset decoration content before stripping (SVGs start with data:image and would be stripped)
                   const savedPresetDecos = backupData.theme.desktopDecorations
@@ -4511,7 +4701,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Stores that never contain base64 image data — skip recursive traversal
           const noImageStores = new Set([
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
-              'bank_transactions', 'scheduled_messages', 'memory_batches', 'hotnews_snapshots', 'desktop_pet'
+              'bank_transactions', 'takeout_orders', 'scheduled_messages', 'memory_batches', 'hotnews_snapshots', 'desktop_pet'
           ]);
 
           // Chunked processObject for large arrays — yields to main thread every 200 items
@@ -4646,6 +4836,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'llm_presets': backupData.llmPresets = processedData; break;
                   case 'personas': backupData.personas = processedData; break;
                   case 'novels': backupData.novels = processedData; break;
+                  case 'coview_media': backupData.coviewMedia = Array.isArray(processedData) ? processedData.map(({ blob: _blob, ...item }: any) => item) : []; break;
+                  case 'coview_books': backupData.coviewBooks = processedData; break;
+                  case 'coview_sessions': backupData.coviewSessions = processedData; break;
+                  case 'coview_messages': backupData.coviewMessages = processedData; break;
                   case 'songs': backupData.songs = processedData; break;
                   case 'bank_transactions': backupData.bankTransactions = processedData; break;
                   case 'bank_data': {
@@ -4661,6 +4855,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'xhs_stock': backupData.xhsStockImages = processedData; break;
                   case 'quizzes': backupData.quizSessions = processedData; break;
                   case 'guidebook': backupData.guidebookSessions = processedData; break;
+                  case 'takeout_orders': backupData.takeoutOrders = processedData; break;
                   case 'scheduled_messages': backupData.scheduledMessages = processedData; break;
                   case 'life_sim': backupData.lifeSimState = Array.isArray(processedData) ? (processedData[0] || null) : (processedData || null); break;
                   case 'handbook': backupData.handbooks = processedData; break;
@@ -4687,6 +4882,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 单例 store：导入端期望单个对象（取首条），非数组
                   case 'vr_music': backupData.vrMusicRoom = Array.isArray(processedData) ? (processedData[0] || undefined) : (processedData || undefined); break;
                   case 'vr_guestbook': backupData.vrGuestbook = Array.isArray(processedData) ? (processedData[0] || undefined) : (processedData || undefined); break;
+                  default:
+                      if (mode !== 'media_only') {
+                          backupData.indexedDbSnapshot = backupData.indexedDbSnapshot || {};
+                          backupData.indexedDbSnapshot[storeName] = Array.isArray(processedData) ? processedData : [];
+                      }
+                      break;
               }
 
               await new Promise(resolve => setTimeout(resolve, 10));
@@ -4701,14 +4902,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // we serialize large arrays separately and build the JSON incrementally.
           const largeArrayKeys = ['characters', 'messages', 'assets', 'galleryImages',
               'savedEmojis', 'memoryNodes', 'memoryVectors', 'memoryLinks',
-              'socialPosts', 'diaries', 'worldbooks', 'novels', 'xhsActivities',
+              'socialPosts', 'diaries', 'worldbooks', 'novels', 'coviewMedia', 'coviewBooks', 'coviewSessions', 'coviewMessages', 'xhsActivities',
               'bankTransactions', 'quizSessions', 'guidebookSessions',
               'topicBoxes', 'anticipations', 'eventBoxes', 'roomCustomAssets', 'mediaAssets',
               'customThemes', 'appearancePresets', 'courses', 'games', 'songs',
               'roomTodos', 'roomNotes', 'tasks', 'anniversaries', 'groups',
               'savedJournalStickers', 'emojiCategories', 'xhsStockImages',
-              'scheduledMessages', 'handbooks', 'trackers', 'trackerEntries', 'hotNewsSnapshots',
-              'dailySchedules', 'memoryBatches', 'pixelHomeAssets', 'pixelHomeLayouts'] as const;
+              'takeoutOrders', 'scheduledMessages', 'handbooks', 'trackers', 'trackerEntries', 'hotNewsSnapshots',
+              'dailySchedules', 'memoryBatches', 'pixelHomeAssets', 'pixelHomeLayouts', 'indexedDbSnapshot'] as const;
 
           // Build metadata (small fields) separately
           const metadata: Record<string, any> = {};
@@ -4950,6 +5151,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
           };
 
+          const restoreLocalStorageSnapshotAssets = async (snapshot: Record<string, string> | undefined): Promise<void> => {
+              if (!snapshot) return;
+              for (const [key, value] of Object.entries(snapshot)) {
+                  try {
+                      const parsed = JSON.parse(value);
+                      await restoreAssetsInPlace(parsed, `localStorage:${key}`);
+                      snapshot[key] = JSON.stringify(parsed);
+                  } catch {
+                      const wrapped = { value };
+                      await restoreAssetsInPlace(wrapped, `localStorage:${key}`);
+                      if (typeof wrapped.value === 'string') snapshot[key] = wrapped.value;
+                  }
+              }
+          };
+
           showImportProgress('database', '正在写入数据库...', 50, { current: '准备写入数据库', currentFile: '' });
           await DB.importFullData(data, {
               beforeWrite: restoreAssetsInPlace,
@@ -5078,10 +5294,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (data.eventNotifFlags && typeof data.eventNotifFlags === 'object') {
               for (const [key, val] of Object.entries(data.eventNotifFlags)) {
                   // 只允许 moro_ 前缀，避免污染其它键
-                  if (typeof val === 'string' && key.startsWith('moro_')) {
+                  if (typeof val === 'string' && key.startsWith('moro_') && !isTemporaryLocalStorageKey(key)) {
                       localStorage.setItem(key, val);
                   }
               }
+          }
+          if (data.localStorageSnapshot) {
+              await restoreLocalStorageSnapshotAssets(data.localStorageSnapshot);
+              restoreLocalStorageSnapshot(data.localStorageSnapshot);
           }
           
           if (data.socialAppData) {
@@ -5335,6 +5555,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     unreadMessages,
     clearUnread,
     markUnread,
+    forceReplyRequest,
+    openForceReplyRequest,
+    clearForceReplyRequest,
     proactiveComposingChars,
     cloudBackupConfig,
     updateCloudBackupConfig,

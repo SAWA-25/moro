@@ -22,6 +22,7 @@ import type {
     PresetPrompt,
     PresetPromptOrderCharacter,
     PresetPromptOrderEntry,
+    PresetSnapshot,
     PresetScopeKey,
     RegexScriptData,
     TavernPreset,
@@ -385,6 +386,8 @@ export function exportTavernPreset(preset: TavernPreset): Record<string, any> {
     delete out.updatedAt;
     delete out.moroApiPresetId;
     delete out.moroScopes;
+    delete out.moroPromptOrdersByScope;
+    delete out.moroSnapshots;
     out.name = preset.name;
     for (const f of SAMPLING_FIELDS) {
         const v = (preset as any)[f];
@@ -425,6 +428,76 @@ export function normalizePresetScopes(scopes?: Partial<Record<PresetScopeKey, bo
     return out;
 }
 
+export function clonePresetOrderEntries(order?: PresetPromptOrderEntry[] | null): PresetPromptOrderEntry[] {
+    return Array.isArray(order)
+        ? order
+            .filter(e => e && typeof e.identifier === 'string')
+            .map(e => ({ identifier: e.identifier, enabled: e.enabled !== false }))
+        : [];
+}
+
+function getOrderForCharId(preset: TavernPreset, characterId: number): PresetPromptOrderEntry[] {
+    const exact = preset.prompt_order.find(po => po.character_id === characterId);
+    if (exact) return exact.order;
+    return preset.prompt_order[0]?.order ?? [];
+}
+
+export function isGroupPresetScope(scope?: PresetScopeKey): boolean {
+    return scope === 'chat.groupText' || scope === 'chat.groupVoice';
+}
+
+export function getFallbackOrderCharacterIdForScope(scope?: PresetScopeKey): number {
+    return isGroupPresetScope(scope) ? ORDER_CHAR_ID_GROUP : ORDER_CHAR_ID_SINGLE;
+}
+
+export function getPresetOrderForScope(
+    preset: TavernPreset,
+    scope?: PresetScopeKey,
+    orderCharacterId?: number,
+): PresetPromptOrderEntry[] {
+    if (scope) {
+        const scoped = clonePresetOrderEntries(preset.moroPromptOrdersByScope?.[scope]);
+        if (scoped.length > 0) return scoped;
+        return getOrderForCharId(preset, getFallbackOrderCharacterIdForScope(scope));
+    }
+    if (orderCharacterId !== undefined) return getOrderForCharId(preset, orderCharacterId);
+    return getOrderForCharId(preset, ORDER_CHAR_ID_SINGLE);
+}
+
+export function hasScopeSpecificOrder(preset: TavernPreset, scope: PresetScopeKey): boolean {
+    return clonePresetOrderEntries(preset.moroPromptOrdersByScope?.[scope]).length > 0;
+}
+
+export function setPresetScopeOrder(
+    preset: TavernPreset,
+    scope: PresetScopeKey,
+    order: PresetPromptOrderEntry[] | null,
+): void {
+    if (!preset.moroPromptOrdersByScope) preset.moroPromptOrdersByScope = {};
+    if (!order || order.length === 0) {
+        delete preset.moroPromptOrdersByScope[scope];
+    } else {
+        preset.moroPromptOrdersByScope[scope] = clonePresetOrderEntries(order);
+    }
+    if (Object.keys(preset.moroPromptOrdersByScope).length === 0) {
+        delete preset.moroPromptOrdersByScope;
+    }
+}
+
+export function getPresetOrderSource(preset: TavernPreset, scope: PresetScopeKey): {
+    kind: 'scope' | 'st';
+    inherited: boolean;
+    characterId?: number;
+    order: PresetPromptOrderEntry[];
+} {
+    const scoped = clonePresetOrderEntries(preset.moroPromptOrdersByScope?.[scope]);
+    if (scoped.length > 0) {
+        return { kind: 'scope', inherited: false, order: scoped };
+    }
+    const characterId = getFallbackOrderCharacterIdForScope(scope);
+    return { kind: 'st', inherited: true, characterId, order: clonePresetOrderEntries(getOrderForCharId(preset, characterId)) };
+}
+
 function shouldTriggerPrompt(prompt: PresetPrompt, generationType?: string): boolean {
     const triggers = Array.isArray(prompt.injection_trigger)
         ? prompt.injection_trigger.map(x => String(x).toLowerCase().trim()).filter(Boolean)
@@ -436,12 +509,6 @@ function shouldTriggerPrompt(prompt: PresetPrompt, generationType?: string): boo
 
 // ---------------------------------------------------------------------------
 // 运行时组装
-
-function getOrderForCharId(preset: TavernPreset, characterId: number): PresetPromptOrderEntry[] {
-    const exact = preset.prompt_order.find(po => po.character_id === characterId);
-    if (exact) return exact.order;
-    return preset.prompt_order[0]?.order ?? [];
-}
 
 interface AbsolutePromptResolved {
     role: string;
@@ -501,6 +568,8 @@ function injectAbsolutePrompts(
 
 export interface ApplyPresetOptions {
     macros: PresetMacroCtx;
+    /** 按 Moro 任务 scope 选择提示词顺序；有 scope 专用 order 时优先使用。 */
+    presetScope?: PresetScopeKey;
     /** prompt_order 用哪份（单聊 100000 / 群聊 100001），默认单聊 */
     orderCharacterId?: number;
     /** ST injection_trigger 过滤用的 generation type，默认 normal */
@@ -545,7 +614,7 @@ export function applyPresetToMessages(
     if (messages.length === 0 || messages[0].role !== 'system') return appendPresetTailMessages(messages, options.tailMessages);
 
     const history = messages.slice(1);
-    const order = getOrderForCharId(preset, options.orderCharacterId ?? ORDER_CHAR_ID_SINGLE);
+    const order = getPresetOrderForScope(preset, options.presetScope, options.orderCharacterId);
     if (order.length === 0) return appendPresetTailMessages(messages, options.tailMessages);
 
     // marker 不在 order 里（残缺/旧版预设）时，其真实内容回折进核心块，保证设定不丢：
@@ -682,6 +751,309 @@ export function estimateTokens(text: string): number {
         if (/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)) cjk++;
     }
     return Math.ceil(cjk + (text.length - cjk) / 3.5);
+}
+
+// ---------------------------------------------------------------------------
+// 高级编辑：诊断 / 安全修复 / 快照
+
+export type PresetDiagnosticSeverity = 'error' | 'warning' | 'info';
+
+export interface PresetDiagnosticIssue {
+    code:
+        | 'missing-chat-history'
+        | 'disabled-chat-history'
+        | 'missing-core-marker'
+        | 'empty-enabled-prompt'
+        | 'duplicate-order-entry'
+        | 'dangling-order-entry'
+        | 'detached-prompt'
+        | 'risky-scope-enabled';
+    severity: PresetDiagnosticSeverity;
+    title: string;
+    detail: string;
+    fixable: boolean;
+    identifier?: string;
+    scope?: PresetScopeKey;
+}
+
+const BASIC_CORE_MARKERS = ['worldInfoBefore', 'charDescription', 'personaDescription', 'dialogueExamples', CHAT_HISTORY_MARKER];
+
+function ensurePromptDefinition(preset: TavernPreset, identifier: string): void {
+    if (preset.prompts.some(p => p.identifier === identifier)) return;
+    const hint = MARKER_HINTS[identifier];
+    preset.prompts.push(hint
+        ? { identifier, name: hint.name, system_prompt: true, marker: true }
+        : { identifier, name: identifier, role: 'system', content: '' });
+}
+
+function getMutableOrderForScope(preset: TavernPreset, scope?: PresetScopeKey): PresetPromptOrderEntry[] {
+    if (scope && preset.moroPromptOrdersByScope?.[scope]?.length) {
+        return preset.moroPromptOrdersByScope[scope]!;
+    }
+    const characterId = scope ? getFallbackOrderCharacterIdForScope(scope) : ORDER_CHAR_ID_SINGLE;
+    let po = preset.prompt_order.find(item => item.character_id === characterId);
+    if (!po) {
+        po = { character_id: characterId, order: [] };
+        preset.prompt_order.push(po);
+    }
+    return po.order;
+}
+
+export function diagnosePreset(preset: TavernPreset, scope?: PresetScopeKey): PresetDiagnosticIssue[] {
+    const order = getPresetOrderForScope(preset, scope);
+    const byId = new Map((preset.prompts ?? []).map(p => [p.identifier, p]));
+    const issues: PresetDiagnosticIssue[] = [];
+    const seen = new Set<string>();
+    const attached = new Set<string>();
+
+    for (const entry of order) {
+        attached.add(entry.identifier);
+        const prompt = byId.get(entry.identifier);
+        if (seen.has(entry.identifier)) {
+            issues.push({
+                code: 'duplicate-order-entry',
+                severity: 'warning',
+                title: '顺序里有重复条目',
+                detail: `「${entry.identifier}」在当前发送顺序里出现了不止一次。`,
+                fixable: true,
+                identifier: entry.identifier,
+                scope,
+            });
+        }
+        seen.add(entry.identifier);
+        if (!prompt) {
+            issues.push({
+                code: 'dangling-order-entry',
+                severity: 'warning',
+                title: '顺序引用了缺失提示词',
+                detail: `「${entry.identifier}」在顺序里，但字库里找不到定义。`,
+                fixable: true,
+                identifier: entry.identifier,
+                scope,
+            });
+            continue;
+        }
+        if (entry.enabled && !prompt.marker && !(prompt.content || '').trim()) {
+            issues.push({
+                code: 'empty-enabled-prompt',
+                severity: 'info',
+                title: '启用了空提示词',
+                detail: `「${prompt.name}」已启用，但正文为空，发送时会被跳过。`,
+                fixable: true,
+                identifier: entry.identifier,
+                scope,
+            });
+        }
+    }
+
+    const chatHistoryEntry = order.find(e => e.identifier === CHAT_HISTORY_MARKER);
+    if (!chatHistoryEntry) {
+        issues.push({
+            code: 'missing-chat-history',
+            severity: 'error',
+            title: '缺少聊天历史 marker',
+            detail: '当前顺序里没有 chatHistory，模型可能看不到最近聊天。',
+            fixable: true,
+            identifier: CHAT_HISTORY_MARKER,
+            scope,
+        });
+    } else if (!chatHistoryEntry.enabled) {
+        issues.push({
+            code: 'disabled-chat-history',
+            severity: 'error',
+            title: '聊天历史 marker 被关闭',
+            detail: 'chatHistory 已在顺序里，但当前关闭，模型会按无历史模式回复。',
+            fixable: true,
+            identifier: CHAT_HISTORY_MARKER,
+            scope,
+        });
+    }
+
+    const enabledCore = order.some(e => e.enabled && CORE_CONTEXT_MARKERS.has(e.identifier));
+    if (!enabledCore) {
+        issues.push({
+            code: 'missing-core-marker',
+            severity: 'error',
+            title: '核心上下文没有启用落点',
+            detail: '角色核心、人设、世界书和记忆需要至少一个核心 marker 承接。',
+            fixable: true,
+            identifier: 'charDescription',
+            scope,
+        });
+    }
+
+    for (const prompt of preset.prompts ?? []) {
+        if (!attached.has(prompt.identifier) && !prompt.marker) {
+            issues.push({
+                code: 'detached-prompt',
+                severity: 'info',
+                title: '有未使用提示词',
+                detail: `「${prompt.name}」存在于字库，但不在当前发送顺序里。`,
+                fixable: false,
+                identifier: prompt.identifier,
+                scope,
+            });
+        }
+    }
+
+    const scopes = normalizePresetScopes(preset.moroScopes);
+    for (const key of PRESET_SCOPE_KEYS) {
+        if (PRESET_SCOPE_META[key].risky && scopes[key]) {
+            issues.push({
+                code: 'risky-scope-enabled',
+                severity: 'warning',
+                title: '风险任务范围已开启',
+                detail: `「${PRESET_SCOPE_META[key].title}」会吃这份预设，请确认不会破坏 JSON 或特殊格式。`,
+                fixable: false,
+                scope: key,
+            });
+        }
+    }
+
+    return issues;
+}
+
+export function applySafePresetFixes(preset: TavernPreset, scope?: PresetScopeKey): { preset: TavernPreset; fixed: string[] } {
+    const next: TavernPreset = JSON.parse(JSON.stringify(preset));
+    const order = getMutableOrderForScope(next, scope);
+    const fixed: string[] = [];
+    const byId = () => new Map(next.prompts.map(p => [p.identifier, p]));
+
+    const deduped: PresetPromptOrderEntry[] = [];
+    const seen = new Set<string>();
+    for (const entry of order) {
+        if (seen.has(entry.identifier)) {
+            fixed.push(`移除重复顺序项：${entry.identifier}`);
+            continue;
+        }
+        seen.add(entry.identifier);
+        deduped.push(entry);
+    }
+    order.splice(0, order.length, ...deduped);
+
+    for (const entry of order) {
+        if (!byId().has(entry.identifier)) {
+            ensurePromptDefinition(next, entry.identifier);
+            fixed.push(`补齐缺失提示词定义：${entry.identifier}`);
+        }
+        const prompt = byId().get(entry.identifier);
+        if (entry.enabled && prompt && !prompt.marker && !(prompt.content || '').trim()) {
+            entry.enabled = false;
+            fixed.push(`关闭空提示词：${prompt.name}`);
+        }
+    }
+
+    if (!order.some(e => e.identifier === CHAT_HISTORY_MARKER)) {
+        ensurePromptDefinition(next, CHAT_HISTORY_MARKER);
+        order.push({ identifier: CHAT_HISTORY_MARKER, enabled: true });
+        fixed.push('补回聊天历史 marker');
+    } else {
+        const entry = order.find(e => e.identifier === CHAT_HISTORY_MARKER)!;
+        if (!entry.enabled) {
+            entry.enabled = true;
+            fixed.push('重新启用聊天历史 marker');
+        }
+    }
+
+    if (!order.some(e => e.enabled && CORE_CONTEXT_MARKERS.has(e.identifier))) {
+        for (const id of BASIC_CORE_MARKERS) ensurePromptDefinition(next, id);
+        const existing = order.find(e => CORE_CONTEXT_MARKERS.has(e.identifier));
+        if (existing) {
+            existing.enabled = true;
+            fixed.push(`重新启用核心 marker：${existing.identifier}`);
+        } else {
+            order.unshift({ identifier: 'charDescription', enabled: true });
+            fixed.push('补回角色核心 marker');
+        }
+    }
+
+    next.updatedAt = Date.now();
+    return { preset: next, fixed };
+}
+
+function snapshotPayload(preset: TavernPreset): Omit<TavernPreset, 'moroSnapshots'> {
+    const copy: TavernPreset = JSON.parse(JSON.stringify(preset));
+    delete copy.moroSnapshots;
+    return copy;
+}
+
+export function createPresetSnapshot(preset: TavernPreset, name?: string, reason?: string): PresetSnapshot {
+    const now = Date.now();
+    return {
+        id: createPresetLocalId('snap'),
+        name: (name || `快照 ${new Date(now).toLocaleString('zh-CN', { hour12: false })}`).trim(),
+        createdAt: now,
+        reason,
+        preset: snapshotPayload(preset),
+    };
+}
+
+export interface PresetDiffSummary {
+    changed: boolean;
+    items: string[];
+}
+
+function orderSignature(order?: PresetPromptOrderEntry[]): string {
+    return clonePresetOrderEntries(order).map(e => `${e.enabled ? '1' : '0'}:${e.identifier}`).join('|');
+}
+
+export function diffPresetSnapshot(snapshot: PresetSnapshot, current: TavernPreset): PresetDiffSummary {
+    const before = snapshot.preset;
+    const after = snapshotPayload(current);
+    const items: string[] = [];
+
+    if (before.name !== after.name) items.push(`名称：${before.name} → ${after.name}`);
+    if (before.moroApiPresetId !== after.moroApiPresetId) items.push('API 方案绑定有变化');
+    for (const f of SAMPLING_FIELDS) {
+        if ((before as any)[f] !== (after as any)[f]) items.push(`采样参数 ${f} 有变化`);
+    }
+    if (JSON.stringify(normalizePresetScopes(before.moroScopes)) !== JSON.stringify(normalizePresetScopes(after.moroScopes))) {
+        items.push('作用范围开关有变化');
+    }
+    const scopeKeys = new Set([
+        ...Object.keys(before.moroPromptOrdersByScope || {}),
+        ...Object.keys(after.moroPromptOrdersByScope || {}),
+    ]);
+    for (const scope of scopeKeys) {
+        const key = scope as PresetScopeKey;
+        if (orderSignature(before.moroPromptOrdersByScope?.[key]) !== orderSignature(after.moroPromptOrdersByScope?.[key])) {
+            items.push(`scope 专用顺序 ${scope} 有变化`);
+        }
+    }
+    for (const po of before.prompt_order) {
+        const next = after.prompt_order.find(item => item.character_id === po.character_id);
+        if (orderSignature(po.order) !== orderSignature(next?.order)) items.push(`ST 顺序 ${po.character_id} 有变化`);
+    }
+    const beforePrompts = new Map(before.prompts.map(p => [p.identifier, p]));
+    const afterPrompts = new Map(after.prompts.map(p => [p.identifier, p]));
+    if (beforePrompts.size !== afterPrompts.size) items.push('提示词数量有变化');
+    for (const [id, p] of beforePrompts) {
+        const n = afterPrompts.get(id);
+        if (!n) {
+            items.push(`提示词被删除：${p.name}`);
+        } else if (JSON.stringify(p) !== JSON.stringify(n)) {
+            items.push(`提示词被修改：${n.name || p.name}`);
+        }
+    }
+    for (const [id, p] of afterPrompts) {
+        if (!beforePrompts.has(id)) items.push(`新增提示词：${p.name}`);
+    }
+    if ((before.regexScripts?.length ?? 0) !== (after.regexScripts?.length ?? 0)) {
+        items.push('随预设正则数量有变化');
+    }
+
+    return { changed: items.length > 0, items };
+}
+
+export function restorePresetSnapshotAsCopy(snapshot: PresetSnapshot, name?: string): TavernPreset {
+    const now = Date.now();
+    const preset: TavernPreset = JSON.parse(JSON.stringify(snapshot.preset));
+    preset.id = createPresetLocalId('preset');
+    preset.name = (name || `${snapshot.preset.name} · 从快照恢复`).trim();
+    preset.createdAt = now;
+    preset.updatedAt = now;
+    preset.moroSnapshots = [];
+    return preset;
 }
 
 // ---------------------------------------------------------------------------

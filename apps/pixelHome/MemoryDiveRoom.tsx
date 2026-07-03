@@ -15,18 +15,10 @@ import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import type { PixelRoomLayout, PixelAsset } from './types';
 import { decodeColorField } from './types';
 import { ROOM_SIZES, ROOM_SLOTS } from './roomTemplates';
+import { defaultFurniturePixelSrc } from './roomPixelRenderer';
+import { getRoomSurfaceStyle, wallTextureStyle, floorTextureStyle } from './roomSurfaceStyles';
 
 const TILE_BASE = 28;
-
-const FLOOR_STYLES: Record<string, { wallFace: string; floor: string }> = {
-  living_room: { wallFace: '#e8d5b8', floor: '#c4a882' },
-  bedroom:     { wallFace: '#e8ddd0', floor: '#d4b896' },
-  study:       { wallFace: '#c9b99a', floor: '#8b6f47' },
-  attic:       { wallFace: '#6b5d50', floor: '#706050' },
-  self_room:   { wallFace: '#f0d0e0', floor: '#d4a8c0' },
-  user_room:   { wallFace: '#c8e0d0', floor: '#a8c4b0' },
-  windowsill:  { wallFace: '#a8bfb0', floor: '#92a89c' },
-};
 
 interface Props {
   roomId: MemoryRoom;
@@ -87,7 +79,7 @@ const MemoryDiveRoom: React.FC<Props> = ({
     return { pw: width, ph: height, tilePx: width / roomSize.w };
   }, [size.w, size.h, roomSize.w, roomSize.h]);
 
-  const roomStyle = FLOOR_STYLES[roomId] || FLOOR_STYLES.living_room;
+  const roomStyle = getRoomSurfaceStyle(roomId);
   // 与编辑器 WALL_TOP_RATIO 保持一致，避免墙/地板分界线位置不同导致家具看起来错位
   const wallH = Math.round(ph * 0.38);
   // 家具尺寸：与编辑器保持同一公式
@@ -122,6 +114,8 @@ const MemoryDiveRoom: React.FC<Props> = ({
           {/* 墙面 */}
           <div className="absolute inset-x-0 top-0 overflow-hidden" style={{ height: wallH }}>
             <WallOrFloor
+              roomId={roomId}
+              surface="wall"
               field={layout?.wallColor}
               fillMode={layout?.wallFillMode}
               offsetX={layout?.wallOffsetX}
@@ -134,6 +128,8 @@ const MemoryDiveRoom: React.FC<Props> = ({
           {/* 地板 */}
           <div className="absolute inset-x-0 bottom-0 overflow-hidden" style={{ top: wallH }}>
             <WallOrFloor
+              roomId={roomId}
+              surface="floor"
               field={layout?.floorColor}
               fillMode={layout?.floorFillMode}
               offsetX={layout?.floorOffsetX}
@@ -151,12 +147,12 @@ const MemoryDiveRoom: React.FC<Props> = ({
              潜行视图的家具位置就能和房间编辑器里拖出来的位置一模一样。 */}
           {layout?.furniture.map(f => {
             const asset = f.assetId ? assets.find(a => a.id === f.assetId) : null;
-            const imgSrc = asset?.pixelImage;
+            const imgSrc = asset?.pixelImage || (f.isDefault !== false ? defaultFurniturePixelSrc(roomId, f.slotId) : null);
             if (!imgSrc) return null;
 
             const slot = slotDefs.find(s => s.id === f.slotId);
             const furSize = Math.round(furBase * 0.22 * f.scale);
-            const isRug = !!asset?.tags?.includes('rug');
+            const isRug = !!asset?.tags?.includes('rug') || (!asset && f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat'));
 
             const autoZ = Math.round(f.y * 4) + 20;
             let zIdx: number;
@@ -240,13 +236,15 @@ const MemoryDiveRoom: React.FC<Props> = ({
 // ─── 子组件：墙 / 地板背景 ────────────────────────────
 
 const WallOrFloor: React.FC<{
+  roomId: MemoryRoom;
+  surface: 'wall' | 'floor';
   field: string | undefined;
   fillMode: 'tile' | 'stretch' | undefined;
   offsetX: number | undefined;
   offsetY: number | undefined;
   tileSize: number;
   fallback: string;
-}> = ({ field, fillMode, offsetX, offsetY, tileSize, fallback }) => {
+}> = ({ roomId, surface, field, fillMode, offsetX, offsetY, tileSize, fallback }) => {
   const d = decodeColorField(field);
   if (d.kind === 'image') {
     const style: React.CSSProperties = fillMode === 'stretch'
@@ -265,8 +263,13 @@ const WallOrFloor: React.FC<{
         };
     return <div className="absolute inset-0" style={style} />;
   }
-  const color = d.kind === 'color' ? d.value : fallback;
-  return <div className="absolute inset-0" style={{ backgroundColor: color }} />;
+  if (d.kind === 'color') {
+    return <div className="absolute inset-0" style={{ backgroundColor: d.value }} />;
+  }
+  const style = surface === 'wall'
+    ? wallTextureStyle(roomId, tileSize)
+    : floorTextureStyle(roomId, tileSize);
+  return <div className="absolute inset-0" style={style || { backgroundColor: fallback }} />;
 };
 
 // ─── 子组件：像素小人（角色或用户） ───────────────────

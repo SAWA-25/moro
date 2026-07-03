@@ -6,6 +6,7 @@
  *   pixel_home_layouts — 每个角色的每个房间布局
  */
 
+import { isLegacyDefaultPixelSurface } from './types';
 import type { PixelAsset, PixelRoomLayout, PixelHomeState } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { ROOM_SLOTS, DEFAULT_ROOM_COLORS, ALL_ROOMS } from './roomTemplates';
@@ -19,6 +20,48 @@ import { openDB } from '../../utils/db';
 
 const STORE_ASSETS = 'pixel_home_assets';
 const STORE_LAYOUTS = 'pixel_home_layouts';
+
+const LEGACY_DEFAULT_ROOM_COLORS: Record<MemoryRoom, { wall: string; floor: string }> = {
+  living_room: { wall: '#fef3c7', floor: '#d6b88a' },
+  bedroom:     { wall: '#ede9fe', floor: '#c4b5a0' },
+  study:       { wall: '#dbeafe', floor: '#8b7355' },
+  attic:       { wall: '#4b5563', floor: '#374151' },
+  self_room:   { wall: '#fce7f3', floor: '#d4a8c0' },
+  user_room:   { wall: '#d1fae5', floor: '#a8c4b0' },
+  windowsill:  { wall: '#cffafe', floor: '#92a89c' },
+};
+
+function isLegacyDefaultTexture(value: unknown): boolean {
+  return typeof value === 'string' && isLegacyDefaultPixelSurface(value);
+}
+
+function isLegacyDefaultSurfaceValue(roomId: MemoryRoom, surface: 'wall' | 'floor', value: unknown): boolean {
+  if (isLegacyDefaultTexture(value)) return true;
+  if (typeof value !== 'string') return false;
+  return value.toLowerCase() === LEGACY_DEFAULT_ROOM_COLORS[roomId]?.[surface].toLowerCase();
+}
+
+function sanitizePresetSurface(roomId: MemoryRoom, surface: 'wall' | 'floor', value: unknown): string {
+  if (isLegacyDefaultSurfaceValue(roomId, surface, value)) return '';
+  return typeof value === 'string' ? value : '';
+}
+
+function layoutLooksLikeBuiltinDefault(layout: PixelRoomLayout): boolean {
+  if (layout.lastDecoratedBy === 'user') return false;
+  const slotIds = new Set((ROOM_SLOTS[layout.roomId] || []).map(slot => slot.id));
+  return (layout.furniture || []).every(f =>
+    slotIds.has(f.slotId) &&
+    f.placedBy !== 'user' &&
+    f.isDefault !== false &&
+    !f.assetId
+  );
+}
+
+function isLegacyDefaultPresetAsset(asset: PixelAsset): boolean {
+  return (Array.isArray(asset.tags) && asset.tags.includes('default')) ||
+    isLegacyDefaultPixelSurface(asset.pixelImage) ||
+    isLegacyDefaultPixelSurface(asset.originalImage);
+}
 
 // ─── 资产 CRUD ──────────────────────────────────────
 
@@ -156,35 +199,24 @@ async function trySeedDefaultHome(charId: string): Promise<boolean> {
   }
   if (!preset) return false;
 
-  // 导入资产（跳过已存在的）
-  if (Array.isArray(preset.assets) && preset.assets.length > 0) {
-    const existingAssets = await PixelAssetDB.getAll();
-    const existingIds = new Set(existingAssets.map(a => a.id));
-    const toSave = preset.assets
-      .filter((a: any) => a && a.id && !existingIds.has(a.id))
-      .map((a: any) => ({
-        ...a,
-        originalImage: a.pixelImage,
-        createdAt: Date.now(),
-        tags: ['default'],
-      }));
-    if (toSave.length > 0) await PixelAssetDB.saveBatch(toSave);
-  }
+  // 默认家具现在由 roomPixelRenderer 手绘生成，不再导入旧预设里的家具资产。
 
   // 导入房间布局
   const layouts: PixelRoomLayout[] = preset.rooms.map((r: any) => ({
     roomId: r.roomId,
     charId,
-    furniture: r.furniture || [],
-    wallColor: r.wallColor,
-    floorColor: r.floorColor,
+    furniture: (r.furniture || [])
+      .filter((f: any) => f && f.isDefault !== false && !String(f.slotId || '').startsWith('user_'))
+      .map((f: any) => ({ ...f, assetId: null })),
+    wallColor: sanitizePresetSurface(r.roomId, 'wall', r.wallColor),
+    floorColor: sanitizePresetSurface(r.roomId, 'floor', r.floorColor),
     ambiance: r.ambiance,
-    wallFillMode: r.wallFillMode,
-    wallOffsetX: r.wallOffsetX,
-    wallOffsetY: r.wallOffsetY,
-    floorFillMode: r.floorFillMode,
-    floorOffsetX: r.floorOffsetX,
-    floorOffsetY: r.floorOffsetY,
+    wallFillMode: isLegacyDefaultSurfaceValue(r.roomId, 'wall', r.wallColor) ? 'tile' : r.wallFillMode,
+    wallOffsetX: isLegacyDefaultSurfaceValue(r.roomId, 'wall', r.wallColor) ? 50 : r.wallOffsetX,
+    wallOffsetY: isLegacyDefaultSurfaceValue(r.roomId, 'wall', r.wallColor) ? 50 : r.wallOffsetY,
+    floorFillMode: isLegacyDefaultSurfaceValue(r.roomId, 'floor', r.floorColor) ? 'tile' : r.floorFillMode,
+    floorOffsetX: isLegacyDefaultSurfaceValue(r.roomId, 'floor', r.floorColor) ? 50 : r.floorOffsetX,
+    floorOffsetY: isLegacyDefaultSurfaceValue(r.roomId, 'floor', r.floorColor) ? 50 : r.floorOffsetY,
     lastUpdatedAt: Date.now(),
     lastDecoratedBy: 'character' as const,
   }));
@@ -210,15 +242,114 @@ function layoutsLookUntouched(layouts: PixelRoomLayout[]): boolean {
   return true;
 }
 
+/**
+ * 旧版默认家园会把一批内置 PNG 家具当作 user_ 家具导入，并给资产打上 default 标签。
+ * 现在默认家具改由代码手绘生成；这里仅移除这些内置旧家具，不碰用户自己导入的资产。
+ */
+async function removeLegacyDefaultPresetFurniture(layouts: PixelRoomLayout[]): Promise<PixelRoomLayout[]> {
+  if (layouts.length === 0) return layouts;
+
+  let defaultAssetIds: Set<string>;
+  try {
+    const assets = await PixelAssetDB.getAll();
+    defaultAssetIds = new Set(
+      assets
+        .filter(isLegacyDefaultPresetAsset)
+        .map(a => a.id)
+    );
+  } catch {
+    return layouts;
+  }
+
+  if (defaultAssetIds.size === 0) return layouts;
+
+  let changed = false;
+  const next = layouts.map(layout => {
+    let roomChanged = false;
+    const furniture = (layout.furniture || [])
+      .filter(f => {
+        const isLegacyFreeDefault =
+          f.isDefault === false &&
+          !!f.assetId &&
+          defaultAssetIds.has(f.assetId) &&
+          String(f.slotId || '').startsWith('user_');
+        if (isLegacyFreeDefault) {
+          roomChanged = true;
+          return false;
+        }
+        return true;
+      })
+      .map(f => {
+        if (f.isDefault !== false && f.assetId && defaultAssetIds.has(f.assetId)) {
+          roomChanged = true;
+          return { ...f, assetId: null };
+        }
+        return f;
+      });
+
+    if (!roomChanged) return layout;
+    changed = true;
+    return {
+      ...layout,
+      furniture,
+      lastUpdatedAt: Date.now(),
+    };
+  });
+
+  if (changed) await PixelLayoutDB.saveBatch(next);
+  return next;
+}
+
 /** 获取角色的完整家园状态，不存在则初始化默认 */
+async function resetLegacyDefaultRoomSurfaces(layouts: PixelRoomLayout[]): Promise<PixelRoomLayout[]> {
+  if (layouts.length === 0) return layouts;
+
+  let changed = false;
+  const next = layouts.map(layout => {
+    const looksBuiltin = layoutLooksLikeBuiltinDefault(layout);
+    const hasLegacyTexture =
+      isLegacyDefaultTexture(layout.wallColor) ||
+      isLegacyDefaultTexture(layout.floorColor);
+    if (!hasLegacyTexture && !looksBuiltin) return layout;
+
+    const wallLegacy = isLegacyDefaultTexture(layout.wallColor) ||
+      (looksBuiltin && isLegacyDefaultSurfaceValue(layout.roomId, 'wall', layout.wallColor));
+    const floorLegacy = isLegacyDefaultTexture(layout.floorColor) ||
+      (looksBuiltin && isLegacyDefaultSurfaceValue(layout.roomId, 'floor', layout.floorColor));
+    if (!wallLegacy && !floorLegacy) return layout;
+
+    changed = true;
+    return {
+      ...layout,
+      wallColor: wallLegacy ? '' : layout.wallColor,
+      floorColor: floorLegacy ? '' : layout.floorColor,
+      wallFillMode: wallLegacy ? 'tile' as const : layout.wallFillMode,
+      wallOffsetX: wallLegacy ? 50 : layout.wallOffsetX,
+      wallOffsetY: wallLegacy ? 50 : layout.wallOffsetY,
+      floorFillMode: floorLegacy ? 'tile' as const : layout.floorFillMode,
+      floorOffsetX: floorLegacy ? 50 : layout.floorOffsetX,
+      floorOffsetY: floorLegacy ? 50 : layout.floorOffsetY,
+      lastUpdatedAt: Date.now(),
+    };
+  });
+
+  if (changed) await PixelLayoutDB.saveBatch(next);
+  return next;
+}
+
 export async function getOrCreateHomeState(charId: string): Promise<PixelHomeState> {
   let existing = await PixelLayoutDB.getAllForChar(charId);
+  existing = await removeLegacyDefaultPresetFurniture(existing);
+  existing = await resetLegacyDefaultRoomSurfaces(existing);
 
   // 首次进入、或之前只存了空壳（没家具/没用户放置）：尝试加载内置默认家园预设
   if (layoutsLookUntouched(existing)) {
     try {
       const seeded = await trySeedDefaultHome(charId);
-      if (seeded) existing = await PixelLayoutDB.getAllForChar(charId);
+      if (seeded) {
+        existing = await PixelLayoutDB.getAllForChar(charId);
+        existing = await resetLegacyDefaultRoomSurfaces(existing);
+      }
     } catch (e) {
       console.warn('[pixelHome] seed default home failed:', e);
     }

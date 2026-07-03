@@ -94,11 +94,31 @@ export interface MemoryNode {
     /** 群名快照（用于群被删除后仍能在 UI 里识别这条记忆来自哪个群） */
     groupName?: string;
 
+    // ─── 来源标记（体检 / 清理 / 用户解释用）──────────────────────
+    /** 记忆来源。新数据会尽量写入；旧数据可能没有，不能据此自动删除。 */
+    source?: MemoryNodeSource;
+
     // ─── 已弃用字段（保留以兼容历史数据读取，新代码不应写入） ───
     /** @deprecated 旧话题盒 ID，已由 eventBoxId 替代 */
     boxId?: string;
     /** @deprecated 旧话题摘要，已废弃 */
     boxTopic?: string;
+}
+
+export type MemoryNodeSourceKind =
+    | 'chat'
+    | 'legacy_memory'
+    | 'diary'
+    | 'group_chat'
+    | 'digestion'
+    | 'system';
+
+export interface MemoryNodeSource {
+    kind: MemoryNodeSourceKind;
+    /** 给用户看的来源说明，如「2026-03 上旬」「交换日记 2026-07-04」 */
+    label?: string;
+    /** 可选来源 ID，如 groupId / eventBoxId / diary date */
+    refId?: string;
 }
 
 // ─── 向量存储 ─────────────────────────────────────────

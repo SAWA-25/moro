@@ -1029,8 +1029,8 @@ const HealthApp: React.FC = () => {
   );
 
   return (
-    <div className="w-full h-full bg-[#f8faf9] text-[#26332e] overflow-hidden" data-manual-anchor="manual-health-root" style={{ paddingTop: 'var(--safe-top)' }}>
-      <div className="h-full flex flex-col">
+    <div className="w-full h-full bg-[#f8faf9] text-[#26332e] overflow-hidden" data-manual-anchor="manual-health-root">
+      <div className="h-full min-h-0 flex flex-col">
         <header className="shrink-0 px-4 pt-3 pb-3 flex items-center justify-between bg-white/80 border-b border-[#e2ebe5]">
           <button onClick={closeApp} className="w-10 h-10 rounded-full bg-[#eef6f1] flex items-center justify-center active:scale-95">
             <ArrowLeft size={20} weight="bold" />
@@ -1054,7 +1054,7 @@ const HealthApp: React.FC = () => {
           </div>
         </nav>
 
-        <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <main className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
           {loading ? (
             <div className="h-full grid place-items-center text-sm font-bold text-[#789085]">正在整理健康记录...</div>
           ) : (

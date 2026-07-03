@@ -9,6 +9,7 @@
 import { CharacterProfile, Worldbook, WorldbookPosition, WorldbookSelectiveLogic } from '../types';
 import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
+import { wrapHiddenPromptBlock } from './promptPrivacy';
 
 export const GROUP_TOGGLES_KEY = 'worldbook_group_toggles';
 export const GROUP_SCOPES_KEY = 'worldbook_group_scopes';
@@ -574,7 +575,10 @@ export const WorldbookRuntime = {
             const role = roleOf(e.position);
             const key = `${role}@${e.depth}`;
             if (!groups.has(key)) groups.set(key, { role, depth: e.depth, contents: [] });
-            groups.get(key)!.contents.push(e.content);
+            groups.get(key)!.contents.push(wrapHiddenPromptBlock(
+                `worldbook-depth-${e.scope}`,
+                `### @Depth 扩展设定 (${e.scope === 'global' ? 'Global Worldbook' : 'Worldbook'})\n#### [${e.category}]\n**Title: ${e.title}**\n${e.content}`,
+            ));
         }
 
         const sorted = [...groups.values()].sort((a, b) => b.depth - a.depth);
@@ -629,10 +633,10 @@ const renderScopedBlocks = (
 ): string => {
     let text = '';
     if (local.length > 0) {
-        text += `${localHeader}\n${renderGrouped(local)}`;
+        text += wrapHiddenPromptBlock('worldbook-local', `${localHeader}\n${renderGrouped(local)}`);
     }
     if (global.length > 0) {
-        text += `${globalHeader}\n（以下为全局生效的扩展设定，对所有对话生效）\n${renderGrouped(global)}`;
+        text += wrapHiddenPromptBlock('worldbook-global', `${globalHeader}\n（以下为全局生效的扩展设定，对所有对话生效）\n${renderGrouped(global)}`);
     }
     return text;
 };

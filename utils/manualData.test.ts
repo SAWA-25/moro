@@ -174,4 +174,105 @@ describe('manual guide data', () => {
     expect(text).toContain('不会读取真实系统后台 App 列表');
     expect(text).toContain('不会创建 Android 全局悬浮窗');
   });
+
+  it('documents chat phone watch meta-analysis guard', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-chat-phone-watch-meta-guard');
+    const text = [notice?.summary, ...(notice?.items || [])].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(text).toContain('查岗');
+    expect(text).toContain('观屏');
+    expect(text).toContain('以我的性格');
+    expect(text).toContain('不会把查岗脚本和人设分析念出来');
+  });
+
+  it('documents check-phone secret space', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-check-phone-secret-space');
+    const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-check-phone-tool')?.setting;
+    const destination = MANUAL_DESTINATIONS['絮语查岗·秘密空间'];
+    const tools = MANUAL_ENTRIES.find(entry => entry.app === '絮语·单聊工具');
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      setting?.description,
+      setting?.defaultBehavior,
+      ...(setting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+      ...(tools?.keywords || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(destination).toBeTruthy();
+    expect(text).toContain('查岗');
+    expect(text).toContain('秘密空间');
+    expect(text).toContain('未发送');
+    expect(text).toContain('私密笔记');
+    expect(text).toContain('心愿');
+    expect(text).toContain('不会读取现实手机');
+  });
+
+  it('documents private chat force reply setting', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-chat-force-reply');
+    const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-force-reply')?.setting;
+    const destination = MANUAL_DESTINATIONS['絮语·单聊设置'];
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      setting?.title,
+      setting?.description,
+      ...(setting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(text).toContain('强制你回话');
+    expect(text).toContain('立即回复');
+    expect(text).toContain('可见消息');
+    expect(text).toContain('默认关闭');
+  });
+
+  it('documents private chat long-distance mode', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-chat-long-distance-mode');
+    const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-long-distance-mode')?.setting;
+    const destination = MANUAL_DESTINATIONS['絮语·单聊设置'];
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      setting?.title,
+      setting?.description,
+      setting?.defaultBehavior,
+      ...(setting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(text).toContain('异地模式');
+    expect(text).toContain('远距离');
+    expect(text).toContain('自动关闭');
+    expect(text).toContain('手动点「见面」仍可进入');
+    expect(text).toContain('不影响你手动点“见面 / 赴个约”');
+  });
+
+  it('documents local map cards for chat locations', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-chat-location-map');
+    const chat = MANUAL_ENTRIES.find(entry => entry.app === '絮语');
+    const tools = MANUAL_ENTRIES.find(entry => entry.app === '絮语·单聊工具');
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      ...(chat?.features || []),
+      ...(chat?.keywords || []),
+      ...(tools?.features || []),
+      ...(tools?.keywords || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(text).toContain('落脚点');
+    expect(text).toContain('地图');
+    expect(text).toContain('本地虚拟');
+    expect(text).toContain('不会读取真实定位');
+  });
 });

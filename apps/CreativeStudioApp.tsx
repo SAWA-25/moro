@@ -26,7 +26,7 @@ const CreativeStudioApp: React.FC = () => {
     return (
         <div
             className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in"
-            style={{ background: PAPER, ...DOT_BG, paddingTop: 'var(--safe-top)' }}
+            style={{ background: PAPER, ...DOT_BG }}
         >
             {/* 顶栏：回桌面贴纸 + 居中小字 */}
             <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0">

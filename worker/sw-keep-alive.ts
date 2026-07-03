@@ -1,7 +1,7 @@
 /// <reference lib="WebWorker" />
 
 import { installReiSW } from '@rei-standard/amsg-sw';
-import { swReadSnapshot, swBuildMessages, swCallLLM, swCleanProactiveText, swMarkGenerated, swShouldGenerateProactive } from '../utils/swProactiveBridge';
+import { swReadSnapshot, swBuildMessages, swBuildQueuedReplyMetadata, swCallLLM, swCleanProactiveText, swMarkGenerated, swShouldGenerateProactive } from '../utils/swProactiveBridge';
 
 /**
  * SW_VERSION: 改 SW 实质行为时（push handler / message protocol / 通知策略 / IDB 升级）
@@ -233,7 +233,7 @@ async function generateProactiveInSW(charId: string): Promise<void> {
     const ts = Date.now();
     await saveContentToInbox({
       messageId: `proactive-sw-${charId}-${ts}`,
-      metadata: { charId },
+      metadata: { charId, ...swBuildQueuedReplyMetadata(snap) },
       message: text,
       contactName: snap.name,
       avatarUrl: snap.avatar,
@@ -600,7 +600,7 @@ async function notifyVisibleClientForToolRequest(payload: any) {
   }
 }
 
-// emotion_update push: worker 跑完副 API 情绪评估后推回的 buff 结果. 静默写进 inbox (不弹通知、
+// emotion_update push: worker 跑完日程 / 心情 API 情绪评估后推回的 buff 结果. 静默写进 inbox (不弹通知、
 // 不计未读), 客户端 flushInboxToChat 看到 messageType==='emotion_update' 时调 applyEmotionEvalRaw
 // 落 buff + 广播 innerState, 不渲染成聊天消息. notifyClients 仅用来触发一次 flush (前台时立即落 buff;
 // 后台时 postMessage 排队/丢弃, 回前台 visibilitychange flush 兜底).

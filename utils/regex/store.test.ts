@@ -3,6 +3,12 @@ import {
     findDisplayRegexSpans, splitOutDisplayRegexSegments,
     collectRegexScripts, getPresetRegexScripts, setPresetRegexScripts, saveGlobalRegexScripts,
     applyRegexToText,
+    buildRegexImportPreview,
+    pickRegexImportScripts,
+    getRegexScriptRiskFlags,
+    REGEX_DEBUG_EVENT,
+    setRegexDebugEventEnabled,
+    isRegexDebugEventEnabled,
 } from './store';
 import { regex_placement } from './engine';
 import { CharacterProfile, RegexScriptData } from '../../types';
@@ -111,6 +117,116 @@ describe('预设自带正则缓存（ST PRESET 作用域）', () => {
         expect(getPresetRegexScripts()[0].trimStrings).toEqual(['剪掉']);
 
         setPresetRegexScripts(null);
+    });
+});
+
+describe('导入预览与风险摘要', () => {
+    beforeEach(() => {
+        setRegexDebugEventEnabled(false);
+    });
+
+    it('识别新增、覆盖、文件内重复和风险项', () => {
+        const existing = [script({ id: 'same', scriptName: '旧脚本' })];
+        const incoming = [
+            script({ id: 'same', scriptName: '覆盖脚本', findRegex: '/foo/', replaceString: 'bar' }),
+            script({ id: 'new-risk', scriptName: '包裹用户输入', findRegex: '/(.*)/', replaceString: '<Human_inputs>$1</Human_inputs>', placement: [regex_placement.USER_INPUT], markdownOnly: false, promptOnly: false }),
+            script({ id: 'new-risk', scriptName: '重复 ID', findRegex: '/bar/', replaceString: '' }),
+        ];
+        const preview = buildRegexImportPreview(JSON.stringify(incoming), existing);
+        expect(preview.total).toBe(3);
+        expect(preview.overwriteCount).toBe(1);
+        expect(preview.newCount).toBe(2);
+        expect(preview.duplicateInImportCount).toBe(2);
+        expect(preview.riskyCount).toBeGreaterThan(0);
+        expect(preview.items[1].riskFlags).toContain('疑似提示词包裹误配');
+    });
+
+    it('默认可把选中的导入脚本全部停用', () => {
+        const preview = buildRegexImportPreview(JSON.stringify([
+            script({ id: 'a', disabled: false }),
+            script({ id: 'b', disabled: false }),
+        ]));
+        const picked = pickRegexImportScripts(preview, [0]);
+        expect(picked).toHaveLength(1);
+        expect(picked[0].id).toBe('a');
+        expect(picked[0].disabled).toBe(true);
+
+        const original = pickRegexImportScripts(preview, [1], { disableImported: false });
+        expect(original[0].disabled).toBe(false);
+    });
+
+    it('风险摘要覆盖删除原文与宽匹配', () => {
+        const flags = getRegexScriptRiskFlags(script({
+            findRegex: '/^[\\s\\S]*$/',
+            replaceString: '',
+            placement: [regex_placement.AI_OUTPUT],
+            markdownOnly: false,
+            promptOnly: false,
+        }));
+        expect(flags).toContain('会改写聊天原文');
+        expect(flags).toContain('命中后会删除内容');
+        expect(flags).toContain('匹配范围较宽');
+    });
+});
+
+describe('正则调试事件', () => {
+    beforeEach(() => {
+        saveGlobalRegexScripts([]);
+        setPresetRegexScripts(null);
+        setRegexDebugEventEnabled(false);
+    });
+
+    it('只在开关开启且发生改写时派发短预览', () => {
+        const target = new EventTarget();
+        const originalWindow = (globalThis as any).window;
+        const originalCustomEvent = (globalThis as any).CustomEvent;
+        (globalThis as any).window = {
+            addEventListener: target.addEventListener.bind(target),
+            removeEventListener: target.removeEventListener.bind(target),
+            dispatchEvent: target.dispatchEvent.bind(target),
+        };
+        if (!originalCustomEvent) {
+            (globalThis as any).CustomEvent = class<T = any> extends Event {
+                detail: T;
+                constructor(type: string, init?: CustomEventInit<T>) {
+                    super(type);
+                    this.detail = init?.detail as T;
+                }
+            };
+        }
+        const events: any[] = [];
+        const onDebug = (event: Event) => events.push((event as CustomEvent).detail);
+        window.addEventListener(REGEX_DEBUG_EVENT, onDebug);
+        try {
+            saveGlobalRegexScripts([script({
+                id: 'debug',
+                findRegex: '/密密麻麻/g',
+                replaceString: '短',
+                markdownOnly: false,
+                promptOnly: false,
+                placement: [regex_placement.AI_OUTPUT],
+            })]);
+            const longInput = `开头 ${'密密麻麻'.repeat(30)} 结尾`;
+            expect(applyRegexToText(longInput, regex_placement.AI_OUTPUT)).not.toBe(longInput);
+            expect(events).toHaveLength(0);
+
+            setRegexDebugEventEnabled(true);
+            expect(isRegexDebugEventEnabled()).toBe(true);
+            applyRegexToText(longInput, regex_placement.AI_OUTPUT);
+            expect(events).toHaveLength(1);
+            expect(events[0].placement).toBe(regex_placement.AI_OUTPUT);
+            expect(events[0].mode).toBe('raw');
+            expect(events[0].inputPreview.length).toBeLessThanOrEqual(51);
+            expect(events[0].inputPreview).not.toContain('结尾');
+        } finally {
+            window.removeEventListener(REGEX_DEBUG_EVENT, onDebug);
+            setRegexDebugEventEnabled(false);
+            saveGlobalRegexScripts([]);
+            if (originalWindow === undefined) delete (globalThis as any).window;
+            else (globalThis as any).window = originalWindow;
+            if (originalCustomEvent === undefined) delete (globalThis as any).CustomEvent;
+            else (globalThis as any).CustomEvent = originalCustomEvent;
+        }
     });
 });
 

@@ -100,10 +100,15 @@ describe('group offline mode', () => {
   });
 
   it('commits a group offline session into the group context', async () => {
-    await commitGroupOfflineSessionToContext(group, 'Me', entries);
+    const info = await commitGroupOfflineSessionToContext(group, 'Me', [
+      ...entries,
+      { role: 'scene', text: '大家等着外卖，外卖还没到。', at: 5 },
+    ]);
 
     const messages = await DB.getGroupMessages(group.id);
     expect(messages).toHaveLength(1);
+    expect(info?.messageId).toBe(messages[0].id);
+    expect(info?.timestamp).toBe(messages[0].timestamp);
     expect(messages[0].groupId).toBe(group.id);
     expect(messages[0].charId).toBe('system');
     expect(messages[0].role).toBe('system');
@@ -111,6 +116,10 @@ describe('group offline mode', () => {
     expect(messages[0].content).toContain('[group offline session]');
     expect(messages[0].content).toContain('Weekend Table');
     expect(messages[0].content).toContain('Mia: I saved you a seat.');
+    expect(messages[0].content).toContain('这不是要求成员们立刻补一轮线上消息');
+    expect(messages[0].content).toContain('外卖送达');
+    expect(messages[0].content).toContain('还不能说成已经发生');
+    expect(messages[0].content).toContain('外卖还没到');
     expect(messages[0].metadata).toEqual(expect.objectContaining({
       groupId: group.id,
       groupOfflineSession: true,

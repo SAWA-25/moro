@@ -469,7 +469,7 @@ const Settings: React.FC = () => {
       };
   }, []);
 
-  // 副 API（处理主聊天以外的辅助任务：日程、生活侧写……）
+  // 副 API（处理主聊天以外的辅助任务：生活侧写、记忆整理……）
   const [localAuxEnabled, setLocalAuxEnabled] = useState<boolean>(!!auxApiConfig.enabled);
   const [localAuxUrl, setLocalAuxUrl] = useState(auxApiConfig.baseUrl);
   const [localAuxKey, setLocalAuxKey] = useState(auxApiConfig.apiKey);
@@ -1397,7 +1397,7 @@ const Settings: React.FC = () => {
   }, [openApp]);
 
   return (
-    <div ref={settingsRootRef} className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+    <div ref={settingsRootRef} className="settings-polaroid h-full w-full bg-[#f6f6f2] flex min-h-0 flex-col relative text-[#2f3437]" style={DOT_BG}>
       <style>{POLAROID_SCOPE_CSS}</style>
 
       {/* GLOBAL PROGRESS OVERLAY */}
@@ -1440,7 +1440,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div ref={settingsScrollRef} className="settings-polaroid-scroll flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
+      <div ref={settingsScrollRef} className="settings-polaroid-scroll flex-1 min-h-0 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
 
         <section data-manual-anchor="manual-settings-root" className="relative overflow-hidden bg-white/92 border border-[#eee9df] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-8" />
@@ -1775,7 +1775,7 @@ const Settings: React.FC = () => {
             </SectionCard>
         </SettingsGroup>
 
-        <SettingsGroup id="settings-api" eyebrow="03 / API" title="模型与服务" desc="主 API 负责聊天回复；副 API 负责日程、总结、生活侧写等辅助任务。">
+        <SettingsGroup id="settings-api" eyebrow="03 / API" title="模型与服务" desc="主 API 负责聊天回复；副 API 负责总结、生活侧写、记忆整理等辅助任务。">
             {/* 主 API 配置 */}
             <SectionCard
             manualAnchor="manual-settings-main-api"
@@ -1949,7 +1949,7 @@ const Settings: React.FC = () => {
         >
             <div className="space-y-4">
                 <InfoNote>
-                    开启后，<b>日程生成、日程协调、生活侧写、部分工具生成</b>会优先使用副 API。关闭或未填完整时自动回退主 API。
+                    开启后，<b>生活侧写、记忆整理、部分工具生成</b>会优先使用副 API。絮语「今日作息」和心情 buff 使用自己的日程 / 心情 API，留空时走主 API。
                 </InfoNote>
 
                 <div className="flex items-center justify-between">

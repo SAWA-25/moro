@@ -8,12 +8,14 @@
  * 本文件只在主线程跑（import 了 DB / 角色状态），不会被打进 SW bundle。
  */
 
-import type { CharacterProfile, AuxApiConfig } from '../types';
+import type { CharacterProfile, AuxApiConfig, Message } from '../types';
 import { DB } from './db';
 import { formatMaterialSources, getMaterialSources, getMessageFlavor, getProactiveIntensity, resolveLifeApi, sanitizeLifeText } from './autonomousLife';
 import { ProactiveChat } from './proactiveChat';
+import { findPendingProactiveReplyMessages, makeQueuedReplyTarget } from './proactivePendingReply';
 import { swPutSnapshot, swKeepOnly, swReadAll, type SwProactiveSnapshot } from './swProactiveBridge';
 import { swOfflineProactiveSystemPrompt } from './laiwangPrompts';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 
 interface MainApiLike { baseUrl?: string; apiKey?: string; model?: string }
 
@@ -99,15 +101,22 @@ async function buildSnapshot(
   );
   if (!api.baseUrl || !api.model) return null; // 没有可用线路就不镜像
 
+  const userProfile = await DB.getUserProfile().catch(() => null);
+  if (shouldHideAmbientSocialRecordForUser(userProfile || undefined) && isAmbientSocialCharacterForUser(char, userProfile || undefined)) return null;
+  const userName = userProfile?.name || '我';
+
   // 最近对话（只取文本，截断）
   let recentMessages: { role: string; content: string }[] = [];
+  let recentMsgs: Message[] = [];
   try {
-    const msgs: any[] = await DB.getRecentMessagesByCharId(char.id, 8);
-    recentMessages = (msgs || [])
+    recentMsgs = await DB.getRecentMessagesByCharId(char.id, 60);
+    recentMessages = (recentMsgs || [])
       .filter(m => m && typeof m.content === 'string' && m.content.trim() && (!m.type || m.type === 'text'))
       .slice(-8)
       .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content).slice(0, 500) }));
   } catch { /* ignore */ }
+  const pendingUserMessages = findPendingProactiveReplyMessages(recentMsgs);
+  const queuedReplyTarget = makeQueuedReplyTarget(pendingUserMessages[0], userName);
 
   const activity = await currentActivity(char.id);
   const lifeEvents = await recentLifeEvents(char);
@@ -118,7 +127,9 @@ async function buildSnapshot(
       personaText: personaBrief(char),
       activity,
       nowText: describeNow(new Date()),
-      userName: '对方',
+      userName,
+      pendingReply: pendingUserMessages.length > 0,
+      forceReplyAllowed: !!char.convoSettings?.forceReplyEnabled,
     }),
     lifeEvents.length ? `你最近的生活不是空白的，下面快照会给你若干切片。主动消息要从这些切片里长出来，不要像总结。` : '',
     `主动消息 v2：主动强度 ${getProactiveIntensity(char)}，来信口味 ${getMessageFlavor(char)}，允许取材 ${formatMaterialSources(char)}。`,
@@ -133,6 +144,8 @@ async function buildSnapshot(
     systemPrompt,
     instruction: '（轮到你主动发消息了，直接写消息正文）',
     recentMessages,
+    pendingUserMessages,
+    queuedReplyTarget,
     lifeEvents,
     proactiveV2: {
       intensity: char.proactiveConfig?.intensity || 'balanced',

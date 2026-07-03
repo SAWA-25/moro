@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense, useRef } from 'react';
 import { BookOpenText, Megaphone, X } from '@phosphor-icons/react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
+import type { ForceReplyRequest } from '../utils/forceReply';
 import StatusBar from './os/StatusBar';
 import DynamicIsland from './os/DynamicIsland';
 import FloatingQuickMenu from './os/FloatingQuickMenu';
@@ -75,7 +76,7 @@ const WorldbookApp = lazyApp(() => import('../apps/WorldbookApp'));
 const NovelApp = lazyApp(() => import('../apps/NovelApp'));
 const BankApp = lazyApp(() => import('../apps/BankApp'));
 const XhsStockApp = lazyApp(() => import('../apps/XhsStockApp'));
-const XhsFreeRoamApp = lazyApp(() => import('../apps/XhsFreeRoamApp'));
+const CoViewApp = lazyApp(() => import('../apps/CoViewApp'));
 const BrowserApp = lazyApp(() => import('../apps/BrowserApp'));
 const SongwritingApp = lazyApp(() => import('../apps/SongwritingApp'));
 const MusicApp = lazyApp(() => import('../apps/MusicApp'));
@@ -114,7 +115,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   CheckPhone, DiaryApp, ScheduleApp, MusicApp, CallApp, PhoneApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaHubApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
-  XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
+  XhsStockApp, CoViewApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
   XunjiApp, TwitterApp, DesktopPetApp, HealthApp, ManualApp,
 ];
@@ -134,7 +135,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
   [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
   [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp, [AppID.XhsStock]: XhsStockApp,
-  [AppID.XhsFreeRoam]: XhsFreeRoamApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
+  [AppID.CoView]: CoViewApp, [AppID.XhsFreeRoam]: CoViewApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
   [AppID.Music]: MusicApp, [AppID.Call]: CallApp, [AppID.Phone]: PhoneApp,
   [AppID.VoiceDesigner]: VoiceDesignerApp,
   [AppID.Guidebook]: GuidebookApp, [AppID.LifeSim]: LifeSimApp, [AppID.MemoryPalace]: MemoryPalaceApp,
@@ -534,8 +535,67 @@ const AppLoadingFallback: React.FC = () => {
   );
 };
 
+const ForceReplyDialog: React.FC<{
+  request: ForceReplyRequest | null;
+  onReply: () => void;
+}> = ({ request, onReply }) => {
+  if (!request) return null;
+  const initial = (request.charName || 'TA').trim().slice(0, 1) || 'T';
+  const reason = (request.reason || request.body || 'TA 正等着你回话。').trim();
+  const preview = request.reason && request.body ? request.body : '';
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[500] flex items-center justify-center px-6 py-8"
+      style={{ background: 'rgba(9, 10, 16, 0.72)', backdropFilter: 'blur(10px)' }}
+    >
+      <div
+        className="w-full max-w-[360px] overflow-hidden border border-white/15 bg-[#111217] text-white shadow-[0_28px_80px_-28px_rgba(0,0,0,0.85)]"
+        style={{ borderRadius: 8 }}
+      >
+        <div className="px-4 pt-4 pb-3 border-b border-white/10">
+          <div className="text-[10px] tracking-[0.18em] uppercase text-white/45">絮语 · 通讯请求</div>
+          <div className="mt-3 flex items-center gap-3">
+            {request.avatar ? (
+              <img src={request.avatar} className="w-12 h-12 object-cover border border-white/15 shrink-0" style={{ borderRadius: 8 }} alt="" />
+            ) : (
+              <span className="w-12 h-12 flex items-center justify-center bg-white/10 border border-white/15 text-lg font-bold shrink-0" style={{ borderRadius: 8 }}>
+                {initial}
+              </span>
+            )}
+            <div className="min-w-0">
+              <div className="text-[18px] font-black leading-tight truncate">{request.charName} 要你回话</div>
+              <div className="mt-1 text-[11px] text-white/50">未回应前会一直停留在这里。</div>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <div className="bg-white/[0.06] border border-white/10 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words" style={{ borderRadius: 8 }}>
+            {reason}
+          </div>
+          {preview && (
+            <div className="text-[11px] leading-relaxed text-white/55 line-clamp-3 break-words">
+              {preview}
+            </div>
+          )}
+          <button
+            onClick={onReply}
+            className="w-full h-11 flex items-center justify-center gap-2 bg-white text-[#111217] text-[14px] font-black active:scale-[0.98] transition-transform"
+            style={{ borderRadius: 8 }}
+          >
+            <Megaphone size={16} weight="fill" />
+            立即回复
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, suspendedOfflineSession, resumeOfflineSession, activeCharacterId, errorDialog, dismissError } = useOS();
+  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, suspendedVideoCall, resumeVideoCall, suspendedOfflineSession, resumeOfflineSession, activeCharacterId, errorDialog, dismissError, forceReplyRequest, openForceReplyRequest } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   const nativeRuntime = isNativeAppRuntime();
   const previousLockedRef = useRef(isLocked);
@@ -770,7 +830,11 @@ const PhoneShell: React.FC = () => {
     // 锁屏抽成独立组件：角色最新消息通知卡（iOS 风格弹出）+ 密码解锁（默认 0103，
     // 设置 App「锁屏与密码」可修改/关闭）。点通知卡解锁后直达对应聊天。
     // 来电覆盖层在锁屏下也要能响铃（角色主动语音通话），接听时自动解锁进电话 App。
-    return <><LockScreen /><IncomingCallOverlay /></>;
+    return <>
+      <LockScreen />
+      <IncomingCallOverlay />
+      <ForceReplyDialog request={forceReplyRequest} onReply={openForceReplyRequest} />
+    </>;
   }
 
   const renderApp = (appId: AppID) => {
@@ -810,7 +874,8 @@ const PhoneShell: React.FC = () => {
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;
-      case AppID.XhsFreeRoam: return <XhsFreeRoamApp />;
+      case AppID.CoView: return <CoViewApp />;
+      case AppID.XhsFreeRoam: return <CoViewApp initialMode="free_roam" />;
       case AppID.Browser: return <BrowserApp />;
       case AppID.Songwriting: return <SongwritingApp />;
       case AppID.Music: return <MusicApp />;
@@ -834,7 +899,15 @@ const PhoneShell: React.FC = () => {
   // 安全区策略（方案 B）：页外/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
-  const shellHandlesSafeArea = !nativeRuntime && ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat, AppID.Takeout].includes(activeApp);
+  const selfManagedSafeAreaApps = new Set<AppID>([
+    AppID.Launcher,
+    AppID.VRWorld,
+    AppID.Chat,
+    AppID.GroupChat,
+    AppID.Takeout,
+    AppID.Forum,
+  ]);
+  const shellHandlesSafeArea = !nativeRuntime && !selfManagedSafeAreaApps.has(activeApp);
   const appCustomCssEntries = Object.entries(theme.appCustomCss || {}).filter(([, css]) => typeof css === 'string' && css.trim());
   const hasUserShellCss = !!theme.globalCustomCss || appCustomCssEntries.length > 0;
 
@@ -1035,6 +1108,8 @@ const PhoneShell: React.FC = () => {
            onOpenManual={openManualUpdateNotice}
          />
        )}
+
+       <ForceReplyDialog request={forceReplyRequest} onReply={openForceReplyRequest} />
     </div>
   );
 };

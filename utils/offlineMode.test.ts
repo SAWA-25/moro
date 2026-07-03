@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { CharacterProfile } from '../types';
+import { DB } from './db';
 import {
   clearOfflineSession,
+  commitOfflineSessionToContext,
   hasOfflineSession,
   loadOfflineSession,
+  prepareOfflineGeneratedText,
   saveOfflineSession,
   type OfflineEntry,
 } from './offlineMode';
@@ -14,8 +18,9 @@ const entries: OfflineEntry[] = [
 ];
 
 describe('offline mode draft sessions', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    await DB.deleteDB();
   });
 
   it('keeps draft sessions isolated per character id', () => {
@@ -40,5 +45,34 @@ describe('offline mode draft sessions', () => {
 
     expect(loadOfflineSession('empty')).toEqual([]);
     expect(hasOfflineSession('empty')).toBe(false);
+  });
+
+  it('prepares generated takeout directives without leaking them into offline entries', () => {
+    const result = prepareOfflineGeneratedText('千夜把袋子往桌边轻轻一放：“先喝点热的。”\n[[TAKEOUT_ORDER: 鲜虾干贝软糯海鲜粥]]');
+
+    expect(result.takeoutDesc).toBe('鲜虾干贝软糯海鲜粥');
+    expect(result.content).toBe('千夜把袋子往桌边轻轻一放：“先喝点热的。”');
+    expect(result.content).not.toContain('TAKEOUT_ORDER');
+  });
+
+  it('commits offline sessions with a follow-up anchor and explicit time boundaries', async () => {
+    const char = { id: 'char-1', name: 'Mia', avatar: 'mia.png' } as CharacterProfile;
+
+    const info = await commitOfflineSessionToContext(char, 'Me', [
+      ...entries,
+      { role: 'scene', text: '两个人说好先等外卖，外卖还没有到。', at: 4 },
+    ]);
+
+    expect(info?.messageId).toBeGreaterThan(0);
+    expect(info?.timestamp).toBeGreaterThan(0);
+
+    const messages = await DB.getMessagesByCharId('char-1', true);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].id).toBe(info?.messageId);
+    expect(messages[0].timestamp).toBe(info?.timestamp);
+    expect(messages[0].content).toContain('这不是要求你立刻补一条线上消息');
+    expect(messages[0].content).toContain('外卖送达');
+    expect(messages[0].content).toContain('还不能说成已经发生');
+    expect(messages[0].content).toContain('外卖还没有到');
   });
 });

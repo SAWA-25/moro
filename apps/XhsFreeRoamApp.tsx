@@ -34,9 +34,19 @@ const resultStyle = (r: string): React.CSSProperties =>
     : r === 'failed' ? { color: '#e11d48', background: '#ffe4e6' }
     : { color: INK_SOFT, background: '#f1efeb' };
 
-const XhsFreeRoamApp: React.FC = () => {
+interface XhsFreeRoamPanelProps {
+    embedded?: boolean;
+    onBack?: () => void;
+    hideBackButton?: boolean;
+}
+
+export const XhsFreeRoamPanel: React.FC<XhsFreeRoamPanelProps> = ({ embedded = false, onBack, hideBackButton = false }) => {
     const { goBack, addToast, characters, activeCharacterId, apiConfig, auxApiConfig, realtimeConfig, userProfile } = useOS();
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
+    const handleBack = onBack || goBack;
+    const wrap = (children: React.ReactNode) => embedded
+        ? <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden animate-fade-in" style={{ color: INK }}>{children}</div>
+        : <InsShell accent={AC}>{children}</InsShell>;
 
     const [selectedCharId, setSelectedCharId] = useState<string>(activeCharacterId || characters[0]?.id || '');
     const [showCharPicker, setShowCharPicker] = useState(false);
@@ -126,24 +136,24 @@ const XhsFreeRoamApp: React.FC = () => {
     );
 
     if (characters.length === 0) {
-        return (
-            <InsShell accent={AC}>
-                <div className="shrink-0 relative z-10 flex items-center gap-2.5 px-3.5 pt-2.5 pb-2.5" style={{ paddingTop: 'var(--safe-top)' }}>
-                    <IconCircle onClick={goBack}><CaretLeft size={18} weight="bold" /></IconCircle>
+        return wrap(
+            <>
+                <div className="shrink-0 relative z-10 flex items-center gap-2.5 px-3.5 pt-2.5 pb-2.5">
+                    {!hideBackButton && <IconCircle onClick={handleBack}><CaretLeft size={18} weight="bold" /></IconCircle>}
                     <h1 className="text-[18px] font-extrabold" style={{ color: INK }}>自由活动</h1>
                 </div>
                 <InsEmpty icon={<Book size={48} weight="fill" />} title="还没有角色" hint="先去创建一个角色，再让 TA 自己去刷小红书" />
-            </InsShell>
+            </>
         );
     }
 
-    return (
-        <InsShell accent={AC}>
+    return wrap(
+        <>
             {/* Header：返回 + 角色切换 + MCP 状态 + 清除 */}
-            <div className="shrink-0 relative z-10" style={{ paddingTop: 'var(--safe-top)' }}>
+            <div className="shrink-0 relative z-10">
                 <div className="flex items-center justify-between px-3.5 pt-2.5 pb-2.5 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                        <IconCircle onClick={goBack}><CaretLeft size={18} weight="bold" /></IconCircle>
+                        {!hideBackButton && <IconCircle onClick={handleBack}><CaretLeft size={18} weight="bold" /></IconCircle>}
                         <button onClick={() => !isRunning && setShowCharPicker(true)} disabled={isRunning} className="flex items-center gap-2 press-soft min-w-0">
                             <StoryRing src={char?.avatar} size={38} active={!isRunning} fallback={char?.name?.[0] || '?'} />
                             <div className="min-w-0 text-left">
@@ -323,8 +333,10 @@ const XhsFreeRoamApp: React.FC = () => {
                 </> : null}>
                 {confirmDialog?.message}
             </InsDialog>
-        </InsShell>
+        </>
     );
 };
+
+const XhsFreeRoamApp: React.FC = () => <XhsFreeRoamPanel />;
 
 export default XhsFreeRoamApp;

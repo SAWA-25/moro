@@ -8,10 +8,13 @@ import {
     detectPersonalityStyle,
     manuallyBindMemories, removeMemoryFromBox, unbindAllLiveMemories,
     reviveArchivedMemory,
+    setEventBoxSealed,
     wipeAllMemoryPalace,
+    inspectMemoryPalace, repairMemoryPalaceIntegrity, revectorizeMemoryNodes,
+    runMemoryPalaceCatchUp, deleteTaggedLegacyMemories,
 } from '../utils/memoryPalace';
-import type { Anticipation, MigrationProgress, MemoryLink, EventBox } from '../utils/memoryPalace';
-import MindMap from '../components/memoryPalace/MindMap';
+import type { Anticipation, MigrationProgress, EventBox, MemoryPalaceInspection } from '../utils/memoryPalace';
+import MindMap, { type MindMapEdge } from '../components/memoryPalace/MindMap';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
@@ -27,8 +30,8 @@ type LinkedMemoryUI = {
 
 // ─── 房间图标映射 ─────────────────────────────────────
 
-/** 顶部安全区 padding：优先用 iOS safe-area-inset-top，没有则退回 40px，避免手机状态栏遮挡按钮 */
-const SAFE_PAD_TOP: React.CSSProperties['paddingTop'] = 'max(40px, calc(env(safe-area-inset-top) + 16px))';
+/** App 内部顶部留白；设备安全区由 PhoneShell 统一处理。 */
+const SAFE_PAD_TOP: React.CSSProperties['paddingTop'] = 40;
 
 /** 房间图标：用纯线条 SVG 代替 emoji，用 currentColor 跟随房间主题色 */
 const RoomIcon: React.FC<{ room: MemoryRoom; size?: number; style?: React.CSSProperties }> = ({ room, size = 20, style }) => {
@@ -256,6 +259,13 @@ const Icon: React.FC<{ name: string; size?: number; style?: React.CSSProperties 
                     <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                 </svg>
             );
+        case 'unlock':
+            return (
+                <svg {...p}>
+                    <rect x="4" y="11" width="16" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 7.4-2" />
+                </svg>
+            );
         case 'broken-heart':
             return (
                 <svg {...p}>
@@ -387,6 +397,16 @@ const StatusMessage: React.FC<{ msg: string | null | undefined; style?: React.CS
     );
 };
 
+const CATCH_UP_REASON_LABEL: Record<string, string> = {
+    done: '可处理旧聊天已整理完，最近热区仍保留在聊天上下文里',
+    lock: '另一个整理任务正在运行',
+    hot_zone: '目前只有热区内的新聊天，系统会先保留不处理',
+    threshold: '可处理缓冲区未达到手动整理最低 10 条',
+    no_progress: '水位线没有前进，可能是副 API 提取失败',
+    max_rounds: '已达到本次整理上限，可稍后继续',
+    error: '整理时遇到错误',
+};
+
 // 黑白拼贴手账：七个展柜不再用色相区分，而用墨黑深浅的灰阶 + 各自的线描图标 + 标签区分
 const ROOM_COLORS: Record<MemoryRoom, string> = {
     living_room: '#1a1a1a',
@@ -413,7 +433,7 @@ export default function MemoryPalaceApp() {
     const palaceEmbedding = memoryPalaceAux.embedding;
     const palaceLLM = memoryPalaceAux.llm;
 
-    const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes' | 'browser' | 'mindmap'>('picker');
+    const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes' | 'browser' | 'mindmap' | 'health'>('picker');
     const [selectedRoom, setSelectedRoom] = useState<MemoryRoom | null>(null);
     const [selectedNode, setSelectedNode] = useState<MemoryNode | null>(null);
     const [roomCounts, setRoomCounts] = useState<Record<MemoryRoom, number>>({} as any);
@@ -462,9 +482,17 @@ export default function MemoryPalaceApp() {
 
     // 心意图谱视图（记忆关联网络：char 怎样把两条记忆联系到一起）
     const [graphNodes, setGraphNodes] = useState<MemoryNode[]>([]);
-    const [graphLinks, setGraphLinks] = useState<MemoryLink[]>([]);
+    const [graphLinks, setGraphLinks] = useState<MindMapEdge[]>([]);
     const [graphFocusId, setGraphFocusId] = useState<string | null>(null);
     const [graphLoading, setGraphLoading] = useState(false);
+
+    // 体检 / 修复视图
+    const [inspection, setInspection] = useState<MemoryPalaceInspection | null>(null);
+    const [inspecting, setInspecting] = useState(false);
+    const [repairing, setRepairing] = useState(false);
+    const [revectorizing, setRevectorizing] = useState(false);
+    const [catchingUp, setCatchingUp] = useState(false);
+    const [healthResult, setHealthResult] = useState<string | null>(null);
 
     // 认知消化状态
     const [digesting, setDigesting] = useState(false);
@@ -658,22 +686,48 @@ export default function MemoryPalaceApp() {
         setView('browser');
     };
 
-    // 心意图谱：拉全部节点 + 全部关联边（按节点聚边去重），默认聚焦关联最多的节点
+    // 心意图谱：拉全部节点 + 真实 MemoryLink + EventBox 合成边，默认聚焦关联最多的节点
     const openMindMap = async () => {
         if (!char) return;
         setGraphLoading(true);
         setView('mindmap');
         try {
-            const nodes = (await MemoryNodeDB.getByCharId(char.id)).filter(n => !n.archived);
+            const nodes = await MemoryNodeDB.getByCharId(char.id);
             const nodeIds = new Set(nodes.map(n => n.id));
-            const linkMap = new Map<string, MemoryLink>();
+            const linkMap = new Map<string, MindMapEdge>();
             // 逐节点取边（links 无 charId 索引），按 link.id 去重，只留两端都在本角色节点集里的边
             await Promise.all(nodes.map(async n => {
                 const ls = await MemoryLinkDB.getByNodeId(n.id);
                 for (const l of ls) {
-                    if (nodeIds.has(l.sourceId) && nodeIds.has(l.targetId)) linkMap.set(l.id, l);
+                    if (nodeIds.has(l.sourceId) && nodeIds.has(l.targetId)) linkMap.set(l.id, { ...l });
                 }
             }));
+            // EventBox 现在是主要关联结构：为图谱合成“同一事件”边，不写回 DB。
+            const boxes = await EventBoxDB.getByCharId(char.id);
+            for (const box of boxes) {
+                const members = [
+                    ...(box.summaryNodeId ? [box.summaryNodeId] : []),
+                    ...(box.liveMemoryIds || []),
+                    ...(box.archivedMemoryIds || []),
+                ].filter((id, idx, arr) => id && nodeIds.has(id) && arr.indexOf(id) === idx);
+                if (members.length < 2) continue;
+                const hub = box.summaryNodeId && nodeIds.has(box.summaryNodeId) ? box.summaryNodeId : members[0];
+                for (const id of members) {
+                    if (id === hub) continue;
+                    const edgeId = `eventbox:${box.id}:${hub}:${id}`;
+                    if (!linkMap.has(edgeId)) {
+                        linkMap.set(edgeId, {
+                            id: edgeId,
+                            sourceId: hub,
+                            targetId: id,
+                            type: 'event_box',
+                            strength: box.sealed ? 0.85 : 0.95,
+                            label: box.name || '同一事件',
+                            how: `都收在「${box.name || '未命名事件'}」这个事件盒里`,
+                        });
+                    }
+                }
+            }
             const links = [...linkMap.values()];
             // 默认聚焦：度数（连边数）最高的节点
             const degree = new Map<string, number>();
@@ -691,6 +745,112 @@ export default function MemoryPalaceApp() {
             setGraphNodes([]); setGraphLinks([]); setGraphFocusId(null);
         } finally {
             setGraphLoading(false);
+        }
+    };
+
+    const refreshInspection = async () => {
+        if (!char) return null;
+        setInspecting(true);
+        try {
+            const result = await inspectMemoryPalace(char.id);
+            setInspection(result);
+            return result;
+        } finally {
+            setInspecting(false);
+        }
+    };
+
+    const openHealth = async () => {
+        setView('health');
+        setHealthResult(null);
+        await refreshInspection();
+    };
+
+    const handleRepairIntegrity = async () => {
+        if (!char || repairing) return;
+        setRepairing(true);
+        setHealthResult(null);
+        try {
+            const result = await repairMemoryPalaceIntegrity(char.id);
+            const changed = result.deletedOrphanVectors + result.deletedBrokenLinks + result.cleanedBoxRefs
+                + result.fixedNodeBoxRefs + result.detachedMissingBoxes;
+            setHealthResult(changed > 0
+                ? `[ok]结构修复完成：孤儿向量 ${result.deletedOrphanVectors}、断链 ${result.deletedBrokenLinks}、事件盒引用 ${result.cleanedBoxRefs}、节点盒关系 ${result.fixedNodeBoxRefs}、缺失盒脱离 ${result.detachedMissingBoxes}`
+                : '[ok]结构检查完毕，未发现需要自动修复的问题');
+            await refreshInspection();
+            await loadStats();
+        } catch (e: any) {
+            setHealthResult(`[err]结构修复失败：${e?.message || e}`);
+        } finally {
+            setRepairing(false);
+        }
+    };
+
+    const handleRevectorizeFromHealth = async () => {
+        if (!char || revectorizing) return;
+        const current = inspection || await refreshInspection();
+        if (!current) return;
+        const ids = Array.from(new Set([
+            ...current.issues.missingVectorNodeIds,
+            ...current.issues.unembeddedNodeIds,
+        ]));
+        if (ids.length === 0) {
+            setHealthResult('[ok]没有缺失向量或待修复向量');
+            return;
+        }
+        if (!palaceEmbedding) {
+            setHealthResult('[err]副 API 的 Embedding 未配置，无法重建向量；正文会保留为待修复状态。');
+            return;
+        }
+        setRevectorizing(true);
+        setHealthResult(`正在重建 ${ids.length} 条向量...`);
+        try {
+            const result = await revectorizeMemoryNodes(char.id, ids, palaceEmbedding, remoteVectorConfig);
+            if (result.failed > 0 || result.error) {
+                setHealthResult(`[warn]向量重建完成：成功 ${result.rebuilt} 条，失败 ${result.failed} 条${result.error ? `；${result.error}` : ''}`);
+            } else {
+                setHealthResult(`[ok]向量重建完成：${result.rebuilt} 条`);
+            }
+            await refreshInspection();
+            await loadStats();
+        } catch (e: any) {
+            setHealthResult(`[err]向量重建失败：${e?.message || e}`);
+        } finally {
+            setRevectorizing(false);
+        }
+    };
+
+    const handleCatchUpFromHealth = async () => {
+        if (!char || catchingUp) return;
+        if (!palaceEmbedding || !palaceLLM) {
+            setHealthResult('[err]请先在文具盒开启并填好副 API，体检只能安全处理本地结构问题。');
+            return;
+        }
+        setCatchingUp(true);
+        setHealthResult('准备整理可处理旧聊天...');
+        try {
+            const result = await runMemoryPalaceCatchUp({
+                char,
+                embeddingConfig: palaceEmbedding,
+                llmConfig: palaceLLM,
+                userName: userProfile?.name || '',
+                onProgress: stage => setHealthResult(stage),
+            });
+            if (result.shouldUpdateCharacter) {
+                await updateCharacter(char.id, {
+                    memories: result.updatedMemories,
+                    hideBeforeMessageId: result.hideBeforeMessageId,
+                } as any);
+            }
+            const reason = CATCH_UP_REASON_LABEL[result.stoppedReason] || result.stoppedReason;
+            const prefix = result.stoppedReason === 'error' || result.stoppedReason === 'no_progress' ? '[err]' : '[ok]';
+            setHealthResult(`${prefix}整理结束：${result.rounds} 轮，处理 ${result.processedMessages} 条旧聊天，写入 ${result.stored} 件标本，跳过 ${result.skipped} 条。${reason}${result.error ? `：${result.error}` : ''}`);
+            await refreshInspection();
+            await loadStats();
+        } catch (e: any) {
+            setHealthResult(`[err]整理失败：${e?.message || e}`);
+        } finally {
+            setCatchingUp(false);
         }
     };
 
@@ -757,6 +917,19 @@ export default function MemoryPalaceApp() {
             alert(`保存失败：${e?.message || e}`);
         } finally {
             setSavingBox(false);
+        }
+    };
+
+    const handleToggleBoxSealed = async (box: EventBox) => {
+        if (!char) return;
+        try {
+            const updated = await setEventBoxSealed(box.id, !box.sealed);
+            if (!updated) return;
+            setAllBoxes(prev => prev.map(b => b.id === updated.id ? updated : b));
+            addToast(updated.sealed ? '事件盒已封存，后续相关记忆会另开延续盒' : '事件盒已解封，后续相关记忆可继续并入', 'success');
+            if (inspection) await refreshInspection();
+        } catch (e: any) {
+            addToast(`操作失败：${e?.message || e}`, 'error');
         }
     };
 
@@ -905,6 +1078,7 @@ export default function MemoryPalaceApp() {
         if (!selectedNode || !char) return;
         setSaving(true);
         try {
+            const contentChanged = editContent.trim() !== selectedNode.content;
             const updated: MemoryNode = {
                 ...selectedNode,
                 content: editContent.trim(),
@@ -913,16 +1087,44 @@ export default function MemoryPalaceApp() {
                 room: editRoom,
                 tags: editTags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
             };
-            await MemoryNodeDB.save(updated);
-            // 远程同步由 MemoryNodeDB.save 自动处理
-            setSelectedNode(updated);
+            if (contentChanged) {
+                updated.embedded = false;
+                await MemoryNodeDB.save(updated);
+                const rv = await revectorizeMemoryNodes(char.id, [updated.id], palaceEmbedding, remoteVectorConfig);
+                if (rv.error) {
+                    addToast(rv.error === 'embedding_missing' ? '记忆已保存，但副 API 未配置，暂时不会参与向量召回' : `记忆已保存，向量重建失败：${rv.error}`, 'error');
+                } else {
+                    addToast('记忆已保存并重新向量化', 'success');
+                }
+                const fresh = await MemoryNodeDB.getById(updated.id);
+                setSelectedNode(fresh || updated);
+            } else {
+                await MemoryNodeDB.save(updated);
+                // 远程同步由 MemoryNodeDB.save 自动处理
+                setSelectedNode(updated);
+            }
             setEditing(false);
-            // 如果房间变了，刷新房间列表
+            // 刷新来源视图，避免从浏览器/事件盒返回时看到旧内容
             if (selectedRoom) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
                 setRoomNodes(nodes);
             }
+            if (prevView === 'all') {
+                const nodes = await MemoryNodeDB.getByCharId(char.id);
+                setAllNodes(nodes);
+            } else if (prevView === 'browser') {
+                const nodes = await MemoryNodeDB.getByCharId(char.id);
+                nodes.sort((a, b) => b.createdAt - a.createdAt);
+                setBrowserNodes(nodes);
+            } else if (prevView === 'boxes') {
+                const boxes = await EventBoxDB.getByCharId(char.id);
+                boxes.sort((a, b) => b.updatedAt - a.updatedAt);
+                setAllBoxes(boxes);
+                setBoxMembers({});
+                setExpandedBoxId(null);
+            }
+            if (inspection) await refreshInspection();
             loadStats();
         } finally {
             setSaving(false);
@@ -972,9 +1174,9 @@ export default function MemoryPalaceApp() {
 
         updateCharacter(charId, { autoArchiveEnabled: true } as any);
 
-        // 统计未同步消息数并决定是否立即追平历史
+        // 统计可处理旧聊天数并决定是否立即整理历史
         // 口径必须和 pipeline 的缓冲区定义一致：排除热区（最后 200 条），
-        // 否则会把"永远不会被处理"的热区也算成未同步，欺骗用户去点立即追平。
+        // 否则会把"永远不会被处理"的热区也算进去，欺骗用户去点立即整理。
         const { getMemoryPalaceUnprocessedBufferCount } = await import('../utils/memoryPalace/pipeline');
         const unprocessedCount = await getMemoryPalaceUnprocessedBufferCount(charId);
 
@@ -995,7 +1197,7 @@ export default function MemoryPalaceApp() {
         });
     };
 
-    // 全自动记忆：用户点「立即追平」后跑的循环逻辑
+    // 全自动记忆：用户点「整理可处理旧聊天」后跑的统一追平逻辑
     const runAutoArchiveCatchUp = async (params: {
         charId: string;
         charName: string;
@@ -1007,56 +1209,29 @@ export default function MemoryPalaceApp() {
         const target = characters.find(c => c.id === charId);
         if (!target) return;
 
-        const {
-            getMemoryPalaceHighWaterMark,
-            getMemoryPalaceUnprocessedBufferCount,
-            processNewMessages,
-            mergePalaceFragmentsIntoMemories,
-        } = await import('../utils/memoryPalace/pipeline');
-
         setAutoArchiveSyncingId(charId);
-        setAutoArchiveSyncProgress(`准备中... (${unprocessedCount} 条)`);
+            setAutoArchiveSyncProgress(`准备中...（可处理旧聊天 ${unprocessedCount} 条）`);
         try {
-            const MAX_ROUNDS = 50;
-            let accumulatedMemories = (target as any).memories ? [...(target as any).memories] : [];
-            let latestHideBefore = (target as any).hideBeforeMessageId;
-            let totalProcessed = 0;
+            const result = await runMemoryPalaceCatchUp({
+                char: target as any,
+                embeddingConfig: mpEmb,
+                llmConfig: mpLLM,
+                userName: userProfile.name,
+                onProgress: setAutoArchiveSyncProgress,
+            });
 
-            for (let round = 1; round <= MAX_ROUNDS; round++) {
-                const curHwm = getMemoryPalaceHighWaterMark(charId);
-                // 用 pipeline 的真实缓冲区口径（排除热区），避免把热区的 200 条
-                // 当未同步反复重试——下面的 force=true 调用其实也只会处理缓冲区，
-                // 用同一口径循环才能正确收敛。
-                const remaining = await getMemoryPalaceUnprocessedBufferCount(charId);
-                if (remaining < 10) break;
-                setAutoArchiveSyncProgress(`第 ${round} 轮：剩余 ${remaining} 条`);
-
-                // processNewMessages 忽略首个参数（内部直接从 DB 加载），传 [] 即可
-                const result = await processNewMessages([], charId, charName, mpEmb, mpLLM, userProfile.name, true);
-
-                // 软跳过：缓冲区没到阈值 / 热区还没被挤出 / 已有任务在跑 —— 不是 palace 失败
-                if (result?.skipReason) {
-                    if (result.skipReason !== 'lock') {
-                        addToast('当前聊天不足以触发总结，请保持这个状态聊天~', 'info');
-                    }
-                    break;
-                }
-
-                if (result?.autoArchive) {
-                    accumulatedMemories = mergePalaceFragmentsIntoMemories(accumulatedMemories, result.autoArchive.fragments);
-                    latestHideBefore = result.autoArchive.hideBeforeMessageId;
-                }
-
-                const newHwm = getMemoryPalaceHighWaterMark(charId);
-                if (newHwm <= curHwm) {
-                    addToast('追平中断：palace 处理失败，请检查副 API 配置', 'error');
-                    break;
-                }
-                totalProcessed += result?.processedMessages || 0;
+            if (result.shouldUpdateCharacter) {
+                await updateCharacter(charId, {
+                    memories: result.updatedMemories,
+                    hideBeforeMessageId: result.hideBeforeMessageId,
+                } as any);
             }
 
-            updateCharacter(charId, { memories: accumulatedMemories, hideBeforeMessageId: latestHideBefore } as any);
-            addToast(`历史追平完成，处理了 ${totalProcessed} 条消息`, 'success');
+            if (result.processedMessages > 0) {
+                addToast(`旧聊天整理完成：处理 ${result.processedMessages} 条，写入 ${result.stored} 件标本`, 'success');
+            } else {
+                addToast(CATCH_UP_REASON_LABEL[result.stoppedReason] || '当前没有可处理旧聊天', result.stoppedReason === 'error' ? 'error' : 'info');
+            }
         } catch (e: any) {
             addToast(`追平失败：${e?.message || '未知错误'}（开关保持开启，后续会按常规进度处理）`, 'error');
         } finally {
@@ -1297,7 +1472,12 @@ export default function MemoryPalaceApp() {
                 setAllBoxes(boxes);
                 setBoxMembers({});
                 setExpandedBoxId(null);
+            } else if (prevView === 'browser' && char) {
+                const nodes = await MemoryNodeDB.getByCharId(char.id);
+                nodes.sort((a, b) => b.createdAt - a.createdAt);
+                setBrowserNodes(nodes);
             }
+            if (inspection) await refreshInspection();
             loadStats();
         } finally {
             setDeleting(false);
@@ -1353,13 +1533,14 @@ export default function MemoryPalaceApp() {
         if (!char) return;
         setDeleting(true);
         try {
-            const allNodes = await MemoryNodeDB.getByCharId(char.id);
-            const migrated = allNodes.filter(n => n.boxId?.startsWith('migrated_'));
-            for (const node of migrated) {
-                await deleteMemory(node.id);
-            }
-            setMigrationResult(`已清除 ${migrated.length} 条迁移数据`);
+            const result = await deleteTaggedLegacyMemories(char.id);
+            setMigrationResult(
+                result.deleted > 0
+                    ? `已清除 ${result.deleted} 条带来源标记的旧记忆导入数据`
+                    : '没有找到带「旧记忆导入」来源标记的数据；早期未标记数据不会自动猜测删除，请在记忆浏览器里手动筛选处理。'
+            );
             loadStats();
+            if (inspection) await refreshInspection();
         } finally {
             setDeleting(false);
         }
@@ -1742,8 +1923,8 @@ export default function MemoryPalaceApp() {
                                                             }}
                                                         >
                                                             {syncing
-                                                                ? autoArchiveSyncProgress || '追平中...'
-                                                                : '自动归档 · 推水位线 · 隐藏已总结'}
+                                                                ? autoArchiveSyncProgress || '整理中...'
+                                                                : '自动归档 · 推水位线 · 热区保留'}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1848,7 +2029,7 @@ export default function MemoryPalaceApp() {
                                     全自动记忆已开启
                                 </div>
                                 <div style={{ fontSize: 12, color: '#626262', marginTop: 4, opacity: 0.85 }}>
-                                    {autoArchiveConfirm.charName} · 历史消息追平
+                                    {autoArchiveConfirm.charName} · 旧聊天整理
                                 </div>
                             </div>
 
@@ -1867,11 +2048,11 @@ export default function MemoryPalaceApp() {
                                             border: '2px solid #1a1a1a',
                                         }}
                                     >
-                                        <div style={{ fontSize: 9, fontWeight: 700, color: '#a0a0a0', letterSpacing: '0.16em', textTransform: 'uppercase' }}>未同步</div>
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: '#a0a0a0', letterSpacing: '0.16em', textTransform: 'uppercase' }}>可处理</div>
                                         <div style={{ fontSize: 22, fontWeight: 800, color: '#393939', marginTop: 4, fontFamily: `'Space Grotesk', sans-serif`, lineHeight: 1 }}>
                                             {autoArchiveConfirm.unprocessedCount}
                                         </div>
-                                        <div style={{ fontSize: 10, color: '#7c7c7c', marginTop: 2 }}>条历史消息</div>
+                                        <div style={{ fontSize: 10, color: '#7c7c7c', marginTop: 2 }}>条旧聊天</div>
                                     </div>
                                     <div
                                         style={{
@@ -1891,7 +2072,7 @@ export default function MemoryPalaceApp() {
 
                                 {/* 说明 */}
                                 <div style={{ fontSize: 11, color: '#727272', lineHeight: 1.7, padding: '4px 2px' }}>
-                                    追平会把过往未同步的消息分批交给副 API 处理、自动归档并推进水位线。
+                                    整理只会处理热区之外、已达到最低 10 条的旧聊天；最近 200 条会继续留在聊天上下文里。
                                 </div>
                             </div>
 
@@ -1925,7 +2106,7 @@ export default function MemoryPalaceApp() {
                                     }}
                                 >
                                     <Icon name="bolt" size={14} />
-                                    立即追平历史
+                                    整理可处理旧聊天
                                 </button>
                                 <button
                                     onClick={() => {
@@ -1940,7 +2121,7 @@ export default function MemoryPalaceApp() {
                                         color: '#626262', fontSize: 13, fontWeight: 600,
                                     }}
                                 >
-                                    稍后慢慢处理（每 100 条触发一次）
+                                    稍后慢慢处理（可处理缓冲满 100 条触发）
                                 </button>
                             </div>
                         </div>
@@ -2557,7 +2738,7 @@ create table if not exists memory_vectors (
 
                     <button
                         onClick={() => {
-                            if (confirm('确定清除所有已迁移的数据？（boxId 以 migrated_ 开头的记忆 + 向量 + 关联）')) {
+                            if (confirm('确定清除带「旧记忆导入」来源标记的数据？\n\n只会删除新迁移时可识别的 legacy_memory 标本、向量和关联；早期未标记旧数据不会被猜测删除。')) {
                                 handleClearMigrated();
                             }
                         }}
@@ -2781,6 +2962,19 @@ create table if not exists memory_vectors (
                         >
                             <Icon name="link" size={13} />
                             <span>心意图谱</span>
+                        </div>
+                        <div
+                            onClick={openHealth}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                fontSize: 11, fontWeight: 600, color: '#626262',
+                                cursor: 'pointer', padding: '4px 12px',
+                                borderRadius: 3, border: '2px solid #1a1a1a',
+                                background: '#f6f6f6',
+                            }}
+                        >
+                            <Icon name="beaker" size={13} />
+                            <span>体检 / 修复</span>
                         </div>
                     </div>
 
@@ -3031,6 +3225,196 @@ create table if not exists memory_vectors (
                             </div>
                         ))}
                     </div>
+                )}
+            </div>
+        );
+    }
+
+    // ─── 体检 / 修复视图 ────────────────────────────────
+    if (view === 'health') {
+        const data = inspection;
+        const stats = data?.processing;
+        const vectorRepairIds = data ? Array.from(new Set([
+            ...data.issues.missingVectorNodeIds,
+            ...data.issues.unembeddedNodeIds,
+        ])) : [];
+        const issueRows = data ? [
+            { label: '缺失向量', count: data.issues.missingVectorNodeIds.length, detail: '节点说自己已向量化，但找不到对应向量。' },
+            { label: '待修复向量', count: data.issues.unembeddedNodeIds.length, detail: '编辑正文或向量失败后留下的待重建节点。' },
+            { label: '孤儿向量', count: data.issues.orphanVectorIds.length, detail: '向量还在，但对应记忆节点已不存在。' },
+            { label: '断链', count: data.issues.brokenLinkIds.length, detail: '关联边指向了不存在的记忆。' },
+            { label: '事件盒坏引用', count: data.issues.missingEventBoxRefs.length, detail: '事件盒成员、summary 或归档列表里有不存在的节点。' },
+            { label: '节点盒关系不一致', count: data.issues.nodeEventBoxMismatchIds.length, detail: '节点写了 eventBoxId，但盒子成员列表里没有它。' },
+            { label: '节点指向缺失盒', count: data.issues.nodesWithMissingBoxIds.length, detail: '节点还挂着已经不存在的事件盒。' },
+        ] : [];
+        const issueTotal = issueRows.reduce((sum, item) => sum + item.count, 0);
+        const busy = inspecting || repairing || revectorizing || catchingUp;
+        const StatCard = ({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) => (
+            <div style={{ border: '2px solid #1a1a1a', background: '#fbfbfb', padding: 10, borderRadius: 3 }}>
+                <div style={{ fontSize: 10, color: '#727272', marginBottom: 4, fontWeight: 700 }}>{label}</div>
+                <div style={{ fontSize: 18, color: '#1a1a1a', fontWeight: 800, lineHeight: 1.2 }}>{value}</div>
+                {hint && <div style={{ fontSize: 10, color: '#8a8a8a', marginTop: 4, lineHeight: 1.4 }}>{hint}</div>}
+            </div>
+        );
+
+        return (
+            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div
+                        onClick={() => setView('palace')}
+                        style={{ fontSize: 12, color: '#1a1a1a', cursor: 'pointer', fontFamily: 'monospace', border: '2px solid #1a1a1a', background: '#fff', padding: '4px 10px', boxShadow: '2px 2px 0 #1a1a1a' }}
+                    >
+                        ← 返回标本馆
+                    </div>
+                    <button
+                        onClick={refreshInspection}
+                        disabled={busy}
+                        style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            fontSize: 11, fontWeight: 700, color: '#626262',
+                            border: '2px solid #1a1a1a', background: '#fff',
+                            borderRadius: 3, padding: '4px 10px',
+                            cursor: busy ? 'wait' : 'pointer',
+                        }}
+                    >
+                        <Icon name="refresh" size={12} />
+                        <span>{inspecting ? '检查中...' : '重新体检'}</span>
+                    </button>
+                </div>
+
+                <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="beaker" size={18} />
+                    <span>标本馆体检</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#727272', lineHeight: 1.6, marginBottom: 12 }}>
+                    这里只做可解释的本地检查和安全修复。最近 {stats?.hotZoneSize ?? 200} 条聊天仍属于热区，不会被强行整理。
+                </div>
+
+                {healthResult && (
+                    <div style={{ border: '2px solid #1a1a1a', background: '#fff', padding: 10, borderRadius: 3, marginBottom: 12, fontSize: 12, lineHeight: 1.6 }}>
+                        <StatusMessage msg={healthResult} />
+                    </div>
+                )}
+
+                {inspecting && !data ? (
+                    <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 48, fontSize: 13 }}>正在检查本地记忆数据...</div>
+                ) : !data ? (
+                    <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 48, fontSize: 13 }}>还没有体检结果，点“重新体检”刷新。</div>
+                ) : (
+                    <>
+                        <div style={{ border: '2px solid #1a1a1a', background: '#f8f8f8', padding: 12, borderRadius: 3, marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Icon name="robot" size={14} />
+                                <span>副 API / Embedding</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <StatCard
+                                    label="副 API"
+                                    value={palaceLLM ? '已配置' : '未配置'}
+                                    hint={palaceLLM ? palaceLLM.model : '不能整理旧聊天、提取记忆或认知消化'}
+                                />
+                                <StatCard
+                                    label="Embedding"
+                                    value={palaceEmbedding ? '已配置' : '未配置'}
+                                    hint={palaceEmbedding ? `${palaceEmbedding.model} · ${palaceEmbedding.dimensions} 维` : '不能生成或修复向量'}
+                                />
+                            </div>
+                        </div>
+
+                        <div style={{ border: '2px solid #1a1a1a', background: '#fbfbfb', padding: 12, borderRadius: 3, marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Icon name="target" size={14} />
+                                <span>水位线与热区</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <StatCard label="语义消息" value={stats?.totalSemanticMessages ?? 0} hint="纯图片、语音等不会计入整理缓冲。" />
+                                <StatCard label="高水位" value={stats?.highWaterMark ?? 0} hint="已经处理到的消息 ID。" />
+                                <StatCard label="热区保护" value={stats?.hotZoneProtectedCount ?? 0} hint={`最近 ${stats?.hotZoneSize ?? 200} 条保留在聊天上下文。`} />
+                                <StatCard label="可处理缓冲" value={stats?.bufferCount ?? 0} hint={`自动阈值 ${stats?.autoThreshold ?? 100}，手动最低 ${stats?.forceThreshold ?? 10}。`} />
+                                <StatCard label="预计本轮整理" value={stats?.processableCount ?? 0} hint="缓冲区按 85% 处理，尾部保留衔接。" />
+                                <StatCard label="当前状态" value={stats?.forceEligible ? '可手动整理' : '先保留'} hint={stats?.autoEligible ? '已达到自动阈值。' : '最近热区或缓冲区不足时不会烧副 API。'} />
+                            </div>
+                        </div>
+
+                        <div style={{ border: '2px solid #1a1a1a', background: '#f8f8f8', padding: 12, borderRadius: 3, marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Icon name="list" size={14} />
+                                <span>馆藏统计</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <StatCard label="记忆节点" value={data.counts.nodes} hint={`已向量 ${data.counts.embeddedNodes} · 待向量 ${data.counts.unembeddedNodes}`} />
+                                <StatCard label="向量" value={data.counts.vectors} hint={remoteVectorConfig.enabled ? '本地向量；远程向量为可选同步。' : '本地 IndexedDB 向量。'} />
+                                <StatCard label="关联" value={data.counts.links} hint="MemoryLink 结构边；事件盒连线另在图谱中合成。" />
+                                <StatCard label="事件盒" value={data.counts.eventBoxes} hint="含活节点、归档节点和整合回忆。" />
+                                <StatCard label="便利贴" value={data.counts.pinned} hint="仍在置顶期的记忆。" />
+                                <StatCard label="旧记忆导入" value={data.counts.migratedTagged} hint="只有带来源标记的数据可安全一键清理。" />
+                            </div>
+                        </div>
+
+                        <div style={{ border: '2px solid #1a1a1a', background: '#fbfbfb', padding: 12, borderRadius: 3, marginBottom: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Icon name={issueTotal > 0 ? 'warning' : 'check'} size={14} />
+                                    <span>完整性问题</span>
+                                </div>
+                                <span style={{ fontSize: 11, color: '#727272' }}>{issueTotal} 项</span>
+                            </div>
+                            {issueRows.map(item => (
+                                <div key={item.label} style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: '1px dashed #d8d5cc' }}>
+                                    <div style={{ width: 28, fontSize: 14, fontWeight: 800, color: item.count > 0 ? '#1a1a1a' : '#a2a2a2', textAlign: 'right' }}>{item.count}</div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a3a' }}>{item.label}</div>
+                                        <div style={{ fontSize: 10, color: '#8a8a8a', lineHeight: 1.5 }}>{item.detail}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                            <button
+                                onClick={handleRepairIntegrity}
+                                disabled={busy}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                    padding: '10px 0', borderRadius: 3, border: '2px solid #1a1a1a',
+                                    background: '#fff', color: '#3f3f3f', fontSize: 12, fontWeight: 800,
+                                    cursor: busy ? 'wait' : 'pointer',
+                                }}
+                            >
+                                <Icon name="check" size={13} />
+                                <span>{repairing ? '修复中...' : '修复结构问题'}</span>
+                            </button>
+                            <button
+                                onClick={handleRevectorizeFromHealth}
+                                disabled={busy || vectorRepairIds.length === 0 || !palaceEmbedding}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                    padding: '10px 0', borderRadius: 3, border: '2px solid #1a1a1a',
+                                    background: vectorRepairIds.length > 0 && palaceEmbedding ? '#f6f6f6' : '#ededed',
+                                    color: '#3f3f3f', fontSize: 12, fontWeight: 800,
+                                    cursor: busy || vectorRepairIds.length === 0 || !palaceEmbedding ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                <Icon name="sync" size={13} />
+                                <span>{revectorizing ? '重建中...' : `重建缺失向量（${vectorRepairIds.length}）`}</span>
+                            </button>
+                            <button
+                                onClick={handleCatchUpFromHealth}
+                                disabled={busy || !stats?.forceEligible || !palaceEmbedding || !palaceLLM}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                    padding: '10px 0', borderRadius: 3, border: '2px solid #1a1a1a',
+                                    background: stats?.forceEligible && palaceEmbedding && palaceLLM ? '#1a1a1a' : '#ededed',
+                                    color: stats?.forceEligible && palaceEmbedding && palaceLLM ? '#fff' : '#727272',
+                                    fontSize: 12, fontWeight: 800,
+                                    cursor: busy || !stats?.forceEligible || !palaceEmbedding || !palaceLLM ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                <Icon name="bolt" size={13} />
+                                <span>{catchingUp ? '整理中...' : '整理可处理旧聊天'}</span>
+                            </button>
+                        </div>
+                    </>
                 )}
             </div>
         );
@@ -3386,6 +3770,21 @@ create table if not exists memory_vectors (
                                             <span>{box.name || '未命名'}</span>
                                             {box.sealed && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 3, background: '#f1f1f1', color: '#535353' }}>已封盒</span>}
                                         </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleToggleBoxSealed(box); }}
+                                            title={box.sealed ? '解封事件盒，让后续相关记忆可继续并入' : '封盒，后续相关记忆会另开延续盒'}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                                                height: 24, borderRadius: 3, flexShrink: 0,
+                                                border: '2px solid #1a1a1a',
+                                                background: box.sealed ? '#f1f1f1' : '#fff',
+                                                color: '#666666', cursor: 'pointer', padding: '0 7px',
+                                                fontSize: 10, fontWeight: 700,
+                                            }}
+                                        >
+                                            <Icon name={box.sealed ? 'unlock' : 'lock'} size={11} />
+                                            <span>{box.sealed ? '解封' : '封盒'}</span>
+                                        </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); editingBoxId === box.id ? cancelEditBoxMeta() : startEditBoxMeta(box); }}
                                             title="编辑盒名和标签"

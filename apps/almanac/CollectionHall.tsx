@@ -79,7 +79,7 @@ const CollectionHall: React.FC<Props> = ({ onExit }) => {
     );
 
     return (
-        <PaperPage kind="sticky" className="animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
+        <PaperPage kind="sticky" className="animate-fade-in">
             <div className="h-full flex flex-col" style={{ color: '#4a3b2e' }}>
                 {/* 顶栏 */}
                 <div className="flex items-center justify-between px-4 pt-3 pb-1 shrink-0 z-10">

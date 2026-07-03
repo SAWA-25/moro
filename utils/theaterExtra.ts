@@ -15,6 +15,7 @@ import type {
     TheaterQuizResult, TheaterQuizResultDimension, TheaterQuizSession, TheaterQuizSettings,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
+import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractJson } from './safeApi';
 import { llmComplete } from './llmComplete';
 import {
@@ -65,6 +66,10 @@ async function chat(api: ResolvedApi, messages: { role: string; content: string 
         maxTokens: opts?.maxTokens ?? 900,
         continueRounds: opts?.continueRounds,
         signal: opts?.signal,
+        meta: makeApiUsageMeta('theater.extra', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding,
+        }),
     });
 }
 

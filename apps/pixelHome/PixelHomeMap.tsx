@@ -7,10 +7,12 @@
  */
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import type { PixelHomeState, PixelHomeTheme, PixelAsset } from './types';
+import type { PixelHomeState, PixelHomeTheme, PixelAsset, PlacedFurniture } from './types';
 import { DEFAULT_HOME_THEME, decodeColorField } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
-import { ROOM_META, ROOM_SIZES } from './roomTemplates';
+import { ROOM_META, ROOM_SLOTS } from './roomTemplates';
+import { defaultFurniturePixelSrc } from './roomPixelRenderer';
+import { getRoomSurfaceStyle, wallTextureStyle, floorTextureStyle } from './roomSurfaceStyles';
 
 interface Props {
   homeState: PixelHomeState;
@@ -22,46 +24,62 @@ interface Props {
   onUpdateTheme?: (theme: PixelHomeTheme) => void;
 }
 
-// 重新排布：客厅大，用户房和个人房相邻
+// 重新排布：从长条楼层改成紧凑整屋平面。
 // 布局 (单位: 格子, 每格 CELL px)
 //
-//   [  露台/窗台 10x3  ]
-//   [卧室 5x5][书房 5x5]
-//   [    客厅  10x6    ]  ← 最大
-//   [个人房5x4][用户房5x4]
-//   [  阁楼  4x4  ]
-//
 const FLOOR_PLAN: { roomId: MemoryRoom; x: number; y: number; w: number; h: number }[] = [
-  { roomId: 'windowsill',  x: 0,  y: 0,  w: 10, h: 3 },
-  { roomId: 'bedroom',     x: 0,  y: 4,  w: 5,  h: 5 },
-  { roomId: 'study',       x: 5,  y: 4,  w: 5,  h: 5 },
-  { roomId: 'living_room', x: 0,  y: 10, w: 10, h: 6 },  // 大客厅
-  { roomId: 'self_room',   x: 0,  y: 17, w: 5,  h: 4 },
-  { roomId: 'user_room',   x: 5,  y: 17, w: 5,  h: 4 },  // 挨着个人房
-  { roomId: 'attic',       x: 3,  y: 22, w: 4,  h: 4 },
+  { roomId: 'attic',       x: 0,  y: 0, w: 4,  h: 4 },
+  { roomId: 'windowsill',  x: 4,  y: 0, w: 10, h: 3 },
+  { roomId: 'bedroom',     x: 0,  y: 4, w: 5,  h: 5 },
+  { roomId: 'living_room', x: 5,  y: 3, w: 10, h: 6 },
+  { roomId: 'study',       x: 15, y: 4, w: 5,  h: 5 },
+  { roomId: 'self_room',   x: 2,  y: 9, w: 5,  h: 4 },
+  { roomId: 'user_room',   x: 7,  y: 9, w: 5,  h: 4 },
 ];
 
 const CELL = 28;
 const WALL_THICK = 5;
 const WALL_TOP_RATIO = 0.38;
 
-const ROOM_STYLE: Record<MemoryRoom, {
-  wallFace: string; wallFaceDark: string;
-  floor: string; floorAlt: string; floorType: 'wood' | 'tile' | 'stone';
-}> = {
-  living_room: { wallFace: '#e8d5b8', wallFaceDark: '#d4c1a4', floor: '#c4a882', floorAlt: '#b89b75', floorType: 'wood' },
-  bedroom:     { wallFace: '#e8ddd0', wallFaceDark: '#d8cdc0', floor: '#d4b896', floorAlt: '#c9ab87', floorType: 'wood' },
-  study:       { wallFace: '#c9b99a', wallFaceDark: '#b5a586', floor: '#8b6f47', floorAlt: '#7d6340', floorType: 'wood' },
-  attic:       { wallFace: '#6b5d50', wallFaceDark: '#5a4d42', floor: '#706050', floorAlt: '#655545', floorType: 'stone' },
-  self_room:   { wallFace: '#f0d0e0', wallFaceDark: '#e0c0d0', floor: '#d4a8c0', floorAlt: '#c99db5', floorType: 'tile' },
-  user_room:   { wallFace: '#c8e0d0', wallFaceDark: '#b8d0c0', floor: '#a8c4b0', floorAlt: '#9db9a5', floorType: 'tile' },
-  windowsill:  { wallFace: '#a8bfb0', wallFaceDark: '#98af9f', floor: '#92a89c', floorAlt: '#879d91', floorType: 'stone' },
-};
+const ROOM_CONNECTORS: { x: number; y: number; w: number; h: number }[] = [
+  { x: 3.85, y: 1.45, w: 0.55, h: 1.1 },
+  { x: 8.6,  y: 2.82, w: 1.8,  h: 0.5 },
+  { x: 4.82, y: 5.75, w: 0.52, h: 1.45 },
+  { x: 14.68, y: 5.75, w: 0.52, h: 1.45 },
+  { x: 5.95, y: 8.75, w: 0.95, h: 0.52 },
+  { x: 8.95, y: 8.75, w: 1.35, h: 0.52 },
+];
 
 // 以下三色可被 homeState.theme 覆盖；留作回退默认
 const WALL_BORDER_FALLBACK = DEFAULT_HOME_THEME.wallBorder;
 const WALL_BORDER_LIGHT_FALLBACK = DEFAULT_HOME_THEME.wallBorderLight;
 const BG_COLOR_FALLBACK = DEFAULT_HOME_THEME.bgColor;
+
+function defaultFurnitureFor(roomId: MemoryRoom): PlacedFurniture[] {
+  return ROOM_SLOTS[roomId].map(slot => ({
+    slotId: slot.id,
+    assetId: null,
+    x: slot.defaultX,
+    y: slot.defaultY,
+    scale: slot.defaultScale,
+    rotation: 0,
+    placedBy: 'character' as const,
+    isDefault: true,
+  }));
+}
+
+function getMapFurniture(layoutFurniture: PlacedFurniture[] | undefined, roomId: MemoryRoom): PlacedFurniture[] {
+  if (layoutFurniture) return layoutFurniture;
+  return defaultFurnitureFor(roomId);
+}
+
+function isRugFurniture(f: PlacedFurniture, asset: PixelAsset | undefined): boolean {
+  return !!asset?.tags?.includes('rug') || (!asset && f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat'));
+}
+
+function isDefaultSlotFurniture(roomId: MemoryRoom, f: PlacedFurniture): boolean {
+  return f.isDefault !== false && ROOM_SLOTS[roomId].some(slot => slot.id === f.slotId);
+}
 
 const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, onEnterRoom, onUpdateTheme }) => {
   const theme = homeState.theme || DEFAULT_HOME_THEME;
@@ -244,24 +262,24 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
         <>
           <button onClick={e => { e.stopPropagation(); setThemePanelOpen(v => !v); }}
             onPointerDown={e => e.stopPropagation()}
-            className="absolute top-2 right-2 z-50 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-white/90 bg-slate-800/80 hover:bg-slate-700 active:scale-95 border border-slate-600/50">
+            className="absolute top-2 right-2 z-50 border-2 border-[#3f3730] bg-[#dccaa3] px-2.5 py-1.5 text-[10px] font-black text-[#302b26] shadow-[3px_3px_0_#3f3730] active:translate-x-[2px] active:translate-y-[2px]">
             主题
           </button>
           {themePanelOpen && (
-            <div className="absolute top-12 right-2 z-50 w-52 p-3 rounded-xl bg-slate-900/95 border border-slate-700 shadow-2xl space-y-2 text-[10px]"
+            <div className="absolute top-12 right-2 z-50 w-52 space-y-2 border-2 border-[#3f3730] bg-[#efe2c5] p-3 text-[10px] shadow-[4px_4px_0_#3f3730]"
               onPointerDown={e => e.stopPropagation()}
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between">
-                <span className="text-slate-200 font-bold text-[11px]">家园主题</span>
+                <span className="text-[#302b26] font-black text-[11px]">家园主题</span>
                 <button onClick={() => setThemePanelOpen(false)}
-                  className="text-slate-500 hover:text-slate-200">×</button>
+                  className="text-[#76685d] hover:text-[#302b26]">X</button>
               </div>
               <ThemeRow label="外围墙体" value={WALL_BORDER} onChange={v => updateTheme({ wallBorder: v })} />
               <ThemeRow label="墙体高光" value={WALL_BORDER_LIGHT} onChange={v => updateTheme({ wallBorderLight: v })} />
               <ThemeRow label="画布背景" value={BG_COLOR} onChange={v => updateTheme({ bgColor: v })} />
               <ThemeRow label="楼梯亮条" value={CORRIDOR_STEP} onChange={v => updateTheme({ corridorStep: v })} />
               <button onClick={() => updateTheme(DEFAULT_HOME_THEME)}
-                className="w-full py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300">
+                className="w-full border-2 border-[#3f3730] bg-[#dccaa3] py-1.5 font-black text-[#302b26]">
                 还原默认
               </button>
             </div>
@@ -274,10 +292,16 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
         transformOrigin: 'center center',
       }}>
         <div className="relative" style={{ width: totalW, height: totalH }}>
+          <div className="absolute inset-0 pointer-events-none" style={{
+            backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px)`,
+            backgroundSize: `${CELL}px ${CELL}px`,
+            opacity: 0.45,
+          }} />
           {FLOOR_PLAN.map(({ roomId, x, y, w, h }, idx) => {
             const meta = ROOM_META[roomId];
-            const style = ROOM_STYLE[roomId];
+            const style = getRoomSurfaceStyle(roomId);
             const roomLayout = homeState.rooms.find(r => r.roomId === roomId);
+            const mapFurniture = getMapFurniture(roomLayout?.furniture, roomId);
             const px = x * CELL + WALL_THICK + 10;
             const py = y * CELL + WALL_THICK + 10;
             const pw = w * CELL;
@@ -291,6 +315,8 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                 <div className="absolute rounded-sm" style={{ inset: -WALL_THICK, backgroundColor: WALL_BORDER }}>
                   <div className="absolute inset-x-0 top-0 rounded-t-sm" style={{ height: 2, backgroundColor: WALL_BORDER_LIGHT }} />
                   <div className="absolute inset-y-0 left-0 rounded-l-sm" style={{ width: 2, backgroundColor: WALL_BORDER_LIGHT }} />
+                  <div className="absolute inset-x-1 bottom-0" style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.28)' }} />
+                  <div className="absolute bottom-[-3px] right-[-3px]" style={{ width: 9, height: 9, backgroundColor: 'rgba(0,0,0,0.22)' }} />
                 </div>
 
                 {/* 墙面带 */}
@@ -330,15 +356,13 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                     }
                     return (
                       <>
-                        <div className="absolute inset-0" style={{ backgroundColor: style.wallFace }} />
-                        <div className="absolute inset-0" style={{
-                          backgroundImage: `linear-gradient(${style.wallFaceDark} 1px, transparent 1px), linear-gradient(90deg, ${style.wallFaceDark}40 1px, transparent 1px)`,
-                          backgroundSize: `${CELL * 2}px ${Math.round(CELL * 0.6)}px`,
-                        }} />
+                        <div className="absolute inset-0" style={wallTextureStyle(roomId, CELL)} />
+                        <div className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: 'rgba(255,255,255,0.22)' }} />
+                        <div className="absolute inset-y-0 right-0 w-[2px]" style={{ backgroundColor: 'rgba(0,0,0,0.14)' }} />
                       </>
                     );
                   })()}
-                  <div className="absolute inset-x-0 bottom-0 h-[2px]" style={{ background: `linear-gradient(to bottom, ${style.wallFaceDark}, ${style.floor})` }} />
+                  <div className="absolute inset-x-0 bottom-0 h-[3px]" style={{ background: `linear-gradient(to bottom, ${style.wallFaceDark}, ${style.base})` }} />
                 </div>
 
                 {/* 地板 */}
@@ -375,22 +399,30 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                     }
                     return (
                       <>
-                        <div className="absolute inset-0" style={{ backgroundColor: style.floor }} />
-                        <FloorTexture type={style.floorType} base={style.floor} alt={style.floorAlt} />
+                        <div className="absolute inset-0" style={floorTextureStyle(roomId, CELL)} />
                       </>
                     );
                   })()}
+                  <div className="absolute inset-0 pointer-events-none" style={{
+                    boxShadow: `inset 0 0 0 1px ${style.floorAlt}80, inset 0 -7px 0 rgba(0,0,0,0.08)`,
+                  }} />
                 </div>
 
                 {/* 家具（仅用户放置的素材）—— 包一层 overflow:hidden，这样大家具的
                    角落溢出部分会被裁掉，而不是溢进隔壁房间；也不影响外层墙体边框。 */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                {roomLayout?.furniture.map(f => {
-                  if (!f.assetId) return null;
-                  const asset = assets.find(a => a.id === f.assetId);
-                  if (!asset) return null;
-                  const imgSrc = asset.pixelImage;
-                  const furSize = Math.round(Math.min(pw, ph) * 0.22 * f.scale);
+                {[...mapFurniture].sort((a, b) => {
+                  const assetA = a.assetId ? assets.find(asset => asset.id === a.assetId) : undefined;
+                  const assetB = b.assetId ? assets.find(asset => asset.id === b.assetId) : undefined;
+                  const rugA = isRugFurniture(a, assetA) ? 0 : 1;
+                  const rugB = isRugFurniture(b, assetB) ? 0 : 1;
+                  return rugA - rugB || a.y - b.y;
+                }).map(f => {
+                  const asset = f.assetId ? assets.find(a => a.id === f.assetId) : undefined;
+                  const imgSrc = asset?.pixelImage || (isDefaultSlotFurniture(roomId, f) ? defaultFurniturePixelSrc(roomId, f.slotId) : null);
+                  if (!imgSrc) return null;
+                  const isRug = isRugFurniture(f, asset);
+                  const furSize = Math.max(16, Math.min(72, Math.round(Math.min(pw, ph) * 0.26 * f.scale)));
                   // 软 clamp：中心点必须在房间内（0..pw, 0..ph），允许最多半个家具宽度溢出；
                   // 溢出部分由外层 overflow-hidden 裁掉。原来的硬 clamp (furSize/2, pw-furSize/2)
                   // 会把角落大家具整体偏移（"右下角家具在全景里整体上移"），完全没 clamp 则
@@ -403,7 +435,9 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                   // 和 PixelRoomEditor 一致：按中心 y 分桶
                   // （避免墙上大家具因视觉底边虚高而压住角色头）
                   const autoZ = Math.round(f.y * 4) + 20;
-                  const zIdx = f.zOrder === 'back'
+                  const zIdx = isRug
+                    ? 1
+                    : f.zOrder === 'back'
                     ? 2 + Math.round(autoZ / 200)
                     : f.zOrder === 'front'
                       ? 1000 + autoZ
@@ -416,6 +450,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                         width: furSize, height: 'auto',
                         transform: `rotate(${f.rotation}deg)`,
                         imageRendering: 'pixelated' as any,
+                        filter: 'drop-shadow(1px 2px 0 rgba(30,20,14,0.28))',
                         zIndex: zIdx,
                       }}
                       draggable={false}
@@ -463,10 +498,9 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
 
           {/* 走廊/楼梯：连接相邻房间之间 1 格空隙。y 坐标要跟 FLOOR_PLAN 同步：
                窗台 0..2 | 间隙 3 | 卧室/书房 4..8 | 间隙 9 | 客厅 10..15 | 间隙 16 | 个人/用户 17..20 | 间隙 21 | 阁楼 22..25 */}
-          <Corridor x={4} y1={3}  y2={4}  border={WALL_BORDER} step={CORRIDOR_STEP} />
-          <Corridor x={4} y1={9}  y2={10} border={WALL_BORDER} step={CORRIDOR_STEP} />
-          <Corridor x={4} y1={16} y2={17} border={WALL_BORDER} step={CORRIDOR_STEP} />
-          <Corridor x={4} y1={21} y2={22} border={WALL_BORDER} step={CORRIDOR_STEP} />
+          {ROOM_CONNECTORS.map((c, i) => (
+            <Corridor key={i} {...c} border={WALL_BORDER} step={CORRIDOR_STEP} />
+          ))}
         </div>
       </div>
     </div>
@@ -489,25 +523,28 @@ const FloorTexture: React.FC<{ type: string; base: string; alt: string }> = ({ t
 
 const ThemeRow: React.FC<{ label: string; value: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => (
   <label className="flex items-center justify-between gap-2 py-0.5 cursor-pointer">
-    <span className="text-slate-400">{label}</span>
+    <span className="font-bold text-[#76685d]">{label}</span>
     <span className="flex items-center gap-1.5">
-      <span className="w-4 h-4 rounded border border-slate-600" style={{ backgroundColor: value }} />
-      <span className="text-slate-500 tabular-nums">{value}</span>
+      <span className="w-4 h-4 border-2 border-[#3f3730]" style={{ backgroundColor: value }} />
+      <span className="text-[#76685d] tabular-nums">{value}</span>
       <input type="color" className="sr-only" value={value}
         onChange={e => onChange(e.target.value)} />
     </span>
   </label>
 );
 
-const Corridor: React.FC<{ x: number; y1: number; y2: number; border: string; step: string }> = ({ x, y1, y2, border, step }) => {
+const Corridor: React.FC<{ x: number; y: number; w: number; h: number; border: string; step: string }> = ({ x, y, w, h, border, step }) => {
   const left = x * CELL + WALL_THICK + 10;
-  const top = y1 * CELL + WALL_THICK + 10;
-  const h = (y2 - y1) * CELL;
+  const top = y * CELL + WALL_THICK + 10;
+  const width = w * CELL;
+  const height = h * CELL;
   return <div className="absolute pointer-events-none" style={{
-    left, top, width: CELL * 2, height: h,
-    background: `repeating-linear-gradient(180deg, ${border} 0px, ${border} 3px, ${step} 3px, ${step} ${Math.round(CELL / 2)}px)`,
-    borderLeft: `${WALL_THICK}px solid ${border}`,
-    borderRight: `${WALL_THICK}px solid ${border}`,
+    left, top, width, height,
+    zIndex: 34,
+    background: `repeating-linear-gradient(90deg, ${border} 0px, ${border} 2px, ${step} 2px, ${step} ${Math.round(CELL / 3)}px)`,
+    border: `2px solid ${border}`,
+    boxShadow: '1px 2px 0 rgba(0,0,0,0.22)',
+    opacity: 0.96,
   }} />;
 };
 

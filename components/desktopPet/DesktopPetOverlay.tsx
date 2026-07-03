@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowsOut, ArrowLineLeft, ArrowLineRight, BowlFood, Minus, PawPrint } from '@phosphor-icons/react';
+import { ArrowsOut, ArrowLineLeft, ArrowLineRight, BowlFood, HandPalm, Minus, PawPrint } from '@phosphor-icons/react';
 import { AppID, type DesktopPetState } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { useDesktopPet } from '../../context/DesktopPetContext';
@@ -22,8 +22,29 @@ import {
 import DesktopPetFoodEffect from './DesktopPetFoodEffect';
 import DesktopPetSprite from './DesktopPetSprite';
 
-const AUTO_RANDOM_IDLE_DELAY_MS = 12000;
-const AUTO_RANDOM_MIN_INTERVAL_MS = 24000;
+const AUTO_BEHAVIOR_CONFIG = {
+  quiet: {
+    walkEnabled: false,
+    walkDelayMs: 45000,
+    walkDurationMs: 0,
+    randomIdleDelayMs: 45000,
+    randomMinIntervalMs: 120000,
+  },
+  gentle: {
+    walkEnabled: true,
+    walkDelayMs: 18000,
+    walkDurationMs: 7000,
+    randomIdleDelayMs: 18000,
+    randomMinIntervalMs: 45000,
+  },
+  lively: {
+    walkEnabled: true,
+    walkDelayMs: 9000,
+    walkDurationMs: 11000,
+    randomIdleDelayMs: 9000,
+    randomMinIntervalMs: 22000,
+  },
+} as const;
 const LONG_PRESS_CONTROLS_MS = 560;
 const OVERLAY_SPEECH_SOURCES = new Set(['feed', 'pat', 'reminder']);
 const FALL_STEP_DISTANCE = 36;
@@ -70,6 +91,7 @@ const DesktopPetOverlay: React.FC = () => {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [speechVisible, setSpeechVisible] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [autoWalkActive, setAutoWalkActive] = useState(false);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedHint, setFeedHint] = useState('');
   const [overlayFoodId, setOverlayFoodId] = useState('');
@@ -93,6 +115,8 @@ const DesktopPetOverlay: React.FC = () => {
   const settleTimerRef = useRef<number | null>(null);
   const fallFrameRef = useRef<number | null>(null);
   const randomIdleTimerRef = useRef<number | null>(null);
+  const autoWalkTimerRef = useRef<number | null>(null);
+  const autoWalkStopTimerRef = useRef<number | null>(null);
   const lastOverlayCommitAtRef = useRef(0);
   const actionLoopCountRef = useRef(0);
   const lastRandomActionAtRef = useRef(0);
@@ -110,6 +134,8 @@ const DesktopPetOverlay: React.FC = () => {
   const hpPercent = Math.round((roleState.hp / DESKTOP_PET_HP_MAX) * 100);
   const fvPercent = Math.round((roleState.fv / DESKTOP_PET_FV_MAX) * 100);
   const quickFood = foods.find(food => food.id === overlayFoodId) || foods[0];
+  const autoBehavior = state.autoBehavior || 'gentle';
+  const autoBehaviorConfig = AUTO_BEHAVIOR_CONFIG[autoBehavior] || AUTO_BEHAVIOR_CONFIG.gentle;
   const visualOverlay = latestOverlayRef.current;
   const viewportWidth = typeof window === 'undefined' ? 390 : window.innerWidth;
   const viewportHeight = typeof window === 'undefined' ? 844 : window.innerHeight;
@@ -131,7 +157,7 @@ const DesktopPetOverlay: React.FC = () => {
     ),
     maxHeight: Math.max(168, viewportHeight - (CONTROLS_PANEL_MARGIN * 2)),
   } : undefined;
-  const canAutoWalk = !!(
+  const autoBaseReady = !!(
     state.floatingEnabled
     && manifest
     && activeApp !== AppID.DesktopPet
@@ -142,18 +168,18 @@ const DesktopPetOverlay: React.FC = () => {
     && state.overlay.dockSide !== 'left'
     && state.overlay.dockSide !== 'right'
     && canDesktopPetAutoWalkDuringAction(currentActionId, role?.defaultAction)
+  );
+  const canAutoWalk = !!(
+    autoBaseReady
+    && autoWalkActive
+    && autoBehaviorConfig.walkEnabled
     && role?.actions.left_walk
     && role?.actions.right_walk
   );
   const canScheduleAutoRandom = !!(
-    state.floatingEnabled
-    && activeApp !== AppID.DesktopPet
-    && !isLocked
-    && !controlsOpen
-    && !dragging
-    && !settling
+    autoBaseReady
+    && !autoWalkActive
     && role
-    && canDesktopPetAutoWalkDuringAction(currentActionId, role.defaultAction)
   );
 
   const applyVisualOverlay = useCallback((overlay: DesktopPetState['overlay']) => {
@@ -217,7 +243,55 @@ const DesktopPetOverlay: React.FC = () => {
     if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current);
     if (fallFrameRef.current) window.cancelAnimationFrame(fallFrameRef.current);
     if (randomIdleTimerRef.current) window.clearTimeout(randomIdleTimerRef.current);
+    if (autoWalkTimerRef.current) window.clearTimeout(autoWalkTimerRef.current);
+    if (autoWalkStopTimerRef.current) window.clearTimeout(autoWalkStopTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    const clearAutoWalkTimers = () => {
+      if (autoWalkTimerRef.current) {
+        window.clearTimeout(autoWalkTimerRef.current);
+        autoWalkTimerRef.current = null;
+      }
+      if (autoWalkStopTimerRef.current) {
+        window.clearTimeout(autoWalkStopTimerRef.current);
+        autoWalkStopTimerRef.current = null;
+      }
+    };
+    clearAutoWalkTimers();
+    setAutoWalkActive(false);
+    if (!autoBaseReady || !autoBehaviorConfig.walkEnabled) return undefined;
+
+    const scheduleWalk = () => {
+      autoWalkTimerRef.current = window.setTimeout(() => {
+        setAutoWalkActive(true);
+        autoWalkStopTimerRef.current = window.setTimeout(() => {
+          setAutoWalkActive(false);
+          scheduleWalk();
+        }, autoBehaviorConfig.walkDurationMs);
+      }, autoBehaviorConfig.walkDelayMs);
+    };
+    scheduleWalk();
+    return clearAutoWalkTimers;
+  }, [activeRoleId, autoBaseReady, autoBehaviorConfig.walkDelayMs, autoBehaviorConfig.walkDurationMs, autoBehaviorConfig.walkEnabled]);
+
+  useEffect(() => {
+    const clampToViewport = () => {
+      const next = clampDesktopPetOverlay(
+        latestOverlayRef.current,
+        { width: window.innerWidth, height: window.innerHeight },
+        spriteSize,
+      );
+      applyVisualOverlay(next);
+      commitOverlay(next);
+    };
+    window.addEventListener('resize', clampToViewport);
+    window.addEventListener('orientationchange', clampToViewport);
+    return () => {
+      window.removeEventListener('resize', clampToViewport);
+      window.removeEventListener('orientationchange', clampToViewport);
+    };
+  }, [applyVisualOverlay, commitOverlay, spriteSize]);
 
   const playSettleAction = () => {
     if (!role) return;
@@ -407,7 +481,7 @@ const DesktopPetOverlay: React.FC = () => {
       commitOverlay(latestOverlayRef.current);
       walkingActionRef.current = null;
     };
-  }, [applyVisualOverlay, canAutoWalk, commitOverlay, commitOverlayIfDue, currentActionId, leftWalkFrameMove, playAction, rightWalkFrameMove, spriteSize, walkFrameRefresh]);
+  }, [applyVisualOverlay, canAutoWalk, commitOverlay, commitOverlayIfDue, leftWalkFrameMove, playAction, rightWalkFrameMove, spriteSize, walkFrameRefresh]);
 
   useEffect(() => {
     if (randomIdleTimerRef.current) {
@@ -420,8 +494,8 @@ const DesktopPetOverlay: React.FC = () => {
       return undefined;
     }
     const wait = Math.max(
-      AUTO_RANDOM_IDLE_DELAY_MS,
-      AUTO_RANDOM_MIN_INTERVAL_MS - (Date.now() - lastRandomActionAtRef.current),
+      autoBehaviorConfig.randomIdleDelayMs,
+      autoBehaviorConfig.randomMinIntervalMs - (Date.now() - lastRandomActionAtRef.current),
     );
     randomIdleTimerRef.current = window.setTimeout(() => {
       if (!role) return;
@@ -438,7 +512,7 @@ const DesktopPetOverlay: React.FC = () => {
         randomIdleTimerRef.current = null;
       }
     };
-  }, [canScheduleAutoRandom, playAction, role]);
+  }, [autoBehaviorConfig.randomIdleDelayMs, autoBehaviorConfig.randomMinIntervalMs, canScheduleAutoRandom, playAction, role]);
 
   const handleSpriteLoop = useCallback(() => {
     if (!role || dragging || settling || canAutoWalk) return;
@@ -553,15 +627,27 @@ const DesktopPetOverlay: React.FC = () => {
                 <div className="text-[10px] font-black text-slate-400 leading-none">桌宠状态</div>
                 <div className="text-xs font-black truncate mt-1">{role?.name || activeRoleId}</div>
               </div>
-              <button
-                className="shrink-0 h-7 px-2 rounded-full bg-slate-950 text-white flex items-center gap-1 text-[11px] font-black active:scale-95"
-                title={quickFood ? `喂食：${quickFood.name}` : '没有可喂食物'}
-                disabled={!quickFood || feedBusy}
-                onClick={() => { void handleQuickFeed(); }}
-              >
-                <BowlFood size={14} weight="bold" />
-                {feedBusy ? '喂...' : '喂食'}
-              </button>
+              <div className="shrink-0 flex items-center gap-1">
+                <button
+                  className="h-7 w-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center active:scale-95"
+                  title="摸摸"
+                  onClick={() => {
+                    showControls();
+                    void patActivePet();
+                  }}
+                >
+                  <HandPalm size={14} weight="bold" />
+                </button>
+                <button
+                  className="h-7 px-2 rounded-full bg-slate-950 text-white flex items-center gap-1 text-[11px] font-black active:scale-95 disabled:opacity-50"
+                  title={quickFood ? `喂食：${quickFood.name}` : '没有可喂食物'}
+                  disabled={!quickFood || feedBusy}
+                  onClick={() => { void handleQuickFeed(); }}
+                >
+                  <BowlFood size={14} weight="bold" />
+                  {feedBusy ? '喂...' : '喂食'}
+                </button>
+              </div>
             </div>
 
             <div className="space-y-1.5">

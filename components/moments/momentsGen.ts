@@ -11,7 +11,7 @@ import {
     momentsReactionPrompt,
     momentsRefreshPrompt,
 } from '../../utils/laiwangPrompts';
-import { isAmbientSocialCharacter } from '../../utils/ambientSocial';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../../utils/ambientSocial';
 import { displayableImages, newId, npcAvatar, postDisplayText } from './momentsUtils';
 import {
     canCharacterCommentMoment,
@@ -114,12 +114,8 @@ export const getMomentVisibleCharacters = (
     characters: CharacterProfile[],
     userProfile: UserProfile,
 ): CharacterProfile[] => {
-    if (userProfile.ambientSocialHideConverted === false) return characters;
-    const linkedCharIds = new Set<string>();
-    (userProfile.ambientSocial?.entries || []).forEach(entry => {
-        if (entry.kind === 'contact' && entry.linkedCharId) linkedCharIds.add(entry.linkedCharId);
-    });
-    return characters.filter(char => !isAmbientSocialCharacter(char) && !linkedCharIds.has(char.id));
+    if (!shouldHideAmbientSocialRecordForUser(userProfile)) return characters;
+    return characters.filter(char => !isAmbientSocialCharacterForUser(char, userProfile));
 };
 
 /** 喂给 LLM 的帖子摘要（仅公开帖） */

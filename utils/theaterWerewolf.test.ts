@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
     rolesFor, createWerewolfGame, checkWinner, tallyVotes, livingWolves, livingGood,
-    WEREWOLF_ROLE_CN, WEREWOLF_ROLE_EMOJI,
+    WEREWOLF_ROLE_CN, WEREWOLF_ROLE_EMOJI, guardablePlayers, resolveNightDeathReasons,
+    applyVoteExile, voteTargetPlayers, votingPlayers, normalizeWerewolfGame,
 } from './theaterWerewolf';
 import { CharacterProfile, WerewolfGame } from '../types';
 
@@ -12,18 +13,25 @@ const mkChar = (id: string, name: string): CharacterProfile => ({
 const chars = (n: number) => Array.from({ length: n }, (_, i) => mkChar(`c${i}`, `角色${i}`));
 
 describe('rolesFor', () => {
-    it('各人数板子总数 = 人数，且狼≥1、神职齐全', () => {
-        for (let total = 4; total <= 14; total++) {
+    it('6-9 人扩展板子符合守卫 / 白痴默认启用规则', () => {
+        expect(rolesFor(6).sort()).toEqual(['guard', 'idiot', 'seer', 'witch', 'wolf', 'wolf'].sort());
+        expect(rolesFor(7).sort()).toEqual(['guard', 'idiot', 'seer', 'villager', 'witch', 'wolf', 'wolf'].sort());
+        expect(rolesFor(8).sort()).toEqual(['guard', 'hunter', 'idiot', 'seer', 'villager', 'witch', 'wolf', 'wolf'].sort());
+        expect(rolesFor(9).sort()).toEqual(['guard', 'hunter', 'idiot', 'seer', 'villager', 'witch', 'wolf', 'wolf', 'wolf'].sort());
+    });
+    it('各人数板子总数 = 人数，且狼≥1、核心神职齐全', () => {
+        for (let total = 6; total <= 14; total++) {
             const roles = rolesFor(total);
             expect(roles.length).toBe(total);
             expect(roles.filter(r => r === 'wolf').length).toBeGreaterThanOrEqual(1);
-            // 4 人以上必有预言家 + 女巫
             expect(roles).toContain('seer');
             expect(roles).toContain('witch');
+            expect(roles).toContain('guard');
+            expect(roles).toContain('idiot');
         }
     });
     it('狼人数永远少于好人数（开局好人不立即落败）', () => {
-        for (let total = 4; total <= 14; total++) {
+        for (let total = 6; total <= 14; total++) {
             const roles = rolesFor(total);
             const w = roles.filter(r => r === 'wolf').length;
             expect(w).toBeLessThan(total - w);
@@ -45,7 +53,7 @@ describe('createWerewolfGame', () => {
         expect(dist(g.players.map(p => p.role))).toBe(dist(rolesFor(6)));
     });
     it('AI 玩家都绑定了 charId，user 没有', () => {
-        const g = createWerewolfGame('我', undefined, chars(4));
+        const g = createWerewolfGame('我', undefined, chars(5));
         const ai = g.players.filter(p => !p.isUser);
         expect(ai.every(p => !!p.charId)).toBe(true);
         expect(g.players.find(p => p.isUser)!.charId).toBeUndefined();
@@ -56,7 +64,7 @@ describe('checkWinner', () => {
     const base = createWerewolfGame('我', undefined, chars(5));
     const withAlive = (roleAlive: Record<string, boolean>): WerewolfGame => ({
         ...base,
-        players: base.players.map((p, i) => ({ ...p, role: (['wolf', 'wolf', 'seer', 'witch', 'hunter', 'villager'] as const)[i], alive: roleAlive[String(i)] ?? true })),
+        players: base.players.map((p, i) => ({ ...p, role: (['wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot'] as const)[i], alive: roleAlive[String(i)] ?? true })),
     });
     it('狼全灭 = 好人胜', () => {
         const g = withAlive({ 0: false, 1: false }); // 两狼出局
@@ -91,9 +99,64 @@ describe('tallyVotes', () => {
     });
 });
 
+describe('guard rules', () => {
+    it('守卫不能连续两晚守同一人', () => {
+        const g = createWerewolfGame('我', undefined, chars(5));
+        g.lastGuardedSeat = 3;
+        const seats = guardablePlayers(g).map(p => p.seat);
+        expect(seats).not.toContain(3);
+        expect(seats.length).toBe(g.players.length - 1);
+    });
+    it('守卫挡狼刀、不挡毒、同守同救仍死亡', () => {
+        expect(resolveNightDeathReasons({ wolfKill: 2, witchHeal: false, witchPoison: null, guardProtect: 2 })).toEqual({});
+        expect(resolveNightDeathReasons({ wolfKill: 2, witchHeal: false, witchPoison: 2, guardProtect: 2 })).toEqual({ 2: 'poison' });
+        expect(resolveNightDeathReasons({ wolfKill: 2, witchHeal: true, witchPoison: null, guardProtect: 2 })).toEqual({ 2: 'guard_heal_conflict' });
+        expect(resolveNightDeathReasons({ wolfKill: 2, witchHeal: true, witchPoison: null, guardProtect: null })).toEqual({});
+    });
+});
+
+describe('idiot rules', () => {
+    const gameWithIdiot = (): WerewolfGame => {
+        const g = createWerewolfGame('我', undefined, chars(5));
+        g.players = g.players.map((p, i) => ({ ...p, role: (['wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot'] as const)[i] }));
+        return g;
+    };
+    it('白痴首次被票出翻牌免死，之后不能投票 / 被投票', () => {
+        const g = gameWithIdiot();
+        const idiot = g.players.find(p => p.role === 'idiot')!;
+        expect(applyVoteExile(g, idiot.seat)).toBe('idiot-revealed');
+        expect(idiot.alive).toBe(true);
+        expect(idiot.idiotRevealed).toBe(true);
+        expect(votingPlayers(g).map(p => p.seat)).not.toContain(idiot.seat);
+        expect(voteTargetPlayers(g).map(p => p.seat)).not.toContain(idiot.seat);
+    });
+    it('翻牌白痴仍可被夜间死亡', () => {
+        const g = gameWithIdiot();
+        const idiot = g.players.find(p => p.role === 'idiot')!;
+        idiot.idiotRevealed = true;
+        const reasons = resolveNightDeathReasons({ wolfKill: idiot.seat, witchHeal: false, witchPoison: null, guardProtect: null });
+        expect(reasons[idiot.seat]).toBe('wolf');
+    });
+});
+
+describe('normalizeWerewolfGame', () => {
+    it('旧存档缺少新增字段时补默认值', () => {
+        const legacy = createWerewolfGame('我', undefined, chars(5)) as any;
+        delete legacy.lastGuardedSeat;
+        delete legacy.pendingKill;
+        delete legacy.winner;
+        delete legacy.players[0].idiotRevealed;
+        const g = normalizeWerewolfGame(legacy);
+        expect(g.lastGuardedSeat).toBeNull();
+        expect(g.pendingKill).toBeNull();
+        expect(g.winner).toBeNull();
+        expect(g.players[0].idiotRevealed).toBe(false);
+    });
+});
+
 describe('role 文案表', () => {
-    it('五种身份都有中文名与 emoji', () => {
-        for (const r of ['wolf', 'seer', 'witch', 'hunter', 'villager'] as const) {
+    it('七种身份都有中文名与 emoji', () => {
+        for (const r of ['wolf', 'seer', 'witch', 'hunter', 'guard', 'idiot', 'villager'] as const) {
             expect(WEREWOLF_ROLE_CN[r]).toBeTruthy();
             expect(WEREWOLF_ROLE_EMOJI[r]).toBeTruthy();
         }

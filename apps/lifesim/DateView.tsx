@@ -19,21 +19,73 @@ import {
 import { synthesizeSongMinimax, loadMinimaxMusicBlob } from '../../utils/minimaxMusic';
 import { synthesizeSpeech } from '../../utils/minimaxTts';
 import { buildCoupleDateMemoryCard, ensureCoupleSpace } from '../../utils/coupleSpace';
+import StreetMap, { MapNode } from './StreetMap';
 
-// 暮色暖调
+// 地图导航浅色系
 const C = {
-    bg: '#1c1822', ink: '#f3ecf5',
-    accent: '#e8a0b8', accent2: '#a78bdc', line: 'rgba(255,255,255,0.12)', card: 'rgba(255,255,255,0.05)',
+    bg: '#f8fafc',
+    ink: '#172033',
+    muted: '#64748b',
+    accent: '#db2777',
+    accent2: '#7c3aed',
+    line: 'rgba(226,232,240,0.96)',
+    card: 'rgba(255,255,255,0.9)',
 };
 
 const Pill: React.FC<{ children: React.ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean; title?: string }> = ({ children, onClick, active, disabled, title }) => (
     <button onClick={onClick} disabled={disabled} title={title}
         style={{
             fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 999, cursor: disabled ? 'default' : 'pointer',
-            border: `1px solid ${active ? C.accent : C.line}`, color: active ? '#1c1822' : C.ink,
-            background: active ? C.accent : 'transparent', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+            border: `1px solid ${active ? C.accent : C.line}`, color: active ? '#fff' : C.ink,
+            background: active ? C.accent : '#fff', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
         }}>{children}</button>
 );
+
+const DATE_POINTS: Array<{ x: number; y: number }> = [
+    { x: 22, y: 26 },
+    { x: 72, y: 22 },
+    { x: 62, y: 43 },
+    { x: 34, y: 51 },
+    { x: 78, y: 64 },
+    { x: 46, y: 74 },
+    { x: 18, y: 70 },
+    { x: 55, y: 18 },
+];
+
+function dateScenePoint(id: string, index = 0) {
+    const builtInIndex = BUILTIN_DATE_SCENES.findIndex(scene => scene.id === id);
+    if (builtInIndex >= 0) return DATE_POINTS[builtInIndex % DATE_POINTS.length];
+    return DATE_POINTS[index % DATE_POINTS.length] || { x: 50, y: 50 };
+}
+
+function sceneNode(scene: DateScene, index: number): MapNode {
+    const point = dateScenePoint(scene.id, index);
+    return {
+        id: `scene-${scene.id}`,
+        kind: 'date',
+        label: scene.name,
+        sublabel: scene.vibe,
+        emoji: scene.emoji,
+        x: point.x,
+        y: point.y,
+        color: '#db2777',
+    };
+}
+
+function worldlineNode(wl: DateWorldline, index: number): MapNode {
+    const point = dateScenePoint(wl.sceneId, index);
+    return {
+        id: `worldline-${wl.id}`,
+        kind: 'worldline',
+        label: wl.title,
+        sublabel: `${wl.sceneName} · ${wl.turnCount} 回合`,
+        emoji: wl.sceneEmoji,
+        x: Math.min(92, point.x + (index % 3) * 4),
+        y: Math.min(88, point.y + (index % 2) * 5),
+        color: wl.parentId ? '#7c3aed' : '#db2777',
+        badge: wl.parentId ? '分叉' : undefined,
+    };
+}
 
 const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { characters, activeCharacterId, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
@@ -255,22 +307,34 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
     // ───────────────────────── 渲染 ─────────────────────────
     if (screen === 'scene') {
+        const sceneNodes = BUILTIN_DATE_SCENES.map(sceneNode);
         return (
             <Overlay onClose={onClose} title={`和 ${char.name} 去哪儿`} onBack={worldlines.length ? () => setScreen('list') : undefined}>
-                <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
-                    <div style={{ color: C.accent, fontSize: 12, marginBottom: 12 }}>挑个地方，开始一条新世界线</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ padding: 14, overflowY: 'auto', flex: 1 }}>
+                    <StreetMap
+                        nodes={sceneNodes}
+                        height={330}
+                        title="选择约会地点"
+                        subtitle="点地图上的地点，开一条新的世界线"
+                        onNodeClick={(node, event) => {
+                            event.stopPropagation();
+                            const scene = BUILTIN_DATE_SCENES.find(item => `scene-${item.id}` === node.id);
+                            if (scene) startScene(scene);
+                        }}
+                    />
+
+                    <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10 }}>
                         {BUILTIN_DATE_SCENES.map(s => (
                             <button key={s.id} onClick={() => startScene(s)}
-                                style={{ textAlign: 'left', padding: 14, borderRadius: 14, border: `1px solid ${C.line}`, background: C.card, color: C.ink, cursor: 'pointer' }}>
-                                <div style={{ fontSize: 24 }}>{s.emoji}</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>{s.name}</div>
-                                <div style={{ fontSize: 11, color: C.accent2, marginTop: 4, lineHeight: 1.5 }}>{s.vibe}</div>
+                                style={{ textAlign: 'left', padding: 13, borderRadius: 16, border: `1px solid ${C.line}`, background: C.card, color: C.ink, cursor: 'pointer', boxShadow: '0 12px 28px -24px rgba(15,23,42,0.6)' }}>
+                                <div style={{ fontSize: 22 }}>{s.emoji}</div>
+                                <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>{s.name}</div>
+                                <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>{s.vibe}</div>
                             </button>
                         ))}
                     </div>
 
-                    <div style={{ marginTop: 18, padding: 14, borderRadius: 14, border: `1px dashed ${C.line}`, background: C.card }}>
+                    <div style={{ marginTop: 18, padding: 14, borderRadius: 18, border: `1px solid ${C.line}`, background: C.card, boxShadow: '0 12px 28px -24px rgba(15,23,42,0.55)' }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 8 }}>＋ 自定义一个场景</div>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                             <input value={cEmoji} onChange={e => setCEmoji(e.target.value.slice(0, 2))} placeholder="🎡" style={inputStyle(48, true)} />
@@ -285,24 +349,40 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
 
     if (screen === 'list') {
+        const wlNodes = worldlines.slice(0, 10).map(worldlineNode);
         return (
             <Overlay onClose={onClose} title={`和 ${char.name} 的约会`}>
-                <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
+                <div style={{ padding: 14, overflowY: 'auto', flex: 1 }}>
                     {!auxOn && (
-                        <div style={{ fontSize: 11, color: C.accent2, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: '8px 12px', marginBottom: 12, lineHeight: 1.6 }}>
+                        <div style={{ fontSize: 11, color: C.accent2, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: '8px 12px', marginBottom: 12, lineHeight: 1.6 }}>
                             提示：约会的「世界引擎」建议用副 API。去「文具盒 → 副线盒」开启后，这边会自动走副线（现在先用主线也能玩）。
                         </div>
                     )}
-                    <button onClick={() => setScreen('scene')} style={{ ...primaryBtn, marginBottom: 14 }}>＋ 开一条新世界线</button>
+                    <StreetMap
+                        nodes={wlNodes}
+                        height={worldlines.length ? 300 : 230}
+                        title={worldlines.length ? '约会路线' : '还没有路线'}
+                        subtitle={worldlines.length ? '点世界线 pin 继续约会' : '先挑个地点，带 TA 出门'}
+                        onNodeClick={(node, event) => {
+                            event.stopPropagation();
+                            const wl = worldlines.find(item => `worldline-${item.id}` === node.id);
+                            if (wl) { setActive(wl); setScreen('session'); }
+                        }}
+                        bottomCenter={
+                            <button onClick={(event) => { event.stopPropagation(); setScreen('scene'); }} style={{ ...primaryBtn, width: 160, marginTop: 0, padding: '9px 12px' }}>
+                                ＋ 新世界线
+                            </button>
+                        }
+                    />
 
                     {worldlines.length === 0 ? (
-                        <div style={{ color: C.accent2, textAlign: 'center', padding: 40, fontSize: 13 }}>还没有约会过。挑个场景，带 TA 出门吧。</div>
+                        <div style={{ color: C.muted, textAlign: 'center', padding: 28, fontSize: 13 }}>还没有约会过。挑个场景，带 TA 出门吧。</div>
                     ) : (() => {
                         const forest = buildForest(worldlines);
                         const hasForks = worldlines.some(w => w.parentId && worldlines.some(p => p.id === w.parentId));
                         return (
                             <>
-                                {hasForks && <div style={{ fontSize: 10.5, color: C.accent2, marginBottom: 10 }}>🌳 分叉树：缩进的是从某条世界线分出来的剧情走向</div>}
+                                {hasForks && <div style={{ fontSize: 11, color: C.muted, margin: '12px 0 10px' }}>分叉路线会缩进显示，从原世界线另开走向。</div>}
                                 {forest.map(n => (
                                     <WorldlineNode key={n.wl.id} node={n} depth={0}
                                         onResume={(wl) => { setActive(wl); setScreen('session'); }}
@@ -336,9 +416,9 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
 
             {/* 消息流 */}
-            <div ref={streamRef} style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+            <div ref={streamRef} style={{ flex: 1, overflowY: 'auto', padding: 16, background: '#f8fafc' }}>
                 {active.recap && (
-                    <div style={{ fontSize: 11, color: C.accent2, background: C.card, border: `1px dashed ${C.line}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14, lineHeight: 1.7 }}>
+                    <div style={{ fontSize: 11, color: C.muted, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: '10px 12px', marginBottom: 14, lineHeight: 1.7 }}>
                         <b style={{ color: C.accent }}>前情提要</b>　{active.recap}
                     </div>
                 )}
@@ -347,7 +427,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
 
             {/* 话 / 动作 分输入 */}
-            <div style={{ borderTop: `1px solid ${C.line}`, padding: 12, background: 'rgba(0,0,0,0.2)' }}>
+            <div style={{ borderTop: `1px solid ${C.line}`, padding: 12, background: 'rgba(255,255,255,0.94)' }}>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 16, alignSelf: 'center' }}>💬</span>
                     <input value={speech} onChange={e => setSpeech(e.target.value)} placeholder={listening ? '在听你说…' : '说点什么…'}
@@ -358,8 +438,8 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             style={{
                                 width: 40, flexShrink: 0, borderRadius: 10, cursor: 'pointer', fontSize: 16,
                                 border: `1px solid ${listening ? C.accent : C.line}`,
-                                background: listening ? C.accent : 'rgba(255,255,255,0.06)',
-                                color: listening ? '#1c1822' : C.ink,
+                                background: listening ? C.accent : C.card,
+                                color: listening ? '#fff' : C.ink,
                             }}>{listening ? '⏺' : '🎤'}</button>
                     )}
                 </div>
@@ -370,7 +450,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         style={inputStyle()} disabled={sending} />
                     <button onClick={send} disabled={sending} style={{ ...primaryBtn, width: 76, marginTop: 0, opacity: sending ? 0.5 : 1 }}>{sending ? '…' : '发送'}</button>
                 </div>
-                <div style={{ fontSize: 10, color: C.accent2, marginTop: 6 }}>话和动作可以只填一个 · TA 会一一回应</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>话和动作可以只填一个 · TA 会一一回应</div>
             </div>
         </Overlay>
     );
@@ -379,25 +459,26 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // ── 子组件 ──
 const MessageRow: React.FC<{ m: DateMessage; char: any; userName: string; onFork: () => void }> = ({ m, char, userName, onFork }) => {
     if (m.role === 'world') {
-        return <div style={{ textAlign: 'center', color: '#9b8fae', fontSize: 12, fontStyle: 'italic', margin: '12px 0', lineHeight: 1.6 }}>— {m.action} —</div>;
+        return <div style={{ textAlign: 'center', color: C.muted, fontSize: 12, fontStyle: 'italic', margin: '12px 0', lineHeight: 1.6 }}>— {m.action} —</div>;
     }
     const mine = m.role === 'user';
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start', marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: '#9b8fae', marginBottom: 3 }}>{mine ? userName : char.name}</div>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>{mine ? userName : char.name}</div>
             {m.speech && (
                 <div style={{
                     maxWidth: '82%', padding: '9px 13px', borderRadius: 14, fontSize: 13.5, lineHeight: 1.6,
-                    background: mine ? 'rgba(232,160,184,0.22)' : 'rgba(255,255,255,0.08)', color: '#f3ecf5',
+                    background: mine ? 'rgba(219,39,119,0.12)' : '#fff', color: C.ink,
+                    border: `1px solid ${mine ? 'rgba(219,39,119,0.18)' : C.line}`,
                     borderTopRightRadius: mine ? 4 : 14, borderTopLeftRadius: mine ? 14 : 4,
                 }}>{m.speech}</div>
             )}
             {m.action && (
-                <div style={{ maxWidth: '82%', fontSize: 12, color: '#c5b6d2', fontStyle: 'italic', marginTop: m.speech ? 4 : 0, padding: '0 4px' }}>（{m.action}）</div>
+                <div style={{ maxWidth: '82%', fontSize: 12, color: C.muted, fontStyle: 'italic', marginTop: m.speech ? 4 : 0, padding: '0 4px' }}>（{m.action}）</div>
             )}
             {!mine && (
                 <button onClick={onFork} title="从这一刻另开一条世界线"
-                    style={{ fontSize: 10, color: '#8a7ea0', background: 'none', border: 'none', cursor: 'pointer', marginTop: 3, padding: '2px 4px' }}>⑂ 从这儿分叉</button>
+                    style={{ fontSize: 10, color: C.accent2, background: 'none', border: 'none', cursor: 'pointer', marginTop: 3, padding: '2px 4px' }}>⑂ 从这儿分叉</button>
             )}
         </div>
     );
@@ -425,10 +506,10 @@ const WorldlineNode: React.FC<{ node: ForestNode; depth: number; onResume: (wl: 
     return (
         <div style={{ marginLeft: depth ? 12 : 0, borderLeft: depth ? `1px solid ${C.line}` : undefined, paddingLeft: depth ? 12 : 0, position: 'relative' }}>
             {depth > 0 && <span style={{ position: 'absolute', left: -1, top: 16, width: 10, height: 1, background: C.line }} />}
-            <div style={{ border: `1px solid ${C.line}`, background: C.card, borderRadius: 14, padding: 14, marginBottom: 10 }}>
+            <div style={{ border: `1px solid ${C.line}`, background: C.card, borderRadius: 16, padding: 14, marginBottom: 10, boxShadow: '0 12px 28px -24px rgba(15,23,42,0.58)' }}>
                 <div onClick={() => onResume(wl)} style={{ cursor: 'pointer' }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{wl.sceneEmoji} {wl.title}</div>
-                    <div style={{ fontSize: 11, color: C.accent2, marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
                         {wl.sceneName} · {wl.turnCount} 回合{wl.parentId ? `${wl.forkedAtTurn != null ? ` · 从第 ${wl.forkedAtTurn} 回合分出` : ' · 分叉'}` : ''} · {new Date(wl.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </div>
                     {wl.vibe && <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>♪ 此刻氛围：{wl.vibe}</div>}
@@ -444,12 +525,12 @@ const WorldlineNode: React.FC<{ node: ForestNode; depth: number; onResume: (wl: 
 };
 
 const Overlay: React.FC<{ children: React.ReactNode; onClose: () => void; title?: string; onBack?: () => void; right?: React.ReactNode }> = ({ children, onClose, title, onBack, right }) => (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 60, background: '#1c1822', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
-            <button onClick={onBack || onClose} style={{ background: 'none', border: 'none', color: '#f3ecf5', fontSize: 18, cursor: 'pointer' }}>‹</button>
-            <div style={{ flex: 1, color: '#f3ecf5', fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || '约会'}</div>
+    <div style={{ position: 'absolute', inset: 0, zIndex: 60, background: C.bg, display: 'flex', flexDirection: 'column', color: C.ink }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: `1px solid ${C.line}`, background: 'rgba(255,255,255,0.92)', boxShadow: '0 10px 28px -26px rgba(15,23,42,0.7)' }}>
+            <button onClick={onBack || onClose} style={{ width: 34, height: 34, borderRadius: 999, background: '#fff', border: `1px solid ${C.line}`, color: C.ink, fontSize: 18, cursor: 'pointer' }}>‹</button>
+            <div style={{ flex: 1, color: C.ink, fontSize: 15, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || '约会'}</div>
             {right}
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#9b8fae', fontSize: 16, cursor: 'pointer' }}>✕</button>
+            <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 999, background: '#fff', border: `1px solid ${C.line}`, color: C.muted, fontSize: 16, cursor: 'pointer' }}>✕</button>
         </div>
         {children}
     </div>
@@ -457,13 +538,13 @@ const Overlay: React.FC<{ children: React.ReactNode; onClose: () => void; title?
 
 const inputStyle = (w?: number, center?: boolean): React.CSSProperties => ({
     flex: w ? undefined : 1, width: w, textAlign: center ? 'center' : 'left',
-    padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.14)',
-    background: 'rgba(255,255,255,0.06)', color: '#f3ecf5', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+    padding: '9px 12px', borderRadius: 12, border: `1px solid ${C.line}`,
+    background: '#fff', color: C.ink, fontSize: 13, outline: 'none', boxSizing: 'border-box',
 });
 
 const primaryBtn: React.CSSProperties = {
-    width: '100%', marginTop: 10, padding: '10px 0', borderRadius: 10, border: 'none', cursor: 'pointer',
-    background: 'linear-gradient(135deg, #e8a0b8, #a78bdc)', color: '#1c1822', fontSize: 13, fontWeight: 700,
+    width: '100%', marginTop: 10, padding: '10px 0', borderRadius: 999, border: 'none', cursor: 'pointer',
+    background: '#172033', color: '#fff', fontSize: 13, fontWeight: 800,
 };
 
 export default DateView;

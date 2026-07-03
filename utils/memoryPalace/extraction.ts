@@ -159,6 +159,7 @@ function parseMemoryNodesFromBuffer(
                 pinnedUntil,
                 eventBoxId: null,  // 由 pipeline 在 binding 阶段设置
                 origin: 'extraction',
+                source: { kind: 'chat' },
                 sourceQuote,
                 genNote,
             };

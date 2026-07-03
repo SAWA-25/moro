@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import type { TheaterFauxKind, TheaterQuizSession } from '../types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CharacterProfile, TheaterFauxKind, TheaterQuizSession, UserProfile } from '../types';
 import {
     getBankQuestions,
     bankQuizNames,
@@ -10,6 +10,7 @@ import {
 import {
     LEGACY_THEATER_QUIZ_SETTINGS,
     formatFauxExport,
+    genExtraPiece,
     normalizeFauxData,
     normalizeTheaterQuizSession,
     parseQuizResult,
@@ -17,6 +18,22 @@ import {
 import { extraFauxPrompt } from './theaterPrompts';
 
 const FAUX_KINDS: TheaterFauxKind[] = ['wechat', 'moments', 'xhs', 'forum', 'weibo', 'qzone', 'douban', 'campus', 'memo', 'schedule', 'receipt', 'browser'];
+const jsonResponse = (data: unknown) => new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+});
+
+let originalFetch: typeof fetch | undefined;
+
+beforeEach(() => {
+    originalFetch = global.fetch;
+});
+
+afterEach(() => {
+    if (originalFetch) global.fetch = originalFetch;
+    else delete (globalThis as any).fetch;
+    vi.restoreAllMocks();
+});
 
 describe('theater extra quiz bank metadata', () => {
     it('exposes readable metadata and tags for built-in quiz banks', () => {
@@ -189,5 +206,36 @@ describe('formatFauxExport', () => {
 
         expect(text).toContain('【番外·备忘录】');
         expect(text).toContain('这次只生成了一段文字稿。');
+    });
+});
+
+describe('theater extra API usage meta', () => {
+    it('keeps custom API role and binding in llmComplete meta', async () => {
+        const fetchFn = vi.fn(async () => jsonResponse({
+            choices: [{ message: { content: '这是一段番外正文。' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
+        }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await genExtraPiece({
+            api: {
+                baseUrl: 'https://custom.example.test/v1',
+                apiKey: '',
+                model: 'custom-model',
+                apiRole: 'custom',
+                apiBinding: '折子戏番外专用 API',
+            },
+            kind: 'diary',
+            char: { id: 'c1', name: '阿澈', systemPrompt: '冷静但嘴硬。' } as CharacterProfile,
+            userProfile: { name: '我', avatar: '', bio: '喜欢夜跑。' } as UserProfile,
+            prompt: '写一段晚饭后的番外',
+        });
+
+        const init = (fetchFn.mock.calls as any[])[0]?.[1] as RequestInit & { __moroMeta?: any };
+        expect(init.__moroMeta).toMatchObject({
+            featureId: 'theater.extra',
+            apiRole: 'custom',
+            apiBinding: '折子戏番外专用 API',
+        });
     });
 });

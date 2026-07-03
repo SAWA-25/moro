@@ -8,7 +8,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { PixelRoomLayout, PlacedFurniture, PixelAsset } from './types';
-import { decodeColorField } from './types';
+import { decodeColorField, isLegacyDefaultPixelSurface } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import type { MemoryNode } from '../../utils/memoryPalace/types';
 import { ROOM_SLOTS, ROOM_META, ROOM_SIZES } from './roomTemplates';
@@ -16,6 +16,8 @@ import { PixelLayoutDB } from './pixelHomeDb';
 import { MemoryNodeDB } from '../../utils/memoryPalace/db';
 import { processImage } from '../../utils/file';
 import { pixelizeImage, removeBackground } from '../../utils/pixelizer';
+import { defaultFurniturePixelSrc } from './roomPixelRenderer';
+import { ROOM_SURFACE_STYLES, wallTextureStyle, floorTextureStyle } from './roomSurfaceStyles';
 
 interface Props {
   charId: string;
@@ -27,6 +29,7 @@ interface Props {
   assets: PixelAsset[];
   onUpdate: () => void;
   onOpenLibrary: (slotId: string | null) => void;
+  onInspectFurniture?: (roomId: MemoryRoom, furniture: PlacedFurniture) => void;
 }
 
 const TILE = 28;
@@ -48,19 +51,6 @@ function snapToGrid(cols: number, rows: number, x: number, y: number): { x: numb
   };
 }
 
-const FLOOR_STYLES: Record<string, {
-  wallFace: string; wallFaceDark: string;
-  base: string; alt: string; pattern: 'wood' | 'tile' | 'stone';
-}> = {
-  living_room: { wallFace: '#e8d5b8', wallFaceDark: '#d4c1a4', base: '#c4a882', alt: '#b89b75', pattern: 'wood' },
-  bedroom:     { wallFace: '#e8ddd0', wallFaceDark: '#d8cdc0', base: '#d4b896', alt: '#c9ab87', pattern: 'wood' },
-  study:       { wallFace: '#c9b99a', wallFaceDark: '#b5a586', base: '#8b6f47', alt: '#7d6340', pattern: 'wood' },
-  attic:       { wallFace: '#6b5d50', wallFaceDark: '#5a4d42', base: '#706050', alt: '#655545', pattern: 'stone' },
-  self_room:   { wallFace: '#f0d0e0', wallFaceDark: '#e0c0d0', base: '#d4a8c0', alt: '#c99db5', pattern: 'tile' },
-  user_room:   { wallFace: '#c8e0d0', wallFaceDark: '#b8d0c0', base: '#a8c4b0', alt: '#9db9a5', pattern: 'tile' },
-  windowsill:  { wallFace: '#a8bfb0', wallFaceDark: '#98af9f', base: '#92a89c', alt: '#879d91', pattern: 'stone' },
-};
-
 const WALL_COLOR = '#3d2b1f';
 const WALL_LIGHT = '#5c4332';
 const WALL_THICK = 6;
@@ -73,12 +63,12 @@ const MOOD_COLORS: Record<string, string> = {
 
 /** 判断家具是否为地毯类（角色可踩，不遮挡，不碰撞） */
 function isRugAsset(f: PlacedFurniture, assets: PixelAsset[]): boolean {
-  if (!f.assetId) return false;
+  if (!f.assetId) return f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat');
   const asset = assets.find(a => a.id === f.assetId);
   return !!asset?.tags?.includes('rug');
 }
 
-const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary }) => {
+const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary, onInspectFurniture }) => {
   const [furniture, setFurniture] = useState<PlacedFurniture[]>(layout.furniture);
   const [wallColor, setWallColor] = useState(layout.wallColor);
   const [floorColor, setFloorColor] = useState(layout.floorColor);
@@ -90,8 +80,8 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   const [memoryLoading, setMemoryLoading] = useState(false);
 
   // 自定义墙纸/地砖
-  const [customWall, setCustomWall] = useState<string | null>(layout.wallColor.startsWith('data:') ? layout.wallColor : null);
-  const [customFloor, setCustomFloor] = useState<string | null>(layout.floorColor.startsWith('data:') ? layout.floorColor : null);
+  const [customWall, setCustomWall] = useState<string | null>(layout.wallColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.wallColor) ? layout.wallColor : null);
+  const [customFloor, setCustomFloor] = useState<string | null>(layout.floorColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.floorColor) ? layout.floorColor : null);
   const [floorTileSize, setFloorTileSize] = useState(TILE); // 地砖平铺大小（可调）
   // 铺设模式 + 偏移
   const [wallFillMode, setWallFillMode] = useState<'tile' | 'stretch'>(layout.wallFillMode || 'tile');
@@ -145,7 +135,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
 
   const meta = ROOM_META[roomId];
   const slotDefs = ROOM_SLOTS[roomId];
-  const floorStyle = FLOOR_STYLES[roomId] || FLOOR_STYLES.living_room;
+  const floorStyle = ROOM_SURFACE_STYLES[roomId] || ROOM_SURFACE_STYLES.living_room;
   const roomSize = ROOM_SIZES[roomId];
   const GRID_COLS = roomSize.w;
   const GRID_ROWS = roomSize.h;
@@ -216,8 +206,8 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     setFurniture(layout.furniture);
     setWallColor(layout.wallColor);
     setFloorColor(layout.floorColor);
-    setCustomWall(layout.wallColor.startsWith('data:') ? layout.wallColor : null);
-    setCustomFloor(layout.floorColor.startsWith('data:') ? layout.floorColor : null);
+    setCustomWall(layout.wallColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.wallColor) ? layout.wallColor : null);
+    setCustomFloor(layout.floorColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.floorColor) ? layout.floorColor : null);
     setWallFillMode(layout.wallFillMode || 'tile');
     setWallOffsetX(layout.wallOffsetX ?? 50);
     setWallOffsetY(layout.wallOffsetY ?? 50);
@@ -237,23 +227,24 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     const build = async () => {
       const blocked = new Set<string>();
       for (const f of furniture) {
-        if (!f.assetId) continue;
-        const asset = assets.find(a => a.id === f.assetId);
-        if (!asset) continue;
+        const asset = f.assetId ? assets.find(a => a.id === f.assetId) : null;
+        const imgSrc = asset?.pixelImage || (f.isDefault !== false ? defaultFurniturePixelSrc(roomId, f.slotId) : null);
+        if (!imgSrc) continue;
         // 地毯不参与碰撞
-        if (asset.tags?.includes('rug')) continue;
+        if (isRugAsset(f, assets)) continue;
 
         // 获取或缓存 ImageData
-        let imgData = collisionMasksRef.current.get(asset.id);
+        const maskKey = asset?.id || `default:${roomId}:${f.slotId}`;
+        let imgData = collisionMasksRef.current.get(maskKey);
         if (!imgData) {
           try {
-            const img = await loadImage(asset.pixelImage);
+            const img = await loadImage(imgSrc);
             const c = document.createElement('canvas');
             c.width = img.naturalWidth; c.height = img.naturalHeight;
             const ctx = c.getContext('2d')!;
             ctx.drawImage(img, 0, 0);
             imgData = ctx.getImageData(0, 0, c.width, c.height);
-            collisionMasksRef.current.set(asset.id, imgData);
+            collisionMasksRef.current.set(maskKey, imgData);
           } catch { continue; }
         }
 
@@ -316,7 +307,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
       }
     };
     build();
-  }, [furniture, assets, GRID_COLS, GRID_ROWS, GRID_STEP_Y]);
+  }, [furniture, assets, GRID_COLS, GRID_ROWS, GRID_STEP_Y, roomId]);
 
   // 桌面端 wheel 缩放
   useEffect(() => {
@@ -506,9 +497,9 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
       const asset = assets.find(a => a.id === f.assetId);
       if (asset) return asset.pixelImage;
     }
-    // 无自定义素材时不显示默认家具
+    if (f.isDefault !== false) return defaultFurniturePixelSrc(roomId, f.slotId);
     return null;
-  }, [assets]);
+  }, [assets, roomId]);
 
   // 墙纸/地砖上传 → 先预览，再确认
   const handleTextureUpload = useCallback(async (file: File, target: 'wall' | 'floor') => {
@@ -614,7 +605,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   const roomDisplayName = roomId === 'user_room' ? `${userName}的房` : meta.name;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: '#1a1410' }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: '#38302a' }}>
       <div ref={outerRef} className="flex-1 overflow-hidden flex items-center justify-center"
         style={{ touchAction: 'none' }}
         onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
@@ -665,11 +656,9 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                 }
                 return (
                   <>
-                    <div className="absolute inset-0" style={{ backgroundColor: floorStyle.wallFace }} />
-                    <div className="absolute inset-0" style={{
-                      backgroundImage: `linear-gradient(${floorStyle.wallFaceDark} 1px, transparent 1px), linear-gradient(90deg, ${floorStyle.wallFaceDark}40 1px, transparent 1px)`,
-                      backgroundSize: `${TILE * 2}px ${Math.round(TILE * 0.6)}px`,
-                    }} />
+                    <div className="absolute inset-0" style={wallTextureStyle(roomId, TILE)} />
+                    <div className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                    <div className="absolute inset-y-0 right-0 w-[2px]" style={{ backgroundColor: 'rgba(0,0,0,0.12)' }} />
                   </>
                 );
               })()}
@@ -710,8 +699,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                 }
                 return (
                   <>
-                    <div className="absolute inset-0" style={{ backgroundColor: floorStyle.base }} />
-                    <FloorTexture type={floorStyle.pattern} alt={floorStyle.alt} />
+                    <div className="absolute inset-0" style={floorTextureStyle(roomId, TILE)} />
                   </>
                 );
               })()}
@@ -731,7 +719,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
               </>
             )}
 
-            {/* 家具（仅有素材的），地毯在底层先渲染 */}
+            {/* 家具，自定义素材优先；默认槽位使用内置手绘像素家具 */}
             {[...furniture].sort((a, b) => {
               // 地毯类在最底层
               const aRug = isRugAsset(a, assets);
@@ -775,11 +763,14 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                   // 避免 img 默认 inline 的基线行间隙 + 亚像素舍入让"越往右看起来越大/越小"
                   width: furSize,
                   zIndex: zIdx,
-                  cursor: mode === 'edit' ? 'grab' : 'default',
+                  cursor: mode === 'edit' ? 'grab' : 'pointer',
                   transition: draggingRef.current === f.slotId ? 'none' : 'left 0.15s, top 0.15s',
-                  pointerEvents: mode === 'edit' ? 'auto' : 'none',
+                  pointerEvents: mode === 'edit' || onInspectFurniture ? 'auto' : 'none',
                 }}
-                  onClick={e => { e.stopPropagation(); }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (mode === 'view') onInspectFurniture?.(roomId, f);
+                  }}
                   onPointerDown={e => {
                     if (touchStateRef.current.active) return;
                     handlePointerDown(e, f.slotId);
@@ -836,7 +827,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
       </div>
 
       {/* 底部工具栏 */}
-      <div className="shrink-0 bg-slate-800/95 backdrop-blur-sm border-t border-slate-700/50 px-3 py-2 max-h-[50%] overflow-y-auto no-scrollbar">
+      <div className="shrink-0 bg-[#5b5148] border-t-4 border-[#3f3730] px-3 py-2 max-h-[50%] overflow-y-auto no-scrollbar shadow-[0_-4px_0_#3f3730]">
         <div className="flex items-center justify-between mb-2">
           <div className="flex gap-1">
             <ModeBtn label="浏览" active={mode === 'view'} onClick={() => { setMode('view'); setSelectedSlot(null); }} />
@@ -896,9 +887,9 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
 
         {/* 纹理预览面板 */}
         {texturePreview && (
-          <div className="p-2.5 bg-slate-700/60 rounded-xl space-y-2 mb-2">
+          <div className="p-2.5 bg-[#efe2c5] border-2 border-[#3f3730] space-y-2 mb-2 shadow-[3px_3px_0_#3f3730]">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-200 font-bold">
+              <span className="text-xs text-[#302b26] font-bold">
                 {texturePreview.target === 'wall' ? '墙纸预览' : '地砖预览'}
               </span>
               <button onClick={() => setTexturePreview(null)}
@@ -974,7 +965,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
               <span className="text-xs text-slate-200 font-bold">
                 {selectedSlotDef?.name || (selectedFurniture.assetId ? assets.find(a => a.id === selectedFurniture.assetId)?.name : '家具')}
               </span>
-              {selectedSlotDef && <span className="text-[10px] text-slate-400 italic">{selectedSlotDef.category}</span>}
+              {selectedSlotDef && <span className="text-[10px] text-[#76685d] italic">{selectedSlotDef.category}</span>}
             </div>
             <SliderRow label="大小" min={0.3} max={10} step={0.1} value={selectedFurniture.scale}
               onChange={v => updateFurniture(selectedSlot!, { scale: v })} display={selectedFurniture.scale.toFixed(1)} />
@@ -991,6 +982,19 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                 <ZOrderBtn label="置顶" active={selectedFurniture.zOrder === 'front'}
                   onClick={() => updateFurniture(selectedSlot!, { zOrder: selectedFurniture.zOrder === 'front' ? 'auto' : 'front' })} />
               </div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-[#76685d]">互动说明</span>
+                <span className="text-[9px] text-[#76685d]">今日刷新 / 点击观察</span>
+              </div>
+              <textarea
+                value={selectedFurniture.interactionPrompt || ''}
+                onChange={e => updateFurniture(selectedSlot!, { interactionPrompt: e.target.value })}
+                placeholder="例如：这是 TA 睡前会看的书，夹着你送的书签。"
+                rows={3}
+                className="w-full resize-none border-2 border-[#3f3730] bg-[#f7efda] px-2 py-2 text-[10px] leading-relaxed text-[#302b26] outline-none placeholder:text-[#8f8173] focus:bg-white"
+              />
             </div>
             <div className="flex gap-2">
               <button onClick={() => onOpenLibrary(selectedSlot)}

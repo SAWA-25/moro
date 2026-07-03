@@ -19,6 +19,7 @@ const MAX_ENTRIES = 9;
 const GROWTH_INTERVAL_MS = 18 * 60 * 60 * 1000;
 export const MIN_AMBIENT_CHARACTER_PROMPT_CHARS = 2000;
 const AMBIENT_CHARACTER_DESCRIPTION = '从絮语里自然接入的人。有自己的生活、社交圈和日常节奏。';
+const PLACEHOLDER_NAME_PATTERN = /^(?:moro|絮语|来往)?\s*(?:向导|助手|系统|客服|npc|NPC|路人|联系人|占位|测试)[-_—\s]*\d{0,3}$/i;
 
 const AMBIENT_CHARACTER_DEPTH_NOTE = `
 # 深层角色设定
@@ -83,7 +84,12 @@ const dedupeEntries = (entries: AmbientSocialEntry[]): AmbientSocialEntry[] => {
 };
 
 const activeAmbientEntries = (entries: AmbientSocialEntry[]): AmbientSocialEntry[] => (
-    entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId))
+    entries.filter(e => (
+        !e.hidden
+        && !isRejectedAmbientGeneratedName(e.name)
+        && !(e.kind === 'contact' && e.linkedCharId)
+        && !(e.kind === 'group' && e.linkedGroupId)
+    ))
 );
 
 const isLegacyLocalEntry = (entry: AmbientSocialEntry): boolean => (
@@ -96,6 +102,13 @@ const isLinkedEntry = (entry: AmbientSocialEntry): boolean => (
     || (entry.kind === 'group' && !!entry.linkedGroupId)
 );
 
+export const isRejectedAmbientGeneratedName = (name: string): boolean => {
+    const normalized = String(name || '').trim();
+    if (!normalized) return true;
+    if (/絮语|来往/.test(normalized) && /向导|助手|NPC|npc|系统|客服|联系人|占位|测试/.test(normalized)) return true;
+    return PLACEHOLDER_NAME_PATTERN.test(normalized);
+};
+
 const normalizeExistingState = (profile: UserProfile, now = Date.now()): AmbientSocialState => {
     const existing: AmbientSocialState = profile.ambientSocial?.version
         ? {
@@ -107,7 +120,11 @@ const normalizeExistingState = (profile: UserProfile, now = Date.now()): Ambient
         version: AMBIENT_SOCIAL_VERSION,
         seededAt: existing.seededAt || now,
         lastGrowthAt: existing.lastGrowthAt,
-        entries: dedupeEntries(existing.entries.filter(entry => !isLegacyLocalEntry(entry) || isLinkedEntry(entry))).slice(0, MAX_ENTRIES),
+        entries: dedupeEntries(existing.entries.filter(entry => (
+            (!isLegacyLocalEntry(entry) || isLinkedEntry(entry))
+            && (!entry.hidden || isLinkedEntry(entry))
+            && !isRejectedAmbientGeneratedName(entry.name)
+        ))).slice(0, MAX_ENTRIES),
     };
 };
 
@@ -168,6 +185,7 @@ function normalizeGeneratedEntry(item: any, now: number, index: number): Ambient
     const note = cleanText(item?.note || item?.context || item?.profile || item?.bio, 180);
     const lastMessage = cleanText(item?.lastMessage || item?.message || item?.preview, 120);
     if (!name || !note || !lastMessage) return null;
+    if (isRejectedAmbientGeneratedName(name)) return null;
     const base = {
         name,
         avatar: fallbackAvatar(name),
@@ -291,6 +309,7 @@ export async function ensureAmbientSocialState(
     now = Date.now(),
 ): Promise<AmbientSocialState> {
     const existing = normalizeExistingState(profile, now);
+    if (profile.ambientSocialEnabled === false) return existing;
     const live = activeAmbientEntries(existing.entries);
     if (live.length >= MIN_INITIAL_ENTRIES) {
         return maybeGrowAmbientSocial(existing, profile, characters, api, now);
@@ -313,6 +332,7 @@ export async function maybeGrowAmbientSocial(
     api: ResolvedApi,
     now = Date.now(),
 ): Promise<AmbientSocialState> {
+    if (profile.ambientSocialEnabled === false) return state;
     const activeCount = activeAmbientEntries(state.entries).length;
     if (activeCount >= MAX_ENTRIES) return state;
     if (state.lastGrowthAt && now - state.lastGrowthAt < GROWTH_INTERVAL_MS) return state;
@@ -335,6 +355,17 @@ export function patchAmbientSocialEntry(
     return {
         ...base,
         entries: base.entries.map(entry => (entry.id === id ? ({ ...entry, ...updates } as AmbientSocialEntry) : entry)),
+    };
+}
+
+export function removeAmbientSocialEntry(
+    state: AmbientSocialState | undefined,
+    id: string,
+): AmbientSocialState {
+    const base = state || { version: AMBIENT_SOCIAL_VERSION, seededAt: Date.now(), entries: [] };
+    return {
+        ...base,
+        entries: base.entries.filter(entry => entry.id !== id),
     };
 }
 
@@ -363,6 +394,35 @@ export function isAmbientSocialCharacter(char: CharacterProfile | null | undefin
 
 export function isAmbientSocialGroup(group: GroupProfile | null | undefined): boolean {
     return !!group?.ambientSocialSource?.entryId;
+}
+
+export function isAmbientSocialCharacterForUser(
+    char: CharacterProfile | null | undefined,
+    profile: UserProfile | null | undefined,
+): boolean {
+    if (!char) return false;
+    if (isAmbientSocialCharacter(char)) return true;
+    return getAmbientSocialLinkedCharacterIds(profile?.ambientSocial?.entries || []).has(char.id);
+}
+
+export function isAmbientSocialGroupForUser(
+    group: GroupProfile | null | undefined,
+    profile: UserProfile | null | undefined,
+): boolean {
+    if (!group) return false;
+    if (isAmbientSocialGroup(group)) return true;
+    return getAmbientSocialLinkedGroupIds(profile?.ambientSocial?.entries || []).has(group.id);
+}
+
+export function shouldSuppressAmbientSocialForUser(profile: UserProfile | null | undefined): boolean {
+    return profile?.ambientSocialEnabled === false;
+}
+
+export function shouldHideAmbientSocialRecordForUser(
+    profile: UserProfile | null | undefined,
+    hideConverted = profile?.ambientSocialHideConverted !== false,
+): boolean {
+    return shouldSuppressAmbientSocialForUser(profile) || hideConverted;
 }
 
 function buildAmbientCharacterPrompt(entry: AmbientSocialContact, userName: string): string {

@@ -8,7 +8,7 @@ export type {
     LinkType, MemoryLink, BoxStatus, TopicBox, TopicContinuity,
     AnticipationStatus, Anticipation, MemoryBatch,
     PersonalityStyle, EmbeddingConfig, ScoredMemory, RemoteVectorConfig,
-    EventBox,
+    EventBox, MemoryNodeSource, MemoryNodeSourceKind,
 } from './types';
 
 export { ROOM_CONFIGS, ROOM_LABELS, getRoomLabel, PERSONALITY_WEIGHTS, EVENT_BOX_COMPRESSION_THRESHOLD } from './types';
@@ -37,7 +37,13 @@ export { expandAndFormat } from './formatter';
 
 // 集成
 export type { LightLLMConfig, PipelineResult, DiaryIngestResult } from './pipeline';
-export { retrieveMemories, injectMemoryPalace, processNewMessages, getMemoryPalaceHighWaterMark, ingestDiaryToPalace } from './pipeline';
+export type { MemoryPalaceProcessingStats } from './pipeline';
+export {
+    retrieveMemories, injectMemoryPalace, processNewMessages, getMemoryPalaceHighWaterMark,
+    getMemoryPalaceProcessingStats, getMemoryPalaceUnprocessedBufferCount, ingestDiaryToPalace,
+    MEMORY_PALACE_HOT_ZONE_SIZE, MEMORY_PALACE_BUFFER_THRESHOLD,
+    MEMORY_PALACE_FORCE_MIN_THRESHOLD, MEMORY_PALACE_PROCESS_RATIO,
+} from './pipeline';
 
 // 期盼
 export {
@@ -57,7 +63,7 @@ export type { MigrationProgress } from './migration';
 export {
     bindMemoriesIntoEventBox, manuallyBindMemories,
     removeMemoryFromBox, reviveArchivedMemory,
-    unbindAllLiveMemories,
+    unbindAllLiveMemories, setEventBoxSealed,
 } from './eventBox';
 export {
     maybeCompressEventBoxes, compressAllEligibleBoxes,
@@ -66,3 +72,19 @@ export {
 // 一键清空（本地 + 云端）
 export { wipeAllMemoryPalace } from './wipe';
 export type { WipeResult } from './wipe';
+
+// 体检 / 修复 / 维护
+export {
+    inspectMemoryPalace,
+    repairMemoryPalaceIntegrity,
+    revectorizeMemoryNodes,
+    runMemoryPalaceCatchUp,
+    deleteTaggedLegacyMemories,
+} from './maintenance';
+export type {
+    MemoryPalaceInspection,
+    MemoryPalaceRepairResult,
+    MemoryPalaceRevectorizeResult,
+    MemoryPalaceCatchUpResult,
+    MemoryPalaceCatchUpTarget,
+} from './maintenance';

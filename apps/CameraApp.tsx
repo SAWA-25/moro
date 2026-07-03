@@ -7,6 +7,7 @@ import { GalleryImage } from '../types';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { ArrowLeft, ArrowsClockwise, Camera as CameraIcon, Images } from '@phosphor-icons/react';
+import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 
 /**
  * 相机 App —— 用「TA 的手机」拍下此刻，让 TA 看见并一起聊。
@@ -141,7 +142,7 @@ const CameraApp: React.FC<CameraAppProps> = ({ charId, onExit, onSendToChat }) =
             });
             const choice = data.choices?.[0];
             let text: string = extractContent(data) || choice?.message?.reasoning_content || choice?.text || '';
-            text = (text || '').trim();
+            text = sanitizeAssistantVisibleText(text);
             if (!text) throw new Error('TA 没有回应，请重试');
 
             const parts = text.split(/\n+/).map(s => s.trim()).filter(Boolean).slice(0, 3);

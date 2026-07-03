@@ -27,7 +27,7 @@
 | 氛围 BGM | `utils/dateEngine.ts` `buildDateBgmPrompt` + `utils/minimaxMusic.ts` `synthesizeSongMinimax`（instrumental），按当前 vibe 生成专属恋爱 BGM，缓存 assetKey 复用 |
 | 语音 | `utils/minimaxTts.ts` `synthesizeSpeech`：开「🔊 有声」后角色台词逐句 TTS 播放（用角色 voiceProfile）。**用户语音输入**：💬输入框旁 🎤 用浏览器 Web Speech API（`webkitSpeechRecognition`，zh-CN）实时转写进「说点什么」 |
 | 持久化 | `utils/dateStore.ts`：localStorage 按角色存多条世界线（list/save/create/fork/delete/rename） |
-| UI | `apps/lifesim/DateView.tsx`：场景选择 / 世界线**分叉树**（`buildForest` + `WorldlineNode` 递归缩进展示血缘）/ 约会会话（消息流 + 话·动作分输入 + 🎤语音输入 + BGM/语音/分叉）|
+| UI | `apps/lifesim/DateView.tsx`：地图式场景选择 / 地图式世界线入口 + **分叉树**（`buildForest` + `WorldlineNode` 递归缩进展示血缘）/ 约会会话（消息流 + 话·动作分输入 + 🎤语音输入 + BGM/语音/分叉）|
 | 入口 | `apps/LifeSimApp.tsx`：顶栏 ♥ 按钮 → `showDate` 覆盖层 |
 | 情侣空间联动 | `components/couple/CoupleSpace.tsx` 写入 `moro_date_intent_v1` 后打开 `LifeSim`，`apps/LifeSimApp.tsx` 消费 intent 直接进入约会；`apps/lifesim/DateView.tsx` 可把当前世界线摘要「收进情侣空间」为 `CoupleMemoryCard(kind:'date')` |
 

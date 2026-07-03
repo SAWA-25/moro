@@ -315,10 +315,11 @@ const ShopApp: React.FC = () => {
 
     const companionCharPay = async (char: CharacterProfile, item: ShopItem, speech: string) => {
         const order = placeOrder([{ item, qty: 1 }], 'char', char.name);
+        const content = [speech.trim(), `我替你付了 ${item.emoji}${item.name}，等包裹到了记得签收。`].filter(Boolean).join('\n');
         try {
             await DB.saveMessage({
                 charId: char.id, role: 'assistant', type: 'text',
-                content: `${speech}\n[心意铺] 我替你付了 ${item.emoji}${item.name}，等包裹到了记得签收。`,
+                content,
                 metadata: { shopCompanion: true, shopOrderId: order.id, shopAction: 'char_pay' },
             } as any);
         } catch { /* ignore */ }
@@ -359,7 +360,7 @@ const ShopApp: React.FC = () => {
         try {
             await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
-                content: `[心意铺陪逛] ${char.name} 带着 ${userProfile.name || '你'} 买下了 ${item.emoji}${item.name}（¥${formatPrice(item.price)}，Moro 虚拟余额自动支付）`,
+                content: `${char.name} 带着 ${userProfile.name || '你'} 买下了 ${item.emoji}${item.name}（¥${formatPrice(item.price)}，已从心意铺账户结清）`,
                 metadata: { shopCompanion: true, shopOrderId: order.id, shopAction: 'auto_user_pay' },
             } as any);
         } catch { /* ignore */ }
@@ -574,7 +575,7 @@ const ShopApp: React.FC = () => {
         try {
             await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
-                content: `[心意铺陪逛] ${userProfile.name || '你'} 替 ${char.name} 付了 ${req.item.emoji}${req.item.name}（¥${formatPrice(req.item.price)}）`,
+                content: `${userProfile.name || '你'} 替 ${char.name} 付了 ${req.item.emoji}${req.item.name}（¥${formatPrice(req.item.price)}）`,
             } as any);
         } catch { /* ignore */ }
         pushCompanionLine(`收下啦，我会记得这是你陪我逛时买的。`, 'want', req.item.id);
@@ -731,7 +732,7 @@ const ShopApp: React.FC = () => {
         try {
             await DB.saveMessage({
                 charId: char.id, role: 'user', type: 'text',
-                content: `[购物车求代付] 我篮子里有：${cartBrief}，一共 ¥${formatPrice(total)}，可以帮我付一下吗～`,
+                content: `我篮子里有：${cartBrief}，一共 ¥${formatPrice(total)}，可以帮我付一下吗～`,
             } as any);
         } catch { /* ignore */ }
         let agree = false; let reply = '';
@@ -788,7 +789,7 @@ const ShopApp: React.FC = () => {
         try {
             await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
-                content: `[购物车] ${userProfile.name || '你'} 帮 ${char.name} 清空了心愿购物车（${items.length}件，¥${formatPrice(total)}）`,
+                content: `${userProfile.name || '你'} 帮 ${char.name} 清空了心愿购物车（${items.length}件，¥${formatPrice(total)}）`,
             } as any);
         } catch { /* ignore */ }
         addToast(`替 ${char.name} 付了 ¥${formatPrice(total)}`, 'success');
@@ -939,7 +940,6 @@ const ShopApp: React.FC = () => {
     return (
         <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
             <PaperBackdrop corners={false} />
-            <div style={{ height: 'var(--safe-top)' }} />
 
             {/* 顶栏：胶带返回钮 + 招牌 + 心意币/钱包小票 */}
             <div className="relative z-20 shrink-0 px-4 pt-2 pb-2">
@@ -1697,7 +1697,6 @@ const ProductDetail: React.FC<{
     return (
         <div className="absolute inset-0 z-[60] flex flex-col animate-fade-in" style={{ background: PAGE_BG, color: INK }}>
             <PaperBackdrop corners={false} />
-            <div style={{ height: 'var(--safe-top)' }} />
             <div className="relative z-10 flex items-center px-4 h-12 gap-2 shrink-0">
                 <button onClick={onClose} className="relative inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }}>
                     <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-2deg)' }} />
@@ -1863,7 +1862,7 @@ const ProductEditorSheet: React.FC<{
                     inputMode="decimal" className="w-full px-3 py-2 rounded-xl text-sm outline-none" style={paperInput} />
 
                 <div className="rounded-xl px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(31,29,26,0.06)', color: INK_SOFT }}>
-                    自定义商品只存在 Moro 本地心意铺里，价格、图片和评分只影响虚拟购物与送礼记录。
+                    保存后会出现在这台手机的货架里，之后的购物车、小票和送礼记录都会按这份资料走。
                 </div>
 
                 <ScrapButton variant={nameReady ? 'ink' : 'ghost'} disabled={!nameReady}

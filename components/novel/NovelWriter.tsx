@@ -419,7 +419,7 @@ ${chapterText.substring(0, 200000)}
 
             {/* 顶栏 */}
             <div className="shrink-0 z-20 border-b-2 border-[#1c1b1a]" style={{ background: PAPER }}>
-                <div className="relative flex items-center gap-2 px-4 pb-2" style={{ paddingTop: 'calc(var(--safe-top) + 0.6rem)' }}>
+                <div className="relative flex items-center gap-2 px-4 pt-2.5 pb-2">
                     <BackSticker onClick={onBack} label="回抽屉" />
                     <button onClick={onOpenSettings} className="flex-1 min-w-0 flex flex-col items-center active:opacity-70 transition-opacity">
                         <span className="font-black text-lg text-[#1c1b1a] truncate max-w-[150px]" style={BRUSH}>{activeBook.title}</span>

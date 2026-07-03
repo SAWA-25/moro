@@ -332,7 +332,7 @@ ${videoCallPromptBody({
             <div className="absolute inset-0 opacity-[0.06] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#1b1a17 1px, transparent 1px)', backgroundSize: '7px 7px' }} />
             <div className="absolute inset-0 bg-gradient-to-b from-[#efece3]/72 via-[#efece3]/88 to-[#efece3]" />
 
-            <div className="relative z-10 flex flex-col h-full">
+            <div className="relative z-10 flex min-h-0 flex-col h-full">
                 <div className="px-4 pt-10 pb-3 border-b-2 border-black flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <button onClick={hangUp} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断">
@@ -367,7 +367,7 @@ ${videoCallPromptBody({
                 </div>
 
                 <div className="px-5 pt-4">
-                    <div className="relative mx-auto w-full max-w-[320px] h-[38vh] min-h-[240px] max-h-[390px] border-2 border-black bg-white p-2 -rotate-[0.4deg]" style={{ boxShadow: '4px 4px 0 #000' }}>
+                    <div className="relative mx-auto w-full max-w-[320px] border-2 border-black bg-white p-2 -rotate-[0.4deg]" style={{ height: 'clamp(180px, 34vh, 360px)', boxShadow: '4px 4px 0 #000' }}>
                         <div className="relative w-full h-full overflow-hidden bg-[#efece3] border-2 border-black">
                             {charImg
                                 ? <img src={charImg} className="w-full h-full object-contain" alt={charName} />

@@ -478,6 +478,7 @@ async function executeActions(
                             accessCount: 0,
                             sourceId: node.id,
                             origin: 'digestion',
+                            source: { kind: 'digestion', label: '认知内化', refId: node.id },
                         };
                         await MemoryNodeDB.save(selfMemory);
                         existingNodes.push(selfMemory);
@@ -513,6 +514,7 @@ async function executeActions(
                             accessCount: 0,
                             sourceId: node.id,
                             origin: 'digestion',
+                            source: { kind: 'digestion', label: `用户认知整合·${category}`, refId: node.id },
                         };
                         await MemoryNodeDB.save(synthesized);
                         existingNodes.push(synthesized);
@@ -553,6 +555,7 @@ async function executeActions(
                             accessCount: 0,
                             sourceId: node.id,
                             origin: 'digestion',
+                            source: { kind: 'digestion', label: '自我领悟', refId: node.id },
                         };
                         await MemoryNodeDB.save(insightMemory);
                         existingNodes.push(insightMemory);
@@ -588,6 +591,7 @@ async function executeActions(
                             accessCount: 0,
                             sourceId: node.id,
                             origin: 'digestion',
+                            source: { kind: 'digestion', label: '自我反刍困惑', refId: node.id },
                         };
                         await MemoryNodeDB.save(confuseMemory);
                         existingNodes.push(confuseMemory);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle, PawPrint, BeerBottle, type Icon } from '@phosphor-icons/react';
+import { Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle, PawPrint, BeerBottle, MoonStars, type Icon } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
@@ -38,7 +38,7 @@ const PROGRAMME: Zhe[] = [
     { section: 'talk',       no: '肆', name: '谈心',   en: 'HEART TO HEART', tagline: '把心里的话，轻轻放下',   desc: '心里堵时，找个角色好好被听一次——只负责接住你、抱住你的安全角落。', Icon: Quotes },
     { section: 'trpg',       no: '伍', name: 'TRPG',   en: 'THE CAMPAIGN',   tagline: '掷一颗骰子，闯一段故事', desc: '拉熟人开团：AI 现搓世界观、骰子判定、自由行动，剧情可转回聊天一起回味。', Icon: DiceFive },
     { section: 'trajectory', no: '陆', name: '轨迹',   en: 'BEFORE WE MET',  tagline: '那些还没遇见你的日子',   desc: '回到过去的节点，看 TA 原本走过的路——也看你，从哪一天起慢慢走进 TA 的人生。', Icon: FilmReel },
-    { section: 'reflection', no: '柒', name: '对影',   en: 'BY MOONLIGHT',   tagline: '举杯邀明月，对影成三人', desc: '同一个人，在不同时间里重逢——是谁，让命运偏离了原本的方向。', Icon: MaskSad },
+    { section: 'reflection', no: '柒', name: '对影',   en: 'BY MOONLIGHT',   tagline: '举杯邀明月，对影成三人', desc: '同一个人，在不同时间里重逢——是谁，让命运偏离了原本的方向。', Icon: MoonStars },
     { section: 'werewolf',   no: '捌', name: '狼人杀', en: 'THE WOLF NIGHT', tagline: '天黑请闭眼，谁是狼',       desc: '拉一桌熟人开局：随机发牌，AI 玩家夜里行动、白天发言投票——会伪装、会推理，谁能笑到天亮？', Icon: PawPrint },
     { section: 'truthdare',  no: '玖', name: '真心话大冒险', en: 'TRUTH OR DARE', tagline: '瓶口指向谁，谁就摊牌', desc: '和角色们围一圈转瓶子：受题者挑真心话或大冒险，另一人出题、当场作答。尺度可调，AI 贴人设玩。', Icon: BeerBottle },
 ];
@@ -62,7 +62,7 @@ const TheaterApp: React.FC = () => {
 
     return (
         <PaperShell>
-            <ScrapHeader title="折子戏" en="ZHE ZI XI" onBack={closeApp} backLabel="回桌面" />
+            <ScrapHeader title="幕间集" en="INTERLUDES" onBack={closeApp} backLabel="回桌面" />
 
             <ScrapScroll className="px-5 pb-12 pt-1">
                 {/* ── 戏单招牌 ── */}
@@ -74,7 +74,7 @@ const TheaterApp: React.FC = () => {
                     <div className="relative">
                         <div className="text-[9px] tracking-[0.42em] mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>TONIGHT'S BILL · 今 日 戏 单</div>
                         <div className="flex items-end gap-2.5">
-                            <div className="text-[52px] leading-[0.9] font-black tracking-tight" style={{ color: INK }}>折子戏</div>
+                            <div className="text-[52px] leading-[0.9] font-black tracking-tight" style={{ color: INK }}>幕间集</div>
                             <MaskHappy size={30} weight="fill" className="mb-2 -rotate-[8deg]" style={{ color: INK }} />
                             <MaskSad size={22} weight="regular" className="mb-2.5 rotate-[6deg]" style={{ color: INK_SOFT }} />
                         </div>

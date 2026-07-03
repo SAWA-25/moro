@@ -5,6 +5,7 @@ import JournalSheet, { SealBtn, CandyToggle, LinedInput, LinedArea, NoteStrip } 
 import { MONO_STACK, CUTE_STACK } from '../handbook/paper';
 import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, ApiPreset, APIConfig } from '../../types';
 import ScheduleCard from '../schedule/ScheduleCard';
+import type { ScheduleLifeNotesBySlot } from '../../utils/scheduleLifeSync';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { REACTION_EMOJIS } from '../../utils/messageReactions';
 import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye, BookmarkSimple, NotePencil } from '@phosphor-icons/react';
@@ -113,6 +114,7 @@ interface ChatModalsProps {
     voiceAvailable?: boolean; // true if char has voiceProfile configured
     // Schedule
     scheduleData?: DailySchedule | null;
+    scheduleLifeNotes?: ScheduleLifeNotesBySlot;
     isScheduleGenerating?: boolean;
     onScheduleEdit?: (index: number, slot: ScheduleSlot) => void;
     onScheduleDelete?: (index: number) => void;
@@ -160,7 +162,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     timeAwarenessEnabled, onToggleTimeAwareness,
     chatVoiceEnabled, onToggleChatVoice, chatVoiceLang, onSetChatVoiceLang,
     onGenerateVoice, voiceAvailable,
-    scheduleData, isScheduleGenerating, onScheduleEdit, onScheduleDelete, onScheduleReroll, onScheduleCoverChange,
+    scheduleData, scheduleLifeNotes, isScheduleGenerating, onScheduleEdit, onScheduleDelete, onScheduleReroll, onScheduleCoverChange,
     onScheduleStyleChange,
     isScheduleFeatureEnabled, onToggleScheduleFeature, isEmotionBuffFeatureEnabled, onToggleEmotionBuffFeature,
     isMemoryPalaceEnabled, isVectorizing, onForceVectorize,
@@ -993,7 +995,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 onClose={() => setModalType('none')}
             >
                 <div>
-                    {/* 作息开关：关闭时不调副 API、不生成日程 */}
+                    {/* 作息开关：关闭时不调日程 / 心情 API、不生成日程 */}
                     {onToggleScheduleFeature && (
                         <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#eed6df' }}>
                             <div className="flex-1 min-w-0">
@@ -1003,8 +1005,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 </div>
                                 <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
                                     {isScheduleFeatureEnabled
-                                        ? '开着：会请副 API 排出 TA 今天的日程，聊天时参考当前时段和日程锚点。'
-                                        : '关着：不请副 API 排日程，聊天也不再注入当天作息。'}
+                                        ? '开着：会用下方日程 / 心情 API 排出 TA 今天的日程；留空时使用主 API。'
+                                        : '关着：不生成日程，聊天也不再注入当天作息。'}
                                 </p>
                             </div>
                             <CandyToggle on={!!isScheduleFeatureEnabled} onToggle={onToggleScheduleFeature} candy="#d8a5b7" />
@@ -1077,6 +1079,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
                             <ScheduleCard
                                 schedule={scheduleData || null}
+                                lifeNotes={scheduleLifeNotes}
                                 character={activeCharacter}
                                 compact={false}
                                 onEdit={onScheduleEdit}
@@ -1089,7 +1092,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 点一条可以改 · 按住不放是删掉
                             </p>
 
-                            {/* 情绪 / 意识流 API */}
+                            {/* 日程 / 心情 API */}
                             {isEmotionBuffFeatureEnabled && activeCharacter && apiPresets && onAddApiPreset && onSaveEmotion && onClearBuffs && (
                                 <EmotionSettingsPanel
                                     char={activeCharacter}

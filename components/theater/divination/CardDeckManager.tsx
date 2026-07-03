@@ -77,7 +77,7 @@ const CardDeckManager: React.FC<Props> = ({ deck, images, onChanged, onBack, add
     };
 
     return (
-        <div className="absolute inset-0 flex flex-col bg-[#14101c] text-white animate-fade-in overflow-hidden" style={{ paddingTop: 'var(--safe-top)' }}>
+        <div className="absolute inset-0 flex flex-col bg-[#14101c] text-white animate-fade-in overflow-hidden">
             <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0 z-10">
                 <button onClick={onBack} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/15 text-white/80 active:scale-95 transition-all border border-white/10">
                     <ArrowLeft size={14} weight="bold" /> 返回

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterProfile, UserProfile } from '../types';
 import {
   buildCharacterLifePostPrompt,
@@ -6,6 +6,7 @@ import {
   chooseXhsCoverUrl,
   classifyXhsFeedCategory,
   FEED_BATCH_SIZE,
+  generateCharacterLifePost,
   getXhsCharacterPostQuota,
   resolveXhsAuthorCharacter,
 } from './xhsFeed';
@@ -16,6 +17,23 @@ const sameNameChars = [
 ] as CharacterProfile[];
 
 const user = { name: 'User', avatar: '', bio: 'tester' } as UserProfile;
+
+const jsonResponse = (data: unknown) => new Response(JSON.stringify(data), {
+  status: 200,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+let originalFetch: typeof fetch | undefined;
+
+beforeEach(() => {
+  originalFetch = global.fetch;
+});
+
+afterEach(() => {
+  if (originalFetch) global.fetch = originalFetch;
+  else delete (globalThis as any).fetch;
+  vi.restoreAllMocks();
+});
 
 describe('xhs character identity', () => {
   it('scales character post quota with roster size', () => {
@@ -89,5 +107,42 @@ describe('xhs character identity', () => {
     expect(prompt).toContain('charId="model-a"');
     expect(prompt).toContain('category');
     expect(prompt).toContain('只保存在本地');
+  });
+
+  it('keeps custom API role and binding in the fetch meta', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({
+      choices: [{
+        message: {
+          content: JSON.stringify([{
+            author: 'Same Name',
+            charId: 'model-a',
+            isCharacter: true,
+            title: '今天的小事',
+            body: '今天路过一家新开的咖啡店，顺手记了一点生活碎片。',
+            category: 'life',
+            tags: ['日常', '咖啡', '熟人近况', '生活记录'],
+            likes: 12,
+            comments: [],
+          }]),
+        },
+        finish_reason: 'stop',
+      }],
+    }));
+    global.fetch = fetchFn as unknown as typeof fetch;
+
+    await generateCharacterLifePost({
+      baseUrl: 'https://custom.example.test/v1',
+      apiKey: '',
+      model: 'custom-model',
+      apiRole: 'custom',
+      apiBinding: '见闻簿专用 API',
+    } as any, sameNameChars[0], user);
+
+    const init = (fetchFn.mock.calls as any[])[0]?.[1] as RequestInit & { __moroMeta?: any };
+    expect(init.__moroMeta).toMatchObject({
+      featureId: 'social.generate',
+      apiRole: 'custom',
+      apiBinding: '见闻簿专用 API',
+    });
   });
 });

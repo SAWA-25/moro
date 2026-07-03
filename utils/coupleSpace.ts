@@ -23,15 +23,22 @@ import type {
   CoupleRecap,
   CoupleTask,
   CoupleWish,
+  CoupleQuestion,
+  CoupleWhisper,
+  CoupleEyesCard,
+  CoupleEyesEra,
+  Message,
 } from '../types';
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
   coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
-  coupleAutoCareUserPrompt, coupleRecapUserPrompt,
+  coupleAutoCareUserPrompt, coupleRecapUserPrompt, coupleEyesCardUserPrompt,
 } from './laiwangPrompts';
 import { llmComplete, type ChatMsg } from './llmComplete';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { DB } from './db';
+import { formatMessageWithTime } from './messageFormat';
 
 export interface CoupleApi {
   baseUrl: string;
@@ -43,6 +50,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const genCoupleId = (p = 'cs'): string =>
   `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+export const COUPLE_EYES_BODY_MAX = 1200;
 
 /** 一份空的情侣空间（首次绑定时初始化）。 */
 export function createCoupleSpace(): CoupleSpace {
@@ -56,17 +65,38 @@ export function createCoupleSpace(): CoupleSpace {
     whispers: [],
     wishes: [],
     questions: [],
-    settings: { theme: 'scrapbook' },
+    settings: { theme: 'clean' },
     profile: { rituals: [] },
     memoryCards: [],
     recaps: [],
     dailyCheckins: [],
     autoCare: {},
+    eyesCards: [],
     interactions: [],
     createdAt: now,
     updatedAt: now,
   };
 }
+
+const normalizeQuestion = (q: CoupleQuestion): CoupleQuestion => {
+  const answer = typeof q.answer === 'string' ? q.answer : '';
+  const status = q.status || (answer ? 'answered' : 'pending');
+  return {
+    ...q,
+    answer,
+    status,
+    visibility: q.visibility === 'named' ? 'named' : 'anonymous',
+    source: q.source === 'whisperInbox' ? 'whisperInbox' : 'questionBox',
+    answeredAt: q.answeredAt || (status === 'answered' && q.at ? q.at : undefined),
+    pinned: !!q.pinned,
+  };
+};
+
+const normalizeWhisper = (w: CoupleWhisper): CoupleWhisper => ({
+  ...w,
+  pinned: !!w.pinned,
+  readAt: typeof w.readAt === 'number' ? w.readAt : undefined,
+});
 
 /** 取角色的情侣空间，没有就给一份默认（不写库，纯读取兜底）。 */
 export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | undefined | null): CoupleSpace {
@@ -80,15 +110,16 @@ export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | 
       anniversaries: cs.anniversaries || [],
       photos: cs.photos || [],
       tasks: cs.tasks || [],
-      whispers: cs.whispers || [],
+      whispers: (cs.whispers || []).map(normalizeWhisper),
       wishes: cs.wishes || [],
-      questions: cs.questions || [],
-      settings: { theme: 'scrapbook', ...(cs.settings || {}) },
+      questions: (cs.questions || []).map(normalizeQuestion),
+      settings: { ...(cs.settings || {}), theme: 'clean' },
       profile: { ...(cs.profile || {}), rituals: cs.profile?.rituals || [] },
       memoryCards: cs.memoryCards || [],
       recaps: cs.recaps || [],
       dailyCheckins: cs.dailyCheckins || [],
       autoCare: cs.autoCare || {},
+      eyesCards: cs.eyesCards || [],
       interactions: cs.interactions || [],
       intimacy: typeof cs.intimacy === 'number' ? cs.intimacy : 0,
     };
@@ -258,6 +289,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     (cs.memoryCards?.length || 0) > 0 || (cs.recaps?.length || 0) > 0 ||
     (cs.dailyCheckins?.length || 0) > 0 || !!cs.profile?.homeName ||
     !!cs.profile?.loveLanguage || (cs.profile?.rituals?.length || 0) > 0 ||
+    (cs.eyesCards?.length || 0) > 0 ||
     (cs.plant?.growth || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
@@ -302,11 +334,19 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     .slice(0, 2)
     .map(r => `${r.title.slice(0, 24)}：${r.summary.slice(0, 70)}`);
 
-  // 提问箱里你近来答过的问答（让角色言行与自己答过的话保持一致）
-  const recentQaLines = [...(cs.questions || [])]
-    .sort((a, b) => b.at - a.at)
+  const eyesCardLines = [...(cs.eyesCards || [])]
+    .sort((a, b) => b.generatedAt - a.generatedAt)
     .slice(0, 2)
-    .map(q => `${userName}问「${q.question.slice(0, 40)}」，你答「${q.answer.slice(0, 50)}」`);
+    .map(c => `${eyesEraLabel[c.era]}：${c.summary.slice(0, 70)}${c.tags?.length ? `（${c.tags.slice(0, 3).join('、')}）` : ''}`);
+
+  // 提问箱里近来答过的重要问答（让角色言行与自己答过的话保持一致）
+  const recentQaLines = [...(cs.questions || [])]
+    .map(normalizeQuestion)
+    .filter(q => (q.status || 'answered') === 'answered' && !!q.answer)
+    .sort((a, b) => b.at - a.at)
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
+    .slice(0, 2)
+    .map(q => `${q.visibility === 'anonymous' ? '匿名' : userName}问「${q.question.slice(0, 40)}」，你答「${q.answer.slice(0, 50)}」`);
 
   // 你们一起养的盆栽（有成长才提）
   let plantLine: string | undefined;
@@ -338,6 +378,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     profileLines,
     memoryCardLines,
     recapLines,
+    eyesCardLines,
   });
 }
 
@@ -733,10 +774,13 @@ const cleanList = (raw: unknown, maxItems: number, maxLen: number): string[] =>
     ? raw.map(x => cleanShort(x, maxLen)).filter(Boolean).slice(0, maxItems)
     : [];
 
+const stripThinkBlocks = (raw: string): string =>
+  String(raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
 function extractJsonObject(raw: string): any | null {
-  const text = raw.trim();
+  const text = stripThinkBlocks(raw);
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = fenced ? fenced[1].trim() : text;
+  const body = stripThinkBlocks(fenced ? fenced[1].trim() : text);
   const m = body.match(/\{[\s\S]*\}/);
   if (!m) return null;
   try { return JSON.parse(m[0]); } catch { return null; }
@@ -825,6 +869,101 @@ export async function generateCoupleRecap(opts: {
   if (obj && !obj.text && obj.summary) obj.text = obj.summary;
   const draft = normalizeAutoCareDraft({ ...(obj || {}), kind: 'recap' }, true);
   return draft?.text || draft?.highlights?.length ? draft : null;
+}
+
+const eyesEraLabel: Record<CoupleEyesEra, string> = {
+  past: '过去的我',
+  present: '现在的我',
+  future: '将来的我',
+};
+
+const formatEyesTime = (ts: number): string => {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function buildCoupleEyesSpaceLines(space: CoupleSpace, userName: string, charName: string): string[] {
+  const lines: { at: number; text: string }[] = [];
+  (space.moments || []).forEach(m => {
+    const who = authorLabel(m.author, userName, charName);
+    lines.push({ at: m.createdAt, text: `动态/${who}：${describeMoment(m)}` });
+  });
+  (space.whispers || []).forEach(w => {
+    const who = authorLabel(w.author, userName, charName);
+    lines.push({ at: w.at, text: `悄悄话/${who}：${w.text}` });
+  });
+  (space.questions || []).map(normalizeQuestion).forEach(q => {
+    const status = q.status || 'answered';
+    const answer = q.answer ? `；${charName}答：${q.answer}` : status === 'pending' ? '；等待回答' : '';
+    lines.push({ at: q.answeredAt || q.at, text: `提问箱/${q.visibility === 'anonymous' ? '匿名' : userName}问：${q.question}${answer}` });
+  });
+  (space.memoryCards || []).forEach(c => lines.push({ at: c.createdAt, text: `记忆卡「${c.title}」：${c.text}` }));
+  (space.recaps || []).forEach(r => lines.push({ at: r.createdAt, text: `关系回顾「${r.title}」：${r.summary}` }));
+  return lines
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 40)
+    .map(x => x.text.replace(/\s+/g, ' ').slice(0, 160));
+}
+
+function normalizeEyesCard(raw: any, era: CoupleEyesEra, sourceMessageIds: number[], now = Date.now()): CoupleEyesCard | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const summary = cleanShort(raw.summary, 80);
+  const body = cleanShort(raw.body || raw.text || raw.content, COUPLE_EYES_BODY_MAX);
+  if (!summary || !body) return null;
+  return {
+    era,
+    summary,
+    tags: cleanList(raw.tags, 4, 12),
+    body,
+    innerVoice: cleanShort(raw.innerVoice, 120) || undefined,
+    generatedAt: now,
+    sourceMessageIds,
+  };
+}
+
+export function upsertCoupleEyesCard(space: CoupleSpace, card: CoupleEyesCard): CoupleSpace {
+  const base = ensureCoupleSpace({ coupleSpace: space });
+  const rest = (base.eyesCards || []).filter(c => c.era !== card.era);
+  return { ...base, eyesCards: [card, ...rest], updatedAt: Date.now() };
+}
+
+export function applyCoupleQuestionAnswer(space: CoupleSpace, questionId: string, answer: string, now = Date.now()): CoupleSpace {
+  const base = ensureCoupleSpace({ coupleSpace: space });
+  return {
+    ...base,
+    questions: (base.questions || []).map(q => q.id === questionId
+      ? { ...normalizeQuestion(q), answer: cleanShort(answer, 160), status: 'answered', answeredAt: now }
+      : q),
+    updatedAt: now,
+  };
+}
+
+export async function generateCoupleEyesCard(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  space: CoupleSpace;
+  era: CoupleEyesEra;
+}): Promise<CoupleEyesCard | null> {
+  const { char, userName, api, space, era } = opts;
+  if (!(api.baseUrl || '').trim() || !api.model) return null;
+  let recentMessages: Message[] = [];
+  try {
+    recentMessages = await DB.getRecentMessagesByCharId(char.id, 80, true);
+  } catch {
+    recentMessages = [];
+  }
+  const recentChatLines = recentMessages
+    .filter(m => m.type !== 'image' && m.type !== 'emoji')
+    .map(m => formatMessageWithTime(m, char.name, userName, formatEyesTime).slice(0, 220));
+  const spaceLines = buildCoupleEyesSpaceLines(ensureCoupleSpace({ coupleSpace: space }), userName, char.name);
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleEyesCardUserPrompt(era, { userName, charName: char.name, recentChatLines, spaceLines }) },
+  ], 1400, 'chat.coupleSpace.eyes');
+  if (!out) return null;
+  return normalizeEyesCard(extractJsonObject(out), era, recentMessages.map(m => m.id), Date.now());
 }
 
 export function buildCoupleDateMemoryCard(input: {
@@ -930,7 +1069,7 @@ export function applyCoupleAutoCareDraft(
       id: genCoupleId('rc'),
       period: 'week',
       periodKey: periodKey('week', now),
-      title: cleanShort(draft?.title || '这几天的小报', 32),
+      title: cleanShort(draft?.title || '这几天的回顾', 32),
       summary: text || highlights.join('；').slice(0, 120) || '这几天也在慢慢靠近。',
       highlights,
       suggestedTasks: draft?.suggestedTasks || [],

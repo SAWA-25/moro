@@ -3,6 +3,8 @@ import type { CharacterProfile, PhoneEvidence } from '../types';
 import {
   buildCheckPhoneRecordPrompt,
   buildCheckPhoneStatusSummary,
+  CHECK_PHONE_APP_DEFS,
+  formatCharPhoneCheckRecordForContext,
   buildPhoneCheckSessionSummary,
   calculatePhoneCheckRisk,
   createPhoneCheckSession,
@@ -106,6 +108,71 @@ describe('check phone utilities', () => {
     expect(prompt?.prompt).toContain('Phone Screenlife Snapshot');
   });
 
+  it('includes secret space as a default check-phone app', () => {
+    const def = CHECK_PHONE_APP_DEFS.find(app => app.type === 'secret_space');
+
+    expect(def?.key).toBe('secret_space');
+    expect(def?.name).toBe('秘密空间');
+    expect(def?.logPrefix).toBe('秘密空间');
+    expect(def?.instruction).toContain('未发送草稿');
+    expect(def?.instruction).toContain('私密笔记');
+    expect(def?.instruction).toContain('小心愿');
+  });
+
+  it('builds secret space prompts around drafts, private notes, and wishes', () => {
+    const prompt = buildCheckPhoneRecordPrompt({
+      char,
+      userName: '用户',
+      type: 'secret_space',
+      context: '角色核心上下文',
+      recentMessages: '用户: 刚才你好像有话没说',
+      timeGap: '你们刚刚还在聊天。',
+    });
+
+    expect(prompt?.appName).toBe('秘密空间');
+    expect(prompt?.prompt).toContain('秘密空间');
+    expect(prompt?.prompt).toContain('未发送草稿');
+    expect(prompt?.prompt).toContain('私密笔记');
+    expect(prompt?.prompt).toContain('小心愿');
+    expect(prompt?.prompt).toContain('Screenlife');
+  });
+
+  it('defaults ordinary secret-space records to private instead of suspicious', () => {
+    const privateRecord = normalizePhoneEvidence({
+      type: 'secret_space',
+      title: '藏起来的小心愿',
+      detail: '秘密：希望下次见面时能先被叫名字。',
+    }, { type: 'secret_space', appName: '秘密空间', now: 100 });
+    const suspiciousRecord = normalizePhoneEvidence({
+      type: 'secret_space',
+      title: '删除记录前的草稿',
+      detail: '刚才撒谎了，先别让对方知道。',
+    }, { type: 'secret_space', appName: '秘密空间', now: 100 });
+
+    expect(privateRecord.meta?.risk).toBe('private');
+    expect(suspiciousRecord.meta?.risk).toBe('suspicious');
+  });
+
+  it('maps secret-space screenlife app names into private evidence', () => {
+    const records = mapXunjiToPhoneEvidence({
+      run: {
+        id: 'run-secret-space',
+        chats: [],
+        browsed: [
+          { id: 'browse-secret', time: 100, appName: '秘密空间', title: '草稿箱', summary: '只是留给自己的一句话。' },
+        ],
+        notes: [],
+        moments: [],
+      } as any,
+      now: 100,
+    });
+
+    expect(records).toHaveLength(1);
+    expect(records[0].type).toBe('secret_space');
+    expect(records[0].meta?.appName).toBe('秘密空间');
+    expect(records[0].meta?.risk).toBe('private');
+  });
+
   it('normalizes and summarizes phone check sessions', () => {
     const record = normalizePhoneEvidence({
       id: 'rec-suspicious',
@@ -137,6 +204,28 @@ describe('check phone utilities', () => {
     expect(summary).toContain('关系线索');
     expect(summary).toContain('信息「同事」');
     expect(trail).toContain('相关人：同事');
+  });
+
+  it('formats reverse phone check records without roleplay meta-analysis', () => {
+    const context = formatCharPhoneCheckRecordForContext(
+      `[查岗记录] 刚才 阿迟 拿走了 用户 的手机翻看。
+阿迟 的浏览过程与内心想法：
+1. 点开了与「伊萨克」的对话，心想：以我的性格，我不会直接质问，而是用更隐晦的方式表达。
+2. 看了朋友圈，心想：这张合照挺刺眼。
+用户 强行抢回了手机。
+阿迟 此刻的心情基调：这条消息可以是：伊萨克这名字出现得挺勤啊。`,
+      '阿迟',
+      '用户',
+    );
+
+    expect(context).toContain('伊萨克');
+    expect(context).toContain('看了朋友圈');
+    expect(context).toContain('伊萨克这名字出现得挺勤啊');
+    expect(context).not.toContain('以我的性格');
+    expect(context).not.toContain('更隐晦');
+    expect(context).not.toContain('这条消息可以是');
+    expect(context).not.toContain('浏览过程与内心想法');
+    expect(context).not.toContain('接下来请');
   });
 
   it('accumulates check-phone risk from actions and evidence', () => {

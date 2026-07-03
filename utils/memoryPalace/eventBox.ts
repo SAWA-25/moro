@@ -261,6 +261,16 @@ export async function manuallyBindMemories(
     return (await EventBoxDB.getById(boxId)) || null;
 }
 
+/** 手动封盒/解封。封盒后新相关记忆会另开延续盒；已有召回不受影响。 */
+export async function setEventBoxSealed(boxId: string, sealed: boolean): Promise<EventBox | null> {
+    const box = await EventBoxDB.getById(boxId);
+    if (!box) return null;
+    box.sealed = sealed;
+    box.updatedAt = Date.now();
+    await EventBoxDB.save(box);
+    return box;
+}
+
 /**
  * 把一条记忆从某 EventBox 中移出（恢复为独立记忆）。
  * 用于 UI 的"解除关联"或"复活归档项"场景。

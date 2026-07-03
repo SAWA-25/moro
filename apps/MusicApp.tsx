@@ -193,8 +193,10 @@ const MusicApp: React.FC = () => {
       { id: 'profile', label: '我的', icon: <UserCircle size={16} weight="fill" /> },
     ];
     return (
-      <div className="absolute left-4 right-4 bottom-[78px] z-40 flex items-center gap-1 rounded-2xl p-1 shizuku-glass-strong"
-        style={{ boxShadow: `0 4px 20px ${C.glow}20` }}>
+      <div
+        className="absolute left-4 right-4 z-40 flex items-center gap-1 rounded-2xl p-1 shizuku-glass-strong"
+        style={{ bottom: 'max(78px, calc(var(--safe-bottom, 0px) + 44px))', boxShadow: `0 4px 20px ${C.glow}20` }}
+      >
         {tabs.map(tab => {
           const active = view === tab.id;
           return (

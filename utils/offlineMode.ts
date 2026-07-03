@@ -5,6 +5,7 @@ import { extractContent } from './safeApi';
 import { RealtimeContextManager } from './realtimeContext';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { extractTakeoutOrderDirective } from './takeout';
 
 /**
  * 线下模式（自动线下）。
@@ -16,13 +17,13 @@ import { makeApiUsageMeta } from './apiUsageCatalog';
  * 用 pending 标记兜底，下次进入聊天时再弹。
  *
  * 结束：线下窗口内的全部情景（旁白/对话/用户行动）合成一条 system 消息落库进入
- * 上下文，随后触发角色主动发一条线上消息收尾。
+ * 上下文，宿主稍等一段时间后才会酌情收尾；期间若已经有新消息或事件，就不再抢话。
  *
  * 线上 ↔ 线下「关联」：本模块做了两头桥接，让见面不是和线上聊天割裂的独立剧情——
  *  · 线上 → 线下：buildOfflineBase 把最近的线上聊天喂进开场/推进 prompt，并明确要求
  *    这场见面承接线上聊到的话题/约定/心情，是同一段关系的延续；
  *  · 线下 → 线上：commitOfflineSessionToContext 把现场情景落成 system 记录，并提示角色
- *    回到线上后记得这次见面、可自然提起，于是收尾的线上消息能接住刚刚发生的事。
+ *    回到线上后记得这次见面、可自然提起，但不能把未发生的外卖/快递/电话等推进成已完成。
  * API：线下场景默认走文具盒主 API / 主模型，让面对面现场和主聊天保持同一套角色声音。
  */
 
@@ -31,6 +32,7 @@ export const OFFLINE_START_EVENT = 'moro-offline-start';
 
 const pendingKey = (charId: string) => `moro_offline_pending_${charId}`;
 const sessionKey = (charId: string) => `moro_offline_session_${charId}`;
+export const OFFLINE_FOLLOWUP_DELAY_MS = 5 * 60 * 1000;
 
 /** 从 AI 输出中剥离 [[OFFLINE_START]] 指令并返回是否命中 */
 export const extractOfflineStartDirective = (content: string): { content: string; offline: boolean } => {
@@ -61,6 +63,24 @@ export interface OfflineEntry {
     text: string;
     at: number;
 }
+
+export interface OfflineCommitInfo {
+    messageId: number;
+    timestamp: number;
+}
+
+export interface OfflineGeneratedTextResult {
+    /** 可写入线下情景记录的正文 */
+    content: string;
+    /** 命中的主动点饭票描述；undefined 表示未命中 */
+    takeoutDesc?: string;
+}
+
+/** 线下模式生成文本入记录前的轻量业务指令处理。 */
+export const prepareOfflineGeneratedText = (content: string): OfflineGeneratedTextResult => {
+    const takeout = extractTakeoutOrderDirective(content);
+    return { content: takeout.content, takeoutDesc: takeout.desc };
+};
 
 export const loadOfflineSession = (charId: string): OfflineEntry[] => {
     try {
@@ -174,6 +194,7 @@ ${recentLines || '（你们还没怎么聊过）'}
 - 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开；
 - 现场反应要像真人刚碰面：先看见对方、听见周围声音、注意到衣着/气味/天气/手里的东西，再决定怎么开口或靠近，不要直接跳成总结、告白或大段独白；
 - 关系没到的地方不要硬亲密，性格克制的人可以尴尬、嘴硬、岔开，熟悉的人也可以用玩笑、沉默或顺手的小动作表达。
+- 如果确实需要使用系统指令（例如主动点饭票的 [[TAKEOUT_ORDER: ...]]），必须放在整段输出最后单独一行，不要写进角色台词或场景旁白里，也不要解释指令本身。
 接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。文字要自然、具体、有生活气，避免舞台剧报幕、小说腔排比和过度煽情。${clockBlock}`;
 };
 
@@ -272,16 +293,20 @@ ${tail}
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */
 export const commitOfflineSessionToContext = async (
     char: CharacterProfile, userName: string, entries: OfflineEntry[],
-): Promise<void> => {
-    if (!entries.length) return;
+): Promise<OfflineCommitInfo | null> => {
+    if (!entries.length) return null;
     const transcript = formatEntries(entries, char.name, userName);
-    await DB.saveMessage({
+    const timestamp = Date.now();
+    const messageId = await DB.saveMessage({
         charId: char.id,
         role: 'system',
         type: 'text',
         content: `[线下模式记录] 你（${char.name}）和 ${userName} 刚刚线下见面了，下面是这次见面现场发生的全部情景。`
-            + `见面已经结束，你们现在回到线上聊天——请把这次见面当作真实发生过、你清楚记得的事：`
-            + `线上接着聊时可以自然提起见面时的细节、延续当时的心情和话题；如果刚才有尴尬、未说完、好笑或亲近的瞬间，可以像真人事后回味那样轻轻带到聊天里。不要表现得好像没见过面，也不要把这段经历硬写成总结报告。\n${transcript}`,
+            + `见面已经结束，这段经历已经写入你们共同的上下文，但这不是要求你立刻补一条线上消息。`
+            + `之后线上接着聊时，可以自然提起见面时的细节、延续当时的心情和话题；如果刚才有尴尬、未说完、好笑或亲近的瞬间，可以像真人事后回味那样轻轻带到聊天里。`
+            + `严格保持时间边界：没有在下面记录中明确发生的外卖送达、快递到达、电话接通、约定完成等事件，都还不能说成已经发生。不要表现得好像没见过面，也不要把这段经历硬写成总结报告。\n${transcript}`,
         metadata: { offlineSession: true },
+        timestamp,
     } as any);
+    return { messageId, timestamp };
 };

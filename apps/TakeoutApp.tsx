@@ -22,7 +22,7 @@ import {
     TAKEOUT_HOT_SEARCHES, getSearchHistory, pushSearchHistory, clearSearchHistory,
     TAKEOUT_ADDRESS_TAGS, getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard,
     getDefaultAddressCard, formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
-    deliveryTimeSlots, type DeliverySlot,
+    deliveryTimeSlots, MIN_TAKEOUT_DELIVERY_MINUTES, effectiveTakeoutEtaAt, type DeliverySlot,
     TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
     recommendAddOnDishes, takeoutHistoryStats,
     getCustomDishes, saveCustomDish, deleteCustomDish,
@@ -40,7 +40,7 @@ import {
  * 一整本米白报纸做的「饭票簿」：撕一张饭票点吃的，跑腿把热乎送到门口，盖个签收章收下。
  * 完全重写界面与文案（店名/按键/位置/口吻全部原创为手账口吻），但不改、不减任何原功能：
  *   现搓店铺(AI/本地) · 进铺点菜 · 撕票下单 · 配送进度 · 跟跑腿/铺子/平台对话 ·
- *   自付/代付(钱包实扣) · 黑心铺子&坏跑腿事故 · 一键申诉退款 · 食评 + NPC 留言。
+ *   自付/代付(钱包实扣) · 不靠谱铺子&坏跑腿事故 · 一键申诉退款 · 食评 + NPC 留言。
  * 美团式增量：首页金刚区(品类宫格) · 搜索历史/热门搜索 · 菜品选规格&加料(SKU 弹层) ·
  *   购物车浮层(逐行增减/清空) · 店铺分页(点餐/评价/商家) · 满减凑单进度 ·
  *   结算预约送达 + 餐具份数 + 多收货地址管理 · 订单骑手实时轨迹地图。
@@ -54,6 +54,7 @@ const NOTE_CHIPS = ['少辣', '多放饭', '多给餐具', '不要香菜', '放�
 const TIP_CHOICES = [0, 2, 5, 8];
 const TABLEWARE_CHOICES = [0, 1, 2, 3, 4, 5];
 const STAR_WORDS = ['', '难吃', '一般', '还行', '满意', '绝了'];
+const displayDeliveryMinutes = (mins?: number) => Math.max(MIN_TAKEOUT_DELIVERY_MINUTES, Math.round(mins || 0));
 
 // 首页金刚区（美团式品类宫格）：一格直达一类铺子
 const KINGKONG: { label: string; emoji: string; cat: string }[] = [
@@ -747,7 +748,8 @@ const TakeoutApp: React.FC = () => {
 
         const rider = newRider();
         const placedAt = Date.now();
-        const etaAt = slot.at ?? (placedAt + activeStore.deliveryMinutes * 60000);
+        const rawEtaAt = slot.at ?? (placedAt + activeStore.deliveryMinutes * 60000);
+        const etaAt = effectiveTakeoutEtaAt({ placedAt, etaAt: rawEtaAt, scheduledAt: slot.at ?? undefined });
         const charId = recipient !== 'me' ? recipient : (payer !== 'me' ? payer : undefined);
         const roll = rollOrderIssues(activeStore, cartItems, cartSubtotal, activeStore.deliveryFee);
 
@@ -978,7 +980,7 @@ const TakeoutApp: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         <input value={addressDraft.city} onChange={e => patchAddressDraft({ city: e.target.value })} placeholder="城市 / 区域（可选）" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
-                        <input value={addressDraft.contactHint} onChange={e => patchAddressDraft({ contactHint: e.target.value })} placeholder="虚拟电话 / 暗号" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                        <input value={addressDraft.contactHint} onChange={e => patchAddressDraft({ contactHint: e.target.value })} placeholder="联系电话 / 暗号" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
                     </div>
                     <input value={addressDraft.addressLine} onChange={e => patchAddressDraft({ addressLine: e.target.value })} placeholder="街道、小区、学校、公司或常去处" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
                     <input value={addressDraft.doorplate} onChange={e => patchAddressDraft({ doorplate: e.target.value })} placeholder="门牌 / 楼层 / 取餐点（可选）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
@@ -1217,7 +1219,7 @@ const TakeoutApp: React.FC = () => {
                                                 <span>·</span><span>{s.distanceKm}km</span>
                                             </div>
                                             <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: '#6b665c' }}>
-                                                <span className="flex items-center gap-0.5"><Bicycle size={12} weight="fill" />{s.deliveryMinutes}分到手</span>
+                                                <span className="flex items-center gap-0.5"><Bicycle size={12} weight="fill" />{displayDeliveryMinutes(s.deliveryMinutes)}分到手</span>
                                                 <span>{s.deliveryFee === 0 ? '免跑腿费' : `跑腿¥${s.deliveryFee}`}</span>
                                                 <span>{s.minOrder ? `够¥${s.minOrder}起送` : '无门槛'}</span>
                                             </div>
@@ -1293,7 +1295,7 @@ const TakeoutApp: React.FC = () => {
                             </div>
                             <div className="text-[11px] mt-0.5 flex items-center gap-2" style={{ color: '#6b665c' }}>
                                 <span className="flex items-center gap-0.5"><Star size={11} weight="fill" color={INK} /><b style={{ color: INK }}>{activeStore.rating}</b></span>
-                                <span>卖出{activeStore.monthlySales} · {activeStore.deliveryMinutes}分 · {activeStore.distanceKm}km</span>
+                                <span>卖出{activeStore.monthlySales} · {displayDeliveryMinutes(activeStore.deliveryMinutes)}分 · {activeStore.distanceKm}km</span>
                             </div>
                             {activeStore.blurb && <div className="text-[11px] mt-1 italic truncate" style={{ color: INK_SOFT }}>「{activeStore.blurb}」</div>}
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1442,7 +1444,7 @@ const TakeoutApp: React.FC = () => {
                                         ['品类', activeStore.category],
                                         ['综合评分', `${activeStore.rating} 分`],
                                         ['月售', `${activeStore.monthlySales} 单`],
-                                        ['送达约', `${activeStore.deliveryMinutes} 分钟`],
+                                        ['送达约', `${displayDeliveryMinutes(activeStore.deliveryMinutes)} 分钟`],
                                         ['跑腿费', activeStore.deliveryFee === 0 ? '免跑腿费' : `¥${activeStore.deliveryFee}`],
                                         ['起送', activeStore.minOrder ? `¥${activeStore.minOrder}` : '无门槛'],
                                         ['距你', `${activeStore.distanceKm} km`],
@@ -1506,7 +1508,7 @@ const TakeoutApp: React.FC = () => {
                             <input value={storeDraft.blurb} onChange={e => patchStoreDraft({ blurb: e.target.value })} placeholder="店铺公告 / 招牌一句话" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
                             <input value={storeDraft.warning} onChange={e => patchStoreDraft({ warning: e.target.value })} placeholder="街坊提醒（可空）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
                             <input value={storeDraft.integrity} onChange={e => patchStoreDraft({ integrity: e.target.value })} placeholder="靠谱程度 0-1（可空）" type="number" step="0.01" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
-                            <div className="text-[10.5px]" style={{ color: INK_SOFT }}>这些都是 Moro 内虚拟资料，只影响饭票演出和后续订单快照。</div>
+                            <div className="text-[10.5px]" style={{ color: INK_SOFT }}>保存后会用在这家铺子的菜牌、订单和旧票快照里。</div>
                             <div className="flex items-center justify-end gap-2 pt-1">
                                 <ScrapButton variant="ghost" onClick={() => setStoreDraft(null)} className="px-4 py-2 text-[12px]">取消</ScrapButton>
                                 <ScrapButton variant="ink" onClick={saveStoreDraft} className="px-5 py-2.5 text-[13px]" icon={<SealCheck size={14} weight="fill" />}>保存铺子</ScrapButton>
@@ -1752,7 +1754,7 @@ const TakeoutApp: React.FC = () => {
                                 </ChoiceChip>
                             ))}
                         </div>
-                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>{slot.at === null ? `跑腿现在就去，约 ${activeStore.deliveryMinutes} 分钟到手` : `预约 ${slot.label} 送到，跑腿掐着点来`}</div>
+                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>{slot.at === null ? `跑腿现在就去，约 ${displayDeliveryMinutes(activeStore.deliveryMinutes)} 分钟到手` : `预约 ${slot.label} 送到，跑腿掐着点来`}</div>
                     </PaperCard>
 
                     {/* 谁来掏这顿饭钱 */}

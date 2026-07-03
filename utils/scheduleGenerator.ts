@@ -56,6 +56,8 @@ interface ApiConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+    apiRole?: 'main' | 'aux' | 'custom';
+    apiBinding?: string;
 }
 
 /**
@@ -316,7 +318,7 @@ export async function generateDailyScheduleForChar(
     apiConfig: ApiConfig,
     forceRegenerate: boolean = false
 ): Promise<DailySchedule | null> {
-    // 总开关关闭时直接短路，避免副 API / 兜底调用
+    // 总开关关闭时直接短路，避免 API / 兜底调用
     if (!isScheduleFeatureOn(char)) return null;
 
     const today = new Date().toISOString().split('T')[0];
@@ -377,7 +379,8 @@ export async function generateDailyScheduleForChar(
             meta: makeApiUsageMeta('almanac.scheduleGenerate', {
                 charId: char.id,
                 charName: char.name,
-                apiRole: 'aux',
+                apiRole: apiConfig.apiRole || 'main',
+                apiBinding: apiConfig.apiBinding,
             }),
         });
 
@@ -448,7 +451,7 @@ export async function generateDailyScheduleForChar(
 // 这些应当**自动落进日程**，成为优先级最高的「锚点」，角色再围着锚点协调其它时段——
 // 而不是日程一天一锁、聊到的事跟卡片各说各话。
 //
-// 为控制副 API 成本：先用廉价的关键词信号过一道闸（chatHasScheduleSignal），
+// 为控制日程协调成本：先用廉价的关键词信号过一道闸（chatHasScheduleSignal），
 // 命中才花一次 LLM 调用做协调（reconcileScheduleWithChat），调用方再叠一层冷却。
 
 /** 时间/约定类信号词——命中才值得花 LLM 协调日程 */
@@ -560,7 +563,8 @@ ${chatBlock}
             meta: makeApiUsageMeta('almanac.scheduleReconcile', {
                 charId: char.id,
                 charName: char.name,
-                apiRole: 'aux',
+                apiRole: apiConfig.apiRole || 'main',
+                apiBinding: apiConfig.apiBinding,
             }),
         });
         let content = data.choices?.[0]?.message?.content || '';
@@ -688,7 +692,8 @@ ${chatSummary}
             meta: makeApiUsageMeta('almanac.flowNarrative', {
                 charId: char.id,
                 charName: char.name,
-                apiRole: 'aux',
+                apiRole: apiConfig.apiRole || 'main',
+                apiBinding: apiConfig.apiBinding,
             }),
         });
 

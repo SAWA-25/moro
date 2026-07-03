@@ -1,7 +1,7 @@
 import type { CharacterProfile, GroupProfile, Message, UserProfile } from '../types';
 import { DB } from './db';
 import { extractContent } from './safeApi';
-import type { OfflinePovPerson } from './offlineMode';
+import type { OfflineCommitInfo, OfflinePovPerson } from './offlineMode';
 import { formatCharacterWithId } from './characterIdentity';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
@@ -258,19 +258,22 @@ export const commitGroupOfflineSessionToContext = async (
   group: GroupProfile,
   userName: string,
   entries: GroupOfflineEntry[],
-): Promise<void> => {
-  if (!entries.length) return;
+): Promise<OfflineCommitInfo | null> => {
+  if (!entries.length) return null;
   const transcript = formatGroupOfflineTranscript(entries, userName);
-  await DB.saveMessage({
+  const timestamp = Date.now();
+  const messageId = await DB.saveMessage({
     charId: 'system',
     groupId: group.id,
     role: 'system',
     type: 'text',
-    content: `[group offline session] [群聊线下记录] ${userName} 刚刚和「${group.name}」一起线下见面了。下面是这次面对面发生的现场记录。见面已经结束，群聊回到线上时，成员们应当把这些当作真实发生过、彼此记得的共同经历：可以自然延续当时的情绪、玩笑、尴尬、未说完的话和现场细节；有人可以轻描淡写地提起，有人也可以嘴硬、装作没事或接着群聊原本的话题。不要表现得像没见过面，也不要把这段经历复述成整齐的总结报告。\n${transcript}`,
+    content: `[group offline session] [群聊线下记录] ${userName} 刚刚和「${group.name}」一起线下见面了。下面是这次面对面发生的现场记录。见面已经结束，这段经历已经写入群聊上下文，但这不是要求成员们立刻补一轮线上消息。之后群聊接着聊时，成员们应当把这些当作真实发生过、彼此记得的共同经历：可以自然延续当时的情绪、玩笑、尴尬、未说完的话和现场细节；有人可以轻描淡写地提起，有人也可以嘴硬、装作没事或接着群聊原本的话题。严格保持时间边界：没有在下面记录中明确发生的外卖送达、快递到达、电话接通、约定完成等事件，都还不能说成已经发生。不要表现得像没见过面，也不要把这段经历复述成整齐的总结报告。\n${transcript}`,
     metadata: {
       groupId: group.id,
       groupName: group.name,
       groupOfflineSession: true,
     },
+    timestamp,
   } as any);
+  return { messageId, timestamp };
 };

@@ -233,6 +233,11 @@ active(新建) → anchor(7天+，心理锚点) → fulfilled / disappointed
   以一条记忆为中心，四周是与它直接相连的记忆，边按关联类型上色（时间 / 情绪 / 因果 / 人物 / 隐喻），
   点任一节点即可把焦点切过去顺着网络走。下方「连接清单」逐条讲清**怎么连上的**，重点呈现「隐喻 / 因果」
   这类「看似不相干却被 char 连到一起」的处理。数据 = 全部 `MemoryNode` + 逐节点聚合去重的 `MemoryLink`。
+  UI 层会额外把 EventBox 的 summary / live / archived 成员合成为 `event_box` 边，展示「同一事件」关系；这只是图谱展示边，不写回 IndexedDB 的 `MemoryLink` schema。
+- **体检 / 修复**（`view==='health'`，维护逻辑在 `maintenance.ts`）：展示副 API / Embedding 状态、高水位、热区保护、可处理缓冲、节点 / 向量 / 断链 / EventBox 引用问题。
+  安全修复只做可证明无害的结构处理：删除孤儿向量、删除断链、清理 EventBox 坏引用、修正盒成员节点状态、让指向缺失盒的节点脱离；不会猜测删除来源不明的旧记忆。
+  编辑记忆正文后会先删除旧向量并把节点标为 `embedded=false`，再尝试重建；Embedding 失败时正文仍保存，但节点留在待修复状态，避免继续用旧向量召回。
+  新迁移数据会写 `source.kind='legacy_memory'`，一键清理只删除这个可识别来源；旧的未标记数据需要用户在记忆浏览器手动筛选。
 
 | 文件 | 职责 |
 |------|------|

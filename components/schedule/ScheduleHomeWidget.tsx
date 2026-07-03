@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CharacterProfile, DailySchedule, ScheduleSlot } from '../../types';
 import ScheduleCard from './ScheduleCard';
+import type { ScheduleLifeNotesBySlot } from '../../utils/scheduleLifeSync';
 
 const getCurrentSlotIndex = (slots: ScheduleSlot[]): number => {
     const now = new Date();
@@ -149,6 +150,7 @@ export const ScheduleSquareWidget: React.FC<ScheduleSquareWidgetProps> = ({
 interface ScheduleHomeWidgetProps {
     schedule: DailySchedule | null;
     character: CharacterProfile | null;
+    lifeNotes?: ScheduleLifeNotesBySlot;
     contentColor?: string; // 兼容旧调用方
     onOpen: () => void;
 }
@@ -156,6 +158,7 @@ interface ScheduleHomeWidgetProps {
 export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     schedule,
     character,
+    lifeNotes = {},
     onOpen,
 }) => {
     const widgetRef = useRef<HTMLButtonElement | null>(null);
@@ -171,8 +174,11 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     const timeLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     const timelineSlots = schedule?.slots ?? [];
+    const currentLifeNotes = currentSlot ? (lifeNotes[currentSlot.startTime] || []) : [];
     const nextLabel = nextSlot ? `${nextSlot.startTime} ${nextSlot.emoji ? `${nextSlot.emoji} ` : ''}${nextSlot.activity}` : '';
-    const noteText = currentSlot?.description || (nextLabel ? `Next · ${nextLabel}` : 'Tap for details');
+    const noteText = currentLifeNotes[0]
+        ? `线下 · ${currentLifeNotes[0].summary || currentLifeNotes[0].activity}`
+        : (currentSlot?.description || (nextLabel ? `Next · ${nextLabel}` : 'Tap for details'));
 
     useEffect(() => {
         const el = widgetRef.current;
@@ -259,6 +265,7 @@ interface ScheduleFullscreenViewerProps {
     activeCharId: string | null;
     onSwitchCharacter: (id: string) => void;
     schedule: DailySchedule | null;
+    lifeNotes?: ScheduleLifeNotesBySlot;
     activeCharacter: CharacterProfile | null;
     contentColor?: string; // 兼容旧调用方
 }
@@ -270,6 +277,7 @@ export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> =
     activeCharId,
     onSwitchCharacter,
     schedule,
+    lifeNotes = {},
     activeCharacter,
 }) => {
     // Lock scroll of background
@@ -366,6 +374,7 @@ export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> =
             >
                 <ScheduleCard
                     schedule={schedule}
+                    lifeNotes={lifeNotes}
                     character={activeCharacter}
                     compact={true}
                 />

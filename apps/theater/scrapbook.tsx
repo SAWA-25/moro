@@ -72,8 +72,8 @@ export const PaperShell: React.FC<{
     style?: React.CSSProperties;
 }> = ({ children, className = '', style }) => (
     <div
-        className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`}
-        style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG, ...style }}
+        className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden animate-fade-in ${className}`}
+        style={{ color: INK, background: PAGE_BG, ...style }}
     >
         <PaperBackdrop />
         {children}
@@ -82,7 +82,11 @@ export const PaperShell: React.FC<{
 
 /** 滚动内容区 */
 export const ScrapScroll: React.FC<{ children: React.ReactNode; className?: string; innerRef?: React.Ref<HTMLDivElement> }> = ({ children, className = '', innerRef }) => (
-    <div ref={innerRef} className={`relative z-10 flex-1 overflow-y-auto no-scrollbar ${className}`}>
+    <div
+        ref={innerRef}
+        className={`relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar ${className}`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
+    >
         {children}
     </div>
 );
@@ -376,21 +380,22 @@ export const PaperSheet: React.FC<{
         <div className="fixed inset-0 z-[120] flex items-end justify-center animate-fade-in">
             <div className="absolute inset-0" style={{ background: 'rgba(20,18,16,0.46)', backdropFilter: 'blur(3px)' }} onClick={onClose} />
             <div
-                className="relative w-full animate-slide-up"
+                className="relative w-full animate-slide-up flex min-h-0 flex-col"
                 style={{
                     maxWidth: 460,
+                    maxHeight: 'min(88vh, calc(var(--visual-viewport-height, 100vh) - var(--safe-top, 0px) - 12px))',
                     background: 'linear-gradient(180deg, #fbf9f2, #f2efe4)',
                     borderTop: '1px solid rgba(176,170,158,0.8)',
                     borderTopLeftRadius: 22, borderTopRightRadius: 22,
                     boxShadow: '0 -22px 48px -20px rgba(20,18,14,0.5)',
-                    paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+                    paddingBottom: 'max(var(--safe-bottom, 0px), 16px)',
                 }}
             >
                 <div className="flex justify-center pt-2.5">
                     <WashiTape color={tape} rotate={-2} className="w-16 h-2.5 rounded-full" />
                 </div>
                 {title && <div className="px-6 pt-3 text-center text-[14px] font-black" style={{ color: INK }}>{title}</div>}
-                <div className="px-5 pt-3 pb-4">{children}</div>
+                <div className="min-h-0 overflow-y-auto no-scrollbar px-5 pt-3 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
             </div>
         </div>
     );

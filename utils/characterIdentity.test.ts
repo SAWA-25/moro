@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AmbientSocialContact, AmbientSocialEntry, CharacterProfile } from '../types';
-import { ambientSocialToCharacter, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter } from './ambientSocial';
+import type { AmbientSocialContact, AmbientSocialEntry, CharacterProfile, UserProfile } from '../types';
+import { ambientSocialToCharacter, ensureAmbientSocialState, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter, isAmbientSocialCharacterForUser, isRejectedAmbientGeneratedName, removeAmbientSocialEntry, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 import { createCharacterId, ensureCharacterModelId, formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 describe('character identity helpers', () => {
@@ -105,5 +105,125 @@ describe('character identity helpers', () => {
     expect(isAmbientSocialCharacter(existing)).toBe(false);
     expect(getAmbientSocialLinkedCharacterIds(entries).has(existing.id)).toBe(true);
     expect(getAmbientSocialLinkedGroupIds(entries).has('group-existing')).toBe(true);
+  });
+
+  it('removes ambient social entries instead of leaving hidden tombstones', () => {
+    const state = {
+      version: 1,
+      seededAt: 1,
+      entries: [
+        {
+          id: 'ambient-delete-me',
+          kind: 'contact',
+          name: 'Delete Me',
+          relation: 'friend',
+          relationLabel: 'friend',
+          avatar: '',
+          note: '',
+          lastMessage: '',
+          lastAt: 1,
+          createdAt: 1,
+        },
+        {
+          id: 'ambient-keep-me',
+          kind: 'contact',
+          name: 'Keep Me',
+          relation: 'friend',
+          relationLabel: 'friend',
+          avatar: '',
+          note: '',
+          lastMessage: '',
+          lastAt: 2,
+          createdAt: 1,
+        },
+      ],
+    } as UserProfile['ambientSocial'];
+
+    const next = removeAmbientSocialEntry(state, 'ambient-delete-me');
+
+    expect(next.entries.map(entry => entry.id)).toEqual(['ambient-keep-me']);
+    expect(next.entries.some(entry => entry.id === 'ambient-delete-me')).toBe(false);
+  });
+
+  it('purges old hidden unlinked ambient contacts during normalization', async () => {
+    const profile = {
+      name: 'User',
+      avatar: '',
+      bio: '',
+      ambientSocial: {
+        version: 1,
+        seededAt: 1,
+        entries: [
+          {
+            id: 'ambient-hidden-old',
+            kind: 'contact',
+            name: 'Hidden Old',
+            relation: 'friend',
+            relationLabel: 'friend',
+            avatar: '',
+            note: '',
+            lastMessage: '',
+            lastAt: 1,
+            hidden: true,
+            createdAt: 1,
+          },
+          {
+            id: 'ambient-linked',
+            kind: 'contact',
+            name: 'Linked',
+            relation: 'friend',
+            relationLabel: 'friend',
+            avatar: '',
+            note: '',
+            lastMessage: '',
+            lastAt: 2,
+            hidden: true,
+            linkedCharId: 'char-linked',
+            createdAt: 1,
+          },
+        ],
+      },
+    } as UserProfile;
+
+    const next = await ensureAmbientSocialState(profile, [], { baseUrl: '', apiKey: '', model: '' } as any, 2);
+
+    expect(next.entries.map(entry => entry.id)).toEqual(['ambient-linked']);
+  });
+
+  it('rejects placeholder-like ambient social generated names', () => {
+    expect(isRejectedAmbientGeneratedName('絮语向导-07')).toBe(true);
+    expect(isRejectedAmbientGeneratedName('絮语助手')).toBe(true);
+    expect(isRejectedAmbientGeneratedName('NPC_12')).toBe(true);
+    expect(isRejectedAmbientGeneratedName('邻居阿南')).toBe(false);
+  });
+
+  it('treats linked ambient contacts as hidden when the user social circle is off', () => {
+    const profile = {
+      name: 'User',
+      avatar: '',
+      bio: '',
+      ambientSocialEnabled: false,
+      ambientSocial: {
+        version: 1,
+        seededAt: 1,
+        entries: [{
+          id: 'ambient-contact',
+          kind: 'contact',
+          name: 'Existing Friend',
+          relation: 'friend',
+          relationLabel: 'friend',
+          avatar: '',
+          note: '',
+          lastMessage: '',
+          lastAt: 1,
+          linkedCharId: 'char-existing',
+          createdAt: 1,
+        }],
+      },
+    } as UserProfile;
+    const existing = { id: 'char-existing', name: 'Existing Friend' } as CharacterProfile;
+
+    expect(isAmbientSocialCharacterForUser(existing, profile)).toBe(true);
+    expect(shouldHideAmbientSocialRecordForUser(profile)).toBe(true);
   });
 });

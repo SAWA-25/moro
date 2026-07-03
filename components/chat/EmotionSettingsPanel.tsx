@@ -51,13 +51,13 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
     return (
         <div className="space-y-4 pt-4 border-t border-[#eed6df]">
             <div>
-                <div className="text-xs font-bold text-[#5a3140] mb-1">情绪 / 意识流 API</div>
+                <div className="text-xs font-bold text-[#5a3140] mb-1">日程 / 心情 API</div>
                 <div className="text-[11px] text-[#8b6d79] leading-relaxed space-y-1">
                     <p>
-                        原版情绪 buff 就在这里。上方「心情 buff」开关决定是否分析、注入和显示。
+                        今日作息排表、聊天里的日程调整和心情 buff 都使用这里的线路。
                     </p>
                     <p className="text-[#8b5b6b] bg-[#fff4f7] border border-[#eed6df] rounded-lg px-2 py-1.5">
-                        下方不填 = 自动用主 API。想细腻点就填个 <b>Claude 系列</b>模型。
+                        不填 = 使用文具盒主 API。想让日程和情绪更细腻，可以填一套单独模型。
                     </p>
                 </div>
             </div>
@@ -70,7 +70,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
 
             <div className="space-y-3">
                 <LlmApiConfigFields
-                    label="副 API 配置"
+                    label="日程 / 心情 API 配置"
                     value={{ baseUrl: url, apiKey: key, model }}
                     onChange={next => {
                         setUrl(next.baseUrl);
@@ -79,8 +79,9 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                         setDirty(true);
                     }}
                     onSaveConfig={handleSave}
-                    saveConfigLabel={dirty ? '保存副 API 配置' : '✓ 已保存'}
-                    savePresetDefaultName={`${char.name} 情绪 API`}
+                    saveConfigLabel={dirty ? '保存日程 / 心情 API' : '✓ 已保存'}
+                    savePresetDefaultName={`${char.name} 日程心情 API`}
+                    apiBinding="日程 / 心情 API"
                     urlPlaceholder="留空 = 使用主 API"
                     modelPlaceholder="claude-haiku-4-5 / gpt-4o-mini / ..."
                     inputClassName="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"

@@ -6,6 +6,8 @@ import AppIcon from '../components/os/AppIcon';
 import { DB } from '../utils/db';
 import { CharacterProfile, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
+import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
+import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
 import { isImageWallpaper } from '../utils/defaultWallpapers';
@@ -413,7 +415,7 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         AppID.Harem,
         AppID.Forum,
         AppID.DesktopPet,
-        AppID.XhsFreeRoam,
+        AppID.CoView,
         AppID.XhsStock,
         AppID.Manual,
     ];
@@ -553,6 +555,7 @@ const Launcher: React.FC = () => {
   const [widgetChar, setWidgetChar] = useState<CharacterProfile | null>(null);
   const [lastMessage, setLastMessage] = useState<string>('');
   const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
+  const [scheduleLifeNotes, setScheduleLifeNotes] = useState<ScheduleLifeNotesBySlot>({});
   const [scheduleCharId, setScheduleCharId] = useState<string | null>(null);
   const [scheduleViewerOpen, setScheduleViewerOpen] = useState(false);
 
@@ -944,9 +947,49 @@ const Launcher: React.FC = () => {
   }, [characters, scheduleCharId, activeCharacterId]);
 
   useEffect(() => {
-      if (!scheduleChar || !isDataLoaded) return;
+      if (!scheduleChar || !isDataLoaded) {
+          setScheduleData(null);
+          setScheduleLifeNotes({});
+          return;
+      }
+      let cancelled = false;
       const today = new Date().toISOString().split('T')[0];
-      DB.getDailySchedule(scheduleChar.id, today).then(s => setScheduleData(s)).catch(() => {});
+      const load = async () => {
+          const s = await DB.getDailySchedule(scheduleChar.id, today).catch(() => null);
+          if (cancelled) return;
+          setScheduleData(s);
+          if (!s) {
+              setScheduleLifeNotes({});
+              return;
+          }
+          const notes = await loadScheduleLifeNotes(s);
+          if (!cancelled) setScheduleLifeNotes(notes);
+      };
+      void load();
+      const onScheduleUpdated = (e: Event) => {
+          const detail = (e as CustomEvent<{ charId?: string; date?: string; deleted?: boolean }>).detail || {};
+          if (detail.charId !== scheduleChar.id) return;
+          if (detail.date && detail.date !== today) return;
+          if (detail.deleted) {
+              setScheduleData(null);
+              setScheduleLifeNotes({});
+              return;
+          }
+          void load();
+      };
+      const onLifeEventUpdated = (e: Event) => {
+          const detail = (e as CustomEvent<{ charId?: string; scheduleDate?: string }>).detail || {};
+          if (detail.charId !== scheduleChar.id) return;
+          if (detail.scheduleDate && detail.scheduleDate !== today) return;
+          void load();
+      };
+      window.addEventListener(DAILY_SCHEDULE_UPDATED_EVENT, onScheduleUpdated);
+      window.addEventListener(CHAR_LIFE_EVENT_UPDATED_EVENT, onLifeEventUpdated);
+      return () => {
+          cancelled = true;
+          window.removeEventListener(DAILY_SCHEDULE_UPDATED_EVENT, onScheduleUpdated);
+          window.removeEventListener(CHAR_LIFE_EVENT_UPDATED_EVENT, onLifeEventUpdated);
+      };
   }, [scheduleChar, isDataLoaded]);
 
   // Restore scroll position BEFORE paint to avoid visible flash/slide
@@ -1087,6 +1130,7 @@ const Launcher: React.FC = () => {
                   <div className="w-full h-full flex flex-col justify-center overflow-hidden">
                       <ScheduleHomeWidget
                           schedule={scheduleData}
+                          lifeNotes={scheduleLifeNotes}
                           character={scheduleChar}
                           contentColor={contentColor}
                           onOpen={() => setScheduleViewerOpen(true)}
@@ -1358,6 +1402,7 @@ const Launcher: React.FC = () => {
           activeCharId={scheduleChar?.id || null}
           onSwitchCharacter={(id) => setScheduleCharId(id)}
           schedule={scheduleData}
+          lifeNotes={scheduleLifeNotes}
           activeCharacter={scheduleChar}
           contentColor={contentColor}
       />

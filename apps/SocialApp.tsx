@@ -12,6 +12,7 @@ import {
     MapPin,
     PaperPlaneTilt,
     PencilSimple,
+    PlugsConnected,
     Plus,
     Scissors,
     Shuffle,
@@ -46,6 +47,17 @@ import {
 } from '../utils/socialDating';
 import { ambientSocialToCharacter } from '../utils/ambientSocial';
 import { resolveAuxApi } from '../utils/auxApi';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { queueManualDeepLink } from '../utils/manualDeepLink';
+import { fetchModelList, testChatConnection } from '../utils/llmClient';
+import {
+    clearLocalApiOverride,
+    isLocalApiOverrideComplete,
+    loadLocalApiOverride,
+    resolveScopedLocalApi,
+    saveLocalApiOverride,
+    type LocalApiOverrideConfig,
+} from '../utils/localApiOverride';
 import {
     accent,
     Chip,
@@ -136,7 +148,7 @@ const toLocalXhsNote = (post: XhsFeedPost) => ({
 });
 
 const AppHeader: React.FC<{ title: string; sub?: string; onBack: () => void; right?: React.ReactNode }> = ({ title, sub, onBack, right }) => (
-    <div className="shrink-0 relative z-10" style={{ paddingTop: 'var(--safe-top)' }}>
+    <div className="shrink-0 relative z-10">
         <div className="flex items-center gap-2.5 px-3.5 pt-2.5 pb-2.5">
             <IconCircle onClick={onBack} title="返回"><CaretLeft size={18} weight="bold" /></IconCircle>
             <div className="min-w-0 flex-1 leading-tight">
@@ -271,8 +283,13 @@ const SocialApp: React.FC = () => {
         setActiveCharacterId,
         importCharacter,
     } = useOS();
-    const feedApi = resolveAuxApi(auxApiConfig, apiConfig);
+    const [socialApiOverride, setSocialApiOverride] = useState<LocalApiOverrideConfig>(() => loadLocalApiOverride('social'));
+    const feedApi = useMemo(
+        () => resolveScopedLocalApi('social', auxApiConfig, apiConfig),
+        [apiConfig, auxApiConfig, socialApiOverride],
+    );
     const apiReady = !!feedApi?.baseUrl && !!feedApi?.model;
+    const socialApiOverrideOn = isLocalApiOverrideComplete(socialApiOverride);
 
     const [posts, setPosts] = useState<XhsFeedPost[]>([]);
     const [loaded, setLoaded] = useState(false);
@@ -296,6 +313,13 @@ const SocialApp: React.FC = () => {
     const [composeCategory, setComposeCategory] = useState<XhsFeedCategory>('life');
     const [friendFilter, setFriendFilter] = useState<string>('all');
     const [friendGeneratingId, setFriendGeneratingId] = useState<string | null>(null);
+    const [showSocialApiSheet, setShowSocialApiSheet] = useState(false);
+    const [socialApiDraft, setSocialApiDraft] = useState<LocalApiOverrideConfig>(socialApiOverride);
+    const [socialApiStatus, setSocialApiStatus] = useState('');
+    const [testingSocialApi, setTestingSocialApi] = useState(false);
+    const [fetchingSocialModels, setFetchingSocialModels] = useState(false);
+    const [socialApiModels, setSocialApiModels] = useState<string[]>([]);
+    const [showSocialApiModels, setShowSocialApiModels] = useState(false);
 
     const [dating, setDating] = useState<DatingProfile[]>([]);
     const [datingIdx, setDatingIdx] = useState(0);
@@ -336,6 +360,128 @@ const SocialApp: React.FC = () => {
         if (apiReady) void refreshDating(); else setDating(fallbackDatingProfiles(12));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
+
+    const setSocialApiDraftField = (field: keyof LocalApiOverrideConfig, value: string) => {
+        setSocialApiDraft(prev => ({ ...prev, [field]: value }));
+    };
+
+    const openSocialApiSheet = () => {
+        const saved = loadLocalApiOverride('social');
+        setSocialApiOverride(saved);
+        setSocialApiDraft(saved);
+        setSocialApiStatus('');
+        setShowSocialApiSheet(true);
+    };
+
+    const copyMainToSocialApi = () => {
+        setSocialApiDraft({
+            baseUrl: apiConfig.baseUrl || '',
+            apiKey: apiConfig.apiKey || '',
+            model: apiConfig.model || '',
+        });
+        setSocialApiStatus('已复制主 API，保存后生效');
+    };
+
+    const copyAuxToSocialApi = () => {
+        const aux = resolveAuxApi(auxApiConfig, apiConfig);
+        setSocialApiDraft({
+            baseUrl: aux.baseUrl || '',
+            apiKey: aux.apiKey || '',
+            model: aux.model || '',
+        });
+        setSocialApiStatus('已复制副 API 当前线路，保存后生效');
+    };
+
+    const saveSocialApi = () => {
+        try {
+            const saved = saveLocalApiOverride('social', socialApiDraft);
+            setSocialApiOverride(saved);
+            setSocialApiDraft(saved);
+            setSocialApiStatus(saved.baseUrl ? '见闻簿专用 API 已保存' : '见闻簿专用 API 已清除');
+            addToast(saved.baseUrl ? '见闻簿会优先使用这条专用 API' : '见闻簿已回到文具盒副 API / 主 API', 'success');
+        } catch (e: any) {
+            const msg = e?.message || '保存失败';
+            setSocialApiStatus(msg);
+            addToast(msg, 'error');
+        }
+    };
+
+    const clearSocialApi = () => {
+        clearLocalApiOverride('social');
+        const empty = loadLocalApiOverride('social');
+        setSocialApiOverride(empty);
+        setSocialApiDraft(empty);
+        setSocialApiStatus('已清除，之后回退文具盒副 API / 主 API');
+        addToast('见闻簿专用 API 已清除', 'success');
+    };
+
+    const testSocialApi = async () => {
+        const baseUrl = socialApiDraft.baseUrl.trim();
+        const model = socialApiDraft.model.trim();
+        if (!baseUrl || !model) {
+            setSocialApiStatus('测试前需要填写 Base URL 和模型名');
+            return;
+        }
+        setTestingSocialApi(true);
+        setSocialApiStatus('正在测试连接…');
+        try {
+            const reply = await testChatConnection(
+                { baseUrl, apiKey: socialApiDraft.apiKey.trim(), model },
+                {
+                    stream: false,
+                    meta: makeApiUsageMeta('social.generate', {
+                        apiRole: 'custom',
+                        apiBinding: '见闻簿专用 API',
+                        isBackgroundTask: false,
+                    }),
+                },
+            );
+            setSocialApiStatus(`连接成功：${reply.slice(0, 30) || '模型已响应'}`);
+        } catch (e: any) {
+            setSocialApiStatus(`连接失败：${e?.message || '请检查地址、Key 和模型名'}`);
+        } finally {
+            setTestingSocialApi(false);
+        }
+    };
+
+    const fetchSocialApiModels = async () => {
+        const baseUrl = socialApiDraft.baseUrl.trim();
+        if (!baseUrl) {
+            setSocialApiStatus('拉取模型前需要填写 Base URL');
+            addToast('请先填写见闻簿专用 API 的 Base URL', 'info');
+            return;
+        }
+        setFetchingSocialModels(true);
+        setSocialApiStatus('正在拉取模型列表…');
+        try {
+            const models = await fetchModelList(
+                { baseUrl, apiKey: socialApiDraft.apiKey.trim() },
+                {
+                    meta: makeApiUsageMeta('social.dedicatedApi.fetchModels', {
+                        apiRole: 'custom',
+                        apiBinding: '见闻簿专用 API',
+                        isBackgroundTask: false,
+                    }),
+                },
+            );
+            if (!models.length) {
+                setSocialApiStatus('没有识别到模型列表，可以继续手动填写模型名');
+                addToast('没有识别到模型列表，可以手动填写模型名', 'info');
+                return;
+            }
+            setSocialApiModels(models);
+            setShowSocialApiModels(true);
+            setSocialApiDraft(prev => models.includes(prev.model.trim()) ? prev : { ...prev, model: models[0] });
+            setSocialApiStatus(`已拉取 ${models.length} 个模型，选好后记得保存`);
+            addToast(`已拉取 ${models.length} 个模型，请保存见闻簿专用 API`, 'success');
+        } catch (e: any) {
+            const msg = e?.message || '请检查地址和密钥';
+            setSocialApiStatus(`拉取模型失败：${msg}`);
+            addToast(`拉取模型失败：${msg}`, 'error');
+        } finally {
+            setFetchingSocialModels(false);
+        }
+    };
 
     const patchPost = (id: string, patch: Partial<XhsFeedPost> | ((p: XhsFeedPost) => Partial<XhsFeedPost>)) => {
         setPosts(prev => prev.map(p => {
@@ -935,8 +1081,18 @@ const SocialApp: React.FC = () => {
                 onBack={closeApp}
                 right={
                     <div className="flex items-center gap-2">
+                        <IconCircle
+                            onClick={openSocialApiSheet}
+                            title={socialApiOverrideOn ? '见闻簿专用 API 已启用' : '见闻簿专用 API'}
+                            tone={socialApiOverrideOn ? 'ink' : 'paper'}
+                        >
+                            <PlugsConnected className="w-4 h-4" weight={socialApiOverrideOn ? 'fill' : 'bold'} />
+                        </IconCircle>
                         <IconCircle onClick={() => openApp(AppID.XhsStock)} title="素材堆（发帖备图）"><Stack className="w-4 h-4" weight="bold" /></IconCircle>
-                        <IconCircle onClick={() => openApp(AppID.XhsFreeRoam)} title="出门转转（真实平台自由活动）"><Binoculars className="w-4 h-4" weight="bold" /></IconCircle>
+                        <IconCircle onClick={() => {
+                            queueManualDeepLink({ appId: AppID.CoView, route: 'free_roam', anchorId: 'manual-coview-free-roam', payload: { tab: 'free_roam' } });
+                            openApp(AppID.CoView);
+                        }} title="出门转转（共览 / 自由活动）"><Binoculars className="w-4 h-4" weight="bold" /></IconCircle>
                     </div>
                 }
             />
@@ -989,6 +1145,104 @@ const SocialApp: React.FC = () => {
                 : mode === 'friends'
                     ? renderPostGrid(characters.length ? '熟人还没发见闻' : '还没有熟人', characters.length ? '可以点上面的“更新”，让某位熟人写一条本地近况。' : '先去剪影集创建角色。')
                     : renderPostGrid('簿子还是空白页', `点“翻新页”剪一沓贴上：熟人按性子发，路人补足生活气。${!apiReady ? '记得先去「文具盒」把 API 补上。' : ''}`)}
+
+            <InsSheet
+                open={showSocialApiSheet}
+                title="见闻簿专用 API"
+                onClose={() => setShowSocialApiSheet(false)}
+                right={<span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ color: socialApiOverrideOn ? '#fff' : INK_SOFT, background: socialApiOverrideOn ? A.solid : '#f2efeb' }}>{socialApiOverrideOn ? '优先使用' : '未启用'}</span>}
+            >
+                <div className="space-y-3 text-left">
+                    <div className="rounded-2xl p-3 text-[11px] leading-relaxed" style={{ background: A.soft, color: A.ink }}>
+                        填完整后，见闻簿的翻新页、熟人近况、评论回复和交友会优先走这里；清除后自动回到文具盒副 API / 主 API。自由活动的真实平台 MCP 不受影响。
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <InsButton variant="soft" accent={AC} onClick={copyMainToSocialApi} className="py-2 text-[12px]">复制主 API</InsButton>
+                        <InsButton variant="soft" accent={AC} onClick={copyAuxToSocialApi} className="py-2 text-[12px]">复制副 API</InsButton>
+                        <InsButton variant="soft" accent={AC} onClick={() => void fetchSocialApiModels()} disabled={fetchingSocialModels} className="py-2 text-[12px]">
+                            {fetchingSocialModels ? '拉取中' : '拉取模型'}
+                        </InsButton>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold" style={{ color: INK_SOFT }}>BASE URL · 接口地址</label>
+                        <input
+                            value={socialApiDraft.baseUrl}
+                            onChange={e => setSocialApiDraftField('baseUrl', e.target.value)}
+                            placeholder="https://your-api.example.com/v1"
+                            className="mt-1 w-full px-3 py-2.5 rounded-2xl text-[13px] outline-none font-mono"
+                            style={{ background: '#f2efeb', color: INK }}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold" style={{ color: INK_SOFT }}>API KEY · 密钥</label>
+                        <input
+                            type="password"
+                            value={socialApiDraft.apiKey}
+                            onChange={e => setSocialApiDraftField('apiKey', e.target.value)}
+                            placeholder="可留空，本地接口会自动用免鉴权兜底"
+                            className="mt-1 w-full px-3 py-2.5 rounded-2xl text-[13px] outline-none font-mono"
+                            style={{ background: '#f2efeb', color: INK }}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold" style={{ color: INK_SOFT }}>MODEL · 模型名</label>
+                        <input
+                            value={socialApiDraft.model}
+                            onChange={e => setSocialApiDraftField('model', e.target.value)}
+                            placeholder="模型名"
+                            className="mt-1 w-full px-3 py-2.5 rounded-2xl text-[13px] outline-none font-mono"
+                            style={{ background: '#f2efeb', color: INK }}
+                        />
+                        {socialApiModels.length > 0 && (
+                            <div className="mt-2 rounded-2xl overflow-hidden" style={{ background: '#f7f5f2', border: '1px solid rgba(38,38,38,0.08)' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSocialApiModels(v => !v)}
+                                    className="w-full px-3 py-2 flex items-center justify-between text-[11px] font-bold"
+                                    style={{ color: INK }}
+                                >
+                                    <span>已拉取 {socialApiModels.length} 个模型</span>
+                                    <span>{showSocialApiModels ? '收起' : '选择'}</span>
+                                </button>
+                                {showSocialApiModels && (
+                                    <div className="max-h-44 overflow-y-auto p-1.5 space-y-1">
+                                        {socialApiModels.map(model => (
+                                            <button
+                                                key={model}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSocialApiDraftField('model', model);
+                                                    setShowSocialApiModels(false);
+                                                    setSocialApiStatus('已选择模型，保存后生效');
+                                                }}
+                                                className="w-full text-left px-2.5 py-1.5 rounded-xl text-[11px] font-mono break-all"
+                                                style={{
+                                                    background: socialApiDraft.model.trim() === model ? A.soft : 'transparent',
+                                                    color: socialApiDraft.model.trim() === model ? A.ink : INK_SOFT,
+                                                }}
+                                            >
+                                                {model}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {socialApiStatus && (
+                        <div className="rounded-2xl px-3 py-2 text-[11px] leading-relaxed" style={{ color: INK_SOFT, background: '#f7f5f2' }}>
+                            {socialApiStatus}
+                        </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                        <InsButton variant="soft" accent="slate" onClick={() => void testSocialApi()} disabled={testingSocialApi} className="py-2.5 text-[12px]">
+                            {testingSocialApi ? '测试中' : '测试'}
+                        </InsButton>
+                        <InsButton variant="soft" accent="slate" onClick={clearSocialApi} className="py-2.5 text-[12px]">清除</InsButton>
+                        <InsButton variant="solid" accent={AC} onClick={saveSocialApi} className="py-2.5 text-[12px]">保存</InsButton>
+                    </div>
+                </div>
+            </InsSheet>
 
             <InsDialog open={composeOpen} title="发一条" en="LOCAL POST" accent={AC} onClose={() => setComposeOpen(false)}
                 actions={<>

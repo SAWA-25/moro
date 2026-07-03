@@ -159,7 +159,7 @@ export const ReviewsOverlay: React.FC<{
         <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={{ background: '#f7f5f2' }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-48" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.08), transparent 70%)' }} />
             {/* 头 */}
-            <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
+            <div className="relative pt-3 pb-3 px-4 shrink-0 z-10">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)' }}>⭐</div>
@@ -251,7 +251,7 @@ export const RegularsOverlay: React.FC<{
         <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={{ background: '#f7f5f2' }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-48" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.08), transparent 70%)' }} />
             {/* 头 */}
-            <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
+            <div className="relative pt-3 pb-3 px-4 shrink-0 z-10">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)' }}>👑</div>

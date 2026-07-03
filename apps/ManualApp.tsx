@@ -705,7 +705,6 @@ const ManualApp: React.FC = () => {
         style={{
           background:
             'radial-gradient(circle at 16% 0%, rgba(236, 192, 111, 0.22), transparent 32%), radial-gradient(circle at 96% 10%, rgba(94, 151, 246, 0.12), transparent 30%), linear-gradient(180deg, #f8f4ea 0%, #efe7d6 100%)',
-          paddingTop: 'var(--safe-top)',
         }}
       >
         <div className="shrink-0 px-4 pt-3 pb-3">
@@ -769,7 +768,6 @@ const ManualApp: React.FC = () => {
       style={{
         background:
           'radial-gradient(circle at 16% 0%, rgba(236, 192, 111, 0.22), transparent 32%), radial-gradient(circle at 96% 10%, rgba(94, 151, 246, 0.12), transparent 30%), linear-gradient(180deg, #f8f4ea 0%, #efe7d6 100%)',
-        paddingTop: 'var(--safe-top)',
       }}
     >
       <style>{MANUAL_RESPONSIVE_STYLE}</style>

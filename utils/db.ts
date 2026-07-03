@@ -5,14 +5,14 @@ import {
     CharacterProfile, ChatTheme, Message, PrivateChatArchive, ChatAlarm, PeriodReminderSettings, PeriodCycleEvent, UserProfile,
     HealthModuleSettings, HealthRecord, HealthReminder, HealthPlan, HealthSummary, HealthModuleId,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
-    GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
+    GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, CoViewBook, CoViewMedia, CoViewMessage, CoViewSession, Emoji, EmojiCategory,
     BankTransaction, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
     XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings, PhoneCheckSession, UserScreenWatchSession,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
-    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession, TheaterFauxPiece,
+    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession, TheaterFauxPiece, TheaterCustomLibraryItem,
     TheaterReflectionSession,
     TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord,
     DesktopPetState,
@@ -21,10 +21,12 @@ import {
 } from '../types';
 import { ensureCharacterModelId } from './characterIdentity';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
+import { dispatchCharLifeEventUpdated, dispatchDailyScheduleSaved, dispatchDailyScheduleUpdated } from './scheduleEvents';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 91; // Bumped: v91 user screen watch sessions
+const DB_VERSION = 94; // Bumped: v94 CoView media/book/session stores
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -32,6 +34,128 @@ const STORE_PRIVATE_CHAT_ARCHIVES = 'private_chat_archives';
 const STORE_CHAT_ALARMS = 'chat_alarms';
 const STORE_CHAT_FOLLOWUPS = 'chat_followups';
 const STORE_CHAT_HUB_DIGESTS = 'chat_hub_digests';
+
+const ASSISTANT_VISIBLE_MESSAGE_TYPES = new Set<string>([
+    'text',
+    'voice',
+    'call_log',
+    'html_card',
+    'vr_card',
+    'twitter_card',
+    'xhs_card',
+    'social_card',
+    'forum_card',
+    'news_card',
+    'screen_peek_card',
+    'screen_watch_card',
+]);
+
+const cleanVisibleRoleText = (value: unknown): string =>
+    sanitizeAssistantVisibleText(value).trim();
+
+const cleanOptionalRoleText = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return value as any;
+    const cleaned = cleanVisibleRoleText(value);
+    return cleaned || undefined;
+};
+
+const normalizeAssistantMessageForSave = <T extends Omit<Message, 'id' | 'timestamp'> & { timestamp?: number }>(msg: T): T => {
+    if (msg.role !== 'assistant' || typeof msg.content !== 'string' || !ASSISTANT_VISIBLE_MESSAGE_TYPES.has(msg.type)) return msg;
+    const next: any = { ...msg, content: cleanVisibleRoleText(msg.content) };
+    if (next.metadata?.htmlTextPreview && typeof next.metadata.htmlTextPreview === 'string') {
+        next.metadata = {
+            ...next.metadata,
+            htmlTextPreview: cleanVisibleRoleText(next.metadata.htmlTextPreview),
+        };
+    }
+    return next;
+};
+
+const normalizeSocialPostVisibleText = (post: SocialPost): SocialPost => ({
+    ...post,
+    title: post.authorType === 'user' ? post.title : cleanVisibleRoleText(post.title),
+    content: post.authorType === 'user' ? post.content : cleanVisibleRoleText(post.content),
+    comments: (post.comments || []).map(comment => (
+        comment.authorType === 'user'
+            ? comment
+            : { ...comment, content: cleanVisibleRoleText(comment.content) }
+    )),
+    relationSignals: post.relationSignals?.map(signal => ({
+        ...signal,
+        text: cleanOptionalRoleText(signal.text),
+    })),
+});
+
+const normalizeXhsFeedVisibleText = (post: XhsFeedPost): XhsFeedPost => ({
+    ...post,
+    title: post.authorType === 'user' ? post.title : cleanVisibleRoleText(post.title),
+    body: post.authorType === 'user' ? post.body : cleanVisibleRoleText(post.body),
+    repostNote: post.authorType === 'user' ? post.repostNote : cleanOptionalRoleText(post.repostNote),
+    comments: (post.comments || []).map(comment => (
+        comment.isUser
+            ? comment
+            : { ...comment, content: cleanVisibleRoleText(comment.content) }
+    )),
+});
+
+const normalizeTwitterTweetVisibleText = (tweet: TwitterTweet): TwitterTweet => ({
+    ...tweet,
+    content: tweet.authorType === 'user' ? tweet.content : cleanVisibleRoleText(tweet.content),
+    replies: (tweet.replies || []).map(reply => (
+        reply.authorType === 'user'
+            ? reply
+            : { ...reply, content: cleanVisibleRoleText(reply.content) }
+    )),
+});
+
+const normalizePhoneCheckSessionVisibleText = (session: PhoneCheckSession): PhoneCheckSession => ({
+    ...session,
+    steps: (session.steps || []).map(step => ({
+        ...step,
+        thought: cleanOptionalRoleText(step.thought),
+        intent: cleanOptionalRoleText(step.intent),
+        visibleClue: cleanOptionalRoleText(step.visibleClue),
+        actionReason: cleanOptionalRoleText(step.actionReason),
+        detail: cleanOptionalRoleText(step.detail),
+    })),
+    evidence: (session.evidence || []).map(record => {
+        const source = record.meta?.source;
+        if (source === 'user_action' || source === 'xunji') return record;
+        return {
+            ...record,
+            title: cleanVisibleRoleText(record.title),
+            detail: cleanVisibleRoleText(record.detail),
+            value: cleanOptionalRoleText(record.value),
+        };
+    }),
+    actions: (session.actions || []).map(action => {
+        if (action.type === 'send_as_character' || action.type === 'post_moment_as_character') return action;
+        return { ...action, detail: cleanOptionalRoleText(action.detail) };
+    }),
+    summary: cleanOptionalRoleText(session.summary),
+    moodAfter: cleanOptionalRoleText(session.moodAfter),
+});
+
+const normalizeUserScreenWatchVisibleText = (session: UserScreenWatchSession): UserScreenWatchSession => ({
+    ...session,
+    comments: (session.comments || []).map(comment => ({
+        ...comment,
+        text: cleanVisibleRoleText(comment.text),
+    })),
+    summary: cleanOptionalRoleText(session.summary),
+});
+
+const normalizeDesktopPetVisibleText = (state: DesktopPetState): DesktopPetState => {
+    const cleanTalk = (message?: DesktopPetState['lastSpeech']) => {
+        if (!message || message.role !== 'pet') return message;
+        return { ...message, text: cleanVisibleRoleText(message.text) };
+    };
+    return {
+        ...state,
+        dialogueLog: state.dialogueLog?.map(message => message.role === 'pet' ? { ...message, text: cleanVisibleRoleText(message.text) } : message),
+        lastSpeech: cleanTalk(state.lastSpeech),
+    };
+};
 const STORE_PERIOD_REMINDER_SETTINGS = 'period_reminder_settings';
 const STORE_PERIOD_CYCLE_EVENTS = 'period_cycle_events';
 const STORE_HEALTH_MODULE_SETTINGS = 'health_module_settings';
@@ -60,6 +184,10 @@ const STORE_COURSES = 'courses';
 const STORE_GAMES = 'games';
 const STORE_WORLDBOOKS = 'worldbooks'; 
 const STORE_NOVELS = 'novels'; 
+const STORE_COVIEW_MEDIA = 'coview_media';
+const STORE_COVIEW_BOOKS = 'coview_books';
+const STORE_COVIEW_SESSIONS = 'coview_sessions';
+const STORE_COVIEW_MESSAGES = 'coview_messages';
 const STORE_BANK_TX = 'bank_transactions';
 const STORE_BANK_DATA = 'bank_data';
 const STORE_XHS_STOCK = 'xhs_stock';
@@ -117,6 +245,7 @@ const STORE_WEREWOLF_GAMES = 'werewolf_games';    // 折子戏·狼人杀对局�
 const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话大冒险（一圈玩家 + 一串回合记录，可存档/回看/续玩）
 const STORE_THEATER_QUIZ_SESSIONS = 'theater_quiz_sessions'; // 折子戏·番外问卷会话（多角色答题 + 题内评论，可续做/回看）
 const STORE_THEATER_FAUX_PIECES = 'theater_faux_pieces'; // 折子戏·仿真图文历史（微信/微博/备忘录等截图结构化结果）
+const STORE_THEATER_CUSTOM_LIBRARY = 'theater_custom_library'; // 幕间集·用户导入小剧场 / 问卷库
 const STORE_THEATER_REFLECTION_SESSIONS = 'theater_reflection_sessions'; // 折子戏·对影会话（两个时间里的 TA + 用户短会面）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/折子戏内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
@@ -137,6 +266,15 @@ type MessagesUpdatedDetail = {
 const dispatchMessagesUpdated = (detail: MessagesUpdatedDetail) => {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('messages-updated', { detail }));
+};
+
+const listObjectStoreNames = (db: IDBDatabase): string[] => {
+  const names: string[] = [];
+  for (let i = 0; i < db.objectStoreNames.length; i++) {
+      const name = db.objectStoreNames.item(i);
+      if (name) names.push(name);
+  }
+  return names;
 };
 
 // API call-log retention limits.
@@ -655,6 +793,26 @@ export const openDB = (): Promise<IDBDatabase> => {
       createStore(STORE_GAMES, { keyPath: 'id' }); 
       createStore(STORE_WORLDBOOKS, { keyPath: 'id' }); 
       createStore(STORE_NOVELS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_COVIEW_MEDIA)) {
+          const coMedia = db.createObjectStore(STORE_COVIEW_MEDIA, { keyPath: 'id' });
+          coMedia.createIndex('kind', 'kind', { unique: false });
+          coMedia.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_COVIEW_BOOKS)) {
+          const coBooks = db.createObjectStore(STORE_COVIEW_BOOKS, { keyPath: 'id' });
+          coBooks.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_COVIEW_SESSIONS)) {
+          const coSessions = db.createObjectStore(STORE_COVIEW_SESSIONS, { keyPath: 'id' });
+          coSessions.createIndex('mode', 'mode', { unique: false });
+          coSessions.createIndex('charId', 'charId', { unique: false });
+          coSessions.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_COVIEW_MESSAGES)) {
+          const coMessages = db.createObjectStore(STORE_COVIEW_MESSAGES, { keyPath: 'id' });
+          coMessages.createIndex('sessionId', 'sessionId', { unique: false });
+          coMessages.createIndex('createdAt', 'createdAt', { unique: false });
+      }
 
       createStore(STORE_VR_NOVELS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(STORE_VR_ANNOTATIONS)) {
@@ -999,6 +1157,12 @@ export const openDB = (): Promise<IDBDatabase> => {
           tfStore.createIndex('charId', 'charId', { unique: false });
           tfStore.createIndex('kind', 'kind', { unique: false });
           tfStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      // ─── v93: 幕间集·用户导入小剧场 / 问卷库 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_CUSTOM_LIBRARY)) {
+          const tclStore = db.createObjectStore(STORE_THEATER_CUSTOM_LIBRARY, { keyPath: 'id' });
+          tclStore.createIndex('kind', 'kind', { unique: false });
+          tclStore.createIndex('updatedAt', 'updatedAt', { unique: false });
       }
       // ─── v86: 折子戏·对影会话 ───
       if (!db.objectStoreNames.contains(STORE_THEATER_REFLECTION_SESSIONS)) {
@@ -1442,8 +1606,9 @@ export const DB = {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
         const store = transaction.objectStore(STORE_MESSAGES);
-        const timestamp = typeof msg.timestamp === 'number' ? msg.timestamp : Date.now();
-        const { timestamp: _ignored, ...payload } = msg;
+        const cleanMsg = normalizeAssistantMessageForSave(msg);
+        const timestamp = typeof cleanMsg.timestamp === 'number' ? cleanMsg.timestamp : Date.now();
+        const { timestamp: _ignored, ...payload } = cleanMsg;
         const request = store.add({ ...payload, timestamp });
         let newId = 0;
         request.onsuccess = () => { newId = request.result as number; };
@@ -1451,8 +1616,8 @@ export const DB = {
         transaction.oncomplete = () => {
             dispatchMessagesUpdated({
                 kind: 'created',
-                charId: msg.charId,
-                groupId: msg.groupId,
+                charId: cleanMsg.charId,
+                groupId: cleanMsg.groupId,
                 messageId: newId,
                 timestamp,
             });
@@ -1474,7 +1639,9 @@ export const DB = {
         req.onsuccess = () => {
             const data = req.result as Message;
             if (data) {
-                data.content = content;
+                data.content = data.role === 'assistant' && ASSISTANT_VISIBLE_MESSAGE_TYPES.has(data.type)
+                    ? cleanVisibleRoleText(content)
+                    : content;
                 updated = data;
                 store.put(data);
             } else {
@@ -1828,9 +1995,10 @@ export const DB = {
   saveSocialPost: async (post: SocialPost): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
+      const cleanPost = normalizeSocialPostVisibleText(post);
       transaction.objectStore(STORE_SOCIAL_POSTS).put({
-          ...post,
-          lastActivityAt: post.lastActivityAt || post.timestamp || Date.now(),
+          ...cleanPost,
+          lastActivityAt: cleanPost.lastActivityAt || cleanPost.timestamp || Date.now(),
       });
   },
 
@@ -1847,7 +2015,7 @@ export const DB = {
               if (!existing) { resolve(null); return; }
               const updated = updater(existing);
               if (!updated) { resolve(null); return; }
-              next = { ...updated, lastActivityAt: updated.lastActivityAt || updated.timestamp || existing.lastActivityAt || Date.now() };
+              next = normalizeSocialPostVisibleText({ ...updated, lastActivityAt: updated.lastActivityAt || updated.timestamp || existing.lastActivityAt || Date.now() });
               store.put(next);
           };
           req.onerror = () => reject(req.error);
@@ -2091,7 +2259,10 @@ export const DB = {
       const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
       tx.objectStore(STORE_CHAR_LIFE_EVENTS).put(event);
       return new Promise((resolve, reject) => {
-          tx.oncomplete = () => resolve();
+          tx.oncomplete = () => {
+              dispatchCharLifeEventUpdated(event);
+              resolve();
+          };
           tx.onerror = () => reject(tx.error);
       });
   },
@@ -2122,13 +2293,22 @@ export const DB = {
       const db = await openDB();
       const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
       const store = tx.objectStore(STORE_CHAR_LIFE_EVENTS);
+      let updatedEvent: CharLifeEvent | null = null;
       const getReq = store.get(id);
       getReq.onsuccess = () => {
           const ev = getReq.result as CharLifeEvent | undefined;
-          if (ev) { ev.surfacedAsMsg = true; ev.surfacedAt = surfacedAt; store.put(ev); }
+          if (ev) {
+              ev.surfacedAsMsg = true;
+              ev.surfacedAt = surfacedAt;
+              updatedEvent = ev;
+              store.put(ev);
+          }
       };
       return new Promise((resolve, reject) => {
-          tx.oncomplete = () => resolve();
+          tx.oncomplete = () => {
+              if (updatedEvent) dispatchCharLifeEventUpdated(updatedEvent);
+              resolve();
+          };
           tx.onerror = () => reject(tx.error);
       });
   },
@@ -2601,6 +2781,26 @@ export const DB = {
       return DB.deleteByIndex(STORE_THEATER_FAUX_PIECES, 'charId', charId);
   },
 
+  // ─── 幕间集·用户导入小剧场 / 问卷库 ───
+  getAllTheaterCustomLibraryItems: async (): Promise<TheaterCustomLibraryItem[]> => (
+      await getAllStoreItems<TheaterCustomLibraryItem>(STORE_THEATER_CUSTOM_LIBRARY)
+  ).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+  saveTheaterCustomLibraryItem: (item: TheaterCustomLibraryItem): Promise<void> =>
+      putStoreItem(STORE_THEATER_CUSTOM_LIBRARY, item),
+  bulkSaveTheaterCustomLibraryItems: async (items: TheaterCustomLibraryItem[]): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_CUSTOM_LIBRARY)) return;
+      const tx = db.transaction(STORE_THEATER_CUSTOM_LIBRARY, 'readwrite');
+      const store = tx.objectStore(STORE_THEATER_CUSTOM_LIBRARY);
+      items.forEach(item => store.put(item));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTheaterCustomLibraryItem: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_CUSTOM_LIBRARY, id),
+
   // ─── 折子戏·对影会话 ───
   getAllTheaterReflectionSessions: async (): Promise<TheaterReflectionSession[]> => {
       const db = await openDB();
@@ -2883,7 +3083,10 @@ export const DB = {
   saveGalleryImage: async (img: GalleryImage): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_GALLERY, 'readwrite');
-      transaction.objectStore(STORE_GALLERY).put(img);
+      transaction.objectStore(STORE_GALLERY).put({
+          ...img,
+          review: typeof img.review === 'string' ? cleanVisibleRoleText(img.review) : img.review,
+      });
   },
 
   getGalleryImages: async (charId?: string): Promise<GalleryImage[]> => {
@@ -2915,7 +3118,9 @@ export const DB = {
                   reject(new Error('Image not found'));
                   return;
               }
-              const updated: GalleryImage = { ...data, ...patch, id: data.id, updatedAt: Date.now() };
+              const cleanPatch: Partial<Omit<GalleryImage, 'id'>> = { ...patch };
+              if (typeof patch.review === 'string') cleanPatch.review = cleanVisibleRoleText(patch.review);
+              const updated: GalleryImage = { ...data, ...cleanPatch, id: data.id, updatedAt: Date.now() };
               const putReq = store.put(updated);
               putReq.onsuccess = () => resolve(updated);
               putReq.onerror = () => reject(putReq.error);
@@ -3064,14 +3269,14 @@ export const DB = {
   saveXhsFeedPost: async (post: XhsFeedPost): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
-      transaction.objectStore(STORE_XHS_FEED).put(post);
+      transaction.objectStore(STORE_XHS_FEED).put(normalizeXhsFeedVisibleText(post));
   },
 
   saveXhsFeedPosts: async (posts: XhsFeedPost[]): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
       const store = transaction.objectStore(STORE_XHS_FEED);
-      for (const p of posts) store.put(p);
+      for (const p of posts) store.put(normalizeXhsFeedVisibleText(p));
   },
 
   deleteXhsFeedPost: async (id: string): Promise<void> => {
@@ -3104,14 +3309,14 @@ export const DB = {
   saveTwitterTweet: async (tweet: TwitterTweet): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
-      transaction.objectStore(STORE_TWITTER_TWEETS).put(tweet);
+      transaction.objectStore(STORE_TWITTER_TWEETS).put(normalizeTwitterTweetVisibleText(tweet));
   },
 
   saveTwitterTweets: async (tweets: TwitterTweet[]): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
       const store = transaction.objectStore(STORE_TWITTER_TWEETS);
-      for (const tweet of tweets) store.put(tweet);
+      for (const tweet of tweets) store.put(normalizeTwitterTweetVisibleText(tweet));
   },
 
   deleteTwitterTweet: async (id: string): Promise<void> => {
@@ -3874,7 +4079,7 @@ export const DB = {
 
   // --- 絮语查岗档案 ---
   savePhoneCheckSession: (session: PhoneCheckSession): Promise<void> =>
-      putStoreItem(STORE_PHONE_CHECK_SESSIONS, session),
+      putStoreItem(STORE_PHONE_CHECK_SESSIONS, normalizePhoneCheckSessionVisibleText(session)),
 
   getPhoneCheckSession: (id: string): Promise<PhoneCheckSession | null> =>
       getStoreItem<PhoneCheckSession>(STORE_PHONE_CHECK_SESSIONS, id),
@@ -3910,10 +4115,11 @@ export const DB = {
 
   // --- 絮语观屏评论会话 ---
   saveUserScreenWatchSession: async (session: UserScreenWatchSession, keepN = 30): Promise<void> => {
+      const cleanSession = normalizeUserScreenWatchVisibleText(session);
       const clean: UserScreenWatchSession = {
-          ...session,
-          frames: (session.frames || []).slice(-20),
-          comments: (session.comments || []).slice(-80),
+          ...cleanSession,
+          frames: (cleanSession.frames || []).slice(-20),
+          comments: (cleanSession.comments || []).slice(-80),
           updatedAt: session.updatedAt || Date.now(),
       };
       await putStoreItem(STORE_USER_SCREEN_WATCH, clean);
@@ -4210,6 +4416,13 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_DAILY_SCHEDULE, 'readwrite');
       transaction.objectStore(STORE_DAILY_SCHEDULE).put(schedule);
+      return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => {
+              dispatchDailyScheduleSaved(schedule);
+              resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+      });
   },
 
   /** 删除某角色的全部每日日程（清空聊天记录·全部清除时连日程一并抹掉） */
@@ -4219,18 +4432,32 @@ export const DB = {
           if (!db.objectStoreNames.contains(STORE_DAILY_SCHEDULE)) { resolve(); return; }
           const transaction = db.transaction(STORE_DAILY_SCHEDULE, 'readwrite');
           const store = transaction.objectStore(STORE_DAILY_SCHEDULE);
+          const deleted: DailySchedule[] = [];
           const req = store.openCursor();
           req.onsuccess = () => {
               const cursor = req.result;
               if (cursor) {
                   const val = cursor.value as DailySchedule;
                   if (val?.charId === charId || (typeof cursor.key === 'string' && cursor.key.startsWith(`${charId}_`))) {
+                      if (val?.charId) deleted.push(val);
                       cursor.delete();
                   }
                   cursor.continue();
               }
           };
-          transaction.oncomplete = () => resolve();
+          transaction.oncomplete = () => {
+              if (deleted.length > 0) {
+                  deleted.forEach(s => dispatchDailyScheduleUpdated({
+                      charId: s.charId,
+                      date: s.date,
+                      scheduleId: s.id,
+                      deleted: true,
+                  }));
+              } else {
+                  dispatchDailyScheduleUpdated({ charId, deleted: true });
+              }
+              resolve();
+          };
           transaction.onerror = () => reject(transaction.error);
       });
   },
@@ -4613,6 +4840,135 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_NOVELS, 'readwrite');
       transaction.objectStore(STORE_NOVELS).delete(id);
+  },
+
+  // --- CoView App ---
+  getCoViewMedia: async (): Promise<CoViewMedia[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_COVIEW_MEDIA)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_MEDIA, 'readonly');
+          const request = transaction.objectStore(STORE_COVIEW_MEDIA).getAll();
+          request.onsuccess = () => {
+              const rows = (request.result || []) as CoViewMedia[];
+              rows.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+              resolve(rows);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  getCoViewMediaById: async (id: string): Promise<CoViewMedia | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_COVIEW_MEDIA)) return null;
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_MEDIA, 'readonly');
+          const request = transaction.objectStore(STORE_COVIEW_MEDIA).get(id);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveCoViewMedia: async (media: CoViewMedia): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_MEDIA, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_MEDIA).put(media);
+  },
+
+  deleteCoViewMedia: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_MEDIA, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_MEDIA).delete(id);
+  },
+
+  getCoViewBooks: async (): Promise<CoViewBook[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_COVIEW_BOOKS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_BOOKS, 'readonly');
+          const request = transaction.objectStore(STORE_COVIEW_BOOKS).getAll();
+          request.onsuccess = () => {
+              const rows = (request.result || []) as CoViewBook[];
+              rows.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+              resolve(rows);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveCoViewBook: async (book: CoViewBook): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_BOOKS, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_BOOKS).put(book);
+  },
+
+  deleteCoViewBook: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_BOOKS, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_BOOKS).delete(id);
+  },
+
+  getCoViewSessions: async (): Promise<CoViewSession[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_COVIEW_SESSIONS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_SESSIONS, 'readonly');
+          const request = transaction.objectStore(STORE_COVIEW_SESSIONS).getAll();
+          request.onsuccess = () => {
+              const rows = (request.result || []) as CoViewSession[];
+              rows.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+              resolve(rows);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveCoViewSession: async (session: CoViewSession): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_SESSIONS, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_SESSIONS).put(session);
+  },
+
+  deleteCoViewSession: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_SESSIONS, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_SESSIONS).delete(id);
+  },
+
+  getCoViewMessages: async (sessionId: string): Promise<CoViewMessage[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_COVIEW_MESSAGES)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_MESSAGES, 'readonly');
+          const store = transaction.objectStore(STORE_COVIEW_MESSAGES);
+          const index = store.index('sessionId');
+          const request = index.getAll(IDBKeyRange.only(sessionId));
+          request.onsuccess = () => {
+              const rows = (request.result || []) as CoViewMessage[];
+              rows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+              resolve(rows);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveCoViewMessage: async (message: CoViewMessage): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_COVIEW_MESSAGES, 'readwrite');
+      transaction.objectStore(STORE_COVIEW_MESSAGES).put(message);
+  },
+
+  clearCoViewMessages: async (sessionId: string): Promise<void> => {
+      const rows = await DB.getCoViewMessages(sessionId);
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_COVIEW_MESSAGES, 'readwrite');
+          const store = transaction.objectStore(STORE_COVIEW_MESSAGES);
+          rows.forEach(row => store.delete(row.id));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+      });
   },
 
   // --- VR World 「页外」 全局小说库 ---
@@ -5132,7 +5488,7 @@ export const DB = {
   saveDesktopPetState: async (state: DesktopPetState): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_DESKTOP_PET, 'readwrite');
-      transaction.objectStore(STORE_DESKTOP_PET).put({ ...state, id: 'main' });
+      transaction.objectStore(STORE_DESKTOP_PET).put({ ...normalizeDesktopPetVisibleText(state), id: 'main' });
   },
 
   removeLifeSimCharacterContext: async (charId: string): Promise<number> => {
@@ -5182,6 +5538,11 @@ export const DB = {
       });
   },
 
+  getObjectStoreNames: async (): Promise<string[]> => {
+      const db = await openDB();
+      return listObjectStoreNames(db);
+  },
+
   exportFullData: async (): Promise<Partial<FullBackupData>> => {
       const db = await openDB();
       
@@ -5198,7 +5559,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMediaRaw, coviewBooks, coviewSessions, coviewMessages, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterCustomLibrary, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords, takeoutOrders] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -5230,6 +5591,10 @@ export const DB = {
           getAllFromStore(STORE_GAMES),
           getAllFromStore(STORE_WORLDBOOKS),
           getAllFromStore(STORE_NOVELS),
+          getAllFromStore(STORE_COVIEW_MEDIA),
+          getAllFromStore(STORE_COVIEW_BOOKS),
+          getAllFromStore(STORE_COVIEW_SESSIONS),
+          getAllFromStore(STORE_COVIEW_MESSAGES),
           getAllFromStore(STORE_BANK_TX),
           getAllFromStore(STORE_BANK_DATA),
           getAllFromStore(STORE_XHS_ACTIVITIES),
@@ -5252,6 +5617,7 @@ export const DB = {
           getAllFromStore(STORE_GUIDEBOOK),
           getAllFromStore(STORE_THEATER_QUIZ_SESSIONS),
           getAllFromStore(STORE_THEATER_FAUX_PIECES),
+          getAllFromStore(STORE_THEATER_CUSTOM_LIBRARY),
           getAllFromStore(STORE_THEATER_REFLECTION_SESSIONS),
           getAllFromStore(STORE_COLLECTION_ITEMS),
           getAllFromStore(STORE_SCHEDULED),
@@ -5278,6 +5644,7 @@ export const DB = {
           getAllFromStore(STORE_LLM_PRESETS),
           getAllFromStore(STORE_PERSONAS),
           getAllFromStore(STORE_DESKTOP_PET),
+          getAllFromStore(STORE_TAKEOUT_ORDERS),
       ]);
 
       const [relationshipNetworkEdges, relationshipNetworkMessages, relationshipNetworkAutoSettings] = await Promise.all([
@@ -5285,6 +5652,36 @@ export const DB = {
           getAllFromStore(STORE_RELATIONSHIP_NETWORK_MESSAGES),
           getAllFromStore(STORE_RELATIONSHIP_NETWORK_SETTINGS),
       ]);
+
+      const structuredBackupStores = new Set([
+          STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES,
+          STORE_CHAT_ALARMS, STORE_CHAT_FOLLOWUPS, STORE_CHAT_HUB_DIGESTS,
+          STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
+          STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES,
+          STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES, STORE_ASSETS, STORE_GALLERY, STORE_USER,
+          STORE_DIARIES, STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES, STORE_GROUPS,
+          STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS,
+          STORE_COVIEW_MEDIA, STORE_COVIEW_BOOKS, STORE_COVIEW_SESSIONS, STORE_COVIEW_MESSAGES,
+          STORE_BANK_TX, STORE_BANK_DATA, STORE_XHS_ACTIVITIES, STORE_XHS_STOCK, STORE_XHS_FEED,
+          STORE_TWITTER_TWEETS, STORE_TWITTER_NOTIFS, STORE_TWITTER_PROFILE, STORE_TWITTER_ACCOUNTS, STORE_TWITTER_DM, STORE_TWITTER_SEARCH,
+          STORE_SONGS, STORE_MUSIC_TRACKS, STORE_MUSIC_PLAYLISTS, STORE_MUSIC_PLAYLIST_ITEMS, STORE_MUSIC_PLAY_EVENTS,
+          STORE_MUSIC_SEARCH_HISTORY, STORE_MUSIC_RECOMMEND_CACHE, STORE_QUIZZES, STORE_GUIDEBOOK,
+          STORE_THEATER_QUIZ_SESSIONS, STORE_THEATER_FAUX_PIECES, STORE_THEATER_CUSTOM_LIBRARY, STORE_THEATER_REFLECTION_SESSIONS, STORE_COLLECTION_ITEMS,
+          STORE_SCHEDULED, STORE_LIFE_SIM, STORE_HANDBOOK, STORE_TRACKERS, STORE_TRACKER_ENTRIES, STORE_HOTNEWS,
+          STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK,
+          STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
+          STORE_PHONE_CALL_LOGS, STORE_PHONE_CHECK_SESSIONS, STORE_USER_SCREEN_WATCH, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
+          STORE_LLM_PRESETS, STORE_PERSONAS, STORE_DESKTOP_PET, STORE_TAKEOUT_ORDERS,
+          STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS,
+          'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
+          'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
+      ]);
+      const indexedDbSnapshotEntries = await Promise.all(
+          listObjectStoreNames(db)
+              .filter(storeName => !structuredBackupStores.has(storeName))
+              .map(async storeName => [storeName, await getAllFromStore(storeName)] as const)
+      );
+      const indexedDbSnapshot = Object.fromEntries(indexedDbSnapshotEntries);
 
       const userProfile = userProfiles.length > 0 ? {
           name: userProfiles[0].name,
@@ -5294,9 +5691,10 @@ export const DB = {
 
       const mainState = bankData.find((d: any) => d.id === 'main_state');
       const dollhouseRecord = bankData.find((d: any) => d.id === 'dollhouse_state');
+      const coviewMedia = (coviewMediaRaw as CoViewMedia[]).map(({ blob: _blob, ...media }) => media as CoViewMedia);
 
       return {
-          characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
+          characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMedia, coviewBooks, coviewSessions, coviewMessages,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
           bankTransactions: bankTx,
@@ -5320,6 +5718,7 @@ export const DB = {
           guidebookSessions,
           theaterQuizSessions,
           theaterFauxPieces,
+          theaterCustomLibrary,
           theaterReflectionSessions,
           collectionItems,
           scheduledMessages,
@@ -5347,6 +5746,8 @@ export const DB = {
           llmPresets,
           personas,
           desktopPetState: desktopPetRecords[0] || undefined,
+          takeoutOrders,
+          indexedDbSnapshot: Object.keys(indexedDbSnapshot).length > 0 ? indexedDbSnapshot : undefined,
           relationshipNetworkEdges,
           relationshipNetworkMessages,
           relationshipNetworkAutoSettings,
@@ -5369,13 +5770,14 @@ export const DB = {
   ): Promise<void> => {
       const db = await openDB();
       
-      const availableStores = [
+      const knownImportStores = [
           STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
           STORE_CHAT_ALARMS, STORE_CHAT_FOLLOWUPS, STORE_CHAT_HUB_DIGESTS, STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
           STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES,
           STORE_ASSETS, STORE_GALLERY, STORE_USER, STORE_DIARIES,
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
-          STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS, STORE_SONGS,
+          STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS,
+          STORE_COVIEW_MEDIA, STORE_COVIEW_BOOKS, STORE_COVIEW_SESSIONS, STORE_COVIEW_MESSAGES, STORE_SONGS,
           STORE_MUSIC_TRACKS, STORE_MUSIC_PLAYLISTS, STORE_MUSIC_PLAYLIST_ITEMS, STORE_MUSIC_PLAY_EVENTS,
           STORE_MUSIC_SEARCH_HISTORY, STORE_MUSIC_RECOMMEND_CACHE,
           STORE_BANK_TX, STORE_BANK_DATA,
@@ -5385,6 +5787,7 @@ export const DB = {
           STORE_GUIDEBOOK,
           STORE_THEATER_QUIZ_SESSIONS,
           STORE_THEATER_FAUX_PIECES,
+          STORE_THEATER_CUSTOM_LIBRARY,
           STORE_THEATER_REFLECTION_SESSIONS,
           STORE_COLLECTION_ITEMS,
           STORE_SCHEDULED,
@@ -5398,9 +5801,11 @@ export const DB = {
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
           STORE_PHONE_CALL_LOGS, STORE_PHONE_CHECK_SESSIONS, STORE_USER_SCREEN_WATCH, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
-          STORE_LLM_PRESETS, STORE_PERSONAS, STORE_DESKTOP_PET,
+          STORE_LLM_PRESETS, STORE_PERSONAS, STORE_DESKTOP_PET, STORE_TAKEOUT_ORDERS,
           STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS,
-      ].filter(name => db.objectStoreNames.contains(name));
+      ];
+      const availableStores = Array.from(new Set([...knownImportStores, ...listObjectStoreNames(db)]))
+          .filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);
 
@@ -5467,6 +5872,10 @@ export const DB = {
           data.llmPresets !== undefined,
           data.personas !== undefined,
           data.novels !== undefined,
+          data.coviewMedia !== undefined,
+          data.coviewBooks !== undefined,
+          data.coviewSessions !== undefined,
+          data.coviewMessages !== undefined,
           data.songs !== undefined,
           data.musicTracks !== undefined,
           data.musicPlaylists !== undefined,
@@ -5526,6 +5935,8 @@ export const DB = {
           data.relationshipNetworkMessages !== undefined,
           data.relationshipNetworkAutoSettings !== undefined,
           data.desktopPetState !== undefined,
+          data.takeoutOrders !== undefined,
+          data.indexedDbSnapshot !== undefined,
       ];
       const sectionTotal = Math.max(1, plannedSections.filter(Boolean).length);
       let sectionDone = 0;
@@ -5868,13 +6279,30 @@ export const DB = {
           data.llmPresets = undefined as any;
       }, data.llmPresets?.length || 0);
       await runSection('人设', data.personas !== undefined, async () => {
-          await clearAndAdd(STORE_PERSONAS, data.personas, '人设', false);
+          await clearAndAdd(STORE_PERSONAS, data.personas, '人设', true);
           data.personas = undefined as any;
       }, data.personas?.length || 0);
       await runSection('小说', data.novels !== undefined, async () => {
           await clearAndAdd(STORE_NOVELS, data.novels, '小说', false);
           data.novels = undefined as any;
       }, data.novels?.length || 0);
+      await runSection('共览视频', data.coviewMedia !== undefined, async () => {
+          const media = (data.coviewMedia || []).map(({ blob: _blob, ...item }) => item);
+          await clearAndAdd(STORE_COVIEW_MEDIA, media, '共览视频', false);
+          data.coviewMedia = undefined as any;
+      }, data.coviewMedia?.length || 0);
+      await runSection('共览书籍', data.coviewBooks !== undefined, async () => {
+          await clearAndAdd(STORE_COVIEW_BOOKS, data.coviewBooks, '共览书籍', false);
+          data.coviewBooks = undefined as any;
+      }, data.coviewBooks?.length || 0);
+      await runSection('共览会话', data.coviewSessions !== undefined, async () => {
+          await clearAndAdd(STORE_COVIEW_SESSIONS, data.coviewSessions, '共览会话', false);
+          data.coviewSessions = undefined as any;
+      }, data.coviewSessions?.length || 0);
+      await runSection('共览消息', data.coviewMessages !== undefined, async () => {
+          await clearAndAdd(STORE_COVIEW_MESSAGES, data.coviewMessages, '共览消息', false);
+          data.coviewMessages = undefined as any;
+      }, data.coviewMessages?.length || 0);
       await runSection('页外小说库', data.vrNovels !== undefined, async () => {
           await clearAndAdd(STORE_VR_NOVELS, data.vrNovels, '页外小说库', false);
           data.vrNovels = undefined as any;
@@ -5965,6 +6393,10 @@ export const DB = {
           await clearAndAdd(STORE_THEATER_FAUX_PIECES, data.theaterFauxPieces, '仿真图文历史', false);
           data.theaterFauxPieces = undefined as any;
       }, data.theaterFauxPieces?.length || 0);
+      await runSection('幕间集导入库', data.theaterCustomLibrary !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_CUSTOM_LIBRARY, data.theaterCustomLibrary, '幕间集导入库', false);
+          data.theaterCustomLibrary = undefined as any;
+      }, data.theaterCustomLibrary?.length || 0);
       await runSection('对影册', data.theaterReflectionSessions !== undefined, async () => {
           await clearAndAdd(STORE_THEATER_REFLECTION_SESSIONS, data.theaterReflectionSessions, '对影册', false);
           data.theaterReflectionSessions = undefined as any;
@@ -5973,6 +6405,19 @@ export const DB = {
           await clearAndAdd(STORE_COLLECTION_ITEMS, data.collectionItems, '典藏馆收录', false);
           data.collectionItems = undefined as any;
       }, data.collectionItems?.length || 0);
+      await runSection('饭票订单', data.takeoutOrders !== undefined, async () => {
+          await clearAndAdd(STORE_TAKEOUT_ORDERS, data.takeoutOrders || [], '饭票订单', false);
+          data.takeoutOrders = undefined as any;
+      }, data.takeoutOrders?.length || 0);
+      await runSection('IndexedDB兜底数据', data.indexedDbSnapshot !== undefined, async () => {
+          const snapshot = data.indexedDbSnapshot || {};
+          for (const [storeName, items] of Object.entries(snapshot)) {
+              if (!hasStore(storeName) || !Array.isArray(items)) continue;
+              await clearAndAdd(storeName, items, `IndexedDB:${storeName}`, true);
+              snapshot[storeName] = undefined as any;
+          }
+          data.indexedDbSnapshot = undefined as any;
+      }, Object.values(data.indexedDbSnapshot || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : 0), 0));
       await runSection('定时消息', data.scheduledMessages !== undefined, async () => {
           await clearAndAdd(STORE_SCHEDULED, data.scheduledMessages || [], '定时消息', false);
           data.scheduledMessages = undefined as any;

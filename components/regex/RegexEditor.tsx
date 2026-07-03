@@ -4,9 +4,10 @@ import {
     regex_placement,
     substitute_find_regex,
     PLACEMENT_LABELS,
-    runRegexScript,
+    diagnoseRegexScriptRun,
+    RegexPreviewMode,
 } from '../../utils/regex/engine';
-import { BracketsCurly, CaretLeft, FloppyDisk, Play } from '@phosphor-icons/react';
+import { BracketsCurly, CaretLeft, FloppyDisk, Play, WarningCircle } from '@phosphor-icons/react';
 
 const AC = '#9ecfc4';
 const AC_DARK = '#5b7771';
@@ -53,6 +54,12 @@ const RUN_MODE_OPTIONS = [
         desc: '用户重新编辑消息时也执行这条正则。',
     },
 ] as const;
+
+const PREVIEW_MODES: Array<{ mode: RegexPreviewMode; title: string; tone: 'mint' | 'blue' | 'rose' }> = [
+    { mode: 'raw', title: '改原文', tone: 'mint' },
+    { mode: 'prompt', title: '仅提示词', tone: 'rose' },
+    { mode: 'markdown', title: '仅显示层', tone: 'blue' },
+];
 
 export interface RegexEditorProps {
     script: RegexScriptData;
@@ -150,6 +157,8 @@ const CheckRow: React.FC<{
 
 const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, charName, eyebrow, onChange, onSave, onClose }) => {
     const [testInput, setTestInput] = useState('');
+    const [previewPlacement, setPreviewPlacement] = useState<number>(script.placement[0] ?? regex_placement.AI_OUTPUT);
+    const [previewDepth, setPreviewDepth] = useState('0');
     const set = (patch: Partial<RegexScriptData>) => onChange({ ...script, ...patch });
 
     const togglePlacement = (p: number) => {
@@ -158,14 +167,41 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
         set({ placement: next });
     };
 
-    const testOutput = useMemo(() => {
-        if (!testInput || !script.findRegex) return '';
-        try {
-            return runRegexScript({ ...script, disabled: false }, testInput, { userName, charName });
-        } catch (e: any) {
-            return `正则执行失败：${e?.message || e}`;
-        }
-    }, [testInput, script, userName, charName]);
+    const effectivePreviewPlacement = script.placement.includes(previewPlacement)
+        ? previewPlacement
+        : script.placement[0] ?? regex_placement.AI_OUTPUT;
+    const parsedPreviewDepth = previewDepth.trim() === '' ? undefined : Number(previewDepth);
+    const safePreviewDepth = typeof parsedPreviewDepth === 'number' && Number.isFinite(parsedPreviewDepth)
+        ? parsedPreviewDepth
+        : undefined;
+    const currentMode: RegexPreviewMode = script.markdownOnly ? 'markdown' : script.promptOnly ? 'prompt' : 'raw';
+    const diagnostics = useMemo(() => {
+        if (!testInput) return [];
+        return PREVIEW_MODES.map(item => ({
+            ...item,
+            result: diagnoseRegexScriptRun(script, testInput, {
+                userName,
+                charName,
+                mode: item.mode,
+                placement: effectivePreviewPlacement,
+                depth: safePreviewDepth,
+            }),
+        }));
+    }, [testInput, script, userName, charName, effectivePreviewPlacement, safePreviewDepth]);
+    const activeDiagnostic = diagnostics.find(d => d.mode === currentMode)?.result;
+    const diagnosticHints = useMemo(() => {
+        if (!activeDiagnostic) return [];
+        const hints: string[] = [];
+        if (!activeDiagnostic.validRegex) hints.push(activeDiagnostic.error || '查找正则无法编译');
+        if (activeDiagnostic.skippedByPlacement) hints.push('当前预览位置未被这条正则勾选');
+        if (activeDiagnostic.skippedByMode) hints.push('当前运行模式不会在这个挂载点执行');
+        if (activeDiagnostic.skippedByDepth) hints.push('当前消息深度被最小/最大深度过滤');
+        if (activeDiagnostic.matched && activeDiagnostic.outputEmpty) hints.push('命中后输出为空，等同删除命中内容');
+        if (activeDiagnostic.matched && !activeDiagnostic.changed) hints.push('已经命中，但替换后文本没有变化');
+        if (!activeDiagnostic.matched && activeDiagnostic.validRegex) hints.push('测试文本没有命中查找正则');
+        if (!script.markdownOnly && !script.promptOnly) hints.push('这条正则保存后会直接改写原文');
+        return hints;
+    }, [activeDiagnostic, script.markdownOnly, script.promptOnly]);
 
     const eb = eyebrow ?? { neu: 'NEW REGEX', old: 'EDIT REGEX' };
 
@@ -174,7 +210,7 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72" style={{ background: `radial-gradient(115% 88% at 50% -22%, ${AC_WASH}, transparent 68%)` }} />
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-[92px] h-48" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0), rgba(130,189,213,0.13), rgba(255,247,229,0))' }} />
 
-            <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: PAPER, borderBottom: '1px solid #ededed' }}>
+            <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ background: PAPER, borderBottom: '1px solid #ededed' }}>
                 <button
                     onClick={onClose}
                     className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
@@ -312,7 +348,37 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                 </Page>
 
                 <Page title="试运行" en="Test">
-                    <Entry title="测试文本" note="输入一段文本，立即查看这条正则的替换结果。">
+                    <Entry title="预览入口" note="用同一段文本查看不同挂载点的预期输出。">
+                        <div className="grid grid-cols-[minmax(0,1fr)_92px] gap-2.5">
+                            <div>
+                                <FieldLabel>运行位置</FieldLabel>
+                                <div className="flex flex-wrap gap-2">
+                                    {PLACEMENT_OPTIONS.map((p) => (
+                                        <StickerChip
+                                            key={p}
+                                            active={effectivePreviewPlacement === p}
+                                            onClick={() => setPreviewPlacement(p)}
+                                            tone={script.placement.includes(p) ? 'rose' : 'plain'}
+                                        >
+                                            {PLACEMENT_LABELS[p]}
+                                        </StickerChip>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <FieldLabel>深度</FieldLabel>
+                                <input
+                                    className="w-full px-3 py-2 text-[13px] outline-none placeholder:text-[#b8b3bd]"
+                                    style={fieldStyle}
+                                    type="number"
+                                    value={previewDepth}
+                                    placeholder="不限"
+                                    onChange={e => setPreviewDepth(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    </Entry>
+                    <Entry title="测试文本" note="输入一段文本，立即查看命中、差异和空结果。">
                         <textarea
                             className="w-full px-3 py-2 text-[12px] leading-relaxed outline-none resize-none font-mono placeholder:text-[#b8b3bd] h-20"
                             style={fieldStyle}
@@ -321,11 +387,46 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                             onChange={e => setTestInput(e.target.value)}
                         />
                         {testInput && (
-                            <div className="mt-2.5 rounded-[14px] px-3 py-3 min-h-[3rem] whitespace-pre-wrap break-words text-[12px] leading-relaxed" style={{ background: GRAD_SOFT, color: AC_DARK, border: `1px solid ${EDGE}` }}>
-                                <div className="mb-1.5 flex items-center gap-1.5 text-[10px] tracking-[0.18em] uppercase" style={{ ...LABEL_STACK, color: AC }}>
-                                    <Play size={11} weight="fill" /> Output
+                            <div className="mt-2.5 space-y-2.5">
+                                <div className="rounded-[14px] px-3 py-2.5" style={{ background: GRAD_SOFT, color: AC_DARK, border: `1px solid ${EDGE}` }}>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <StickerChip active tone={activeDiagnostic?.matched ? 'mint' : 'plain'}>{activeDiagnostic?.matched ? '已命中' : '未命中'}</StickerChip>
+                                        <StickerChip active tone={activeDiagnostic?.changed ? 'blue' : 'plain'}>{activeDiagnostic?.changed ? '有变化' : '无变化'}</StickerChip>
+                                        {activeDiagnostic?.outputEmpty && <StickerChip active tone="rose">输出为空</StickerChip>}
+                                        {!activeDiagnostic?.validRegex && <StickerChip active tone="rose">正则无效</StickerChip>}
+                                    </div>
+                                    {diagnosticHints.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                            {diagnosticHints.map((hint, idx) => (
+                                                <div key={`${hint}-${idx}`} className="flex items-start gap-1.5 text-[10px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                                    <WarningCircle size={12} weight="fill" className="mt-0.5 shrink-0" style={{ color: '#c68a2d' }} />
+                                                    <span>{hint}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                {testOutput || <span style={{ color: INK_FAINT }}>结果为空</span>}
+                                <div className="grid gap-2">
+                                    {diagnostics.map(item => (
+                                        <div
+                                            key={item.mode}
+                                            className="rounded-[14px] px-3 py-3 min-h-[3rem] whitespace-pre-wrap break-words text-[12px] leading-relaxed"
+                                            style={{
+                                                background: item.mode === currentMode ? GRAD_SOFT : GRAD_FIELD,
+                                                color: item.result.changed ? AC_DARK : INK_SOFT,
+                                                border: `1px solid ${item.mode === currentMode ? EDGE : HAIRLINE}`,
+                                            }}
+                                        >
+                                            <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px]" style={{ color: item.mode === currentMode ? AC_DARK : INK_FAINT }}>
+                                                <span className="inline-flex items-center gap-1.5 font-bold">
+                                                    <Play size={11} weight="fill" /> {item.title}
+                                                </span>
+                                                <span style={LABEL_STACK}>{item.result.changed ? 'CHANGED' : item.result.matched ? 'MATCHED' : 'SKIPPED'}</span>
+                                            </div>
+                                            {item.result.output || <span style={{ color: INK_FAINT }}>结果为空</span>}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </Entry>

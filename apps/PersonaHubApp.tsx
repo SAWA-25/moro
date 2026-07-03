@@ -106,7 +106,7 @@ const PersonaHubApp: React.FC = () => {
     return (
         <div
             className="absolute inset-0 flex flex-col text-[#2f3432] animate-fade-in"
-            style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}
+            style={DOT_BG}
         >
             {/* 顶栏 */}
             <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0 bg-[#f5f7f4]/95 backdrop-blur border-b border-[#e6ece8]">

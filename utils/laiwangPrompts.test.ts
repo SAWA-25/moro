@@ -8,26 +8,52 @@ import {
   coupleAutoCareUserPrompt,
   coupleChatPersonaSystem,
   coupleCommentUserPrompt,
+  coupleEyesCardUserPrompt,
+  coupleEyesFuturePrompt,
+  coupleEyesPastPrompt,
+  coupleEyesPresentPrompt,
   coupleInnerVoiceUserPrompt,
   coupleInteractionUserPrompt,
   coupleMomentUserPrompt,
   coupleRecapUserPrompt,
   coupleSpaceBlock,
   coupleWhisperUserPrompt,
+  charPhoneCheckFollowupPrompt,
+  charPhoneCheckScriptGuard,
+  convoLines,
+  liveGroupModePromptBlock,
   livePrivateDraftPromptBody,
-  livePrivateInterjectPromptBody,
   proactiveFallbackHint,
+  proactivePendingReplyHint,
   swOfflineProactiveSystemPrompt,
   userScreenWatchCommentSystemPrompt,
+  userScreenWatchCommentUserPrompt,
   userScreenWatchContextBlock,
 } from './laiwangPrompts';
 
 describe('laiwang prompt copy', () => {
+  it('keeps long-distance mode online and away from offline directives', () => {
+    const text = convoLines.longDistanceMode;
+
+    expect(text).toContain('异地模式');
+    expect(text).toContain('远距离');
+    expect(text).toContain('纯线上');
+    expect(text).toContain('聊天');
+    expect(text).toContain('语音电话');
+    expect(text).toContain('视频通话');
+    expect(text).toContain('未来见面约定');
+    expect(text).not.toContain('[[OFFLINE_START]]');
+  });
+
   it('explains how character settings become natural dialogue', () => {
     const text = characterDialogueGuidance('小夏');
 
     expect(text).toContain('角色设定的自然对话方式');
     expect(text).toContain('而不是逐条复述给小夏听');
+    expect(text).toContain('先回应当前话题');
+    expect(text).toContain('生活半径要更广');
+    expect(text).toContain('吃饭、睡觉、起床只是生活素材之一，不是默认寒暄模板');
+    expect(text).toContain('不要每轮硬转成"我现在在做什么"的近况汇报');
     expect(text).toContain('对话示例只用来学习说话节奏');
     expect(text).toContain('它们不是实际发生过的历史');
   });
@@ -43,21 +69,6 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('不会写进聊天记录');
     expect(text).toContain('不落库');
     expect(text).toContain('不要把草稿当成已经说出口');
-  });
-
-  it('keeps live private interjects out of the current chat window fiction', () => {
-    const text = livePrivateInterjectPromptBody({
-      userName: '小夏',
-      charName: '阿迟',
-      sourceCharName: '林晚',
-      userText: '今天好困',
-      recent: '小夏: 早',
-    });
-
-    expect(text).toContain('不要假装自己在当前私聊里');
-    expect(text).toContain('不要假装看见了');
-    expect(text).toContain('不要说成小夏把同一条消息发给了你');
-    expect(text).toContain('保存到你自己的私聊里');
   });
 
   it('keeps autonomous life v2 fields in the JSON examples', () => {
@@ -77,18 +88,14 @@ describe('laiwang prompt copy', () => {
       charName: '阿迟',
       draftText: '我想说点事',
     });
-    const interject = livePrivateInterjectPromptBody({
-      userName: '小夏',
-      charName: '阿迟',
-      sourceCharName: '林晚',
-      userText: '今天好累',
-      recent: '阿迟: 嗯',
-    });
+    const group = liveGroupModePromptBlock();
 
     expect(draft).toContain('默认要克制');
     expect(draft).toContain('不要催用户赶紧发');
-    expect(interject).toContain('这不是刷存在感');
-    expect(interject).toContain('不要强行升温');
+    expect(draft).toContain('没有必要就短一点');
+    expect(group).toContain('当前群聊');
+    expect(group).toContain('不要分流到其它群、其它私聊');
+    expect(group).toContain('[[PRIVATE]]');
   });
 
   it('keeps proactive call instructions conditional in fallback prompts', () => {
@@ -113,6 +120,46 @@ describe('laiwang prompt copy', () => {
     expect(withoutCall).not.toContain('[[CALL_USER]]');
   });
 
+  it('keeps force reply instructions conditional', () => {
+    const withForce = proactiveFallbackHint({
+      userName: '小夏',
+      timeStr: '7月4日 20:00',
+      timeSinceUser: '3小时',
+      longGap: true,
+      forceReplyAllowed: true,
+    });
+    const withoutForce = proactiveFallbackHint({
+      userName: '小夏',
+      timeStr: '7月4日 20:00',
+      timeSinceUser: '3小时',
+      longGap: true,
+      forceReplyAllowed: false,
+    });
+    const activeMsgRules = activeMsg2ImportantRules('小夏', { forceReplyAllowed: true }).join('\n');
+
+    expect(withForce).toContain('[[FORCE_REPLY:');
+    expect(withForce).toContain('强制回话');
+    expect(withForce).toContain('控制欲');
+    expect(withoutForce).not.toContain('[[FORCE_REPLY:');
+    expect(activeMsgRules).toContain('[[FORCE_REPLY:');
+  });
+
+  it('prioritizes unreplied user messages during proactive replies', () => {
+    const text = proactivePendingReplyHint({
+      userName: '小夏',
+      timeStr: '7月4日 09:30',
+      messages: [
+        { content: '你刚刚是不是没看到我这句', timestamp: 1_788_000_000_000, type: 'text' },
+      ],
+      lifeContext: '刚从便利店出来，手里还攥着冰咖啡',
+    });
+
+    expect(text).toContain('第一优先级是自然接住这些消息');
+    expect(text).toContain('你刚刚是不是没看到我这句');
+    expect(text).toContain('生活底色');
+    expect(text).not.toContain('不是回复');
+  });
+
   it('centralizes natural active message rules for active message 2.0 and SW prompts', () => {
     const rules = activeMsg2ImportantRules('小夏').join('\n');
     const prompted = activeMsg2ModeInstruction('prompted', '从下雨切入');
@@ -129,6 +176,18 @@ describe('laiwang prompt copy', () => {
     expect(prompted).toContain('不要把额外提示照抄成任务汇报');
     expect(swPrompt).toContain('生活切片');
     expect(swPrompt).toContain('不要输出 [[CALL_USER]]');
+  });
+
+  it('lets SW proactive prompts switch into pending-reply mode', () => {
+    const text = swOfflineProactiveSystemPrompt({
+      charName: '阿迟',
+      nowText: '7月4日 周六 09:30',
+      userName: '小夏',
+      pendingReply: true,
+    });
+
+    expect(text).toContain('没被你接住的消息');
+    expect(text).not.toContain('不是回复，是你自己想起');
   });
 
   it('keeps couple space context grounded in natural relationship cues', () => {
@@ -150,9 +209,11 @@ describe('laiwang prompt copy', () => {
       profileLines: ['睡前互道晚安'],
       memoryCardLines: ['雨天小路：你们一起躲雨'],
       recapLines: ['这周把普通雨天记住了'],
+      eyesCardLines: ['过去的我：TA 记得你曾经怎样靠近'],
     });
 
     expect(text).toContain('关系线索');
+    expect(text).toContain('TA 眼中的我');
     expect(text).toContain('不要照念清单');
     expect(text).toContain('不要硬套甜话');
     expect(text).toContain('1 个具体细节');
@@ -204,6 +265,31 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('不要编造重大事件');
   });
 
+  it('keeps TA eyes prompts split by era and prevents future prophecy', () => {
+    const params = {
+      userName: '小夏',
+      charName: '阿迟',
+      recentChatLines: ['[10:00] 小夏: 今天有点累', '[10:01] 阿迟: 那就靠一会儿。'],
+      spaceLines: ['悄悄话/小夏：今天想你', '记忆卡「雨天」：一起躲雨'],
+    };
+    const text = [
+      coupleEyesPastPrompt(params),
+      coupleEyesPresentPrompt(params),
+      coupleEyesFuturePrompt(params),
+      coupleEyesCardUserPrompt('future', params),
+    ].join('\n');
+
+    expect(text).toContain('过去的我');
+    expect(text).toContain('现在的我');
+    expect(text).toContain('将来的我');
+    expect(text).toContain('不是预言');
+    expect(text).toContain('不要写“注定”“一定会”“未来必然”');
+    for (const field of ['"summary"', '"tags"', '"body"', '"innerVoice"']) {
+      expect(text).toContain(field);
+    }
+    expect(text).toContain('严格只输出 JSON');
+  });
+
   it('keeps user screen watch prompts bounded to active user sharing', () => {
     const text = [
       userScreenWatchCommentSystemPrompt({
@@ -222,8 +308,24 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('主动');
     expect(text).toContain('共享');
     expect(text).toContain('Moro 内部');
+    expect(text).toContain('不要 JSON、Markdown、代码块');
+    expect(userScreenWatchCommentUserPrompt(true)).toContain('不要 JSON、Markdown 或代码块');
     expect(text).toContain('不代表你能在共享结束后继续看见');
     expect(text).not.toContain('后台监控');
     expect(text).not.toContain('无限权限');
+  });
+
+  it('keeps reverse phone check follow-up as real chat text', () => {
+    const text = [
+      charPhoneCheckScriptGuard('阿迟', '小夏'),
+      charPhoneCheckFollowupPrompt({ charName: '阿迟', userName: '小夏', exitMode: 'finished' }),
+    ].join('\n');
+
+    expect(text).toContain('聊天内容');
+    expect(text).toContain('可以点名');
+    expect(text).toContain('具体人名');
+    expect(text).toContain('以我的性格');
+    expect(text).toContain('更自然的是');
+    expect(text).toContain('只输出要发出去的正文');
   });
 });

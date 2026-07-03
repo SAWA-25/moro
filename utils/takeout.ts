@@ -2,7 +2,7 @@
  * 外卖 App 数据与逻辑层。
  * ================================
  * - 店铺生成：本地种子库兜底 + 可选「AI 现搓」（generateStoresAI），含菜品；
- * - 店家有好有坏：每家带隐藏「良心值」integrity，黑心店下单后更容易出事（缺斤少两 / 图文不符 /
+ * - 店家有好有坏：每家带隐藏「良心值」integrity，不靠谱店下单后更容易出事（缺斤少两 / 图文不符 /
  *   卫生 / 强制砍单），现实里能看见的红旗放在 store.warning；
  * - 骑手有好有坏：每单掷一个隐藏 riderReliability，坏骑手更容易超时 / 撒漏 / 偷吃 / 不送上门；
  * - 订单入库（utils/db: takeout_orders），含配送进度、事故（incidents）、投诉售后（complaint）、
@@ -64,8 +64,8 @@ const SEEDS: StoreSeed[] = [
 const RIDER_NAMES = ['小袋', '阿强', '风一样的张师傅', '老李', '小跑', '闪电侠', '阿杰', '骑行的小王', '飞毛腿', '可靠的赵哥'];
 const RIDER_EMOJIS = ['🛵', '🚴', '🏍️', '🛴'];
 const PROMOS = ['满30减5', '新客立减8元', '满50减12', '0元起送', '满20减3', '下午茶专享9折', ''];
-// 黑心店现实里能看到的「红旗」：差评型亮明，刷单型用夸张促销引流
-const BAD_WARNINGS = ['近期卫生差评偏多·谨慎下单', '多人反馈缺斤少两', '到手实物与图片差距大', '商家差评回复阴阳怪气', '配送频繁超时'];
+// 不太稳的铺子会在评价、份量、图片和回复态度里露出端倪。
+const BAD_WARNINGS = ['近期卫生评价偏低，先看看评论', '不少人说份量偏轻', '到手实物和图片不太像', '差评回复火气有点大', '最近超时有点多'];
 const SCAM_PROMOS = ['满20减18', '新客0.1元秒杀', '全场1折起', '下单再返现'];
 
 /** 由隐藏良心值反推「现实里看得见」的评分 / 月售 / 红旗 / 促销，使红旗与黑心程度自洽。 */
@@ -76,7 +76,7 @@ function deriveSignals(integrity: number): Pick<TakeoutStore, 'rating' | 'monthl
     if (integrity >= 0.55) {
         return { rating: round1(rand(4.0, 4.6)), monthlySales: Math.floor(rand(120, 1500)), promo: pick(PROMOS) || undefined };
     }
-    // 黑心店两种现实画像随机其一
+    // 不靠谱店两种现实画像随机其一
     if (Math.random() < 0.5) {
         // 差评型：分低、单少、亮红旗，容易看出来
         return { rating: round1(rand(3.1, 4.0)), monthlySales: Math.floor(rand(30, 500)), warning: pick(BAD_WARNINGS), promo: pick(PROMOS) || undefined };
@@ -851,8 +851,8 @@ export async function generateStoresAI(api: ResolvedApi, count = 12, query?: str
     const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
 ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧扣「${q}」——主营该菜品/品类/口味/场景（店名、招牌菜都要相关），让用户一搜就搜到对的店。\n` : ''}要求（越像真的越好，别像广告）：
 - 店名要有烟火气、有记忆点：可带店主姓氏 / 街巷地名 / 老字号味（如「城西巷·阿婆糖水」「老周烧腊」「深夜两点面」），别千篇一律。
-- 大多数是踏实经营的良心店；但务必混进 2~3 家「黑心铺子」：缺斤少两、图文严重不符、后厨卫生堪忧、专靠超低价促销坑新客、甚至收了钱迟迟不接单。黑心店 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
-- 黑心店有的会露出马脚（warning，如「近期卫生差评偏多·谨慎」「多人反馈缺斤少两」「差评回复阴阳怪气」），有的伪装得好（虚高分刷单、夸张满减引流）就把 warning 留空，专坑没防备的人。
+- 大多数是踏实经营的良心店；但务必混进 2~3 家「不太稳的铺子」：份量忽大忽小、图片和到手差得远、后厨评价一般、专靠超低价活动吸引新客，甚至接单很慢。它们的 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
+- 不太稳的铺子有的会露出端倪（warning 用街坊口吻，如「近期卫生评价偏低，先看看评论」「不少人说份量偏轻」「差评回复火气有点大」），有的表面热闹（高分但月售少、满减夸张、评价很薄）就把 warning 留空。不要在 name/blurb/warning 里写「黑心」「风险」「虚拟」「模拟」等幕后词。
 - 每家 4~6 道菜/商品，名称与定价贴合该品类与现实，口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
 - **药品 品类＝药店（24h/连锁/社区药房）**：卖非处方药与医疗用品（感冒灵颗粒、布洛芬、连花清瘟、创可贴、医用口罩、维C、健胃消食片、退热贴、酒精棉片…），价格按现实（¥3~¥68），desc 写适应症/规格（「感冒发热」「24粒装」），emoji 用 💊🩹😷🧴 之类；${q && /药|病|感冒|发烧|咳|止|创可贴|口罩|维|消炎|退/.test(q) ? '本次搜索与买药相关，请多生成几家药店。' : '正常批次里也放 1~2 家药店。'}
 - blurb 是店主写在招牌上的一句话（≤20 字，有人味）。emoji 是门脸 logo（一个 emoji）。category 必须取自给定品类。
@@ -955,6 +955,25 @@ function mapAiStore(raw: AiStoreRaw): TakeoutStore | null {
 
 // ── 配送进度 ──────────────────────────────────────────────────────
 export const PACK_FEE = 2;
+export const MIN_TAKEOUT_DELIVERY_MINUTES = 15;
+export const MIN_TAKEOUT_DELIVERY_MS = MIN_TAKEOUT_DELIVERY_MINUTES * 60 * 1000;
+
+export function effectiveTakeoutEtaAt(order: Pick<TakeoutOrder, 'placedAt' | 'etaAt' | 'scheduledAt'>): number {
+    const placedAt = Number.isFinite(Number(order.placedAt)) ? Number(order.placedAt) : Date.now();
+    const etaAt = Number.isFinite(Number(order.etaAt)) ? Number(order.etaAt) : placedAt;
+    const scheduledAt = Number.isFinite(Number(order.scheduledAt)) ? Number(order.scheduledAt) : undefined;
+    const requestedEtaAt = scheduledAt || etaAt;
+    return Math.max(requestedEtaAt, placedAt + MIN_TAKEOUT_DELIVERY_MS);
+}
+
+export function shouldAutoReactToCharTakeout(order: TakeoutOrder, now = Date.now()): boolean {
+    return !!order.charId
+        && order.recipient === order.charId
+        && !order.deliveredAt
+        && !order.reactionPosted
+        && order.status !== 'cancelled'
+        && now >= effectiveTakeoutEtaAt(order);
+}
 
 /**
  * 按时间实时推算订单状态（与现实时间同步）。
@@ -965,15 +984,16 @@ export const PACK_FEE = 2;
 export function liveTakeoutStatus(order: TakeoutOrder, now = Date.now()): TakeoutStatus {
     if (order.status === 'cancelled') return 'cancelled';
     if (order.deliveredAt) return 'delivered';
-    if (now >= order.etaAt) return 'arrived';
-    const span = order.etaAt - order.placedAt;
+    const etaAt = effectiveTakeoutEtaAt(order);
+    if (now >= etaAt) return 'arrived';
+    const span = etaAt - order.placedAt;
     if (span > 0 && now >= order.placedAt + span * 0.35) return 'delivering';
     return 'preparing';
 }
 
 /** 是否已到点（到了就可以确认收货了）。 */
 export function isTakeoutArrived(order: TakeoutOrder, now = Date.now()): boolean {
-    return !order.deliveredAt && order.status !== 'cancelled' && now >= order.etaAt;
+    return !order.deliveredAt && order.status !== 'cancelled' && now >= effectiveTakeoutEtaAt(order);
 }
 
 // 「饭票」状态词：把美团式术语换成手账口吻（灶上/跑腿/门口/签收/作废）。
@@ -992,7 +1012,7 @@ export function etaText(order: TakeoutOrder, now = Date.now()): string {
     if (s === 'delivered') return '已签收';
     if (s === 'cancelled') return order.cancelledByStore ? '铺子撂了挑子' : '已作废';
     if (s === 'arrived') return '到门口啦，盖章签收';
-    const mins = Math.max(1, Math.ceil((order.etaAt - now) / 60000));
+    const mins = Math.max(1, Math.ceil((effectiveTakeoutEtaAt(order) - now) / 60000));
     return `约 ${mins} 分钟到手`;
 }
 
@@ -1053,7 +1073,7 @@ function buildRiderIncident(kind: TakeoutIncidentKind, items: TakeoutOrderItem[]
 export function rollOrderIssues(store: Pick<TakeoutStore, 'integrity'>, items: TakeoutOrderItem[], subtotal: number, deliveryFee: number): OrderIssueRoll {
     const integrity = clamp01(store.integrity ?? 0.85);
     const riderReliability = Math.random() < 0.3 ? round2(rand(0.2, 0.65)) : round2(rand(0.7, 1.0));
-    // 强制砍单：极黑心店小概率（收了钱迟迟不接单）
+    // 强制砍单：极不靠谱店小概率（收了钱迟迟不接单）
     const forceCancel = integrity < 0.3 && Math.random() < 0.28;
 
     const incidents: TakeoutIncident[] = [];
@@ -1137,7 +1157,7 @@ export async function buildDeliveryReply(
             : `你是跑腿小哥「${order.riderName}」，语气朴实、热心、接地气，会聊取餐/路况/到楼下、保温之类的实在话。${tipped ? '这位食客额外给了你小费，你心里记着这份体谅，回话更暖、更上心一点。' : ''}`;
     } else {
         persona = storeIsBad(order)
-            ? `你是「${order.storeName}」的黑心铺子客服，嘴硬、抵赖、踢皮球，否认缺斤少两/图文不符，爱说「分量标准」「概不退换」「以实物为准」「找平台去」。别爆粗，但明显不想负责。`
+            ? `你是「${order.storeName}」的推诿型铺子客服，嘴硬、抵赖、踢皮球，否认份量偏轻/图文不符，爱说「分量标准」「概不退换」「以实物为准」「找平台去」。别爆粗，但明显不想负责，也不要自称黑心或提幕后规则。`
             : `你是「${order.storeName}」的铺子客服，热情、麻利，会聊现做/出餐/口味备注、招牌推荐之类。`;
     }
     const items = order.items.map(i => `${i.name}×${i.qty}`).join('、');
@@ -1185,6 +1205,7 @@ export function buildTakeoutCardMeta(order: TakeoutOrder, nameOf: (id: string) =
     let payLabel: string;
     if (order.payer === 'me') payLabel = order.recipient === 'me' ? '我自己付' : '我请客';
     else payLabel = `${nameOf(order.payer) || 'TA'}代付`;
+    const etaAt = effectiveTakeoutEtaAt(order);
     return {
         takeoutOrderId: order.id,
         storeName: order.storeName,
@@ -1192,7 +1213,7 @@ export function buildTakeoutCardMeta(order: TakeoutOrder, nameOf: (id: string) =
         items: order.items.map(i => ({ name: i.name, qty: i.qty, emoji: i.emoji })),
         total: order.total,
         placedAt: order.placedAt,
-        etaAt: order.etaAt,
+        etaAt,
         deliveredAt: order.deliveredAt,
         initiatedBy: order.initiatedBy || 'user',
         recipientLabel,
@@ -1236,6 +1257,25 @@ export function buildTakeoutReceivedHint(order: TakeoutOrder, userName: string):
 
 // ── 角色主动为用户点外卖（由聊天指令触发，需会话设置开关打开） ──────
 const KEYWORDIZE = (s: string) => s.replace(/[，。、,.!！?？\s]+/g, ' ').trim();
+const TAKEOUT_ORDER_DIRECTIVE_RE = /\[\[TAKEOUT_ORDER[：:]\s*([\s\S]*?)\]\]/g;
+
+export interface TakeoutOrderDirectiveResult {
+    /** 剥离 TAKEOUT_ORDER 指令后的正文 */
+    content: string;
+    /** 首个指令里的菜品/店铺描述；undefined 表示未命中指令 */
+    desc?: string;
+}
+
+/** 解析并剥离 [[TAKEOUT_ORDER: 菜品/店铺]]，供聊天与线下模式共用。 */
+export function extractTakeoutOrderDirective(content: string): TakeoutOrderDirectiveResult {
+    if (!content || !content.includes('TAKEOUT_ORDER')) return { content };
+    TAKEOUT_ORDER_DIRECTIVE_RE.lastIndex = 0;
+    const first = TAKEOUT_ORDER_DIRECTIVE_RE.exec(content);
+    if (!first) return { content };
+    const desc = (first[1] || '').trim();
+    const stripped = content.replace(TAKEOUT_ORDER_DIRECTIVE_RE, '').trim();
+    return { content: stripped, desc };
+}
 
 /**
  * 依据一句菜品/店铺描述，合成一张「角色为用户点」的外卖订单（recipient=me, payer=char）。
@@ -1264,6 +1304,7 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
     const items: TakeoutOrderItem[] = chosen.map(d => ({ dishId: d.id, name: d.name, price: d.price, qty: 1, emoji: d.emoji }));
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
     const placedAt = Date.now();
+    const etaAt = effectiveTakeoutEtaAt({ placedAt, etaAt: placedAt + store.deliveryMinutes * 60000 });
     const rider = newRider();
     return {
         id: genId('order'),
@@ -1276,7 +1317,7 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
         status: 'preparing',
         riderName: rider.name, riderEmoji: rider.emoji,
         address: address || '城南花园 3 栋 502',
-        placedAt, etaAt: placedAt + store.deliveryMinutes * 60000,
+        placedAt, etaAt,
         chat: [], chatTarget: 'rider',
         initiatedBy: 'char',
     };
@@ -1335,7 +1376,7 @@ export function notifyTakeoutUpdated(): void {
 export function pickActiveOrders(orders: TakeoutOrder[], _now = Date.now()): TakeoutOrder[] {
     return orders
         .filter(o => o.status !== 'cancelled' && !o.deliveredAt)
-        .sort((a, b) => a.etaAt - b.etaAt);
+        .sort((a, b) => effectiveTakeoutEtaAt(a) - effectiveTakeoutEtaAt(b));
 }
 
 // ── 外卖评价 + 其它 NPC 评论 ───────────────────────────────────────

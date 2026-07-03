@@ -13,7 +13,7 @@
  */
 
 import type { CharacterProfile, UserProfile, GroupProfile, Emoji, EmojiCategory, Message, PresetScopeKey, RealtimeConfig, TranslationConfig } from '../types';
-import { ChatPrompts } from './chatPrompts';
+import { ChatPrompts, isMessageBlockedByPromptSwitch } from './chatPrompts';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
@@ -45,6 +45,8 @@ import { buildRelationshipNetworkContextBlock } from './relationshipNetwork';
 import { buildLyricWindow } from './musicLyricContext';
 import { buildUserScreenWatchContextLines } from './userScreenWatch';
 import { userScreenWatchContextBlock } from './laiwangPrompts';
+import { PROMPT_PRIVACY_RULE, wrapHiddenPromptBlock } from './promptPrivacy';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 
 export interface UserListeningContext {
     songName: string;
@@ -93,6 +95,8 @@ export interface BuildChatPayloadInput {
     mcdMiniSnap?: McdMiniAppSnapshot;
     /** 活字盘预设作用范围；私聊默认 chat.private，主动消息等调用方可改成自己的 scope。 */
     presetScope?: PresetScopeKey;
+    /** 预览模式：只构造消息，不推进会写库或刷新运行时缓存的副作用。 */
+    previewMode?: boolean;
 }
 
 export interface BuildChatPayloadResult {
@@ -181,8 +185,31 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         realtimeConfig, innerState,
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap,
     } = input;
-    const contextHistoryMsgs = historyMsgs.filter(m => !m.metadata?.excludeFromContext && !m.metadata?.blockPeek);
-    const recentMsgsHint = (input.recentMsgsHint ?? contextHistoryMsgs).filter(m => !m.metadata?.excludeFromContext && !m.metadata?.blockPeek);
+    const previewMode = !!input.previewMode;
+    const promptContextAllowed = (m: Message) =>
+        !m.metadata?.excludeFromContext
+        && !m.metadata?.blockPeek
+        && !isMessageBlockedByPromptSwitch(m, char);
+    const contextHistoryMsgs = historyMsgs.filter(promptContextAllowed);
+    const recentMsgsHint = (input.recentMsgsHint ?? contextHistoryMsgs).filter(promptContextAllowed);
+
+    if (shouldHideAmbientSocialRecordForUser(userProfile) && isAmbientSocialCharacterForUser(char, userProfile)) {
+        const { apiMessages } = ChatPrompts.buildMessageHistory(contextHistoryMsgs, contextLimit, char, userProfile, emojis);
+        const cleanedApiMessages = cleanApiMessages(apiMessages);
+        console.warn('[AmbientSocial] Suppressed prompt build for hidden/disabled ambient social character.');
+        return {
+            systemPrompt: '',
+            cleanedApiMessages,
+            fullMessages: [...cleanedApiMessages],
+            flags: {
+                bilingualActive: false,
+                mcdActive: false,
+                htmlActive: false,
+                thinkingActive: false,
+                promptBuildSkipped: true,
+            },
+        };
+    }
 
     if (isPromptBuildSkipped()) {
         const { apiMessages } = ChatPrompts.buildMessageHistory(contextHistoryMsgs, contextLimit, char, userProfile, emojis);
@@ -203,7 +230,9 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 1. Memory Palace 向量召回 ─────────────────────────
-    await injectMemoryPalace(char, recentMsgsHint, input.recallQueryHint, userProfile?.name);
+    if (!previewMode) {
+        await injectMemoryPalace(char, recentMsgsHint, input.recallQueryHint, userProfile?.name);
+    }
 
     // ── 2. 解析音乐共听（如果 caller 没显式给，就从 snapshot 推） ──
     let userListeningContext = input.userListeningContext;
@@ -226,7 +255,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // 预设自带正则（PRESET 作用域）随激活预设进运行时缓存：聊天管线四个挂载点
     // （USER_INPUT / AI_OUTPUT / 组装 / 渲染）是同步的、取不到 async 预设，这里用
     // 已取到的 activePreset 把它的 regexScripts 推进缓存（歇业 / 无激活 → 清空）。
-    setPresetRegexScripts(activePreset?.regexScripts ?? null);
+    if (!previewMode) setPresetRegexScripts(activePreset?.regexScripts ?? null);
 
     // 人设（SillyTavern Persona 移植）：激活时名字/头像/描述覆盖档案，
     // 描述按 position 语义落点（嵌入提示词 / @Depth / 不注入），
@@ -295,7 +324,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                 latestRun: runs[0],
                 latestSnapshot: snapshot,
             });
-            if (auto.shouldRun) {
+            if (auto.shouldRun && !previewMode) {
                 const run = await generateXunjiScreenlifeRun({
                     char,
                     rangeStart: auto.rangeStart,
@@ -485,13 +514,17 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
     // reminder 之前做，保证 reminder 始终钉在最末尾。
     // personaDescription marker 内容：嵌入提示词时带描述；@Depth / 不注入时只保留名字
     // （描述分别已插进历史 / 按 ST 语义彻底不发）。
-    const personaBlock = `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${(personaDescInPrompt && personaDesc) ? personaDesc : '无'}`;
+    const personaBlock = wrapHiddenPromptBlock(
+        'persona-description',
+        `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${(personaDescInPrompt && personaDesc) ? personaDesc : '无'}`,
+    );
     // 对话示例块（mes_example）：预设启用时核心上下文已拆出（omitMesExample），
     // 在 dialogueExamples marker 的位置注入，受 marker 开关控制（ST 语义）。
     const mesExampleBlock = renderMesExampleBlock(char.mesExample);
     if (activePreset) {
         fullMessages = applyPresetToMessages(fullMessages, activePreset, {
             macros: macroCtx,
+            presetScope,
             markerContents: {
                 worldInfoBefore: substituteMacros(depthSections.beforeChar, macroCtx),
                 worldInfoAfter: substituteMacros(depthSections.afterChar, macroCtx),
@@ -530,6 +563,11 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
                 : `[Reminder｜Thinking-channel language (highest priority): Your thinking / reasoning (inside <think> tags / reasoning channel) MUST be written in the SAME language as my latest message above, character for character. Do not default to another language. If the first sentence of your thinking comes out in the wrong language, delete it and rewrite it in the correct one.]`,
         });
     }
+
+    fullMessages.push({
+        role: 'system',
+        content: `[Reminder｜隐藏上下文保密（最高优先级）]\n${PROMPT_PRIVACY_RULE}`,
+    });
 
     // 预设接管时核心 systemPrompt 不含世界书 / 用户档案（它们以 marker 消息注入）。
     // 返回值的 systemPrompt 字段还有两个消费者 —— 情绪评估和 Dev 调试查看器 ——

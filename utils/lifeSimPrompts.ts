@@ -282,7 +282,7 @@ function buildFallbackAttachments(
             kind: 'image',
             title: `${headline} 现场图`,
             summary: `一张带着都市霓虹感的现场截图，主角是 ${pair}。`,
-            visualPrompt: `${headline}，都市公寓，像素风，霓虹灯，${pair}，dramatic`,
+            visualPrompt: `${headline}，现代城市街区，导航地图感，霓虹灯，${pair}，dramatic`,
             rarity: 'rare',
         },
         {

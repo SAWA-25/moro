@@ -1,6 +1,6 @@
 # 来往·情侣空间 2.0（Couple Space）
 
-> 改情侣空间相关逻辑前必读。一句话：情侣空间仍挂在 `CharacterProfile.coupleSpace` 上，但「来往」底栏入口现在是一个多空间手账目录，可以浏览、创建、切换多个角色空间，并把动态、约会、饭票、回顾等关系痕迹沉淀进聊天上下文。
+> 改情侣空间相关逻辑前必读。一句话：情侣空间仍挂在 `CharacterProfile.coupleSpace` 上，但「来往」底栏入口现在是一个多空间目录，可以浏览、创建、切换多个角色空间，并把动态、约会、饭票、回顾等关系痕迹沉淀进聊天上下文。
 
 ## 入口与多空间模型
 
@@ -23,21 +23,33 @@
 
 - `settings?: CoupleSpaceSettings`
   - `autoCareEnabled?: boolean`：`undefined` 视为开启，旧空间和新空间默认允许后台自经营。
-  - `theme?: 'scrapbook'`
+  - `theme?: 'clean'`
 - `profile?: CoupleProfile`
   - `homeName`、`userNickname`、`charNickname`、`rituals`、`loveLanguage`、`updatedAt`
 - `memoryCards?: CoupleMemoryCard[]`
   - 来自约会、饭票、回顾、动态或手动记录，可 `pinned`
 - `recaps?: CoupleRecap[]`
-  - 周/月关系回顾小报，含 `highlights`、`suggestedTasks`、`suggestedWishes`
+  - 周/月关系回顾，含 `highlights`、`suggestedTasks`、`suggestedWishes`
 - `dailyCheckins?: CoupleDailyCheckin[]`
   - 每日情侣打卡，按 `ymd` 去重
 - `autoCare?: CoupleAutoCareState`
   - 记录 `lastRunAt`、`lastMomentAt`、`lastRecapAt`、`lastSource`、`lastSummary`
+- `eyesCards?: CoupleEyesCard[]`
+  - 「TA 眼中的我」三张长文卡，`era` 固定为 `past` / `present` / `future`
+  - 每张包含 `summary`、`tags`、`body`、`innerVoice?`、`generatedAt`、`sourceMessageIds?`
+  - 旧空间由 `ensureCoupleSpace()` 补成空数组；重新生成时只覆盖同一张卡
+
+提问箱和悄悄话管理字段：
+
+- `CoupleQuestion.status?: 'pending' | 'answered' | 'failed'`：提问箱先写入 pending，再由副 API 回填；旧问答没有状态时按 answered 处理。
+- `CoupleQuestion.visibility?: 'anonymous' | 'named'`：新提问默认匿名，便于做匿名问答流。
+- `CoupleQuestion.source?: 'questionBox' | 'whisperInbox'`：区分来源入口。
+- `CoupleQuestion.answeredAt?`、`pinned?`：用于查看答案、收藏和排序。
+- `CoupleWhisper.pinned?`、`readAt?`：用于信箱收藏、未读 / 已读状态。
 
 ## 主要视图（`components/couple/CoupleSpace.tsx`）
 
-界面统一为黑白拼贴手账风格，复用 `apps/theater/scrapbook.tsx` 的 `PaperCard`、`ScrapButton`、`Polaroid`、`Stamp` 等组件。照片和头像在目录中可灰阶展示，强调色改为墨黑、米白纸面和灰阶胶带。
+界面统一为来往里的清爽社交界面：浅灰背景、白色圆角卡片、粉色重点按钮和普通头像展示；不要复用折子戏的 `apps/theater/scrapbook.tsx`，也不要出现胶带、拍立得、灰阶头像、米白纸面或黑白拼贴手账风格。
 
 页签调整为：
 
@@ -47,13 +59,14 @@
 - `约定`：约定任务和心愿清单合并在同一页。
 - `纪念`：在一起纪念日、生日、约定日和 7 天内提醒横幅。
 - `档案`：空间名、互相称呼、恋爱小习惯、相处方式，以及最近记忆卡。
-- `回顾`：手动生成周回顾，展示历史关系小报。
+- `回顾`：手动生成周回顾，展示历史关系回顾。
 - `游戏`：默契大考验、街角约会入口、情侣盆栽和成就。
 
 浮动入口仍保留：
 
-- 提问箱：你问 TA 答，答案会进入聊天上下文。
-- 悄悄话信箱：更私密的小纸条。
+- 提问箱：仍与悄悄话信箱分开进入，但视觉升级为「悄悄问 TA」匿名问答流。新问题先落 pending，显示等待回答；答案回填后可折叠查看，也支持收藏和删除。
+- 悄悄话信箱：更私密的消息流，支持收藏、删除、未读 / 已读和用户留言已回状态；底部保留快速留一句悄悄话。
+- TA 眼中的我：在「今日」和「档案」进入。目录固定三张卡「过去的我 / 现在的我 / 将来的我」，点卡片进入长文详情；右上可生成或重新生成。未来卡只写 TA 的期待、担心和想象，不写成确定预言。
 
 ## 后台自经营
 
@@ -85,6 +98,7 @@
 
 - `chat.coupleSpace.autoCare`
 - `chat.coupleSpace.recap`
+- `chat.coupleSpace.eyes`
 
 ## 聊天上下文注入
 
@@ -94,10 +108,27 @@
 
 - 恋爱天数、亲密度等级、最近 3 条动态。
 - 最近纪念日、未完成约定、未实现心愿。
-- 最近提问箱问答、盆栽阶段、未回复悄悄话。
+- 最多 2 条重要提问箱问答、盆栽阶段、最新一条用户未回复悄悄话。
 - 2.0 新增：情侣档案固定设定、最多 3 张记忆卡、最多 2 份关系回顾。
+- 新增：最多 2 张「TA 眼中的我」摘要，只注入 summary / tags，不注入长文正文，避免聊天上下文过重。
 
 提示词文案集中在 `utils/laiwangPrompts.ts` 的情侣空间分区，不在业务 util 内散写 prompt。
+
+## TA 眼中的我生成
+
+生成入口在 `utils/coupleSpace.ts`：
+
+- `generateCoupleEyesCard({ char, userName, api, space, era })`
+- 先检查副 API 配置，未配置直接返回 `null`，不阻塞 UI。
+- 使用 `DB.getRecentMessagesByCharId(char.id, 80, true)` 读取最近私聊，并通过 `formatMessageWithTime()` 格式化。
+- 素材还会合并情侣空间动态、悄悄话、提问箱、记忆卡和关系回顾。
+- 模型返回严格 JSON：`summary`、`tags`、`body`、`innerVoice?`。解析时会剥离 `<think>` 和代码围栏，正文会裁剪到本地上限。
+
+Prompt 在 `utils/laiwangPrompts.ts`：
+
+- `coupleEyesPastPrompt()`：过去写记忆里的轮廓，不审判、不编造重大过往。
+- `coupleEyesPresentPrompt()`：现在写真切感受和当下相处，不写成用户画像报告。
+- `coupleEyesFuturePrompt()`：将来写期待、担心和想象，明确不是预言。
 
 ## 互动与联动
 
@@ -117,7 +148,7 @@
 
 | 文件 | 关键点 |
 |------|-------|
-| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 多空间目录、手账 UI、今日/档案/回顾/游戏页、打卡、设置开关、约会入口 |
+| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 多空间目录、清爽社交 UI、今日/档案/回顾/游戏页、打卡、设置开关、约会入口 |
 | [`utils/coupleSpace.ts`](../utils/coupleSpace.ts) | 数据兼容、提示词注入、角色侧 LLM 调用、自动经营、回顾、记忆卡构建 |
 | [`utils/laiwangPrompts.ts`](../utils/laiwangPrompts.ts) | 情侣空间 prompt 文案中心 |
 | [`context/OSContext.tsx`](../context/OSContext.tsx) | 主动消息、离线生活、饭票送达后的自动经营接入 |

@@ -1415,7 +1415,8 @@ function swShouldGenerateProactive(snap, now = Date.now()) {
   if (!snap.api?.baseUrl || !snap.api?.model) return { ok: false, reason: "missing_api" };
   if (snap.updatedAt && now - snap.updatedAt > 48 * 60 * 60 * 1e3) return { ok: false, reason: "stale_snapshot" };
   const quiet = swResolveQuietHours(snap, now);
-  if (quiet.active && quiet.behavior !== "send") return { ok: false, reason: `quiet_hours_${quiet.behavior}` };
+  const hasPendingReply = !!snap.pendingUserMessages?.length;
+  if (quiet.active && quiet.behavior !== "send" && !hasPendingReply) return { ok: false, reason: `quiet_hours_${quiet.behavior}` };
   return { ok: true, reason: "ok" };
 }
 function formatLifeEventsForPrompt(events) {
@@ -1435,16 +1436,17 @@ function formatLifeEventsForPrompt(events) {
     return hits >= 2 ? "" : t;
   };
   const picked = (events || []).map((e) => {
-    const activity = cleanLifeText(e?.activity) || cleanLifeText(e?.summary);
+    if (!e) return null;
+    const activity = cleanLifeText(e.activity) || cleanLifeText(e.summary);
     if (!e || !activity) return null;
     return {
       ...e,
       activity,
-      mood: cleanLifeText(e.mood),
-      location: cleanLifeText(e.location),
-      thread: cleanLifeText(e.thread)
+      mood: cleanLifeText(e.mood) || void 0,
+      location: cleanLifeText(e.location) || void 0,
+      thread: cleanLifeText(e.thread) || void 0
     };
-  }).filter((e) => !!e).slice(-5);
+  }).filter((e) => e !== null).slice(-5);
   if (picked.length === 0) return "";
   const lines = picked.map((e) => {
     const d = new Date(e.timestamp);
@@ -1458,9 +1460,26 @@ function formatLifeEventsForPrompt(events) {
 ${lines.join("\n")}
 `;
 }
+function formatPendingUserMessagesForPrompt(messages) {
+  const picked = (messages || []).map((m, index) => {
+    const content = String(m?.content || "").replace(/\s+/g, " ").trim().slice(0, 500);
+    if (!m || !content) return "";
+    const time = m.timestamp ? new Date(m.timestamp) : null;
+    const hhmm = time && Number.isFinite(time.getTime()) ? `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}` : "";
+    const kind = m.type === "voice" ? "\u8BED\u97F3\u8F6C\u5199" : "\u6587\u5B57";
+    return `${index + 1}. ${hhmm ? `${hhmm} ` : ""}${kind}\uFF1A\u300C${content}\u300D`;
+  }).filter(Boolean);
+  if (!picked.length) return "";
+  return `
+\u7528\u6237\u524D\u9762\u5DF2\u7ECF\u53D1\u6765\u4F46\u8FD8\u6CA1\u88AB\u4F60\u56DE\u590D\u7684\u6D88\u606F\uFF08\u8FD9\u6B21\u5FC5\u987B\u5148\u63A5\u4F4F\uFF0C\u4E0D\u8981\u53E6\u8D77\u8BDD\u9898\uFF09\uFF1A
+${picked.join("\n")}
+`;
+}
 function swBuildMessages(snap) {
   const v2 = snap.proactiveV2;
+  const pendingPrompt = formatPendingUserMessagesForPrompt(snap.pendingUserMessages);
   const v2Prompt = [
+    pendingPrompt,
     formatLifeEventsForPrompt(snap.lifeEvents),
     v2?.messageFlavor ? `\u6765\u4FE1\u53E3\u5473\uFF1A${v2.messageFlavor}\u3002` : "",
     v2?.materialSources?.length ? `\u5141\u8BB8\u53D6\u6750\uFF1A${v2.materialSources.join("\u3001")}\u3002` : "",
@@ -1472,8 +1491,19 @@ ${v2Prompt}` : ""}` }];
     if (!m || !m.content) continue;
     msgs.push({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 500) });
   }
-  msgs.push({ role: "user", content: snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09" });
+  const instruction = snap.pendingUserMessages?.length ? `${snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09"}
+\u8FD9\u6B21\u5148\u81EA\u7136\u56DE\u5E94\u4E0A\u9762\u7684\u672A\u56DE\u590D\u6D88\u606F\uFF1B\u53EF\u4EE5\u987A\u5E26\u5E26\u51FA\u4F60\u7684\u8FD1\u51B5\uFF0C\u4F46\u4E0D\u8981\u5047\u88C5\u6CA1\u770B\u5230\u3002` : snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09";
+  msgs.push({ role: "user", content: instruction });
   return msgs;
+}
+function swBuildQueuedReplyMetadata(snap) {
+  const pendingIds = Array.from(new Set(
+    (snap.pendingUserMessages || []).map((m) => Number(m?.id)).filter((id) => Number.isFinite(id) && id > 0)
+  ));
+  return {
+    ...snap.queuedReplyTarget ? { queuedReplyTarget: snap.queuedReplyTarget } : {},
+    ...pendingIds.length ? { pendingProactiveReplyIds: pendingIds } : {}
+  };
 }
 async function swCallLLM(api, messages, maxTokens = 400, signal) {
   const baseUrl = (api.baseUrl || "").trim();
@@ -1640,7 +1670,7 @@ async function generateProactiveInSW(charId) {
     const ts = Date.now();
     await saveContentToInbox({
       messageId: `proactive-sw-${charId}-${ts}`,
-      metadata: { charId },
+      metadata: { charId, ...swBuildQueuedReplyMetadata(snap) },
       message: text,
       contactName: snap.name,
       avatarUrl: snap.avatar,

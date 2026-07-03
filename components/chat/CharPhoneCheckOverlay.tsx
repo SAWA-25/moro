@@ -21,6 +21,7 @@ import {
     makePhoneCheckAction,
     normalizePhoneCheckStep,
 } from '../../utils/checkPhone';
+import { charPhoneCheckScriptGuard } from '../../utils/laiwangPrompts';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -829,6 +830,7 @@ ${resolveCart(userProfile.shopCart).length > 0
     : '（购物车是空的）'}
 
 ### 要求
+这次查岗必须围绕一个明确的情绪或剧情动机展开，例如怀疑、吃醋、担心、保护欲、被聊天线索刺到，或关系边界被触动；不能因为无聊、随便看看、系统允许、完成任务感或没话找话而查岗。每一步的 intent 都要能接住这个动机或从真实线索继续延伸，禁止写成“随便看看”“无聊”“系统允许”。
 生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
 - "home" 桌面
 - "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）
@@ -836,11 +838,12 @@ ${resolveCart(userProfile.shopCart).length > 0
 - "phone" 电话记录 / "shop" 心意铺购物与购物车 / "takeout" 饭票外卖 / "wallet" 钱包收支 / "browser" 热点与浏览痕迹 / "map" 地区与位置线索
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
 每一步还要写 intent / emotion / risk / visibleClue：
-- intent：TA 点开这里的动机（如确认关系、找生活线索、吃醋、照顾、试探）。
+- intent：TA 点开这里的动机（如确认关系、找生活线索、吃醋、照顾、试探），必须具体，不要写“随便看看”“无聊”或“系统允许”。
 - emotion：这一刻的情绪（1~3个词）。
 - risk：normal / private / suspicious；涉及隐私、位置、钱、关系操作时至少 private，准备动手操作时通常 suspicious。
 - visibleClue：TA 此刻真实看到的关键线索，必须来自上面的快照或对话节选，不要编真实设备外的新信息。
 如果 action 不为 none，再写 actionReason：TA 为什么会按人设做这个越界动作。
+${charPhoneCheckScriptGuard(char.name, userProfile.name || '用户')}
 翻到 moments / twitter / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。twitter 里包含国际时间线和私信概况，看到外文推文时可以提到语言或翻译痕迹。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
@@ -851,7 +854,7 @@ moments（朋友圈）步骤可以带 action：
 - {"type":"post_moment","content":"…"} 代替 ${userProfile.name} 发一条朋友圈（content 是以 ${userProfile.name} 口吻写的动态正文，30~80字；可以宣示主权、撒糖、调皮地替TA说点话，也可能阴阳怪气）
 任意一步都可带 action（看到购物车有没结算的东西时）：
 - {"type":"clear_cart"} 帮 ${userProfile.name} 把心意铺购物车清空（你替 TA 代付）。宠溺/大方/想讨好或心疼 TA 的角色才会这么做；小气、在闹脾气或购物车是空的时候绝不要用。
-是否做这些动作、做哪种，严格按人设性格来：温柔的角色多半只看不动，占有欲强/醋劲大的角色才会下手——回复别人、拉黑、抢着替TA发朋友圈昭告关系、或大方地帮 TA 清空购物车。不要为了戏剧性乱来。
+是否做这些动作、做哪种，严格按人设性格来：温柔克制的角色多半只看不动；占有欲、醋劲或保护欲强，且被具体线索刺激到时，才可能下手——回复别人、拉黑、抢着替TA发朋友圈昭告关系、或大方地帮 TA 清空购物车。不要为了戏剧性乱来。
 另外生成 exitQuestions：3 个问题。${userProfile.name} 想中途拿回手机时，${char.name} 会要求 TA 先回答这 3 个问题（按人设出题：可以是审问、撒娇、试探）。
 endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用于之后 TA 主动发消息的语气基调）。
 

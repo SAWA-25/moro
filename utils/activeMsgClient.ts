@@ -16,6 +16,7 @@ import { KeepAlive } from './keepAlive';
 import { activeMsg2ImportantRules, activeMsg2LegacyStyleHint, activeMsg2ModeInstruction } from './laiwangPrompts';
 import { buildOpenAiEndpoint } from './openAiCompat';
 import { WorldbookRuntime } from './worldbookRuntime';
+import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 
 const ACTIVE_MSG_VAPID_PUBLIC_KEY = import.meta.env.VITE_AMSG_VAPID_PUBLIC_KEY || '';
 const ACTIVE_MSG_API_BASE_OVERRIDE = (import.meta.env.VITE_AMSG_API_BASE_URL || '').trim();
@@ -226,8 +227,9 @@ const buildLegacyStyleProactiveHint = (
   targetName: string,
   currentTime: string,
   timeSinceUser: string,
+  forceReplyAllowed?: boolean,
 ) => {
-  return activeMsg2LegacyStyleHint({ targetName, currentTime, timeSinceUser });
+  return activeMsg2LegacyStyleHint({ targetName, currentTime, timeSinceUser, forceReplyAllowed });
 };
 
 const buildCompletePrompt = async (
@@ -239,7 +241,8 @@ const buildCompletePrompt = async (
 ) => {
   const { recentMessages, timeSinceUser } = await buildTimeGapHint(char.id);
   const currentTime = nowIsoLocal().replace('T', ' ');
-  const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', currentTime, timeSinceUser);
+  const forceReplyAllowed = !!char.convoSettings?.forceReplyEnabled;
+  const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', currentTime, timeSinceUser, forceReplyAllowed);
   const emojis = await DB.getEmojis();
   const categories = await DB.getEmojiCategories();
   const scanMessages = recentMessages
@@ -274,7 +277,7 @@ const buildCompletePrompt = async (
     '你将代表下面这个角色，生成一条“主动发给用户”的私聊消息。',
     '',
     '【重要规则】',
-    ...activeMsg2ImportantRules(userProfile.name || '用户'),
+    ...activeMsg2ImportantRules(userProfile.name || '用户', { forceReplyAllowed }),
     '',
     '【角色系统设定】',
     systemPrompt,
@@ -489,6 +492,9 @@ export const ActiveMsgClient = {
     apiConfig: APIConfig;
   }) {
     const { char, config, userProfile, groups, realtimeConfig, apiConfig } = params;
+    if (shouldHideAmbientSocialRecordForUser(userProfile) && isAmbientSocialCharacterForUser(char, userProfile)) {
+      throw new Error('用户社交圈已关闭或该 NPC 已被隐藏，不能为它创建主动消息任务。');
+    }
     const globalConfig = await ensureTenantReady();
     const client = await initializeClient(globalConfig);
     const pushSubscription = await this.ensurePushSubscription();

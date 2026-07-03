@@ -166,7 +166,7 @@ export const PaperCard: React.FC<{
 
 // ---------- 顶栏 ----------
 export const TopBar: React.FC<{ left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode; className?: string }> = ({ left, center, right, className }) => (
-    <div className={`relative flex items-center gap-2 px-4 pb-2 shrink-0 z-20 ${className || ''}`} style={{ paddingTop: 'calc(var(--safe-top) + 0.6rem)' }}>
+    <div className={`relative flex items-center gap-2 px-4 pt-2.5 pb-2 shrink-0 z-20 ${className || ''}`}>
         <div className="flex items-center gap-2">{left}</div>
         {center && <div className="absolute left-1/2 -translate-x-1/2 text-center select-none pointer-events-none">{center}</div>}
         <div className="ml-auto flex items-center gap-2">{right}</div>

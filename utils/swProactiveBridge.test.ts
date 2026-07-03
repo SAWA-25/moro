@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   swBuildMessages,
+  swBuildQueuedReplyMetadata,
   swCleanProactiveText,
   swShouldGenerateProactive,
   type SwProactiveSnapshot,
@@ -38,6 +39,24 @@ describe('sw proactive v2 bridge', () => {
     expect(messages[messages.length - 1].role).toBe('user');
   });
 
+  it('injects pending user messages and exposes queued reply metadata', () => {
+    const snap = mkSnap({
+      pendingUserMessages: [
+        { id: 7, content: '你还没回我这句', timestamp: 1_788_000_000_000, type: 'text' },
+      ],
+      queuedReplyTarget: { id: 7, content: '你还没回我这句', name: '小夏' },
+    });
+    const messages = swBuildMessages(snap);
+
+    expect(messages[0].content).toContain('还没被你回复');
+    expect(messages[0].content).toContain('你还没回我这句');
+    expect(messages[messages.length - 1].content).toContain('先自然回应');
+    expect(swBuildQueuedReplyMetadata(snap)).toEqual({
+      queuedReplyTarget: { id: 7, content: '你还没回我这句', name: '小夏' },
+      pendingProactiveReplyIds: [7],
+    });
+  });
+
   it('skips stale snapshots and quiet-hour life-only windows', () => {
     const now = 1_788_000_000_000;
     expect(swShouldGenerateProactive(mkSnap({ updatedAt: now - 49 * 60 * 60 * 1000 }), now).reason).toBe('stale_snapshot');
@@ -47,6 +66,11 @@ describe('sw proactive v2 bridge', () => {
       proactiveV2: { quietHours: { enabled: true, start: '00:00', end: '23:59', behavior: 'life_only' } },
     });
     expect(swShouldGenerateProactive(quiet, now)).toEqual({ ok: false, reason: 'quiet_hours_life_only' });
+    expect(swShouldGenerateProactive(mkSnap({
+      updatedAt: now,
+      proactiveV2: { quietHours: { enabled: true, start: '00:00', end: '23:59', behavior: 'life_only' } },
+      pendingUserMessages: [{ id: 9, content: '这句还没回' }],
+    }), now)).toEqual({ ok: true, reason: 'ok' });
   });
 
   it('cleans directives and wrappers from SW generated text', () => {

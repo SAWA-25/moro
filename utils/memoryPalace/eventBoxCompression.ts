@@ -354,6 +354,7 @@ function createSummaryNode(box: EventBox, result: CompressionLLMResult, now: num
         isBoxSummary: true,
         archived: false,
         origin: 'system',
+        source: { kind: 'system', label: `事件盒整合：${box.name || '未命名事件'}`, refId: box.id },
     };
 }
 

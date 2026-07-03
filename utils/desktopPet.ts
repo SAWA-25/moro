@@ -1,4 +1,4 @@
-import type { DesktopPetReminder, DesktopPetRoleState, DesktopPetState, DesktopPetTalkMessage } from '../types';
+import type { DesktopPetAutoBehavior, DesktopPetMood, DesktopPetReminder, DesktopPetRoleState, DesktopPetState, DesktopPetTalkMessage } from '../types';
 
 export type DesktopPetReminderRepeat = 'none' | 'daily';
 
@@ -71,9 +71,76 @@ export const DESKTOP_PET_PROMPT_LIMIT = 1200;
 export const DESKTOP_PET_FALL_SPEED_MIN = 60;
 export const DESKTOP_PET_FALL_SPEED_MAX = 360;
 export const DESKTOP_PET_FALL_SPEED_DEFAULT = 150;
+export const DESKTOP_PET_DEFAULT_AUTO_BEHAVIOR: DesktopPetAutoBehavior = 'gentle';
+export const DESKTOP_PET_HP_DECAY_PER_HOUR = 2;
+export const DESKTOP_PET_HP_DECAY_MAX_HOURS = 12;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 export type DesktopPetWalkDirection = 'left' | 'right';
+
+export interface DesktopPetManualAction {
+  id: string;
+  label: string;
+}
+
+export interface DesktopPetMoodMeta {
+  label: string;
+  description: string;
+  accent: string;
+}
+
+const DESKTOP_PET_AUTO_BEHAVIORS: DesktopPetAutoBehavior[] = ['quiet', 'gentle', 'lively'];
+
+const DESKTOP_PET_BLOCKED_MANUAL_ACTIONS = new Set([
+  'default',
+  'up',
+  'down',
+  'left',
+  'right',
+  'left_walk',
+  'right_walk',
+  'drag',
+  'fall',
+  'onfloor',
+]);
+
+const DESKTOP_PET_BLOCKED_MANUAL_ACTION_PREFIXES = ['feed_'];
+
+const DESKTOP_PET_ACTION_LABELS: Record<string, string> = {
+  sleep: '睡一会',
+  sit: '坐下',
+  patpat: '摸摸反应',
+  niaolong: '鸟笼',
+  zhiren: '纸人',
+  wavehand: '挥手',
+  wavehand2: '挥手',
+  shr: '伸展',
+  quiqian1: '求签',
+  quiqian2: '再求一签',
+  quiqian3: '小小占卜',
+  look: '探头',
+  wind: '起风',
+  str: '伸展',
+  e_skill1: '小技能',
+  e_skill2: '小技能',
+  e_skill3: '小技能',
+  qskill: '大招',
+  palace_1: '宫殿',
+  palace_2: '宫殿',
+  palace_3: '宫殿',
+  photo_frame_1: '拍照',
+  photo_frame_2: '拍照',
+  photo_frame_3: '拍照',
+};
+
+export const DESKTOP_PET_MOOD_META: Record<DesktopPetMood, DesktopPetMoodMeta> = {
+  hungry: { label: '有点饿', description: '饱腹偏低，喂点喜欢的食物会恢复精神。', accent: 'emerald' },
+  lonely: { label: '想陪伴', description: '有一阵没互动了，摸摸或说句话会让它安心。', accent: 'sky' },
+  happy: { label: '很亲近', description: '最近有互动，好感也不错，正适合一起待着。', accent: 'pink' },
+  sleepy: { label: '犯困', description: '夜深了，桌宠会更安静一点。', accent: 'violet' },
+  calm: { label: '安稳', description: '状态平稳，适合轻轻陪在桌面上。', accent: 'slate' },
+};
 
 const DESKTOP_PET_ACTION_HOLD_LOOPS: Record<string, number> = {
   sleep: 4,
@@ -111,7 +178,9 @@ export const createDefaultDesktopPetState = (now = Date.now()): DesktopPetState 
   floatingEnabled: false,
   overlay: { x: 24, y: 220, scale: 0.72, dockSide: 'none' },
   aiEnabled: true,
+  autoBehavior: DESKTOP_PET_DEFAULT_AUTO_BEHAVIOR,
   fallSpeed: DESKTOP_PET_FALL_SPEED_DEFAULT,
+  lastCareTickAt: now,
   dialogueLog: [],
   notificationsEnabled: false,
   roleStates: {},
@@ -123,6 +192,12 @@ export const clampNumber = (value: number, min: number, max: number): number => 
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
 };
+
+export const normalizeDesktopPetAutoBehavior = (value?: string | null): DesktopPetAutoBehavior => (
+  DESKTOP_PET_AUTO_BEHAVIORS.includes(value as DesktopPetAutoBehavior)
+    ? value as DesktopPetAutoBehavior
+    : DESKTOP_PET_DEFAULT_AUTO_BEHAVIOR
+);
 
 export const sortFrameNames = (frames: string[]): string[] => [...frames].sort((a, b) => {
   const an = Number((a.match(/_(\d+)\.[^./?#]+(?:[?#].*)?$/) || [])[1] ?? Number.MAX_SAFE_INTEGER);
@@ -156,12 +231,24 @@ export const ensureDesktopPetState = (state?: DesktopPetState | null, now = Date
     dockSide: state?.overlay?.dockSide || 'none',
   },
   aiEnabled: state?.aiEnabled !== false,
+  autoBehavior: normalizeDesktopPetAutoBehavior(state?.autoBehavior),
   fallSpeed: clampNumber(state?.fallSpeed ?? DESKTOP_PET_FALL_SPEED_DEFAULT, DESKTOP_PET_FALL_SPEED_MIN, DESKTOP_PET_FALL_SPEED_MAX),
+  lastCareTickAt: typeof state?.lastCareTickAt === 'number' && Number.isFinite(state.lastCareTickAt) ? state.lastCareTickAt : now,
   rolePrompts: normalizeDesktopPetRolePrompts(state?.rolePrompts),
   dialogueLog: Array.isArray(state?.dialogueLog) ? state.dialogueLog.slice(-DESKTOP_PET_DIALOGUE_LIMIT) : [],
   lastSpeech: state?.lastSpeech,
   roleStates: state?.roleStates || {},
   reminders: Array.isArray(state?.reminders) ? state.reminders : [],
+});
+
+export const setDesktopPetAutoBehavior = (
+  input: DesktopPetState,
+  autoBehavior: DesktopPetAutoBehavior,
+  now = Date.now(),
+): DesktopPetState => ({
+  ...ensureDesktopPetState(input, now),
+  autoBehavior: normalizeDesktopPetAutoBehavior(autoBehavior),
+  updatedAt: now,
 });
 
 export const setDesktopPetRolePrompt = (
@@ -229,6 +316,84 @@ export const getDesktopPetRoleState = (state: DesktopPetState, roleId: string): 
   state.roleStates?.[roleId] || { hp: 80, fv: 0 }
 );
 
+export const getDesktopPetLastInteractionAt = (roleState: DesktopPetRoleState): number => Math.max(
+  roleState.lastInteractedAt || 0,
+  roleState.lastFedAt || 0,
+  roleState.lastPattedAt || 0,
+  roleState.lastTalkedAt || 0,
+);
+
+export const applyDesktopPetCareTick = (
+  input: DesktopPetState,
+  now = Date.now(),
+): DesktopPetState => {
+  const state = ensureDesktopPetState(input, now);
+  const lastCareTickAt = typeof input.lastCareTickAt === 'number' && Number.isFinite(input.lastCareTickAt) ? input.lastCareTickAt : now;
+  const elapsedHours = Math.floor((now - lastCareTickAt) / HOUR_MS);
+  if (elapsedHours <= 0) {
+    return state.lastCareTickAt === lastCareTickAt ? state : { ...state, lastCareTickAt };
+  }
+
+  const hpLoss = Math.min(elapsedHours, DESKTOP_PET_HP_DECAY_MAX_HOURS) * DESKTOP_PET_HP_DECAY_PER_HOUR;
+  const roleIds = new Set([state.activeRoleId, ...Object.keys(state.roleStates || {})].filter(Boolean));
+  const roleStates = { ...state.roleStates };
+  roleIds.forEach(roleId => {
+    const prev = getDesktopPetRoleState(state, roleId);
+    roleStates[roleId] = {
+      ...prev,
+      hp: clampNumber((prev.hp || 0) - hpLoss, 0, DESKTOP_PET_HP_MAX),
+    };
+  });
+
+  return {
+    ...state,
+    roleStates,
+    lastCareTickAt: now,
+    updatedAt: now,
+  };
+};
+
+export const getDesktopPetMood = (
+  state: DesktopPetState,
+  roleId: string,
+  now = Date.now(),
+): DesktopPetMood => {
+  const roleState = getDesktopPetRoleState(state, roleId);
+  if (roleState.hp <= 35) return 'hungry';
+
+  const hour = new Date(now).getHours();
+  if (hour >= 23 || hour < 6) return 'sleepy';
+
+  const lastInteractionAt = getDesktopPetLastInteractionAt(roleState);
+  if (lastInteractionAt && now - lastInteractionAt <= 2 * HOUR_MS && roleState.fv >= 40) return 'happy';
+  if ((!lastInteractionAt || now - lastInteractionAt > 48 * HOUR_MS) && roleState.fv < 80) return 'lonely';
+  return 'calm';
+};
+
+export const getDesktopPetMoodMeta = (mood: DesktopPetMood): DesktopPetMoodMeta => DESKTOP_PET_MOOD_META[mood];
+
+export const markDesktopPetTalked = (
+  input: DesktopPetState,
+  roleId: string,
+  now = Date.now(),
+): DesktopPetState => {
+  const state = ensureDesktopPetState(input, now);
+  const prev = getDesktopPetRoleState(state, roleId);
+  return {
+    ...state,
+    activeRoleId: roleId,
+    roleStates: {
+      ...state.roleStates,
+      [roleId]: {
+        ...prev,
+        lastTalkedAt: now,
+        lastInteractedAt: now,
+      },
+    },
+    updatedAt: now,
+  };
+};
+
 export const canUseDesktopPetItem = (item: DesktopPetItemManifest, roleId: string): boolean => (
   item.type === 'consumable' && (!item.petLimit || item.petLimit.includes(roleId))
 );
@@ -268,6 +433,7 @@ export const feedDesktopPet = (
     hp: clampNumber((prev.hp || 0) + hpDelta, 0, DESKTOP_PET_HP_MAX),
     fv: clampNumber((prev.fv || 0) + fvDelta, 0, DESKTOP_PET_FV_MAX),
     lastFedAt: now,
+    lastInteractedAt: now,
   };
   const actionId = multiplier > 1 ? 'feed_1' : multiplier < 1 ? 'feed_3' : 'feed_2';
 
@@ -307,10 +473,56 @@ export const buildDesktopPetFallbackSpeech = (
     return `${roleName}吃下了${options.itemName}，看起来精神了一点。`;
   }
   if (source === 'pat') return `${roleName}被摸了摸，安静地靠近了一点。`;
+  if (source === 'reminder') return `${roleName}轻轻敲了敲屏幕，提醒你看一眼待办。`;
   if (source === 'idle') return `${roleName}晃了晃，像是在等你继续陪一会儿。`;
   const text = options.userText?.trim();
   if (text) return `${roleName}听见了：“${text.slice(0, 24)}”。`;
   return `${roleName}看着你，轻轻应了一声。`;
+};
+
+export const buildDesktopPetReminderSpeech = (
+  roleName: string,
+  reminder: Pick<DesktopPetReminder, 'title' | 'note'>,
+): string => {
+  const title = reminder.title.trim() || '提醒';
+  const note = reminder.note?.trim();
+  return note
+    ? `${roleName}轻轻敲了敲屏幕：${title}。${note}`
+    : `${roleName}轻轻敲了敲屏幕：${title}。`;
+};
+
+export const getDesktopPetActionLabel = (actionId: string): string => (
+  DESKTOP_PET_ACTION_LABELS[actionId]
+  || actionId
+    .replace(/^e_skill/i, '技能 ')
+    .replace(/^qskill$/i, '大招')
+    .replace(/_/g, ' ')
+);
+
+export const isDesktopPetSafeManualAction = (actionId: string): boolean => (
+  !!actionId
+  && !DESKTOP_PET_BLOCKED_MANUAL_ACTIONS.has(actionId)
+  && !DESKTOP_PET_BLOCKED_MANUAL_ACTION_PREFIXES.some(prefix => actionId.startsWith(prefix))
+);
+
+export const listDesktopPetManualActions = (
+  role: DesktopPetRoleManifest | undefined,
+  limit = 18,
+): DesktopPetManualAction[] => {
+  if (!role) return [];
+  const ordered = [
+    ...(role.randomActs || []).flatMap(act => act.actList || []),
+    ...Object.keys(role.actions || {}),
+  ];
+  const seen = new Set<string>();
+  return ordered
+    .filter(actionId => {
+      if (seen.has(actionId) || !role.actions[actionId] || !isDesktopPetSafeManualAction(actionId)) return false;
+      seen.add(actionId);
+      return true;
+    })
+    .slice(0, limit)
+    .map(actionId => ({ id: actionId, label: getDesktopPetActionLabel(actionId) }));
 };
 
 export const clampDesktopPetOverlay = (
@@ -434,6 +646,7 @@ export const patDesktopPet = (
         ...prev,
         fv: clampNumber((prev.fv || 0) + 1, 0, DESKTOP_PET_FV_MAX),
         lastPattedAt: now,
+        lastInteractedAt: now,
       },
     },
     updatedAt: now,

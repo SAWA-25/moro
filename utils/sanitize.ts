@@ -16,6 +16,7 @@
  */
 
 import { segmentTextWithProtectedBlocks } from '@rei-standard/amsg-instant';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 // ─── 底层 helper (共享, 无歧义清理) ─────────────────────────────────────────
 
@@ -24,6 +25,9 @@ const stripLiteralBackslashN = (t: string): string => t.replace(/\\n/g, '\n');
 
 /** 源标签 `[聊天]/[通话]/[约会]` → 换行 (保留分隔语义) */
 const stripSourceTags = (t: string): string => t.replace(/\s*\[(?:聊天|通话|约会)\]\s*/g, '\n');
+
+/** 心意铺聊天记录标签兜底：只剥行首标记，保留正文里的普通提及。 */
+const stripShopLineLabels = (t: string): string => t.replace(/^\s*[\[【]\s*心意铺(?:陪逛)?\s*[\]】]\s*/gm, '');
 
 /** 4 种时间格式: 带括号 ISO / 行首裸 ISO / 中文 12h / 英文 12h */
 const stripTimestamps = (t: string): string =>
@@ -61,6 +65,8 @@ const stripBusinessTagsForBubble = (t: string): string =>
     // 拍一拍：[[PAT_SUFFIX: x]] 角色改后缀、[[PAT]] 角色拍用户；据此落副作用，气泡里不该残留。
     .replace(/\[\[\s*PAT_SUFFIX\s*[:：][^\]]*\]\]/gi, '')
     .replace(/\[\[\s*PAT\s*\]\]/gi, '')
+    // 强制回话：隐藏控制指令，只能触发 OS 弹窗，不能留在气泡或通知里。
+    .replace(/\[\[\s*FORCE_REPLY\s*[:：]?\s*[\s\S]*?\]\]/gi, '')
     // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
     .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
     .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')
@@ -197,6 +203,7 @@ export function sanitizeForNotification(text: string): string {
   result = stripRoleNamePrefix(result);
   // 7. 源标签 [聊天] 等
   result = stripSourceTags(result);
+  result = stripShopLineLabels(result);
   // 8. 内部状态 / 业务标签 / 引用
   result = stripInnerState(result);
   result = stripBusinessTagsForNotification(result);
@@ -211,7 +218,9 @@ export function sanitizeForNotification(text: string): string {
   result = stripBackticks(result);
   // 12. 老翻译标记
   result = stripLegacyTrans(result);
-  // 13. 空白收尾
+  // 13. prompt / roleplay meta leak guard
+  result = sanitizeAssistantVisibleText(result);
+  // 14. 空白收尾
   result = collapseWhitespace(result);
   return result;
 }
@@ -233,6 +242,7 @@ export function sanitizeForBubble(
   result = stripLiteralBackslashN(result);
   // 2. 源标签 / 时间戳 / 业务标签
   result = stripSourceTags(result);
+  result = stripShopLineLabels(result);
   result = stripTimestamps(result);
   result = stripMarkdownHeaders(result);
   result = stripBusinessTagsForBubble(result);
@@ -346,10 +356,12 @@ export function sanitizeIntoSegments(text: string): Segment[] {
   cleaned = stripChineseDate(cleaned);
   cleaned = stripRoleNamePrefix(cleaned);
   cleaned = stripSourceTags(cleaned);
+  cleaned = stripShopLineLabels(cleaned);
   // 注意: 这里**不**剥 stripQuotes — 引用要带到客户端让 Step 7 配 aiReplyTarget.
   // sanitizeTextForBanner 单独剥引用给 notification.
   cleaned = stripLegacyTrans(cleaned);
   cleaned = stripMarkdownDividers(cleaned);
+  cleaned = sanitizeAssistantVisibleText(cleaned);
 
   // Phase 2: chunk 跟客户端 chatParser.chunkText 同算法 (内联避免 import chatParser
   // 把 DB / React / Capacitor 依赖拖进 worker bundle)
@@ -410,6 +422,7 @@ function sanitizeTextForBanner(text: string): string {
   result = stripMarkdownHeaders(result);
   result = stripMarkdownBold(result);
   result = stripBackticks(result);
+  result = sanitizeAssistantVisibleText(result);
   result = collapseWhitespace(result);
   return result;
 }

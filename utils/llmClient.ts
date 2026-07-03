@@ -112,6 +112,7 @@ export async function completeText(
         if (preset) {
             convo = applyPresetToMessages(messages, preset, {
                 macros: { charName: '角色', userName: '用户' },
+                presetScope: opts.presetScope,
             }) as ChatMsg[];
         }
     }

@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { generateStores, rollOrderIssues, resolveComplaint, PACK_FEE, generateStoreReviewsAI } from './takeout';
+import {
+    effectiveTakeoutEtaAt,
+    extractTakeoutOrderDirective,
+    generateStores,
+    generateStoreReviewsAI,
+    isTakeoutArrived,
+    liveTakeoutStatus,
+    MIN_TAKEOUT_DELIVERY_MS,
+    PACK_FEE,
+    resolveComplaint,
+    rollOrderIssues,
+    shouldAutoReactToCharTakeout,
+} from './takeout';
 import type { TakeoutOrder, TakeoutOrderItem } from '../types';
 
 describe('generateStoreReviewsAI fallback', () => {
@@ -23,6 +35,33 @@ const mkOrder = (over: Partial<TakeoutOrder>): TakeoutOrder => ({
     recipient: 'me', payer: 'me', payStatus: 'paid', status: 'delivered',
     riderName: '小袋', riderEmoji: '🛵', address: '某地', placedAt: 0, etaAt: 1, chat: [],
     ...over,
+});
+
+describe('角色主动点外卖指令解析', () => {
+    it('解析半角冒号指令并剥离正文里的标记', () => {
+        const result = extractTakeoutOrderDirective('我给你点了点热的。\n[[TAKEOUT_ORDER: 鲜虾干贝软糯海鲜粥]]');
+        expect(result.desc).toBe('鲜虾干贝软糯海鲜粥');
+        expect(result.content).toBe('我给你点了点热的。');
+    });
+
+    it('解析全角冒号指令', () => {
+        const result = extractTakeoutOrderDirective('先垫一口。\n[[TAKEOUT_ORDER：加蛋牛肉汤面]]');
+        expect(result.desc).toBe('加蛋牛肉汤面');
+        expect(result.content).toBe('先垫一口。');
+    });
+
+    it('只有指令时返回空正文但保留下单描述', () => {
+        const result = extractTakeoutOrderDirective('[[TAKEOUT_ORDER: 皮蛋瘦肉粥]]');
+        expect(result.desc).toBe('皮蛋瘦肉粥');
+        expect(result.content).toBe('');
+    });
+
+    it('多条指令取第一条描述并剥掉全部标记', () => {
+        const result = extractTakeoutOrderDirective('先吃这个。\n[[TAKEOUT_ORDER: 海鲜粥]]\n等会儿再喝点热的。\n[[TAKEOUT_ORDER: 热奶茶]]');
+        expect(result.desc).toBe('海鲜粥');
+        expect(result.content).toBe('先吃这个。\n\n等会儿再喝点热的。');
+        expect(result.content).not.toContain('TAKEOUT_ORDER');
+    });
 });
 
 describe('外卖店铺生成', () => {
@@ -106,5 +145,56 @@ describe('投诉售后核定', () => {
         });
         const { refund } = resolveComplaint(order);
         expect(refund).toBeGreaterThan(0);
+    });
+});
+
+describe('外卖有效 ETA 与自动反应边界', () => {
+    it('新单有效 ETA 不早于下单后 15 分钟', () => {
+        const order = mkOrder({
+            status: 'preparing',
+            placedAt: 1_000,
+            etaAt: 61_000,
+            deliveredAt: undefined,
+        });
+
+        expect(effectiveTakeoutEtaAt(order)).toBe(order.placedAt + MIN_TAKEOUT_DELIVERY_MS);
+        expect(liveTakeoutStatus(order, order.placedAt + 60_000)).toBe('preparing');
+        expect(isTakeoutArrived(order, order.placedAt + 60_000)).toBe(false);
+        expect(liveTakeoutStatus(order, order.placedAt + MIN_TAKEOUT_DELIVERY_MS)).toBe('arrived');
+    });
+
+    it('旧异常短 ETA 不会立刻触发角色收货反应', () => {
+        const order = mkOrder({
+            status: 'preparing',
+            charId: 'char-1',
+            recipient: 'char-1',
+            payer: 'me',
+            placedAt: 10_000,
+            etaAt: 11_000,
+            deliveredAt: undefined,
+            reactionPosted: false,
+        });
+
+        expect(shouldAutoReactToCharTakeout(order, order.placedAt + 60_000)).toBe(false);
+        expect(shouldAutoReactToCharTakeout(order, order.placedAt + MIN_TAKEOUT_DELIVERY_MS)).toBe(true);
+    });
+
+    it('已送达、已反应、取消或非角色收货的订单不会自动触发角色反应', () => {
+        const base = mkOrder({
+            status: 'preparing',
+            charId: 'char-1',
+            recipient: 'char-1',
+            payer: 'me',
+            placedAt: 10_000,
+            etaAt: 11_000,
+            deliveredAt: undefined,
+            reactionPosted: false,
+        });
+        const now = base.placedAt + MIN_TAKEOUT_DELIVERY_MS;
+
+        expect(shouldAutoReactToCharTakeout({ ...base, deliveredAt: now }, now)).toBe(false);
+        expect(shouldAutoReactToCharTakeout({ ...base, reactionPosted: true }, now)).toBe(false);
+        expect(shouldAutoReactToCharTakeout({ ...base, status: 'cancelled' }, now)).toBe(false);
+        expect(shouldAutoReactToCharTakeout({ ...base, recipient: 'me' }, now)).toBe(false);
     });
 });

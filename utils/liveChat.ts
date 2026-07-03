@@ -1,5 +1,4 @@
-import type { CharacterProfile, LiveChatOverride, LiveChatSettings, UserProfile } from '../types';
-import { canCharContactUser } from './blockSystem';
+import type { LiveChatOverride, LiveChatSettings, UserProfile } from '../types';
 
 export type NormalizedLiveChatSettings = Required<LiveChatSettings>;
 
@@ -9,7 +8,6 @@ export const DEFAULT_LIVE_CHAT_SETTINGS: NormalizedLiveChatSettings = {
     draftPauseMs: 1500,
     draftMinChars: 3,
     draftCooldownMs: 12000,
-    interjectMaxTargets: 2,
 };
 
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -26,7 +24,6 @@ export function normalizeLiveChatSettings(profile?: Pick<UserProfile, 'liveChatS
         draftPauseMs: clampInt(raw.draftPauseMs, DEFAULT_LIVE_CHAT_SETTINGS.draftPauseMs, 500, 10000),
         draftMinChars: clampInt(raw.draftMinChars, DEFAULT_LIVE_CHAT_SETTINGS.draftMinChars, 1, 200),
         draftCooldownMs: clampInt(raw.draftCooldownMs, DEFAULT_LIVE_CHAT_SETTINGS.draftCooldownMs, 0, 10 * 60 * 1000),
-        interjectMaxTargets: clampInt(raw.interjectMaxTargets, DEFAULT_LIVE_CHAT_SETTINGS.interjectMaxTargets, 0, 8),
     };
 }
 
@@ -61,34 +58,4 @@ export function shouldTriggerLiveDraft(input: LiveDraftTriggerInput): boolean {
     if (input.lastTriggeredAt !== undefined && input.now - input.lastTriggeredAt < input.settings.draftCooldownMs) return false;
     if (input.lastTriggeredText && input.lastTriggeredText.trim() === text) return false;
     return true;
-}
-
-export function getLiveChatInterjectCandidates(
-    characters: CharacterProfile[],
-    activeCharacterId?: string | null,
-): CharacterProfile[] {
-    return characters.filter(char => (
-        char.id !== activeCharacterId
-        && canCharContactUser(char)
-    ));
-}
-
-export function pickLiveChatInterjectTargets<T extends { id: string }>(
-    candidates: T[],
-    maxTargets: number,
-    seed = Date.now(),
-): T[] {
-    const max = clampInt(maxTargets, DEFAULT_LIVE_CHAT_SETTINGS.interjectMaxTargets, 0, 8);
-    if (max <= 0 || candidates.length === 0) return [];
-    const scored = candidates.map((item, index) => {
-        let hash = seed + index * 2654435761;
-        for (let i = 0; i < item.id.length; i += 1) {
-            hash = ((hash << 5) - hash + item.id.charCodeAt(i)) | 0;
-        }
-        return { item, score: hash >>> 0 };
-    });
-    return scored
-        .sort((a, b) => a.score - b.score)
-        .slice(0, max)
-        .map(entry => entry.item);
 }

@@ -17,6 +17,7 @@ import { PresetRuntime, applyPresetToMessages } from '../utils/presets';
 import { WorldbookRuntime } from '../utils/worldbookRuntime';
 import { Message, ChatTheme } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
+import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
 type ViewMode = 'role-select' | 'in-call' | 'history' | 'record-detail';
 type CallBubble = { id: string; dbId?: number; role: 'user' | 'assistant'; text: string; time: string; audioUrl?: string; timestamp: number };
@@ -49,13 +50,13 @@ const summarizeKeepsakeLine = (transcript: CallBubble[], charName: string) => {
 };
 const sanitizeAssistantOutput = (raw: string) => {
   if (!raw) return '';
-  return raw
+  return sanitizeAssistantVisibleText(raw
     .replace(/^\s*(?:\[\s*通话\s*\]\s*)+/gim, '')
     .replace(/^\s*(?:\[\s*(?:聊天|约会)\s*\]\s*)+/gim, '')
     .replace(/^\s*\[?\d{1,2}:\d{2}(?::\d{2})?\]?\s*/gm, '')
     .replace(/^\s*\[?\d{4}[\/-]\d{1,2}[\/-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\]?\s*/gm, '')
     .replace(/^\s*时间戳[:：].*$/gim, '')
-    .trim();
+    .trim());
 };
 /** 中文舞台指示 → MiniMax 语气词标签映射 */
 const NARRATION_TO_INTERJECTION: Record<string, string> = {
@@ -729,6 +730,7 @@ const CallApp: React.FC = () => {
     const activePreset = await PresetRuntime.getActivePresetForScope('chat.phoneText');
     const fullMessages = activePreset
       ? applyPresetToMessages([{ role: 'system', content: systemPrompt }, ...messages], activePreset, {
+        presetScope: 'chat.phoneText',
         macros: {
           charName: selectedChar?.name || '角色',
           userName,

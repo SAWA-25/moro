@@ -20,6 +20,7 @@ import {
     X, ArrowClockwise, Crosshair, Footprints, MapPin, Sparkle,
     PaperPlaneRight, UserPlus, BookOpen, ChatCircleDots, Eye, Storefront,
 } from '@phosphor-icons/react';
+import StreetMap, { MapNode, MapPoint, MapRoute, mapDistanceLabel } from './StreetMap';
 
 // ── 内置内容池 ───────────────────────────────────────────────
 
@@ -396,6 +397,7 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [showWorldviewGen, setShowWorldviewGen] = useState(false);
     const [worldviewText, setWorldviewText] = useState('');
     const [genBusy, setGenBusy] = useState(false);
+    const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
 
     // 持久化
     useEffect(() => { saveRoam(state); }, [state]);
@@ -486,11 +488,10 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
 
     // 地图：点空白处移动
-    const mapRef = useRef<HTMLDivElement>(null);
-    const onMapTap = (e: React.MouseEvent) => {
-        const box = mapRef.current?.getBoundingClientRect(); if (!box) return;
-        const x = Math.max(4, Math.min(96, ((e.clientX - box.left) / box.width) * 100));
-        const y = Math.max(6, Math.min(92, ((e.clientY - box.top) / box.height) * 100));
+    const onMapTap = (point: MapPoint) => {
+        setSelectedMapNodeId(null);
+        const x = Math.max(4, Math.min(96, point.x));
+        const y = Math.max(6, Math.min(92, point.y));
         setState(s => ({ ...s, userX: x, userY: y }));
         if (Math.random() < 0.25) setTimeout(maybeEvent, 200);
     };
@@ -572,13 +573,94 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const activeThread = state.threads.find(t => t.personId === activeThreadId) || null;
     const dexCount = state.dexPeople.length + state.dexShops.length;
     const unreadCount = state.threads.filter(t => t.unread).length;
+    const userMapNode: MapNode = {
+        id: 'roam-user',
+        kind: 'user',
+        label: userProfile.name || '我',
+        sublabel: companion ? `和 ${companion.name} 一起` : '当前位置',
+        avatar: userProfile.avatar,
+        x: state.userX,
+        y: state.userY,
+        color: '#2563eb',
+        badge: '我',
+        active: true,
+    };
+    const shopNodes: MapNode[] = state.shops.map(shop => ({
+        id: `shop-${shop.id}`,
+        kind: 'shop',
+        label: shop.name,
+        sublabel: shop.kind,
+        emoji: shop.emoji,
+        x: shop.x,
+        y: shop.y,
+        color: '#0f8a6b',
+    }));
+    const personNodes: MapNode[] = state.nearby.map(person => ({
+        id: `person-${person.id}`,
+        kind: 'person',
+        label: person.name,
+        sublabel: person.blurb,
+        emoji: person.kind === 'known' ? undefined : person.emoji,
+        avatar: person.avatar,
+        x: person.x,
+        y: person.y,
+        color: person.kind === 'known' ? KNOWN : STRANGER,
+        badge: person.kind === 'known' ? '熟' : undefined,
+    }));
+    const eventNode: MapNode[] = state.activeEvent ? [{
+        id: `event-${state.activeEvent.id}`,
+        kind: 'event',
+        label: state.activeEvent.title,
+        sublabel: state.eventPlace || '街头事件',
+        emoji: state.activeEvent.emoji,
+        x: Math.min(92, state.userX + 13),
+        y: Math.max(12, state.userY - 12),
+        color: '#d97706',
+        badge: '事件',
+        active: true,
+    }] : [];
+    const mapNodes = [...shopNodes, ...personNodes, ...eventNode];
+    const selectedMapNode = selectedMapNodeId ? mapNodes.find(node => node.id === selectedMapNodeId) || null : null;
+    const selectedRoute: MapRoute[] = selectedMapNode ? [{
+        id: `roam-route-${selectedMapNode.id}`,
+        from: userMapNode,
+        to: selectedMapNode,
+        label: mapDistanceLabel(userMapNode, selectedMapNode),
+        color: selectedMapNode.color,
+        dashed: true,
+    }] : [];
 
     // ── 渲染 ──
     return (
-        <div className="absolute inset-0 z-20 flex flex-col" style={{ background: PAPER, color: INK, paddingTop: 'env(safe-area-inset-top, 0px)', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.05) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
+        <div className="absolute inset-0 z-20 flex min-h-0 flex-col" style={{ background: PAPER, color: INK, backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.05) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
             <style>{`
                 .roam-fade { animation: fadeIn 0.25s ease; }
                 .roam-sheet { animation: slideUp 0.3s cubic-bezier(0.25,1,0.5,1); }
+                .roam-map-control {
+                    width: 38px;
+                    height: 38px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 999px;
+                    border: 1px solid rgba(226,232,240,0.96);
+                    background: rgba(255,255,255,0.92);
+                    color: #172033;
+                    box-shadow: 0 12px 24px -22px rgba(15,23,42,0.8);
+                }
+                .roam-wander-button {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    border: 0;
+                    border-radius: 999px;
+                    padding: 10px 18px;
+                    background: #172033;
+                    color: #fff;
+                    font-size: 14px;
+                    font-weight: 900;
+                    box-shadow: 0 18px 34px -24px rgba(15,23,42,0.85);
+                }
             `}</style>
             {/* 顶栏 */}
             <div className="flex items-center px-3 py-3 shrink-0 relative">
@@ -590,96 +672,42 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-4 pt-2">
-                {/* 地图：贴在手账里的手绘街区 */}
-                <div className="sj-roam-photo relative" style={{ background: '#fbfaf7', borderRadius: 8, padding: '9px 9px 9px', border: '1px solid rgba(236,233,226,0.95)', boxShadow: '0 12px 26px -16px rgba(50,48,60,0.4)' }}>
-                    {/* 角落和纸胶带 */}
-                    <span style={{ position: 'absolute', top: -9, left: 22, width: 60, height: 18, transform: 'rotate(-5deg)', background: 'rgba(120,180,210,0.4)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', zIndex: 4, pointerEvents: 'none' }} />
-                    <span style={{ position: 'absolute', top: -9, right: 22, width: 60, height: 18, transform: 'rotate(4deg)', background: 'rgba(205,150,95,0.4)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', zIndex: 4, pointerEvents: 'none' }} />
-                    <div className="relative overflow-hidden" style={{ height: 300, borderRadius: 4, border: '1px solid rgba(0,0,0,0.06)' }}>
-                    <div
-                        ref={mapRef}
-                        onClick={onMapTap}
-                        className="absolute inset-0 cursor-pointer"
-                        style={{
-                            background: '#ece5d6',
-                            backgroundImage:
-                                'linear-gradient(rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(90deg, rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(rgba(170,158,138,0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(170,158,138,0.2) 1px, transparent 1px)',
-                            backgroundSize: '56px 56px, 56px 56px, 18px 18px, 18px 18px',
-                        }}
-                    >
-                        {/* 街区色块（公园/水域点缀） */}
-                        <div className="absolute rounded-lg" style={{ left: '6%', top: '10%', width: '20%', height: '16%', background: 'rgba(150,190,150,0.35)' }} />
-                        <div className="absolute rounded-lg" style={{ left: '70%', top: '60%', width: '22%', height: '20%', background: 'rgba(150,180,210,0.4)' }} />
-                        <div className="absolute rounded-lg" style={{ left: '40%', top: '74%', width: '16%', height: '12%', background: 'rgba(150,190,150,0.3)' }} />
-
-                        {/* 店铺 */}
-                        {state.shops.map(sh => (
-                            <button
-                                key={sh.id}
-                                onClick={e => { e.stopPropagation(); visitShop(sh); }}
-                                className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 active:scale-90 transition-transform"
-                                style={{ left: `${sh.x}%`, top: `${sh.y}%`, background: 'rgba(255,255,255,0.95)', borderRadius: 999, border: '1px solid rgba(236,233,226,0.95)', boxShadow: '0 2px 6px -3px rgba(50,48,60,0.4)' }}
-                            >
-                                <span className="text-[13px] leading-none">{sh.emoji}</span>
-                                <span className="font-hand whitespace-nowrap" style={{ fontSize: 10, fontWeight: 700, color: '#5c574f' }}>{sh.name}</span>
+                <StreetMap
+                    nodes={mapNodes}
+                    user={userMapNode}
+                    routes={selectedRoute}
+                    selectedNodeId={selectedMapNodeId}
+                    height={320}
+                    title={state.street}
+                    subtitle={selectedMapNode ? `${selectedMapNode.label} · ${selectedMapNode.sublabel || '附近'}` : '点空白处移动 · 点 pin 进店或聊天'}
+                    onCanvasClick={onMapTap}
+                    onNodeClick={(node, event) => {
+                        event.stopPropagation();
+                        setSelectedMapNodeId(node.id);
+                        if (node.id.startsWith('shop-')) {
+                            const shop = state.shops.find(item => `shop-${item.id}` === node.id);
+                            if (shop) visitShop(shop);
+                        } else if (node.id.startsWith('person-')) {
+                            const person = state.nearby.find(item => `person-${item.id}` === node.id);
+                            if (person) chatWith(person);
+                        }
+                    }}
+                    topRight={
+                        <div className="flex gap-2">
+                            <button onClick={(event) => { event.stopPropagation(); setShowCompanionPick(true); }} className="roam-map-control" title="一起逛街">
+                                {companion ? <img src={companion.avatar} className="w-6 h-6 rounded-full object-cover" /> : <UserPlus size={17} weight="bold" />}
                             </button>
-                        ))}
-
-                        {/* 人物 pin */}
-                        {state.nearby.map(p => (
-                            <button
-                                key={p.id}
-                                onClick={e => { e.stopPropagation(); chatWith(p); }}
-                                className="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center active:scale-90 transition-transform"
-                                style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                            >
-                                <div className="flex items-center gap-1">
-                                    <span className="relative flex items-center justify-center" style={{ width: 22, height: 30 }}>
-                                        <span className="absolute inset-x-0 top-0 mx-auto rounded-full shadow" style={{ width: 22, height: 22, background: p.kind === 'known' ? KNOWN : STRANGER }} />
-                                        <span className="absolute" style={{ bottom: 1, left: '50%', transform: 'translateX(-50%) rotate(45deg)', width: 8, height: 8, background: p.kind === 'known' ? KNOWN : STRANGER }} />
-                                        <span className="absolute top-[3px] text-[11px] leading-none">{p.kind === 'known' && p.avatar ? '' : p.emoji}</span>
-                                        {p.kind === 'known' && p.avatar && <img src={p.avatar} className="absolute top-[2px] rounded-full object-cover" style={{ width: 18, height: 18 }} />}
-                                    </span>
-                                    <span className="font-hand whitespace-nowrap px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.96)', fontSize: 10, fontWeight: 700, color: '#5c574f', boxShadow: '0 2px 5px -3px rgba(50,48,60,0.4)' }}>{p.name}</span>
-                                </div>
+                            <button onClick={(event) => { event.stopPropagation(); setState(s => ({ ...s, userX: 46, userY: 52 })); setSelectedMapNodeId(null); }} className="roam-map-control" title="回到中心">
+                                <Crosshair size={17} weight="bold" />
                             </button>
-                        ))}
-
-                        {/* 用户 + 同伴 */}
-                        <div className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: `${state.userX}%`, top: `${state.userY}%` }}>
-                            <span className="absolute -inset-3 rounded-full animate-ping" style={{ background: 'rgba(43,41,51,0.16)' }} />
-                            <span className="relative block w-4 h-4 rounded-full ring-2 ring-white shadow" style={{ background: INK }} />
-                            {companion && (
-                                <img src={companion.avatar} className="absolute -right-5 -top-1 w-6 h-6 rounded-full object-cover ring-2 ring-white shadow" />
-                            )}
                         </div>
-                    </div>
-
-                    {/* 街名 pill */}
-                    <div className="absolute top-2.5 left-2.5 right-12 flex">
-                        <div className="flex items-center gap-1 px-3 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }}>
-                            <MapPin size={13} weight="fill" style={{ color: STRANGER }} />
-                            <span className="font-hand truncate" style={{ fontSize: 14, fontWeight: 700, color: '#5c574f' }}>{state.street}</span>
-                        </div>
-                    </div>
-
-                    {/* 操作提示 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-14 px-3 py-1 rounded-full font-hand whitespace-nowrap pointer-events-none" style={{ background: 'rgba(43,41,51,0.5)', color: '#fbfaf7', fontSize: 12 }}>
-                        点空白处移动 · 点 pin 聊天
-                    </div>
-                    {/* 随便走走 */}
-                    <button onClick={wander} className="scrap-btn absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 px-5 py-2.5 font-hand" style={{ fontSize: 14, fontWeight: 700 }}>
-                        <Footprints size={17} weight="bold" /> 随便走走
-                    </button>
-                    {/* 同伴 / 定位 */}
-                    <button onClick={() => setShowCompanionPick(true)} className="absolute right-2.5 top-2.5 w-10 h-10 rounded-full flex items-center justify-center active:scale-90" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }} title="一起逛街">
-                        {companion ? <img src={companion.avatar} className="w-7 h-7 rounded-full object-cover" /> : <UserPlus size={18} weight="bold" style={{ color: '#5c574f' }} />}
-                    </button>
-                    <button onClick={() => setState(s => ({ ...s, userX: 46, userY: 52 }))} className="absolute right-2.5 bottom-3 w-10 h-10 rounded-full flex items-center justify-center active:scale-90" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }} title="回到中心">
-                        <Crosshair size={18} weight="bold" style={{ color: '#5c574f' }} />
-                    </button>
-                    </div>
-                </div>
+                    }
+                    bottomCenter={
+                        <button onClick={(event) => { event.stopPropagation(); wander(); }} className="roam-wander-button">
+                            <Footprints size={17} weight="bold" /> 随便走走
+                        </button>
+                    }
+                />
 
                 {/* Tab 条 */}
                 <div className="flex items-center gap-1 mt-3 p-1 rounded-2xl" style={{ background: 'rgba(120,116,106,0.1)' }}>

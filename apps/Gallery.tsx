@@ -659,7 +659,7 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
 
     const renderDetail = () => selectedImage && (
         <div className="flex flex-col h-full relative animate-fade-in" style={{ background: 'linear-gradient(180deg,#2a2723,#16140f)' }}>
-            <div className="absolute top-0 left-0 w-full px-4 flex justify-between items-start z-50" style={{ paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+            <div className="absolute top-0 left-0 w-full px-4 pt-3 flex justify-between items-start z-50">
                 <IconCircle tone="glass" onClick={() => { setView('grid'); setShowChatContext(false); }} title="返回"><CaretLeft size={18} weight="bold" /></IconCircle>
                 <div className="min-w-0 mx-3 text-center">
                     <div className="text-[11px] px-3 py-1.5 rounded-full font-bold truncate max-w-[170px]" style={{ background: 'rgba(255,255,255,0.16)', color: '#fff', fontFamily: 'var(--font-label)', backdropFilter: 'blur(8px)' }}>

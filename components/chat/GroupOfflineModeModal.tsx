@@ -3,7 +3,7 @@ import { Check, PencilSimple, Signpost, UsersThree, X } from '@phosphor-icons/re
 import type { CharacterProfile, GroupProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { CUTE_STACK, MONO_STACK, SERIF_STACK } from '../handbook/paper';
-import type { OfflinePovPerson } from '../../utils/offlineMode';
+import type { OfflineCommitInfo, OfflinePovPerson } from '../../utils/offlineMode';
 import {
     clearGroupOfflineSession,
     commitGroupOfflineSessionToContext,
@@ -23,7 +23,7 @@ interface GroupOfflineModeModalProps {
     userProfile: UserProfile;
     /** 群聊线下场景生成用的 API。宿主传文具盒主 API，让赴约现场跟主聊天模型保持一致。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
-    onEnd: () => void;
+    onEnd: (info: OfflineCommitInfo | null) => void;
     onSuspend: (entryCount: number) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
@@ -210,9 +210,9 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
         if (ending || isEditing) return;
         setEnding(true);
         try {
-            await commitGroupOfflineSessionToContext(group, userName, entries);
+            const commitInfo = await commitGroupOfflineSessionToContext(group, userName, entries);
             clearGroupOfflineSession(group.id);
-            onEnd();
+            onEnd(commitInfo);
         } catch (e: any) {
             addToast(`群聊赴约记录保存失败：${e?.message || e}`, 'error');
             setEnding(false);

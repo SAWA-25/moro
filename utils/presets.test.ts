@@ -6,14 +6,20 @@ import {
     ORDER_CHAR_ID_SINGLE,
     ORDER_CHAR_ID_GROUP,
     PresetRuntime,
+    applySafePresetFixes,
     applyPresetToMessages,
+    createPresetSnapshot,
     createAllPresetScopes,
     createDefaultPreset,
+    diagnosePreset,
+    diffPresetSnapshot,
     ensureDefaultPresetSeed,
     exportTavernPreset,
+    getPresetOrderForScope,
     getPresetGenParams,
     importTavernPreset,
     normalizePresetScopes,
+    restorePresetSnapshotAsCopy,
     substitutePresetMacros,
 } from './presets';
 import { DB } from './db';
@@ -227,13 +233,19 @@ describe('exportTavernPreset', () => {
         const p = importTavernPreset(ST_PRESET_JSON, 'n');
         p.moroApiPresetId = 'api-local';
         p.moroScopes = { 'chat.private': true, 'structured.tool': true };
+        p.moroPromptOrdersByScope = { 'chat.private': [{ identifier: 'main', enabled: true }] };
+        p.moroSnapshots = [createPresetSnapshot(p, 'local snap')];
         if (p.raw) {
             (p.raw as any).moroApiPresetId = 'raw-api';
             (p.raw as any).moroScopes = { 'chat.groupText': true };
+            (p.raw as any).moroPromptOrdersByScope = { 'chat.private': [] };
+            (p.raw as any).moroSnapshots = [{ id: 'raw' }];
         }
         const out = exportTavernPreset(p);
         expect(out.moroApiPresetId).toBeUndefined();
         expect(out.moroScopes).toBeUndefined();
+        expect(out.moroPromptOrdersByScope).toBeUndefined();
+        expect(out.moroSnapshots).toBeUndefined();
     });
 });
 
@@ -406,6 +418,30 @@ describe('applyPresetToMessages', () => {
         expect(out.map(m => m.content)).toEqual(['CORE', 'group 小明', 'u1', 'a1', 'u2', 'a2']);
     });
 
+    it('按 scope 选择顺序：专用 order 优先，其次群聊 scope 回退 100001，其它回退 100000', () => {
+        const p = createDefaultPreset();
+        p.prompts.push(
+            { identifier: 'single-main', name: 'Single', role: 'system', content: 'single' },
+            { identifier: 'group-main', name: 'Group', role: 'system', content: 'group' },
+            { identifier: 'phone-main', name: 'Phone', role: 'system', content: 'phone' },
+        );
+        p.prompt_order = [
+            { character_id: ORDER_CHAR_ID_SINGLE, order: [{ identifier: 'single-main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+            { character_id: ORDER_CHAR_ID_GROUP, order: [{ identifier: 'group-main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+        ];
+        p.moroPromptOrdersByScope = {
+            'chat.phoneText': [{ identifier: 'phone-main', enabled: true }, { identifier: 'chatHistory', enabled: true }],
+        };
+
+        expect(getPresetOrderForScope(p, 'chat.private').map(e => e.identifier)).toEqual(['single-main', 'chatHistory']);
+        expect(getPresetOrderForScope(p, 'chat.groupText').map(e => e.identifier)).toEqual(['group-main', 'chatHistory']);
+        expect(getPresetOrderForScope(p, 'chat.phoneText').map(e => e.identifier)).toEqual(['phone-main', 'chatHistory']);
+
+        expect(applyPresetToMessages(baseMessages, p, { macros: MACROS, presetScope: 'chat.phoneText' }).map(m => m.content)).toEqual([
+            'CORE', 'phone', 'u1', 'a1', 'u2', 'a2',
+        ]);
+    });
+
     it('tailMessages 总是在预设骨架之后追加，用于 JSON 守卫', () => {
         const p = createDefaultPreset();
         const out = applyPresetToMessages(baseMessages, p, {
@@ -546,5 +582,58 @@ describe('applyPresetToMessages · markerContents 联动（世界书 / 用户档
         expect(out.map(m => m.content)).toEqual([
             'Write 小明 reply to 阿罗.', 'CORE', 'u1', 'a1', 'u2', 'a2', 'PHI text',
         ]);
+    });
+});
+
+describe('预设高级编辑工具', () => {
+    it('diagnosePreset 识别缺 marker、空启用项、重复项和悬空引用，并可安全修复', () => {
+        const p = createDefaultPreset();
+        p.prompts.push({ identifier: 'empty', name: '空提示词', role: 'system', content: '' });
+        p.prompt_order = [{
+            character_id: ORDER_CHAR_ID_SINGLE,
+            order: [
+                { identifier: 'empty', enabled: true },
+                { identifier: 'empty', enabled: true },
+                { identifier: 'ghost', enabled: true },
+            ],
+        }];
+
+        const issues = diagnosePreset(p, 'chat.private');
+        expect(issues.map(i => i.code)).toEqual(expect.arrayContaining([
+            'missing-chat-history',
+            'missing-core-marker',
+            'empty-enabled-prompt',
+            'duplicate-order-entry',
+            'dangling-order-entry',
+        ]));
+
+        const fixed = applySafePresetFixes(p, 'chat.private');
+        const fixedIssues = diagnosePreset(fixed.preset, 'chat.private');
+        expect(fixed.fixed.length).toBeGreaterThan(0);
+        expect(fixedIssues.some(i => i.code === 'missing-chat-history')).toBe(false);
+        expect(fixedIssues.some(i => i.code === 'missing-core-marker')).toBe(false);
+        expect(fixed.preset.prompts.some(prompt => prompt.identifier === 'ghost')).toBe(true);
+        expect(getPresetOrderForScope(fixed.preset, 'chat.private').filter(e => e.identifier === 'empty')).toHaveLength(1);
+        expect(getPresetOrderForScope(fixed.preset, 'chat.private').find(e => e.identifier === 'empty')?.enabled).toBe(false);
+    });
+
+    it('快照 diff 能描述变化，恢复时创建新预设副本而不复用 id', () => {
+        const p = createDefaultPreset('snapshot-base');
+        const snap = createPresetSnapshot(p, 'before');
+        p.temperature = 0.42;
+        p.prompts[0].content = 'changed';
+        p.moroPromptOrdersByScope = { 'chat.phoneText': [{ identifier: 'main', enabled: true }] };
+
+        const diff = diffPresetSnapshot(snap, p);
+        expect(diff.changed).toBe(true);
+        expect(diff.items.join('\n')).toContain('temperature');
+        expect(diff.items.join('\n')).toContain('提示词被修改');
+        expect(diff.items.join('\n')).toContain('chat.phoneText');
+
+        const restored = restorePresetSnapshotAsCopy(snap);
+        expect(restored.id).not.toBe(p.id);
+        expect(restored.name).toContain('从快照恢复');
+        expect(restored.temperature).toBe(snap.preset.temperature);
+        expect(restored.moroSnapshots).toEqual([]);
     });
 });

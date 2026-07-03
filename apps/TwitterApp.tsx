@@ -1003,7 +1003,7 @@ const TwitterApp: React.FC = () => {
     };
 
     const renderHeader = () => (
-        <div className="shrink-0 bg-white/90 backdrop-blur border-b border-[#eff3f4]" style={{ paddingTop: 'var(--safe-top)' }}>
+        <div className="shrink-0 bg-white/90 backdrop-blur border-b border-[#eff3f4]">
             <div className="h-12 px-3 flex items-center">
                 <IconButton title="返回桌面" onClick={closeApp}><CaretLeft size={22} weight="bold" /></IconButton>
                 <div className="mx-auto"><XLogo size={24} weight="fill" /></div>
@@ -1022,7 +1022,7 @@ const TwitterApp: React.FC = () => {
         const translated = getTwitterTranslationText(tweet.translations, translationTarget);
         return (
             <Shell>
-                <div className="shrink-0 border-b border-[#eff3f4] bg-white/90 backdrop-blur" style={{ paddingTop: 'var(--safe-top)' }}>
+                <div className="shrink-0 border-b border-[#eff3f4] bg-white/90 backdrop-blur">
                     <div className="h-12 px-3 flex items-center gap-3">
                         <IconButton title="返回" onClick={() => setDetailId(null)}><CaretLeft size={22} weight="bold" /></IconButton>
                         <div className="font-black text-[18px]">推文</div>
@@ -1355,7 +1355,7 @@ const TwitterApp: React.FC = () => {
 
         return (
             <Shell>
-                <div className="shrink-0 border-b border-[#eff3f4] bg-white/90 backdrop-blur" style={{ paddingTop: 'var(--safe-top)' }}>
+                <div className="shrink-0 border-b border-[#eff3f4] bg-white/90 backdrop-blur">
                     <div className="h-12 px-3 flex items-center gap-3">
                         <IconButton title="返回" onClick={() => setAccountId(null)}><CaretLeft size={22} weight="bold" /></IconButton>
                         <div className="min-w-0">
@@ -1425,7 +1425,7 @@ const TwitterApp: React.FC = () => {
     function renderCompose() {
         const target = replyTarget || quoteTarget;
         return (
-            <div className="absolute inset-0 bg-white z-50 flex flex-col" style={{ paddingTop: 'var(--safe-top)' }}>
+            <div className="absolute inset-0 bg-white z-50 flex flex-col">
                 <div className="h-12 px-3 flex items-center border-b border-[#eff3f4]">
                     <IconButton title="关闭" onClick={() => { setComposeOpen(false); setReplyTarget(null); setQuoteTarget(null); resetComposeExtras(); }}><CaretLeft size={22} weight="bold" /></IconButton>
                     <button onClick={submitCompose} disabled={!composeText.trim()} className="ml-auto px-5 py-2 rounded-full bg-[#1d9bf0] text-white text-[14px] font-black disabled:opacity-50">{replyTarget ? '回复' : '发推'}</button>
@@ -1552,7 +1552,7 @@ const TwitterApp: React.FC = () => {
             </label>
         );
         return (
-            <div className="absolute inset-0 z-50 bg-white flex flex-col" style={{ paddingTop: 'var(--safe-top)' }}>
+            <div className="absolute inset-0 z-50 bg-white flex flex-col">
                 <div className="h-12 px-3 flex items-center border-b border-[#eff3f4]">
                     <IconButton title="关闭" onClick={() => setProfileEditorOpen(false)}><CaretLeft size={22} /></IconButton>
                     <div className="font-black text-[17px]">编辑资料</div>

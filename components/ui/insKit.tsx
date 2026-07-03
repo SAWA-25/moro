@@ -130,7 +130,7 @@ export const InsHeader: React.FC<{
 }> = ({ title, en, onBack, right, accent: ac, center = false }) => {
   const a = accent(ac);
   return (
-    <div className="relative z-20 shrink-0" style={{ paddingTop: 'var(--safe-top)' }}>
+    <div className="relative z-20 shrink-0">
       <div className="flex items-center gap-2.5 px-3.5 pt-2.5 pb-2.5">
         {onBack
           ? <IconCircle onClick={onBack} title="返回"><CaretLeft size={18} weight="bold" /></IconCircle>

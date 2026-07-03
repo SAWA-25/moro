@@ -1,7 +1,7 @@
 /**
  * 购物商城 —— 纯数据 + 纯函数模块。
  *
- * 一个「虚拟礼物商城」：内置一批带图标和价格的礼物。
+ * 一个礼物商城：内置一批带图标和价格的礼物。
  *  - 用户用钱包余额买下 → 进背包（shopInventory）→ 在商城里挑一个角色送出去
  *    （聊天里落一张「礼物卡」，并在双方小票里各记一笔，角色会在聊天里回应/写感谢信）。
  *  - 角色也会「自己逛商城」：用副 API 决定给自己买点什么、或回赠用户一件礼物（落角色小票，
@@ -138,7 +138,7 @@ export const sanitizeShopItemDraft = (draft: ShopItemDraft, base?: ShopItem): Sh
     const image = /^https?:\/\//i.test(rawImage) ? rawImage.slice(0, 500) : undefined;
     const rawRating = draft.rating ?? base?.rating;
     let rating = rawRating == null || rawRating === '' ? undefined : Number(rawRating);
-    rating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating * 10) / 10)) : undefined;
+    const safeRating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round((rating as number) * 10) / 10)) : undefined;
     const { image: _oldImage, rating: _oldRating, ...baseRest } = base || {};
     return {
         ...baseRest,
@@ -149,7 +149,7 @@ export const sanitizeShopItemDraft = (draft: ShopItemDraft, base?: ShopItem): Sh
         category,
         blurb,
         ...(image ? { image } : {}),
-        ...(rating != null ? { rating } : {}),
+        ...(safeRating != null ? { rating: safeRating } : {}),
         custom: true,
         updatedAt: Date.now(),
     };
@@ -881,12 +881,12 @@ export function buildShopCompanionPrompt(
     const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
     const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
     const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
-    const balanceLine = ctx.userBalance != null ? `用户虚拟余额：¥${formatPrice(ctx.userBalance)}\n` : '';
-    const system = `你是「${char.name}」，正在陪 ${userName} 逛虚拟礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或触发虚拟购买。所有付款都只是 Moro 虚拟余额和虚拟订单，不涉及现实支付。请完全按你的人设、关系亲疏、预算感和当下心情行动。\n${persona ? `【人设】\n${persona}\n` : ''}`;
+    const balanceLine = ctx.userBalance != null ? `可用余额：¥${formatPrice(ctx.userBalance)}\n` : '';
+    const system = `你是「${char.name}」，正在陪 ${userName} 逛礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或推进结账。请完全按你的人设、关系亲疏、预算感和当下心情行动。你的 speech 只说沉浸话，不提系统、Moro、本地、虚拟、模拟、现实支付、幕后规则等词。\n${persona ? `【人设】\n${persona}\n` : ''}`;
     const user = `当前界面：${ctx.surface}
 用户刚做的事：${ctx.userAction || '正在浏览'}
 你的大致预算感：¥${formatPrice(budget)}
-${balanceLine}自动付款边界：允许你在非常想推进、金额合理、符合关系和人设时使用 "auto_user_pay" 帮 ${userName} 用虚拟余额买下；若余额不足系统会自动改成请求确认。
+${balanceLine}结账边界：允许你在非常想推进、金额合理、符合关系和人设时使用 "auto_user_pay" 帮 ${userName} 直接结账；若余额不够，会改成请求确认。
 正在看的商品：${itemLine}
 购物车：${cartLines}
 屏幕上可见商品：
@@ -896,11 +896,11 @@ ${compactShelf(visible)}
 - "say"：只说一句话，不触发界面动作。
 - "point"：高亮指出某件商品。
 - "scroll_to_item"：把界面带到某件商品。
-- "open_item"：模拟点开某件商品详情。
-- "add_user_cart"：模拟把商品放进 ${userName} 的篮子。
+- "open_item"：打开某件商品详情。
+- "add_user_cart"：把商品放进 ${userName} 的篮子。
 - "want"：你明显喜欢某件商品，先记进自己的心愿单。
-- "ask_user_pay"：你想要某件商品，并向 ${userName} 撒娇/认真请求帮你付款；系统会弹出请求窗口。
-- "auto_user_pay"：你主动推进，让 ${userName} 用虚拟余额直接买下某件商品；只在你很确定时使用。
+- "ask_user_pay"：你想要某件商品，并向 ${userName} 撒娇/认真请求帮你付款；会出现请求窗口。
+- "auto_user_pay"：你主动推进，让 ${userName} 直接结账某件商品；只在你很确定时使用。
 - "char_pay"：你决定直接付款买给 ${userName}（适合你很想送、金额不离谱、关系/性格允许时）。
 
 只输出 JSON，不要多余文字：

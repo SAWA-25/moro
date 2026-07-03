@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -13,7 +13,9 @@ import BankDollhouse from '../components/bank/BankDollhouse';
 import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
+import BankJobCenter from '../components/bank/BankJobCenter';
 import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } from '../components/bank/BankBusiness';
+import { BankActionHistoryDrawer, BankActionResultModal, BankActionResultView, BankBadge, BankMetricGrid, BankModal, bankModalInputStyle } from '../components/bank/BankModalKit';
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, buildMishapText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
@@ -36,19 +38,21 @@ import {
     LOAN_PRODUCTS,
     SHOP_UNLOCK_COST,
     createDefaultBankLifeState,
-    advanceJobApplicationStage,
+    advanceJobApplicationStageWithAi,
+    appendBankActionRecord,
     advanceBankLifeDay,
     appendJobChatMessage,
     applyMarketPulses,
     applyCompanyIssue,
-    applyForJob,
+    applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
     computeCreditProfile,
+    createBankActionResult,
     buyStock,
     channelLabel,
+    declineJobApplication,
     foundCompany,
-    getJobsByCategory,
     leaveJob,
     loanTotal,
     mergeAiJobPostings,
@@ -60,14 +64,23 @@ import {
     startJobApplication,
     stockMarketValue,
     updateResumeProfile,
+    withdrawCompanyDividend,
 } from '../utils/bankLife';
 import {
+    generateAiBankActionDraft,
+    generateAiCompanyActionDraft,
+    generateAiDashboardInsight,
+    generateAiInvestAdvice,
     generateAiJobs,
+    generateAiJobStageDecision,
     generateAiLifeDay,
     generateAiLoanReview,
     generateAiMarketPulse,
     generateAiRecruiterReply,
     generateAiResumeReview,
+    generateAiShopActionDraft,
+    generateAiStockOrderDraft,
+    generateAiLedgerInsight,
 } from '../utils/bankLifeAi';
 
 const INITIAL_STATE: BankFullState = {
@@ -221,22 +234,58 @@ const HbModal: React.FC<{
     open: boolean; onClose: () => void; title: string; sub?: string;
     footer?: React.ReactNode; children: React.ReactNode;
 }> = ({ open, onClose, title, sub, footer, children }) => {
-    if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={onClose}>
-            <div className="absolute inset-0 bg-black/40 animate-fade-in" style={{ backdropFilter: 'blur(6px)' }} />
-            <div className="relative w-full max-w-sm animate-slide-up flex flex-col" style={{ background: '#fff', borderRadius: 28, boxShadow: '0 34px 80px -32px rgba(20,18,16,0.58)', maxHeight: '86vh' }} onClick={e => e.stopPropagation()}>
-                <div className="p-6 overflow-y-auto no-scrollbar">
-                    <div className="text-[22px] font-black" style={{ fontFamily: HAND_FONT, color: INK }}>{title}</div>
-                    {sub && <div className="text-[11px] mt-0.5 mb-4" style={{ color: INK_SOFT }}>{sub}</div>}
-                    {!sub && <div className="mb-4" />}
-                    {children}
-                </div>
-                {footer && <div className="px-6 pb-6">{footer}</div>}
-            </div>
-        </div>
+        <BankModal open={open} onClose={onClose} title={title} sub={sub} footer={footer}>
+            {children}
+        </BankModal>
     );
 };
+
+type BankImmersiveModal =
+    | { kind: 'history' }
+    | { kind: 'actionResult'; result: BankLifeActionResult }
+    | { kind: 'eventDetail'; eventId: string }
+    | { kind: 'transactionDetail'; txId: string }
+    | { kind: 'goalDetail'; goalId: string }
+    | { kind: 'dashboardInsight' }
+    | { kind: 'shopUnlock' }
+    | { kind: 'shopRestock'; productId: string }
+    | { kind: 'shopUpgrade' }
+    | { kind: 'stockDetail'; symbol: string }
+    | { kind: 'stockOrder'; side: 'buy' | 'sell'; symbol: string }
+    | { kind: 'companyFound' }
+    | { kind: 'companyIssue'; optionId: string }
+    | { kind: 'companyDividend' }
+    | { kind: 'loanProduct'; channel: BankLoanChannel }
+    | { kind: 'loanApply' }
+    | { kind: 'loanRepay'; loanId: string }
+    | { kind: 'recordDetail'; record: BankLifeActionRecord };
+
+const mergeActionAiDraft = (result: BankLifeActionResult, draft?: { summary?: string; tone?: BankLifeActionTone; riskTags?: string[]; suggestions?: string[]; metrics?: { label: string; value: string; tone?: BankLifeActionTone }[] }): BankLifeActionResult => {
+    if (!draft) return result;
+    return {
+        ...result,
+        tone: draft.tone || result.tone,
+        aiSummary: draft.summary || result.aiSummary,
+        riskTags: Array.from(new Set([...(result.riskTags || []), ...(draft.riskTags || [])])).slice(0, 8),
+        nextActions: draft.suggestions?.length ? draft.suggestions : result.nextActions,
+        metrics: draft.metrics?.length ? [...(result.metrics || []), ...draft.metrics].slice(0, 8) : result.metrics,
+    };
+};
+
+const actionRecordToResult = (record: BankLifeActionRecord): BankLifeActionResult => ({
+    id: record.id,
+    category: record.category,
+    kind: record.kind,
+    title: record.title,
+    summary: record.summary,
+    tone: record.tone || 'info',
+    amount: record.amount,
+    riskTags: record.riskTags,
+    aiSummary: record.aiSummary,
+    metrics: record.metrics,
+    payload: record.payload,
+});
 
 const BankApp: React.FC = () => {
     const { closeApp, characters, addToast, apiConfig, auxApiConfig, userProfile, adjustUserBalance } = useOS();
@@ -266,6 +315,7 @@ const BankApp: React.FC = () => {
     const [businessResult, setBusinessResult] = useState<BusinessResult | null>(null);
     const [showReviews, setShowReviews] = useState(false);
     const [showRegulars, setShowRegulars] = useState(false);
+    const [bankModal, setBankModal] = useState<BankImmersiveModal | null>(null);
     
     // Forms
     const [txAmount, setTxAmount] = useState('');
@@ -287,9 +337,8 @@ const BankApp: React.FC = () => {
     const [newShopName, setNewShopName] = useState('');
     const [selectedJobId, setSelectedJobId] = useState<string>(JOB_POSTINGS[0]?.id || '');
     const [selectedApplicationId, setSelectedApplicationId] = useState<string>('');
-    const [interviewAnswer, setInterviewAnswer] = useState('');
     const [jobSearchQuery, setJobSearchQuery] = useState('');
-    const [aiBusy, setAiBusy] = useState<'day' | 'jobs' | 'resume' | 'recruiter' | 'market' | 'loan' | null>(null);
+    const [aiBusy, setAiBusy] = useState<'day' | 'jobs' | 'resume' | 'recruiter' | 'stage' | 'market' | 'loan' | 'dashboard' | 'shop' | 'invest' | 'company' | 'ledger' | null>(null);
     const [resumeDraft, setResumeDraft] = useState<Partial<BankResumeProfile>>({});
     const [selectedStockSymbol, setSelectedStockSymbol] = useState('MORO');
     const [marketView, setMarketView] = useState<'all' | 'watch' | 'gainers' | 'losers'>('all');
@@ -381,6 +430,57 @@ const BankApp: React.FC = () => {
         setDollhouseState(nextDollhouse);
         await DB.saveBankDollhouse(nextDollhouse);
         return nextDollhouse;
+    };
+
+    const showActionResult = (result?: BankLifeActionResult | null) => {
+        if (result) setBankModal({ kind: 'actionResult', result });
+    };
+
+    const persistStandaloneActionResult = async (result: BankLifeActionResult) => {
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            return { ...withLife, life: appendBankActionRecord(withLife.life!, result) };
+        });
+        showActionResult(result);
+    };
+
+    const syncActionHistoryResult = async (result: BankLifeActionResult) => {
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            const life = withLife.life!;
+            return {
+                ...withLife,
+                life: {
+                    ...life,
+                    actionHistory: (life.actionHistory || []).map(record => record.id === result.id ? {
+                        ...record,
+                        tone: result.tone,
+                        summary: result.summary,
+                        aiSummary: result.aiSummary,
+                        riskTags: result.riskTags,
+                        metrics: result.metrics,
+                        payload: result.payload,
+                    } : record),
+                },
+            };
+        });
+    };
+
+    const enrichResultWithAi = async (
+        result: BankLifeActionResult,
+        busy: typeof aiBusy,
+        loader: () => Promise<{ summary?: string; tone?: BankLifeActionTone; riskTags?: string[]; suggestions?: string[]; metrics?: { label: string; value: string; tone?: BankLifeActionTone }[] }>
+    ): Promise<BankLifeActionResult> => {
+        if (!auxApi.baseUrl || !auxApi.model) return result;
+        setAiBusy(busy);
+        try {
+            return mergeActionAiDraft(result, await loader());
+        } catch (error) {
+            console.warn('[BankActionAI] fallback', error);
+            return result;
+        } finally {
+            setAiBusy(null);
+        }
     };
 
     const loadData = async () => {
@@ -625,7 +725,24 @@ const BankApp: React.FC = () => {
         const cur = migrateBankLifeState(stateRef.current);
         // 只有「支出」计入今日花费（进账不算）；记账纯记现实金钱，不再影响店铺精力
         const newSpent = cur.todaySpent + (txType === 'expense' ? amount : 0);
-        const newState = { ...cur, todaySpent: newSpent };
+        let actionResult = createBankActionResult({
+            category: 'ledger',
+            kind: 'ledger-add',
+            title: txType === 'income' ? '进账已记录' : '支出已记录',
+            summary: `${txNote} · ${txType === 'income' ? '收入' : '支出'} ¥${amount}`,
+            tone: txType === 'income' ? 'good' : newSpent > cur.config.dailyBudget ? 'warn' : 'info',
+            amount: txType === 'income' ? amount : -amount,
+            riskTags: txType === 'expense' && newSpent > cur.config.dailyBudget ? ['超过今日预算'] : [],
+            metrics: [
+                { label: '金额', value: `¥${amount}`, tone: txType === 'income' ? 'good' : 'warn' },
+                { label: '类型', value: txType === 'income' ? '收入' : '支出' },
+                { label: '今日支出', value: `¥${Math.round(newSpent)}`, tone: newSpent > cur.config.dailyBudget ? 'warn' : 'info' },
+                { label: '今日预算', value: `¥${cur.config.dailyBudget}` },
+            ],
+            payload: { txId: newTx.id, note: txNote, type: txType },
+        });
+        actionResult = await enrichResultWithAi(actionResult, 'ledger', () => generateAiLedgerInsight(auxApi, cur.life!, { transaction: newTx, todaySpent: newSpent, dailyBudget: cur.config.dailyBudget }));
+        const newState = { ...cur, todaySpent: newSpent, life: appendBankActionRecord(cur.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
@@ -644,6 +761,7 @@ const BankApp: React.FC = () => {
         } else {
             addToast('支出已记下', 'success');
         }
+        showActionResult(actionResult);
     };
 
     // BankLedger 写入了角色点评后，同步回 transactions 状态（持久化已在 BankLedger 内完成）
@@ -706,24 +824,53 @@ const BankApp: React.FC = () => {
         const COST = 20;
         if (!(await consumeShopEnergy(COST))) return;
 
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
+        const staff = cur.shop.staff.find(s => s.id === staffId);
         const updatedStaff = cur.shop.staff.map(s =>
             s.id === staffId ? { ...s, fatigue: Math.max(0, s.fatigue - 50) } : s
         );
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'staff-rest',
+            title: '店员休息完成',
+            summary: `${staff?.name || '店员'} 的疲劳下降了，下一轮营业更稳。`,
+            tone: 'good',
+            metrics: [
+                { label: '消耗精力', value: `${COST}`, tone: 'warn' },
+                { label: '店员', value: staff?.name || staffId },
+            ],
+            payload: { staffId, cost: COST },
+        });
 
-        const newState = { ...cur, shop: { ...cur.shop, staff: updatedStaff } };
+        const newState = { ...cur, shop: { ...cur.shop, staff: updatedStaff }, life: appendBankActionRecord(cur.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         addToast('店员休息好了！', 'success');
+        showActionResult(actionResult);
     };
 
     const handleUnlockRecipe = async (recipeId: string, cost: number) => {
         if (!(await consumeShopEnergy(cost))) return;
 
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
+        const recipe = SHOP_RECIPES.find(r => r.id === recipeId);
         const newUnlocked = [...cur.shop.unlockedRecipes, recipeId];
         const newAppeal = calculateAppeal(cur.shop.staff.length, newUnlocked);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'recipe-unlock',
+            title: '新品已上架',
+            summary: `${recipe?.name || '新品'} 已加入菜单，并附赠 ${STARTING_STOCK} 份起始库存。`,
+            tone: 'good',
+            metrics: [
+                { label: '新品', value: recipe?.name || recipeId },
+                { label: '消耗精力', value: `${cost}`, tone: 'warn' },
+                { label: '起始库存', value: `${STARTING_STOCK}` },
+                { label: '人气', value: `${newAppeal}` },
+            ],
+            payload: { recipeId, cost },
+        });
 
         const newState = {
             ...cur,
@@ -733,12 +880,14 @@ const BankApp: React.FC = () => {
                 appeal: newAppeal,
                 // 上架即附赠一批起始库存，新品当场就能卖
                 stock: { ...(cur.shop.stock || {}), [recipeId]: STARTING_STOCK },
-            }
+            },
+            life: appendBankActionRecord(cur.life!, actionResult),
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         addToast(`新商品上架！附赠 ${STARTING_STOCK} 份起始库存，营业时就能卖了`, 'success');
+        showActionResult(actionResult);
     };
 
     // --- 进货：花钱包的钱补一批库存（毛利来自进货价 < 售价） ---
@@ -761,12 +910,30 @@ const BankApp: React.FC = () => {
         }
 
         const newStock = { ...(cur.shop.stock || {}), [recipeId]: Math.min(STOCK_CAP, curStock + RESTOCK_BATCH) };
-        const newState = { ...cur, shop: { ...cur.shop, stock: newStock } };
+        let actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-restock',
+            title: '进货完成',
+            summary: `${r.name} 补货 +${RESTOCK_BATCH}，库存到 ${newStock[recipeId]}。`,
+            tone: 'good',
+            amount: -cost,
+            metrics: [
+                { label: '商品', value: r.name },
+                { label: '补货数量', value: `${RESTOCK_BATCH}` },
+                { label: '进货成本', value: `${cur.config.currencySymbol}${cost}`, tone: 'warn' },
+                { label: '当前库存', value: `${newStock[recipeId]}` },
+            ],
+            payload: { recipeId, cost, quantity: RESTOCK_BATCH },
+        });
+        actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, migrateBankLifeState(cur).life!, { action: 'restock', product: r.name, cost, quantity: RESTOCK_BATCH }));
+        const migrated = migrateBankLifeState(cur);
+        const newState = { ...migrated, shop: { ...migrated.shop, stock: newStock }, life: appendBankActionRecord(migrated.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         adjustUserBalance(-cost, { note: `${r.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: recipeId });
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
+        showActionResult(actionResult);
     };
 
     const handleRestockLifeProduct = async (productId: string) => {
@@ -783,14 +950,31 @@ const BankApp: React.FC = () => {
             addToast(`钱包不够进货（需 ¥${cost}）`, 'error');
             return;
         }
-        const nextLife = {
+        let actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-restock',
+            title: '货架补货完成',
+            summary: `${product.name} 补货 +${batch}，货架又满起来了。`,
+            tone: 'good',
+            amount: -cost,
+            metrics: [
+                { label: '商品', value: product.name },
+                { label: '补货数量', value: `${batch}` },
+                { label: '进货成本', value: `¥${cost}`, tone: 'warn' },
+                { label: '库存上限', value: `${STOCK_CAP}` },
+            ],
+            payload: { productId, cost, quantity: batch },
+        });
+        actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, cur.life!, { action: 'restock', product: product.name, cost, quantity: batch }));
+        const nextLife = appendBankActionRecord({
             ...cur.life!,
             shopProducts: (cur.life!.shopProducts || []).map(p => p.id === productId ? { ...p, stock: Math.min(STOCK_CAP, p.stock + batch) } : p),
             shopEvents: [{ id: `shop-event-${Date.now()}`, dateStr: cur.life!.dateStr, title: '补了一批货', detail: `${product.name} 补货 +${batch}，货架又满起来了。`, tone: 'info' as const }, ...(cur.life!.shopEvents || [])].slice(0, 20),
-        };
+        }, actionResult);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
         adjustUserBalance(-cost, { note: `${product.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: product.id });
         addToast(`${product.name} 进货 +${batch}`, 'success');
+        showActionResult(actionResult);
     };
 
     // --- 店铺升级：花钱包的钱提升等级（客流↑、档次溢价↑、过夜分红↑） ---
@@ -807,12 +991,31 @@ const BankApp: React.FC = () => {
             addToast(`钱包不够升级（需 ${cur.config.currencySymbol}${cost}），先开门营业多赚点`, 'error');
             return;
         }
-        const newState = { ...cur, shop: { ...cur.shop, shopLevel: level + 1 } };
+        let actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-upgrade',
+            title: `店铺升到 Lv.${level + 1}`,
+            summary: '客流、价格溢价和挂机收入都会跟着提升。',
+            tone: 'good',
+            amount: -cost,
+            metrics: [
+                { label: '新等级', value: `Lv.${level + 1}` },
+                { label: '升级费用', value: `${cur.config.currencySymbol}${cost}`, tone: 'warn' },
+                { label: '客流加成', value: `+${shopLevelExtraCustomers(level + 1)} 位` },
+                { label: '挂机倍率', value: `${shopLevelPassiveMult(level + 1)}x` },
+            ],
+            nextActions: ['检查库存是否够卖', '安排店员休息'],
+            payload: { fromLevel: level, toLevel: level + 1, cost },
+        });
+        const migrated = migrateBankLifeState(cur);
+        actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, migrated.life!, { action: 'shop-upgrade', fromLevel: level, toLevel: level + 1, cost }));
+        const newState = { ...migrated, shop: { ...migrated.shop, shopLevel: level + 1 }, life: appendBankActionRecord(migrated.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         adjustUserBalance(-cost, { note: `店铺升级 Lv.${level + 1}`, category: 'shop', kind: 'shop-upgrade', sourceApp: '人生拟' });
         addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
+        showActionResult(actionResult);
     };
 
     // --- 收取挂机营业额：把待收金币进钱包 ---
@@ -821,38 +1024,68 @@ const BankApp: React.FC = () => {
         const idle = accrueShopIdle(cur.shop, Date.now()); // 先把零头折算进来再收
         const amount = Math.floor(idle.pendingRevenue);
         if (amount < 1) { addToast('还没攒下营业额，过会儿再来收～', 'info'); return; }
-        const newState = { ...cur, shop: { ...cur.shop, pendingRevenue: 0, lastAccrualAt: Date.now(), totalRevenue: (cur.shop.totalRevenue || 0) + amount } };
+        const migrated = migrateBankLifeState(cur);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-idle',
+            title: '挂机营业额已收取',
+            summary: `离店期间攒下的 ¥${amount} 已进入钱包。`,
+            tone: 'good',
+            amount,
+            metrics: [
+                { label: '收取金额', value: `${cur.config.currencySymbol}${amount}`, tone: 'good' },
+                { label: '当前天气', value: getWeatherDef(cur.shop.weather?.id).label },
+                { label: '每小时估算', value: `${cur.config.currencySymbol}${computeIdleRatePerHour(cur.shop)}` },
+            ],
+            payload: { amount },
+        });
+        const newState = { ...migrated, shop: { ...migrated.shop, pendingRevenue: 0, lastAccrualAt: Date.now(), totalRevenue: (migrated.shop.totalRevenue || 0) + amount }, life: appendBankActionRecord(migrated.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         adjustUserBalance(amount, { note: '领取挂机营业额', category: 'shop', kind: 'shop-idle', sourceApp: '人生拟' });
         addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}`, 'success');
+        showActionResult(actionResult);
     };
 
     // --- Fire / Rehire / Delete Staff ---
 
     const handleFireStaff = async (staffId: string) => {
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
         const staff = cur.shop.staff.find(s => s.id === staffId);
         if (!staff) return;
 
         const updatedActive = cur.shop.staff.filter(s => s.id !== staffId);
         const firedPool = [...(cur.firedStaff || []), { ...staff, fatigue: 0 }];
         const newAppeal = calculateAppeal(updatedActive.length, cur.shop.unlockedRecipes);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'staff-fire',
+            title: '店员已离开排班',
+            summary: `${staff.name} 已移入离职池，店铺人气会按当前员工数重新计算。`,
+            tone: 'warn',
+            metrics: [
+                { label: '店员', value: staff.name },
+                { label: '当前人气', value: `${newAppeal}` },
+            ],
+            payload: { staffId },
+        });
 
         const newState = {
             ...cur,
             shop: { ...cur.shop, staff: updatedActive, appeal: newAppeal },
-            firedStaff: firedPool
+            firedStaff: firedPool,
+            life: appendBankActionRecord(cur.life!, actionResult),
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         addToast(`${staff.name} 已被解雇`, 'info');
+        showActionResult(actionResult);
     };
 
     const handleRehireStaff = async (staffId: string) => {
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
         const staff = (cur.firedStaff || []).find(s => s.id === staffId);
         if (!staff) return;
 
@@ -861,16 +1094,30 @@ const BankApp: React.FC = () => {
         const updatedActive = [...cur.shop.staff, rehired];
         const updatedFired = (cur.firedStaff || []).filter(s => s.id !== staffId);
         const newAppeal = calculateAppeal(updatedActive.length, cur.shop.unlockedRecipes);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'staff-rehire',
+            title: '店员重新入职',
+            summary: `${staff.name} 回到店里，排班人数和人气已更新。`,
+            tone: 'good',
+            metrics: [
+                { label: '店员', value: staff.name },
+                { label: '当前人气', value: `${newAppeal}` },
+            ],
+            payload: { staffId },
+        });
 
         const newState = {
             ...cur,
             shop: { ...cur.shop, staff: updatedActive, appeal: newAppeal },
-            firedStaff: updatedFired
+            firedStaff: updatedFired,
+            life: appendBankActionRecord(cur.life!, actionResult),
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         addToast(`${staff.name} 已重新入职！`, 'success');
+        showActionResult(actionResult);
     };
 
     const handleDeleteFiredStaff = async (staffId: string) => {
@@ -888,12 +1135,25 @@ const BankApp: React.FC = () => {
     const handleHireStaff = async (newStaff: ShopStaff, cost: number) => {
         if (!(await consumeShopEnergy(cost))) return;
 
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
         const randomX = 20 + Math.random() * 60;
         const staffWithPos = { ...newStaff, x: randomX, y: 50 };
 
         const updatedStaff = [...cur.shop.staff, staffWithPos];
         const newAppeal = calculateAppeal(updatedStaff.length, cur.shop.unlockedRecipes);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'staff-hire',
+            title: '新店员入职',
+            summary: `${newStaff.name} 加入排班，店铺人气提升到 ${newAppeal}。`,
+            tone: 'good',
+            metrics: [
+                { label: '店员', value: newStaff.name },
+                { label: '消耗精力', value: `${cost}`, tone: 'warn' },
+                { label: '当前人气', value: `${newAppeal}` },
+            ],
+            payload: { staffId: staffWithPos.id, cost },
+        });
 
         const newState = {
             ...cur,
@@ -901,12 +1161,14 @@ const BankApp: React.FC = () => {
                 ...cur.shop,
                 staff: updatedStaff,
                 appeal: newAppeal
-            }
+            },
+            life: appendBankActionRecord(cur.life!, actionResult),
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         addToast('新店员入职！', 'success');
+        showActionResult(actionResult);
     };
 
     const handleRefreshGuestbook = async () => {
@@ -962,7 +1224,7 @@ ${previousGuestbook}
                         messages: [{ role: 'user', content: prompt }],
                         stream: false,
                     }, {
-                        meta: makeApiUsageMeta('bank.lifeAi', {
+                        meta: makeApiUsageMeta('bank.shopAction', {
                             charId: randomChar.id,
                             charName: randomChar.name,
                             apiRole: auxApi.apiRole || 'aux',
@@ -1162,52 +1424,93 @@ ${previousGuestbook}
         }
     };
 
-    const handleApplyJob = async (posting: BankJobPosting) => {
+    const handleDashboardInsight = async () => {
         const cur = migrateBankLifeState(stateRef.current);
-        const result = applyForJob(cur.life!, posting, userProfile.balance || 0);
-        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        if (result.balanceDelta !== 0) {
-            adjustUserBalance(result.balanceDelta, { note: `${posting.title} 求职踩坑`, category: 'job', kind: 'job-risk', sourceApp: '人生拟', sourceId: posting.id });
-        }
-        addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+        let actionResult = createBankActionResult({
+            category: 'dashboard',
+            kind: 'dashboard-insight',
+            title: '首页复盘',
+            summary: '已按当前现金流、疲劳、持仓、负债和经营状态生成一张人生拟看板。',
+            tone: debtValue > 0 || cur.life!.fatigue > 70 ? 'warn' : 'info',
+            riskTags: [
+                ...(cur.life!.fatigue > 70 ? ['疲劳偏高'] : []),
+                ...(debtValue > 0 ? ['存在负债'] : []),
+                ...(Object.keys(cur.life!.holdings).length > 0 ? ['持仓波动'] : []),
+            ],
+            metrics: [
+                { label: '钱包', value: `¥${Math.round(userProfile.balance || 0)}`, tone: 'good' },
+                { label: '净资产', value: `¥${netWorth}` },
+                { label: '疲劳', value: `${cur.life!.fatigue}/100`, tone: cur.life!.fatigue > 70 ? 'warn' : 'info' },
+                { label: '负债', value: `¥${Math.round(debtValue)}`, tone: debtValue > 0 ? 'warn' : 'good' },
+            ],
+            nextActions: lifeSuggestions.map(s => s.title).slice(0, 3),
+            payload: { netWorth, stockValue, debtValue },
+        });
+        actionResult = await enrichResultWithAi(actionResult, 'dashboard', () => generateAiDashboardInsight(auxApi, cur.life!));
+        await persistStandaloneActionResult(actionResult);
     };
 
     const handleStartJobApplication = async (posting: BankJobPosting) => {
         const cur = migrateBankLifeState(stateRef.current);
         setAiBusy('resume');
-        const aiReview = await generateAiResumeReview(auxApi, cur.life!, posting);
-        const result = startJobApplication(cur.life!, posting);
-        result.application.aiReview = aiReview;
-        result.life.jobHistory = result.life.jobHistory.map(app => app.id === result.application.id ? { ...app, aiReview } : app);
-        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        setAiBusy(null);
-        setSelectedApplicationId(result.application.id);
-        addToast('简历已投出', 'success');
+        try {
+            const aiReview = await generateAiResumeReview(auxApi, cur.life!, posting);
+            const result = startJobApplication(cur.life!, posting);
+            result.application.aiReview = aiReview;
+            result.life.jobHistory = result.life.jobHistory.map(app => app.id === result.application.id ? { ...app, aiReview } : app);
+            await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+            setSelectedApplicationId(result.application.id);
+            addToast('简历已投出', 'success');
+        } finally {
+            setAiBusy(null);
+        }
     };
 
-    const handleAdvanceJobApplication = async (applicationId: string) => {
+    const handleSendRecruiterMessage = async (applicationId: string, message: string) => {
         const cur = migrateBankLifeState(stateRef.current);
         const current = cur.life?.jobHistory.find(app => app.id === applicationId);
-        if (current && interviewAnswer.trim() && auxApi.model) {
-            setAiBusy('recruiter');
-            const reply = await generateAiRecruiterReply(auxApi, cur.life!, current, interviewAnswer.trim());
+        if (!current || !message.trim()) return;
+        setAiBusy('recruiter');
+        try {
+            const reply = await generateAiRecruiterReply(auxApi, cur.life!, current, message.trim());
             await persistStateUpdate(prev => {
                 const withLife = migrateBankLifeState(prev);
-                let nextLife = appendJobChatMessage(withLife.life!, applicationId, { role: 'user', content: interviewAnswer.trim(), at: new Date().toLocaleString() });
+                let nextLife = appendJobChatMessage(withLife.life!, applicationId, { role: 'user', content: message.trim(), at: new Date().toLocaleString() });
                 nextLife = appendJobChatMessage(nextLife, applicationId, { role: 'boss', content: reply.content, at: new Date().toLocaleString() });
                 return { ...withLife, life: nextLife };
             });
+            setSelectedApplicationId(applicationId);
+        } finally {
             setAiBusy(null);
         }
-        const result = advanceJobApplicationStage(cur.life!, applicationId, interviewAnswer, userProfile.balance || 0);
+    };
+
+    const handleAdvanceJobApplication = async (applicationId: string, answer = '') => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const current = cur.life?.jobHistory.find(app => app.id === applicationId);
+        setAiBusy('stage');
+        try {
+            const aiDraft = current ? await generateAiJobStageDecision(auxApi, cur.life!, current, answer) : undefined;
+            const result = advanceJobApplicationStageWithAi(cur.life!, applicationId, answer, userProfile.balance || 0, aiDraft);
+            if (!result.application) return;
+            await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+            if (result.balanceDelta !== 0) {
+                adjustUserBalance(result.balanceDelta, { note: `${result.application.title} 求职损失`, category: 'job', kind: 'job-risk', sourceApp: '人生拟', sourceId: result.application.postingId });
+            }
+            setSelectedApplicationId(result.application.id);
+            addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+        } finally {
+            setAiBusy(null);
+        }
+    };
+
+    const handleDeclineJobApplication = async (applicationId: string, reason: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = declineJobApplication(cur.life!, applicationId, reason);
         if (!result.application) return;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        if (result.balanceDelta !== 0) {
-            adjustUserBalance(result.balanceDelta, { note: `${result.application.title} 求职损失`, category: 'job', kind: 'job-risk', sourceApp: '人生拟', sourceId: result.application.postingId });
-        }
         setSelectedApplicationId(result.application.id);
-        setInterviewAnswer('');
-        addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+        addToast('已放弃这份机会', 'info');
     };
 
     const handleGenerateAiJobs = async () => {
@@ -1253,7 +1556,7 @@ ${previousGuestbook}
         if (wallet < SHOP_UNLOCK_COST) { addToast(`开店至少需要 ¥${SHOP_UNLOCK_COST}`, 'error'); return; }
         const tpl = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
         const shopName = newShopName.trim() || `${tpl.name}`;
-        await persistStateUpdate(prev => {
+        const nextState = await persistStateUpdate(prev => {
             const withLife = migrateBankLifeState(prev);
             return {
                 ...withLife,
@@ -1263,6 +1566,13 @@ ${previousGuestbook}
         });
         adjustUserBalance(-SHOP_UNLOCK_COST, { note: '人生拟开店启动金', category: 'shop', kind: 'shop-open', sourceApp: '人生拟' });
         addToast(`${shopName} 准备开张`, 'success');
+        const record = nextState.life?.actionHistory?.[0];
+        if (record) {
+            let result = actionRecordToResult(record);
+            result = await enrichResultWithAi(result, 'shop', () => generateAiShopActionDraft(auxApi, nextState.life!, { action: 'shop-open', businessType: tpl.name, shopName, cost: SHOP_UNLOCK_COST }));
+            await syncActionHistoryResult(result);
+            showActionResult(result);
+        }
     };
 
     const handleBuyStock = async (symbol: string) => {
@@ -1276,6 +1586,11 @@ ${previousGuestbook}
         adjustUserBalance(-result.cost, { note: `买入 ${symbol}`, category: 'stock', kind: 'stock-buy', sourceApp: '人生拟', sourceId: symbol, relatedEntityId: symbol });
         setStockBudget(prev => ({ ...prev, [symbol]: '' }));
         addToast(`买入 ${symbol} ${result.shares} 股`, 'success');
+        if (result.actionResult) {
+            const actionResult = await enrichResultWithAi(result.actionResult, 'invest', () => generateAiStockOrderDraft(auxApi, result.life, { side: 'buy', symbol, cost: result.cost, shares: result.shares }));
+            await syncActionHistoryResult(actionResult);
+            showActionResult(actionResult);
+        }
     };
 
     const handleSellStock = async (symbol: string) => {
@@ -1290,13 +1605,35 @@ ${previousGuestbook}
         adjustUserBalance(result.revenue, { note: `卖出 ${symbol}`, category: 'stock', kind: 'stock-sell', sourceApp: '人生拟', sourceId: symbol, relatedEntityId: symbol });
         setStockSellShares(prev => ({ ...prev, [symbol]: '' }));
         addToast(`卖出 ${symbol}，到账 ¥${result.revenue}`, 'success');
+        if (result.actionResult) {
+            const actionResult = await enrichResultWithAi(result.actionResult, 'invest', () => generateAiStockOrderDraft(auxApi, result.life, { side: 'sell', symbol, revenue: result.revenue, soldShares: result.soldShares }));
+            await syncActionHistoryResult(actionResult);
+            showActionResult(actionResult);
+        }
     };
 
     const handleToggleWatchlist = async (symbol: string) => {
+        const quote = migrateBankLifeState(stateRef.current).life?.stockMarket.find(s => s.symbol === symbol);
+        let actionResult: BankLifeActionResult | undefined;
         await updateLifeState(life => {
             const exists = life.watchlist.includes(symbol);
-            return { ...life, watchlist: exists ? life.watchlist.filter(s => s !== symbol) : [symbol, ...life.watchlist] };
+            const nextActionResult = createBankActionResult({
+                category: 'invest',
+                kind: 'watchlist',
+                title: exists ? '移出自选' : '加入自选',
+                summary: `${quote?.name || symbol} 已${exists ? '移出' : '加入'}自选列表。`,
+                tone: 'info',
+                metrics: [
+                    { label: '代码', value: symbol },
+                    { label: '当前价格', value: quote ? `¥${quote.price}` : '未知' },
+                    { label: '风险', value: quote ? `${quote.risk}/5` : '未知', tone: quote && quote.risk >= 4 ? 'warn' : 'info' },
+                ],
+                payload: { symbol, action: exists ? 'remove' : 'add' },
+            });
+            actionResult = nextActionResult;
+            return appendBankActionRecord({ ...life, watchlist: exists ? life.watchlist.filter(s => s !== symbol) : [symbol, ...life.watchlist] }, nextActionResult);
         });
+        showActionResult(actionResult);
     };
 
     const handleFoundCompany = async () => {
@@ -1307,27 +1644,46 @@ ${previousGuestbook}
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
         adjustUserBalance(-COMPANY_FOUND_COST, { note: `创办${companyName || companyDirection}`, category: 'company', kind: 'company-found', sourceApp: '人生拟' });
         addToast('公司成立，第一笔启动资金已转入公司', 'success');
+        const record = nextLife.actionHistory?.[0];
+        if (record) {
+            let result = actionRecordToResult(record);
+            result = await enrichResultWithAi(result, 'company', () => generateAiCompanyActionDraft(auxApi, nextLife, { action: 'company-found', name: companyName, direction: companyDirection, cost: COMPANY_FOUND_COST }));
+            await syncActionHistoryResult(result);
+            showActionResult(result);
+        }
     };
 
     const handleCompanyIssue = async (optionId: string) => {
         const cur = migrateBankLifeState(stateRef.current);
         const beforeCash = cur.life?.company?.cash || 0;
-        const nextLife = applyCompanyIssue(cur.life!, optionId);
+        const result = applyCompanyIssueWithResult(cur.life!, optionId);
+        const nextLife = result.life;
         const afterCash = nextLife.company?.cash || beforeCash;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
         addToast(afterCash >= beforeCash ? '事务处理完成，公司现金增加' : '事务处理完成，公司现金减少', 'success');
+        if (result.actionResult) {
+            const actionResult = await enrichResultWithAi(result.actionResult, 'company', () => generateAiCompanyActionDraft(auxApi, nextLife, { action: 'company-issue', optionId, beforeCash, afterCash }));
+            await syncActionHistoryResult(actionResult);
+            showActionResult(actionResult);
+        }
     };
 
     const handleCompanyDividend = async () => {
         const cur = migrateBankLifeState(stateRef.current);
         const company = cur.life?.company;
         if (!company || company.cash <= COMPANY_FOUND_COST) { addToast('公司暂时没有可分红利润', 'info'); return; }
-        const amount = Math.floor((company.cash - COMPANY_FOUND_COST) * 0.35);
+        const result = withdrawCompanyDividend(cur.life!);
+        const amount = result.amount;
         if (amount <= 0) return;
-        const nextLife = { ...cur.life!, company: { ...company, cash: company.cash - amount, cumulativeProfit: company.cumulativeProfit - amount } };
+        const nextLife = result.life;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
         adjustUserBalance(amount, { note: `${company.name} 分红`, category: 'company', kind: 'company-dividend', sourceApp: '人生拟', sourceId: company.id });
         addToast(`公司分红到账 ¥${amount}`, 'success');
+        if (result.actionResult) {
+            const actionResult = await enrichResultWithAi(result.actionResult, 'company', () => generateAiCompanyActionDraft(auxApi, nextLife, { action: 'company-dividend', amount, company: company.name }));
+            await syncActionHistoryResult(actionResult);
+            showActionResult(actionResult);
+        }
     };
 
     const handleBorrowLoan = async () => {
@@ -1341,11 +1697,29 @@ ${previousGuestbook}
         const review = await generateAiLoanReview(auxApi, { ...cur.life!, creditProfile }, loanChannel, amount);
         setAiBusy(null);
         if (!review.approved || review.approvedAmount <= 0) {
+            const actionResult = createBankActionResult({
+                category: 'loan',
+                kind: 'loan-reject',
+                title: '借款审核未通过',
+                summary: review.reason,
+                aiSummary: review.reason,
+                tone: 'warn',
+                riskTags: review.warnings,
+                metrics: [
+                    { label: '申请渠道', value: product.name },
+                    { label: '申请金额', value: `¥${amount}` },
+                    { label: '信用分', value: `${creditProfile.score}` },
+                ],
+                nextActions: ['降低申请金额', '先减少负债压力'],
+                payload: { channel: loanChannel, amount, creditProfile },
+            });
             await persistStateUpdate(prev => {
                 const withLife = migrateBankLifeState(prev);
-                return { ...withLife, life: { ...withLife.life!, creditProfile, events: [{ id: `loan-reject-${Date.now()}`, dateStr: withLife.life!.dateStr, title: '借款审核未通过', detail: review.reason, tone: 'warn' as const }, ...withLife.life!.events].slice(0, 80) } };
+                const lifeWithEvent = { ...withLife.life!, creditProfile, events: [{ id: `loan-reject-${Date.now()}`, dateStr: withLife.life!.dateStr, title: '借款审核未通过', detail: review.reason, tone: 'warn' as const }, ...withLife.life!.events].slice(0, 80) };
+                return { ...withLife, life: appendBankActionRecord(lifeWithEvent, actionResult) };
             });
             addToast(review.reason, 'error');
+            showActionResult(actionResult);
             return;
         }
         const result = borrowLoan({ ...cur.life!, creditProfile }, loanChannel, review.approvedAmount);
@@ -1355,19 +1729,31 @@ ${previousGuestbook}
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
         adjustUserBalance(review.approvedAmount, { note: result.loan.note, category: 'loan', kind: 'loan-borrow', sourceApp: '人生拟', sourceId: result.loan.id });
         addToast(`${result.loan.note} ¥${review.approvedAmount} 到账`, loanChannel === 'shady' ? 'info' : 'success');
+        if (result.actionResult) {
+            const actionResult = mergeActionAiDraft({ ...result.actionResult, aiSummary: review.reason, riskTags: [...(result.actionResult.riskTags || []), ...review.warnings] }, {
+                summary: review.reason,
+                tone: loanChannel === 'shady' ? 'warn' : 'good',
+                riskTags: review.warnings,
+            });
+            await syncActionHistoryResult(actionResult);
+            showActionResult(actionResult);
+        }
     };
 
     const handleRepayLoan = async (loanId: string) => {
         const amount = Math.round(Number(loanRepayAmount[loanId]));
         if (!Number.isFinite(amount) || amount <= 0) { addToast('请输入还款金额', 'error'); return; }
-        if ((userProfile.balance || 0) < amount) { addToast('钱包不够还这笔', 'error'); return; }
         const cur = migrateBankLifeState(stateRef.current);
+        const loan = cur.life?.loans.find(l => l.id === loanId);
+        const dueNow = loan ? Math.round(loan.outstanding + loan.interestDue) : amount;
+        if ((userProfile.balance || 0) < Math.min(amount, dueNow)) { addToast('钱包不够还这笔', 'error'); return; }
         const result = repayLoan(cur.life!, loanId, amount);
         if (result.paid <= 0) return;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
         adjustUserBalance(-result.paid, { note: '贷款还款', category: 'loan', kind: 'loan-repay', sourceApp: '人生拟', sourceId: loanId });
         setLoanRepayAmount(prev => ({ ...prev, [loanId]: '' }));
         addToast(`已还款 ¥${result.paid}`, 'success');
+        showActionResult(result.actionResult);
     };
 
     // --- Goals ---
@@ -1386,8 +1772,22 @@ ${previousGuestbook}
             icon: '🎁',
             isCompleted: false
         };
-        const cur = stateRef.current;
-        const newState = { ...cur, goals: [...cur.goals, newGoal] };
+        const cur = migrateBankLifeState(stateRef.current);
+        const actionResult = createBankActionResult({
+            category: 'goal',
+            kind: 'goal-create',
+            title: '攒钱心愿已建立',
+            summary: `${goalName} 的目标金额是 ¥${parsedTarget}，之后可以在经营和账本里慢慢推进。`,
+            tone: 'good',
+            metrics: [
+                { label: '心愿', value: goalName },
+                { label: '目标金额', value: `¥${parsedTarget}` },
+                { label: '当前进度', value: '0%' },
+            ],
+            nextActions: ['记一笔收入', '规划每日预算'],
+            payload: { goalId: newGoal.id, targetAmount: parsedTarget },
+        });
+        const newState = { ...cur, goals: [...cur.goals, newGoal], life: appendBankActionRecord(cur.life!, actionResult) };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
@@ -1395,6 +1795,7 @@ ${previousGuestbook}
         setGoalName('');
         setGoalTarget('');
         addToast('心愿已添加', 'success');
+        showActionResult(actionResult);
     };
 
     // --- AI 后台润色评价：把模板评价改写得更多样、有个性，并据点评情绪微调星级（影响口碑）。
@@ -1424,7 +1825,7 @@ ${JSON.stringify(list, null, 2)}
                 messages: [{ role: 'user', content: prompt }],
                 stream: false,
             }, {
-                meta: makeApiUsageMeta('bank.lifeAi', { apiRole: auxApi.apiRole || 'aux', apiBinding: auxApi.apiBinding || '顾客点评' }),
+                meta: makeApiUsageMeta('bank.shopAction', { apiRole: auxApi.apiRole || 'aux', apiBinding: auxApi.apiBinding || '顾客点评' }),
             });
             const jsonStr = (extractContent(data) || '').replace(/```json/g, '').replace(/```/g, '').trim();
             const parsed = JSON.parse(jsonStr);
@@ -1606,6 +2007,30 @@ ${JSON.stringify(list, null, 2)}
         const total = Math.max(1, Math.round((base + tips) * (1 + (repBonusPct + levelBonusPct) / 100)));
         const updatedStaff = staff.map(s => ({ ...s, fatigue: Math.min(s.maxFatigue, s.fatigue + 18) }));
         const mergedReviews = [...newReviews, ...reviews].slice(0, 40);
+        const soldItems = Array.from(itemMap.values()).sort((a, b) => b.subtotal - a.subtotal);
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-business',
+            title: '本轮营业结算',
+            summary: `${lifeState.shopBusinessName || cur.shop.shopName} 接待了 ${customerCount} 位客人，收入 ¥${total}。`,
+            tone: mishaps > 0 || lostSales > 0 ? 'warn' : 'good',
+            amount: total,
+            riskTags: [
+                ...(lostSales > 0 ? ['缺货流失'] : []),
+                ...(mishaps > 0 ? ['服务失误'] : []),
+                ...(energetic === 0 ? ['店员疲劳'] : []),
+            ],
+            metrics: [
+                { label: '总收入', value: `¥${total}`, tone: 'good' },
+                { label: '客人数', value: `${customerCount}` },
+                { label: '小费', value: `¥${tips}`, tone: tips > 0 ? 'good' : 'info' },
+                { label: '差错', value: `${mishaps}`, tone: mishaps > 0 ? 'warn' : 'good' },
+                { label: '流失', value: `${lostSales}`, tone: lostSales > 0 ? 'warn' : 'good' },
+                { label: '天气', value: weather.label },
+            ],
+            nextActions: lostSales > 0 ? ['先补货再营业'] : ['查看顾客评价'],
+            payload: { total, base, tips, customerCount, soldItems, lostSales, mishaps },
+        });
         const newState: BankFullState = {
             ...cur,
             shop: {
@@ -1617,7 +2042,7 @@ ${JSON.stringify(list, null, 2)}
                 stock: stockLeft,
                 regulars: prunedRegulars,
             },
-            life: {
+            life: appendBankActionRecord({
                 ...lifeState,
                 shopProducts: usingLifeProducts
                     ? (lifeState.shopProducts || []).map(p => ({ ...p, stock: Math.max(0, lifeStockLeft[p.id] ?? p.stock) }))
@@ -1625,7 +2050,7 @@ ${JSON.stringify(list, null, 2)}
                 shopEvents: usingLifeProducts
                     ? [{ id: `shop-event-${Date.now()}`, dateStr: lifeState.dateStr, title: '今日营业', detail: `${lifeState.shopBusinessName || cur.shop.shopName} 接待了 ${customerCount} 位客人，收入 ¥${total}。`, tone: 'good' as const }, ...(lifeState.shopEvents || [])].slice(0, 20)
                     : lifeState.shopEvents,
-            },
+            }, actionResult),
         };
         stateRef.current = newState;
         setState(newState);
@@ -1638,7 +2063,7 @@ ${JSON.stringify(list, null, 2)}
 
         setBusinessResult({
             total, base, tips, customerCount,
-            items: Array.from(itemMap.values()).sort((a, b) => b.subtotal - a.subtotal),
+            items: soldItems,
             reviews: newReviews,
             repBonusPct,
             levelBonusPct,
@@ -1685,12 +2110,7 @@ ${JSON.stringify(list, null, 2)}
     const fmt = (n: number) => `¥${Math.round(n)}`;
     const selectedBusiness = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
     const allJobPostings = [...(life.aiJobPostings || []), ...JOB_POSTINGS];
-    const jobsForCategory = (category: string) => allJobPostings.filter(j => !category || category === '全部' || j.category === category);
-    const selectedJob = allJobPostings.find(j => j.id === selectedJobId) || jobsForCategory(jobCategory)[0] || allJobPostings[0];
     const lifeSuggestions = buildLifeSuggestions(life, userProfile.balance || 0);
-    const selectedApplication = selectedApplicationId
-        ? life.jobHistory.find(a => a.id === selectedApplicationId)
-        : life.jobHistory[0];
     const selectedStock = life.stockMarket.find(s => s.symbol === selectedStockSymbol) || life.stockMarket[0];
     const selectedLoan = selectedLoanId ? life.loans.find(l => l.id === selectedLoanId) : life.loans[0];
 
@@ -1749,15 +2169,20 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                     <div className="w-16 h-16 rounded-[20px] flex items-center justify-center text-[28px] shrink-0" style={{ background: '#faf8f5', border: '1px solid rgba(43,41,51,0.06)' }}>¥</div>
                 </div>
-                <ScrapButton onClick={handleAdvanceLifeDay} className="mt-4 w-full py-2.5 text-[13px]">{aiBusy === 'day' ? 'AI 生成今日事件中…' : '下一天'}</ScrapButton>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                    <ScrapButton onClick={handleAdvanceLifeDay} className="col-span-2 py-2.5 text-[13px]">{aiBusy === 'day' ? 'AI 生成今日事件中…' : '下一天'}</ScrapButton>
+                    <button onClick={() => setBankModal({ kind: 'history' })} className="py-2.5 text-[12px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>记录</button>
+                </div>
             </PaperCard>
 
             <div className="grid grid-cols-2 gap-2.5">
                 {statTiles.map(s => (
-                    <PaperCard key={s.label} className="px-3 py-3">
+                    <button key={s.label} onClick={() => setBankModal({ kind: 'dashboardInsight' })} className="text-left active:scale-[0.99] transition-transform">
+                    <PaperCard className="px-3 py-3 h-full">
                         <div className="text-[10px] font-bold" style={{ color: INK_SOFT }}>{s.label}</div>
                         <div className="text-[22px] font-black leading-tight mt-0.5 truncate" style={{ color: s.color, fontFamily: HAND_FONT }}>{s.value}</div>
                     </PaperCard>
+                    </button>
                 ))}
             </div>
 
@@ -1795,14 +2220,14 @@ ${JSON.stringify(list, null, 2)}
                 <SectionTag en="today">今日事件</SectionTag>
                 <div className="space-y-2.5 mt-3">
                     {life.events.slice(0, 6).map(ev => (
-                        <div key={ev.id} className="flex items-start gap-2 text-[12px]">
+                        <button key={ev.id} onClick={() => setBankModal({ kind: 'eventDetail', eventId: ev.id })} className="w-full flex items-start gap-2 text-[12px] text-left active:scale-[0.99] transition-transform">
                             <span className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0" style={{ background: ev.tone === 'good' ? '#dcfce7' : ev.tone === 'bad' ? '#ffe4e6' : ev.tone === 'warn' ? '#fef3c7' : '#f1f5f9', color: ev.tone === 'good' ? '#15803d' : ev.tone === 'bad' ? '#be123c' : ev.tone === 'warn' ? '#92400e' : INK_SOFT }}>{ev.tone === 'good' ? '✓' : ev.tone === 'bad' ? '!' : ev.tone === 'warn' ? '△' : '·'}</span>
                             <div className="flex-1 min-w-0">
                                 <div className="font-bold truncate" style={{ color: INK }}>{ev.title} <span className="font-normal" style={{ color: INK_SOFT }}>{ev.dateStr}</span></div>
                                 <div className="leading-relaxed" style={{ color: '#5a5660' }}>{ev.detail}</div>
                             </div>
                             {ev.amount !== undefined && <span className="font-black shrink-0" style={{ color: ev.amount >= 0 ? '#16a34a' : '#e11d48' }}>{ev.amount >= 0 ? '+' : '-'}¥{Math.abs(ev.amount)}</span>}
-                        </div>
+                        </button>
                     ))}
                 </div>
             </PaperCard>
@@ -1811,145 +2236,42 @@ ${JSON.stringify(list, null, 2)}
                 <SectionTag en="ledger">最近流水</SectionTag>
                 <div className="mt-2">
                     {transactions.slice(0, 5).map(tx => (
-                        <div key={tx.id} className="flex items-center justify-between py-2 text-[12px] border-b last:border-0" style={{ borderColor: 'rgba(43,41,51,0.06)' }}>
+                        <button key={tx.id} onClick={() => setBankModal({ kind: 'transactionDetail', txId: tx.id })} className="w-full flex items-center justify-between py-2 text-[12px] border-b last:border-0 text-left active:scale-[0.99] transition-transform" style={{ borderColor: 'rgba(43,41,51,0.06)' }}>
                             <span className="truncate pr-2">{tx.note}<span style={{ color: INK_SOFT }}> · {tx.sourceApp || '手动'}</span></span>
                             <span className="font-black shrink-0" style={{ color: tx.type === 'income' ? '#16a34a' : '#e11d48' }}>{tx.type === 'income' ? '+' : '-'}¥{tx.amount}</span>
-                        </div>
+                        </button>
                     ))}
                 </div>
             </PaperCard>
         </div>
     );
 
-    const renderJobs = () => {
-        const jobs = jobsForCategory(jobCategory);
-        const applicationStageLabel: Record<string, string> = {
-            submitted: '已投递',
-            screening: '简历筛选',
-            assessment: '笔试 / 试岗',
-            interview: '面试问答',
-            offer: 'Offer',
-            hired: '已入职',
-            trial: '试用中',
-            rejected: '未通过',
-            scammed: '踩坑',
-        };
-        return (
-            <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
-                {life.currentJob && (
-                    <PaperCard className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <CleanBadge tone="green">当前在职</CleanBadge>
-                                <div className="text-[18px] font-black mt-1 truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.currentJob.title}</div>
-                                <div className="text-[12px]" style={{ color: INK_SOFT }}>{life.currentJob.employer} · 已工作 {life.currentJob.daysWorked} 天 · 待发 ¥{Math.round(life.currentJob.accruedWage)}</div>
-                            </div>
-                            <ScrapButton onClick={handleLeaveJob} variant="ghost" className="px-3 py-2 text-[12px]">离职</ScrapButton>
-                        </div>
-                    </PaperCard>
-                )}
-                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                    {JOB_CATEGORIES.map(c => (
-                        <button key={c} onClick={() => { setJobCategory(c); const first = jobsForCategory(c)[0]; if (first) setSelectedJobId(first.id); }} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(jobCategory === c)}>{c}</button>
-                    ))}
-                </div>
-                <PaperCard className="p-4 space-y-3">
-                    <SectionTag en="resume">我的简历</SectionTag>
-                    <div className="grid grid-cols-2 gap-2 max-[420px]:grid-cols-1">
-                        <input value={String(resumeDraft.headline ?? life.resume?.headline ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, headline: e.target.value }))} placeholder="一句话定位" className="px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                        <input value={Array.isArray(resumeDraft.skills) ? resumeDraft.skills.join('，') : String(resumeDraft.skills ?? life.resume?.skills?.join('，') ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, skills: e.target.value as any }))} placeholder="技能，用逗号分隔" className="px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                    </div>
-                    <textarea value={String(resumeDraft.selfIntro ?? life.resume?.selfIntro ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, selfIntro: e.target.value }))} rows={2} placeholder="自我介绍" className="w-full px-3 py-2 text-[12px] outline-none resize-none" style={hbInputStyle} />
-                    <div className="flex gap-2">
-                        <button onClick={handleSaveResume} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>保存简历</button>
-                        <input value={jobSearchQuery} onChange={e => setJobSearchQuery(e.target.value)} placeholder="想找什么岗位？" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                        <button onClick={handleGenerateAiJobs} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>{aiBusy === 'jobs' ? '生成中…' : 'AI 找岗位'}</button>
-                    </div>
-                </PaperCard>
-
-                <div className="grid grid-cols-[0.9fr_1.1fr] gap-3 max-[420px]:grid-cols-1">
-                    <div className="space-y-2.5">
-                        {jobs.map(job => (
-                            <button key={job.id} onClick={() => setSelectedJobId(job.id)} className="w-full text-left p-3 press-soft" style={{ ...cleanCardStyle, borderColor: selectedJob?.id === job.id ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                        <div className="text-[14px] font-black truncate" style={{ color: INK }}>{job.title}</div>
-                                        <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>{job.employer}</div>
-                                    </div>
-                                    {job.black && <CleanBadge tone="red">谨慎</CleanBadge>}
-                                </div>
-                                <div className="mt-2 text-[12px] font-black" style={{ color: '#16a34a' }}>¥{job.salaryMin}-{job.salaryMax}{job.payCycle === 'daily' ? '/天' : '/月'}</div>
-                            </button>
-                        ))}
-                    </div>
-                    {selectedJob && (
-                        <PaperCard className="p-4 space-y-3">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="text-[20px] font-black leading-tight" style={{ color: INK, fontFamily: HAND_FONT }}>{selectedJob.title}</div>
-                                    <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>{selectedJob.employer} · {selectedJob.category} · {selectedJob.payCycle === 'daily' ? '日结' : `${selectedJob.payDay}号发薪`}</div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                    <div className="text-[16px] font-black" style={{ color: '#16a34a' }}>¥{selectedJob.salaryMin}-{selectedJob.salaryMax}</div>
-                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{selectedJob.payCycle === 'daily' ? '每天' : '每月'}</div>
-                                </div>
-                            </div>
-                            <p className="text-[12px] leading-relaxed" style={{ color: '#4a4750' }}>{selectedJob.description}</p>
-                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                <div className="rounded-2xl p-3" style={{ background: '#faf8f5' }}><b>强度</b><div>{selectedJob.intensity}/5</div></div>
-                                <div className="rounded-2xl p-3" style={{ background: '#faf8f5' }}><b>结算</b><div>{selectedJob.payCycle === 'daily' ? '当天到账' : `${selectedJob.payDay}号`}</div></div>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                                {[...selectedJob.requirements, ...selectedJob.benefits, ...selectedJob.riskTags].map(tag => <CleanBadge key={tag} tone={selectedJob.riskTags.includes(tag) ? 'amber' : 'default'}>{tag}</CleanBadge>)}
-                            </div>
-                            <button onClick={() => handleStartJobApplication(selectedJob)} className="w-full py-2.5 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn(selectedJob.black ? '#f43f5e' : INK)}>
-                                投递简历
-                            </button>
-                        </PaperCard>
-                    )}
-                </div>
-                {selectedApplication && (
-                    <PaperCard className="p-4 space-y-3">
-                        <SectionTag en="interview">求职进展</SectionTag>
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="font-black text-[16px] truncate" style={{ color: INK }}>{selectedApplication.title}</div>
-                                <div className="text-[12px]" style={{ color: INK_SOFT }}>{selectedApplication.employer} · {applicationStageLabel[selectedApplication.stage || selectedApplication.status] || selectedApplication.status}</div>
-                            </div>
-                            <CleanBadge tone={selectedApplication.status === 'scammed' ? 'red' : selectedApplication.status === 'hired' ? 'green' : 'blue'}>评分 {selectedApplication.score || 0}</CleanBadge>
-                        </div>
-                        <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{selectedApplication.message}</div>
-                        {selectedApplication.aiReview && (
-                            <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#f5f3ff', color: '#4c1d95' }}>
-                                <b>AI 简历匹配 {selectedApplication.aiReview.score} 分：</b>{selectedApplication.aiReview.suggestion}
-                            </div>
-                        )}
-                        {(selectedApplication.chatMessages || []).length > 0 && (
-                            <div className="space-y-1.5 rounded-2xl p-3" style={{ background: '#faf8f5' }}>
-                                {(selectedApplication.chatMessages || []).slice(-6).map((m, idx) => (
-                                    <div key={`${m.at}-${idx}`} className="text-[12px]" style={{ color: m.role === 'boss' ? INK : INK_SOFT }}><b>{m.role === 'boss' ? '招聘方' : m.role === 'user' ? '我' : '系统'}：</b>{m.content}</div>
-                                ))}
-                            </div>
-                        )}
-                        {(selectedApplication.questions || []).slice(0, 3).map(q => (
-                            <div key={q.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#fff', border: '1px solid rgba(43,41,51,0.06)' }}>
-                                <div className="font-bold" style={{ color: INK }}>{q.question}</div>
-                                {q.answer && <div className="mt-1" style={{ color: INK_SOFT }}>{q.answer}</div>}
-                            </div>
-                        ))}
-                        {(['assessment', 'interview'].includes(selectedApplication.stage || '')) && (
-                            <textarea value={interviewAnswer} onChange={e => setInterviewAnswer(e.target.value)} rows={3} placeholder="写下面试回答或试岗表现" className="w-full px-3 py-2 text-[12px] outline-none resize-none" style={hbInputStyle} />
-                        )}
-                        {!['hired', 'trial', 'rejected', 'scammed'].includes(selectedApplication.stage || selectedApplication.status) && (
-                            <button onClick={() => handleAdvanceJobApplication(selectedApplication.id)} className="w-full py-2.5 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
-                                {selectedApplication.stage === 'offer' ? '接受 Offer' : selectedApplication.stage === 'submitted' ? '查看筛选' : selectedApplication.stage === 'screening' ? '进入下一步' : '提交回答'}
-                            </button>
-                        )}
-                    </PaperCard>
-                )}
-            </div>
-        );
-    };
+    const renderJobs = () => (
+        <BankJobCenter
+            life={life}
+            walletBalance={userProfile.balance || 0}
+            jobPostings={allJobPostings}
+            jobCategories={JOB_CATEGORIES}
+            jobCategory={jobCategory}
+            onJobCategoryChange={setJobCategory}
+            selectedJobId={selectedJobId}
+            onSelectJob={setSelectedJobId}
+            selectedApplicationId={selectedApplicationId}
+            onSelectApplication={setSelectedApplicationId}
+            jobSearchQuery={jobSearchQuery}
+            onJobSearchQueryChange={setJobSearchQuery}
+            resumeDraft={resumeDraft}
+            onResumeDraftChange={setResumeDraft}
+            aiBusy={aiBusy}
+            onSaveResume={handleSaveResume}
+            onGenerateAiJobs={handleGenerateAiJobs}
+            onStartApplication={handleStartJobApplication}
+            onAdvanceApplication={handleAdvanceJobApplication}
+            onSendRecruiterMessage={handleSendRecruiterMessage}
+            onDeclineApplication={handleDeclineJobApplication}
+            onLeaveJob={handleLeaveJob}
+        />
+    );
 
     const renderInvest = () => {
         const market = [...life.stockMarket].filter(q => marketView === 'watch' ? life.watchlist.includes(q.symbol) : true);
@@ -1983,6 +2305,7 @@ ${JSON.stringify(list, null, 2)}
                                 <div className="text-[11px]" style={{ color: q.changePct >= 0 ? '#e11d48' : '#16a34a' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct}%</div>
                             </div>
                         </div>
+                        <button onClick={() => setBankModal({ kind: 'stockDetail', symbol: q.symbol })} className="w-full py-2 text-[12px] font-black" style={chipStyle(false)}>查看行情详情 / 风险</button>
                         {renderStockChart(q)}
                         <div className="grid grid-cols-3 gap-2 text-center">
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.[q.intraday.length - 1]?.time || '15:00'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
@@ -1998,11 +2321,11 @@ ${JSON.stringify(list, null, 2)}
                         <div className="grid grid-cols-2 gap-2">
                             <div className="flex gap-1.5">
                                 <input type="number" value={stockBudget[q.symbol] || ''} onChange={e => setStockBudget(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="买入金额" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                                <button onClick={() => handleBuyStock(q.symbol)} className="px-3 text-[12px] font-black" style={smallBtn('#f43f5e')}>买</button>
+                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'buy', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#f43f5e')}>买</button>
                             </div>
                             <div className="flex gap-1.5">
                                 <input type="number" value={stockSellShares[q.symbol] || ''} onChange={e => setStockSellShares(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="卖出股数" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                                <button onClick={() => handleSellStock(q.symbol)} className="px-3 text-[12px] font-black" style={smallBtn('#16a34a')}>卖</button>
+                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'sell', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#16a34a')}>卖</button>
                             </div>
                         </div>
                         <button onClick={() => handleToggleWatchlist(q.symbol)} className="w-full py-2 text-[12px] font-black" style={chipStyle(false)}>{life.watchlist.includes(q.symbol) ? '移出自选' : '加入自选'}</button>
@@ -2034,7 +2357,7 @@ ${JSON.stringify(list, null, 2)}
                     <div className="flex gap-2 overflow-x-auto no-scrollbar">
                         {COMPANY_DIRECTIONS.map(d => <button key={d} onClick={() => setCompanyDirection(d)} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(companyDirection === d)}>{d}</button>)}
                     </div>
-                    <button onClick={handleFoundCompany} className="w-full py-2.5 text-[14px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>投入 ¥{COMPANY_FOUND_COST}</button>
+                    <button onClick={() => setBankModal({ kind: 'companyFound' })} className="w-full py-2.5 text-[14px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>投入 ¥{COMPANY_FOUND_COST}</button>
                 </PaperCard>
             ) : (
                 <>
@@ -2044,7 +2367,7 @@ ${JSON.stringify(list, null, 2)}
                                 <div className="text-[20px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.company.name}</div>
                                 <div className="text-[11px]" style={{ color: INK_SOFT }}>{life.company.direction} · 员工 {life.company.employees}</div>
                             </div>
-                            <button onClick={handleCompanyDividend} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>分红</button>
+                            <button onClick={() => setBankModal({ kind: 'companyDividend' })} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>分红</button>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-3 text-center">
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[15px] font-black">¥{Math.round(life.company.cash)}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>现金</div></div>
@@ -2057,7 +2380,7 @@ ${JSON.stringify(list, null, 2)}
                             <SectionTag en={life.company.pendingIssue.kind || 'issue'}>{life.company.pendingIssue.title}</SectionTag>
                             <p className="text-[12px] leading-relaxed" style={{ color: '#4a4750' }}>{life.company.pendingIssue.description}</p>
                             <div className="grid grid-cols-2 gap-2">
-                                {life.company.pendingIssue.options.map(opt => <button key={opt.id} onClick={() => handleCompanyIssue(opt.id)} className="py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn(opt.cashDelta >= 0 ? '#16a34a' : '#f43f5e')}>{opt.label}</button>)}
+                                {life.company.pendingIssue.options.map(opt => <button key={opt.id} onClick={() => setBankModal({ kind: 'companyIssue', optionId: opt.id })} className="py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn(opt.cashDelta >= 0 ? '#16a34a' : '#f43f5e')}>{opt.label}</button>)}
                             </div>
                         </PaperCard>
                     )}
@@ -2096,7 +2419,7 @@ ${JSON.stringify(list, null, 2)}
                 <div className="grid grid-cols-3 gap-2">
                     {(['bank', 'formal', 'shady'] as BankLoanChannel[]).map(ch => {
                         const p = LOAN_PRODUCTS[ch];
-                        return <button key={ch} onClick={() => setLoanChannel(ch)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: loanChannel === ch ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                        return <button key={ch} onClick={() => { setLoanChannel(ch); setBankModal({ kind: 'loanProduct', channel: ch }); }} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: loanChannel === ch ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
                             <div className="text-[13px] font-black truncate" style={{ color: INK }}>{channelLabel(ch)}</div>
                             <div className="text-[10px]" style={{ color: INK_SOFT }}>{p.dailyRate < 0.001 ? '低息' : p.dailyRate < 0.002 ? '灵活' : '高风险'}</div>
                         </button>;
@@ -2113,7 +2436,7 @@ ${JSON.stringify(list, null, 2)}
                     <div className="flex flex-wrap gap-1.5">{product.terms.map(term => <CleanBadge key={term} tone={loanChannel === 'shady' ? 'red' : 'default'}>{term}</CleanBadge>)}</div>
                     <div className="flex gap-2">
                         <input type="number" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="flex-1 px-3 py-2 outline-none" style={hbInputStyle} />
-                        <button onClick={handleBorrowLoan} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>{aiBusy === 'loan' ? '审核中…' : '申请'}</button>
+                        <button onClick={() => setBankModal({ kind: 'loanApply' })} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>{aiBusy === 'loan' ? '审核中…' : '申请'}</button>
                     </div>
                 </PaperCard>
                 {selectedLoan && (
@@ -2134,7 +2457,7 @@ ${JSON.stringify(list, null, 2)}
                         ))}
                         <div className="flex gap-2">
                             <input type="number" value={loanRepayAmount[selectedLoan.id] || ''} onChange={e => setLoanRepayAmount(prev => ({ ...prev, [selectedLoan.id]: e.target.value }))} placeholder="还款金额" className="flex-1 px-3 py-2 outline-none" style={hbInputStyle} />
-                            <button onClick={() => handleRepayLoan(selectedLoan.id)} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>还款</button>
+                            <button onClick={() => setBankModal({ kind: 'loanRepay', loanId: selectedLoan.id })} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>还款</button>
                         </div>
                     </PaperCard>
                 )}
@@ -2194,7 +2517,7 @@ ${JSON.stringify(list, null, 2)}
                         <div className="flex flex-wrap gap-1.5">
                             {selectedBusiness.products.map(p => <CleanBadge key={p.id} tone="default">{p.name} ¥{p.price}</CleanBadge>)}
                         </div>
-                        <button onClick={handleUnlockLifeShop} className="w-full py-3 text-[15px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
+                        <button onClick={() => setBankModal({ kind: 'shopUnlock' })} className="w-full py-3 text-[15px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
                             投入 ¥{SHOP_UNLOCK_COST} 开始营业
                         </button>
                     </PaperCard>
@@ -2261,7 +2584,7 @@ ${JSON.stringify(list, null, 2)}
                             const regs = Object.values(state.shop.regulars || {});
                             const regN = regs.filter(r => r.visits >= REGULAR_VISITS).length;
                             return (
-                                <button onClick={() => setShowRegulars(true)} className="absolute left-3 bottom-[58px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 8px 20px -12px rgba(38,38,38,0.42)' }}>
+                                <button onClick={() => setShowRegulars(true)} className="absolute left-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ bottom: 'max(58px, calc(var(--safe-bottom, 0px) + 24px))', background: 'rgba(255,255,255,0.95)', boxShadow: '0 8px 20px -12px rgba(38,38,38,0.42)' }}>
                                     <span className="text-[12px] font-black" style={{ color: INK }}>{regN || '常客'}</span>
                                     <span className="text-[10px]" style={{ color: INK_SOFT }}>名册</span>
                                 </button>
@@ -2272,7 +2595,7 @@ ${JSON.stringify(list, null, 2)}
                             if (pending < 1) return null;
                             const full = pending >= idleCapNow(state.shop);
                             return (
-                                <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 bottom-[60px] z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
+                                <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ bottom: 'max(60px, calc(var(--safe-bottom, 0px) + 26px))', background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
                                     <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
                                     {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
                                 </button>
@@ -2297,7 +2620,7 @@ ${JSON.stringify(list, null, 2)}
                                     <div key={p.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#faf8f5' }}>
                                         <div className="font-black truncate" style={{ color: INK }}>{p.name}</div>
                                         <div className="mt-1 flex justify-between" style={{ color: INK_SOFT }}><span>售价 ¥{p.price}</span><span>库存 {p.stock}</span></div>
-                                        <button onClick={() => handleRestockLifeProduct(p.id)} className="mt-2 w-full py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>
+                                        <button onClick={() => setBankModal({ kind: 'shopRestock', productId: p.id })} className="mt-2 w-full py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>
                                             补货 · 约 ¥{Math.max(1, Math.round(p.cost * RESTOCK_BATCH))}
                                         </button>
                                     </div>
@@ -2323,7 +2646,7 @@ ${JSON.stringify(list, null, 2)}
                                     <div className="text-[15px] font-black" style={{ color: INK }}>店铺等级</div>
                                     <div className="text-[11px]" style={{ color: INK_SOFT }}>Lv.{state.shop.shopLevel || 1} · 客流、价格和挂机收入会跟着成长</div>
                                 </div>
-                                <button onClick={handleUpgradeShop} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>
+                                <button onClick={() => setBankModal({ kind: 'shopUpgrade' })} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>
                                     升级
                                 </button>
                             </div>
@@ -2350,11 +2673,290 @@ ${JSON.stringify(list, null, 2)}
         );
     };
 
+    const renderImmersiveModal = () => {
+        const modal = bankModal;
+        const close = () => setBankModal(null);
+        const confirmBtn = (label: string, onClick: () => void | Promise<void>, bg = INK) => (
+            <button onClick={() => { void onClick(); }} className="w-full py-3 text-[14px] font-black active:scale-95 transition-transform" style={smallBtn(bg)}>
+                {label}
+            </button>
+        );
+
+        if (!modal) return null;
+        if (modal.kind === 'actionResult') {
+            return <BankActionResultModal result={modal.result} currency={state.config.currencySymbol} onClose={close} />;
+        }
+        if (modal.kind === 'history') {
+            return (
+                <BankActionHistoryDrawer
+                    open
+                    records={life.actionHistory || []}
+                    onClose={close}
+                    onSelect={(record) => setBankModal({ kind: 'recordDetail', record })}
+                />
+            );
+        }
+        if (modal.kind === 'recordDetail') {
+            return (
+                <BankModal open title={modal.record.title} sub={`${modal.record.category} · ${modal.record.dateStr}`} onClose={close}>
+                    <BankActionResultView result={actionRecordToResult(modal.record)} currency={state.config.currencySymbol} />
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'eventDetail') {
+            const ev = life.events.find(e => e.id === modal.eventId);
+            return (
+                <BankModal open title={ev?.title || '事件详情'} sub={ev?.dateStr} onClose={close}>
+                    {ev ? <div className="space-y-3">
+                        <p className="rounded-2xl p-3 text-[13px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{ev.detail}</p>
+                        <BankMetricGrid items={[
+                            { label: '类型', value: ev.tone || 'info', tone: ev.tone || 'info' },
+                            ...(typeof ev.amount === 'number' ? [{ label: '金额影响', value: `${ev.amount >= 0 ? '+' : '-'}${state.config.currencySymbol}${Math.abs(Math.round(ev.amount))}`, tone: ev.amount >= 0 ? 'good' as const : 'warn' as const }] : []),
+                        ]} />
+                    </div> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这条事件已经不在最近记录里。</div>}
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'transactionDetail') {
+            const tx = transactions.find(t => t.id === modal.txId);
+            return (
+                <BankModal open title={tx?.note || '流水详情'} sub={tx?.dateStr} onClose={close}>
+                    {tx ? <div className="space-y-3">
+                        <BankMetricGrid items={[
+                            { label: '金额', value: `${tx.type === 'income' ? '+' : '-'}${state.config.currencySymbol}${tx.amount}`, tone: tx.type === 'income' ? 'good' : 'warn' },
+                            { label: '分类', value: tx.category || 'general' },
+                            { label: '来源', value: tx.sourceApp || '手动记录' },
+                            { label: '时间', value: new Date(tx.timestamp).toLocaleString() },
+                        ]} />
+                        {tx.charComment && <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#f5f3ff', color: '#4c1d95' }}><b>{tx.charComment.charName}：</b>{tx.charComment.text}</p>}
+                    </div> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这笔流水已经被删除。</div>}
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'goalDetail') {
+            const goal = state.goals.find(g => g.id === modal.goalId);
+            const pct = goal ? Math.min(100, Math.round((goal.currentAmount / Math.max(1, goal.targetAmount)) * 100)) : 0;
+            return (
+                <BankModal open title={goal?.name || '心愿详情'} sub="攒钱目标" onClose={close}>
+                    {goal ? <div className="space-y-3">
+                        <BankMetricGrid items={[
+                            { label: '目标金额', value: `${state.config.currencySymbol}${goal.targetAmount}` },
+                            { label: '已攒', value: `${state.config.currencySymbol}${goal.currentAmount}`, tone: 'good' },
+                            { label: '进度', value: `${pct}%` },
+                            { label: '状态', value: goal.isCompleted ? '已完成' : '进行中', tone: goal.isCompleted ? 'good' : 'info' },
+                        ]} />
+                        <div className="h-2 rounded-full overflow-hidden" style={{ background: '#efece7' }}><div className="h-full" style={{ width: `${pct}%`, background: '#16a34a' }} /></div>
+                    </div> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这个心愿已经不在列表里。</div>}
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'dashboardInsight') {
+            return (
+                <BankModal open title="首页看板复盘" sub="现金流、状态、经营和风险先过一遍" onClose={close} footer={confirmBtn(aiBusy === 'dashboard' ? 'AI 复盘中…' : '生成 AI 复盘', handleDashboardInsight, '#f43f5e')}>
+                    <div className="space-y-3">
+                        <BankMetricGrid items={[
+                            { label: '钱包', value: `${state.config.currencySymbol}${Math.round(userProfile.balance || 0)}`, tone: 'good' },
+                            { label: '净资产', value: `${state.config.currencySymbol}${netWorth}` },
+                            { label: '股票市值', value: `${state.config.currencySymbol}${Math.round(stockValue)}`, tone: stockValue > 0 ? 'info' : 'good' },
+                            { label: '负债', value: `${state.config.currencySymbol}${Math.round(debtValue)}`, tone: debtValue > 0 ? 'warn' : 'good' },
+                            { label: '疲劳', value: `${life.fatigue}/100`, tone: life.fatigue > 70 ? 'warn' : 'info' },
+                            { label: '声誉', value: `${life.reputation}/100` },
+                        ]} />
+                        <div className="space-y-2">
+                            {lifeSuggestions.map(s => <button key={s.id} onClick={() => { setActiveTab(s.tab); close(); }} className="w-full rounded-2xl px-3 py-2 text-left text-[12px]" style={{ background: '#faf8f5', color: '#4a4750' }}><b style={{ color: INK }}>{s.title}</b><div>{s.detail}</div></button>)}
+                        </div>
+                    </div>
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'shopUnlock') {
+            return (
+                <BankModal open title="开店确认" sub="这是一笔 Moro 内虚拟启动金" onClose={close} footer={confirmBtn(`投入 ${state.config.currencySymbol}${SHOP_UNLOCK_COST} 开店`, handleUnlockLifeShop, '#f43f5e')}>
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                            <div><FieldLabel>店铺名字</FieldLabel><input value={newShopName} onChange={e => setNewShopName(e.target.value)} placeholder={`${selectedBusiness.name}小店`} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
+                            <div><FieldLabel>业态</FieldLabel><div className="px-3 py-2 text-[13px] font-black" style={bankModalInputStyle}>{selectedBusiness.icon} {selectedBusiness.name}</div></div>
+                        </div>
+                        <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{selectedBusiness.vibe}</p>
+                        <BankMetricGrid items={[
+                            { label: '启动金', value: `${state.config.currencySymbol}${SHOP_UNLOCK_COST}`, tone: 'warn' },
+                            { label: '毛利', value: `${Math.round(selectedBusiness.margin * 100)}%` },
+                            { label: '风险', value: `${selectedBusiness.risk}/5`, tone: selectedBusiness.risk >= 4 ? 'warn' : 'info' },
+                            { label: '钱包', value: `${state.config.currencySymbol}${Math.round(userProfile.balance || 0)}` },
+                        ]} />
+                    </div>
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'shopRestock') {
+            const product = life.shopProducts?.find(p => p.id === modal.productId);
+            const cost = product ? Math.max(1, Math.round(product.cost * RESTOCK_BATCH)) : 0;
+            return (
+                <BankModal open title="补货确认" sub="补货会立刻从钱包扣除虚拟成本" onClose={close} footer={confirmBtn(`确认补货 ${RESTOCK_BATCH} 份`, () => handleRestockLifeProduct(modal.productId), '#16a34a')}>
+                    {product ? <BankMetricGrid items={[
+                        { label: '商品', value: product.name },
+                        { label: '当前库存', value: `${product.stock}` },
+                        { label: '补货后', value: `${Math.min(STOCK_CAP, product.stock + RESTOCK_BATCH)}` },
+                        { label: '成本', value: `${state.config.currencySymbol}${cost}`, tone: 'warn' },
+                    ]} /> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这个商品已经不在货架上。</div>}
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'shopUpgrade') {
+            const level = state.shop.shopLevel || 1;
+            const cost = shopUpgradeCost(level);
+            return (
+                <BankModal open title="店铺升级" sub="升级会提升客流、溢价和挂机收入" onClose={close} footer={confirmBtn(level >= MAX_SHOP_LEVEL ? '已经满级' : `支付 ${state.config.currencySymbol}${cost} 升级`, handleUpgradeShop, '#16a34a')}>
+                    <BankMetricGrid items={[
+                        { label: '当前等级', value: `Lv.${level}` },
+                        { label: '升级后', value: `Lv.${Math.min(MAX_SHOP_LEVEL, level + 1)}`, tone: 'good' },
+                        { label: '费用', value: `${state.config.currencySymbol}${cost}`, tone: 'warn' },
+                        { label: '钱包', value: `${state.config.currencySymbol}${Math.round(userProfile.balance || 0)}` },
+                    ]} />
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'stockDetail' || modal.kind === 'stockOrder') {
+            const quote = life.stockMarket.find(s => s.symbol === modal.symbol);
+            const hold = quote ? life.holdings[quote.symbol] : undefined;
+            if (!quote) return <BankModal open title="股票详情" onClose={close}>没有找到这只虚拟股票。</BankModal>;
+            if (modal.kind === 'stockDetail') {
+                return (
+                    <BankModal open title={`${quote.name} ${quote.symbol}`} sub={`${quote.industry} · 虚拟行情`} onClose={close} wide footer={confirmBtn(aiBusy === 'invest' ? 'AI 分析中…' : '生成 AI 风险点评', async () => {
+                        let result = createBankActionResult({
+                            category: 'invest',
+                            kind: 'invest-advice',
+                            title: `${quote.name} 行情点评`,
+                            summary: quote.aiReason || quote.news,
+                            tone: quote.risk >= 4 ? 'warn' : 'info',
+                            riskTags: quote.risk >= 4 ? ['高波动', '虚拟投资'] : ['虚拟投资'],
+                            metrics: [
+                                { label: '价格', value: `${state.config.currencySymbol}${quote.price}` },
+                                { label: '涨跌', value: `${quote.changePct >= 0 ? '+' : ''}${quote.changePct}%`, tone: quote.changePct >= 0 ? 'good' : 'warn' },
+                                { label: '风险', value: `${quote.risk}/5`, tone: quote.risk >= 4 ? 'warn' : 'info' },
+                                { label: '持仓', value: hold ? `${hold.shares} 股` : '未持仓' },
+                            ],
+                            payload: { symbol: quote.symbol },
+                        });
+                        result = await enrichResultWithAi(result, 'invest', () => generateAiInvestAdvice(auxApi, life, quote));
+                        await persistStandaloneActionResult(result);
+                    }, '#0284c7')}>
+                        <div className="space-y-3">
+                            {renderStockChart(quote)}
+                            <BankMetricGrid items={[
+                                { label: '现价', value: `${state.config.currencySymbol}${quote.price}` },
+                                { label: '涨跌', value: `${quote.changePct >= 0 ? '+' : ''}${quote.changePct}%`, tone: quote.changePct >= 0 ? 'good' : 'warn' },
+                                { label: '风险', value: `${quote.risk}/5`, tone: quote.risk >= 4 ? 'warn' : 'info' },
+                                { label: '持仓', value: hold ? `${hold.shares} 股` : '未持仓' },
+                            ]} />
+                            <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{quote.aiReason || quote.news}</p>
+                            <div className="flex flex-wrap gap-1.5">{(quote.eventTags || []).map(tag => <BankBadge key={tag} tone="info">{tag}</BankBadge>)}</div>
+                        </div>
+                    </BankModal>
+                );
+            }
+            const side = modal.side;
+            const rawAmount = side === 'buy' ? Number(stockBudget[quote.symbol]) : Number(stockSellShares[quote.symbol] || hold?.shares || 0);
+            const fee = side === 'buy' ? Math.max(1, Math.round((Number.isFinite(rawAmount) ? rawAmount : 0) * 0.003)) : Math.max(1, Math.round((Number.isFinite(rawAmount) ? rawAmount : 0) * quote.price * 0.003));
+            const estimatedShares = side === 'buy' ? Math.max(0, Math.floor((((Number.isFinite(rawAmount) ? rawAmount : 0) - fee) / quote.price) * 1000) / 1000) : Math.min(hold?.shares || 0, Number.isFinite(rawAmount) ? rawAmount : 0);
+            return (
+                <BankModal open title={side === 'buy' ? `买入 ${quote.name}` : `卖出 ${quote.name}`} sub="订单会按当前虚拟行情撮合" onClose={close} footer={confirmBtn(side === 'buy' ? '确认买入' : '确认卖出', () => side === 'buy' ? handleBuyStock(quote.symbol) : handleSellStock(quote.symbol), side === 'buy' ? '#f43f5e' : '#16a34a')}>
+                    <div className="space-y-3">
+                        <div><FieldLabel>{side === 'buy' ? '买入金额' : '卖出股数'}</FieldLabel><input type="number" value={side === 'buy' ? stockBudget[quote.symbol] || '' : stockSellShares[quote.symbol] || ''} onChange={e => side === 'buy' ? setStockBudget(prev => ({ ...prev, [quote.symbol]: e.target.value })) : setStockSellShares(prev => ({ ...prev, [quote.symbol]: e.target.value }))} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
+                        <BankMetricGrid items={[
+                            { label: '现价', value: `${state.config.currencySymbol}${quote.price}` },
+                            { label: '预计份额', value: `${estimatedShares} 股` },
+                            { label: '手续费估算', value: `${state.config.currencySymbol}${fee}`, tone: 'warn' },
+                            { label: '持仓', value: hold ? `${hold.shares} 股` : '未持仓' },
+                        ]} />
+                        <div className="flex flex-wrap gap-1.5"><BankBadge tone={quote.risk >= 4 ? 'warn' : 'info'}>风险 {quote.risk}/5</BankBadge><BankBadge tone="default">虚拟投资</BankBadge></div>
+                    </div>
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'companyFound') {
+            return (
+                <BankModal open title="创办公司确认" sub="启动资金会进入公司现金池" onClose={close} footer={confirmBtn(`投入 ${state.config.currencySymbol}${COMPANY_FOUND_COST}`, handleFoundCompany, '#8b5cf6')}>
+                    <BankMetricGrid items={[
+                        { label: '公司名', value: companyName || `${companyDirection}小公司` },
+                        { label: '方向', value: companyDirection },
+                        { label: '启动资金', value: `${state.config.currencySymbol}${COMPANY_FOUND_COST}`, tone: 'warn' },
+                        { label: '钱包', value: `${state.config.currencySymbol}${Math.round(userProfile.balance || 0)}` },
+                    ]} />
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'companyIssue') {
+            const issue = life.company?.pendingIssue;
+            const opt = issue?.options.find(o => o.id === modal.optionId);
+            return (
+                <BankModal open title={issue?.title || '公司事项'} sub={issue?.description} onClose={close} footer={opt ? confirmBtn(`选择：${opt.label}`, () => handleCompanyIssue(opt.id), opt.cashDelta >= 0 ? '#16a34a' : '#f43f5e') : undefined}>
+                    {opt ? <BankMetricGrid items={[
+                        { label: '方案', value: opt.label },
+                        { label: '现金变化', value: `${opt.cashDelta >= 0 ? '+' : '-'}${state.config.currencySymbol}${Math.abs(opt.cashDelta)}`, tone: opt.cashDelta >= 0 ? 'good' : 'warn' },
+                        { label: '声誉变化', value: `${opt.reputationDelta >= 0 ? '+' : ''}${opt.reputationDelta}` },
+                        { label: '压力变化', value: `${opt.stressDelta >= 0 ? '+' : ''}${opt.stressDelta}`, tone: opt.stressDelta > 0 ? 'warn' : 'good' },
+                    ]} /> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这件事项已经处理过。</div>}
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'companyDividend') {
+            const company = life.company;
+            const amount = company ? Math.max(0, Math.floor((company.cash - COMPANY_FOUND_COST) * 0.35)) : 0;
+            return (
+                <BankModal open title="公司分红确认" sub="只分配安全垫以上的一部分现金" onClose={close} footer={confirmBtn(amount > 0 ? `确认分红 ${state.config.currencySymbol}${amount}` : '暂无可分红', handleCompanyDividend, '#16a34a')}>
+                    <BankMetricGrid items={[
+                        { label: '公司现金', value: `${state.config.currencySymbol}${Math.round(company?.cash || 0)}` },
+                        { label: '安全垫', value: `${state.config.currencySymbol}${COMPANY_FOUND_COST}` },
+                        { label: '预计到账', value: `${state.config.currencySymbol}${amount}`, tone: amount > 0 ? 'good' : 'warn' },
+                    ]} />
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'loanProduct' || modal.kind === 'loanApply') {
+            const channel = modal.kind === 'loanProduct' ? modal.channel : loanChannel;
+            const product = LOAN_PRODUCTS[channel];
+            return (
+                <BankModal open title={product.name} sub="Moro 内虚拟借款合同，不连接真实机构" onClose={close} footer={modal.kind === 'loanApply' ? confirmBtn(aiBusy === 'loan' ? '审核中…' : '提交审核', handleBorrowLoan, '#f43f5e') : confirmBtn('按这个产品申请', () => { setLoanChannel(channel); setBankModal({ kind: 'loanApply' }); }, '#f43f5e')}>
+                    <div className="space-y-3">
+                        <div><FieldLabel>申请金额</FieldLabel><input type="number" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
+                        <BankMetricGrid items={[
+                            { label: '额度', value: `${state.config.currencySymbol}${product.min}-${product.max}` },
+                            { label: '日息', value: `${(product.dailyRate * 100).toFixed(3)}%`, tone: channel === 'shady' ? 'warn' : 'info' },
+                            { label: '期限', value: `${product.days} 天` },
+                            { label: '渠道', value: channelLabel(channel), tone: channel === 'shady' ? 'warn' : 'info' },
+                        ]} />
+                        <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: channel === 'shady' ? '#fff1f2' : '#faf8f5', color: channel === 'shady' ? '#be123c' : '#4a4750' }}>{product.review}</p>
+                        <div className="flex flex-wrap gap-1.5">{product.terms.map(term => <BankBadge key={term} tone={channel === 'shady' ? 'warn' : 'default'}>{term}</BankBadge>)}</div>
+                    </div>
+                </BankModal>
+            );
+        }
+        if (modal.kind === 'loanRepay') {
+            const loan = life.loans.find(l => l.id === modal.loanId);
+            const due = loan ? Math.round(loan.outstanding + loan.interestDue) : 0;
+            return (
+                <BankModal open title="还款确认" sub="还款会优先抵扣利息，再抵扣本金" onClose={close} footer={loan ? confirmBtn('确认还款', () => handleRepayLoan(loan.id), '#16a34a') : undefined}>
+                    {loan ? <div className="space-y-3">
+                        <div><FieldLabel>还款金额</FieldLabel><input type="number" value={loanRepayAmount[loan.id] || ''} onChange={e => setLoanRepayAmount(prev => ({ ...prev, [loan.id]: e.target.value }))} placeholder={`${due}`} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
+                        <BankMetricGrid items={[
+                            { label: '产品', value: loan.note },
+                            { label: '应还合计', value: `${state.config.currencySymbol}${due}`, tone: 'warn' },
+                            { label: '利息', value: `${state.config.currencySymbol}${Math.round(loan.interestDue)}` },
+                            { label: '到期日', value: loan.dueDate },
+                        ]} />
+                    </div> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这笔借款已经结清。</div>}
+                </BankModal>
+            );
+        }
+        return null;
+    };
+
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAGE_BG, color: INK }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-64 z-0" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.10), transparent 70%)' }} />
 
-            <div className="relative shrink-0 z-[50] px-3.5 pt-[calc(env(safe-area-inset-top)+0.65rem)] pb-2.5">
+            <div className="relative shrink-0 z-[50] px-3.5 pt-3 pb-2.5">
                 <div className="flex items-center gap-2.5 rounded-[26px] bg-white px-2.5 py-2.5" style={{ border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -28px rgba(38,38,38,0.35)' }}>
                         <button
                             onClick={closeApp}
@@ -2439,7 +3041,7 @@ ${JSON.stringify(list, null, 2)}
             {/* Guestbook Overlay */}
             {showGuestbook && (
                 <div className="absolute inset-0 z-[100] flex flex-col animate-slide-up" style={{ background: PAGE_BG }}>
-                    <div className="pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0">
+                    <div className="pt-3 pb-3 px-4 shrink-0">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-[14px] flex items-center justify-center text-[18px] font-black" style={{ background: '#ffe4e6', color: '#be123c' }}>
@@ -2544,7 +3146,7 @@ ${JSON.stringify(list, null, 2)}
                 </div>
             )}
 
-            <div className="shrink-0 z-30 px-2.5 pt-2 relative" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
+            <div className="shrink-0 z-30 px-2.5 pt-2 relative" style={{ paddingBottom: 10 }}>
                 <div className="grid grid-cols-7 gap-1 rounded-[26px] bg-white p-1.5" style={{ border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 -8px 30px -24px rgba(38,38,38,0.45), 0 1px 2px rgba(38,38,38,0.04)' }}>
                     {[
                         { key: 'life', label: '人生', emoji: '📆' },
@@ -2675,6 +3277,8 @@ ${JSON.stringify(list, null, 2)}
             {showRegulars && (
                 <RegularsOverlay regulars={state.shop.regulars || {}} onClose={() => setShowRegulars(false)} />
             )}
+
+            {renderImmersiveModal()}
 
         </div>
     );

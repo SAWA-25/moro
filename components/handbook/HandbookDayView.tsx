@@ -66,7 +66,7 @@ const HandbookDayView: React.FC<DayViewProps> = ({
             {/* 主画布区 — 自适应填满, 顶部留出悬浮 bar 的位置 */}
             <div
                 className="flex-1 px-3 pb-3 min-h-0"
-                style={{ paddingTop: 'calc(max(env(safe-area-inset-top, 12px), 12px) + 40px)' }}
+                style={{ paddingTop: 52 }}
             >
                 {allPages.length === 0 || !activeLayout ? (
                     <EmptyDay />

@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import type { DesktopPetReminder, DesktopPetState, DesktopPetTalkMessage } from '../types';
+import type { DesktopPetAutoBehavior, DesktopPetReminder, DesktopPetState, DesktopPetTalkMessage } from '../types';
 import { useOS } from './OSContext';
 import { DB } from '../utils/db';
 import {
@@ -9,7 +9,9 @@ import {
   DESKTOP_PET_FALL_SPEED_MAX,
   DESKTOP_PET_FALL_SPEED_MIN,
   DESKTOP_PET_MANIFEST_URL,
+  applyDesktopPetCareTick,
   appendDesktopPetDialogue,
+  buildDesktopPetReminderSpeech,
   buildDesktopPetFallbackSpeech,
   clearDesktopPetDialogue,
   createDefaultDesktopPetState,
@@ -18,9 +20,12 @@ import {
   feedDesktopPet,
   getDesktopPetItemMultiplier,
   getDesktopPetRoleState,
+  markDesktopPetTalked,
   markDueDesktopPetRemindersFired,
+  normalizeDesktopPetAutoBehavior,
   patDesktopPet,
   selectDesktopPetRandomAction,
+  setDesktopPetAutoBehavior,
   setDesktopPetRolePrompt,
   type DesktopPetItemManifest,
   type DesktopPetManifest,
@@ -28,6 +33,7 @@ import {
 import { getNotifyPermission, requestNotifyPermission, showLocalNotification } from '../utils/browserNotify';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
+import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 
 interface DesktopPetContextValue {
   manifest: DesktopPetManifest | null;
@@ -46,10 +52,13 @@ interface DesktopPetContextValue {
   clearPetDialogue: () => Promise<void>;
   speakAsPet: (input: { text: string; source?: DesktopPetTalkMessage['source']; itemId?: string }) => Promise<void>;
   setRolePrompt: (roleId: string, prompt: string) => Promise<void>;
+  setAiEnabled: (enabled: boolean) => Promise<void>;
+  setAutoBehavior: (autoBehavior: DesktopPetAutoBehavior) => Promise<void>;
   updateOverlay: (overlay: Partial<DesktopPetState['overlay']>) => Promise<void>;
   setFallSpeed: (speed: number) => Promise<void>;
   setFloatingEnabled: (enabled: boolean) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<boolean>;
+  triggerTestReminder: () => Promise<{ notified: boolean }>;
   addReminder: (input: { title: string; note?: string; dueAt: number; repeat: DesktopPetReminder['repeat'] }) => Promise<void>;
   updateReminder: (id: string, patch: Partial<DesktopPetReminder>) => Promise<void>;
   deleteReminder: (id: string) => Promise<void>;
@@ -58,7 +67,11 @@ interface DesktopPetContextValue {
 const DesktopPetContext = createContext<DesktopPetContextValue | null>(null);
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const cleanPetSpeech = (text: string) => text.replace(/^["“”'「」]+|["“”'「」]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 180);
+const cleanPetSpeech = (text: string) => sanitizeAssistantVisibleText(text)
+  .replace(/^["“”'「」]+|["“”'「」]+$/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 180);
 
 const buildPetSystemPrompt = (roleName: string, customPrompt?: string) => [
   `你是 Moro 的独立桌宠「${roleName}」。`,
@@ -104,10 +117,11 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (!manifestRes.ok) throw new Error('桌宠资源清单不存在，请先运行资源导入脚本。');
         const nextManifest = await manifestRes.json() as DesktopPetManifest;
         if (cancelled) return;
-        const nextState = ensureDesktopPetState(stored);
+        const nextState = applyDesktopPetCareTick(ensureDesktopPetState(stored));
         const activeRoleId = nextManifest.roles[nextState.activeRoleId] ? nextState.activeRoleId : Object.keys(nextManifest.roles)[0] || DESKTOP_PET_DEFAULT_ROLE;
         const normalized = { ...nextState, activeRoleId };
         setManifest(nextManifest);
+        stateRef.current = normalized;
         setState(normalized);
         setCurrentActionId(nextManifest.roles[activeRoleId]?.defaultAction || 'default');
         setLoadError(null);
@@ -242,8 +256,9 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return stateRef.current.lastSpeech || createDesktopPetTalkMessage({ role: 'pet', text: '我在。', source: 'chat' });
     }
     const now = Date.now();
+    const roleId = stateRef.current.activeRoleId;
     const userMessage = createDesktopPetTalkMessage({ role: 'user', text: cleanText, source: 'chat' }, now);
-    persist(appendDesktopPetDialogue(stateRef.current, userMessage, now));
+    persist(markDesktopPetTalked(appendDesktopPetDialogue(stateRef.current, userMessage, now), roleId, now));
     const replyText = await generatePetSpeech({ source: 'chat', userText: cleanText });
     const petMessage = createDesktopPetTalkMessage({ role: 'pet', text: replyText, source: 'chat' });
     addPetMessage(petMessage);
@@ -305,6 +320,14 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     persist(setDesktopPetRolePrompt(stateRef.current, roleId, prompt));
   }, [persist]);
 
+  const setAiEnabled = useCallback(async (enabled: boolean) => {
+    persist({ ...stateRef.current, aiEnabled: enabled, updatedAt: Date.now() });
+  }, [persist]);
+
+  const setAutoBehavior = useCallback(async (autoBehavior: DesktopPetAutoBehavior) => {
+    persist(setDesktopPetAutoBehavior(stateRef.current, normalizeDesktopPetAutoBehavior(autoBehavior)));
+  }, [persist]);
+
   const setFallSpeed = useCallback(async (speed: number) => {
     persist({
       ...stateRef.current,
@@ -335,6 +358,32 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (ok) persist({ ...stateRef.current, notificationsEnabled: true, updatedAt: Date.now() });
     return ok;
   }, [persist]);
+
+  const triggerTestReminder = useCallback(async (): Promise<{ notified: boolean }> => {
+    const cur = stateRef.current;
+    const roleName = manifestRef.current?.roles[cur.activeRoleId]?.name || cur.activeRoleId || '桌宠';
+    const reminder = { title: '测试提醒', note: '如果你看见这条，桌宠提醒可以正常显示。' };
+    const body = buildDesktopPetReminderSpeech(roleName, reminder);
+    addPetMessage(createDesktopPetTalkMessage({ role: 'pet', text: body, source: 'reminder' }));
+    if (!cur.notificationsEnabled) return { notified: false };
+    const title = `桌宠提醒：${reminder.title}`;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await LocalNotifications.schedule({
+          notifications: [{
+            id: Math.floor(Date.now() % 2147483647),
+            title,
+            body: reminder.note,
+            schedule: { at: new Date(Date.now() + 250) },
+          }],
+        });
+      } catch {
+        /* fall through to browser notification */
+      }
+    }
+    await showLocalNotification(title, { body: reminder.note, tag: 'desktop-pet-test' });
+    return { notified: true };
+  }, [addPetMessage]);
 
   const addReminder = useCallback(async (input: { title: string; note?: string; dueAt: number; repeat: DesktopPetReminder['repeat'] }) => {
     const reminder: DesktopPetReminder = {
@@ -368,13 +417,19 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     const notifyDue = async () => {
       const cur = stateRef.current;
-      if (!cur.notificationsEnabled) return;
       const { state: next, due } = markDueDesktopPetRemindersFired(cur);
       if (due.length === 0) return;
       persist(next);
+      const roleName = manifestRef.current?.roles[next.activeRoleId]?.name || next.activeRoleId || '桌宠';
       for (const reminder of due) {
         const title = `桌宠提醒：${reminder.title}`;
-        const body = reminder.note || `${next.activeRoleId} 在敲屏幕。`;
+        const body = reminder.note || `${roleName} 在敲屏幕。`;
+        addPetMessage(createDesktopPetTalkMessage({
+          role: 'pet',
+          text: buildDesktopPetReminderSpeech(roleName, reminder),
+          source: 'reminder',
+        }));
+        if (!cur.notificationsEnabled) continue;
         if (Capacitor.isNativePlatform()) {
           try {
             await LocalNotifications.schedule({
@@ -395,6 +450,19 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const timer = window.setInterval(() => { void notifyDue(); }, 15000);
     void notifyDue();
     return () => window.clearInterval(timer);
+  }, [addPetMessage, persist]);
+
+  useEffect(() => {
+    const tickCare = () => {
+      const cur = stateRef.current;
+      const next = applyDesktopPetCareTick(cur);
+      if (next.updatedAt !== cur.updatedAt || next.lastCareTickAt !== cur.lastCareTickAt) {
+        persist(next);
+      }
+    };
+    const timer = window.setInterval(tickCare, 5 * 60 * 1000);
+    tickCare();
+    return () => window.clearInterval(timer);
   }, [persist]);
 
   const value = useMemo<DesktopPetContextValue>(() => ({
@@ -414,14 +482,17 @@ export const DesktopPetProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     clearPetDialogue,
     speakAsPet,
     setRolePrompt,
+    setAiEnabled,
+    setAutoBehavior,
     updateOverlay,
     setFallSpeed,
     setFloatingEnabled,
     setNotificationsEnabled,
+    triggerTestReminder,
     addReminder,
     updateReminder,
     deleteReminder,
-  }), [activeRoleId, addReminder, clearPetDialogue, currentActionId, deleteReminder, feedActivePet, foods, isReady, loadError, manifest, patActivePet, playAction, playRandomAction, setActiveRole, setFallSpeed, setFloatingEnabled, setNotificationsEnabled, setRolePrompt, speakAsPet, state, talkToActivePet, updateOverlay, updateReminder]);
+  }), [activeRoleId, addReminder, clearPetDialogue, currentActionId, deleteReminder, feedActivePet, foods, isReady, loadError, manifest, patActivePet, playAction, playRandomAction, setActiveRole, setAiEnabled, setAutoBehavior, setFallSpeed, setFloatingEnabled, setNotificationsEnabled, setRolePrompt, speakAsPet, state, talkToActivePet, triggerTestReminder, updateOverlay, updateReminder]);
 
   return <DesktopPetContext.Provider value={value}>{children}</DesktopPetContext.Provider>;
 };

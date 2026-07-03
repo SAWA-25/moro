@@ -4,7 +4,8 @@ import { makeChatAlarm, prepareAlarmForSave } from './chatAlarms';
 import { preparePeriodReminderSettings } from './periodReminders';
 import { makeHealthPlan, makeHealthRecord, normalizeHealthReminder, prepareHealthModuleSettings, summarizeHealthDay } from './health';
 import { createDefaultDesktopPetState } from './desktopPet';
-import type { CharacterProfile, ChatAlarm, ChatFollowup, ChatHubDigest, CollectionItem, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage, SocialPost, TheaterFauxPiece, TheaterReflectionSession, XhsFeedPost } from '../types';
+import { collectLocalStorageSnapshot, restoreLocalStorageSnapshot, shouldBackupLocalStorageKey } from './localStorageBackup';
+import type { CharacterProfile, ChatAlarm, ChatFollowup, ChatHubDigest, CollectionItem, FullBackupData, PeriodCycleEvent, PeriodReminderSettings, Persona, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage, SocialPost, TakeoutOrder, TheaterFauxPiece, TheaterReflectionSession, XhsFeedPost } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -739,5 +740,173 @@ describe('health center stores', () => {
     await expect(DB.getAllHealthReminders()).resolves.toEqual([reminder]);
     await expect(DB.getAllHealthPlans()).resolves.toEqual([plan]);
     await expect(DB.getAllHealthSummaries()).resolves.toEqual([summary]);
+  });
+});
+
+describe('complete backup restore coverage', () => {
+  const walkAndRestoreAssetRefs = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        if (node[i] === 'assets/avatar.png') node[i] = 'data:image/png;base64,AAA';
+        else walkAndRestoreAssetRefs(node[i]);
+      }
+      return;
+    }
+    for (const key of Object.keys(node)) {
+      if (node[key] === 'assets/avatar.png') node[key] = 'data:image/png;base64,AAA';
+      else walkAndRestoreAssetRefs(node[key]);
+    }
+  };
+
+  it('restores persona avatar asset references before writing personas', async () => {
+    await DB.deleteDB();
+    const persona: Persona = {
+      id: 'persona-backup-1',
+      name: 'Backup Persona',
+      avatar: 'assets/avatar.png',
+      description: 'identity',
+      position: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      personas: [persona],
+    } as FullBackupData, {
+      beforeWrite: async (root) => {
+        walkAndRestoreAssetRefs(root);
+      },
+    });
+
+    expect((await DB.getAllPersonas())[0]).toMatchObject({
+      id: persona.id,
+      avatar: 'data:image/png;base64,AAA',
+    });
+  });
+
+  it('exports and restores takeout order receipts and status history', async () => {
+    await DB.deleteDB();
+    const order: TakeoutOrder = {
+      id: 'takeout-order-backup-1',
+      storeId: 'store-1',
+      storeName: 'Noodle House',
+      storeEmoji: 'N',
+      items: [{ dishId: 'dish-1', name: 'Noodles', price: 18, qty: 2, emoji: 'B' }],
+      subtotal: 36,
+      deliveryFee: 3,
+      packFee: 1,
+      total: 40,
+      recipient: 'me',
+      payer: 'me',
+      payStatus: 'paid',
+      status: 'delivered',
+      riderName: 'Rider',
+      riderEmoji: 'R',
+      address: 'Test address',
+      placedAt: 100,
+      etaAt: 200,
+      deliveredAt: 220,
+      chat: [{ role: 'rider', text: 'Arrived', at: 210 }],
+      chatTarget: 'rider',
+      complaint: { filed: true, resolved: true, outcome: 'refund approved', refunded: 5 },
+      review: { rating: 5, text: 'Good', at: 230, tags: ['fast'], replies: [{ name: 'Store', emoji: 'S', text: 'Thanks', at: 240, isMerchant: true }] },
+    };
+
+    await DB.saveTakeoutOrder(order);
+    const exported = await DB.exportFullData();
+    expect(exported.takeoutOrders).toEqual([order]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      takeoutOrders: exported.takeoutOrders || [],
+    } as FullBackupData);
+
+    await expect(DB.getTakeoutOrders()).resolves.toEqual([order]);
+  });
+
+  it('exports and restores unmapped IndexedDB stores through the fallback snapshot', async () => {
+    await DB.deleteDB();
+    const card = {
+      id: 'divination-card-backup-1',
+      deck: 'tarot',
+      index: 1,
+      name: 'Backup Card',
+      image: 'data:image/png;base64,BBB',
+      updatedAt: 10,
+    };
+    const db = await openDB();
+    const tx = db.transaction('divination_cards', 'readwrite');
+    tx.objectStore('divination_cards').put(card);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    const exported = await DB.exportFullData();
+    expect(exported.indexedDbSnapshot?.divination_cards).toEqual([card]);
+
+    await DB.deleteDB();
+    await DB.importFullData({
+      timestamp: 0,
+      version: 1,
+      indexedDbSnapshot: {
+        divination_cards: exported.indexedDbSnapshot?.divination_cards || [],
+      },
+    } as FullBackupData);
+
+    await expect(DB.getRawStoreData('divination_cards')).resolves.toEqual([card]);
+  });
+
+  it('collects persistent localStorage backup keys and skips transient runtime keys', () => {
+    localStorage.clear();
+    localStorage.setItem('os_active_persona_id', 'persona-a');
+    localStorage.setItem('os_default_persona_id', 'persona-default');
+    localStorage.setItem('moro_takeout_custom_stores_v1', '[{"id":"store"}]');
+    localStorage.setItem('moro_takeout_custom_dishes_v1', '[{"id":"dish"}]');
+    localStorage.setItem('moro_shop_dynamic_items_v1', '[{"id":"gift"}]');
+    localStorage.setItem('moro_shop_catalog_v1', '[{"id":"catalog"}]');
+    localStorage.setItem('moro_import_in_progress_v1', '{"phase":"database"}');
+    localStorage.setItem('moro_takeout_intent_v1', '{"recipientCharId":"c1"}');
+
+    const snapshot = collectLocalStorageSnapshot();
+
+    expect(snapshot).toMatchObject({
+      os_active_persona_id: 'persona-a',
+      os_default_persona_id: 'persona-default',
+      moro_takeout_custom_stores_v1: '[{"id":"store"}]',
+      moro_takeout_custom_dishes_v1: '[{"id":"dish"}]',
+      moro_shop_dynamic_items_v1: '[{"id":"gift"}]',
+      moro_shop_catalog_v1: '[{"id":"catalog"}]',
+    });
+    expect(snapshot).not.toHaveProperty('moro_import_in_progress_v1');
+    expect(snapshot).not.toHaveProperty('moro_takeout_intent_v1');
+    expect(shouldBackupLocalStorageKey('moro_import_in_progress_v1')).toBe(false);
+    expect(shouldBackupLocalStorageKey('moro_takeout_intent_v1')).toBe(false);
+  });
+
+  it('restores only allowed localStorage snapshot keys', () => {
+    localStorage.clear();
+
+    restoreLocalStorageSnapshot({
+      os_active_persona_id: 'persona-a',
+      moro_takeout_custom_stores_v1: '[{"id":"store"}]',
+      moro_shop_dynamic_items_v1: '[{"id":"gift"}]',
+      moro_import_in_progress_v1: '{"phase":"assets"}',
+      moro_takeout_intent_v1: '{"recipientCharId":"c1"}',
+      unrelated_key: 'skip',
+    });
+
+    expect(localStorage.getItem('os_active_persona_id')).toBe('persona-a');
+    expect(localStorage.getItem('moro_takeout_custom_stores_v1')).toBe('[{"id":"store"}]');
+    expect(localStorage.getItem('moro_shop_dynamic_items_v1')).toBe('[{"id":"gift"}]');
+    expect(localStorage.getItem('moro_import_in_progress_v1')).toBeNull();
+    expect(localStorage.getItem('moro_takeout_intent_v1')).toBeNull();
+    expect(localStorage.getItem('unrelated_key')).toBeNull();
   });
 });

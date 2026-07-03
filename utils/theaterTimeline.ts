@@ -447,7 +447,7 @@ async function assembleNodes(
         const events = await DB.getLifeEvents(charId);
         afterNodes = (events || [])
             .filter(e => e.timestamp > firstMetTs)
-            .map(e => {
+            .map((e): TrajectoryNode | null => {
                 const activity = sanitizeLifeText(e.activity) || sanitizeLifeText(e.summary || '');
                 const summary = sanitizeLifeText(e.summary || '');
                 if (!activity && !summary) return null;

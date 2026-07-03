@@ -3,6 +3,7 @@ import { DB } from './db';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { CharPlaylistSong, ConvoSettings } from '../types';
 import { sanitizeForBubble } from './sanitize';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 export interface MusicActionSnapshot {
     songId: number;
@@ -338,7 +339,8 @@ export const ChatParser = {
      * Pass { keepCitations: true } to preserve [QUOTE:..]/[引用:..]/[回复 ".."] tags
      * (used when downstream chunking needs to detect per-bubble citation targets).
      */
-    sanitize: (text: string, options?: { keepCitations?: boolean }): string => sanitizeForBubble(text, options),
+    sanitize: (text: string, options?: { keepCitations?: boolean }): string =>
+        sanitizeAssistantVisibleText(sanitizeForBubble(text, options)),
 
     /**
      * Check if text has meaningful display content after stripping all markers/junk.

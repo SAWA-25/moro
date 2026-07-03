@@ -304,12 +304,12 @@ export interface InstantPushPayload {
   // sendInstantPushAndAwaitReply 自动注入; 直接调用 sendInstantPush 的低阶路径 (e.g. 测试推送)
   // 可省略, 此时 worker 行为退化到 v0.6 one-shot.
   sessionId?: string;
-  // 副 API 情绪评估: 客户端把拼好的 eval prompt + 副 API 凭据塞这里, worker 包装层 (worker/instant-push)
+  // 情绪评估: 客户端把拼好的 eval prompt + 日程 / 心情 API 凭据塞这里, worker 包装层 (worker/instant-push)
   // 在主回复跑完后用它跑一次 eval LLM, 把结果作为 emotion_update push 推回. 框架本身忽略此字段,
   // 不会回显到 push, 所以 api.apiKey 不会泄露. 仅顶层传, 不放 metadata.
   emotionEval?: {
     prompt: string;
-    api: { baseUrl: string; apiKey: string; model: string };
+    api: { baseUrl: string; apiKey: string; model: string; apiRole?: 'main' | 'aux' | 'custom'; apiBinding?: string };
   };
   // Moro Worker wrapper 读取这个字段决定本次大 payload 用 multipart 还是 D1 envelope。
   // amsg-instant 本体会忽略未知字段, 所以旧包也能安全接收。

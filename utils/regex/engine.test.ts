@@ -5,6 +5,7 @@ import {
     getRegexedString,
     normalizeRegexScript,
     createEmptyRegexScript,
+    diagnoseRegexScriptRun,
     regex_placement,
     substitute_find_regex,
 } from './engine';
@@ -130,6 +131,50 @@ describe('getRegexedString', () => {
         const s1 = makeScript({ findRegex: '/a/g', replaceString: 'b', placement: [regex_placement.AI_OUTPUT] });
         const s2 = makeScript({ findRegex: '/b/g', replaceString: 'c', placement: [regex_placement.AI_OUTPUT] });
         expect(getRegexedString('a', regex_placement.AI_OUTPUT, [s1, s2])).toBe('c');
+    });
+});
+
+describe('diagnoseRegexScriptRun', () => {
+    it('报告非法正则', () => {
+        const s = makeScript({ findRegex: '/[未闭合/' });
+        const result = diagnoseRegexScriptRun(s, '随便什么');
+        expect(result.validRegex).toBe(false);
+        expect(result.error).toContain('无法编译');
+        expect(result.output).toBe('随便什么');
+    });
+
+    it('报告命中后输出为空', () => {
+        const s = makeScript({ findRegex: '/删掉/g', replaceString: '', placement: [regex_placement.AI_OUTPUT] });
+        const result = diagnoseRegexScriptRun(s, '请删掉', { placement: regex_placement.AI_OUTPUT });
+        expect(result.matched).toBe(true);
+        expect(result.changed).toBe(true);
+        expect(result.outputEmpty).toBe(false);
+
+        const all = makeScript({ findRegex: '/^[\\s\\S]*$/', replaceString: '', placement: [regex_placement.AI_OUTPUT] });
+        expect(diagnoseRegexScriptRun(all, '整段删除', { placement: regex_placement.AI_OUTPUT }).outputEmpty).toBe(true);
+    });
+
+    it('报告运行模式过滤', () => {
+        const s = makeScript({ findRegex: '/foo/g', replaceString: 'bar', promptOnly: true, placement: [regex_placement.AI_OUTPUT] });
+        const raw = diagnoseRegexScriptRun(s, 'foo', { placement: regex_placement.AI_OUTPUT, mode: 'raw' });
+        expect(raw.matched).toBe(true);
+        expect(raw.changed).toBe(false);
+        expect(raw.skippedByMode).toBe(true);
+
+        const prompt = diagnoseRegexScriptRun(s, 'foo', { placement: regex_placement.AI_OUTPUT, mode: 'prompt' });
+        expect(prompt.changed).toBe(true);
+        expect(prompt.output).toBe('bar');
+    });
+
+    it('报告深度过滤', () => {
+        const s = makeScript({ findRegex: '/foo/g', replaceString: 'bar', promptOnly: true, minDepth: 2, maxDepth: 3, placement: [regex_placement.AI_OUTPUT] });
+        const skipped = diagnoseRegexScriptRun(s, 'foo', { placement: regex_placement.AI_OUTPUT, mode: 'prompt', depth: 0 });
+        expect(skipped.matched).toBe(true);
+        expect(skipped.changed).toBe(false);
+        expect(skipped.skippedByDepth).toBe(true);
+
+        const applied = diagnoseRegexScriptRun(s, 'foo', { placement: regex_placement.AI_OUTPUT, mode: 'prompt', depth: 2 });
+        expect(applied.changed).toBe(true);
     });
 });
 

@@ -371,7 +371,7 @@ const HandbookApp: React.FC = () => {
         return (
             <div
                 className="absolute z-30 left-0 right-0 px-3 pointer-events-none"
-                style={{ top: 'max(env(safe-area-inset-top, 12px), 12px)' }}
+                style={{ top: 12 }}
             >
                 <div className="flex items-center justify-between gap-2 pointer-events-auto">
                     <button

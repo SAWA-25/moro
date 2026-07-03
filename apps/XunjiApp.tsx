@@ -651,9 +651,9 @@ const XunjiApp: React.FC = () => {
   }
 
   return (
-    <div className="relative h-full overflow-hidden bg-[#eef3f4] text-slate-900">
+    <div className="relative h-full overflow-hidden bg-[#eef3f4] text-slate-900 flex flex-col">
       <Header closeApp={closeApp} />
-      <main className="absolute inset-x-0 top-[52px] bottom-0 overflow-y-auto px-3 pb-5 space-y-3">
+      <main className="flex-1 min-h-0 overflow-y-auto px-3 pb-5 space-y-3">
         <RoleCard
           char={activeChar}
           characters={characters}
@@ -725,7 +725,7 @@ const XunjiApp: React.FC = () => {
 };
 
 const Header: React.FC<{ closeApp: () => void }> = ({ closeApp }) => (
-  <header className="absolute inset-x-0 top-0 h-[52px] bg-white/95 backdrop-blur border-b border-slate-200 px-3 flex items-center gap-2 z-10">
+  <header className="shrink-0 h-[52px] bg-white/95 backdrop-blur border-b border-slate-200 px-3 flex items-center gap-2 z-10">
     <button onClick={closeApp} className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center active:scale-95"><CaretLeft size={18} weight="bold" /></button>
       <div className="w-9 h-9 rounded-[8px] bg-cyan-950 text-white flex items-center justify-center"><Compass size={20} weight="fill" /></div>
       <div className="min-w-0">

@@ -26,7 +26,7 @@ const WeddingSection: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     const engaged = characters.filter(c => c.marriage?.active);
 
     return (
-        <PaperPage kind="kraft" className="animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
+        <PaperPage kind="kraft" className="animate-fade-in">
             <div className="h-full flex flex-col" style={{ color: '#5b3b4a' }}>
                 <div className="relative flex items-center justify-between px-4 pt-3 pb-1 shrink-0 z-10">
                     <button

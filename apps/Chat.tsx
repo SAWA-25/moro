@@ -14,22 +14,26 @@ import { processImage } from '../utils/file';
 import { extractContent } from '../utils/safeApi';
 import { callChatCompletion } from '../utils/llmClient';
 import { generateDailyScheduleForChar, isEmotionBuffFeatureOn, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
+import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
+import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, livePrivateInterjectPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, type PrivateCallMode } from '../utils/laiwangPrompts';
-import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, type PrivateCallMode } from '../utils/laiwangPrompts';
+import { isAuxApiOn, resolveAuxApi, resolveOptionalCustomApi } from '../utils/auxApi';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { runMemoryPalaceCatchUp } from '../utils/memoryPalace';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import MessageItem from '../components/chat/MessageItem';
+import LocationMapCard from '../components/chat/LocationMapCard';
 import CharacterProfilePage from '../components/character/CharacterProfilePage';
 import CheckPhone from './CheckPhone';
 import CameraApp from './CameraApp';
 import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
-import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
+import { OFFLINE_FOLLOWUP_DELAY_MS, OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession, type OfflineCommitInfo } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
 import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
 import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
@@ -68,11 +72,12 @@ import { ContextBuilder } from '../utils/context';
 import { substituteMacros } from '../utils/macros';
 import { PersonaRuntime } from '../utils/personas';
 import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
+import { buildChatLocationMap } from '../utils/chatLocationMap';
 import type { ParsedEmojiImport } from '../utils/emojiImport';
 import { InnerVoiceEntry } from '../types';
 import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import { generateXunjiScreenlifeRun } from '../utils/xunji';
-import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage } from '../utils/userScreenWatch';
+import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage, sanitizeUserScreenWatchComment } from '../utils/userScreenWatch';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
 import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
@@ -93,9 +98,7 @@ import {
     weekdayLabel,
 } from '../utils/chatAlarms';
 import {
-    getLiveChatInterjectCandidates,
     normalizeLiveChatSettings,
-    pickLiveChatInterjectTargets,
     resolveLiveChatEnabled,
     shouldTriggerLiveDraft,
 } from '../utils/liveChat';
@@ -120,6 +123,7 @@ const ASSISTANT_REVEAL_BETWEEN_MIN_MS = 900;
 const ASSISTANT_REVEAL_BETWEEN_MAX_MS = 2400;
 const ASSISTANT_REVEAL_CHAR_MS = 45;
 const ASSISTANT_REVEAL_CHAR_MAX_MS = 3200;
+const DAILY_SCHEDULE_TTL_MS = 24 * 60 * 60 * 1000;
 const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'forum_card', 'chat_forward',
     'screen_peek_card', 'screen_watch_card', 'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
@@ -754,7 +758,7 @@ const parsePrivateChatArchiveImport = (fileName: string, rawText: string, char: 
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars, forceReplyRequest, clearForceReplyRequest, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
     const { cfg: musicCfg, current: musicCurrent, playing: musicPlaying, playSong: playMusicSong, togglePlay: toggleMusicPlay } = useMusic();
     const userScreenWatch = useUserScreenWatch();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
@@ -801,6 +805,7 @@ const Chat: React.FC = () => {
     const activeCharIdRef = useRef(activeCharacterId);
     const charRef = useRef<typeof char>(null as any);
     const revealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const offlineFollowupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const revealKnownIdsRef = useRef<Set<number>>(new Set());
     const revealNextAtRef = useRef(0);
     const revealHydratedRef = useRef(false);
@@ -810,6 +815,7 @@ const Chat: React.FC = () => {
 
     const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'tabloid'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
+    const [scheduleLifeNotes, setScheduleLifeNotes] = useState<ScheduleLifeNotesBySlot>({});
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
     const [claimTarget, setClaimTarget] = useState<Message | null>(null);
@@ -817,6 +823,7 @@ const Chat: React.FC = () => {
     const [claimPwInput, setClaimPwInput] = useState(''); // 口令红包：领取前要先答对的口令
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
+    const scheduleRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 回神：自我校准结果弹窗 + 进行中状态
     const [recenterResult, setRecenterResult] = useState<RecenterResult | null>(null);
     const [isRecentering, setIsRecentering] = useState(false);
@@ -869,6 +876,12 @@ const Chat: React.FC = () => {
     const [showLocationModal, setShowLocationModal] = useState(false);
     const [locationName, setLocationName] = useState('');
     const [locationDetail, setLocationDetail] = useState('');
+    const locationPreviewName = locationName.trim() || '你准备分享的地方';
+    const locationPreviewAddress = locationDetail.trim();
+    const locationMapPreview = useMemo(
+        () => buildChatLocationMap(locationPreviewName, locationPreviewAddress),
+        [locationPreviewName, locationPreviewAddress]
+    );
 
     // AI 画图 modal
     const [showImageGenModal, setShowImageGenModal] = useState(false);
@@ -1007,7 +1020,6 @@ const Chat: React.FC = () => {
     const liveDraftLastTextRef = useRef<string>('');
     const livePendingSendTriggerRef = useRef(false);
     const livePrevTypingRef = useRef(false);
-    const liveInterjectBusyIdsRef = useRef<Set<string>>(new Set());
 
     const makeAlarmDraftFor = useCallback((kind: ChatAlarmKind): ChatAlarm | null => {
         if (!char) return null;
@@ -2186,54 +2198,142 @@ ${parallelReplyPromptBody({
         };
     }, []);
 
-    // Auto-generate daily schedule (fire-and-forget on chat load) + 今日作息每 24 小时自动更新一次
-    // 总开关关闭时完全跳过：不查询 DB、不调用副 API、不跑兜底
-    // 刷新策略：① 进聊天时若缓存作息已存在但 generatedAt 距今 ≥24h，自动重算；
-    //          ② 未过期则按差额挂一个一次性定时器，聊天长开也能到点自动刷新。
-    useEffect(() => {
-        if (!char || !apiConfig.baseUrl || !apiConfig.model) return;
-        if (!isScheduleFeatureOn(char)) {
-            setScheduleData(null);
+    function resolveScheduleMoodApi(targetChar: CharacterProfile | null | undefined) {
+        return resolveOptionalCustomApi(targetChar?.emotionConfig?.api, apiConfig, {
+            customBinding: '今日作息日程 / 心情 API',
+            mainBinding: '今日作息 API 留空，使用主 API',
+        });
+    }
+
+    function clearScheduleRefreshTimer() {
+        if (scheduleRefreshTimerRef.current) {
+            clearTimeout(scheduleRefreshTimerRef.current);
+            scheduleRefreshTimerRef.current = null;
+        }
+    }
+
+    function scheduleNextDailyScheduleRefresh(targetChar: CharacterProfile, schedule: DailySchedule) {
+        clearScheduleRefreshTimer();
+        if (!isScheduleFeatureOn(targetChar)) return;
+        const age = Date.now() - (schedule.generatedAt || 0);
+        const delay = DAILY_SCHEDULE_TTL_MS - age;
+        if (delay <= 0) return;
+        scheduleRefreshTimerRef.current = setTimeout(() => {
+            scheduleRefreshTimerRef.current = null;
+            generateDailySchedule(targetChar, true);
+        }, delay);
+    }
+
+    async function applyScheduleState(targetChar: CharacterProfile, schedule: DailySchedule | null) {
+        if (activeCharIdRef.current !== targetChar.id) return;
+        setScheduleData(schedule);
+        if (!schedule) {
+            setScheduleLifeNotes({});
+            clearScheduleRefreshTimer();
             return;
         }
-        const SCHEDULE_TTL_MS = 24 * 60 * 60 * 1000;
+        scheduleNextDailyScheduleRefresh(targetChar, schedule);
+        const notes = await loadScheduleLifeNotes(schedule);
+        if (activeCharIdRef.current === targetChar.id) setScheduleLifeNotes(notes);
+    }
+
+    // Auto-generate daily schedule (fire-and-forget on chat load) + 今日作息每 24 小时自动更新一次
+    // 总开关关闭时完全跳过：不查询 DB、不调用 API、不跑兜底
+    // 刷新策略：加载/生成/刷新后都按 generatedAt 重新挂下一轮 24h 刷新。
+    useEffect(() => {
+        clearScheduleRefreshTimer();
+        if (!char) return;
+        if (!isScheduleFeatureOn(char)) {
+            setScheduleData(null);
+            setScheduleLifeNotes({});
+            return;
+        }
+        const scheduleApi = resolveScheduleMoodApi(char);
+        if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         const targetChar = char;
         const today = new Date().toISOString().split('T')[0];
         let cancelled = false;
-        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-        DB.getDailySchedule(targetChar.id, today).then(existing => {
+        DB.getDailySchedule(targetChar.id, today).then(async existing => {
             if (cancelled) return;
             if (!existing) {
+                setScheduleData(null);
+                setScheduleLifeNotes({});
                 // Generate in background, don't block chat
                 generateDailySchedule(targetChar, false);
                 return;
             }
-            const age = Date.now() - (existing.generatedAt || 0);
-            if (age >= SCHEDULE_TTL_MS) {
+            await applyScheduleState(targetChar, existing);
+            if (cancelled) return;
+            if (Date.now() - (existing.generatedAt || 0) >= DAILY_SCHEDULE_TTL_MS) {
                 // 距上次生成已满 24 小时：自动重算一份新作息（强制重生成）
                 generateDailySchedule(targetChar, true);
-            } else {
-                setScheduleData(existing);
-                // 聊天保持打开时，到 24 小时整点再自动刷新一次
-                refreshTimer = setTimeout(() => {
-                    if (!cancelled) generateDailySchedule(targetChar, true);
-                }, SCHEDULE_TTL_MS - age);
             }
         }).catch(() => {});
         return () => {
             cancelled = true;
-            if (refreshTimer) clearTimeout(refreshTimer);
+            clearScheduleRefreshTimer();
         };
-    }, [activeCharacterId, char?.scheduleFeatureEnabled]);
+    }, [
+        activeCharacterId,
+        char?.scheduleFeatureEnabled,
+        char?.scheduleStyle,
+        char?.emotionConfig?.api?.baseUrl,
+        char?.emotionConfig?.api?.apiKey,
+        char?.emotionConfig?.api?.model,
+        apiConfig.baseUrl,
+        apiConfig.apiKey,
+        apiConfig.model,
+    ]);
+
+    useEffect(() => {
+        if (!char || !isScheduleFeatureOn(char)) return;
+        let cancelled = false;
+        const targetChar = char;
+        const today = new Date().toISOString().split('T')[0];
+        const reloadSchedule = async () => {
+            const fresh = await DB.getDailySchedule(targetChar.id, today).catch(() => null);
+            if (!cancelled) await applyScheduleState(targetChar, fresh);
+        };
+        const reloadNotes = async () => {
+            if (!scheduleData) return;
+            const notes = await loadScheduleLifeNotes(scheduleData);
+            if (!cancelled && activeCharIdRef.current === targetChar.id) setScheduleLifeNotes(notes);
+        };
+        const onScheduleUpdated = (e: Event) => {
+            const detail = (e as CustomEvent<{ charId?: string; date?: string; deleted?: boolean }>).detail || {};
+            if (detail.charId !== targetChar.id) return;
+            if (detail.date && detail.date !== today) return;
+            if (detail.deleted) {
+                setScheduleData(null);
+                setScheduleLifeNotes({});
+                return;
+            }
+            void reloadSchedule();
+        };
+        const onLifeEventUpdated = (e: Event) => {
+            const detail = (e as CustomEvent<{ charId?: string; scheduleDate?: string }>).detail || {};
+            if (detail.charId !== targetChar.id) return;
+            if (detail.scheduleDate && scheduleData?.date && detail.scheduleDate !== scheduleData.date) return;
+            void reloadNotes();
+        };
+        window.addEventListener(DAILY_SCHEDULE_UPDATED_EVENT, onScheduleUpdated);
+        window.addEventListener(CHAR_LIFE_EVENT_UPDATED_EVENT, onLifeEventUpdated);
+        return () => {
+            cancelled = true;
+            window.removeEventListener(DAILY_SCHEDULE_UPDATED_EVENT, onScheduleUpdated);
+            window.removeEventListener(CHAR_LIFE_EVENT_UPDATED_EVENT, onLifeEventUpdated);
+        };
+    }, [char?.id, char?.scheduleFeatureEnabled, char?.scheduleStyle, scheduleData?.id, scheduleData?.date]);
 
     // 日程锚点：聊天里出现约定/变更时，自动协调今天的日程（让 char 的日程既自治、又随聊天对齐）
-    // 「主动调整日程」需开启副 API（用户预期：开副 API 才让 TA 后台跑这件杂活）。
+    // 「主动调整日程」走今日作息底部自设 API；留空则走主 API，不再依赖文具盒副 API。
     // 廉价信号闸（chatHasScheduleSignal）+ 每角色 8 分钟冷却，控制成本，不每轮都调。
     useEffect(() => {
         if (!char || !isScheduleFeatureOn(char)) return;
-        if (!isAuxApiOn(auxApiConfig)) return;                 // 未开副 API：不主动协调（仍可手动看/生成日程）
         if (!scheduleData || isTyping) return;                 // 还没今日日程 / 回复进行中：先不打扰
         if (messages.length === 0 || !chatHasScheduleSignal(messages)) return;
+        const scheduleApi = resolveScheduleMoodApi(char);
+        if (!scheduleApi.baseUrl || !scheduleApi.model) return;
 
         const lastMsgId = messages[messages.length - 1]?.id ?? 0;
         const sig = `${char.id}:${lastMsgId}`;
@@ -2251,19 +2351,29 @@ ${parallelReplyPromptBody({
         const targetCharId = char.id;
         const curChar = char;
         const curSchedule = scheduleData;
-        const auxApi = resolveAuxApi(auxApiConfig, apiConfig);
         let cancelled = false;
         (async () => {
             try {
                 const recent = await DB.getRecentMessagesByCharId(targetCharId, 50);
-                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, auxApi);
-                if (!cancelled && updated) setScheduleData(updated);
+                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, scheduleApi);
+                if (!cancelled && updated) await applyScheduleState(curChar, updated);
             } catch (e) {
                 console.warn('[Schedule/Reconcile] effect failed:', e);
             }
         })();
         return () => { cancelled = true; };
-    }, [messages, char?.id, scheduleData?.id, isTyping, auxApiConfig]);
+    }, [
+        messages,
+        char?.id,
+        char?.emotionConfig?.api?.baseUrl,
+        char?.emotionConfig?.api?.apiKey,
+        char?.emotionConfig?.api?.model,
+        scheduleData?.id,
+        isTyping,
+        apiConfig.baseUrl,
+        apiConfig.apiKey,
+        apiConfig.model,
+    ]);
 
     // Load all messages when history-manager modal opens
     useEffect(() => {
@@ -2447,96 +2557,6 @@ ${parallelReplyPromptBody({
         return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     };
 
-    const runLivePrivateInterjects = async (sourceChar: CharacterProfile, userText: string) => {
-        const trimmed = userText.trim();
-        if (!trimmed || !liveChatEnabled || liveChatSettings.interjectMaxTargets <= 0) return;
-        const replyApi = resolveAuxApi(auxApiConfig, apiConfig);
-        if (!replyApi.baseUrl || !replyApi.model) return;
-
-        const candidates = getLiveChatInterjectCandidates(characters, sourceChar.id)
-            .filter(target => !liveInterjectBusyIdsRef.current.has(target.id));
-        const targets = pickLiveChatInterjectTargets(candidates, liveChatSettings.interjectMaxTargets);
-        if (!targets.length) return;
-
-        targets.forEach(target => liveInterjectBusyIdsRef.current.add(target.id));
-
-        const clearBusy = (targetId: string) => {
-            liveInterjectBusyIdsRef.current.delete(targetId);
-        };
-
-        const runOneTarget = async (target: CharacterProfile) => {
-            try {
-                const recentMessages = await DB.getRecentMessagesByCharId(target.id, target.contextLimit || 80);
-                const recent = recentMessages
-                    .slice(-24)
-                    .map(m => formatMessageWithTime(m, target.name, userProfile.name || '我', formatTime))
-                    .join('\n');
-                const prompt = `${ContextBuilder.buildCoreContext(target, userProfile, true)}
-
-${livePrivateInterjectPromptBody({
-                    userName: userProfile.name || '用户',
-                    charName: target.name,
-                    sourceCharName: sourceChar.name,
-                    userText: trimmed,
-                    recent,
-                })}`;
-                const data = await callChatCompletion(replyApi, {
-                    model: replyApi.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.85,
-                    max_tokens: 800,
-                    stream: false,
-                }, {
-                    maxRetries: 1,
-                    timeoutMs: 45000,
-                    meta: makeApiUsageMeta('chat.livePrivateInterject', {
-                        charId: target.id,
-                        charName: target.name,
-                        apiRole: isAuxApiOn(auxApiConfig) ? 'aux' : 'main',
-                    }),
-                });
-                const cleaned = ChatParser.sanitize((extractContent(data) || '').trim());
-                if (!ChatParser.hasDisplayContent(cleaned)) return;
-                const chunks = ChatParser.chunkTextByBubbleMode(cleaned, target.convoSettings?.bubbleStyleMode)
-                    .map(chunk => ChatParser.sanitize(chunk).trim())
-                    .filter(chunk => ChatParser.hasDisplayContent(chunk));
-                if (!chunks.length) return;
-                for (const chunk of chunks) {
-                    await DB.saveMessage({
-                        charId: target.id,
-                        role: 'assistant',
-                        type: 'text',
-                        content: chunk,
-                        metadata: {
-                            liveChatInterject: true,
-                            sourceCharId: sourceChar.id,
-                            sourceCharName: sourceChar.name,
-                            sourceUserText: trimmed.slice(0, 200),
-                        },
-                    } as any);
-                }
-                window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                    detail: {
-                        charId: target.id,
-                        charName: target.name,
-                        body: chunks.join(' ').replace(/\s+/g, ' ').trim().slice(0, 120),
-                        bodies: chunks.slice(0, 8),
-                        count: chunks.length,
-                        avatarUrl: target.avatar,
-                    },
-                }));
-            } catch (err) {
-                console.warn('[LiveChat] private interject failed:', target.name, err);
-            } finally {
-                clearBusy(target.id);
-            }
-        };
-
-        for (const target of targets) {
-            void runOneTarget(target);
-        }
-    };
-
     // --- Actions ---
 
     const handleSendText = async (customContent?: string, customType?: MessageType, metadata?: any) => {
@@ -2637,6 +2657,17 @@ ${livePrivateInterjectPromptBody({
         }
 
         const savedUserMsgId = await DB.saveMessage(msgPayload);
+        const clearsForceReply = !!(
+            forceReplyRequest?.charId === char.id &&
+            !rawMetadata.hidden &&
+            !rawMetadata.proactiveHint &&
+            !rawMetadata.mcdDeactivate &&
+            !rawMetadata.parallelReplyFanout &&
+            String(text || '').trim()
+        );
+        if (clearsForceReply) {
+            clearForceReplyRequest(char.id);
+        }
 
         // Detect XHS link in user text and create xhs_card via MCP
         if (type === 'text') {
@@ -2682,7 +2713,6 @@ ${livePrivateInterjectPromptBody({
 
         const liveAutoEligible = type === 'text' && !metadata?.mcdDeactivate;
         if (liveChatEnabled && liveAutoEligible) {
-            void runLivePrivateInterjects(char, text);
             triggerLiveSendReply();
             return;
         }
@@ -2977,7 +3007,8 @@ ${recent || '（你们相处了很久）'}
     }, [messages, char, isTyping]);
 
     // ── 角色主动查用户手机：「允许 char 看手机」开启时，AI 回复落定后小概率发起（带冷却）──
-    const CHAR_PHONE_CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+    const CHAR_PHONE_CHECK_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+    const CHAR_PHONE_CHECK_RANDOM_CHANCE = 0.08;
     const phoneCheckPrevTypingRef = useRef(false);
     useEffect(() => {
         const wasTyping = phoneCheckPrevTypingRef.current;
@@ -2991,7 +3022,7 @@ ${recent || '（你们相处了很久）'}
         let last = 0;
         try { last = Number(localStorage.getItem(cooldownKey) || 0); } catch { /* ignore */ }
         if (Date.now() - last < CHAR_PHONE_CHECK_COOLDOWN_MS) return;
-        if (Math.random() > 0.15) return;
+        if (Math.random() > CHAR_PHONE_CHECK_RANDOM_CHANCE) return;
         try { localStorage.setItem(cooldownKey, String(Date.now())); } catch { /* ignore */ }
         const timer = setTimeout(() => setCharPhoneCheckActive(true), 1500);
         return () => clearTimeout(timer);
@@ -3005,7 +3036,22 @@ ${recent || '（你们相处了很久）'}
         try { if (char?.id) localStorage.setItem(`moro_char_phone_check_last_${char.id}`, String(Date.now())); } catch { /* ignore */ }
         void reloadMessages(visibleCountRef.current);
         addToast(exitMode === 'forced' ? `你抢回了手机，${char?.name} 好像有话要说…` : `${char?.name} 把手机还给了你`, 'info');
-        setTimeout(() => { triggerAI(messages); }, 800);
+        setTimeout(() => {
+            void (async () => {
+                if (!char) return;
+                const latest = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500).catch(() => messages);
+                await triggerAI(latest, undefined, undefined, {
+                    ephemeralSystemPrompt: charPhoneCheckFollowupPrompt({
+                        userName: userProfile.name || '用户',
+                        charName: char.name,
+                        exitMode,
+                    }),
+                    emptyReplyFallback: '你还挺会让人惦记。',
+                    apiUsageContext: { apiBinding: '查岗收尾' },
+                    roleplayMetaLeakGuard: true,
+                });
+            })();
+        }, 800);
     };
 
     // ── 线下模式：监听 [[OFFLINE_START]] 广播（applyAssistantPostProcessing 剥离指令后发出）──
@@ -3211,15 +3257,48 @@ ${recent || '（你们相处了很久）'}
         return () => window.removeEventListener('moro-offline-resume-request', handler);
     }, [addToast, clearSuspendedOfflineSession]);
 
-    // 线下模式结束：情景已合成 system 消息落库，刷新后让角色主动发消息收尾
-    const handleOfflineEnd = () => {
+    const clearOfflineFollowupTimer = useCallback(() => {
+        if (offlineFollowupTimerRef.current) {
+            clearTimeout(offlineFollowupTimerRef.current);
+            offlineFollowupTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => clearOfflineFollowupTimer, [activeCharacterId, clearOfflineFollowupTimer]);
+
+    const scheduleOfflineFollowup = useCallback((charId: string, commitInfo: OfflineCommitInfo | null) => {
+        clearOfflineFollowupTimer();
+        if (!commitInfo) return;
+        offlineFollowupTimerRef.current = setTimeout(() => {
+            offlineFollowupTimerRef.current = null;
+            void (async () => {
+                const liveChar = charRef.current;
+                if (!liveChar || liveChar.id !== charId || activeCharIdRef.current !== charId) return;
+                if (isTypingRef.current || !canCharContactUser(liveChar)) return;
+                const fresh = await DB.getRecentMessagesByCharId(charId, liveChar.contextLimit || 500).catch(() => [] as Message[]);
+                const hasVisibleAfterOffline = fresh.some(m =>
+                    isPrivateChatVisibleMessage(m) &&
+                    (m.timestamp > commitInfo.timestamp || (m.timestamp === commitInfo.timestamp && m.id > commitInfo.messageId))
+                );
+                if (hasVisibleAfterOffline) return;
+                await triggerAI(fresh, undefined, undefined, {
+                    ephemeralSystemPrompt:
+                        '这是一条线下见面结束数分钟后的自然线上收尾。可以轻轻回味刚才线下现场的细节或情绪，但不要像任务汇报，也不要立刻推进新的现实事件。尤其是外卖、快递、电话、约定等，只有线下记录或聊天里明确写明已经发生，才能说成已经发生；如果只是正在等，就保持“还在等”的时间状态。',
+                    apiUsageContext: { offlineFollowup: true },
+                });
+            })();
+        }, OFFLINE_FOLLOWUP_DELAY_MS);
+    }, [clearOfflineFollowupTimer, triggerAI]);
+
+    // 线下模式结束：情景已合成 system 消息落库，刷新后等几分钟再酌情收尾
+    const handleOfflineEnd = (commitInfo: OfflineCommitInfo | null) => {
         if (suspendedOfflineSession?.kind === 'private' && suspendedOfflineSession.charId === char?.id) {
             clearSuspendedOfflineSession();
         }
         setShowOfflineMode(false);
         void reloadMessages(visibleCountRef.current);
         addToast('线下模式已结束，回到线上聊天', 'info');
-        setTimeout(() => { triggerAI(messages); }, 800);
+        if (char?.id) scheduleOfflineFollowup(char.id, commitInfo);
     };
 
     const handleOfflineSuspend = (entryCount: number) => {
@@ -4152,7 +4231,11 @@ ${privateCallDecisionPromptBody({
     const handleSendLocation = async () => {
         const name = locationName.trim();
         if (!name) { addToast('填一下地点名称', 'info'); return; }
-        await handleSendText(name, 'location', { address: locationDetail.trim() });
+        const address = locationDetail.trim();
+        await handleSendText(name, 'location', {
+            address: address || undefined,
+            locationMap: buildChatLocationMap(name, address),
+        });
         setShowLocationModal(false);
         setLocationName('');
         setLocationDetail('');
@@ -4404,10 +4487,14 @@ ${privateCallDecisionPromptBody({
     // --- Schedule Handlers ---
     const loadSchedule = async () => {
         if (!char) return;
-        if (!isScheduleFeatureOn(char)) { setScheduleData(null); return; }
+        if (!isScheduleFeatureOn(char)) {
+            setScheduleData(null);
+            setScheduleLifeNotes({});
+            return;
+        }
         const today = new Date().toISOString().split('T')[0];
         const s = await DB.getDailySchedule(char.id, today);
-        setScheduleData(s);
+        await applyScheduleState(char, s);
     };
 
     // Load schedule when modal opens
@@ -4420,31 +4507,35 @@ ${privateCallDecisionPromptBody({
         const newSlots = [...scheduleData.slots];
         newSlots[index] = slot;
         const updated = { ...scheduleData, slots: newSlots };
-        setScheduleData(updated);
         await DB.saveDailySchedule(updated);
+        if (char) await applyScheduleState(char, updated);
     };
 
     const handleScheduleDelete = async (index: number) => {
         if (!scheduleData) return;
         const newSlots = scheduleData.slots.filter((_, i) => i !== index);
         const updated = { ...scheduleData, slots: newSlots };
-        setScheduleData(updated);
         await DB.saveDailySchedule(updated);
+        if (char) await applyScheduleState(char, updated);
     };
 
     const handleScheduleCoverChange = async (dataUrl: string) => {
         if (!scheduleData) return;
         const updated = { ...scheduleData, coverImage: dataUrl };
-        setScheduleData(updated);
         await DB.saveDailySchedule(updated);
+        if (char) await applyScheduleState(char, updated);
     };
 
     const generateDailySchedule = async (targetChar: typeof char, forceRegenerate: boolean = false) => {
         if (!targetChar || isScheduleGenerating) return;
+        const scheduleApi = resolveScheduleMoodApi(targetChar);
+        if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         setIsScheduleGenerating(true);
         try {
-            const result = await generateDailyScheduleForChar(targetChar, userProfile, resolveAuxApi(auxApiConfig, apiConfig), forceRegenerate);
-            if (result) setScheduleData(result);
+            const result = await generateDailyScheduleForChar(targetChar, userProfile, scheduleApi, forceRegenerate);
+            if (result) {
+                await applyScheduleState(targetChar, result);
+            }
         } catch (e) {
             console.error('[Schedule] Generation error:', e);
         } finally {
@@ -4458,10 +4549,14 @@ ${privateCallDecisionPromptBody({
         // Force regenerate with new style — use updated char object
         const updatedChar = { ...char, scheduleStyle: style };
         if (!isScheduleFeatureOn(updatedChar)) return;
+        const scheduleApi = resolveScheduleMoodApi(updatedChar);
+        if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         setIsScheduleGenerating(true);
         try {
-            const result = await generateDailyScheduleForChar(updatedChar, userProfile, resolveAuxApi(auxApiConfig, apiConfig), true);
-            if (result) setScheduleData(result);
+            const result = await generateDailyScheduleForChar(updatedChar, userProfile, scheduleApi, true);
+            if (result) {
+                await applyScheduleState(updatedChar, result);
+            }
         } catch (e) {
             console.error('[Schedule] Regeneration after style change failed:', e);
         } finally {
@@ -4484,6 +4579,7 @@ ${privateCallDecisionPromptBody({
         updateCharacter(char.id, patch);
         if (!nextEnabled) {
             setScheduleData(null);
+            setScheduleLifeNotes({});
             addToast('作息日程已关闭', 'info');
             return;
         }
@@ -4494,7 +4590,7 @@ ${privateCallDecisionPromptBody({
             const today = new Date().toISOString().split('T')[0];
             const existing = await DB.getDailySchedule(char.id, today).catch(() => null);
             if (existing) {
-                setScheduleData(existing);
+                await applyScheduleState(updatedChar, existing);
             } else {
                 generateDailySchedule(updatedChar, false);
             }
@@ -5042,6 +5138,7 @@ ${privateCallDecisionPromptBody({
                 phoneState: undefined,
             });
             setScheduleData(null);
+            setScheduleLifeNotes({});
             setInnerVoiceHistory([]);
             setInnerVoiceCurrent(null);
             setTakeoutCardTarget(null);
@@ -5075,6 +5172,7 @@ ${privateCallDecisionPromptBody({
         setWindowedFocusMsgId(null);
         setFlashMsgId(null);
         setScheduleData(null);
+        setScheduleLifeNotes({});
         setInnerVoiceHistory([]);
         setInnerVoiceCurrent(null);
         setTakeoutCardTarget(null);
@@ -5113,88 +5211,39 @@ ${privateCallDecisionPromptBody({
 
         setIsVectorizing(true);
         setModalType('none');
-        addToast('🏰 开始向量化所有聊天记录...', 'info');
+        addToast('开始整理可处理旧聊天，最近 200 条热区会保留在聊天上下文里', 'info');
 
         try {
-            const { processNewMessages, getMemoryPalaceHighWaterMark, mergePalaceFragmentsIntoMemories } = await import('../utils/memoryPalace/pipeline');
-            const BATCH_PROCESS_RATIO = 0.85;
-            const BATCH_SIZE = 170; // 200 * 0.85
-            let totalProcessed = 0;
-            let round = 0;
-            const MAX_ROUNDS = 50; // 安全上限
-            // 每轮合并进来的 palace MemoryFragment；全部处理完后一次性 updateCharacter
-            let accumulatedMemories = char.memories ? [...char.memories] : [];
-            let latestHideBefore = char.hideBeforeMessageId;
+            const result = await runMemoryPalaceCatchUp({
+                char,
+                embeddingConfig: mpEmb,
+                llmConfig: mpLLM,
+                userName: userProfile?.name || '',
+            });
 
-            while (round < MAX_ROUNDS) {
-                round++;
-                const hwm = getMemoryPalaceHighWaterMark(char.id);
-                const allMessages = await DB.getMessagesByCharId(char.id, true);
-                const textMessages = allMessages
-                    .filter(m => m.type === 'text' && m.content?.trim())
-                    .sort((a, b) => a.id - b.id);
-
-                // 计算未处理的消息
-                const unprocessed = textMessages.filter(m => m.id > hwm);
-                if (unprocessed.length < 10) break; // 剩余太少，停止
-
-                // 取一批处理
-                const batch = unprocessed.slice(0, BATCH_SIZE);
-                console.log(`🏰 [ForceVectorize] 第 ${round} 轮：处理 ${batch.length} 条消息（hwm=${hwm}，剩余 ${unprocessed.length}）`);
-
-                const pipelineResult = await processNewMessages(batch, char.id, char.name, mpEmb, mpLLM, userProfile?.name || '', true);
-
-                // 软跳过：缓冲区还没到阈值 / 热区还没被挤出 / 已有任务在跑 —— 不是 LLM 失败
-                if (pipelineResult?.skipReason) {
-                    if (pipelineResult.skipReason !== 'lock') {
-                        addToast('当前聊天不足以触发总结，请保持这个状态聊天~', 'info');
-                    }
-                    break;
-                }
-
-                totalProcessed += batch.length;
-
-                // 累积自动归档，统一在循环结束后 updateCharacter
-                // 避免每轮 setState 触发 char 对象重建进而 dep 失效
-                // 仅在 char.autoArchiveEnabled 开启时累积；未开启则 palace 仍向量化，但不推 hideBefore
-                if (pipelineResult?.autoArchive && (char as any).autoArchiveEnabled) {
-                    accumulatedMemories = mergePalaceFragmentsIntoMemories(
-                        accumulatedMemories,
-                        pipelineResult.autoArchive.fragments,
-                    );
-                    latestHideBefore = pipelineResult.autoArchive.hideBeforeMessageId;
-                }
-
-                // 检查高水位是否前进了（如果没前进说明 LLM 失败了）
-                const newHwm = getMemoryPalaceHighWaterMark(char.id);
-                if (newHwm <= hwm) {
-                    addToast('⚠️ 处理中断：LLM 提取失败，请检查副 API 配置', 'error');
-                    break;
-                }
-            }
-
-            // 隐藏线追平到向量高水位：覆盖「关闭期推进了 hwm 但 hide 被冻结」的历史空档。
-            // 只要全自动记忆开着，即便本轮没有新批次也把 hide 追平到 hwm（之前的消息都已向量化）。
-            if ((char as any).autoArchiveEnabled) {
-                const hwmFinal = getMemoryPalaceHighWaterMark(char.id);
-                if (hwmFinal > (latestHideBefore || 0)) latestHideBefore = hwmFinal;
-            }
-
-            // 循环结束后把累积的自动归档一次性写回角色
-            if (latestHideBefore !== char.hideBeforeMessageId || accumulatedMemories.length !== (char.memories?.length || 0)) {
-                updateCharacter(char.id, {
-                    memories: accumulatedMemories,
-                    hideBeforeMessageId: latestHideBefore,
+            if (result.shouldUpdateCharacter) {
+                await updateCharacter(char.id, {
+                    memories: result.updatedMemories,
+                    hideBeforeMessageId: result.hideBeforeMessageId,
                 } as any);
             }
 
-            if (totalProcessed > 0) {
-                addToast(`✅ 向量化完成：${round} 轮处理了约 ${totalProcessed} 条消息`, 'success');
+            if (result.processedMessages > 0) {
+                addToast(`旧聊天整理完成：${result.rounds} 轮处理 ${result.processedMessages} 条，写入 ${result.stored} 件标本`, 'success');
             } else {
-                addToast('所有聊天记录都已处理完毕，无需操作', 'info');
+                const reasonMap: Record<string, string> = {
+                    done: '可处理旧聊天已整理完',
+                    lock: '另一个整理任务正在运行',
+                    hot_zone: '目前只有最近热区内的聊天，先保留不处理',
+                    threshold: '可处理旧聊天不足 10 条，暂时不用整理',
+                    no_progress: '水位线没有前进，请检查副 API',
+                    max_rounds: '已达到本次整理上限，可稍后继续',
+                    error: '整理失败，请检查副 API',
+                };
+                addToast(reasonMap[result.stoppedReason] || '当前没有可处理旧聊天', result.stoppedReason === 'error' || result.stoppedReason === 'no_progress' ? 'error' : 'info');
             }
         } catch (e: any) {
-            addToast(`❌ 向量化失败：${e.message}`, 'error');
+            addToast(`整理失败：${e.message}`, 'error');
         } finally {
             setIsVectorizing(false);
         }
@@ -5909,7 +5958,7 @@ ${privateCallDecisionPromptBody({
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(
         () => handleSendText(),
-        [char, input, replyTarget, parallelReplyEnabled, parallelReplyTargets, auxApiConfig, apiConfig, userProfile, liveChatEnabled, liveChatSettings],
+        [char, input, replyTarget, parallelReplyEnabled, parallelReplyTargets, auxApiConfig, apiConfig, userProfile, liveChatEnabled],
     );
 
     // ── 会话设置（聊天设置面板）派生值：备注名 / 头像覆盖 / 时间戳等 ──
@@ -6824,9 +6873,15 @@ ${privateCallDecisionPromptBody({
                         <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#9bb3c4' }}>Mark The Spot</span>
                         <span aria-hidden className="flex-1 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }} />
                     </div>
+                    <LocationMapCard
+                        variant="preview"
+                        name={locationPreviewName}
+                        address={locationPreviewAddress}
+                        locationMap={locationMapPreview}
+                    />
                     <LinedInput value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="这儿叫什么（比如：江汉路口那家咖啡店）" maxLength={40} className="font-bold" autoFocus />
                     <LinedInput value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="几楼几号、怎么找到你，空着也行" maxLength={80} />
-                    <NoteStrip>TA 会收到一张插着小旗的位置卡片，一眼就知道你这会儿落在哪儿。</NoteStrip>
+                    <NoteStrip>TA 会收到一张插着小旗的位置卡片；这张小地图只在 Moro 本地生成，不会读取真实定位。</NoteStrip>
                 </div>
              </JournalSheet>
 
@@ -7045,7 +7100,10 @@ ${privateCallDecisionPromptBody({
              {showUserScreenWatchPanel && char && (() => {
                  const activeWatch = userScreenWatch.session;
                  const settings = activeWatch?.settings || userScreenWatchDraftSettings;
-                 const latestComment = activeWatch?.comments?.slice(-1)[0]?.text || '';
+                 const latestComment = [...(activeWatch?.comments || [])]
+                     .reverse()
+                     .map(comment => sanitizeUserScreenWatchComment(comment.text))
+                     .find(Boolean) || '';
                  const sameChar = !activeWatch || activeWatch.charId === char.id;
                  const toggleSetting = (key: 'captureFrames' | 'trackMoroUsage' | 'floatingEnabled') => {
                      const value = !settings[key];
@@ -7088,7 +7146,7 @@ ${privateCallDecisionPromptBody({
                                  {activeWatch && (
                                      <div className="rounded-2xl border border-slate-100 px-3.5 py-3">
                                          <div className="mb-1 text-[11px] font-black text-slate-400">最近短评</div>
-                                         <div className="text-[13px] leading-relaxed text-slate-800">{latestComment || '还没有短评，点“评这一眼”可以让 TA 立刻接一句。'}</div>
+                                         <div className="max-h-20 overflow-hidden break-words text-[13px] leading-relaxed text-slate-800">{latestComment || '还没有短评，点“评这一眼”可以让 TA 立刻接一句。'}</div>
                                          <div className="mt-2 text-[11px] text-slate-400">Moro 内部停留：{formatMoroUsage(activeWatch.usage || [], 3)}</div>
                                      </div>
                                  )}
@@ -7245,6 +7303,7 @@ ${privateCallDecisionPromptBody({
                 voiceAvailable={!!(char.voiceProfile?.voiceId || char.voiceProfile?.timberWeights?.length)}
                 onGenerateVoice={selectedMessage ? () => handleManualTts(selectedMessage) : undefined}
                 scheduleData={scheduleData}
+                scheduleLifeNotes={scheduleLifeNotes}
                 isScheduleGenerating={isScheduleGenerating}
                 onScheduleEdit={handleScheduleEdit}
                 onScheduleDelete={handleScheduleDelete}
@@ -7261,7 +7320,7 @@ ${privateCallDecisionPromptBody({
                 apiPresets={apiPresets}
                 onAddApiPreset={addApiPreset}
                 onSaveEmotion={(config) => {
-                    // API 同步到所有角色，enabled 仅写到当前角色
+                    // 日程 / 心情 API 同步到所有角色，enabled 仅写到当前角色
                     syncEmotionApiToAllCharacters(config.api);
                     updateCharacter(char.id, {
                         emotionConfig: {

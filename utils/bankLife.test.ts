@@ -7,15 +7,19 @@ import {
     canUnlockLifeShop,
     advanceBankLifeDay,
     advanceJobApplicationStage,
+    advanceJobApplicationStageWithAi,
     applyForJob,
     applyMarketPulses,
     appendJobChatMessage,
+    appendBankActionRecord,
     borrowLoan,
     buildLifeSuggestions,
+    createBankActionResult,
     computeCreditProfile,
     buyStock,
     createDefaultBankLifeState,
     foundCompany,
+    applyCompanyIssueWithResult,
     leaveJob,
     loanTotal,
     mergeAiJobPostings,
@@ -25,6 +29,7 @@ import {
     sellStock,
     startJobApplication,
     updateResumeProfile,
+    withdrawCompanyDividend,
 } from './bankLife';
 import { BankFullState } from '../types';
 
@@ -70,6 +75,14 @@ describe('bankLife', () => {
         expect(programmer.bossName).toBeTruthy();
         expect(programmer.companyIntro).toContain(programmer.employer);
         expect(programmer.tags?.length).toBeGreaterThan(1);
+        expect(programmer.salaryDetail?.socialInsurance).toBeTruthy();
+        expect(programmer.salaryDetail?.bonusSubsidies?.length).toBeGreaterThan(0);
+        expect(programmer.responsibilities?.length).toBeGreaterThan(1);
+        expect(programmer.requirementDetails?.length).toBeGreaterThan(1);
+        expect(programmer.employeeBenefits).toContain('五险一金');
+        expect(programmer.recruiterStats?.responseTime).toBeTruthy();
+        expect(programmer.companyIndustry).toBeTruthy();
+        expect(programmer.publishNote).toBeTruthy();
     });
 
     it('starts job applications with recruiter chat messages', () => {
@@ -133,8 +146,25 @@ describe('bankLife', () => {
         expect(migrated.life?.jobSearchSessions).toEqual([]);
         expect(migrated.life?.marketPulses).toEqual([]);
         expect(migrated.life?.aiJobPostings).toEqual([]);
+        expect(migrated.life?.actionHistory).toEqual([]);
         expect(migrated.life?.resume?.skills).toEqual([]);
         expect(migrated.life?.creditProfile?.score).toBeGreaterThan(0);
+    });
+
+    it('records generic bank action history for replayable modals', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const result = createBankActionResult({
+            category: 'dashboard',
+            kind: 'dashboard-insight',
+            title: '复盘',
+            summary: '今天先看现金流。',
+            tone: 'info',
+            metrics: [{ label: '现金', value: '¥100' }],
+        });
+        const life = appendBankActionRecord(life0, result);
+
+        expect(life.actionHistory?.[0]).toMatchObject({ id: result.id, category: 'dashboard', kind: 'dashboard-insight' });
+        expect(life.actionHistory?.[0].metrics?.[0].label).toBe('现金');
     });
 
     it('updates resume profile without losing existing life state', () => {
@@ -193,15 +223,78 @@ describe('bankLife', () => {
         expect(next.life.jobHistory[0].id).toBe(started.application.id);
     });
 
+    it('migrates legacy active job applications into the staged pipeline', () => {
+        const job = JOB_POSTINGS.find(j => !j.black)!;
+        const migrated = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '旧店', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [], totalRevenue: 0 },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: {
+                ...createDefaultBankLifeState('2026-06-01'),
+                jobHistory: [{
+                    id: 'legacy-app',
+                    postingId: job.id,
+                    title: job.title,
+                    employer: job.employer,
+                    status: 'rejected',
+                    stage: 'submitted',
+                    score: 0,
+                    dateStr: '2026-06-01',
+                    message: '旧版投递记录',
+                }],
+            },
+        } as unknown as BankFullState);
+
+        expect(migrated.life?.jobHistory[0].status).toBe('active');
+        expect(migrated.life?.jobHistory[0].stageHistory?.length).toBeGreaterThan(0);
+        expect(migrated.life?.jobHistory[0].todos?.length).toBeGreaterThan(0);
+    });
+
+    it('keeps offer as a review stage until the user accepts it', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const job = JOB_POSTINGS.find(j => !j.black)!;
+        const started = startJobApplication(life0, job);
+        const screening = advanceJobApplicationStageWithAi(started.life, started.application.id, '', 0, { nextStage: 'screening' });
+        const chat = advanceJobApplicationStageWithAi(screening.life, started.application.id, '可以稳定排班', 0, { nextStage: 'recruiter_chat' });
+        const assessment = advanceJobApplicationStageWithAi(chat.life, started.application.id, '到岗时间明确', 0, { nextStage: 'assessment' });
+        const interview = advanceJobApplicationStageWithAi(assessment.life, started.application.id, '试岗表现稳定', 0, { nextStage: 'interview' });
+        const offer = advanceJobApplicationStageWithAi(interview.life, started.application.id, '面试回答完整', 0, { nextStage: 'offer', offerSalary: job.salaryMin + 300 });
+
+        expect(offer.application?.stage).toBe('offer');
+        expect(offer.life.currentJob).toBeUndefined();
+
+        const accepted = advanceJobApplicationStageWithAi(offer.life, started.application.id, '接受 Offer', 0, { nextStage: 'hired' });
+        expect(accepted.application?.stage).toBe('hired');
+        expect(accepted.life.currentJob?.title).toBe(job.title);
+        expect(accepted.life.currentJob?.salaryMin).toBe(offer.application?.offerTerms?.salary);
+    });
+
+    it('caps virtual losses when an AI stage marks a risky job as a scam', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const risky = JOB_POSTINGS.find(j => j.black)!;
+        const started = startJobApplication(life0, risky);
+        const screening = advanceJobApplicationStageWithAi(started.life, started.application.id, '', 20, { nextStage: 'screening' });
+        const scammed = advanceJobApplicationStageWithAi(screening.life, started.application.id, '对方要求押金', 20, { nextStage: 'scammed', riskFlags: ['押金'] });
+
+        expect(scammed.application?.stage).toBe('scammed');
+        expect(scammed.balanceDelta).toBeGreaterThanOrEqual(-20);
+        expect(scammed.life.events[0].amount).toBe(scammed.balanceDelta);
+    });
+
     it('buys and sells virtual stocks with holdings and money results', () => {
         const life0 = createDefaultBankLifeState('2026-06-01');
         expect(life0.stockMarket[0].history?.length).toBeGreaterThan(10);
         const bought = buyStock(life0, 'MORO', 1000);
         expect(bought.cost).toBeGreaterThan(0);
         expect(bought.life.holdings.MORO.shares).toBeGreaterThan(0);
+        expect(bought.actionResult?.kind).toBe('stock-buy');
+        expect(bought.life.actionHistory?.[0].category).toBe('invest');
         const sold = sellStock(bought.life, 'MORO', bought.life.holdings.MORO.shares);
         expect(sold.revenue).toBeGreaterThan(0);
         expect(sold.life.holdings.MORO).toBeUndefined();
+        expect(sold.actionResult?.pnl).toBeTypeOf('number');
     });
 
     it('appends stock candles when advancing a day', () => {
@@ -220,6 +313,21 @@ describe('bankLife', () => {
         expect(life.company?.cash).toBe(COMPANY_FOUND_COST);
         expect(life.company?.orders?.length).toBeGreaterThan(0);
         expect(life.company?.pendingIssue?.options.length).toBeGreaterThan(0);
+        expect(life.actionHistory?.[0].kind).toBe('company-found');
+    });
+
+    it('returns structured company issue and dividend results without reducing profit below zero', () => {
+        const founded = foundCompany(createDefaultBankLifeState('2026-06-01'), '月光社', '软件工作室');
+        const optionId = founded.company!.pendingIssue!.options[0].id;
+        const issue = applyCompanyIssueWithResult(founded, optionId);
+        expect(issue.actionResult?.category).toBe('company');
+        expect(issue.life.actionHistory?.[0].kind).toBe('company-issue');
+
+        const withCash = { ...issue.life, company: { ...issue.life.company!, cash: COMPANY_FOUND_COST + 10000, cumulativeProfit: 0 } };
+        const dividend = withdrawCompanyDividend(withCash);
+        expect(dividend.amount).toBeGreaterThan(0);
+        expect(dividend.life.company?.cumulativeProfit).toBeGreaterThanOrEqual(0);
+        expect(dividend.actionResult?.kind).toBe('company-dividend');
     });
 
     it('applies AI market pulses to stock news', () => {
@@ -247,10 +355,21 @@ describe('bankLife', () => {
         const borrowed = borrowLoan(createDefaultBankLifeState('2026-06-01'), 'formal', 5000);
         expect(borrowed.loan.contractTerms?.length).toBeGreaterThan(1);
         expect(borrowed.loan.repaymentPlan?.length).toBeGreaterThan(0);
+        expect(borrowed.actionResult?.kind).toBe('loan-borrow');
         const advanced = advanceBankLifeDay(borrowed.life);
         expect(loanTotal(advanced.life)).toBeGreaterThan(5000);
         const repaid = repayLoan(advanced.life, borrowed.loan.id, 1000);
         expect(repaid.paid).toBe(1000);
         expect(loanTotal(repaid.life)).toBeLessThan(loanTotal(advanced.life));
+        expect(repaid.actionResult?.kind).toBe('loan-repay');
+    });
+
+    it('caps shady loan metadata and repayment overpay at outstanding balance', () => {
+        const borrowed = borrowLoan(createDefaultBankLifeState('2026-06-01'), 'shady', 12000);
+        expect(borrowed.loan.serviceFee).toBeLessThanOrEqual(500);
+        expect(borrowed.actionResult?.riskTags).toContain('高利息');
+        const repaid = repayLoan(borrowed.life, borrowed.loan.id, 999999);
+        expect(repaid.paid).toBe(12000);
+        expect(repaid.life.loans).toHaveLength(0);
     });
 });

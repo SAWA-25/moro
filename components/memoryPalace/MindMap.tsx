@@ -10,11 +10,23 @@
  */
 
 import React from 'react';
-import type { MemoryNode, MemoryLink, MemoryRoom, LinkType } from '../../utils/memoryPalace';
+import type { MemoryNode, MemoryRoom, LinkType } from '../../utils/memoryPalace';
+
+export type MindMapLinkType = LinkType | 'event_box';
+
+export interface MindMapEdge {
+    id: string;
+    sourceId: string;
+    targetId: string;
+    type: MindMapLinkType;
+    strength: number;
+    label?: string;
+    how?: string;
+}
 
 interface MindMapProps {
     nodes: MemoryNode[];
-    links: MemoryLink[];
+    links: MindMapEdge[];
     focusId: string | null;
     onFocus: (id: string) => void;
     roomColors: Record<string, string>;
@@ -22,12 +34,13 @@ interface MindMapProps {
 }
 
 /** 关联类型 → 颜色 + 人话标签 + 一句"怎么连上的" */
-const LINK_META: Record<LinkType, { color: string; label: string; how: string }> = {
+const LINK_META: Record<MindMapLinkType, { color: string; label: string; how: string }> = {
     temporal: { color: '#6b7fa8', label: '时间', how: '前后脚发生，被你顺着时间线串在了一起' },
     emotional: { color: '#c98aa6', label: '情绪', how: '当时的心情很像，于是一想起这件就带出那件' },
     causal: { color: '#c2954e', label: '因果', how: '一件事牵出了另一件，你把来龙去脉接上了' },
     person: { color: '#4f9a87', label: '人物', how: '都绕着同一个人，于是归到了一处' },
     metaphor: { color: '#8a6cc0', label: '隐喻', how: '两件看似不相干的事，被一个相似的意象/感觉勾连起来' },
+    event_box: { color: '#3f3f3f', label: '同一事件', how: '被收进同一个事件盒，说明它们属于同一段连续发生的事' },
 };
 
 const MAX_NEIGHBORS = 12;
@@ -46,8 +59,8 @@ const MindMap: React.FC<MindMapProps> = ({ nodes, links, focusId, onFocus, roomC
 
     // 与焦点直接相连的边 + 对端节点，按强度降序，截断到 MAX_NEIGHBORS
     const neighbors = React.useMemo(() => {
-        if (!focus) return [] as { link: MemoryLink; node: MemoryNode }[];
-        const out: { link: MemoryLink; node: MemoryNode }[] = [];
+        if (!focus) return [] as { link: MindMapEdge; node: MemoryNode }[];
+        const out: { link: MindMapEdge; node: MemoryNode }[] = [];
         for (const l of links) {
             let otherId: string | null = null;
             if (l.sourceId === focus.id) otherId = l.targetId;
@@ -82,7 +95,7 @@ const MindMap: React.FC<MindMapProps> = ({ nodes, links, focusId, onFocus, roomC
         <div>
             {/* 图例 */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                {(Object.keys(LINK_META) as LinkType[]).map(t => (
+                {(Object.keys(LINK_META) as MindMapLinkType[]).map(t => (
                     <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#626262' }}>
                         <span style={{ width: 14, height: 2, background: LINK_META[t].color, display: 'inline-block' }} />
                         {LINK_META[t].label}
@@ -159,7 +172,7 @@ const MindMap: React.FC<MindMapProps> = ({ nodes, links, focusId, onFocus, roomC
                             <span style={{ display: 'inline-block', width: 48, height: 6, background: '#eee', border: '1px solid #cfcfcf', position: 'relative' }}>
                                 <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(nb.link.strength * 100)}%`, background: m.color }} />
                             </span>
-                            <span style={{ fontSize: 10, color: '#9a9a9a' }}>{m.how}</span>
+                            <span style={{ fontSize: 10, color: '#9a9a9a' }}>{nb.link.how || m.how}</span>
                         </div>
                         <div style={{ fontSize: 12, lineHeight: 1.5, color: '#2a2a2a' }}>{snippet(nb.node.content, 64)}</div>
                     </div>

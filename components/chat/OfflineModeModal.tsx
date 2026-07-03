@@ -18,13 +18,16 @@ import {
     generateOfflineOpening,
     generateOfflineTurn,
     commitOfflineSessionToContext,
+    prepareOfflineGeneratedText,
+    type OfflineCommitInfo,
 } from '../../utils/offlineMode';
+import { TAKEOUT_ORDER_EVENT } from '../../utils/takeout';
 
 /**
  * 线下模式弹窗：角色输出 [[OFFLINE_START]]（自动线下开启时）后弹出。
  * 窗口里只记录线下发生的情景：场景旁白 / 角色言行 / 用户行动。
  * 用户可在输入框发言或行动，角色实时回应；「退出线下」会把全部情景
- * 合成一条 system 消息进入上下文，并由宿主（Chat.tsx）触发角色主动发消息收尾。
+ * 合成一条 system 消息进入上下文，并由宿主（Chat.tsx）延迟酌情收尾。
  */
 
 interface OfflineModeModalProps {
@@ -32,8 +35,8 @@ interface OfflineModeModalProps {
     userProfile: UserProfile;
     /** 线下场景生成用的 API。宿主传文具盒主 API，让面对面现场跟主聊天模型保持一致。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
-    /** 结束线下模式：情景已落库后回调，宿主负责 reload + 触发角色主动消息 */
-    onEnd: () => void;
+    /** 结束线下模式：情景已落库后回调，宿主负责 reload + 延迟收尾 */
+    onEnd: (info: OfflineCommitInfo | null) => void;
     /** 挂起线下模式：只收起窗口，保留 localStorage 草稿，不落库、不触发收尾 */
     onSuspend: (entryCount: number) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
@@ -79,6 +82,16 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         });
     };
 
+    const consumeGeneratedText = (raw: string): string => {
+        const processed = prepareOfflineGeneratedText(raw);
+        if (processed.takeoutDesc !== undefined) {
+            window.dispatchEvent(new CustomEvent(TAKEOUT_ORDER_EVENT, {
+                detail: { charId: char.id, desc: processed.takeoutDesc },
+            }));
+        }
+        return processed.content;
+    };
+
     const beginEditEntry = (index: number, text: string) => {
         if (busy || ending) return;
         setEditingIndex(index);
@@ -117,7 +130,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         setOpeningChosen(true);
         setBusy(true);
         try {
-            const opening = await generateOfflineOpening(char, userProfile, apiConfig, pov, scenario);
+            const opening = consumeGeneratedText(await generateOfflineOpening(char, userProfile, apiConfig, pov, scenario));
             if (opening) pushEntries({ role: 'scene', text: opening, at: Date.now() });
         } catch (e: any) {
             addToast(`线下开场生成失败：${e?.message || e}`, 'error');
@@ -139,7 +152,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             const base = userInput
                 ? [...entries, { role: 'user' as const, text: userInput, at: Date.now() }]
                 : entries;
-            const reply = await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov);
+            const reply = consumeGeneratedText(await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov));
             if (reply) pushEntries({ role: 'char', text: reply, at: Date.now() });
         } catch (e: any) {
             addToast(`线下情景生成失败：${e?.message || e}`, 'error');
@@ -160,9 +173,9 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         if (ending || isEditing) return;
         setEnding(true);
         try {
-            await commitOfflineSessionToContext(char, userProfile.name, entries);
+            const commitInfo = await commitOfflineSessionToContext(char, userProfile.name, entries);
             clearOfflineSession(char.id);
-            onEnd();
+            onEnd(commitInfo);
         } catch (e: any) {
             addToast(`线下记录保存失败：${e?.message || e}`, 'error');
             setEnding(false);

@@ -1,4 +1,5 @@
 import { AppID, UserScreenWatchComment, UserScreenWatchFrame, UserScreenWatchSession, UserScreenWatchSettings, UserScreenWatchUsageSlice } from '../types';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 export const USER_SCREEN_WATCH_MAX_FRAMES = 20;
 export const USER_SCREEN_WATCH_MAX_COMMENTS = 80;
@@ -21,6 +22,113 @@ const clampMs = (value: unknown, fallback: number, min: number, max: number): nu
 
 const uid = (prefix: string, now = Date.now()): string =>
   `${prefix}-${now}-${Math.random().toString(36).slice(2, 8)}`;
+
+const USER_SCREEN_WATCH_COMMENT_KEYS = ['text', 'comment', 'content', 'message', 'reply', '短评', '评论', '正文'];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const stripUserScreenWatchCommentFence = (raw: string): string => {
+  let text = raw.trim();
+  const wholeFence = text.match(/^```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)\s*```$/);
+  if (wholeFence) return wholeFence[1].trim();
+  text = text
+    .replace(/^```(?:[a-zA-Z0-9_-]+)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return text.replace(/^json\s*(?=[{\[])/i, '').trim();
+};
+
+const pickUserScreenWatchCommentField = (value: unknown, depth = 0): unknown | undefined => {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const picked = pickUserScreenWatchCommentField(item, depth + 1);
+      if (picked !== undefined) return picked;
+    }
+    return undefined;
+  }
+  if (!isRecord(value) || depth > 2) return undefined;
+
+  const entries = Object.entries(value);
+  for (const key of USER_SCREEN_WATCH_COMMENT_KEYS) {
+    const found = entries.find(([name]) => name.toLowerCase() === key.toLowerCase());
+    if (found && found[1] !== undefined && found[1] !== null) return found[1];
+  }
+
+  for (const key of ['data', 'result', 'payload', 'output']) {
+    const nested = value[key];
+    if (nested !== undefined && nested !== null) {
+      const picked = pickUserScreenWatchCommentField(nested, depth + 1);
+      if (picked !== undefined) return picked;
+    }
+  }
+  return undefined;
+};
+
+const parseJsonishUserScreenWatchComment = (text: string): unknown | undefined => {
+  const clean = stripUserScreenWatchCommentFence(text);
+  const candidates = [clean];
+  const firstObj = clean.indexOf('{');
+  const lastObj = clean.lastIndexOf('}');
+  if (firstObj >= 0 && lastObj > firstObj) candidates.push(clean.slice(firstObj, lastObj + 1));
+  const firstArr = clean.indexOf('[');
+  const lastArr = clean.lastIndexOf(']');
+  if (firstArr >= 0 && lastArr > firstArr) candidates.push(clean.slice(firstArr, lastArr + 1));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const picked = pickUserScreenWatchCommentField(parsed);
+      if (picked !== undefined) return picked;
+      if (/^\s*[{[]/.test(candidate)) return '';
+    } catch { /* try the next shape */ }
+  }
+
+  for (const key of USER_SCREEN_WATCH_COMMENT_KEYS) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = clean.match(new RegExp(`["']${escaped}["']\\s*[:：]\\s*("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^,}\\]\\n\\r]+)`, 'i'));
+    if (!match) continue;
+    const rawValue = match[1].trim();
+    if (!rawValue || /^[}\]]?$/.test(rawValue)) return '';
+    if (rawValue.startsWith('"')) {
+      try { return JSON.parse(rawValue); } catch { return rawValue.slice(1, -1); }
+    }
+    if (rawValue.startsWith("'")) return rawValue.slice(1, -1);
+    return rawValue;
+  }
+
+  return undefined;
+};
+
+const looksLikeRawUserScreenWatchJson = (text: string): boolean =>
+  /^(?:json\s*)?[{\[]/i.test(stripUserScreenWatchCommentFence(text));
+
+export function sanitizeUserScreenWatchComment(raw: unknown, maxLen = 90): string {
+  const limit = Math.max(0, Math.round(Number(maxLen) || 90));
+  const picked = typeof raw === 'string'
+    ? parseJsonishUserScreenWatchComment(raw)
+    : pickUserScreenWatchCommentField(raw);
+  if (picked !== undefined) raw = picked;
+
+  let text = stripUserScreenWatchCommentFence(String(raw ?? ''));
+  if (!text) return '';
+  if (picked === undefined && looksLikeRawUserScreenWatchJson(text)) return '';
+
+  text = text
+    .replace(/^(?:短评|评论|回复|内容|text|comment|content|message)\s*[:：]\s*/i, '')
+    .replace(/```/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  text = sanitizeAssistantVisibleText(text);
+
+  while (/^["'「『“‘]/.test(text) && /["'」』”’]$/.test(text) && text.length >= 2) {
+    text = text.slice(1, -1).trim();
+  }
+
+  if (!text || looksLikeRawUserScreenWatchJson(text)) return '';
+  return limit ? text.slice(0, limit) : '';
+}
 
 export function normalizeUserScreenWatchSettings(input?: Partial<UserScreenWatchSettings> | null): UserScreenWatchSettings {
   return {
@@ -76,10 +184,11 @@ export function appendUserScreenWatchComment(
   session: UserScreenWatchSession,
   comment: Omit<UserScreenWatchComment, 'id'> & { id?: string },
 ): UserScreenWatchSession {
+  const text = sanitizeUserScreenWatchComment(comment.text);
   const item: UserScreenWatchComment = {
     id: comment.id || uid('usw-comment', comment.createdAt),
     frameId: comment.frameId,
-    text: (comment.text || '').trim(),
+    text,
     createdAt: comment.createdAt,
     source: comment.source,
   };
@@ -195,7 +304,10 @@ export function formatMoroUsage(usage: UserScreenWatchUsageSlice[] = [], limit =
 
 export function buildUserScreenWatchSummary(session: UserScreenWatchSession): string {
   const duration = formatDurationZh((session.endedAt || session.updatedAt || Date.now()) - session.startedAt);
-  const comments = (session.comments || []).filter(c => c.source !== 'summary');
+  const comments = (session.comments || [])
+    .filter(c => c.source !== 'summary')
+    .map(c => ({ ...c, text: sanitizeUserScreenWatchComment(c.text) }))
+    .filter(c => c.text);
   const latest = comments.slice(-3).map(c => c.text).filter(Boolean);
   const usageLine = formatMoroUsage(session.usage || [], 4);
   const frameCount = (session.frames || []).length;
@@ -218,7 +330,9 @@ export function isUserScreenWatchContextFresh(session: UserScreenWatchSession | 
 export function buildUserScreenWatchContextLines(session: UserScreenWatchSession, now = Date.now()): string[] {
   if (!isUserScreenWatchContextFresh(session, now)) return [];
   const comments = (session.comments || [])
-    .filter(c => c.source !== 'summary' && c.text)
+    .filter(c => c.source !== 'summary')
+    .map(c => ({ ...c, text: sanitizeUserScreenWatchComment(c.text) }))
+    .filter(c => c.text)
     .slice(-3)
     .map(c => `- ${new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${session.charName}短评：${c.text}`);
   const frames = (session.frames || [])

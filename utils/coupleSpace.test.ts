@@ -1,15 +1,19 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
     applyCoupleAutoCareDraft,
+    applyCoupleQuestionAnswer,
     buildCoupleSpacePromptBlock,
+    COUPLE_EYES_BODY_MAX,
     ensureCoupleSpace,
     generateCharQuestionAnswer,
     generateCharWhisperReply,
+    generateCoupleEyesCard,
     generateCoupleRecap,
     isCoupleAutoCareEnabled,
     shouldRunCoupleAutoCare,
     type CoupleApi,
 } from './coupleSpace';
+import { DB } from './db';
 import type { CharacterProfile, CoupleSpace } from '../types';
 
 /**
@@ -115,18 +119,34 @@ describe('情侣空间 2.0 数据兼容与后台自经营', () => {
     it('ensureCoupleSpace 会给旧空间补齐 v2 字段，且旧空间默认开启后台自经营', () => {
         const space = ensureCoupleSpace({ coupleSpace: oldSpace() });
 
-        expect(space.settings?.theme).toBe('scrapbook');
+        expect(space.settings?.theme).toBe('clean');
         expect(space.settings?.autoCareEnabled).toBeUndefined();
         expect(space.profile?.rituals).toEqual([]);
         expect(space.memoryCards).toEqual([]);
         expect(space.recaps).toEqual([]);
         expect(space.dailyCheckins).toEqual([]);
         expect(space.autoCare).toEqual({});
+        expect(space.eyesCards).toEqual([]);
         expect(isCoupleAutoCareEnabled(space)).toBe(true);
     });
 
+    it('ensureCoupleSpace 会把旧提问箱记录默认视为已回答', () => {
+        const space = ensureCoupleSpace({
+            coupleSpace: oldSpace({
+                questions: [{ id: 'qa-old', question: '你会想我吗', answer: '会。', at: now }],
+            }),
+        });
+
+        expect(space.questions?.[0]).toMatchObject({
+            id: 'qa-old',
+            status: 'answered',
+            visibility: 'anonymous',
+            source: 'questionBox',
+        });
+    });
+
     it('单个空间关闭 autoCareEnabled=false 后不会触发自动经营', () => {
-        const space = ensureCoupleSpace({ coupleSpace: oldSpace({ settings: { autoCareEnabled: false, theme: 'scrapbook' } }) });
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace({ settings: { autoCareEnabled: false, theme: 'clean' } }) });
 
         expect(isCoupleAutoCareEnabled(space)).toBe(false);
         expect(shouldRunCoupleAutoCare(space, now)).toMatchObject({ shouldRun: false, reason: 'disabled' });
@@ -163,26 +183,26 @@ describe('情侣空间 2.0 数据兼容与后台自经营', () => {
     it('手动回顾不受后台自动经营开关和三天冷却影响', () => {
         const space = ensureCoupleSpace({
             coupleSpace: oldSpace({
-                settings: { autoCareEnabled: false, theme: 'scrapbook' },
+                settings: { autoCareEnabled: false, theme: 'clean' },
                 autoCare: { lastRecapAt: now - 60_000 },
             }),
         });
         const applied = applyCoupleAutoCareDraft(space, {
             kind: 'recap',
-            title: '本周小报',
-            text: '这周的心事被好好夹进手账里。',
+            title: '本周回顾',
+            text: '这周的心事被好好留在空间里。',
             highlights: ['一起完成了一个约定'],
         }, { source: 'manual', text: '用户手动生成情侣空间回顾', at: now }, now);
 
         expect(applied.applied).toBe('recap');
-        expect(applied.space.recaps?.[0].title).toBe('本周小报');
-        expect(applied.space.memoryCards?.[0]).toMatchObject({ kind: 'recap', title: '本周小报' });
+        expect(applied.space.recaps?.[0].title).toBe('本周回顾');
+        expect(applied.space.memoryCards?.[0]).toMatchObject({ kind: 'recap', title: '本周回顾' });
     });
 
     it('generateCoupleRecap 能解析 summary 格式 JSON 并保留建议项', async () => {
         mockFetch(jsonRes({
             content: JSON.stringify({
-                title: '雨天小报',
+                title: '雨天回顾',
                 summary: '你们把一个普通雨天过成了两个人的暗号。',
                 highlights: ['一起记下雨声', '把晚安说得很认真'],
                 suggestedTasks: ['周末一起散步'],
@@ -194,10 +214,73 @@ describe('情侣空间 2.0 数据兼容与后台自经营', () => {
         const draft = await generateCoupleRecap({ char, userName: '小明', api: API, space, period: 'week' });
         expect(draft).toMatchObject({
             kind: 'recap',
-            title: '雨天小报',
+            title: '雨天回顾',
             text: '你们把一个普通雨天过成了两个人的暗号。',
             suggestedTasks: ['周末一起散步'],
             suggestedWishes: ['去看海'],
+        });
+    });
+
+    it('generateCoupleEyesCard 能解析 JSON、剥离 think 并限制正文长度', async () => {
+        vi.spyOn(DB, 'getRecentMessagesByCharId').mockResolvedValue([
+            { id: 1, charId: 'c1', role: 'user', type: 'text', content: '今天我有点累', timestamp: now - 2_000 },
+            { id: 2, charId: 'c1', role: 'assistant', type: 'text', content: '那就靠一会儿。', timestamp: now - 1_000 },
+        ] as any);
+        mockFetch(jsonRes({
+            content: `<think>先想想</think>${JSON.stringify({
+                summary: 'TA 记得你很累的时候也会努力温柔。',
+                tags: ['疲惫', '靠近', '被看见', '会被裁掉', '也会被裁掉'],
+                body: '你'.repeat(COUPLE_EYES_BODY_MAX + 80),
+                innerVoice: '其实我想把你接住。',
+            })}`,
+        }));
+        const space = ensureCoupleSpace({ coupleSpace: oldSpace({ whispers: [{ id: 'w1', author: 'user', text: '今天有点想你', at: now - 500 }] }) });
+
+        const card = await generateCoupleEyesCard({ char: { ...char, id: 'c1' } as CharacterProfile, userName: '小明', api: API, space, era: 'past' });
+
+        expect(card).toMatchObject({
+            era: 'past',
+            summary: 'TA 记得你很累的时候也会努力温柔。',
+            tags: ['疲惫', '靠近', '被看见', '会被裁掉'],
+            innerVoice: '其实我想把你接住。',
+            sourceMessageIds: [1, 2],
+        });
+        expect(card!.body).toHaveLength(COUPLE_EYES_BODY_MAX);
+        expect(card!.body).not.toContain('think');
+    });
+
+    it('generateCoupleEyesCard 遇到空 API 配置返回 null 且不读取聊天', async () => {
+        const spy = vi.spyOn(DB, 'getRecentMessagesByCharId').mockResolvedValue([] as any);
+        const fn = mockFetch(jsonRes({ content: '{"summary":"x","body":"y"}' }));
+
+        const card = await generateCoupleEyesCard({ char: { ...char, id: 'c1' } as CharacterProfile, userName: '小明', api: { baseUrl: '', model: '' }, space: ensureCoupleSpace({ coupleSpace: oldSpace() }), era: 'present' });
+
+        expect(card).toBeNull();
+        expect(spy).not.toHaveBeenCalled();
+        expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('提问箱 pending 回填只更新目标问题，不覆盖并发写入', () => {
+        const space = ensureCoupleSpace({
+            coupleSpace: oldSpace({
+                questions: [
+                    { id: 'qa1', question: '你会想我吗', answer: '', at: now, status: 'pending', visibility: 'anonymous', source: 'questionBox' },
+                    { id: 'qa2', question: '并发写入的问题', answer: '', at: now + 1, status: 'pending', visibility: 'anonymous', source: 'questionBox' },
+                ],
+            }),
+        });
+
+        const next = applyCoupleQuestionAnswer(space, 'qa1', '会，但我不一定承认。', now + 2);
+
+        expect(next.questions?.find(q => q.id === 'qa1')).toMatchObject({
+            answer: '会，但我不一定承认。',
+            status: 'answered',
+            answeredAt: now + 2,
+        });
+        expect(next.questions?.find(q => q.id === 'qa2')).toMatchObject({
+            question: '并发写入的问题',
+            answer: '',
+            status: 'pending',
         });
     });
 
@@ -210,6 +293,7 @@ describe('情侣空间 2.0 数据兼容与后台自经营', () => {
                     profile: { homeName: '雨天备用拥抱处', loveLanguage: '先抱抱再讲道理', rituals: ['睡前互道晚安', '吵架后先牵手', '周五一起吃甜点', '这条应被裁剪'] },
                     memoryCards: [1, 2, 3, 4].map(i => ({ id: `mc${i}`, kind: 'manual', title: `记忆卡${i}`, text: `第${i}张记忆卡`, createdAt: now - i })),
                     recaps: [1, 2, 3].map(i => ({ id: `rc${i}`, period: 'week', periodKey: `2026-W0${i}`, title: `回顾${i}`, summary: `第${i}份关系回顾`, highlights: [], suggestedTasks: [], suggestedWishes: [], sourceIds: [], createdAt: now - i })),
+                    eyesCards: [1, 2, 3].map(i => ({ era: (i === 1 ? 'past' : i === 2 ? 'present' : 'future') as any, summary: `第${i}张眼中卡`, tags: [`标签${i}`], body: `正文${i}`, generatedAt: now - i })),
                 }),
             }),
         } as CharacterProfile;
@@ -224,6 +308,9 @@ describe('情侣空间 2.0 数据兼容与后台自经营', () => {
         expect(block).toContain('回顾1');
         expect(block).toContain('回顾2');
         expect(block).not.toContain('回顾3');
+        expect(block).toContain('第1张眼中卡');
+        expect(block).toContain('第2张眼中卡');
+        expect(block).not.toContain('第3张眼中卡');
         expect(block).toContain('睡前互道晚安');
         expect(block).not.toContain('这条应被裁剪');
     });

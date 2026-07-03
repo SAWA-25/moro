@@ -16,6 +16,7 @@ export enum AppID {
   Room = 'room',
   CheckPhone = 'check_phone',
   Social = 'social',
+  CoView = 'co_view',
   Study = 'study',
   Game = 'game',
   Worldbook = 'worldbook', 
@@ -221,6 +222,15 @@ export interface TavernPreset {
      * 不随 SillyTavern JSON 导出。
      */
     moroScopes?: Partial<Record<PresetScopeKey, boolean>>;
+    /**
+     * Moro 本地增强：按任务 scope 保存独立提示词顺序。未配置时回退到 ST 的
+     * prompt_order（群聊 scope 用 100001，其余用 100000）。不随 SillyTavern JSON 导出。
+     */
+    moroPromptOrdersByScope?: Partial<Record<PresetScopeKey, PresetPromptOrderEntry[]>>;
+    /**
+     * Moro 本地增强：预设编辑快照，用于对比和恢复为副本。不随 SillyTavern JSON 导出。
+     */
+    moroSnapshots?: PresetSnapshot[];
     // —— 提示词管理器 ——
     prompts: PresetPrompt[];
     prompt_order: PresetPromptOrderCharacter[];
@@ -232,6 +242,14 @@ export interface TavernPreset {
     regexScripts?: RegexScriptData[];
     /** 导入时的原始 JSON 全量兜底（utility prompts / 模型选择等未映射字段），导出时原样合并 */
     raw?: Record<string, any>;
+}
+
+export interface PresetSnapshot {
+    id: string;
+    name: string;
+    createdAt: number;
+    reason?: string;
+    preset: Omit<TavernPreset, 'moroSnapshots'>;
 }
 
 export interface SystemLog {
@@ -1884,8 +1902,9 @@ export interface BankShopState {
 }
 
 export type BankJobPayCycle = 'daily' | 'monthly';
-export type BankJobApplicationStatus = 'hired' | 'trial' | 'rejected' | 'scammed';
-export type BankJobApplicationStage = 'submitted' | 'screening' | 'assessment' | 'interview' | 'offer' | 'hired' | 'trial' | 'rejected' | 'scammed';
+export type BankJobApplicationStatus = 'active' | 'hired' | 'trial' | 'rejected' | 'scammed' | 'declined';
+export type BankJobApplicationStage = 'submitted' | 'screening' | 'recruiter_chat' | 'assessment' | 'interview' | 'negotiation' | 'offer' | 'hired' | 'trial' | 'rejected' | 'scammed' | 'declined';
+export type BankJobStageTone = 'good' | 'warn' | 'bad' | 'info';
 export type BankLoanChannel = 'bank' | 'formal' | 'shady';
 export type BankLifeSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type BankLifePlanKind = 'work' | 'shop' | 'interview' | 'company' | 'loan' | 'invest' | 'rest';
@@ -1920,6 +1939,98 @@ export interface BankLifeShopProduct {
     appeal: number;
 }
 
+// --- CO-VIEW / SHARED WATCHING & READING TYPES ---
+
+export type CoViewMode = 'cinema' | 'reading' | 'free_roam';
+
+export type CoViewMediaKind = 'local_file' | 'direct_url' | 'embed_site' | 'external_link' | 'search_result';
+
+export interface CoViewMedia {
+    id: string;
+    kind: CoViewMediaKind;
+    title: string;
+    url?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number;
+    blob?: Blob;
+    description?: string;
+    posterUrl?: string;
+    sourceLabel?: string;
+    createdAt: number;
+    updatedAt: number;
+    lastPlayedAt?: number;
+}
+
+export interface CoViewBookChapter {
+    id: string;
+    title: string;
+    text: string;
+    index: number;
+}
+
+export interface CoViewBook {
+    id: string;
+    title: string;
+    author?: string;
+    sourceName?: string;
+    sourceType: 'txt' | 'md' | 'epub' | 'paste';
+    chapters: CoViewBookChapter[];
+    currentChapterIndex: number;
+    currentPage: number;
+    charsPerPage: number;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export type CoViewAction =
+    | { kind: 'none' }
+    | { kind: 'pause' }
+    | { kind: 'resume' }
+    | { kind: 'next_page' }
+    | { kind: 'prev_page' };
+
+export interface CoViewMessage {
+    id: string;
+    sessionId: string;
+    mode: Exclude<CoViewMode, 'free_roam'>;
+    role: 'user' | 'character' | 'system';
+    charId?: string;
+    text: string;
+    action?: CoViewAction;
+    createdAt: number;
+}
+
+export interface CoViewSession {
+    id: string;
+    mode: Exclude<CoViewMode, 'free_roam'>;
+    charId: string;
+    targetId?: string;
+    targetTitle?: string;
+    status: 'active' | 'ended';
+    progress?: {
+        seconds?: number;
+        duration?: number;
+        chapterIndex?: number;
+        page?: number;
+    };
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface BankJobSalaryDetail {
+    baseSalary?: number;
+    socialInsurance?: string;
+    bonusSubsidies?: string[];
+    note?: string;
+}
+
+export interface BankJobRecruiterStats {
+    responseTime?: string;
+    replyRate?: string;
+    todayReplies?: string;
+}
+
 export interface BankJobPosting {
     id: string;
     category: string;
@@ -1943,6 +2054,14 @@ export interface BankJobPosting {
     bossName?: string;
     bossTitle?: string;
     companyIntro?: string;
+    salaryDetail?: BankJobSalaryDetail;
+    responsibilities?: string[];
+    requirementDetails?: string[];
+    employeeBenefits?: string[];
+    recruiterStats?: BankJobRecruiterStats;
+    companyIndustry?: string;
+    companyStage?: string;
+    publishNote?: string;
     black?: boolean;
     successBias?: number;
 }
@@ -1952,6 +2071,63 @@ export interface BankJobEmployment extends BankJobPosting {
     accruedWage: number;
     daysWorked: number;
     trialUntil?: string;
+}
+
+export interface BankJobStageHistoryEntry {
+    id: string;
+    stage: BankJobApplicationStage;
+    title: string;
+    detail: string;
+    at: string;
+    tone?: BankJobStageTone;
+    score?: number;
+    balanceDelta?: number;
+}
+
+export interface BankJobStageTodo {
+    id: string;
+    label: string;
+    detail: string;
+    kind: 'resume' | 'chat' | 'assessment' | 'interview' | 'negotiation' | 'offer' | 'risk' | 'done';
+    done?: boolean;
+}
+
+export interface BankJobOfferTerms {
+    salary: number;
+    payCycle: BankJobPayCycle;
+    payDay?: number;
+    workTime?: string;
+    trialDays?: number;
+    benefits: string[];
+    risks: string[];
+    negotiable?: boolean;
+}
+
+export interface BankJobStageResult {
+    id: string;
+    stage: BankJobApplicationStage;
+    title: string;
+    summary: string;
+    tone: BankJobStageTone;
+    highlights: string[];
+    nextActionLabel?: string;
+    balanceDelta?: number;
+    scoreDelta?: number;
+    riskFlags?: string[];
+}
+
+export interface BankJobStageAiDraft {
+    nextStage?: BankJobApplicationStage;
+    scoreDelta?: number;
+    summary?: string;
+    bossMessage?: string;
+    highlights?: string[];
+    riskFlags?: string[];
+    offerSalary?: number;
+    offerTerms?: Partial<BankJobOfferTerms>;
+    rejectReason?: string;
+    nextActionLabel?: string;
+    tone?: BankJobStageTone;
 }
 
 export interface BankJobApplication {
@@ -1964,10 +2140,17 @@ export interface BankJobApplication {
     score?: number;
     questions?: { id: string; question: string; answer?: string; score?: number }[];
     offerSalary?: number;
+    offerTerms?: BankJobOfferTerms;
     riskNote?: string;
     chatMessages?: { role: 'boss' | 'user' | 'system'; content: string; at: string }[];
     resumeSnapshot?: BankResumeProfile;
+    postingSnapshot?: BankJobPosting;
     aiReview?: { score: number; strengths: string[]; weaknesses: string[]; suggestion: string };
+    stageHistory?: BankJobStageHistoryEntry[];
+    todos?: BankJobStageTodo[];
+    stageResult?: BankJobStageResult;
+    declinedReason?: string;
+    lastUpdatedAt?: string;
     dateStr: string;
     message: string;
 }
@@ -2063,6 +2246,82 @@ export interface BankLifeEvent {
     amount?: number;
 }
 
+export type BankLifeActionCategory = 'dashboard' | 'goal' | 'ledger' | 'shop' | 'invest' | 'company' | 'loan' | 'job';
+export type BankLifeActionTone = 'good' | 'warn' | 'bad' | 'info';
+
+export interface BankLifeActionMetric {
+    label: string;
+    value: string;
+    tone?: BankLifeActionTone;
+}
+
+export interface BankLifeActionRecord {
+    id: string;
+    category: BankLifeActionCategory;
+    kind: string;
+    title: string;
+    summary: string;
+    dateStr: string;
+    at: string;
+    tone?: BankLifeActionTone;
+    amount?: number;
+    riskTags?: string[];
+    aiSummary?: string;
+    metrics?: BankLifeActionMetric[];
+    payload?: Record<string, unknown>;
+}
+
+export interface BankLifeActionResult {
+    id: string;
+    category: BankLifeActionCategory;
+    kind: string;
+    title: string;
+    summary: string;
+    tone: BankLifeActionTone;
+    amount?: number;
+    riskTags?: string[];
+    aiSummary?: string;
+    metrics?: BankLifeActionMetric[];
+    lines?: BankLifeActionMetric[];
+    nextActions?: string[];
+    payload?: Record<string, unknown>;
+}
+
+export interface BankStockOrderResult extends BankLifeActionResult {
+    category: 'invest';
+    kind: 'stock-buy' | 'stock-sell' | 'watchlist';
+    symbol: string;
+    shares?: number;
+    price?: number;
+    fee?: number;
+    cost?: number;
+    revenue?: number;
+    pnl?: number;
+}
+
+export interface BankCompanyActionResult extends BankLifeActionResult {
+    category: 'company';
+    cashDelta?: number;
+    reputationDelta?: number;
+    stressDelta?: number;
+}
+
+export interface BankLoanActionResult extends BankLifeActionResult {
+    category: 'loan';
+    loanId?: string;
+    channel?: BankLoanChannel;
+    principal?: number;
+    paid?: number;
+    dueDate?: string;
+}
+
+export interface BankShopActionResult extends BankLifeActionResult {
+    category: 'shop';
+    productId?: string;
+    productName?: string;
+    quantity?: number;
+}
+
 export interface BankLifeAiEvent extends BankLifeEvent {
     source?: 'ai' | 'system';
     category?: 'daily' | 'career' | 'market' | 'company' | 'loan' | 'shop';
@@ -2144,6 +2403,7 @@ export interface BankLifeState {
     company?: BankCompanyState;
     loans: BankLoan[];
     events: BankLifeEvent[];
+    actionHistory?: BankLifeActionRecord[];
     aiEvents?: BankLifeAiEvent[];
     resume?: BankResumeProfile;
     jobSearchSessions?: BankJobSearchSession[];
@@ -3363,11 +3623,23 @@ export interface CoupleWish {
 }
 
 /** 提问箱：用户问一句，角色（AI）答一句，两边合存一条。 */
+export type CoupleQuestionStatus = 'pending' | 'answered' | 'failed';
+export type CoupleQuestionVisibility = 'anonymous' | 'named';
+export type CoupleQuestionSource = 'questionBox' | 'whisperInbox';
+
 export interface CoupleQuestion {
   id: string;
   question: string;
   answer: string;
   at: number;
+  /** pending 先落库，answered 回填答案；老数据没有该字段时按 answered 处理。 */
+  status?: CoupleQuestionStatus;
+  /** 匿名问答流默认 anonymous；named 仅保留给以后明确署名的入口。 */
+  visibility?: CoupleQuestionVisibility;
+  /** 记录来源入口，方便提问箱和悄悄话相关问答分开管理。 */
+  source?: CoupleQuestionSource;
+  answeredAt?: number;
+  pinned?: boolean;
 }
 
 /** 养盆栽：你们一起养的一株虚拟植物，每日照料攒成长值、随阶段长大。 */
@@ -3387,6 +3659,8 @@ export interface CoupleWhisper {
   author: 'user' | 'char';
   text: string;
   at: number;
+  pinned?: boolean;
+  readAt?: number;
 }
 
 /** 每日互动类型：亲一下 / 抱一下 / 牵手 / 送礼物。 */
@@ -3405,7 +3679,7 @@ export interface CoupleInteraction {
 /** 情侣空间设置。autoCareEnabled 为 undefined 时视为开启，兼容旧空间默认自动经营。 */
 export interface CoupleSpaceSettings {
   autoCareEnabled?: boolean;
-  theme?: 'scrapbook';
+  theme?: 'clean';
 }
 
 /** 情侣空间档案：两个人给这个空间留下的固定设定与小习惯。 */
@@ -3464,6 +3738,19 @@ export interface CoupleAutoCareState {
   lastSummary?: string;
 }
 
+export type CoupleEyesEra = 'past' | 'present' | 'future';
+
+/** TA 眼中的我：角色基于相处素材写给用户的一张长文卡。 */
+export interface CoupleEyesCard {
+  era: CoupleEyesEra;
+  summary: string;
+  tags: string[];
+  body: string;
+  innerVoice?: string;
+  generatedAt: number;
+  sourceMessageIds?: number[];
+}
+
 /**
  * 来往·情侣空间（参考 QQ 情侣空间）。挂在 CharacterProfile 上（每个角色一份），
  * 由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文，
@@ -3487,18 +3774,20 @@ export interface CoupleSpace {
   plant?: CouplePlant;
   /** 默契大考验·历史最高默契度（0~100，可选） */
   compatBest?: number;
-  /** v2：空间设置（自动经营默认开，主题默认手账）。 */
+  /** v2：空间设置（自动经营默认开，主题默认清爽界面）。 */
   settings?: CoupleSpaceSettings;
   /** v2：两个人的固定档案 / 小习惯。 */
   profile?: CoupleProfile;
   /** v2：从约会、外卖、动态或回顾沉淀来的记忆卡。 */
   memoryCards?: CoupleMemoryCard[];
-  /** v2：周/月关系回顾小报。 */
+  /** v2：周/月关系回顾。 */
   recaps?: CoupleRecap[];
   /** v2：每日情侣打卡。 */
   dailyCheckins?: CoupleDailyCheckin[];
   /** v2：后台自经营节流状态。 */
   autoCare?: CoupleAutoCareState;
+  /** TA 眼中的我：过去 / 现在 / 将来三张长文卡。 */
+  eyesCards?: CoupleEyesCard[];
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;
@@ -3517,7 +3806,6 @@ export interface LiveChatSettings {
     draftPauseMs?: number;
     draftMinChars?: number;
     draftCooldownMs?: number;
-    interjectMaxTargets?: number;
 }
 
 export interface ConvoSettings {
@@ -3571,6 +3859,8 @@ export interface ConvoSettings {
     proactiveRandom?: boolean;
     /** 主动语音通话：角色在主动找用户时可按人设/剧情自行决定直接拨语音电话（需主动发消息开启） */
     proactiveCallEnabled?: boolean;
+    /** 强制回话：角色在强控制欲/吃醋/担心/急事等低频场景可要求用户立刻回到本单聊回复。默认关。 */
+    forceReplyEnabled?: boolean;
     /** 主动为用户点外卖：开启后角色可在合适场景（饭点/降温/用户喊饿…）主动替用户下单外卖并代付，
      *  在聊天里生成可点开的外卖订单小票。关闭则永不触发该行为。默认关。 */
     proactiveTakeoutOrder?: boolean;
@@ -3578,6 +3868,8 @@ export interface ConvoSettings {
     momentsAutoPost?: 'off' | 'random' | number;
     /** 允许 char 看手机：角色可自然提及用户手机里的日程 / 朋友圈 / 音乐动态（提示词注入） */
     allowPhoneBrowse?: boolean;
+    /** 异地模式：当前会话按远距离 / 纯线上相处，禁止角色自动切线下；不影响用户手动发起见面。 */
+    longDistanceMode?: boolean;
     /** 自动线下：对话发展到见面情境时自动切换线下面对面模式（提示词注入） */
     autoOffline?: boolean;
     /** 发消息生成形式：'split' 一句一句蹦（默认）/ 'whole' 一大段说完 / 'freeform' 旧版按人设随意（兼容旧数据，等同 split + personaDrivenMessageLength） */
@@ -5315,7 +5607,12 @@ export interface DesktopPetRoleState {
     fv: number;
     lastFedAt?: number;
     lastPattedAt?: number;
+    lastTalkedAt?: number;
+    lastInteractedAt?: number;
 }
+
+export type DesktopPetAutoBehavior = 'quiet' | 'gentle' | 'lively';
+export type DesktopPetMood = 'hungry' | 'lonely' | 'happy' | 'sleepy' | 'calm';
 
 export interface DesktopPetReminder {
     id: string;
@@ -5348,7 +5645,9 @@ export interface DesktopPetState {
         dockSide?: 'none' | 'left' | 'right';
     };
     aiEnabled?: boolean;
+    autoBehavior?: DesktopPetAutoBehavior;
     fallSpeed?: number;
+    lastCareTickAt?: number;
     rolePrompts?: Record<string, string>;
     dialogueLog?: DesktopPetTalkMessage[];
     lastSpeech?: DesktopPetTalkMessage;
@@ -5405,6 +5704,10 @@ export interface FullBackupData {
     roomCustomAssets?: { id?: string; name: string; image: string; defaultScale: number; description?: string; visibility?: 'public' | 'character'; assignedCharIds?: string[] }[]; 
     
     novels?: NovelBook[];
+    coviewMedia?: CoViewMedia[];
+    coviewBooks?: CoViewBook[];
+    coviewSessions?: CoViewSession[];
+    coviewMessages?: CoViewMessage[];
     vrNovels?: VRWorldNovel[];          // 虚拟世界「页外」全局小说库
     vrAnnotations?: VRNovelAnnotation[]; // 虚拟世界小说批注
     customCreatorParts?: CustomCreatorPart[]; // 捏脸系统自定义部件
@@ -5430,6 +5733,7 @@ export interface FullBackupData {
     innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
     llmPresets?: TavernPreset[];              // 预设 App：SillyTavern 式 Chat Completion 预设
     personas?: Persona[];                     // 人设 App：SillyTavern 式用户人设
+    takeoutOrders?: TakeoutOrder[];
     relationshipNetworkEdges?: RelationshipNetworkEdge[];
     relationshipNetworkMessages?: RelationshipNetworkMessage[];
     relationshipNetworkAutoSettings?: RelationshipNetworkAutoSettings[];
@@ -5483,6 +5787,9 @@ export interface FullBackupData {
 
     // Theater faux screenshots (折子戏·仿真图文历史)
     theaterFauxPieces?: TheaterFauxPiece[];
+
+    // Theater custom imported library (幕间集·自定义小剧场 / 问卷库)
+    theaterCustomLibrary?: TheaterCustomLibraryItem[];
 
     // Theater reflections (折子戏·对影册)
     theaterReflectionSessions?: TheaterReflectionSession[];
@@ -5550,6 +5857,8 @@ export interface FullBackupData {
     bm25Mode?: string;
     lastActiveCharId?: string;
     eventNotifFlags?: Record<string, string>;  // moro_* 事件通知标记
+    localStorageSnapshot?: Record<string, string>;
+    indexedDbSnapshot?: Record<string, any[]>;
     hotNewsSnapshots?: HotNewsSnapshot[];
 }
 
@@ -6086,14 +6395,14 @@ export interface TheaterReflectionSession {
 
 // ──────────────────────────────────────────────────────────────────
 // 折子戏·狼人杀（捌）：拉一桌熟人开一局狼人杀。
-// user 与选中的角色各占一座，AI 玩家按各自身份（狼 / 预言家 / 女巫 / 猎人 / 平民）
+// user 与选中的角色各占一座，AI 玩家按各自身份（狼 / 预言家 / 女巫 / 猎人 / 守卫 / 白痴 / 平民）
 // 在夜里行动、白天发言、投票放逐。AI 发言走副 API、贴各自人设说话、会伪装会推理。
 // 一局完整流程（夜→昼→投票）记在 log 里，可存档、回看、续局。
 // 📌 prompt 文案集中在 utils/theaterPrompts.ts（[捌] 狼人杀 区段），引擎在 utils/theaterWerewolf.ts。
 // ──────────────────────────────────────────────────────────────────
-export type WerewolfRole = 'wolf' | 'seer' | 'witch' | 'hunter' | 'villager';
+export type WerewolfRole = 'wolf' | 'seer' | 'witch' | 'hunter' | 'guard' | 'idiot' | 'villager';
 export type WerewolfPhase = 'setup' | 'night' | 'day' | 'vote' | 'over';
-export type WerewolfDeathReason = 'wolf' | 'vote' | 'poison' | 'shot';
+export type WerewolfDeathReason = 'wolf' | 'vote' | 'poison' | 'shot' | 'guard_heal_conflict';
 
 export interface WerewolfPlayer {
   seat: number;            // 座位号 1..N
@@ -6103,6 +6412,7 @@ export interface WerewolfPlayer {
   avatar?: string;
   role: WerewolfRole;
   alive: boolean;
+  idiotRevealed?: boolean;  // 白痴被投票放逐时翻牌免死；之后不能投票 / 被投票
   deadRound?: number;      // 死于第几轮
   deadReason?: WerewolfDeathReason;
 }
@@ -6128,6 +6438,7 @@ export interface WerewolfGame {
   log: WerewolfLogEntry[];
   witchHealUsed: boolean;  // 女巫解药是否已用
   witchPoisonUsed: boolean;// 女巫毒药是否已用
+  lastGuardedSeat?: number | null; // 守卫上一夜守护目标；用于禁止连续两晚守同一人
   pendingKill?: number | null;   // 本夜狼刀目标座位（结算前暂存）
   winner?: 'good' | 'wolf' | null;
 }
@@ -6271,6 +6582,50 @@ export interface TheaterFauxPiece {
   fallbackText: string;
   createdAt: number;
   updatedAt: number;
+}
+
+// 折子戏/幕间集·自定义导入库：用户导入的小剧场指令与问卷题库。
+export type TheaterCustomLibraryKind = 'piece' | 'quiz';
+
+export interface TheaterCustomLibraryBase {
+  id: string;                 // = `${kind}:${normalizedTitle}`，同类型同标题覆盖更新
+  kind: TheaterCustomLibraryKind;
+  title: string;
+  description?: string;
+  tags: string[];
+  sourceName?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TheaterCustomPiecePreset extends TheaterCustomLibraryBase {
+  kind: 'piece';
+  instruction: string;
+}
+
+export interface TheaterCustomQuizPreset extends TheaterCustomLibraryBase {
+  kind: 'quiz';
+  questions: string[];
+  recommendedParticipants?: string;
+}
+
+export type TheaterCustomLibraryItem = TheaterCustomPiecePreset | TheaterCustomQuizPreset;
+
+export interface TheaterCustomImportBundle {
+  moroTheaterLibraryVersion?: number;
+  pieces?: Array<{
+    title?: string;
+    instruction?: string;
+    description?: string;
+    tags?: string[];
+  }>;
+  quizzes?: Array<{
+    title?: string;
+    questions?: string[];
+    description?: string;
+    tags?: string[];
+    recommendedParticipants?: string;
+  }>;
 }
 
 // ──────────────────────────────────────────────────────────────────

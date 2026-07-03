@@ -42,6 +42,19 @@ export interface SwLifeEventSnapshot {
   proactiveAngle?: string;
 }
 
+export interface SwPendingUserMessage {
+  id: number;
+  content: string;
+  timestamp?: number;
+  type?: 'text' | 'voice';
+}
+
+export interface SwQueuedReplyTarget {
+  id: number;
+  content: string;
+  name: string;
+}
+
 export interface SwProactiveV2Config {
   intensity?: 'quiet' | 'balanced' | 'chatty' | 'unfiltered';
   messageFlavor?: 'natural' | 'self' | 'warm' | 'playful' | 'moody';
@@ -66,6 +79,10 @@ export interface SwProactiveSnapshot {
   instruction: string;
   /** 最近若干条对话（role + content，已截断） */
   recentMessages: { role: string; content: string }[];
+  /** 用户已经发出但还没被角色可见回复的消息，用于主动来信时先补接。 */
+  pendingUserMessages?: SwPendingUserMessage[];
+  /** 主线程落库时可直接复用的默认引用目标。 */
+  queuedReplyTarget?: SwQueuedReplyTarget;
   /** v2：主线程镜像的近期生活事件。SW 不写主库，只消费这些快照。 */
   lifeEvents?: SwLifeEventSnapshot[];
   /** v2：主动消息设置的轻量镜像。 */
@@ -172,7 +189,8 @@ export function swShouldGenerateProactive(snap: SwProactiveSnapshot, now = Date.
   if (!snap.api?.baseUrl || !snap.api?.model) return { ok: false, reason: 'missing_api' };
   if (snap.updatedAt && now - snap.updatedAt > 48 * 60 * 60 * 1000) return { ok: false, reason: 'stale_snapshot' };
   const quiet = swResolveQuietHours(snap, now);
-  if (quiet.active && quiet.behavior !== 'send') return { ok: false, reason: `quiet_hours_${quiet.behavior}` };
+  const hasPendingReply = !!snap.pendingUserMessages?.length;
+  if (quiet.active && quiet.behavior !== 'send' && !hasPendingReply) return { ok: false, reason: `quiet_hours_${quiet.behavior}` };
   return { ok: true, reason: 'ok' };
 }
 
@@ -193,18 +211,19 @@ function formatLifeEventsForPrompt(events: SwLifeEventSnapshot[] | undefined): s
     return hits >= 2 ? '' : t;
   };
   const picked = (events || [])
-    .map(e => {
-      const activity = cleanLifeText(e?.activity) || cleanLifeText(e?.summary);
+    .map((e): SwLifeEventSnapshot | null => {
+      if (!e) return null;
+      const activity = cleanLifeText(e.activity) || cleanLifeText(e.summary);
       if (!e || !activity) return null;
       return {
         ...e,
         activity,
-        mood: cleanLifeText(e.mood),
-        location: cleanLifeText(e.location),
-        thread: cleanLifeText(e.thread),
+        mood: cleanLifeText(e.mood) || undefined,
+        location: cleanLifeText(e.location) || undefined,
+        thread: cleanLifeText(e.thread) || undefined,
       };
     })
-    .filter((e): e is SwLifeEventSnapshot => !!e)
+    .filter((e): e is SwLifeEventSnapshot => e !== null)
     .slice(-5);
   if (picked.length === 0) return '';
   const lines = picked.map(e => {
@@ -217,9 +236,28 @@ function formatLifeEventsForPrompt(events: SwLifeEventSnapshot[] | undefined): s
   return `\n你最近自己的生活切片（不是汇报素材，要压成一句真实消息）：\n${lines.join('\n')}\n`;
 }
 
+function formatPendingUserMessagesForPrompt(messages: SwPendingUserMessage[] | undefined): string {
+  const picked = (messages || [])
+    .map((m, index) => {
+      const content = String(m?.content || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      if (!m || !content) return '';
+      const time = m.timestamp ? new Date(m.timestamp) : null;
+      const hhmm = time && Number.isFinite(time.getTime())
+        ? `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+        : '';
+      const kind = m.type === 'voice' ? '语音转写' : '文字';
+      return `${index + 1}. ${hhmm ? `${hhmm} ` : ''}${kind}：「${content}」`;
+    })
+    .filter(Boolean);
+  if (!picked.length) return '';
+  return `\n用户前面已经发来但还没被你回复的消息（这次必须先接住，不要另起话题）：\n${picked.join('\n')}\n`;
+}
+
 export function swBuildMessages(snap: SwProactiveSnapshot): { role: string; content: string }[] {
   const v2 = snap.proactiveV2;
+  const pendingPrompt = formatPendingUserMessagesForPrompt(snap.pendingUserMessages);
   const v2Prompt = [
+    pendingPrompt,
     formatLifeEventsForPrompt(snap.lifeEvents),
     v2?.messageFlavor ? `来信口味：${v2.messageFlavor}。` : '',
     v2?.materialSources?.length ? `允许取材：${v2.materialSources.join('、')}。` : '',
@@ -230,8 +268,25 @@ export function swBuildMessages(snap: SwProactiveSnapshot): { role: string; cont
     if (!m || !m.content) continue;
     msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content).slice(0, 500) });
   }
-  msgs.push({ role: 'user', content: snap.instruction || '（轮到你主动发消息了，直接写消息正文）' });
+  const instruction = snap.pendingUserMessages?.length
+    ? `${snap.instruction || '（轮到你主动发消息了，直接写消息正文）'}\n这次先自然回应上面的未回复消息；可以顺带带出你的近况，但不要假装没看到。`
+    : snap.instruction || '（轮到你主动发消息了，直接写消息正文）';
+  msgs.push({ role: 'user', content: instruction });
   return msgs;
+}
+
+export function swBuildQueuedReplyMetadata(
+  snap: SwProactiveSnapshot,
+): { queuedReplyTarget?: SwQueuedReplyTarget; pendingProactiveReplyIds?: number[] } {
+  const pendingIds = Array.from(new Set(
+    (snap.pendingUserMessages || [])
+      .map(m => Number(m?.id))
+      .filter(id => Number.isFinite(id) && id > 0),
+  ));
+  return {
+    ...(snap.queuedReplyTarget ? { queuedReplyTarget: snap.queuedReplyTarget } : {}),
+    ...(pendingIds.length ? { pendingProactiveReplyIds: pendingIds } : {}),
+  };
 }
 
 /** 调用 OpenAI 兼容聊天补全端点（镜像 autonomousLife.callLLM，可在 SW 内跑）。 */

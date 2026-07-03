@@ -1,6 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { DailySchedule, ScheduleSlot, CharacterProfile } from '../../types';
+import type { ScheduleLifeNotesBySlot } from '../../utils/scheduleLifeSync';
 
 interface ScheduleCardProps {
     schedule: DailySchedule | null;
@@ -12,6 +13,7 @@ interface ScheduleCardProps {
     onReroll?: () => void;
     onCoverImageChange?: (dataUrl: string) => void;
     isGenerating?: boolean;
+    lifeNotes?: ScheduleLifeNotesBySlot;
 }
 
 const getCurrentSlotIndex = (slots: ScheduleSlot[]): number => {
@@ -30,6 +32,11 @@ const formatDate = (): string => {
     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     return `${months[now.getMonth()]} ${now.getDate()} · ${days[now.getDay()]}`;
+};
+
+const formatNoteTime = (timestamp: number): string => {
+    const d = new Date(timestamp);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
 /* ══════════ ins 杂志风调色 ══════════
@@ -96,6 +103,7 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
     onReroll,
     onCoverImageChange,
     isGenerating = false,
+    lifeNotes = {},
 }) => {
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
     const [editTime, setEditTime] = useState('');
@@ -254,6 +262,7 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                         const isCurrent = idx === currentIdx;
                         const isPast = currentIdx >= 0 && idx < currentIdx;
                         const isEditing = editingIdx === idx;
+                        const slotLifeNotes = lifeNotes[slot.startTime] || [];
 
                         if (isEditing && !compact) {
                             return (
@@ -383,6 +392,38 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                                     {/* 当前时段：露出一句此刻的心里话 */}
                                     {isCurrent && slot.innerThought && (
                                         <p className="text-[10.5px] italic mt-1 leading-snug" style={{ color: pal.accentDeep }}>「{slot.innerThought}」</p>
+                                    )}
+                                    {slotLifeNotes.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                            <div className="text-[9px] font-bold tracking-[0.16em] uppercase" style={{ color: pal.accent }}>
+                                                线下近况
+                                            </div>
+                                            {slotLifeNotes.map(note => {
+                                                const noteText = note.summary || note.activity;
+                                                const meta = [
+                                                    formatNoteTime(note.timestamp),
+                                                    note.location ? `在${note.location}` : '',
+                                                    note.mood || '',
+                                                    note.surfacedAsMsg ? '已说过' : '',
+                                                ].filter(Boolean).join(' · ');
+                                                return (
+                                                    <div
+                                                        key={note.id}
+                                                        className="rounded-xl px-2.5 py-1.5"
+                                                        style={{ background: '#faf8fb', border: `1px solid ${pal.accentBorder}` }}
+                                                    >
+                                                        <div className="text-[10.5px] leading-snug break-words" style={{ color: INK }}>
+                                                            {noteText}
+                                                        </div>
+                                                        {meta && (
+                                                            <div className="mt-0.5 text-[9px] leading-tight" style={{ color: INK_SOFT }}>
+                                                                {meta}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     )}
                                 </div>
                             </div>

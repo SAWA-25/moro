@@ -62,6 +62,8 @@ export async function fulfillAnticipation(id: string): Promise<void> {
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
         accessCount: 0,
+        origin: 'system',
+        source: { kind: 'system', label: '期盼实现', refId: ant.id },
     };
 
     await MemoryNodeDB.save(warmMemory);
@@ -94,6 +96,8 @@ export async function disappointAnticipation(id: string): Promise<void> {
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
         accessCount: 0,
+        origin: 'system',
+        source: { kind: 'system', label: '期盼落空', refId: ant.id },
     };
 
     await MemoryNodeDB.save(heartknot);

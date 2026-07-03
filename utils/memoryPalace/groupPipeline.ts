@@ -283,6 +283,7 @@ export async function processGroupNewMessages(
                         origin: 'extraction',
                         groupId: group.id,
                         groupName: group.name,
+                        source: { kind: 'group_chat', label: group.name, refId: group.id },
                     };
                     await MemoryNodeDB.save(node);
 

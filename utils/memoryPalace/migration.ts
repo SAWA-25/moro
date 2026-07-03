@@ -430,6 +430,7 @@ export async function migrateOldMemories(
                 accessCount: 0,
                 eventBoxId: null,
                 origin: 'extraction',
+                source: { kind: 'legacy_memory', label: currentLabel, refId: chunkKey },
             });
             await new Promise(r => setTimeout(r, 2)); // 避免 ID 碰撞
         }

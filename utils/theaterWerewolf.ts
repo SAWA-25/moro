@@ -2,7 +2,7 @@
  * 折子戏·狼人杀（捌）——引擎。
  * ================================
  * 拉一桌熟人开一局狼人杀：user 与选中的角色各占一座，AI 玩家按各自隐藏身份
- * 在夜里行动（狼刀 / 预言家查验 / 女巫用药）、白天发言、投票放逐。
+ * 在夜里行动（狼刀 / 预言家查验 / 女巫用药 / 守卫守护）、白天发言、投票放逐。
  *
  * 本文件只管「规则 + 牌桌状态的纯函数」与「三类 AI 调用」（夜晚结算 / 白天发言 / 投票）；
  * UI 流程（逐步收集 user 行动、落库、动画）在 apps/theater/WerewolfApp.tsx。
@@ -21,10 +21,10 @@ import {
 } from './theaterPrompts';
 
 export const WEREWOLF_ROLE_CN: Record<WerewolfRole, string> = {
-    wolf: '狼人', seer: '预言家', witch: '女巫', hunter: '猎人', villager: '平民',
+    wolf: '狼人', seer: '预言家', witch: '女巫', hunter: '猎人', guard: '守卫', idiot: '白痴', villager: '平民',
 };
 export const WEREWOLF_ROLE_EMOJI: Record<WerewolfRole, string> = {
-    wolf: '🐺', seer: '🔮', witch: '🧪', hunter: '🏹', villager: '🧑‍🌾',
+    wolf: '🐺', seer: '🔮', witch: '🧪', hunter: '🏹', guard: '🛡️', idiot: '🃏', villager: '🧑‍🌾',
 };
 export const isWolf = (r: WerewolfRole) => r === 'wolf';
 
@@ -36,20 +36,20 @@ const shuffle = <T,>(arr: T[]): T[] => {
 };
 const pick = <T,>(arr: T[]): T | undefined => arr[Math.floor(Math.random() * arr.length)];
 
-/** 按总人数发牌：4~9 人固定板子，>9 自动扩展（狼≈1/3，三神，余平民）。 */
+/** 按总人数发牌：6~9 人固定扩展板子，>9 自动扩展（狼≈1/3，五神，余平民）。 */
 export function rolesFor(total: number): WerewolfRole[] {
     switch (total) {
         case 4: return ['wolf', 'seer', 'witch', 'villager'];
         case 5: return ['wolf', 'seer', 'witch', 'hunter', 'villager'];
-        case 6: return ['wolf', 'wolf', 'seer', 'witch', 'hunter', 'villager'];
-        case 7: return ['wolf', 'wolf', 'seer', 'witch', 'hunter', 'villager', 'villager'];
-        case 8: return ['wolf', 'wolf', 'wolf', 'seer', 'witch', 'hunter', 'villager', 'villager'];
-        case 9: return ['wolf', 'wolf', 'wolf', 'seer', 'witch', 'hunter', 'villager', 'villager', 'villager'];
+        case 6: return ['wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot'];
+        case 7: return ['wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot', 'villager'];
+        case 8: return ['wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot', 'hunter', 'villager'];
+        case 9: return ['wolf', 'wolf', 'wolf', 'seer', 'witch', 'guard', 'idiot', 'hunter', 'villager'];
     }
     const wolves = Math.max(1, Math.floor(total / 3));
     const roles: WerewolfRole[] = [];
     for (let i = 0; i < wolves; i++) roles.push('wolf');
-    roles.push('seer', 'witch', 'hunter');
+    roles.push('seer', 'witch', 'guard', 'idiot', 'hunter');
     while (roles.length < total) roles.push('villager');
     return roles.slice(0, total);
 }
@@ -72,7 +72,21 @@ export function createWerewolfGame(userName: string, userAvatar: string | undefi
         title: `${new Date(now).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} 的一局`,
         createdAt: now, lastActiveAt: now,
         players, round: 1, phase: 'night', log: [],
-        witchHealUsed: false, witchPoisonUsed: false, pendingKill: null, winner: null,
+        witchHealUsed: false, witchPoisonUsed: false, lastGuardedSeat: null, pendingKill: null, winner: null,
+    };
+}
+
+/** 旧存档补齐新增字段；不改 IndexedDB 结构，读出来时兼容即可。 */
+export function normalizeWerewolfGame(g: WerewolfGame): WerewolfGame {
+    return {
+        ...g,
+        lastGuardedSeat: g.lastGuardedSeat ?? null,
+        pendingKill: g.pendingKill ?? null,
+        winner: g.winner ?? null,
+        players: g.players.map(p => ({
+            ...p,
+            idiotRevealed: p.idiotRevealed ?? false,
+        })),
     };
 }
 
@@ -82,6 +96,17 @@ export const userPlayer = (g: WerewolfGame) => g.players.find(p => p.isUser);
 export const livingPlayers = (g: WerewolfGame) => g.players.filter(p => p.alive);
 export const livingWolves = (g: WerewolfGame) => g.players.filter(p => p.alive && p.role === 'wolf');
 export const livingGood = (g: WerewolfGame) => g.players.filter(p => p.alive && p.role !== 'wolf');
+export const votingPlayers = (g: WerewolfGame) => g.players.filter(p => p.alive && !p.idiotRevealed);
+export const voteTargetPlayers = (g: WerewolfGame, voterSeat?: number) =>
+    g.players.filter(p => p.alive && !p.idiotRevealed && p.seat !== voterSeat);
+export const guardablePlayers = (g: WerewolfGame) =>
+    livingPlayers(g).filter(p => p.seat !== (g.lastGuardedSeat ?? null));
+export const canGuardSeat = (g: WerewolfGame, seat: number) =>
+    guardablePlayers(g).some(p => p.seat === seat);
+export const voteTargetSeat = (g: WerewolfGame, seat: any, voterSeat?: number): number | null => {
+    const n = Number(seat);
+    return Number.isFinite(n) && voteTargetPlayers(g, voterSeat).some(p => p.seat === n) ? n : null;
+};
 
 /** 胜负判定：狼全灭＝好人胜；存活狼≥存活好人＝狼胜；否则继续。 */
 export function checkWinner(g: WerewolfGame): 'good' | 'wolf' | null {
@@ -116,7 +141,7 @@ const personaOf = (p: WerewolfPlayer, chars: CharacterProfile[]) =>
 
 const rosterText = (g: WerewolfGame, chars: CharacterProfile[]) =>
     werewolfRosterText(g.players.map(p => ({
-        seat: p.seat, name: p.name, role: p.role, alive: p.alive, isUser: p.isUser, persona: personaOf(p, chars),
+        seat: p.seat, name: p.name, role: p.role, alive: p.alive, isUser: p.isUser, persona: personaOf(p, chars), idiotRevealed: !!p.idiotRevealed,
     })));
 
 // ── LLM 调用 ────────────────────────────────────────────────────────────────
@@ -147,41 +172,89 @@ export interface NightAIOpts {
     needWolfKill: boolean;   // 狼队是否由 AI 决定刀人（user 不是狼时为 true）
     needWitch: boolean;      // 存活女巫是 AI（非 user）
     needSeer: boolean;       // 存活预言家是 AI（非 user）
+    needGuard: boolean;      // 存活守卫是 AI（非 user）
     knownKill?: number | null; // user 是狼时已选的刀（让 AI 女巫据此决策）
+    knownGuardProtect?: number | null; // user 是守卫时已选的守护目标
 }
 export interface NightAIResult {
     wolfKill: number | null;
     seerCheck: number | null;
     witchHeal: boolean;
     witchPoison: number | null;
+    guardProtect: number | null;
     narration: string;
 }
 
 function heuristicWolfKill(g: WerewolfGame): number | null {
     const targets = livingGood(g);
     if (!targets.length) return null;
-    const gods = targets.filter(p => p.role !== 'villager');
+    const gods = targets.filter(p => p.role !== 'villager' && p.role !== 'idiot');
     return (pick(gods.length ? gods : targets) as WerewolfPlayer).seat;
+}
+
+function heuristicGuardProtect(g: WerewolfGame): number | null {
+    const targets = guardablePlayers(g);
+    if (!targets.length) return null;
+    const good = targets.filter(p => p.role !== 'wolf');
+    const gods = good.filter(p => p.role !== 'villager' && p.role !== 'idiot');
+    return (pick(gods.length ? gods : good.length ? good : targets) as WerewolfPlayer).seat;
+}
+
+export interface NightDeathInput {
+    wolfKill: number | null;
+    witchHeal: boolean;
+    witchPoison: number | null;
+    guardProtect: number | null;
+}
+
+/** 守卫挡狼刀、不挡毒；同守同救会让被刀者仍出局。 */
+export function resolveNightDeathReasons(input: NightDeathInput): Record<number, NonNullable<WerewolfPlayer['deadReason']>> {
+    const deaths: Record<number, NonNullable<WerewolfPlayer['deadReason']>> = {};
+    const kill = input.wolfKill;
+    const guarded = kill != null && input.guardProtect === kill;
+    const healed = kill != null && input.witchHeal;
+    if (kill != null) {
+        if (guarded && healed) deaths[kill] = 'guard_heal_conflict';
+        else if (!guarded && !healed) deaths[kill] = 'wolf';
+    }
+    if (input.witchPoison != null) deaths[input.witchPoison] = 'poison';
+    return deaths;
+}
+
+export function applyVoteExile(g: WerewolfGame, target: number): 'dead' | 'idiot-revealed' | null {
+    const p = playerBySeat(g, target);
+    if (!p || !p.alive) return null;
+    if (p.role === 'idiot' && !p.idiotRevealed) {
+        p.idiotRevealed = true;
+        delete p.deadRound;
+        delete p.deadReason;
+        return 'idiot-revealed';
+    }
+    p.alive = false;
+    p.deadRound = g.round;
+    p.deadReason = 'vote';
+    return 'dead';
 }
 
 /** 夜晚结算：让 AI 法官给出需要的字段，解析失败用启发式补齐。 */
 export async function resolveNightAI(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, opts: NightAIOpts): Promise<NightAIResult> {
     const defaultNarration = '夜风掠过屋檐，村庄陷入沉睡，有人却在黑暗里悄悄睁开了眼……';
     // 没有任何 AI 夜间动作要决定时（仅缺氛围旁白），不必发起请求。
-    if (!opts.needWolfKill && !opts.needWitch && !opts.needSeer) {
-        return { wolfKill: opts.knownKill ?? null, seerCheck: null, witchHeal: false, witchPoison: null, narration: defaultNarration };
+    if (!opts.needWolfKill && !opts.needWitch && !opts.needSeer && !opts.needGuard) {
+        return { wolfKill: opts.knownKill ?? null, seerCheck: null, witchHeal: false, witchPoison: null, guardProtect: opts.knownGuardProtect ?? null, narration: defaultNarration };
     }
     const sys = werewolfNightSys({ roster: rosterText(g, chars), round: g.round });
     const user = werewolfNightUser({
-        round: g.round, needWolfKill: opts.needWolfKill, needWitch: opts.needWitch, needSeer: opts.needSeer,
-        knownKill: opts.knownKill, witchHealLeft: !g.witchHealUsed, witchPoisonLeft: !g.witchPoisonUsed,
+        round: g.round, needWolfKill: opts.needWolfKill, needWitch: opts.needWitch, needSeer: opts.needSeer, needGuard: opts.needGuard,
+        knownKill: opts.knownKill, knownGuardProtect: opts.knownGuardProtect, lastGuardedSeat: g.lastGuardedSeat ?? null,
+        witchHealLeft: !g.witchHealUsed, witchPoisonLeft: !g.witchPoisonUsed,
     });
     // 解析失败 / 网络抖动都退回启发式（各需求字段下方都有兜底），绝不卡死整局。
     let j: any = null;
     try { j = await callJSON(api, sys, user); } catch { j = null; }
 
     const res: NightAIResult = {
-        wolfKill: opts.knownKill ?? null, seerCheck: null, witchHeal: false, witchPoison: null,
+        wolfKill: opts.knownKill ?? null, seerCheck: null, witchHeal: false, witchPoison: null, guardProtect: opts.knownGuardProtect ?? null,
         narration: (j && typeof j.narration === 'string' && j.narration.trim()) || defaultNarration,
     };
     if (opts.needWolfKill) res.wolfKill = aliveSeat(g, j?.wolfKill) ?? heuristicWolfKill(g);
@@ -197,6 +270,7 @@ export async function resolveNightAI(g: WerewolfGame, chars: CharacterProfile[],
         // 救人和毒人通常不同夜全下；若 AI 又救又毒同一人，取消毒
         if (res.witchHeal && res.witchPoison != null && res.witchPoison === res.wolfKill) res.witchPoison = null;
     }
+    if (opts.needGuard) res.guardProtect = (j?.guardProtect != null && canGuardSeat(g, Number(j.guardProtect))) ? Number(j.guardProtect) : heuristicGuardProtect(g);
     return res;
 }
 
@@ -226,18 +300,18 @@ export async function generateDaySpeeches(g: WerewolfGame, chars: CharacterProfi
 
 // ── 投票·AI 唱票 ────────────────────────────────────────────────────────────
 export async function collectVotes(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi): Promise<{ seat: number; target: number; reason?: string }[]> {
-    const voters = g.players.filter(p => p.alive && !p.isUser);
-    const aliveSeats = livingPlayers(g).map(p => p.seat);
+    const voters = votingPlayers(g).filter(p => !p.isUser);
+    const targetSeats = voteTargetPlayers(g).map(p => p.seat);
     if (!voters.length) return [];
     const sys = werewolfVoteSys({ roster: rosterText(g, chars) });
-    const user = werewolfVoteUser({ round: g.round, voters: voters.map(v => ({ seat: v.seat, name: v.name })), aliveSeats, log: publicLogText(g) });
+    const user = werewolfVoteUser({ round: g.round, voters: voters.map(v => ({ seat: v.seat, name: v.name })), aliveSeats: targetSeats, log: publicLogText(g) });
     let arr: any = null;
     try { arr = await callJSON(api, sys, user, 700); } catch { arr = null; }
     const byVoter = new Map<number, { seat: number; target: number; reason?: string }>();
     if (Array.isArray(arr)) {
         for (const it of arr) {
             const seat = Number(it?.seat);
-            const target = aliveSeat(g, it?.target);
+            const target = voteTargetSeat(g, it?.target, seat);
             if (voters.some(v => v.seat === seat) && target != null && target !== seat) {
                 byVoter.set(seat, { seat, target, reason: typeof it?.reason === 'string' ? it.reason.slice(0, 40) : undefined });
             }
@@ -246,7 +320,7 @@ export async function collectVotes(g: WerewolfGame, chars: CharacterProfile[], a
     // 兜底：没拿到票的 AI 随机投一个存活的别人
     for (const v of voters) {
         if (!byVoter.has(v.seat)) {
-            const others = aliveSeats.filter(s => s !== v.seat);
+            const others = targetSeats.filter(s => s !== v.seat);
             const t = pick(others);
             if (t != null) byVoter.set(v.seat, { seat: v.seat, target: t });
         }

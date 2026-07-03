@@ -15,6 +15,8 @@ import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
 import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled, makeDebugLogger } from './devDebug';
 import { buildOpenAiEndpoint } from './openAiCompat';
+import { sanitizeAssistantVisibleText } from './promptPrivacy';
+import { dispatchForceReplyRequest, extractForceReplyDirective } from './forceReply';
 
 // 同一个 category，两个 tag——保持 console 里现有的 [ActiveMsg] / [amsg] 标签，
 // 方便用户 / 文档里 grep 历史报错信息。两条 tag 都归 instant-push 一类。
@@ -82,6 +84,16 @@ const getQueuedReplyTarget = (
     ? rawRecord.name.trim()
     : '我';
   return { id, content, name };
+};
+
+const getPendingProactiveReplyIds = (message: ActiveMsg2InboxMessage): number[] => {
+  const raw = message.metadata?.pendingProactiveReplyIds;
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(
+    raw
+      .map(id => Number(id))
+      .filter(id => Number.isFinite(id) && id > 0),
+  ));
 };
 
 // ─── push 路径模块级 XHS 共享状态 ─────────────────────────────────────────────
@@ -213,7 +225,8 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
 
   const queuedReplyTarget = getQueuedReplyTarget(message, sessionId);
 
-  await applyAssistantPostProcessing(message.body || '', {
+  const pendingProactiveReplyIds = getPendingProactiveReplyIds(message);
+  const visibleSavedCount = await applyAssistantPostProcessing(message.body || '', {
     char,
     userProfile,
     emojis,
@@ -284,6 +297,15 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     directives: isLastChunk(message) ? extractDirectives(message) : [],
     reasoningContent,
   });
+
+  if (visibleSavedCount > 0 && pendingProactiveReplyIds.length) {
+    try {
+      await DB.setMessagesStatus(pendingProactiveReplyIds, 'read');
+      dispatchProgress();
+    } catch {
+      // 回执失败不影响 push 消息本体。
+    }
+  }
 
   // ─── Phase 2 Round 2 (2f): push 尾段 ───
   // Memory Palace 缓冲区处理仍在这里 (跟本地 fetch 路径 finally 段对齐, 不依赖 React).
@@ -414,7 +436,7 @@ async function runPushTailPipeline(
     }
   }
 
-  // 2. 情绪评估 — 已迁到 worker (副 API): worker 跑完主回复后跑 eval, 推 emotion_update push,
+  // 2. 情绪评估 — 已迁到 worker（日程 / 心情 API）: worker 跑完主回复后跑 eval, 推 emotion_update push,
   // flushInboxToChat 看到 messageType==='emotion_update' 调 applyEmotionEvalRaw 落 buff.
   // 所以这里不再触发客户端 eval (否则 worker + 客户端双跑双扣费). 见 worker/instant-push + useChatAI.
 
@@ -445,7 +467,7 @@ const flushInboxToChatImpl = async () => {
       bodyChars: typeof message.body === 'string' ? message.body.length : undefined,
     });
 
-    // emotion_update: worker 跑完副 API 情绪评估后推回的 buff 结果. 不渲染成聊天消息, 直接落 buff +
+    // emotion_update: worker 跑完日程 / 心情 API 情绪评估后推回的 buff 结果. 不渲染成聊天消息, 直接落 buff +
     // 广播 innerState (useChatAI 监听 'emotion-innerstate-updated' → setEvolvedNarrative 喂下一轮).
     // 识别条件用 messageType==='emotion_update' 或 metadata.emotionRaw 存在 —— 后者兜底旧 SW
     // (<1.8.0 不认 emotion_update messageKind, 会把它当 content 存进 inbox, 但 metadata.emotionRaw
@@ -512,11 +534,31 @@ const flushInboxToChatImpl = async () => {
 
     if (!routed) {
       try {
+        const forceReplyExtract = extractForceReplyDirective(message.body || '');
+        let rawBody = forceReplyExtract.content;
+        if (forceReplyExtract.forceReply) {
+          try {
+            const chars = await DB.getAllCharacters();
+            const char = chars.find((c) => c.id === message.charId);
+            if (char?.convoSettings?.forceReplyEnabled) {
+              const body = sanitizeAssistantVisibleText(rawBody).replace(/\s+/g, ' ').trim().slice(0, 180);
+              dispatchForceReplyRequest({
+                charId: message.charId,
+                reason: forceReplyExtract.reason,
+                body,
+                messageId: typeof message.messageId === 'number' ? message.messageId : undefined,
+                source: 'active-msg-raw-fallback',
+              });
+            }
+          } catch {
+            // If character lookup fails, still strip the hidden directive before saving.
+          }
+        }
         await DB.saveMessage({
           charId: message.charId,
           role: 'assistant',
           type: 'text',
-          content: message.body,
+          content: sanitizeAssistantVisibleText(rawBody),
           timestamp: messageTimestamp,
           metadata: {
             source: 'active_msg_2',
@@ -566,12 +608,15 @@ const flushInboxToChatImpl = async () => {
       }
       bubbleCount = Math.max(1, n);
     } catch { /* 数不出来就按 1 条算, 不影响消息本体 */ }
+    const visiblePreviewBody = sanitizeAssistantVisibleText(
+      extractForceReplyDirective(message.previewBody || message.body || '').content,
+    );
     window.dispatchEvent(new CustomEvent('active-msg-received', {
       detail: {
         sessionId: (message as any).sessionId || (message.metadata as any)?.sessionId,
         charId: message.charId,
         charName: message.charName,
-        body: message.previewBody || message.body,
+        body: visiblePreviewBody,
         bodies: bubbleBodies.filter(Boolean).slice(0, 8),
         count: bubbleCount,
         avatarUrl: message.avatarUrl,

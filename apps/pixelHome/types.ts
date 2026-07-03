@@ -41,6 +41,7 @@ export interface PlacedFurniture {
   scale: number;
   rotation: number;
   colorOverride?: string;
+  interactionPrompt?: string;
   placedBy: 'user' | 'character';
   isDefault?: boolean;        // 是否为默认槽位家具（false/undefined = 用户自由放置）
   /**
@@ -96,12 +97,27 @@ export const DEFAULT_HOME_THEME: PixelHomeTheme = {
   corridorStep: '#c4a882',
 };
 
+const LEGACY_DEFAULT_PIXEL_SURFACE_MARKERS = [
+  'Q2Vsc3lzIFN0dWRpbyBUb29s',
+  'DZWxzeXMgU3R1ZGlvIFRvb2',
+  'U3R1ZGlvIFRvb2',
+  'U29mdHdhcmUAQ2Vsc3lz',
+  'QBDZWxzeXMgU3R1ZGlv',
+];
+
+export function isLegacyDefaultPixelSurface(value: string | undefined | null): boolean {
+  return !!value &&
+    value.startsWith('data:image/') &&
+    LEGACY_DEFAULT_PIXEL_SURFACE_MARKERS.some(marker => value.includes(marker));
+}
+
 /** wallColor/floorColor 的解读器：判断是图片、纯色还是默认 */
 export function decodeColorField(v: string | undefined | null):
   | { kind: 'image'; value: string }
   | { kind: 'color'; value: string }
   | { kind: 'default' } {
   if (!v) return { kind: 'default' };
+  if (isLegacyDefaultPixelSurface(v)) return { kind: 'default' };
   if (v.startsWith('data:')) return { kind: 'image', value: v };
   // 允许 "#rgb"/"#rgba"/"#rrggbb"/"#rrggbbaa"
   if (/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v)) return { kind: 'color', value: v };

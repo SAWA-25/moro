@@ -18,6 +18,11 @@ export const FEED_BATCH_SIZE = 20;
 /** 每条帖子展示/保留的评论上限（生成时截断） */
 export const FEED_COMMENTS_PER_POST = 40;
 
+type ApiUsageTaggedConfig = APIConfig & {
+    apiRole?: 'main' | 'aux' | 'custom';
+    apiBinding?: string;
+};
+
 /**
  * 热门话题池：小红书常见的话题/圈子。每次刷新随机抽一小撮喂给模型，
  * 让 tags 与正文围绕这些「话题」展开，刷出来更有「话题感」、彼此能聚成圈。
@@ -125,7 +130,7 @@ const pickTopics = (n: number): string[] => {
 };
 
 const callLlm = async (
-    apiConfig: APIConfig,
+    apiConfig: ApiUsageTaggedConfig,
     systemPrompt: string,
     userMessage: string,
     featureId: 'social.generate' | 'social.reply' = 'social.generate',
@@ -142,7 +147,10 @@ const callLlm = async (
         max_tokens: 16000,
         stream: false,
     }, {
-        meta: makeApiUsageMeta(featureId, { apiRole: 'aux' }),
+        meta: makeApiUsageMeta(featureId, {
+            apiRole: apiConfig.apiRole || 'aux',
+            apiBinding: apiConfig.apiBinding,
+        }),
     });
     return (extractContent(data) || '').trim();
 };

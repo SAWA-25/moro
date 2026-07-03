@@ -9,10 +9,16 @@ import {
     looksLikeWrapMisconfig,
 } from '../utils/regex/engine';
 import {
+    REGEX_DEBUG_EVENT,
+    RegexDebugEventDetail,
+    buildRegexImportPreview,
     getGlobalRegexScripts,
     saveGlobalRegexScripts,
-    parseRegexImportJson,
     exportRegexScriptsJson,
+    getRegexScriptRiskFlags,
+    pickRegexImportScripts,
+    setRegexDebugEventEnabled,
+    RegexImportPreview,
 } from '../utils/regex/store';
 import RegexEditor from '../components/regex/RegexEditor';
 import {
@@ -52,6 +58,25 @@ const LABEL_STACK: React.CSSProperties = {
     fontFamily: '"SFMono-Regular", "Roboto Mono", "Courier New", monospace',
 };
 const PINNED_PRESETS_KEY = 'os_preset_pinned_ids';
+
+type ScriptFilter = 'all' | 'enabled' | 'disabled' | 'raw' | 'prompt' | 'display' | 'risky';
+type ImportSafetyMode = 'disabled' | 'original';
+
+interface ImportPreviewState {
+    preview: RegexImportPreview;
+    selectedIndexes: number[];
+    safetyMode: ImportSafetyMode;
+}
+
+const SCRIPT_FILTERS: Array<{ id: ScriptFilter; label: string }> = [
+    { id: 'all', label: '全部' },
+    { id: 'enabled', label: '启用' },
+    { id: 'disabled', label: '停用' },
+    { id: 'raw', label: '改原文' },
+    { id: 'prompt', label: '仅提示词' },
+    { id: 'display', label: '仅显示' },
+    { id: 'risky', label: '风险' },
+];
 
 const readPinnedPresetIds = (): string[] => {
     try {
@@ -261,22 +286,39 @@ const ScriptCard: React.FC<{
     script: RegexScriptData;
     disabled: boolean;
     mode: string;
+    selected: boolean;
+    selectionMode: boolean;
+    riskFlags: string[];
     onOpen: () => void;
+    onSelect: () => void;
     onToggle: () => void;
     onFix: () => void;
     onDelete: () => void;
-}> = ({ script, disabled, mode, onOpen, onToggle, onFix, onDelete }) => (
+}> = ({ script, disabled, mode, selected, selectionMode, riskFlags, onOpen, onSelect, onToggle, onFix, onDelete }) => (
     <div
-        onClick={onOpen}
+        onClick={selectionMode ? onSelect : onOpen}
         className="relative cursor-pointer rounded-[16px] px-3 py-2.5 active:scale-[0.99] transition-transform"
         style={{
             background: disabled ? 'linear-gradient(135deg, #f6f5f2, #eeece8)' : GRAD_CARD,
-            border: `1px solid ${HAIRLINE}`,
+            border: `1px solid ${selected ? 'rgba(91,119,113,0.42)' : HAIRLINE}`,
             boxShadow: '0 10px 24px -22px rgba(38,38,38,0.32)',
             opacity: disabled ? 0.72 : 1,
         }}
     >
         <div className="flex items-start gap-2.5">
+            {selectionMode && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect();
+                    }}
+                    className="mt-1 w-6 h-6 rounded-full flex items-center justify-center shrink-0 active:scale-95"
+                    style={{ background: selected ? GRAD_MAIN : PAPER, border: `1px solid ${selected ? EDGE : HAIRLINE}`, color: AC_DARK }}
+                    aria-label={selected ? '取消选择' : '选择脚本'}
+                >
+                    {selected ? '✓' : ''}
+                </button>
+            )}
             <span className="shrink-0 mt-0.5 w-8 h-8 rounded-[11px] flex items-center justify-center" style={{ background: disabled ? '#eceae6' : GRAD_SOFT, color: disabled ? '#aaa6a0' : AC_DARK }}>
                 <BracketsCurly size={16} weight="bold" />
             </span>
@@ -294,6 +336,7 @@ const ScriptCard: React.FC<{
                 <div className="mt-2 flex items-end justify-between gap-2">
                     <div className="min-w-0 flex-1 flex flex-wrap gap-1.5">
                         <StickerChip active tone={script.promptOnly ? 'gold' : script.markdownOnly ? 'blue' : 'mint'}>{mode}</StickerChip>
+                        {riskFlags.length > 0 && <StickerChip active tone="gold">风险 {riskFlags.length}</StickerChip>}
                         {script.placement.slice(0, 3).map(p => PLACEMENT_LABELS[p] && (
                             <StickerChip key={p} active={false} tone="plain">{PLACEMENT_LABELS[p]}</StickerChip>
                         ))}
@@ -308,20 +351,31 @@ const ScriptCard: React.FC<{
                                 <span className="inline-flex items-center gap-1"><WarningCircle size={13} weight="fill" />仅提示词</span>
                             </PinButton>
                         )}
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete();
-                            }}
-                            className="w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform"
-                            style={{ background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f' }}
-                            aria-label="删除"
-                            title="删除"
-                        >
-                            <Trash size={15} weight="bold" />
-                        </button>
+                        {!selectionMode && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete();
+                                }}
+                                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                                style={{ background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f' }}
+                                aria-label="删除"
+                                title="删除"
+                            >
+                                <Trash size={15} weight="bold" />
+                            </button>
+                        )}
                     </div>
                 </div>
+                {riskFlags.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {riskFlags.slice(0, 3).map(flag => (
+                            <span key={flag} className="text-[10px] px-2 py-1 rounded-full" style={{ background: '#fff8ea', color: '#7a5b1f', border: '1px solid rgba(215,166,79,0.30)' }}>
+                                {flag}
+                            </span>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     </div>
@@ -338,6 +392,13 @@ const RegexApp: React.FC = () => {
     const [characterSelectorOpen, setCharacterSelectorOpen] = useState(true);
     const [presetQuery, setPresetQuery] = useState('');
     const [pinnedPresetIds, setPinnedPresetIds] = useState<string[]>(() => readPinnedPresetIds());
+    const [scriptQuery, setScriptQuery] = useState('');
+    const [scriptFilter, setScriptFilter] = useState<ScriptFilter>('all');
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedScriptIds, setSelectedScriptIds] = useState<string[]>([]);
+    const [importPreview, setImportPreview] = useState<ImportPreviewState | null>(null);
+    const [debugEnabled, setDebugEnabled] = useState(false);
+    const [debugLogs, setDebugLogs] = useState<RegexDebugEventDetail[]>([]);
     const [editing, setEditing] = useState<RegexScriptData | null>(null);
     const [editingIsNew, setEditingIsNew] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -375,6 +436,36 @@ const RegexApp: React.FC = () => {
             ? (preset?.regexScripts || [])
             : (scopedChar?.regexScripts || []);
     const enabledCount = scripts.filter(s => !s.disabled).length;
+    const riskMap = useMemo(() => new Map(scripts.map(s => [s.id, getRegexScriptRiskFlags(s)])), [scripts]);
+    const riskCount = useMemo(() => scripts.filter(s => (riskMap.get(s.id)?.length || 0) > 0).length, [scripts, riskMap]);
+    const selectedSet = useMemo(() => new Set(selectedScriptIds), [selectedScriptIds]);
+    const filteredScripts = useMemo(() => {
+        const q = scriptQuery.trim().toLowerCase();
+        return scripts.filter(script => {
+            const riskFlags = riskMap.get(script.id) || [];
+            const mode = script.markdownOnly ? '仅显示层' : script.promptOnly ? '仅提示词' : '改写原文';
+            const text = [
+                script.scriptName,
+                script.findRegex,
+                script.replaceString,
+                mode,
+                ...script.placement.map(p => PLACEMENT_LABELS[p] || ''),
+                ...riskFlags,
+            ].join(' ').toLowerCase();
+            if (q && !text.includes(q)) return false;
+            switch (scriptFilter) {
+                case 'enabled': return !script.disabled;
+                case 'disabled': return !!script.disabled;
+                case 'raw': return !script.markdownOnly && !script.promptOnly;
+                case 'prompt': return !!script.promptOnly;
+                case 'display': return !!script.markdownOnly;
+                case 'risky': return riskFlags.length > 0;
+                default: return true;
+            }
+        });
+    }, [scripts, scriptQuery, scriptFilter, riskMap]);
+    const selectedScripts = useMemo(() => scripts.filter(s => selectedSet.has(s.id)), [scripts, selectedSet]);
+    const allVisibleSelected = filteredScripts.length > 0 && filteredScripts.every(s => selectedSet.has(s.id));
 
     useEffect(() => {
         DB.getAllPresets()
@@ -391,6 +482,27 @@ const RegexApp: React.FC = () => {
             .catch(e => addToast(`预设列表读取失败：${e?.message || e}`, 'error'));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        setSelectedScriptIds(prev => {
+            const next = prev.filter(id => scripts.some(s => s.id === id));
+            return next.length === prev.length ? prev : next;
+        });
+    }, [scripts]);
+
+    useEffect(() => {
+        setRegexDebugEventEnabled(debugEnabled);
+        const onDebug = (event: Event) => {
+            const detail = (event as CustomEvent<RegexDebugEventDetail>).detail;
+            if (!detail) return;
+            setDebugLogs(prev => [detail, ...prev].slice(0, 40));
+        };
+        window.addEventListener(REGEX_DEBUG_EVENT, onDebug);
+        return () => {
+            window.removeEventListener(REGEX_DEBUG_EVENT, onDebug);
+            setRegexDebugEventEnabled(false);
+        };
+    }, [debugEnabled]);
 
     const persist = async (next: RegexScriptData[]) => {
         if (scope === 'global') {
@@ -428,6 +540,54 @@ const RegexApp: React.FC = () => {
         void persist(scripts.map(s => s.id === script.id ? { ...s, disabled: !s.disabled } : s));
     };
 
+    const toggleScriptSelection = (id: string) => {
+        setSelectedScriptIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
+
+    const toggleSelectVisible = () => {
+        if (allVisibleSelected) {
+            const visible = new Set(filteredScripts.map(s => s.id));
+            setSelectedScriptIds(prev => prev.filter(id => !visible.has(id)));
+        } else {
+            setSelectedScriptIds(prev => Array.from(new Set([...prev, ...filteredScripts.map(s => s.id)])));
+        }
+    };
+
+    const persistSelectedPatch = (patch: Partial<RegexScriptData>, toast: string) => {
+        if (selectedScriptIds.length === 0) { addToast('请先选择正则', 'info'); return; }
+        void persist(scripts.map(s => selectedSet.has(s.id) ? { ...s, ...patch } : s));
+        addToast(toast, 'success');
+    };
+
+    const handleBatchDelete = () => {
+        if (selectedScriptIds.length === 0) { addToast('请先选择正则', 'info'); return; }
+        setConfirmDialog({
+            title: '删除选中的正则？',
+            message: `将删除 ${selectedScriptIds.length} 条正则，删除后无法恢复。`,
+            onConfirm: () => {
+                void persist(scripts.filter(s => !selectedSet.has(s.id)));
+                setSelectedScriptIds([]);
+                setSelectionMode(false);
+                setConfirmDialog(null);
+                addToast('已删除选中正则', 'success');
+            },
+        });
+    };
+
+    const downloadScripts = (list: RegexScriptData[], filename: string) => {
+        if (list.length === 0) { addToast('没有可导出的正则', 'info'); return; }
+        const blob = new Blob([exportRegexScriptsJson(list)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        addToast('已导出 JSON', 'success');
+    };
+
     const handleFixWrapMisconfig = (script: RegexScriptData) => {
         if (!window.confirm(`将「${script.scriptName || '未命名正则'}」设置为仅提示词模式？\n\n启用后，它只会改写发送给 LLM 的提示词，不会改动聊天原文或气泡显示。`)) return;
         void persist(scripts.map(s => s.id === script.id ? { ...s, promptOnly: true } : s));
@@ -463,11 +623,12 @@ const RegexApp: React.FC = () => {
         if (!file) return;
         (async () => {
             try {
-                const imported = parseRegexImportJson(await file.text());
-                const map = new Map(scripts.map(s => [s.id, s]));
-                imported.forEach(s => map.set(s.id, s));
-                await persist(Array.from(map.values()));
-                addToast(`已导入 ${imported.length} 条正则`, 'success');
+                const preview = buildRegexImportPreview(await file.text(), scripts);
+                setImportPreview({
+                    preview,
+                    selectedIndexes: preview.items.map((_, idx) => idx),
+                    safetyMode: 'disabled',
+                });
             } catch (err: any) {
                 addToast(`导入失败：${err?.message || '不是有效的 JSON 文件'}`, 'error');
             } finally {
@@ -477,21 +638,50 @@ const RegexApp: React.FC = () => {
     };
 
     const handleExport = () => {
-        if (scripts.length === 0) { addToast('当前范围没有可导出的正则', 'info'); return; }
-        const blob = new Blob([exportRegexScriptsJson(scripts)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = scope === 'global'
+        downloadScripts(scripts, scope === 'global'
             ? 'regex-global.json'
             : scope === 'preset'
                 ? `regex-preset-${preset?.name || 'preset'}.json`
-                : `regex-${scopedChar?.name || 'scoped'}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        addToast('已导出 JSON', 'success');
+                : `regex-${scopedChar?.name || 'scoped'}.json`);
+    };
+
+    const handleExportSelected = () => {
+        downloadScripts(selectedScripts, scope === 'global'
+            ? 'regex-global-selected.json'
+            : scope === 'preset'
+                ? `regex-preset-${preset?.name || 'preset'}-selected.json`
+                : `regex-${scopedChar?.name || 'scoped'}-selected.json`);
+    };
+
+    const handleConfirmImport = async () => {
+        if (!importPreview) return;
+        const picked = pickRegexImportScripts(importPreview.preview, importPreview.selectedIndexes, {
+            disableImported: importPreview.safetyMode === 'disabled',
+        });
+        if (picked.length === 0) { addToast('请至少选择一条正则', 'info'); return; }
+        const map = new Map(scripts.map(s => [s.id, s]));
+        picked.forEach(s => map.set(s.id, s));
+        await persist(Array.from(map.values()));
+        setImportPreview(null);
+        addToast(`已导入 ${picked.length} 条正则`, 'success');
+    };
+
+    const toggleImportIndex = (idx: number) => {
+        setImportPreview(prev => {
+            if (!prev) return prev;
+            const selected = prev.selectedIndexes.includes(idx)
+                ? prev.selectedIndexes.filter(i => i !== idx)
+                : [...prev.selectedIndexes, idx];
+            return { ...prev, selectedIndexes: selected };
+        });
+    };
+
+    const toggleAllImportIndexes = () => {
+        setImportPreview(prev => {
+            if (!prev) return prev;
+            const all = prev.selectedIndexes.length === prev.preview.items.length;
+            return { ...prev, selectedIndexes: all ? [] : prev.preview.items.map((_, idx) => idx) };
+        });
     };
 
     const handleNewScript = () => {
@@ -509,7 +699,7 @@ const RegexApp: React.FC = () => {
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72" style={{ background: `radial-gradient(115% 88% at 50% -22%, ${AC_WASH}, transparent 68%)` }} />
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-[92px] h-48" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0), rgba(130,189,213,0.13), rgba(255,247,229,0))' }} />
 
-            <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: PAPER, borderBottom: '1px solid #ededed' }}>
+            <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ background: PAPER, borderBottom: '1px solid #ededed' }}>
                 <button
                     onClick={closeApp}
                     className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
@@ -653,6 +843,43 @@ const RegexApp: React.FC = () => {
                     </ToolCard>
                 )}
 
+                {debugEnabled && (
+                    <ToolCard>
+                        <div className="px-4 pt-3 pb-2.5 border-b" style={{ borderColor: HAIRLINE }}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[14px] font-extrabold" style={{ color: INK }}>本次会话调试</div>
+                                    <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>只显示入口、模式和短预览，不保存完整聊天。</div>
+                                </div>
+                                <div className="flex gap-1.5 shrink-0">
+                                    <PinButton onClick={() => setDebugLogs([])} tone="rose">清空</PinButton>
+                                    <PinButton onClick={() => setDebugEnabled(false)} tone="mint">关闭</PinButton>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-3 py-2.5 space-y-2 max-h-56 overflow-y-auto no-scrollbar">
+                            {debugLogs.length === 0 ? (
+                                <div className="py-5 text-center text-[11px]" style={{ color: INK_FAINT }}>开启后，聊天管线触发正则改写时会出现在这里。</div>
+                            ) : debugLogs.map((log, idx) => (
+                                <div key={`${log.timestamp}-${idx}`} className="rounded-[14px] px-3 py-2.5" style={{ background: GRAD_FIELD, border: `1px solid ${HAIRLINE}` }}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="text-[11px] font-bold truncate" style={{ color: INK }}>
+                                            {PLACEMENT_LABELS[log.placement] || `位置 ${log.placement}`} · {log.mode === 'markdown' ? '仅显示层' : log.mode === 'prompt' ? '仅提示词' : '改原文'}
+                                        </div>
+                                        <div className="text-[9px] shrink-0" style={{ ...LABEL_STACK, color: INK_FAINT }}>
+                                            {new Date(log.timestamp).toLocaleTimeString()}
+                                        </div>
+                                    </div>
+                                    <div className="mt-1 text-[10px] leading-relaxed font-mono break-words" style={{ color: INK_SOFT }}>
+                                        {log.inputPreview || '(空)'} → {log.outputPreview || '(空)'}
+                                    </div>
+                                    <div className="mt-1 text-[9px]" style={{ color: INK_FAINT }}>脚本数 {log.scriptCount}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </ToolCard>
+                )}
+
                 <ToolCard>
                     <div className="px-4 pt-3 pb-2.5 border-b" style={{ borderColor: HAIRLINE, background: 'linear-gradient(135deg, rgba(232,245,241,0.42), rgba(255,255,255,0.18), rgba(255,247,229,0.34))' }}>
                         <div className="flex items-start justify-between gap-3">
@@ -683,10 +910,52 @@ const RegexApp: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 mt-3">
+                        <div className="grid grid-cols-4 gap-2 mt-3">
                             <StatTile label="总数" value={scripts.length} tone="teal" />
                             <StatTile label="启用" value={enabledCount} tone="sky" />
                             <StatTile label="停用" value={scripts.length - enabledCount} tone="paper" />
+                            <StatTile label="风险" value={riskCount} tone="paper" />
+                        </div>
+                        <div className="mt-3 space-y-2.5">
+                            <label className="flex h-11 items-center gap-2 rounded-[16px] px-3" style={{ background: GRAD_FIELD, border: `1px solid ${HAIRLINE}` }}>
+                                <MagnifyingGlass size={16} weight="bold" style={{ color: '#718096' }} />
+                                <input
+                                    value={scriptQuery}
+                                    onChange={e => setScriptQuery(e.target.value)}
+                                    className="min-w-0 flex-1 bg-transparent outline-none text-[12px] font-bold placeholder:text-[#9aa3af]"
+                                    style={{ color: INK }}
+                                    placeholder="搜索名称、正则、替换内容或风险标签"
+                                />
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {SCRIPT_FILTERS.map(filter => (
+                                    <StickerChip key={filter.id} active={scriptFilter === filter.id} onClick={() => setScriptFilter(filter.id)} tone={filter.id === 'risky' ? 'gold' : 'plain'}>
+                                        {filter.label}
+                                    </StickerChip>
+                                ))}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                <PinButton onClick={() => setSelectionMode(v => !v)} tone={selectionMode ? 'mint' : 'rose'}>
+                                    {selectionMode ? '退出选择' : '批量选择'}
+                                </PinButton>
+                                {selectionMode && (
+                                    <>
+                                        <PinButton onClick={toggleSelectVisible} tone="rose">{allVisibleSelected ? '取消本页' : '选择本页'}</PinButton>
+                                        <PinButton onClick={() => persistSelectedPatch({ disabled: false }, '已启用选中正则')} tone="mint">启用</PinButton>
+                                        <PinButton onClick={() => persistSelectedPatch({ disabled: true }, '已停用选中正则')} tone="rose">停用</PinButton>
+                                        <PinButton onClick={handleExportSelected} tone="rose">导出选中</PinButton>
+                                        <PinButton onClick={handleBatchDelete} tone="danger">删除</PinButton>
+                                    </>
+                                )}
+                                <PinButton onClick={() => setDebugEnabled(v => !v)} tone={debugEnabled ? 'mint' : 'rose'}>
+                                    {debugEnabled ? '调试中' : '调试日志'}
+                                </PinButton>
+                                {selectionMode && (
+                                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ color: INK_SOFT, background: GRAD_FIELD, border: `1px solid ${HAIRLINE}` }}>
+                                        已选 {selectedScripts.length}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -703,18 +972,28 @@ const RegexApp: React.FC = () => {
                                     {scope === 'preset' && !preset ? '请先选择一个活字盘预设，再管理随预设生效的正则。' : '新建正则或导入 JSON 后，会显示在这里。'}
                                 </p>
                             </div>
+                        ) : filteredScripts.length === 0 ? (
+                            <div className="py-7 text-center">
+                                <div className="text-[13px] font-bold" style={{ color: INK }}>没有匹配的正则</div>
+                                <p className="mt-1 text-[10px] leading-relaxed" style={{ color: INK_SOFT }}>换个关键词或筛选条件再看。</p>
+                            </div>
                         ) : (
                             <div className="space-y-2">
-                                {scripts.map((script) => {
+                                {filteredScripts.map((script) => {
                                     const disabled = !!script.disabled;
                                     const mode = script.markdownOnly ? '仅显示层' : script.promptOnly ? '仅提示词' : '改写原文';
+                                    const riskFlags = riskMap.get(script.id) || [];
                                     return (
                                         <ScriptCard
                                             key={script.id}
                                             script={script}
                                             disabled={disabled}
                                             mode={mode}
+                                            selected={selectedSet.has(script.id)}
+                                            selectionMode={selectionMode}
+                                            riskFlags={riskFlags}
                                             onOpen={() => openEditor(script)}
+                                            onSelect={() => toggleScriptSelection(script.id)}
                                             onToggle={() => handleToggle(script)}
                                             onFix={() => handleFixWrapMisconfig(script)}
                                             onDelete={() => handleDelete(script)}
@@ -739,6 +1018,79 @@ const RegexApp: React.FC = () => {
             </div>
 
             <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
+
+            {importPreview && (
+                <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-3 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} onClick={() => setImportPreview(null)} />
+                    <div className="relative w-full max-w-md max-h-[86vh] rounded-[26px] bg-white overflow-hidden animate-pop-in" style={{ border: `1px solid ${HAIRLINE}`, boxShadow: '0 30px 70px -34px rgba(38,38,38,0.58)' }}>
+                        <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: HAIRLINE, background: GRAD_SOFT }}>
+                            <div className="text-[9px] tracking-[0.32em] uppercase mb-1" style={{ ...LABEL_STACK, color: AC }}>IMPORT PREVIEW</div>
+                            <h3 className="text-[18px] font-bold" style={{ color: INK }}>导入前检查</h3>
+                            <p className="text-[12px] leading-relaxed mt-1" style={{ color: INK_SOFT }}>
+                                {importPreview.preview.total} 条 · 新增 {importPreview.preview.newCount} · 覆盖 {importPreview.preview.overwriteCount} · 风险 {importPreview.preview.riskyCount}
+                            </p>
+                            {importPreview.preview.duplicateInImportCount > 0 && (
+                                <p className="text-[10px] leading-relaxed mt-1" style={{ color: '#7a5b1f' }}>文件内有重复 ID，后导入的同 ID 脚本会覆盖前一条。</p>
+                            )}
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => setImportPreview(prev => prev ? { ...prev, safetyMode: 'disabled' } : prev)}
+                                    className="rounded-full py-2 text-[12px] font-bold active:scale-95"
+                                    style={{ background: importPreview.safetyMode === 'disabled' ? GRAD_MAIN : GRAD_FIELD, color: AC_DARK, border: `1px solid ${importPreview.safetyMode === 'disabled' ? EDGE : HAIRLINE}` }}
+                                >
+                                    全部停用
+                                </button>
+                                <button
+                                    onClick={() => setImportPreview(prev => prev ? { ...prev, safetyMode: 'original' } : prev)}
+                                    className="rounded-full py-2 text-[12px] font-bold active:scale-95"
+                                    style={{ background: importPreview.safetyMode === 'original' ? GRAD_MAIN : GRAD_FIELD, color: AC_DARK, border: `1px solid ${importPreview.safetyMode === 'original' ? EDGE : HAIRLINE}` }}
+                                >
+                                    保持原状态
+                                </button>
+                            </div>
+                        </div>
+                        <div className="px-3 py-3 max-h-[48vh] overflow-y-auto no-scrollbar space-y-2">
+                            <button
+                                onClick={toggleAllImportIndexes}
+                                className="w-full rounded-[14px] px-3 py-2 text-left text-[12px] font-bold active:scale-[0.99]"
+                                style={{ background: GRAD_FIELD, color: AC_DARK, border: `1px solid ${HAIRLINE}` }}
+                            >
+                                {importPreview.selectedIndexes.length === importPreview.preview.items.length ? '取消全选' : '全选'} · 已选 {importPreview.selectedIndexes.length}
+                            </button>
+                            {importPreview.preview.items.map((item, idx) => {
+                                const selected = importPreview.selectedIndexes.includes(idx);
+                                return (
+                                    <button
+                                        key={`${item.script.id}-${idx}`}
+                                        onClick={() => toggleImportIndex(idx)}
+                                        className="w-full rounded-[16px] px-3 py-2.5 text-left active:scale-[0.99]"
+                                        style={{ background: selected ? GRAD_SOFT : GRAD_FIELD, border: `1px solid ${selected ? EDGE : HAIRLINE}` }}
+                                    >
+                                        <div className="flex items-start gap-2.5">
+                                            <span className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: selected ? GRAD_MAIN : PAPER, border: `1px solid ${EDGE}`, color: AC_DARK }}>{selected ? '✓' : ''}</span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-[12px] font-bold truncate" style={{ color: INK }}>{item.script.scriptName || '未命名正则'}</span>
+                                                <span className="block mt-0.5 text-[10px] font-mono truncate" style={{ color: INK_SOFT }}>{item.script.findRegex || '未填写查找正则'}</span>
+                                                <span className="mt-1 flex flex-wrap gap-1.5">
+                                                    {item.duplicate && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff8ea', color: '#7a5b1f', border: '1px solid rgba(215,166,79,0.30)' }}>覆盖现有</span>}
+                                                    {item.duplicateInImport && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff8ea', color: '#7a5b1f', border: '1px solid rgba(215,166,79,0.30)' }}>文件内重复</span>}
+                                                    {item.riskFlags.map(flag => (
+                                                        <span key={flag} className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff5f7', color: '#d4536f', border: '1px solid #f1c6d1' }}>{flag}</span>
+                                                    ))}
+                                                </span>
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="px-5 py-4 flex gap-2.5 border-t" style={{ borderColor: HAIRLINE }}>
+                            <button onClick={() => setImportPreview(null)} className="flex-1 py-3 rounded-full text-[13px] font-bold active:scale-95" style={{ background: PAPER, color: INK_SOFT, border: `1px solid ${HAIRLINE}` }}>取消</button>
+                            <button onClick={() => void handleConfirmImport()} className="flex-1 py-3 rounded-full text-[13px] font-bold active:scale-95" style={{ background: GRAD_MAIN, color: AC_DARK }}>导入选中</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {confirmDialog && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-5 animate-fade-in">

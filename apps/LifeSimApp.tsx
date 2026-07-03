@@ -1,6 +1,6 @@
 /**
- * LifeSimApp — 街角 · 拼贴手账版
- * 核心体验：翻着手账看角色操控街坊邻里，制造街角Drama，离线回来发现整条街翻天覆地
+ * LifeSimApp — 街角 · 地图版
+ * 核心体验：在一张虚拟街区地图上观察角色、地点、关系和事件的长期变化。
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -51,7 +51,7 @@ function TwemojiImg({ emoji, size = 16, className = '' }: { emoji: string; size?
 }
 
 // 子组件
-import WorldMap from './lifesim/WorldMap';
+import StreetMap, { MapLayerMode, MapNode, MapPoint, MapRoute, mapDistanceLabel } from './lifesim/StreetMap';
 import NPCGrid from './lifesim/NPCGrid';
 import DramaFeed from './lifesim/DramaFeed';
 import RelationsTab from './lifesim/RelationsTab';
@@ -78,6 +78,61 @@ const SEASON_SCRAP: Record<string, { accent: string; tape: string; tape2: string
     fall:   { accent: '#b07442', tape: 'rgba(205,150,95,0.46)', tape2: 'rgba(228,196,156,0.55)', hanzi: '秋' },
     winter: { accent: '#737da0', tape: 'rgba(150,160,190,0.46)', tape2: 'rgba(202,208,224,0.6)', hanzi: '冬' },
 };
+
+const USER_POINT: MapPoint = { x: 48, y: 58 };
+const EVENT_ACCENTS: Record<string, string> = {
+    fight: '#dc2626',
+    party: '#d97706',
+    gossip: '#7c3aed',
+    romance: '#db2777',
+    rivalry: '#ea580c',
+    alliance: '#0284c7',
+};
+
+function hashSeed(seed: string): number {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    return hash;
+}
+
+function clampMap(value: number, min = 7, max = 93): number {
+    return Math.max(min, Math.min(max, value));
+}
+
+function jitterPoint(seed: string, origin: MapPoint, radius = 8): MapPoint {
+    const hash = hashSeed(seed || 'moro');
+    const angle = (hash % 360) * Math.PI / 180;
+    const distance = 3 + ((hash >>> 8) % 100) / 100 * radius;
+    return {
+        x: clampMap(origin.x + Math.cos(angle) * distance),
+        y: clampMap(origin.y + Math.sin(angle) * distance),
+    };
+}
+
+function fallbackPoint(seed: string): MapPoint {
+    const hash = hashSeed(seed || 'street');
+    return {
+        x: 12 + (hash % 76),
+        y: 14 + ((hash >>> 8) % 70),
+    };
+}
+
+function npcMapPoint(state: LifeSimState, npc: SimNPC): MapPoint {
+    const family = npc.familyId ? state.families.find(item => item.id === npc.familyId) : null;
+    if (family) return jitterPoint(npc.id, { x: family.homeX, y: family.homeY }, 7);
+    return fallbackPoint(npc.id);
+}
+
+function latestActionForNode(state: LifeSimState, node: MapNode): SimAction | undefined {
+    if (node.kind === 'event') return state.actionLog.find(action => `event-${action.id}` === node.id);
+    if (node.kind === 'person') return state.actionLog.find(action => action.involvedNpcIds?.includes(node.id.replace(/^npc-/, '')));
+    if (node.kind === 'family') {
+        const familyId = node.id.replace(/^family-/, '');
+        const memberIds = state.families.find(family => family.id === familyId)?.memberIds || [];
+        return state.actionLog.find(action => action.involvedNpcIds?.some(id => memberIds.includes(id)));
+    }
+    return undefined;
+}
 
 // ── API调用 ──────────────────────────────────────────────────────
 
@@ -152,6 +207,8 @@ const LifeSimApp: React.FC = () => {
     const [isResetting, setIsResetting] = useState(false);
     const [showRoam, setShowRoam] = useState(false);
     const [showDate, setShowDate] = useState(false);
+    const [mapLayer, setMapLayer] = useState<MapLayerMode>('info');
+    const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
 
     const [activeTab, setActiveTab] = useState<'npcs'|'drama'|'relations'>('npcs');
     const [actionPanel, setActionPanel] = useState<'none'|'stir'|'add'>('none');
@@ -906,7 +963,7 @@ const LifeSimApp: React.FC = () => {
     const isMainPlotThinking = !!processingMsg && !gameState.isProcessingCharTurn;
     const scrap = SEASON_SCRAP[season] || SEASON_SCRAP.spring;
     const highTension = gameState.chaosLevel > 70;
-    const topSafePadding = 'max(12px, env(safe-area-inset-top, 12px))';
+    const topSafePadding = '12px';
 
     const TABS = [
         { id: 'npcs', label: '街坊', en: 'folks', Icon: UsersThree },
@@ -914,237 +971,237 @@ const LifeSimApp: React.FC = () => {
         { id: 'relations', label: '人情', en: 'ties', Icon: HeartHalf },
     ] as const;
 
+    const userNode: MapNode = {
+        id: 'user',
+        kind: 'user',
+        label: userProfile?.name || '我',
+        sublabel: '当前位置',
+        avatar: userProfile?.avatar,
+        x: USER_POINT.x,
+        y: USER_POINT.y,
+        color: '#2563eb',
+        badge: '我',
+        active: isUserTurn,
+    };
+
+    const familyNodes: MapNode[] = gameState.families.map(family => {
+        const members = gameState.npcs.filter(npc => npc.familyId === family.id);
+        const moodAvg = members.length ? Math.round(members.reduce((sum, npc) => sum + npc.mood, 0) / members.length) : 0;
+        return {
+            id: `family-${family.id}`,
+            kind: 'family',
+            label: family.name,
+            sublabel: `${members.length} 位街坊 · 心情 ${moodAvg >= 0 ? '+' : ''}${moodAvg}`,
+            emoji: family.emoji,
+            x: family.homeX,
+            y: family.homeY,
+            color: members.length ? scrap.accent : '#94a3b8',
+            badge: members.length ? `${members.length}` : '空',
+            muted: members.length === 0,
+        };
+    });
+
+    const npcNodes: MapNode[] = gameState.npcs.map(npc => {
+        const point = npcMapPoint(gameState, npc);
+        const hasTension = (npc.grudges?.length || 0) > 0;
+        const hasCrush = (npc.crushes?.length || 0) > 0;
+        return {
+            id: `npc-${npc.id}`,
+            kind: 'person',
+            label: npc.name,
+            sublabel: npc.personality.slice(0, 2).join(' / ') || '街坊',
+            emoji: npc.emoji,
+            x: point.x,
+            y: point.y,
+            color: hasTension ? '#dc2626' : hasCrush ? '#db2777' : '#475569',
+            badge: hasTension ? '怨' : hasCrush ? '恋' : undefined,
+            active: gameState.currentActorId === npc.id,
+        };
+    });
+
+    const recentEventNodes: MapNode[] = gameState.actionLog.slice(-4).map((action, index) => {
+        const involved = action.involvedNpcIds?.map(id => gameState.npcs.find(npc => npc.id === id)).filter(Boolean) as SimNPC[] | undefined;
+        const base = involved?.[0] ? npcMapPoint(gameState, involved[0]) : fallbackPoint(action.id);
+        const point = jitterPoint(`event-${action.id}`, base, 6);
+        return {
+            id: `event-${action.id}`,
+            kind: 'event',
+            label: action.headline || '街头事件',
+            sublabel: `pg.${action.turnNumber}`,
+            x: point.x,
+            y: point.y,
+            color: action.storyKind === 'main_plot' ? '#d97706' : EVENT_ACCENTS[action.type as string] || '#7c3aed',
+            badge: action.storyKind === 'main_plot' ? '主线' : `${index + 1}`,
+        };
+    }).reverse();
+
+    const thinkingNodes: MapNode[] = activeThinkingChar ? [{
+        id: `actor-${activeThinkingChar.id}`,
+        kind: 'person',
+        label: activeThinkingChar.name,
+        sublabel: '正在行动',
+        avatar: activeThinkingChar.avatar,
+        x: 55,
+        y: 61,
+        color: '#7c3aed',
+        active: true,
+    }] : [];
+
+    const mapNodes = mapLayer === 'relations'
+        ? [...npcNodes, ...recentEventNodes.slice(0, 2), ...thinkingNodes]
+        : [...familyNodes, ...gameState.npcs.filter(npc => !npc.familyId).map(npc => npcNodes.find(node => node.id === `npc-${npc.id}`)!).filter(Boolean), ...recentEventNodes, ...thinkingNodes];
+
+    const selectedMapNode = selectedMapNodeId
+        ? [userNode, ...mapNodes, ...npcNodes, ...familyNodes].find(node => node.id === selectedMapNodeId) || null
+        : null;
+
+    const selectedRoute: MapRoute[] = selectedMapNode && selectedMapNode.id !== 'user'
+        ? [{
+            id: `route-${selectedMapNode.id}`,
+            from: USER_POINT,
+            to: selectedMapNode,
+            label: mapDistanceLabel(USER_POINT, selectedMapNode),
+            color: selectedMapNode.color || '#2563eb',
+            dashed: true,
+        }]
+        : [];
+
+    const relationRoutes: MapRoute[] = mapLayer === 'relations' ? gameState.npcs.flatMap(npc => {
+        const from = npcMapPoint(gameState, npc);
+        const routes: MapRoute[] = [];
+        (npc.crushes || []).forEach(targetId => {
+            const target = gameState.npcs.find(item => item.id === targetId);
+            if (target) routes.push({ id: `crush-${npc.id}-${target.id}`, from, to: npcMapPoint(gameState, target), color: '#db2777', label: '暗恋', dashed: true });
+        });
+        (npc.grudges || []).forEach(targetId => {
+            const target = gameState.npcs.find(item => item.id === targetId);
+            if (target) routes.push({ id: `grudge-${npc.id}-${target.id}`, from, to: npcMapPoint(gameState, target), color: '#dc2626', label: '记仇', dashed: true });
+        });
+        return routes;
+    }) : [];
+
+    const selectedAction = selectedMapNode ? latestActionForNode(gameState, selectedMapNode) : undefined;
+
     return (
-        <div className="sj-app h-full w-full max-w-full flex flex-col overflow-hidden select-none"
-            style={{ background: '#f4f2ed', overflowX: 'hidden' }}>
+        <div className="sj-app sj-map-app h-full w-full max-w-full flex flex-col overflow-hidden select-none">
 
             <SJStyles accent={scrap.accent} tape={scrap.tape} tape2={scrap.tape2} />
 
-            {/* ── 页眉：手写刊头 + 工具贴纸 + 蕾丝花边 ── */}
-            <div className="flex-shrink-0 relative" style={{
-                paddingTop: topSafePadding,
-                background: 'linear-gradient(180deg, #fbfaf7, #f4f2ed)',
-                borderBottom: '1px solid rgba(236,233,226,0.9)',
-            }}>
-                <div className="flex items-center gap-2 px-3 pt-2 pb-3" style={{ minHeight: 46 }}>
-                    {/* 合上本子（返回） */}
-                    <button onClick={closeApp} aria-label="返回"
-                        className="scrap-btn-paper flex items-center justify-center flex-shrink-0"
-                        style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                        <ArrowLeft size={17} weight="bold" />
+            <header className="sj-nav">
+                <button onClick={closeApp} aria-label="返回" className="sj-icon-button">
+                    <ArrowLeft size={18} weight="bold" />
+                </button>
+                <div className="sj-nav-title">
+                    <div className="sj-nav-name">街角</div>
+                    <div className="sj-nav-meta">
+                        <span>{si.zh}</span><span>{ti.zh}</span><span>{wi.zh}</span><span>DAY {gameState.day ?? 1}</span>
+                    </div>
+                </div>
+                <div className="sj-nav-tools">
+                    <button onClick={() => setShowRoam(true)} title="出门逛逛" className="sj-icon-button"><MapTrifold size={18} weight="bold" /></button>
+                    <button onClick={() => setShowDate(true)} title="带 TA 去约会" className="sj-icon-button"><HeartHalf size={18} weight="bold" /></button>
+                    <button onClick={() => setShowSettings(true)} title="设定" className="sj-icon-button with-count">
+                        <GearSix size={18} weight="bold" />
+                        <span>{participantChars.length}</span>
                     </button>
-
-                    {/* 刊头 */}
-                    <div className="flex-1 min-w-0 flex flex-col items-start leading-none pl-0.5">
-                        <div className="flex items-baseline gap-1.5">
-                            <span className="font-hand" style={{ fontSize: 33, fontWeight: 700, color: '#2b2933', letterSpacing: '0.06em' }}>街角</span>
-                            <span className="sj-stamp" title={`${si.zh}`}>
-                                <TwemojiImg emoji={si.emoji} size={11} />
-                                <span style={{ fontSize: 8.5, fontWeight: 700, color: scrap.accent }}>{scrap.hanzi}</span>
-                            </span>
-                        </div>
-                        <span className="label-mono" style={{ fontSize: 7.5, color: '#a79c8e', marginTop: 2 }}>street-corner journal</span>
-                    </div>
-
-                    {/* 工具贴纸：出门 / 设定 / 翻篇 */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button onClick={() => setShowRoam(true)} title="出门逛逛"
-                            className="scrap-btn-paper flex items-center justify-center"
-                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                            <MapTrifold size={16} weight="bold" />
-                        </button>
-                        <button onClick={() => setShowDate(true)} title="带 TA 去约会"
-                            className="scrap-btn-paper flex items-center justify-center"
-                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                            <HeartHalf size={16} weight="bold" />
-                        </button>
-                        <button onClick={() => setShowSettings(true)} title="设定" className="scrap-btn-paper flex items-center justify-center relative"
-                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                            <GearSix size={16} weight="bold" />
-                            <span style={{
-                                position: 'absolute', right: -3, bottom: -3,
-                                fontSize: 8, fontWeight: 700, color: 'white',
-                                background: scrap.accent, borderRadius: 999, padding: '0 4px',
-                                border: '1.5px solid #fbfaf7', minWidth: 15, textAlign: 'center',
-                            }}>{participantChars.length}</span>
-                        </button>
-                        <button onClick={() => setShowResetDialog(true)} title="翻篇重开"
-                            className="scrap-btn-paper flex items-center justify-center"
-                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                            <ArrowCounterClockwise size={16} weight="bold" />
-                        </button>
-                    </div>
+                    <button onClick={() => setShowResetDialog(true)} title="翻篇重开" className="sj-icon-button"><ArrowCounterClockwise size={18} weight="bold" /></button>
                 </div>
+            </header>
 
-                {/* 季节 / 时辰 / 天气 小贴条 + 页码 */}
-                <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap">
-                    <span className="sj-chip"><TwemojiImg emoji={si.emoji} size={12} /> {si.zh}</span>
-                    <span className="sj-chip"><TwemojiImg emoji={ti.emoji} size={12} /> {ti.zh}</span>
-                    <span className="sj-chip"><TwemojiImg emoji={wi.emoji} size={12} /> {wi.zh}</span>
-                    <span className="flex-1" />
-                    <span className="label-mono" style={{ fontSize: 9, color: '#8b8996', letterSpacing: '0.12em' }}>
-                        DAY {gameState.day ?? 1} · pg.{gameState.turnNumber}
-                    </span>
-                </div>
-                <div className="lace-edge absolute left-0 right-0" style={{ bottom: -9 }} />
-            </div>
-
-            {/* ── 节日便签 ── */}
             {(todayFestival || festivalAnnounce) && (
-                <div className="flex-shrink-0 mx-3 mt-3 px-3 py-1.5 relative tilt-r" style={{
-                    background: scrap.tape2,
-                    borderRadius: 4,
-                    border: '1px dashed rgba(120,116,106,0.4)',
-                    color: '#3f3a32', fontSize: 11, fontWeight: 700, textAlign: 'center',
-                    fontFamily: 'var(--font-hand)',
-                }}>
-                    {todayFestival ? <><TwemojiImg emoji={todayFestival.emoji} size={13} /> {todayFestival.name}</> : festivalAnnounce}
+                <div className="sj-alert">
+                    {todayFestival ? <><TwemojiImg emoji={todayFestival.emoji} size={14} /> {todayFestival.name}</> : festivalAnnounce}
                 </div>
             )}
 
-            {/* ── 地图：贴在手账里的街区照片 ── */}
-            <figure className="sj-photo flex-shrink-0 mx-3 mt-3 tilt-l">
-                <span className="sj-tape" style={{ top: -10, left: 24, transform: 'rotate(-5deg)', width: 64 }} />
-                <span className="sj-tape" style={{ top: -10, right: 24, transform: 'rotate(4deg)', width: 64, background: scrap.tape2 }} />
-                <div className="sj-photo-inner">
-                    <WorldMap gameState={gameState} />
-                </div>
-                <figcaption className="flex items-center justify-between px-1 pt-1.5">
-                    <span className="font-hand" style={{ fontSize: 14, color: '#2b2933' }}>{si.zh}日的街区</span>
-                    <span className="label-mono" style={{ fontSize: 8, color: '#a79c8e' }}>year {gameState.year ?? 1}</span>
-                </figcaption>
-            </figure>
+            <main className="sj-map-stage">
+                <StreetMap
+                    nodes={mapNodes}
+                    user={userNode}
+                    routes={[...relationRoutes, ...selectedRoute]}
+                    layer={mapLayer}
+                    selectedNodeId={selectedMapNodeId}
+                    height="100%"
+                    title={`${si.zh}日的街区`}
+                    subtitle={`${chaosLabel} · year ${gameState.year ?? 1} · pg.${gameState.turnNumber}`}
+                    onCanvasClick={() => setSelectedMapNodeId(null)}
+                    onNodeClick={(node, event) => {
+                        event.stopPropagation();
+                        setSelectedMapNodeId(node.id);
+                        if (node.kind === 'event' || node.kind === 'worldline') setActiveTab('drama');
+                        if (node.kind === 'person' || node.kind === 'family') setActiveTab('npcs');
+                    }}
+                    topRight={
+                        <div className="sj-layer-toggle">
+                            <button className={mapLayer === 'info' ? 'active' : ''} onClick={(event) => { event.stopPropagation(); setMapLayer('info'); }}>信息</button>
+                            <button className={mapLayer === 'relations' ? 'active' : ''} onClick={(event) => { event.stopPropagation(); setMapLayer('relations'); setActiveTab('relations'); }}>关系</button>
+                        </div>
+                    }
+                    bottomLeft={
+                        <div className="sj-heat-pill">
+                            <span>{chaosLabel}</span>
+                            <b>{gameState.chaosLevel}°</b>
+                        </div>
+                    }
+                    bottomCenter={
+                        <div className="sj-map-hint">
+                            {selectedMapNode ? `${selectedMapNode.label} · ${selectedMapNode.sublabel || '查看详情'}` : '点地图 pin 查看地点、街坊和事件'}
+                        </div>
+                    }
+                />
+            </main>
 
-            {/* ── 街区热度（手绘热度条） ── */}
-            <div className="flex items-center gap-2 mx-3 mt-2.5 px-1">
-                <span className="font-hand" style={{ fontSize: 13, color: highTension ? '#b03a34' : '#2b2933', minWidth: 56, fontWeight: 700 }}>{chaosLabel}</span>
-                <div className="flex-1 sj-heat-track">
-                    <div className="sj-heat-fill" style={{
-                        width: `${gameState.chaosLevel}%`,
-                        background: highTension
-                            ? 'repeating-linear-gradient(45deg, #d8625b, #d8625b 5px, #c44f48 5px, #c44f48 10px)'
-                            : `repeating-linear-gradient(45deg, ${scrap.accent}, ${scrap.accent} 5px, ${scrap.accent}cc 5px, ${scrap.accent}cc 10px)`,
-                    }} />
-                </div>
-                <span className="label-mono" style={{ fontSize: 9, color: '#8b8996', minWidth: 24, textAlign: 'right' }}>{gameState.chaosLevel}°</span>
-            </div>
-
-            {/* ── 回合状态便签 ── */}
-            {(gameState.isProcessingCharTurn || isUserTurn) && (
-                <div className="mx-3 mt-2 px-2.5 py-1 flex items-center gap-1.5" style={{
-                    fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
-                    color: gameState.isProcessingCharTurn ? '#8b6bb8' : scrap.accent,
-                    alignSelf: 'flex-start',
-                    background: gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.1)' : `${scrap.accent}1a`,
-                    borderRadius: 999,
-                    border: `1px dashed ${gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.4)' : scrap.accent + '66'}`,
-                }}>
-                    {gameState.isProcessingCharTurn ? (
-                        <><GearSix size={13} weight="bold" className="animate-spin" /> {processingMsg || '街坊们在琢磨…'}</>
-                    ) : (
-                        <><Star size={13} weight="fill" /> 轮到你落笔了</>
-                    )}
-                </div>
-            )}
-
-            {/* ── 出场角色贴纸条 ── */}
-            {(participantChars.length > 0 || isMainPlotThinking) && (
-                <div className="mx-3 mt-2 px-2 py-2 scrap-card" style={{ borderRadius: 12 }}>
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                        {isMainPlotThinking && (
-                            <div className="flex items-center gap-1.5 flex-shrink-0" style={{
-                                padding: '4px 9px', borderRadius: 999,
-                                border: '1px dashed rgba(176,116,66,0.5)',
-                                background: 'rgba(176,116,66,0.12)',
-                                color: '#9b6238', fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
-                            }}>
-                                <span style={{ fontSize: 14 }}>🎬</span>
-                                <span>主线编剧室</span>
-                            </div>
-                        )}
-
-                        {participantChars.map(char => {
-                            const isActive = gameState.isProcessingCharTurn && gameState.currentActorId === char.id;
-                            return (
-                                <div key={char.id} className="flex items-center gap-1.5 flex-shrink-0" style={{
-                                    padding: '4px 9px', borderRadius: 999,
-                                    border: isActive ? `1px dashed ${scrap.accent}` : '1px dashed rgba(167,162,151,0.5)',
-                                    background: isActive ? `${scrap.accent}1f` : 'rgba(255,255,255,0.6)',
-                                    color: isActive ? '#3f3a32' : '#8b8996',
-                                    fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
-                                    transition: 'all 0.18s ease',
-                                }}>
-                                    <img src={char.avatar} alt={char.name} style={{
-                                        width: 20, height: 20, borderRadius: 999, objectFit: 'cover',
-                                        boxShadow: isActive ? `0 0 0 2px ${scrap.accent}55` : 'none',
-                                    }} />
-                                    <span>{char.name}</span>
-                                    {isActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: scrap.accent }} />}
+            <section className="sj-bottom-panel">
+                <div className="sj-detail-row">
+                    {selectedMapNode ? (
+                        <div className="sj-selected-detail">
+                            <div>
+                                <div className="sj-detail-kicker">{selectedMapNode.kind === 'event' ? '最近事件' : selectedMapNode.kind === 'family' ? '地点' : '地图节点'}</div>
+                                <div className="sj-detail-title">{selectedMapNode.label}</div>
+                                <div className="sj-detail-copy">
+                                    {selectedAction?.headline || selectedAction?.description || selectedMapNode.sublabel || '这处 pin 暂时没有更多记录。'}
                                 </div>
-                            );
-                        })}
-                    </div>
-                    {(activeThinkingChar || isMainPlotThinking) && (
-                        <div style={{ marginTop: 5, fontSize: 11, color: '#a79c8e', fontFamily: 'var(--font-hand)' }}>
-                            {isMainPlotThinking
-                                ? processingMsg
-                                : `${activeThinkingChar?.name || '角色'} 正在落笔，API 已开始调用`}
+                            </div>
+                            <button onClick={() => setSelectedMapNodeId(null)} className="sj-text-button">收起</button>
+                        </div>
+                    ) : (
+                        <div className="sj-selected-detail">
+                            <div>
+                                <div className="sj-detail-kicker">街区状态</div>
+                                <div className="sj-detail-title">{gameState.isProcessingCharTurn ? (processingMsg || '街坊们在琢磨…') : isUserTurn ? '轮到你落笔了' : '街角正在更新'}</div>
+                                <div className="sj-detail-copy">
+                                    {participantChars.length > 0
+                                        ? `本局有 ${participantChars.length} 位角色参与，地图会记录他们影响到的街坊关系。`
+                                        : '还没有选择参与角色，去设定里挑几位角色加入这条街。'}
+                                </div>
+                            </div>
+                            {gameState.isProcessingCharTurn ? <GearSix size={18} weight="bold" className="animate-spin" /> : <Star size={18} weight="fill" color={scrap.accent} />}
                         </div>
                     )}
                 </div>
-            )}
 
-            {/* ── 内页：分栏笔记本 ── */}
-            <div className="flex-1 flex flex-col mx-3 mt-2.5 mb-1 scrap-card overflow-hidden" style={{ minHeight: 0, minWidth: 0, borderRadius: 14 }}>
-                {/* 索引页签 */}
-                <div className="flex items-end gap-1 px-2 pt-2" style={{ borderBottom: '1px dashed rgba(167,162,151,0.5)' }}>
+                <div className="sj-panel-tabs">
                     {TABS.map(({ id, label, Icon }) => {
                         const active = activeTab === id;
                         return (
-                            <button key={id} onClick={() => setActiveTab(id as any)}
-                                className="flex items-center gap-1.5 px-3 py-1.5"
-                                style={{
-                                    fontFamily: 'var(--font-hand)', fontSize: 14, fontWeight: 700,
-                                    color: active ? '#fbfaf7' : '#8b8996',
-                                    background: active ? scrap.accent : 'transparent',
-                                    borderRadius: '10px 10px 0 0',
-                                    border: active ? `1px solid ${scrap.accent}` : '1px solid transparent',
-                                    borderBottom: 'none',
-                                    marginBottom: -1,
-                                    transition: 'all 0.15s',
-                                }}>
-                                <Icon size={13} weight="bold" /> {label}
+                            <button key={id} onClick={() => setActiveTab(id as any)} className={active ? 'active' : ''}>
+                                <Icon size={15} weight="bold" /> {label}
                             </button>
                         );
                     })}
-                    <span className="flex-1" />
                 </div>
-                <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar scrap-panel" style={{ minWidth: 0 }}>
+                <div className="sj-panel-content no-scrollbar">
                     {activeTab === 'npcs' && <NPCGrid gameState={gameState} onLongPressNpc={setEditingNpc} />}
                     {activeTab === 'drama' && <DramaFeed gameState={gameState} />}
                     {activeTab === 'relations' && <RelationsTab gameState={gameState} />}
                 </div>
-            </div>
+            </section>
 
-            {/* ── 底部动作贴纸：搅局 / 拉人 / 吃瓜 ── */}
             {isUserTurn && (
-                <div className="flex-shrink-0 grid grid-cols-3 gap-2 px-3 pb-2 pt-1"
-                    style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
-                    <button onClick={() => setActionPanel('stir')}
-                        className="scrap-btn flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px' }}>
-                        <MaskHappy size={17} weight="bold" />
-                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>搅局</span>
-                    </button>
-                    <button onClick={() => setActionPanel('add')}
-                        className="scrap-btn flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px', background: scrap.accent }}>
-                        <UserPlus size={17} weight="bold" />
-                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>拉人</span>
-                    </button>
-                    <button onClick={handleWatch}
-                        className="scrap-btn-paper flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px' }}>
-                        <Eye size={17} weight="bold" />
-                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>吃瓜</span>
-                    </button>
+                <div className="sj-map-dock">
+                    <button onClick={() => setActionPanel('stir')} title="搅局"><MaskHappy size={19} weight="bold" /><span>搅局</span></button>
+                    <button onClick={() => setActionPanel('add')} title="拉人"><UserPlus size={19} weight="bold" /><span>拉人</span></button>
+                    <button onClick={handleWatch} title="吃瓜"><Eye size={19} weight="bold" /><span>吃瓜</span></button>
                 </div>
             )}
 
@@ -1221,12 +1278,316 @@ const LifeSimApp: React.FC = () => {
 const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ accent, tape, tape2 }) => (
     <style>{`
         .sj-app {
-            color: #2b2933;
+            color: #172033;
             --sj-accent: ${accent};
             --sj-tape: ${tape};
             --sj-tape2: ${tape2};
-            background-image: radial-gradient(circle at 1px 1px, rgba(120,116,106,0.05) 1px, transparent 0);
-            background-size: 16px 16px;
+            background:
+                linear-gradient(180deg, #f8fafc 0%, #eef2f4 52%, #f8fafc 100%);
+        }
+        .sj-map-app {
+            position: relative;
+            overflow-x: hidden;
+            padding-bottom: 74px;
+        }
+        .sj-map-app .font-hand {
+            font-family: inherit;
+        }
+        .sj-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 8px;
+            background: rgba(248, 250, 252, 0.9);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.96);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            z-index: 20;
+        }
+        .sj-nav-title {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .sj-nav-name {
+            font-size: 24px;
+            font-weight: 900;
+            line-height: 1;
+            color: #0f172a;
+        }
+        .sj-nav-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            overflow-x: auto;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+            scrollbar-width: none;
+        }
+        .sj-nav-meta::-webkit-scrollbar { display: none; }
+        .sj-nav-meta span {
+            flex: 0 0 auto;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+        }
+        .sj-nav-tools {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+        }
+        .sj-icon-button {
+            position: relative;
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            border: 1px solid rgba(203, 213, 225, 0.92);
+            background: rgba(255, 255, 255, 0.9);
+            color: #172033;
+            box-shadow: 0 12px 26px -24px rgba(15, 23, 42, 0.7);
+            touch-action: manipulation;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .sj-icon-button:active {
+            transform: scale(0.94);
+        }
+        .sj-icon-button.with-count span {
+            position: absolute;
+            right: -2px;
+            bottom: -2px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--sj-accent);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 900;
+            border: 2px solid #fff;
+        }
+        .sj-alert {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 8px 12px 0;
+            flex-shrink: 0;
+            padding: 7px 12px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.88);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            color: #334155;
+            font-size: 12px;
+            font-weight: 800;
+            box-shadow: 0 12px 26px -24px rgba(15, 23, 42, 0.65);
+        }
+        .sj-map-stage {
+            flex: 1 1 auto;
+            min-height: 260px;
+            padding: 10px 12px 8px;
+        }
+        .sj-layer-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            box-shadow: 0 12px 24px -22px rgba(15, 23, 42, 0.8);
+            pointer-events: auto;
+        }
+        .sj-layer-toggle button {
+            border: 0;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: transparent;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 900;
+        }
+        .sj-layer-toggle button.active {
+            color: #fff;
+            background: #172033;
+        }
+        .sj-heat-pill,
+        .sj-map-hint {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            max-width: min(310px, 78vw);
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            color: #334155;
+            box-shadow: 0 12px 24px -22px rgba(15, 23, 42, 0.8);
+            font-size: 12px;
+            font-weight: 900;
+        }
+        .sj-map-hint {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sj-heat-pill b {
+            color: ${accent};
+        }
+        .sj-bottom-panel {
+            flex: 0 0 min(42vh, 330px);
+            min-height: 214px;
+            margin: 0 12px 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            box-shadow: 0 -18px 44px -34px rgba(15, 23, 42, 0.75);
+        }
+        .sj-detail-row {
+            flex: 0 0 auto;
+            padding: 10px 12px 8px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        }
+        .sj-selected-detail {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-width: 0;
+        }
+        .sj-detail-kicker {
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 900;
+        }
+        .sj-detail-title {
+            margin-top: 2px;
+            color: #0f172a;
+            font-size: 16px;
+            font-weight: 900;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+        .sj-detail-copy {
+            margin-top: 3px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.45;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .sj-text-button {
+            flex: 0 0 auto;
+            border: 0;
+            border-radius: 999px;
+            padding: 7px 10px;
+            background: #eef2f4;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 900;
+        }
+        .sj-panel-tabs {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 6px;
+            padding: 8px 10px;
+            background: rgba(248, 250, 252, 0.92);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        }
+        .sj-panel-tabs button {
+            flex: 1;
+            min-width: 0;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            background: transparent;
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 900;
+        }
+        .sj-panel-tabs button.active {
+            color: #fff;
+            background: #172033;
+            border-color: #172033;
+        }
+        .sj-panel-content {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #f8fafc;
+        }
+        .sj-map-dock {
+            position: absolute;
+            left: 50%;
+            bottom: max(10px, env(safe-area-inset-bottom, 0px));
+            z-index: 35;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(3, minmax(62px, 1fr));
+            gap: 7px;
+            width: min(310px, calc(100% - 34px));
+            padding: 7px;
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid rgba(255,255,255,0.16);
+            box-shadow: 0 22px 36px -24px rgba(15,23,42,0.75);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+        .sj-map-dock button {
+            min-width: 0;
+            border: 0;
+            border-radius: 18px;
+            padding: 8px 6px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .sj-map-dock button:active {
+            transform: scale(0.96);
+        }
+        .sj-map-app .scrap-card {
+            background: rgba(255,255,255,0.88) !important;
+            border: 1px solid rgba(226,232,240,0.96) !important;
+            outline: none !important;
+            box-shadow: 0 12px 26px -24px rgba(15,23,42,0.55) !important;
+        }
+        .sj-map-app .scrap-btn,
+        .sj-map-app .scrap-btn-paper {
+            border-radius: 999px !important;
+            border: 1px solid rgba(203,213,225,0.92) !important;
+            background: rgba(255,255,255,0.92) !important;
+            color: #172033 !important;
+            outline: none !important;
+            box-shadow: 0 12px 26px -24px rgba(15,23,42,0.65) !important;
         }
         /* 和纸胶带条 */
         .sj-app .sj-tape {
@@ -1262,35 +1623,14 @@ const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ a
             font-size: 11px; font-weight: 700; color: #5c574f;
             font-family: var(--font-hand);
         }
-        /* 拍立得照片框 */
-        .sj-app .sj-photo {
-            position: relative;
-            background: #fbfaf7;
-            border: 1px solid rgba(236,233,226,0.95);
-            border-radius: 6px;
-            padding: 9px 9px 4px;
-            box-shadow: 0 12px 26px -16px rgba(50,48,60,0.4);
+        @media (max-width: 430px) {
+            .sj-nav { gap: 7px; padding-left: 9px; padding-right: 9px; }
+            .sj-nav-name { font-size: 21px; }
+            .sj-nav-tools { gap: 4px; }
+            .sj-icon-button { width: 34px; height: 34px; }
+            .sj-map-stage { padding-left: 9px; padding-right: 9px; }
+            .sj-bottom-panel { margin-left: 9px; margin-right: 9px; flex-basis: min(44vh, 315px); }
         }
-        .sj-app .sj-photo-inner {
-            border-radius: 3px;
-            overflow: hidden;
-            border: 1px solid rgba(0,0,0,0.06);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
-        }
-        /* 热度条 */
-        .sj-app .sj-heat-track {
-            height: 10px; border-radius: 999px; overflow: hidden;
-            background: rgba(120,116,106,0.1);
-            border: 1px solid rgba(167,162,151,0.4);
-        }
-        .sj-app .sj-heat-fill {
-            height: 100%; border-radius: 999px;
-            transition: width 0.7s ease-out;
-        }
-        /* 底部动作贴纸轻微歪斜 */
-        .sj-app .sj-action:nth-child(1) { rotate: -1.4deg; }
-        .sj-app .sj-action:nth-child(3) { rotate: 1.4deg; }
-        .sj-app .sj-action:active { transform: scale(0.96); }
     `}</style>
 );
 

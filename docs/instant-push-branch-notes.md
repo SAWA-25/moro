@@ -14,7 +14,7 @@
 
 - 情绪评估跟主消息一样走 Instant Push worker。
 - 前端在 instant 请求体里带上 `emotionEval` 配置和 prompt。
-- worker 收到主消息请求后，用 `ctx.waitUntil` 运行副 API 情绪评估。
+- worker 收到主消息请求后，用 `ctx.waitUntil` 运行日程 / 心情 API 情绪评估；该 API 留空时使用主 API。
 - 情绪评估完成后，worker 通过 `emotion_update` push 把 raw 结果推回客户端。
 - 客户端收到后统一调用 `applyEmotionEvalRaw` 落库、更新 buff、广播 UI 刷新事件。
 
@@ -173,4 +173,4 @@ ChatApp 的 instant prompt 构建已经和本地本体对齐：
 - 情绪 buff instant 回传已验证。
 - 小红书 / Notion 工具调用与续跑状态提示已验证。
 - 大包场景默认走 multipart；启用 D1 BlobStore 后可用 envelope 路径承接更稳的大 payload。
-- 本地构建已通过：`npm run build`。
+- 本地构建已通过：`pnpm build`。
