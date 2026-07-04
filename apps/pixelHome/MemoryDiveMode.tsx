@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import type { MemoryRoom, RemoteVectorConfig } from '../../utils/memoryPalace/types';
+import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import type { APIConfig, CharacterProfile, UserProfile } from '../../types';
 import type { PixelHomeState, PixelAsset } from './types';
 import type {
@@ -22,6 +22,7 @@ import { BUFF_META } from './memoryDiveTypes';
 import { ROOM_META } from './roomTemplates';
 import { ContextBuilder } from '../../utils/context';
 import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
+import { resolveMoodApi } from '../../utils/scheduleMoodApi';
 import {
   planRoomVisit,
   generateIntroDialogues, generateOutroDialogues,
@@ -47,7 +48,6 @@ interface Props {
   homeState: PixelHomeState;
   assets: PixelAsset[];
   apiConfig: APIConfig;
-  remoteVectorConfig?: RemoteVectorConfig;
   onExit: (result: DiveResult | null) => void;
 }
 
@@ -66,7 +66,7 @@ type PlaybackStep =
 
 const MemoryDiveMode: React.FC<Props> = ({
   charId, charName, charProfile, userProfile, charSprite, playerSprite,
-  userName, homeState, assets, apiConfig, remoteVectorConfig, onExit,
+  userName, homeState, assets, apiConfig, onExit,
 }) => {
   const fullCharContext = useMemo(() =>
     ContextBuilder.buildCoreContext(charProfile, userProfile, true),
@@ -301,7 +301,7 @@ const MemoryDiveMode: React.FC<Props> = ({
           previousEndingLine: prevEndingLineRef.current,
           previousEndingSpeaker: prevEndingSpeakerRef.current,
         },
-        apiConfig, fullCharContext, remoteVectorConfig,
+        apiConfig, fullCharContext,
       );
       scriptRef.current = res.script;
       beatIdxRef.current = 0;
@@ -325,7 +325,7 @@ const MemoryDiveMode: React.FC<Props> = ({
       setIsLoadingScript(false);
       setLoadError(err?.message || '生成失败');
     }
-  }, [charId, charName, apiConfig, fullCharContext, remoteVectorConfig, enqueueDialogues]);
+  }, [charId, charName, apiConfig, fullCharContext, enqueueDialogues]);
 
   // 后台静默预载"下一个房间"的剧本。播到 beat 1 左右触发——
   // 用户读对话时偷偷 generate，真正切换房间时能秒进。
@@ -359,7 +359,7 @@ const MemoryDiveMode: React.FC<Props> = ({
           previousEndingLine: prevEndingGuess,
           previousEndingSpeaker: 'narrator',
         },
-        apiConfig, fullCharContext, remoteVectorConfig,
+        apiConfig, fullCharContext,
       );
       // 真正切过去时 currentRoom 才是 next，本地已改过的话要放弃
       if (sessionRef.current?.currentRoom !== s.currentRoom) return;
@@ -370,7 +370,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     } finally {
       preloadingRef.current = false;
     }
-  }, [charId, charName, apiConfig, fullCharContext, remoteVectorConfig]);
+  }, [charId, charName, apiConfig, fullCharContext]);
 
   // 在当前房间播到一会之后触发预载（不要刚 load 完就调，让 beat 0 先展开）
   useEffect(() => {
@@ -603,12 +603,9 @@ const MemoryDiveMode: React.FC<Props> = ({
 
     // 后台向角色发射情绪（若启用了 emotionConfig）——角色不记得发生了什么，
     // 但潜意识里会留一层情绪底色，与 chat app 的 buff 系统共用同一套机制
-    // 情绪 API 未单独配置时回退到主 apiConfig（与记忆宫殿副 API 完全独立）
+    // 心情 API 未单独配置时回退到主 apiConfig（与记忆宫殿副 API 完全独立）
     if (isEmotionBuffFeatureOn(charProfile)) {
-      const configuredEmotionApi = charProfile.emotionConfig?.api;
-      const emotionApi = configuredEmotionApi?.baseUrl
-        ? configuredEmotionApi
-        : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+      const emotionApi = resolveMoodApi(charProfile, apiConfig);
       // fire-and-forget
       emitDiveEmotion({
         charProfile,

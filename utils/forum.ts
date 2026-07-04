@@ -1,3 +1,5 @@
+import { formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
+
 /**
  * 茶话亭 —— 一个持久、可浏览的论坛（区别于折子戏里「番外·匿名论坛」的一次性仿真截图）。
  *
@@ -660,9 +662,9 @@ ${targetName ? `当前对话对象：${targetName}` : ''}
 ${replies}`;
 }
 
-export interface CharBrief { id: string; name: string; persona?: string; }
+export interface CharBrief { id: string; modelId?: string; name: string; persona?: string; }
 
-export interface RawReply { name: string; body: string; reply_to?: string; }
+export interface RawReply { name: string; body: string; reply_to?: string; charId?: string; }
 
 export function buildForumPrompt(
     post: Pick<ForumPost, 'title' | 'body' | 'boardId'>,
@@ -671,7 +673,11 @@ export function buildForumPrompt(
     startFloor = 2,
 ): { system: string; user: string } {
     const board = boardOf(post.boardId);
-    const roster = chars.slice(0, 6).map(c => `- ${c.name}：${(c.persona || '').slice(0, 120) || '（无设定）'}`).join('\n');
+    const roster = chars.slice(0, 6).map(c => {
+        const id = getCharacterModelId(c);
+        const idPart = id ? ` charId="${id}"` : '';
+        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').slice(0, 120) || '（无设定）'}`;
+    }).join('\n');
     const system = '你在为一个网络论坛（百度贴吧风格）生成「跟帖区」楼层。跟帖要口语、简短、风格各异（有人共鸣、有人吐槽、有人抬杠玩梗、有人认真建议、有人单纯顶帖/接楼），像真实网友盖楼。';
     const endFloor = startFloor + count - 1;
     const user = `板块：${board?.emoji || ''}${board?.name || ''}
@@ -681,11 +687,13 @@ export function buildForumPrompt(
 下面这些是「实名出镜」的网友（你认识的角色），他们也可能来盖楼，请严格用其本名、并贴合各自人设说话：
 ${roster || '（暂无实名角色）'}
 
+Identity rule: when a reply is from a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
+
 请生成 ${count} 条跟帖（这是第 ${startFloor}~${endFloor} 楼）：其中若干条来自上面的实名角色（用其本名、合乎人设地回应），其余来自匿名网友（你为每位现编一个有网感的网名，可重复出现像在对话）。
 - 口语、自然、有梗、不复读、有来有回，长短随意、不限字数；
 - 让其中 2~4 条带 "reply_to" 字段（楼中楼，回复前面某位网友的名字），形成对话感；
 只输出一个 JSON 数组，不要任何多余文字或代码块标记：
-[{"name":"网友名","body":"跟帖内容","reply_to":"（可选）被回复者网名"}]`;
+[{"name":"网友名","charId":"实名角色必须填上方 charId；匿名网友省略","body":"跟帖内容","reply_to":"（可选）被回复者网名"}]`;
     return { system, user };
 }
 
@@ -737,7 +745,11 @@ export function parseForumReplies(raw: string): RawReply[] {
     const arr = salvageFlat(raw);
     return arr
         .map((x: any) => {
-            const o: RawReply = { name: String(x?.name || '').trim().slice(0, 24), body: String(x?.body || '').trim() };
+            const o: RawReply = {
+                name: String(x?.name || '').trim().slice(0, 24),
+                body: String(x?.body || '').trim(),
+                charId: String(x?.charId || x?.authorCharId || x?.characterId || '').trim().slice(0, 80) || undefined,
+            };
             const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
             if (rt) o.reply_to = rt;
             return o;
@@ -793,18 +805,23 @@ export function parseCharReply(raw: string): string | null {
  */
 export function materializeReplies(
     raw: RawReply[],
-    chars: { id: string; name: string; avatar?: string }[],
+    chars: { id: string; modelId?: string; name: string; avatar?: string }[],
     startFloor: number,
     opName?: string,
     existing: ForumReply[] = [],
 ): ForumReply[] {
     const now = Date.now();
     const out: ForumReply[] = [];
-    const findChar = (n: string) => chars.find(c => c.name === n);
+    const findChar = (r: RawReply) => {
+        const byId = resolveCharacterByModelId(chars, r.charId);
+        if (byId) return byId;
+        const sameName = chars.filter(c => c.name === r.name);
+        return sameName.length === 1 ? sameName[0] : undefined;
+    };
     let floor = startFloor;
     for (let i = 0; i < raw.length; i++) {
         const r = raw[i];
-        const ch = findChar(r.name);
+        const ch = findChar(r);
         // 楼中楼：挂到本批 / 已有楼层里同名作者的最近一层
         if (r.reply_to) {
             const host = [...existing, ...out].reverse().find(f => f.authorName === r.reply_to);
@@ -882,7 +899,11 @@ export function buildThreadsPrompt(
     topic?: Pick<ForumTopicEvent, 'title' | 'intro' | 'tags'>,
     trends?: ForumTrendPack | ForumTrendItem[] | null,
 ): { system: string; user: string } {
-    const roster = chars.slice(0, 6).map(c => `- ${c.name}：${(c.persona || '').slice(0, 100) || '（无设定）'}`).join('\n');
+    const roster = chars.slice(0, 6).map(c => {
+        const id = getCharacterModelId(c);
+        const idPart = id ? ` charId="${id}"` : '';
+        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').slice(0, 100) || '（无设定）'}`;
+    }).join('\n');
     const longMin = Math.max(3, Math.round(count * 0.4)); // 至少四成是有内容的长贴
     const trendsText = trendBrief(trends);
     const system = `你是百度贴吧某个吧的资深泡吧网友，最懂真实帖子长什么样。现在为「${board.emoji}${board.name}」吧生成一屏**像真人真事、能让人想点进去看**的帖子列表。真实贴吧不是全是水贴：有灌水接龙的短帖、热梗短帖、标题党，也有讲一件事讲得绘声绘色的好贴长文、有头有尾的八卦/求助/树洞。坚决避免「只有标题、正文一句话就没了」的空壳帖。`;
@@ -894,6 +915,10 @@ ${trendsText ? `\n当前联网热梗/热点素材（只借语感、话题张力�
 可「实名出镜」的网友（**每人最多发 1 个帖**，少数帖子由他们发，用其本名、贴合人设；其余都用你现编的、各不相同的网名）：
 ${roster || '（暂无实名角色）'}
 
+Identity rule: when a thread is authored by a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
+
+Identity rule: when a reply is from a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
+
 一次性生成 ${count} 个帖子，硬性要求：
 1. **混合帖型**：其中至少 ${longMin} 个是**有实质内容的好贴长文**（正文 150~400 字、可分 2~4 段，把一件事讲清楚、有细节有情绪有钩子）；另有 2~3 个热梗短帖/玩梗帖、1~2 个「蹲后续/后续来了/求鉴定」帖、若干普通水帖。热梗要像真人顺手套梗，不要像营销号盘点。
 2. **八卦/吃瓜/求助/树洞类正文必须把事讲完整**，绝不允许正文只有一句话或只是复述标题。
@@ -902,11 +927,11 @@ ${roster || '（暂无实名角色）'}
 5. 每帖给 "floors"（这帖大概盖了多少楼，30~588 的整数；越有料/越有争议的帖楼越多，多数 30~150、少数爆楼几百），和 "likes"（点赞数，0~9999，自然分布）。
 
 只输出一个 JSON 数组，不要任何多余文字或代码块标记；务必把 ${count} 条全部写完、最后用 ] 收尾：
-[{"author":"网名或角色本名","title":"标题","body":"正文（按上面要求，该长则长）","floors":整数,"likes":整数}]`;
+[{"author":"网名或角色本名","charId":"实名角色必须填上方 charId；匿名网友省略","title":"标题","body":"正文（按上面要求，该长则长）","floors":整数,"likes":整数}]`;
     return { system, user };
 }
 
-export interface RawThread { author: string; title: string; body: string; floors: number; likes: number; }
+export interface RawThread { author: string; charId?: string; title: string; body: string; floors: number; likes: number; }
 
 export function parseThreads(raw: string): RawThread[] {
     if (!raw) return [];
@@ -921,7 +946,14 @@ export function parseThreads(raw: string): RawThread[] {
         seenTitle.add(key);
         const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
         const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
-        out.push({ author: String(x?.author || '').trim().slice(0, 24), title, body: String(x?.body || '').trim(), floors, likes });
+        out.push({
+            author: String(x?.author || '').trim().slice(0, 24),
+            charId: String(x?.charId || x?.authorCharId || x?.characterId || '').trim().slice(0, 80) || undefined,
+            title,
+            body: String(x?.body || '').trim(),
+            floors,
+            likes,
+        });
         if (out.length >= 24) break;
     }
     return out;
@@ -1062,14 +1094,18 @@ export function fallbackThreads(boardId: string, count: number, topic?: ForumTop
 export function materializeThreads(
     raw: RawThread[],
     boardId: string,
-    chars: { id: string; name: string; avatar?: string }[],
+    chars: { id: string; modelId?: string; name: string; avatar?: string }[],
     sourceEventId?: string,
     tags: string[] = [],
 ): ForumPost[] {
     const now = Date.now();
     const usedChar = new Set<string>(); // 同一实名角色一批里只当一次楼主，避免「重复角色的帖子」
     return raw.map((t, i) => {
-        let ch = chars.find(c => c.name === t.author);
+        let ch = resolveCharacterByModelId(chars, t.charId);
+        if (!ch) {
+            const sameName = chars.filter(c => c.name === t.author);
+            if (sameName.length === 1) ch = sameName[0];
+        }
         if (ch && usedChar.has(ch.id)) ch = undefined; // 角色已发过帖→这条当匿名网友处理
         if (ch) usedChar.add(ch.id);
         const ago = Math.floor(Math.random() * 3600_000 * 24 * 3); // 近 3 天内

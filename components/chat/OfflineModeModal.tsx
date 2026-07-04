@@ -13,6 +13,7 @@ import {
     loadOfflineSession,
     saveOfflineSession,
     clearOfflineSession,
+    markOfflineSessionActive,
     loadOfflinePov,
     saveOfflinePov,
     generateOfflineOpening,
@@ -74,6 +75,10 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const openingStartedRef = useRef(false);
     const openingScenarioRef = useRef('');
     const isEditing = editingIndex !== null;
+
+    useEffect(() => {
+        markOfflineSessionActive(char.id);
+    }, [char.id]);
 
     const persistEntries = (next: OfflineEntry[]) => {
         setEntries(next);

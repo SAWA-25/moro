@@ -14,12 +14,15 @@ import { processImage } from '../utils/file';
 import { extractContent } from '../utils/safeApi';
 import { callChatCompletion } from '../utils/llmClient';
 import { generateDailyScheduleForChar, isEmotionBuffFeatureOn, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
+import { getCharacterModelId } from '../utils/characterIdentity';
 import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
 import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
 import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, type PrivateCallMode } from '../utils/laiwangPrompts';
-import { isAuxApiOn, resolveAuxApi, resolveOptionalCustomApi } from '../utils/auxApi';
+import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
+import { cleanScheduleMoodApi, resolveScheduleApi } from '../utils/scheduleMoodApi';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { isMemoryFeatureEnabled } from '../utils/memoryPalace/cognitiveFlow';
 import { runMemoryPalaceCatchUp } from '../utils/memoryPalace';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
@@ -773,7 +776,7 @@ const parsePrivateChatArchiveImport = (fileName: string, rawText: string, char: 
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars, forceReplyRequest, clearForceReplyRequest, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncScheduleMoodApisToAllCharacters, theme: osTheme, proactiveComposingChars, forceReplyRequest, clearForceReplyRequest, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
     const { cfg: musicCfg, current: musicCurrent, playing: musicPlaying, playSong: playMusicSong, togglePlay: toggleMusicPlay } = useMusic();
     const userScreenWatch = useUserScreenWatch();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
@@ -915,7 +918,7 @@ const Chat: React.FC = () => {
     const [settingsContextLimit, setSettingsContextLimit] = useState(500);
     const [settingsHtmlModeCustomPrompt, setSettingsHtmlModeCustomPrompt] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
-    const [isVectorizing, setIsVectorizing] = useState(false);
+    const [isMemoryOrganizing, setIsMemoryOrganizing] = useState(false);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [selectedEmoji, setSelectedEmoji] = useState<Emoji | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<EmojiCategory | null>(null); // For deletion modal
@@ -2320,11 +2323,8 @@ ${parallelReplyPromptBody({
         };
     }, []);
 
-    function resolveScheduleMoodApi(targetChar: CharacterProfile | null | undefined) {
-        return resolveOptionalCustomApi(targetChar?.emotionConfig?.api, apiConfig, {
-            customBinding: '今日作息日程 / 心情 API',
-            mainBinding: '今日作息 API 留空，使用主 API',
-        });
+    function resolveDailyScheduleApi(targetChar: CharacterProfile | null | undefined) {
+        return resolveScheduleApi(targetChar, apiConfig);
     }
 
     function clearScheduleRefreshTimer() {
@@ -2348,6 +2348,21 @@ ${parallelReplyPromptBody({
 
     async function applyScheduleState(targetChar: CharacterProfile, schedule: DailySchedule | null) {
         if (activeCharIdRef.current !== targetChar.id) return;
+        if (schedule) {
+            const targetModelId = getCharacterModelId(targetChar);
+            if (schedule.charId !== targetChar.id || (schedule.modelId && schedule.modelId !== targetModelId)) {
+                console.warn('[Schedule] Ignored schedule for another character', {
+                    targetCharId: targetChar.id,
+                    targetModelId,
+                    scheduleCharId: schedule.charId,
+                    scheduleModelId: schedule.modelId,
+                });
+                setScheduleData(null);
+                setScheduleLifeNotes({});
+                clearScheduleRefreshTimer();
+                return;
+            }
+        }
         setScheduleData(schedule);
         if (!schedule) {
             setScheduleLifeNotes({});
@@ -2370,7 +2385,7 @@ ${parallelReplyPromptBody({
             setScheduleLifeNotes({});
             return;
         }
-        const scheduleApi = resolveScheduleMoodApi(char);
+        const scheduleApi = resolveDailyScheduleApi(char);
         if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         const targetChar = char;
         const today = new Date().toISOString().split('T')[0];
@@ -2399,6 +2414,9 @@ ${parallelReplyPromptBody({
         activeCharacterId,
         char?.scheduleFeatureEnabled,
         char?.scheduleStyle,
+        char?.emotionConfig?.scheduleApi?.baseUrl,
+        char?.emotionConfig?.scheduleApi?.apiKey,
+        char?.emotionConfig?.scheduleApi?.model,
         char?.emotionConfig?.api?.baseUrl,
         char?.emotionConfig?.api?.apiKey,
         char?.emotionConfig?.api?.model,
@@ -2454,7 +2472,7 @@ ${parallelReplyPromptBody({
         if (!char || !isScheduleFeatureOn(char)) return;
         if (!scheduleData || isTyping) return;                 // 还没今日日程 / 回复进行中：先不打扰
         if (messages.length === 0 || !chatHasScheduleSignal(messages)) return;
-        const scheduleApi = resolveScheduleMoodApi(char);
+        const scheduleApi = resolveDailyScheduleApi(char);
         if (!scheduleApi.baseUrl || !scheduleApi.model) return;
 
         const lastMsgId = messages[messages.length - 1]?.id ?? 0;
@@ -2487,6 +2505,9 @@ ${parallelReplyPromptBody({
     }, [
         messages,
         char?.id,
+        char?.emotionConfig?.scheduleApi?.baseUrl,
+        char?.emotionConfig?.scheduleApi?.apiKey,
+        char?.emotionConfig?.scheduleApi?.model,
         char?.emotionConfig?.api?.baseUrl,
         char?.emotionConfig?.api?.apiKey,
         char?.emotionConfig?.api?.model,
@@ -3304,10 +3325,7 @@ ${recent || '（你们相处了很久）'}
                     const reason = d.reason?.trim();
                     await updateCharacter(d.charId!, {
                         avatar: target.content,
-                        convoSettings: {
-                            ...(liveChar.convoSettings || {}),
-                            charAvatarOverride: target.content,
-                        },
+                        convoSettings: { charAvatarOverride: target.content },
                     });
                     await DB.saveMessage({
                         charId: d.charId!,
@@ -4662,7 +4680,7 @@ ${privateCallDecisionPromptBody({
 
     const generateDailySchedule = async (targetChar: typeof char, forceRegenerate: boolean = false) => {
         if (!targetChar || isScheduleGenerating) return;
-        const scheduleApi = resolveScheduleMoodApi(targetChar);
+        const scheduleApi = resolveDailyScheduleApi(targetChar);
         if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         setIsScheduleGenerating(true);
         try {
@@ -4683,7 +4701,7 @@ ${privateCallDecisionPromptBody({
         // Force regenerate with new style — use updated char object
         const updatedChar = { ...char, scheduleStyle: style };
         if (!isScheduleFeatureOn(updatedChar)) return;
-        const scheduleApi = resolveScheduleMoodApi(updatedChar);
+        const scheduleApi = resolveDailyScheduleApi(updatedChar);
         if (!scheduleApi.baseUrl || !scheduleApi.model) return;
         setIsScheduleGenerating(true);
         try {
@@ -5145,7 +5163,7 @@ ${privateCallDecisionPromptBody({
         if (!char) return;
 
         // 记忆宫殿安全检查：保留最近 10 条时仍保护未处理消息；全量清除语义是重置角色上下文。
-        if (preserveContext && char.memoryPalaceEnabled) {
+        if (preserveContext && isMemoryFeatureEnabled(char)) {
             const hwm = await getMemoryPalaceHWM(char.id);
             const allMessages = await DB.getMessagesByCharId(char.id, true);
             const textMessages = allMessages.filter(m => m.type === 'text' && m.content?.trim());
@@ -5156,7 +5174,7 @@ ${privateCallDecisionPromptBody({
                 const processedMsgs = allMessages.filter(m => m.id <= hwm);
                 const choice = confirm(
                     `⚠️ 回忆标本馆提醒\n\n` +
-                    `当前有 ${unprocessedCount} 条聊天记录尚未被回忆标本馆处理（向量化）。\n` +
+                    `当前有 ${unprocessedCount} 条聊天记录尚未被回忆标本馆整理。\n` +
                     `直接清空会导致这些记录永久丢失，无法被角色记住。\n\n` +
                     `点击「确定」→ 仅删除已被回忆标本馆处理过的记录（安全）\n` +
                     `点击「取消」→ 取消清空操作\n\n` +
@@ -5264,22 +5282,21 @@ ${privateCallDecisionPromptBody({
         addToast('已清空絮语上下文、角色软件状态和生成内容，仅保留角色设定', 'success');
     };
 
-    const handleForceVectorize = async () => {
-        if (!char || !char.memoryPalaceEnabled || isVectorizing) return;
-        const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
-        if (!mpEmb || !mpLLM) {
+    const handleOrganizeMemory = async () => {
+        if (!char || !isMemoryFeatureEnabled(char) || isMemoryOrganizing) return;
+        const { llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+        if (!mpLLM) {
             addToast('请先在文具盒开启并填好副 API', 'error');
             return;
         }
 
-        setIsVectorizing(true);
+        setIsMemoryOrganizing(true);
         setModalType('none');
         addToast('开始整理可处理旧聊天，最近 200 条热区会保留在聊天上下文里', 'info');
 
         try {
             const result = await runMemoryPalaceCatchUp({
                 char,
-                embeddingConfig: mpEmb,
                 llmConfig: mpLLM,
                 userName: userProfile?.name || '',
             });
@@ -5308,7 +5325,7 @@ ${privateCallDecisionPromptBody({
         } catch (e: any) {
             addToast(`整理失败：${e.message}`, 'error');
         } finally {
-            setIsVectorizing(false);
+            setIsMemoryOrganizing(false);
         }
     };
 
@@ -7378,17 +7395,20 @@ ${privateCallDecisionPromptBody({
                 isEmotionBuffFeatureEnabled={isEmotionBuffFeatureOn(char)}
                 onToggleEmotionBuffFeature={handleToggleEmotionBuffFeature}
                 isMemoryPalaceEnabled={!!char.memoryPalaceEnabled}
-                isVectorizing={isVectorizing}
-                onForceVectorize={handleForceVectorize}
+                isMemoryOrganizing={isMemoryOrganizing}
+                onOrganizeMemory={handleOrganizeMemory}
                 apiPresets={apiPresets}
                 onAddApiPreset={addApiPreset}
                 onSaveEmotion={(config) => {
-                    // 日程 / 心情 API 同步到所有角色，enabled 仅写到当前角色
-                    syncEmotionApiToAllCharacters(config.api);
+                    // 日程 API / 心情 API 同步到所有角色，enabled 仅写到当前角色
+                    const scheduleApi = cleanScheduleMoodApi(config.scheduleApi);
+                    const moodApi = cleanScheduleMoodApi(config.moodApi);
+                    syncScheduleMoodApisToAllCharacters({ scheduleApi, moodApi });
                     updateCharacter(char.id, {
                         emotionConfig: {
                             enabled: config.enabled,
-                            ...(config.api && config.api.baseUrl ? { api: config.api } : {}),
+                            ...(scheduleApi ? { scheduleApi } : {}),
+                            ...(moodApi ? { moodApi } : {}),
                         },
                     });
                 }}
@@ -8311,8 +8331,8 @@ ${privateCallDecisionPromptBody({
                     onClearChatContextOnly={handleClearChatContextOnly}
                     preserveContext={preserveContext}
                     onTogglePreserveContext={() => setPreserveContext(!preserveContext)}
-                    isVectorizing={isVectorizing}
-                    onForceVectorize={handleForceVectorize}
+                    isMemoryOrganizing={isMemoryOrganizing}
+                    onOrganizeMemory={handleOrganizeMemory}
                     onExportChat={handleExportChat}
                     messagesCount={filterPrivateChatVisibleMessages((allHistoryMessages && allHistoryMessages.length > 0) ? allHistoryMessages : messages).length}
                     privateChatArchives={privateChatArchives}

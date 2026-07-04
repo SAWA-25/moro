@@ -14,7 +14,7 @@
 
 - 情绪评估跟主消息一样走 Instant Push worker。
 - 前端在 instant 请求体里带上 `emotionEval` 配置和 prompt。
-- worker 收到主消息请求后，用 `ctx.waitUntil` 运行日程 / 心情 API 情绪评估；该 API 留空时使用主 API。
+- worker 收到主消息请求后，用 `ctx.waitUntil` 运行心情 API 情绪评估；心情 API 留空时使用主 API。
 - 情绪评估完成后，worker 通过 `emotion_update` push 把 raw 结果推回客户端。
 - 客户端收到后统一调用 `applyEmotionEvalRaw` 落库、更新 buff、广播 UI 刷新事件。
 

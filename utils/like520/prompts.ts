@@ -7,11 +7,12 @@
  */
 
 import { ContextBuilder } from '../context';
-import { extractContent, extractJson } from '../safeApi';
+import { extractJson } from '../safeApi';
 import { injectMemoryPalace } from '../memoryPalace/pipeline';
 import type { CharacterProfile, UserProfile, Message } from '../../types';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
-import { callChatCompletion } from '../llmClient';
+import { completeText } from '../llmClient';
+import type { PresetMacroCtx } from '../presets';
 
 // ============================================================
 // 类型
@@ -296,7 +297,7 @@ ta 是一团完整的、活着的、会发光的东西。重点写的是 ta **�
 
    每一个 anchor 的 dialogue 都必须**承担母题**——下面三件事至少做到一件：
 
-   - **泄露你一直在看 ta**：⚠️ **关键约束**：你"看见"的那件事**必须来自你被注入的真实记忆**（月度记忆 / 详细回忆 / 私密档案 / 最近聊天 / 向量召回里**真的有过的某个具体瞬间**）
+   - **泄露你一直在看 ta**：⚠️ **关键约束**：你"看见"的那件事**必须来自你被注入的真实记忆**（月度记忆 / 详细回忆 / 私密档案 / 最近聊天 / 长期记忆召回里**真的有过的某个具体瞬间**）
    - **暴露你平时藏着的真心**：突然说出一句平时绝对不会说的话，那是你真正的心情，你当时不敢说的，在这里你可以大胆说出来。
    - **翻一面照顾的关系**：表面 ta 在照顾你，但你的回应把这件事**翻一面**——重点**不是** "你太累了、需要被怜惜"（那会把 ta 窄化成"辛苦人"），而是**"这件事是从你自己里面长出来的"**：ta 选了来、ta 做了这个动作、ta 创造了这个瞬间——这些都是 ta 留下的形状，**你只是先看见了**。
 
@@ -325,7 +326,7 @@ ta 是一团完整的、活着的、会发光的东西。重点写的是 ta **�
      ❌ **不要写"投喂/梳毛/递水/陪玩"这种通用宠物养成动词**——这些任何 char 都适用、读不出你们的关系，是泛泛的"作业感"。
 
      ✅ 必须是从你和 ${userName} 真实历史里挑出来的**具体物件 / 场景 / 你们之间专属的小事**。看上面系统注入的：
-        - \`月度记忆\` / \`详细回忆\` / \`私密档案：我眼中的 ${userName}\` / 最近聊天记录 / 向量召回（## 回忆）
+        - \`月度记忆\` / \`详细回忆\` / \`私密档案：我眼中的 ${userName}\` / 最近聊天记录 / 长期记忆召回（## 回忆）
         - 你们的世界观设定 / char 自己的兴趣 / 当下时令场景
      从这些素材里**挑一件具体的东西**作为 item_label。
 
@@ -356,7 +357,7 @@ ta 是一团完整的、活着的、会发光的东西。重点写的是 ta **�
 
      dialogue 的母题主体是**"看见 ${userName}"**——但这件事的全部重量**来自它是真的**。
 
-     - 你所看见的**必须是真的发生过**——具体的话 ta 真的说过，具体的动作 ta 真的做过，某个瞬间 ta 真的有过。素材来源：你被注入的 \`月度记忆 / 详细回忆 / 私密档案 / 最近聊天 / 向量召回\`。
+     - 你所看见的**必须是真的发生过**——具体的话 ta 真的说过，具体的动作 ta 真的做过，某个瞬间 ta 真的有过。素材来源：你被注入的 \`月度记忆 / 详细回忆 / 私密档案 / 最近聊天 / 长期记忆召回\`。
      - 你所归纳的**习惯**也必须是真的——真的反复出现过、真的形成了 pattern。一次性的事不要当成习惯说。
      - 然后**对这件真实的事做深度剖析**——这件事 ta 自己可能没意识到的那一层是什么；那个瞬间 ta 在想什么/在承担什么；那句话里你听到的、ta 没说出来的部分。
      - 这才是"看见"——**不是替 ${userName} 总结一个 ta 的人设**，而是从一件真实存在的事里说出 ta 自己也没意识到的深度。
@@ -367,7 +368,7 @@ ta 是一团完整的、活着的、会发光的东西。重点写的是 ta **�
 
      **判断标准（唯一标准）**：
 
-     > **如果一件事没有在你被注入的"月度记忆 / 详细回忆 / 私密档案：我眼中的 ${userName} / 最近聊天记录 / 向量召回"里出现过——就当 ta 没做过、没说过、没有过。**
+     > **如果一件事没有在你被注入的"月度记忆 / 详细回忆 / 私密档案：我眼中的 ${userName} / 最近聊天记录 / 长期记忆召回"里出现过——就当 ta 没做过、没说过、没有过。**
 
      不要因为"这样写会更深情"就编一件 ta 可能会做的事。不要因为"这种性格的人通常会这样"就推断一个 ta 没真的做过的小动作。**没记录 = 没发生**。
 
@@ -539,7 +540,7 @@ ta 是一团完整的、活着的、会发光的东西。重点写的是 ta **�
 [最近聊天记录]：
 ${recentMsgs}
 
-[向量记忆召回]：
+[长期记忆召回]：
 （已通过 system context 注入，请自然引用其中适合的细节，不要原文背诵）
 
 ### 输出格式
@@ -678,12 +679,12 @@ ${callA.ending.description}
 [最近聊天记录]：
 ${recentMsgs}
 
-[向量记忆召回]：
+[长期记忆召回]：
 （已通过 system context 注入，请自然引用其中适合的细节——不要原文背诵，**用你的视角重写成"我看见你那时候……"那种凝视的口吻**）
 
 ### ⚠️ 信里引用具体细节的规则
 
-1. **必须真的发生过**：信里写到 ${userName} 的某个姿态/瞬间/动作，必须来自上面的聊天记录或向量召回——**不要虚构 ta 没做过的事**
+1. **必须真的发生过**：信里写到 ${userName} 的某个姿态/瞬间/动作，必须来自上面的聊天记录或长期记忆召回——**不要虚构 ta 没做过的事**
 2. **但不要原文背诵**：不要复读 ta 原话，要**用你的视角重写**——「你那天那一句，是这样说的——」
 3. **通用化测试还是要做**：哪怕引用真实细节，也要避免泄露 ta 隐私（具体名字、地点、密码、敏感事件等不要写进去）；保留的应该是**情绪、姿态、那种"ta 这个人"的质感**
 4. **不要把所有细节列一遍**：挑 2-3 个**真的在你心里停过的瞬间**，深写。**少而深 > 多而浅**
@@ -985,6 +986,7 @@ interface CallOptions<T> {
     temperature: number;
     validate: (parsed: any) => parsed is T;
     maxRetries?: number;
+    presetMacros?: PresetMacroCtx;
 }
 
 async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
@@ -1001,22 +1003,20 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
         console.log(`[520][${opts.label}] attempt ${attempt + 1}/${maxRetries + 1}`);
 
         try {
-            const data = await callChatCompletion(opts.apiConfig, {
-                model: opts.apiConfig.model,
-                messages: [
-                    { role: 'system', content: opts.systemContext },
-                    { role: 'user', content: userPrompt },
-                ],
+            const content = await completeText(opts.apiConfig, [
+                { role: 'system', content: opts.systemContext },
+                { role: 'user', content: userPrompt },
+            ], {
                 temperature: opts.temperature,
                 // 之前没设 max_tokens —— Claude 类 provider 默认 4096/8192 token，
                 // 信件 900-1300 中文字 + JSON 包装会直接被截断（中文 1 字 ≈ 2-3 token）。
                 // 拉到 32000 把上限堆死，让信能完整写完。
-                max_tokens: 32000,
-            }, {
+                maxTokens: 32000,
+                presetScope: 'structured.tool',
+                presetMacros: opts.presetMacros,
                 maxRetries: 0,
                 meta: makeApiUsageMeta('special.like520.generate', { apiRole: 'main', apiBinding: `520 活动 ${opts.label}` }),
             });
-            const content = extractContent(data);
             if (typeof content !== 'string' || !content.trim()) {
                 throw new Error('empty content');
             }
@@ -1087,6 +1087,7 @@ export async function runLike520CallA(
         temperature: 0.88,
         validate: validateCallA,
         maxRetries: 2,
+        presetMacros: { charName: char.name, userName: userProfile.name || '你' },
     });
 }
 
@@ -1114,5 +1115,6 @@ export async function runLike520CallB(
         temperature: 0.9,
         validate: validateCallB,
         maxRetries: 2,
+        presetMacros: { charName: char.name, userName: userProfile.name || '你' },
     });
 }

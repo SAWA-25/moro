@@ -335,7 +335,7 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             emotionConfig: { enabled: true },
         } as CharacterProfile;
         try {
-            await importCharacter(newChar);
+            await importCharacter(newChar, { preserveId: true });
             addToast(`已把 ${thread.name} 加进往来，可在名册里改 TA 的人设`, 'success');
         } catch { addToast('加入往来失败，再试试', 'error'); }
     };

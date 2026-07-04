@@ -12,7 +12,7 @@ describe('optional custom API resolution', () => {
         const api = resolveOptionalCustomApi(
             { baseUrl: ' https://custom.example.test/v1 ', apiKey: ' custom-key ', model: ' cheap-model ' },
             mainApi,
-            { customBinding: '今日作息日程 / 心情 API' },
+            { customBinding: '今日日程 API' },
         );
 
         expect(api).toEqual({
@@ -20,7 +20,7 @@ describe('optional custom API resolution', () => {
             apiKey: 'custom-key',
             model: 'cheap-model',
             apiRole: 'custom',
-            apiBinding: '今日作息日程 / 心情 API',
+            apiBinding: '今日日程 API',
         });
     });
 
@@ -32,13 +32,13 @@ describe('optional custom API resolution', () => {
         const api = resolveOptionalCustomApi(
             { baseUrl: ' ', apiKey: 'custom-key', model: 'cheap-model' },
             mainApi,
-            { mainBinding: '今日作息 API 留空，使用主 API' },
+            { mainBinding: '今日日程 API 留空，使用主 API' },
         );
 
         expect(api).toEqual({
             ...mainApi,
             apiRole: 'main',
-            apiBinding: '今日作息 API 留空，使用主 API',
+            apiBinding: '今日日程 API 留空，使用主 API',
         });
     });
 

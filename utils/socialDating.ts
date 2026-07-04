@@ -2,6 +2,7 @@ import { AmbientSocialContact, CharacterProfile, UserProfile } from '../types';
 import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
 
 /**
  * 见闻簿·交友（发现身边的人）—— 本地 AI 实时生成一批「附近的人」交友卡片，
@@ -68,16 +69,22 @@ const emojiFor = (name: string): string => {
     return EMOJI_POOL[Math.abs(h) % EMOJI_POOL.length];
 };
 
-export interface CharBrief { id: string; name: string; persona?: string; avatar?: string; }
+export interface CharBrief { id: string; modelId?: string; name: string; persona?: string; avatar?: string; }
 
 // ── 生成 prompt ────────────────────────────────────────────────────────────
 export function buildDatingPrompt(chars: CharBrief[], userProfile: UserProfile, count: number): string {
-    const roster = chars.slice(0, 5).map(c => `- ${c.name}：${(c.persona || '').replace(/\s+/g, ' ').slice(0, 120) || '（无设定）'}`).join('\n');
+    const roster = chars.slice(0, 5).map(c => {
+        const id = getCharacterModelId(c);
+        const idPart = id ? ` charId="${id}"` : '';
+        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').replace(/\s+/g, ' ').slice(0, 120) || '（无设定）'}`;
+    }).join('\n');
     const intents = DATING_INTENTS.map(i => `${i.key}(${i.label})`).join('、');
     return `你是一个交友/约会 App（参考探探、Soul、陌陌）的「发现·附近的人」推荐引擎，为用户「${userProfile.name}」生成一批**逼真、各式各样、像真人**的附近用户交友卡片。
 
 ## 可「实名出镜」的人（用户认识的角色，可能也在附近刷交友，**每人最多 1 张卡**，用其本名、贴合人设写简介）
 ${roster || '（暂无，全部生成虚构路人）'}
+
+Identity rule: if a real character from this roster appears, output isChar=true and copy charId exactly from the roster. Names are display text only; do not identify, merge, or substitute characters by similar name/persona.
 
 ## 硬性要求
 1. 一次生成 ${count} 张交友卡片，**人物多种多样、不重样**：不同性别、年龄（18~45）、性格、职业、生活状态；其中 ${chars.length ? '1~2 张可由上面的实名角色出镜（isChar=true、name 用其本名），其余' : '全部'}为虚构路人（isChar=false，昵称像真实交友软件用户、各不相同）。
@@ -87,7 +94,7 @@ ${roster || '（暂无，全部生成虚构路人）'}
 5. 卡片之间简介风格、措辞要各异，别套同一个模板。
 
 **只输出一个紧凑、完整、合法的 JSON 数组**（无多余空白、无 markdown 围栏、无解释），把 ${count} 张全部写完、最后用 ] 收尾：
-[{"name":"昵称或角色本名","isChar":false,"age":24,"gender":"女","intent":"gamemate","distanceKm":1.2,"online":true,"tags":["…"],"bio":"…"}]`;
+[{"name":"昵称或角色本名","charId":"真实角色必须填 roster 里的 charId；路人省略","isChar":false,"age":24,"gender":"女","intent":"gamemate","distanceKm":1.2,"online":true,"tags":["…"],"bio":"…"}]`;
 }
 
 // ── 解析（含截断打捞：交友卡是扁平对象，逐个抠完整 {…}） ──────────────────────
@@ -121,7 +128,13 @@ export function parseDatingProfiles(raw: string, chars: CharBrief[]): DatingProf
         const key = name.toLowerCase();
         if (seenName.has(key)) continue;
         seenName.add(key);
-        let ch = (x?.isChar || x?.isCharacter) ? chars.find(c => c.name === name) : undefined;
+        const wantsChar = !!(x?.isChar || x?.isCharacter);
+        const modelCharId = String(x?.charId || x?.authorCharId || x?.characterId || '').trim();
+        let ch = wantsChar ? resolveCharacterByModelId(chars, modelCharId) : undefined;
+        if (!ch && wantsChar) {
+            const sameName = chars.filter(c => c.name === name);
+            if (sameName.length === 1) ch = sameName[0];
+        }
         if (ch && usedChar.has(ch.id)) ch = undefined;
         if (ch) usedChar.add(ch.id);
         const intent = (INTENT_KEYS.has(String(x?.intent)) ? String(x?.intent) : pick(DATING_INTENTS).key) as DatingIntent;
@@ -244,7 +257,12 @@ export async function generateDatingReply(api: DatingApi, p: DatingProfile, user
             max_tokens: 2000,
             stream: false,
         }, {
-            meta: makeApiUsageMeta('social.dating', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '交友回复' }),
+            meta: makeApiUsageMeta('social.dating', {
+                apiRole: api.apiRole || 'aux',
+                apiBinding: api.apiBinding || '交友回复',
+                charId: p.isChar ? p.charId : undefined,
+                charName: p.isChar ? p.name : undefined,
+            }),
         });
         let t = (extractContent(data) || '').trim();
         t = t.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
@@ -262,7 +280,13 @@ export async function generateDatingBatch(
     // 随机抽几位角色「出镜」
     const pool = [...characters];
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[pool[i], pool[j]] = [pool[j], pool[i]]; }
-    const briefs: CharBrief[] = pool.slice(0, 5).map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || '', avatar: c.convoSettings?.charAvatarOverride || c.avatar }));
+    const briefs: CharBrief[] = pool.slice(0, 5).map(c => ({
+        id: c.id,
+        modelId: getCharacterModelId(c),
+        name: c.name,
+        persona: c.systemPrompt || '',
+        avatar: c.convoSettings?.charAvatarOverride || c.avatar,
+    }));
     const prompt = buildDatingPrompt(briefs, userProfile, count);
     const data = await callChatCompletion(api, {
         model: api.model,

@@ -763,11 +763,9 @@ ${charPart}
         if (!p) {
             palaceStatus = { tone: 'fail', title: '回忆标本馆 · 写入失败', detail: '处理过程抛了异常，详情看控制台。往事柜已 fallback 走主 API 散文版，写入成功。' };
         } else if (p.status === 'palace_disabled') {
-            palaceStatus = { tone: 'off', title: '回忆标本馆 · 没开', detail: `${archiveResult.charName} 没开回忆标本馆，走的是主 API 散文路径写往事柜。想让日记进向量记忆，去角色设置里打开"回忆标本馆"开关再收一次。` };
+            palaceStatus = { tone: 'off', title: '回忆标本馆 · 没开', detail: `${archiveResult.charName} 没开回忆标本馆，走的是主 API 散文路径写往事柜。想让日记进入本地结构化记忆，去角色设置里打开"回忆标本馆"开关再收一次。` };
         } else if (p.status === 'lightllm_missing') {
             palaceStatus = { tone: 'warn', title: '回忆标本馆 · 副 API 没配', detail: '标本馆开着，但文具盒副 API 没填；没法做结构化抽取，往事柜已 fallback 走散文版。' };
-        } else if (p.status === 'embedding_missing') {
-            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 嵌入模型没配', detail: '标本馆开着，但 embedding 配置缺失；没法向量化，往事柜已 fallback 走主 API 散文版。' };
         } else if (p.status === 'empty_input') {
             palaceStatus = { tone: 'warn', title: '回忆标本馆 · 内容是空的', detail: '日记两页都没有正文，没东西可收进馆。' };
         } else if (p.status === 'extracted_none') {
@@ -776,7 +774,7 @@ ${charPart}
             palaceStatus = {
                 tone: 'on',
                 title: `回忆标本馆 · 收了 ${p.stored} 条${p.skipped > 0 ? `（另有 ${p.skipped} 条撞上已有记忆去重）` : ''}`,
-                detail: '副 API 把日记拆成下面这几条结构化记忆并向量化，同一组内容也 bullet 化进了上面的往事柜。之后聊天召回时按语义命中。createdAt 已对齐到日记当天。',
+                detail: '副 API 把日记拆成下面这几条结构化记忆并保存到本地，同一组内容也 bullet 化进了上面的往事柜。之后聊天召回时按本地文本语义命中。createdAt 已对齐到日记当天。',
             };
         }
 

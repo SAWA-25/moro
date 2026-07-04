@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AmbientSocialContact, AmbientSocialEntry, CharacterProfile, UserProfile } from '../types';
 import { ambientSocialToCharacter, ensureAmbientSocialState, getAmbientSocialLinkedCharacterIds, getAmbientSocialLinkedGroupIds, isAmbientSocialCharacter, isAmbientSocialCharacterForUser, isRejectedAmbientGeneratedName, removeAmbientSocialEntry, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
-import { createCharacterId, ensureCharacterModelId, formatCharacterWithId, getCharacterModelId } from './characterIdentity';
+import { buildCharacterIdentityAnchorPrompt, createCharacterId, ensureCharacterModelId, formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
 
 describe('character identity helpers', () => {
   it('creates non-empty unique character ids with a source prefix', () => {
@@ -24,6 +24,27 @@ describe('character identity helpers', () => {
 
     expect(getCharacterModelId(char)).toBe('identity-a');
     expect(formatCharacterWithId(char)).toBe('Same Name (ID: identity-a)');
+  });
+
+  it('builds a reusable model-visible identity anchor prompt', () => {
+    const char = { id: 'db-row-a', modelId: 'identity-a', name: 'Same Name' } as CharacterProfile;
+
+    const prompt = buildCharacterIdentityAnchorPrompt(char, { taskLabel: 'a schedule task' });
+
+    expect(prompt).toContain('targetModelCharId: "identity-a"');
+    expect(prompt).toContain('targetLocalCharId: "db-row-a"');
+    expect(prompt).toContain('Same Name (ID: identity-a)');
+    expect(prompt).toContain('Do not merge, substitute, or borrow');
+  });
+
+  it('resolves model-visible ids back to local character records', () => {
+    const chars = [
+      { id: 'row-a', modelId: 'model-a', name: 'Same Name' },
+      { id: 'row-b', modelId: 'model-b', name: 'Same Name' },
+    ] as CharacterProfile[];
+
+    expect(resolveCharacterByModelId(chars, 'model-b')?.id).toBe('row-b');
+    expect(resolveCharacterByModelId(chars, 'row-a')?.modelId).toBe('model-a');
   });
 
   it('backfills missing modelId from the persistent row id', () => {

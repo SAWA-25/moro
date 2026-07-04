@@ -43,8 +43,8 @@ interface ConvoSettingsPanelProps {
     onClearChatContextOnly: () => void;
     preserveContext: boolean;
     onTogglePreserveContext: () => void;
-    isVectorizing?: boolean;
-    onForceVectorize?: () => void;
+    isMemoryOrganizing?: boolean;
+    onOrganizeMemory?: () => void;
     onExportChat: () => void;
     messagesCount: number;
     privateChatArchives: PrivateChatArchive[];
@@ -217,7 +217,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang,
         onSetTranslateSourceLang, onSetTranslateLang,
         onOpenHistoryManager, onClearHistory, onClearChatContextOnly, preserveContext, onTogglePreserveContext,
-        isVectorizing, onForceVectorize, onExportChat, messagesCount,
+        isMemoryOrganizing, onOrganizeMemory, onExportChat, messagesCount,
         privateChatArchives, activePrivateChatId,
         onNewPrivateChat, onSwitchPrivateChat, onRenamePrivateChat, onTogglePinPrivateChat, onDeletePrivateChat, onExportPrivateChat, onImportPrivateChat,
         categories, emojiCounts, onSaveCategoryVisibility,
@@ -227,7 +227,15 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
     const cs: ConvoSettings = char.convoSettings || {};
     const updateConvo = (patch: Partial<ConvoSettings>) => {
-        updateCharacter(char.id, { convoSettings: { ...char.convoSettings, ...patch } });
+        updateCharacter(char.id, { convoSettings: patch });
+    };
+    const updateSocialProfile = (patch: Partial<NonNullable<CharacterProfile['socialProfile']>>) => {
+        updateCharacter(char.id, {
+            socialProfile: {
+                ...(char.socialProfile ? {} : { handle: '' }),
+                ...patch,
+            } as CharacterProfile['socialProfile'],
+        });
     };
     const globalLiveChatSettings = normalizeLiveChatSettings(userProfile);
     const liveChatOverride = cs.liveChatOverride || 'inherit';
@@ -275,7 +283,6 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         const now = Date.now();
         updateCharacter(char.id, {
             convoSettings: {
-                ...char.convoSettings,
                 userNickname: defaultUserRemark,
                 userRemarkMotivation: `默认备注：先按你的个人资料称呼你，之后 ${char.name} 可以根据剧情和相处主动改。`,
                 userRemarkUpdatedAt: now,
@@ -565,19 +572,19 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                             <LineInput
                                 tag="WECHAT ID"
                                 value={char.socialProfile?.handle || ''}
-                                onChange={v => updateCharacter(char.id, { socialProfile: { ...char.socialProfile, handle: v } })}
+                                onChange={v => updateSocialProfile({ handle: v })}
                                 placeholder={`默认 moro_${char.id.slice(0, 10)}`}
                             />
                             <LineInput
                                 tag="AREA"
                                 value={char.socialProfile?.region || ''}
-                                onChange={v => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, region: v || undefined } })}
+                                onChange={v => updateSocialProfile({ region: v || undefined })}
                                 placeholder="比如：安徽 亳州 / 日本 京都…"
                             />
                             <LineInput
                                 tag="MOTTO"
                                 value={char.socialProfile?.bio || ''}
-                                onChange={v => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, bio: v || undefined } })}
+                                onChange={v => updateSocialProfile({ bio: v || undefined })}
                                 placeholder="挂在 TA 主页上的一句话…"
                             />
                         </div>
@@ -920,7 +927,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                             const city = char.cityConfig;
                             const mode = city?.mode;
                             const setCity = (patch: Partial<NonNullable<typeof char.cityConfig>>) =>
-                                updateCharacter(char.id, { cityConfig: { ...(char.cityConfig || { mode: 'real' as const }), ...patch } });
+                                updateCharacter(char.id, { cityConfig: patch as CharacterProfile['cityConfig'] });
                             return (
                                 <div className="space-y-2.5">
                                     <div className="flex flex-wrap gap-2">
@@ -1021,7 +1028,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                     style={{ background: '#fff', border: '1.5px solid #bfa3dd', color: '#7a5aa0', boxShadow: '2px 2px 0 #ddccef', ...CUTE_STACK }}
                                 >打开今日日程</button>
                                 <p className="text-[9.5px] leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
-                                    聊到约定/变更时，TA 会用「今日日程」底部的日程 / 心情 API 主动协调；不填则使用主 API。
+                                    聊到约定/变更时，TA 会用「今日日程」底部的日程 API 主动协调；不填则使用主 API。心情 buff 可另配心情 API。
                                 </p>
                                 <div className="flex items-start justify-between gap-3 rounded-[12px] px-3 py-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                     <div className="min-w-0">
@@ -1394,13 +1401,13 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         note={`当前有 ${messagesCount} 条看得见的消息，可以导出为 JSON 文件。`}
                         side={<PinButton onClick={onExportChat}>导出 JSON</PinButton>}
                     />
-                    {char.memoryPalaceEnabled && onForceVectorize && (
+                    {char.memoryPalaceEnabled && onOrganizeMemory && (
                         <Entry
                             mark="❒" title="送进回忆标本馆"
-                            note="把还没处理的聊天记录全部交给回忆标本馆做向量化，办完之后就能放心清空聊天。"
+                            note="把可处理的旧聊天交给回忆标本馆提取并收录到本地，最近热区仍会留在聊天上下文里。"
                             side={
-                                <PinButton tone="mint" onClick={onForceVectorize} disabled={isVectorizing}>
-                                    {isVectorizing ? '处理中…' : '🏰 全部处理'}
+                                <PinButton tone="mint" onClick={onOrganizeMemory} disabled={isMemoryOrganizing}>
+                                    {isMemoryOrganizing ? '处理中…' : '🏰 全部处理'}
                                 </PinButton>
                             }
                         />

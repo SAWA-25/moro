@@ -1,10 +1,10 @@
 import type { CharacterProfile, GroupProfile, Message, UserProfile } from '../types';
 import { DB } from './db';
-import { extractContent } from './safeApi';
 import type { OfflineCommitInfo, OfflinePovPerson } from './offlineMode';
 import { formatCharacterWithId } from './characterIdentity';
-import { callChatCompletion } from './llmClient';
+import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import type { PresetMacroCtx } from './presets';
 
 export interface GroupOfflineSceneEntry {
   role: 'scene';
@@ -106,18 +106,21 @@ interface GroupOfflineApi {
 }
 
 // 群聊线下赴约默认走文具盒主 API / 主模型，让群体现场和主聊天保持同一套角色声音。
-const callGroupOfflineLLM = async (api: GroupOfflineApi, prompt: string, temperature = 0.9): Promise<string> => {
-  const data = await callChatCompletion(api, {
-    model: api.model,
-    messages: [{ role: 'user', content: prompt }],
+const GROUP_OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮群体线下现场正文，不要前缀或解释。';
+
+const callGroupOfflineLLM = async (api: GroupOfflineApi, prompt: string, temperature = 0.9, presetMacros?: PresetMacroCtx): Promise<string> => {
+  return (await completeText(api, [
+    { role: 'system', content: prompt },
+    { role: 'user', content: GROUP_OFFLINE_DIRECT_OUTPUT_USER },
+  ], {
     temperature,
-  }, {
+    presetScope: 'creative.text',
+    presetMacros,
     meta: makeApiUsageMeta('chat.groupOfflineMode', {
       apiRole: api.apiRole || 'main',
       apiBinding: api.apiBinding,
     }),
-  });
-  return (extractContent(data) || '').trim();
+  })).trim();
 };
 
 const memberDisplayName = (group: GroupProfile, member: CharacterProfile): string =>
@@ -222,7 +225,7 @@ ${rerollBlock}
 - 至少让一位最适合接这个场的人有反应，可以是台词、小动作、插科打诨或沉默；
 - 承接最近群聊里的话题或约定，让这场见面像自然落地；
 - 不要替 ${userProfile.name || '你'} 说话或行动，不要让所有成员机械轮流亮相。
-只输出现场正文，不要前缀或解释。`);
+只输出现场正文，不要前缀或解释。`, 0.9, { charName: group.name, userName: userProfile.name || '你' });
 };
 
 export const generateGroupOfflineTurn = async (
@@ -261,7 +264,7 @@ ${rerollBlock}
 - 让一位或几位最适合的人接话，不要强行全员轮流，不要写成主持人总结；
 - 可以穿插小动作、视线、停顿、身边环境和成员之间的打岔，但要短、具体、像真人聚在一起；
 - 不要替 ${userName} 说话或行动，不要突然推进不符合关系的亲密或冲突。
-只输出续写正文，不要前缀或解释。`);
+只输出续写正文，不要前缀或解释。`, 0.9, { charName: group.name, userName });
 };
 
 export const commitGroupOfflineSessionToContext = async (

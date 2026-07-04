@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     targetFloorCount, parseThreads, materializeThreads, fallbackThreads,
-    parseForumReplies, materializeReplies, buildThreadsPrompt, FORUM_BOARDS,
+    parseForumReplies, materializeReplies, buildForumPrompt, buildThreadsPrompt, FORUM_BOARDS,
     levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, isCheckedIn,
     checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp, boardStat,
     makeNotif, unreadCount, hotRank, userLikesReceived, votePoll, pollTotal,
@@ -97,6 +97,47 @@ describe('materializeThreads', () => {
         expect(linxia.replies).toEqual([]);
         const luren = posts.find(p => p.authorName === '路人')!;
         expect(luren.authorType).toBe('npc');
+    });
+});
+
+describe('materializeThreads identity anchors', () => {
+    it('uses charId anchors for same-name thread authors and avoids name guessing', () => {
+        const chars = [
+            { id: 'row-a', modelId: 'model-a', name: 'Same', avatar: 'a.png' },
+            { id: 'row-b', modelId: 'model-b', name: 'Same', avatar: 'b.png' },
+        ];
+        const byAnchor = materializeThreads(parseThreads('[{"author":"Same","charId":"model-b","title":"anchor","body":"x","floors":50,"likes":1}]'), 'chat', chars);
+        expect(byAnchor[0].authorType).toBe('char');
+        expect(byAnchor[0].authorId).toBe('row-b');
+        expect(byAnchor[0].avatar).toBe('b.png');
+
+        const ambiguous = materializeThreads(parseThreads('[{"author":"Same","title":"ambiguous","body":"x","floors":50,"likes":1}]'), 'chat', chars);
+        expect(ambiguous[0].authorType).toBe('npc');
+        expect(ambiguous[0].authorId).toBeUndefined();
+    });
+});
+
+describe('forum identity prompts', () => {
+    it('prints model ids and identity rules for generated replies', () => {
+        const { user } = buildForumPrompt(
+            { boardId: 'chat', title: 'topic', body: 'body' },
+            [{ id: 'row-a', modelId: 'model-a', name: 'Same', persona: 'quiet' }],
+            2,
+        );
+        expect(user).toContain('charId="model-a"');
+        expect(user).toContain('Identity rule');
+        expect(user).toContain('do not merge');
+    });
+
+    it('prints model ids and identity rules for generated threads', () => {
+        const { user } = buildThreadsPrompt(
+            FORUM_BOARDS[0],
+            [{ id: 'row-a', modelId: 'model-a', name: 'Same', persona: 'quiet' }],
+            2,
+        );
+        expect(user).toContain('charId="model-a"');
+        expect(user).toContain('Identity rule');
+        expect(user).toContain('do not merge');
     });
 });
 
@@ -239,6 +280,23 @@ describe('materializeReplies', () => {
         // 落成楼中楼挂到 existing，不产生新主楼
         expect(out.length).toBe(0);
         expect(existing[0].subReplies?.length).toBe(1);
+    });
+});
+
+describe('materializeReplies identity anchors', () => {
+    it('uses charId anchors for same-name replies and avoids name guessing', () => {
+        const chars = [
+            { id: 'row-a', modelId: 'model-a', name: 'Same', avatar: 'a.png' },
+            { id: 'row-b', modelId: 'model-b', name: 'Same', avatar: 'b.png' },
+        ];
+        const byAnchor = materializeReplies([{ name: 'Same', charId: 'model-b', body: 'from b' }], chars, 2);
+        expect(byAnchor[0].authorType).toBe('char');
+        expect(byAnchor[0].authorId).toBe('row-b');
+        expect(byAnchor[0].avatar).toBe('b.png');
+
+        const ambiguous = materializeReplies([{ name: 'Same', body: 'without id' }], chars, 2);
+        expect(ambiguous[0].authorType).toBe('npc');
+        expect(ambiguous[0].authorId).toBeUndefined();
     });
 });
 

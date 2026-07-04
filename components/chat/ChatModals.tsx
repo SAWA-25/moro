@@ -126,10 +126,10 @@ interface ChatModalsProps {
     onToggleScheduleFeature?: () => void;
     isEmotionBuffFeatureEnabled?: boolean;
     onToggleEmotionBuffFeature?: () => void;
-    // Memory Palace force vectorize
+    // Memory Palace manual catch-up
     isMemoryPalaceEnabled?: boolean;
-    isVectorizing?: boolean;
-    onForceVectorize?: () => void;
+    isMemoryOrganizing?: boolean;
+    onOrganizeMemory?: () => void;
     // Emotion (embedded under schedule modal, synced on/off with scheduleStyle)
     apiPresets?: ApiPreset[];
     onAddApiPreset?: (name: string, config: APIConfig) => void;
@@ -165,7 +165,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     scheduleData, scheduleLifeNotes, isScheduleGenerating, onScheduleEdit, onScheduleDelete, onScheduleReroll, onScheduleCoverChange,
     onScheduleStyleChange,
     isScheduleFeatureEnabled, onToggleScheduleFeature, isEmotionBuffFeatureEnabled, onToggleEmotionBuffFeature,
-    isMemoryPalaceEnabled, isVectorizing, onForceVectorize,
+    isMemoryPalaceEnabled, isMemoryOrganizing, onOrganizeMemory,
     apiPresets, onAddApiPreset, onSaveEmotion, onClearBuffs,
 }) => {
     const bgInputRef = useRef<HTMLInputElement>(null);
@@ -550,18 +550,18 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                          <p className="text-[10px] text-slate-400 mt-2 text-center">可选择从某条消息开始显示，隐藏之前的记录（不被 AI 读取）。</p>
                      </div>
                      
-                     {/* 记忆宫殿：一键向量化所有聊天记录 */}
-                     {isMemoryPalaceEnabled && onForceVectorize && (
+                     {/* 记忆宫殿：一键整理可处理旧聊天 */}
+                     {isMemoryPalaceEnabled && onOrganizeMemory && (
                          <div className="pt-2 border-t border-slate-100">
                              <button
-                                 onClick={onForceVectorize}
-                                 disabled={isVectorizing}
+                                 onClick={onOrganizeMemory}
+                                 disabled={isMemoryOrganizing}
                                  className="w-full py-3 bg-emerald-50 text-emerald-600 font-bold rounded-2xl border border-emerald-200 active:scale-95 transition-transform flex items-center justify-center gap-2"
                              >
-                                 {isVectorizing ? '🏰 向量化处理中...' : '🏰 一键向量化所有聊天记录'}
+                                 {isMemoryOrganizing ? '🏰 整理处理中...' : '🏰 一键整理所有聊天记录'}
                              </button>
                              <p className="text-[10px] text-slate-400 mt-2 text-center leading-relaxed">
-                                 将所有未处理的聊天记录交给回忆标本馆向量化，完成后可安全清空聊天。<br/>
+                                 将可处理的旧聊天交给回忆标本馆提取并收录到本地，最近热区仍会留在聊天上下文里。<br/>
                                  <span className="text-slate-300">看不懂这是什么的话不需要操作此按钮。</span>
                              </p>
                          </div>
@@ -613,7 +613,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             return (
                                 <NoteStrip tone="good">
                                     <b>自动归档已经开启</b>：palace 处理完会按日期把聊天自动收进「本月日度总结」。
-                                    自动流程用的是<b>回忆标本馆内置模板</b>（保证向量检索稳定）；
+                                    自动流程用的是<b>回忆标本馆内置模板</b>（保证本地记忆结构稳定）；
                                     下面选择的模板<b>只影响手动归档</b>，怎么换都不影响自动归档。
                                 </NoteStrip>
                             );
@@ -621,7 +621,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         if (palaceOn && !autoOn) {
                             return (
                                 <NoteStrip tone="warn">
-                                    回忆标本馆开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
+                                    回忆标本馆开着，但<b>自动归档没开</b>——palace 只在后台整理本地标本，
                                     <b>不会</b>自动写进「本月日度总结」。想让它自动写：剪影集 → 登场人物 → 角色 →
                                     回忆标本馆开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
                                     按选中的<b>《{activeName}》</b>模板手动归档一次。
@@ -724,7 +724,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     {typeof activeCharacter.hideBeforeMessageId === 'number' && activeCharacter.hideBeforeMessageId > 0 && (
                         <div className="p-2.5 text-[11px] leading-relaxed mb-2" style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 12, color: INK }}>
                             <b>💡 已经设了隐藏起点</b>：灰掉的消息是归档时标「已总结」的，AI 看不到原文、但读得到它们的总结。<br/>
-                            <span style={{ color: INK_SOFT }}>回忆标本馆的向量记忆另有自己的水位线（跟这儿无关），不用手动管。</span>
+                            <span style={{ color: INK_SOFT }}>回忆标本馆另有自己的处理水位线（跟这儿无关），不用手动管。</span>
                         </div>
                     )}
                     <div className="sticky top-0 backdrop-blur-sm z-10 pb-1.5 -mx-1 px-1" style={{ background: 'rgba(246,243,236,0.95)' }}>
@@ -998,7 +998,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 onClose={() => setModalType('none')}
             >
                 <div>
-                    {/* 作息开关：关闭时不调日程 / 心情 API、不生成日程 */}
+                    {/* 作息开关：关闭时不调日程 API、不生成日程 */}
                     {onToggleScheduleFeature && (
                         <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#eed6df' }}>
                             <div className="flex-1 min-w-0">
@@ -1008,7 +1008,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 </div>
                                 <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
                                     {isScheduleFeatureEnabled
-                                        ? '开着：会用下方日程 / 心情 API 排出 TA 今天的日程；留空时使用主 API。'
+                                        ? '开着：会用下方日程 API 排出 TA 今天的日程；留空时使用主 API。'
                                         : '关着：不生成日程，聊天也不再注入当天作息。'}
                                 </p>
                             </div>
@@ -1095,8 +1095,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 点一条可以改 · 按住不放是删掉
                             </p>
 
-                            {/* 日程 / 心情 API */}
-                            {isEmotionBuffFeatureEnabled && activeCharacter && apiPresets && onAddApiPreset && onSaveEmotion && onClearBuffs && (
+                            {/* 日程 API / 心情 API */}
+                            {activeCharacter && apiPresets && onAddApiPreset && onSaveEmotion && onClearBuffs && (
                                 <EmotionSettingsPanel
                                     char={activeCharacter}
                                     apiPresets={apiPresets}

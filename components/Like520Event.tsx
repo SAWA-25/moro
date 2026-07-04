@@ -14,6 +14,7 @@ import { DB } from '../utils/db';
 import { APIConfig, CharacterProfile, SpecialMomentRecord } from '../types';
 import { fetchModelList, testChatConnection } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { isMainApiStreamEnabled } from '../utils/apiConfigDefaults';
 import {
     runLike520CallA,
     runLike520CallB,
@@ -3516,7 +3517,7 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
     const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
     const [localKey, setLocalKey] = useState(apiConfig.apiKey);
     const [localModel, setLocalModel] = useState(apiConfig.model);
-    const [localStream, setLocalStream] = useState(apiConfig.stream === true);
+    const [localStream, setLocalStream] = useState(isMainApiStreamEnabled(apiConfig));
     const [isLoadingModels, setIsLoadingModels] = useState(false);
     const [statusMsg, setStatusMsg] = useState('');
     const [showModelList, setShowModelList] = useState(false);
@@ -3527,7 +3528,7 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
         setLocalUrl(preset.config.baseUrl);
         setLocalKey(preset.config.apiKey);
         setLocalModel(preset.config.model);
-        setLocalStream(preset.config.stream === true);
+        setLocalStream(isMainApiStreamEnabled(preset.config));
         setTestResult(null);
         addToast(`已加载预设: ${preset.name}`, 'info');
     };

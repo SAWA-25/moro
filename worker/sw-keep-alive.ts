@@ -71,8 +71,9 @@ import { swReadSnapshot, swBuildMessages, swBuildQueuedReplyMetadata, swCallLLM,
  *            落 inbox + 弹系统通知（关站/后台冻结也能发）；有可见 client 则照旧 postMessage 交主线程。
  *            本地 proactive 定时器同理（fireProactiveTrigger 无 client 时走 SW 生成）。
  *  - 1.16.1: notificationclick 支持健康·经期提醒，点击打开健康 App，不再误走聊天入口。
+ *  - 1.16.2: 线下模式现场未结束时，SW 端离线主动消息跳过该角色，避免面对面现场和线上私聊并发。
  */
-const SW_VERSION = '1.16.1';
+const SW_VERSION = '1.16.2';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -600,7 +601,7 @@ async function notifyVisibleClientForToolRequest(payload: any) {
   }
 }
 
-// emotion_update push: worker 跑完日程 / 心情 API 情绪评估后推回的 buff 结果. 静默写进 inbox (不弹通知、
+// emotion_update push: worker 跑完心情 API 情绪评估后推回的 buff 结果. 静默写进 inbox (不弹通知、
 // 不计未读), 客户端 flushInboxToChat 看到 messageType==='emotion_update' 时调 applyEmotionEvalRaw
 // 落 buff + 广播 innerState, 不渲染成聊天消息. notifyClients 仅用来触发一次 flush (前台时立即落 buff;
 // 后台时 postMessage 排队/丢弃, 回前台 visibilitychange flush 兜底).

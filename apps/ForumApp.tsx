@@ -3,6 +3,7 @@ import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     ForumState, ForumPost, ForumReply, ForumPoll, ForumDraft, ForumTopicEvent, ForumListFilter, ForumTrendPack, FORUM_BOARDS, boardOf, seedForum, fid,
     npcEmoji, fallbackReplies, buildForumPrompt, parseForumReplies, materializeReplies,
@@ -204,8 +205,8 @@ const ForumApp: React.FC = () => {
         };
     }, [loaded]);
 
-    const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || undefined })), [characters]);
-    const charLite = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar })), [characters]);
+    const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt || undefined })), [characters]);
+    const charLite = useMemo(() => characters.map(c => ({ id: c.id, modelId: c.modelId || c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar })), [characters]);
 
     const api = () => resolveAuxApi(auxApiConfig, apiConfig);
     const unread = unreadCount(notifs);
@@ -360,10 +361,20 @@ const ForumApp: React.FC = () => {
         const c = characters[Math.floor(Math.random() * characters.length)];
         let decided: { boardId: string; title: string; body: string } | null = null;
         try {
-            const { system, user } = buildCharThreadPrompt({ id: c.id, name: c.name, persona: c.systemPrompt });
-            const out = await llmComplete(api(), [
+            const forumApi = api();
+            const { system, user } = buildCharThreadPrompt({ id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt });
+            const out = await llmComplete(forumApi, [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 0.95, maxTokens: 300 });
+            ], {
+                temperature: 0.95,
+                maxTokens: 300,
+                meta: makeApiUsageMeta('forum.generate', {
+                    apiRole: forumApi.apiRole || 'aux',
+                    apiBinding: forumApi.apiBinding || '角色发帖',
+                    charId: c.id,
+                    charName: c.name,
+                }),
+            });
             decided = parseCharThread(out);
         } catch { /* fall through */ }
         if (!decided) decided = { boardId: 'chat', title: '今天也想找人说说话', body: '没什么大事，就是突然想冒个泡。有人在吗？' };
@@ -389,13 +400,23 @@ const ForumApp: React.FC = () => {
         if (charReplyBusy) return;
         setCharReplyBusy(true);
         const c = characters[Math.floor(Math.random() * characters.length)];
-        const lite = { id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar };
+        const lite = { id: c.id, modelId: c.modelId || c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar };
         let body: string | null = null;
         try {
-            const { system, user } = buildCharReplyPrompt(open, { id: c.id, name: c.name, persona: c.systemPrompt });
-            const out = await llmComplete(api(), [
+            const forumApi = api();
+            const { system, user } = buildCharReplyPrompt(open, { id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt });
+            const out = await llmComplete(forumApi, [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 0.92, maxTokens: 900 });
+            ], {
+                temperature: 0.92,
+                maxTokens: 900,
+                meta: makeApiUsageMeta('forum.generate', {
+                    apiRole: forumApi.apiRole || 'aux',
+                    apiBinding: forumApi.apiBinding || '角色回帖',
+                    charId: c.id,
+                    charName: c.name,
+                }),
+            });
             body = parseCharReply(out);
         } catch { /* fallback */ }
         if (!body) body = '路过看完，忍不住接一句：这事真不能只看表面。';

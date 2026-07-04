@@ -88,7 +88,7 @@ export function normalizeMessageContent(
             }
             if (card?.type === 'like520_card') {
                 // 520 特别活动：那个"小小的下午"+ char 给 user 的信。信的内容是这次活动的母题落点，
-                // 归档 / 月度总结 / 向量召回都应该读到它，否则只是一个"[系统卡片]"占位会让前后文断层。
+                // 归档 / 月度总结 / 长期记忆召回都应该读到它，否则只是一个"[系统卡片]"占位会让前后文断层。
                 const letter = (typeof card.letter === 'string' && card.letter.trim()) ? card.letter.trim() : '';
                 const titlePart = card.title ? `结局「${card.title}」。` : '';
                 const descPart = card.description ? `${card.description} ` : '';
@@ -118,7 +118,7 @@ export function normalizeMessageContent(
         return preview ? `[HTML卡片] ${preview}` : '[HTML卡片]';
     }
 
-    // 音乐卡片：把 metadata.song + intent 翻成自然文本，否则归档/palace/向量只看到
+    // 音乐卡片：把 metadata.song + intent 翻成自然文本，否则归档/palace 只看到
     // "[音乐卡片]" 这种没信息量的占位，丢掉"谁因为什么歌做了什么"的语义
     if (type === 'music_card') {
         const song = msg.metadata?.song as { name?: string; artists?: string } | undefined;

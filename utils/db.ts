@@ -19,7 +19,7 @@ import {
     MusicLibraryTrack, MusicLibraryPlaylist, MusicPlaylistItem, MusicPlayEvent, MusicSearchHistoryItem, MusicRecommendCacheEntry,
     ChatFollowup, ChatHubDigest
 } from '../types';
-import { ensureCharacterModelId } from './characterIdentity';
+import { normalizeCharacterDefaults } from './impression';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 import { dispatchCharLifeEventUpdated, dispatchDailyScheduleSaved, dispatchDailyScheduleUpdated } from './scheduleEvents';
 import { sanitizeAssistantVisibleText } from './promptPrivacy';
@@ -1362,14 +1362,14 @@ export const DB = {
       const transaction = db.transaction(STORE_CHARACTERS, 'readonly');
       const store = transaction.objectStore(STORE_CHARACTERS);
       const request = store.getAll();
-      request.onsuccess = () => resolve(((request.result || []) as CharacterProfile[]).map(c => ensureCharacterModelId(c)));
+      request.onsuccess = () => resolve(((request.result || []) as CharacterProfile[]).map(c => normalizeCharacterDefaults(c)));
       request.onerror = () => reject(request.error);
     });
   },
 
   saveCharacter: async (character: CharacterProfile): Promise<void> => {
     const db = await openDB();
-    const normalizedCharacter = ensureCharacterModelId(character);
+    const normalizedCharacter = normalizeCharacterDefaults(character);
     // 等事务真正提交再 resolve —— 否则调用方 await 后立刻重读 DB 会拿到旧值 (情绪 buff 落库竞态根因).
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
@@ -1432,7 +1432,7 @@ export const DB = {
       const request = index.getAll(IDBKeyRange.only(charId));
       request.onsuccess = () => {
           let results = (request.result || []).filter((m: Message) => !m.groupId);
-          // 记忆宫殿：过滤已处理的消息（高水位标记之前的），用向量记忆替代
+          // 记忆宫殿：过滤已处理的消息（高水位标记之前的），用本地长期记忆替代
           if (!includeProcessed) {
               try {
                   const hwm = parseInt(localStorage.getItem(`mp_lastMsgId_${charId}`) || '0', 10);
@@ -6029,7 +6029,6 @@ export const DB = {
           data.twitterDMThreads !== undefined,
           data.twitterSearchRecords !== undefined,
           data.memoryNodes !== undefined,
-          data.memoryVectors !== undefined,
           data.memoryLinks !== undefined,
           data.topicBoxes !== undefined,
           data.anticipations !== undefined,
@@ -6194,7 +6193,7 @@ export const DB = {
                       return media ? applyMediaToChar(c, media) : c;
                   });
               }
-              data.characters = data.characters.map(c => c ? ensureCharacterModelId(c) : c);
+              data.characters = data.characters.map(c => c ? normalizeCharacterDefaults(c) : c);
               await clearAndAdd(STORE_CHARACTERS, data.characters, '角色资料', true);
           } else if (data.mediaAssets && hasStore(STORE_CHARACTERS)) {
               await beforeWrite(data.mediaAssets, '角色媒体', true);
@@ -6203,7 +6202,7 @@ export const DB = {
               if (existingChars.length > 0) {
                   const updatedChars = existingChars.map(c => {
                       const media = mediaAssets.find(m => m.charId === c.id);
-                      return ensureCharacterModelId(media ? applyMediaToChar(c, media) : c);
+                      return normalizeCharacterDefaults(media ? applyMediaToChar(c, media) : c);
                   });
                   await putItems(STORE_CHARACTERS, updatedChars, '角色资料', false);
               }
@@ -6607,31 +6606,6 @@ export const DB = {
           await clearAndAdd('memory_nodes', data.memoryNodes, '记忆节点', false);
           data.memoryNodes = undefined as any;
       }, data.memoryNodes?.length || 0);
-      await runSection('记忆向量', data.memoryVectors !== undefined, async () => {
-          if (!data.memoryVectors || !hasStore('memory_vectors')) {
-              data.memoryVectors = undefined as any;
-              return;
-          }
-          await clearStore('memory_vectors');
-          const CHUNK_SIZE = 50;
-          const total = data.memoryVectors.length;
-          for (let i = 0; i < total; i += CHUNK_SIZE) {
-              const end = Math.min(i + CHUNK_SIZE, total);
-              const chunk = data.memoryVectors.slice(i, end).filter(Boolean).map((v: any) => {
-                  if (!v || !v.vector || !Array.isArray(v.vector)) return v;
-                  const f32 = new Float32Array(v.vector);
-                  return { ...v, vector: new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength) };
-              });
-              await withStore('memory_vectors', store => {
-                  chunk.forEach((item: any) => store.put(item));
-              });
-              for (let j = i; j < end; j++) {
-                  (data.memoryVectors as any[])[j] = undefined;
-              }
-              report('记忆向量', 'items', end, total);
-          }
-          data.memoryVectors = undefined as any;
-      }, data.memoryVectors?.length || 0);
       await runSection('记忆关系', data.memoryLinks !== undefined, async () => {
           await clearAndAdd('memory_links', data.memoryLinks, '记忆关系', false);
           data.memoryLinks = undefined as any;

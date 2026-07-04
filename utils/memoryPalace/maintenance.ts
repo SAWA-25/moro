@@ -2,14 +2,12 @@
  * Memory Palace maintenance helpers.
  *
  * These helpers keep UI repair actions out of React components: inspect what is
- * safe to inspect locally, repair only structural references, and re-vectorize
- * nodes only when the caller provides an embedding config.
+ * safe to inspect locally and repair only structural references.
  */
 
 import type { MemoryFragment } from '../../types';
-import type { EmbeddingConfig, EventBox, MemoryLink, MemoryNode, RemoteVectorConfig } from './types';
-import { EventBoxDB, MemoryLinkDB, MemoryNodeDB, MemoryVectorDB } from './db';
-import { vectorizeAndStore } from './vectorStore';
+import type { EventBox, MemoryLink, MemoryNode } from './types';
+import { EventBoxDB, LegacyIndexResidueDB, MemoryLinkDB, MemoryNodeDB } from './db';
 import type { LightLLMConfig, MemoryPalaceProcessingStats, PipelineResult } from './pipeline';
 import {
     getMemoryPalaceHighWaterMark,
@@ -23,18 +21,13 @@ export interface MemoryPalaceInspection {
     processing: MemoryPalaceProcessingStats;
     counts: {
         nodes: number;
-        embeddedNodes: number;
-        unembeddedNodes: number;
-        vectors: number;
         links: number;
         eventBoxes: number;
         pinned: number;
         migratedTagged: number;
+        legacyIndexRows: number;
     };
     issues: {
-        missingVectorNodeIds: string[];
-        unembeddedNodeIds: string[];
-        orphanVectorIds: string[];
         brokenLinkIds: string[];
         missingEventBoxRefs: { boxId: string; field: 'summary' | 'live' | 'archived'; nodeId: string }[];
         nodeEventBoxMismatchIds: string[];
@@ -43,18 +36,10 @@ export interface MemoryPalaceInspection {
 }
 
 export interface MemoryPalaceRepairResult {
-    deletedOrphanVectors: number;
     deletedBrokenLinks: number;
     cleanedBoxRefs: number;
     fixedNodeBoxRefs: number;
     detachedMissingBoxes: number;
-}
-
-export interface MemoryPalaceRevectorizeResult {
-    requested: number;
-    rebuilt: number;
-    failed: number;
-    error?: string;
 }
 
 export interface MemoryPalaceCatchUpTarget {
@@ -109,27 +94,17 @@ function collectBoxRefIssues(boxes: EventBox[], nodeIds: Set<string>): MemoryPal
 }
 
 export async function inspectMemoryPalace(charId: string): Promise<MemoryPalaceInspection> {
-    const [processing, nodes, vectors, boxes] = await Promise.all([
+    const [processing, nodes, legacyIndexRows, boxes] = await Promise.all([
         getMemoryPalaceProcessingStats(charId),
         MemoryNodeDB.getByCharId(charId),
-        MemoryVectorDB.getAllByCharId(charId),
+        LegacyIndexResidueDB.countByCharId(charId),
         EventBoxDB.getByCharId(charId),
     ]);
     const links = await loadAllLinksForNodes(nodes);
     const nodeIds = new Set(nodes.map(n => n.id));
-    const vectorIds = new Set(vectors.map(v => v.memoryId));
     const boxIds = new Set(boxes.map(b => b.id));
     const now = Date.now();
 
-    const missingVectorNodeIds = nodes
-        .filter(n => n.embedded && !vectorIds.has(n.id))
-        .map(n => n.id);
-    const unembeddedNodeIds = nodes
-        .filter(n => !n.embedded)
-        .map(n => n.id);
-    const orphanVectorIds = vectors
-        .filter(v => !nodeIds.has(v.memoryId))
-        .map(v => v.memoryId);
     const brokenLinkIds = links
         .filter(l => !nodeIds.has(l.sourceId) || !nodeIds.has(l.targetId))
         .map(l => l.id);
@@ -154,18 +129,13 @@ export async function inspectMemoryPalace(charId: string): Promise<MemoryPalaceI
         processing,
         counts: {
             nodes: nodes.length,
-            embeddedNodes: nodes.filter(n => n.embedded).length,
-            unembeddedNodes: unembeddedNodeIds.length,
-            vectors: vectors.length,
             links: links.length,
             eventBoxes: boxes.length,
             pinned: nodes.filter(n => n.pinnedUntil && n.pinnedUntil > now).length,
             migratedTagged: nodes.filter(n => n.source?.kind === 'legacy_memory').length,
+            legacyIndexRows,
         },
         issues: {
-            missingVectorNodeIds,
-            unembeddedNodeIds,
-            orphanVectorIds,
             brokenLinkIds,
             missingEventBoxRefs,
             nodeEventBoxMismatchIds,
@@ -175,23 +145,14 @@ export async function inspectMemoryPalace(charId: string): Promise<MemoryPalaceI
 }
 
 export async function repairMemoryPalaceIntegrity(charId: string): Promise<MemoryPalaceRepairResult> {
-    const [nodes, vectors, boxes] = await Promise.all([
+    const [nodes, boxes] = await Promise.all([
         MemoryNodeDB.getByCharId(charId),
-        MemoryVectorDB.getAllByCharId(charId),
         EventBoxDB.getByCharId(charId),
     ]);
     const nodeIds = new Set(nodes.map(n => n.id));
     const boxIds = new Set(boxes.map(b => b.id));
     const nodeById = new Map(nodes.map(n => [n.id, n]));
     const links = await loadAllLinksForNodes(nodes);
-
-    let deletedOrphanVectors = 0;
-    for (const vec of vectors) {
-        if (!nodeIds.has(vec.memoryId)) {
-            await MemoryVectorDB.delete(vec.memoryId);
-            deletedOrphanVectors++;
-        }
-    }
 
     let deletedBrokenLinks = 0;
     for (const link of links) {
@@ -279,7 +240,6 @@ export async function repairMemoryPalaceIntegrity(charId: string): Promise<Memor
     }
 
     return {
-        deletedOrphanVectors,
         deletedBrokenLinks,
         cleanedBoxRefs,
         fixedNodeBoxRefs,
@@ -287,57 +247,11 @@ export async function repairMemoryPalaceIntegrity(charId: string): Promise<Memor
     };
 }
 
-export async function revectorizeMemoryNodes(
-    charId: string,
-    nodeIds: string[],
-    embeddingConfig?: EmbeddingConfig | null,
-    remoteVectorConfig?: RemoteVectorConfig,
-): Promise<MemoryPalaceRevectorizeResult> {
-    const uniqueIds = Array.from(new Set(nodeIds.filter(Boolean)));
-    if (uniqueIds.length === 0) return { requested: 0, rebuilt: 0, failed: 0 };
-
-    const nodes = (await Promise.all(uniqueIds.map(id => MemoryNodeDB.getById(id))))
-        .filter((n): n is MemoryNode => !!n && n.charId === charId);
-    if (nodes.length === 0) return { requested: uniqueIds.length, rebuilt: 0, failed: uniqueIds.length, error: '没有找到可重建的记忆' };
-
-    for (const node of nodes) {
-        node.embedded = false;
-        await MemoryVectorDB.delete(node.id);
-        await MemoryNodeDB.save(node);
-        if (remoteVectorConfig?.enabled && remoteVectorConfig.initialized) {
-            try {
-                const { deleteVector } = await import('./supabaseVector');
-                await deleteVector(remoteVectorConfig, node.id).catch(() => {});
-            } catch { /* remote cleanup is best-effort */ }
-        }
-    }
-
-    if (!embeddingConfig) {
-        return { requested: nodes.length, rebuilt: 0, failed: nodes.length, error: 'embedding_missing' };
-    }
-
-    try {
-        const result = await vectorizeAndStore(nodes, embeddingConfig, remoteVectorConfig, { skipDedup: true });
-        return {
-            requested: nodes.length,
-            rebuilt: result.stored,
-            failed: Math.max(0, nodes.length - result.stored),
-        };
-    } catch (e: any) {
-        return {
-            requested: nodes.length,
-            rebuilt: 0,
-            failed: nodes.length,
-            error: e?.message || String(e),
-        };
-    }
-}
-
 export async function deleteTaggedLegacyMemories(charId: string): Promise<{ deleted: number }> {
     const nodes = await MemoryNodeDB.getByCharId(charId);
     const targets = nodes.filter(n => n.source?.kind === 'legacy_memory');
     for (const node of targets) {
-        await MemoryVectorDB.delete(node.id);
+        await LegacyIndexResidueDB.delete(node.id);
         const links = await MemoryLinkDB.getByNodeId(node.id);
         for (const link of links) await MemoryLinkDB.delete(link.id);
         await MemoryNodeDB.delete(node.id);
@@ -348,13 +262,12 @@ export async function deleteTaggedLegacyMemories(charId: string): Promise<{ dele
 
 export async function runMemoryPalaceCatchUp(params: {
     char: MemoryPalaceCatchUpTarget;
-    embeddingConfig: EmbeddingConfig;
     llmConfig: LightLLMConfig;
     userName?: string;
     maxRounds?: number;
     onProgress?: (stage: string) => void;
 }): Promise<MemoryPalaceCatchUpResult> {
-    const { char, embeddingConfig, llmConfig, userName = '', maxRounds = 50, onProgress } = params;
+    const { char, llmConfig, userName = '', maxRounds = 50, onProgress } = params;
     let rounds = 0;
     let processedMessages = 0;
     let stored = 0;
@@ -375,7 +288,7 @@ export async function runMemoryPalaceCatchUp(params: {
             }
             const beforeHwm = getMemoryPalaceHighWaterMark(char.id);
             onProgress?.(`第 ${round} 轮：可整理 ${stats.bufferCount} 条，预计处理 ${stats.processableCount} 条`);
-            const result = await processNewMessages([], char.id, char.name, embeddingConfig, llmConfig, userName, true, onProgress);
+            const result = await processNewMessages([], char.id, char.name, llmConfig, userName, true, onProgress);
             lastPipelineResult = result;
             if (!result) {
                 stoppedReason = 'error';

@@ -9,7 +9,7 @@ export function extractCharAvatarDirective(content: string): { useAvatar: boolea
     let useAvatar = false;
     let reason: string | undefined;
     const cleaned = (content || '').replace(
-        /\[\[(?:SET_CHAR_AVATAR_FROM_LAST_IMAGE|USE_LAST_USER_IMAGE_AS_CHAR_AVATAR)(?:[：:]\s*([^\]]*?))?\]\]/gi,
+        /\[\[\s*(?:SET_CHAR_AVATAR_FROM_LAST_IMAGE|USE_LAST_USER_IMAGE_AS_CHAR_AVATAR)\s*(?:[：:]\s*([^\]]*?))?\s*\]\]/gi,
         (_match, rawReason) => {
             useAvatar = true;
             if (!reason && rawReason) reason = String(rawReason).trim();

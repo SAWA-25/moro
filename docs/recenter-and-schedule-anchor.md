@@ -51,10 +51,10 @@
 | 环节 | 位置 |
 |------|------|
 | 廉价信号闸 `chatHasScheduleSignal` | `utils/scheduleGenerator.ts`：关键词正则扫最近 8 条，命中才值得花 LLM |
-| 协调 `reconcileScheduleWithChat` | `utils/scheduleGenerator.ts`：走「今日作息」底部日程 / 心情 API；底部 API 留空时直接使用主 API，对照聊天产出协调后的完整日程；无需改动返回 `changed:false` |
+| 协调 `reconcileScheduleWithChat` | `utils/scheduleGenerator.ts`：走「今日作息」底部日程 API；日程 API 留空时直接使用主 API，对照聊天产出协调后的完整日程；无需改动返回 `changed:false` |
 | 触发 | `apps/Chat.tsx`：`messages` 变化的 effect，过信号闸 + 每角色 8 分钟冷却（localStorage）后台跑；不再要求全局副 API 开启 |
 | 注入 | `utils/context.ts` `buildScheduleInjection`：锚点单独提到最前（「今天你和对方约定/已定下的事」） |
-| 入口 | 聊天右上角设置 → `ConvoSettingsPanel`「TA 的日程表」（开关 + 翻开今日日程 + 日程 / 心情 API 配置） |
+| 入口 | 聊天右上角设置 → `ConvoSettingsPanel`「TA 的日程表」（开关 + 翻开今日日程 + 日程 API / 心情 API 配置） |
 
 ### 锚点标记
 
@@ -64,7 +64,7 @@
 
 - **角色自治优先**：没被聊天触及的时段原样保留，只动需要动的；用户不是日程主语。
 - **别把锚点变成另一种揪着不放**：注入文案明确要求「记着、围着它走，不用反复主动提起或催问」。
-- **成本可控 + 明确线路**：今日作息底部 API 填齐就走自定义线路，留空直接走主 API；触发仍先过信号闸（正则，0 成本）→ 命中 → 8 分钟冷却 → 才一次 LLM 调用；不每轮都调。
+- **成本可控 + 明确线路**：今日作息底部日程 API 填齐就走自定义线路，留空直接走主 API；触发仍先过信号闸（正则，0 成本）→ 命中 → 8 分钟冷却 → 才一次 LLM 调用；不每轮都调。
 
 ---
 
@@ -83,9 +83,9 @@
 #### 边界：什么走主 API、什么走副 API
 
 - **主 API（聊天体验本身）**：私聊正文回复（`hooks/useChatAI.ts`）、群聊回复（`apps/ChatHub.tsx`）、主动消息（`utils/activeMsgRuntime.ts`）、Instant Push、QQ 桥（`apps/QQBridge.tsx`）、电话（`apps/CallApp.tsx` 实时通话）、聊天内的角色反应（求婚回应 `decideCharProposal`、红包过期反应、外卖/礼物反应）、偷看心声 `generateInnerVoice`、回神 `runRecenter`。
-- **副 API（其余全部功能 / App）**：浏览器、银行、TRPG/游戏、相机·查手机生成（`CheckPhone`，注意 `CameraApp` 多模态识图仍走主 API）、交换日记/日记社、小说、写歌歌词·Prompt、攻略本/手账、岁时记日历、约会/街角/记忆潜入、回忆标本馆（记忆提取、认知消化、向量化均复用文具盒副 API 的 Base URL / API Key）、小红书自由活动、页外剧院/VR·轨迹·对影、朋友圈生成、情侣空间、占卜、谈心、世界书/好友验证决策、番外仿真、角色卡生成/润色/导入、角色音乐主页、TTS 台词翻译、整理归档总结，等等。
+- **副 API（其余全部功能 / App）**：浏览器、银行、TRPG/游戏、相机·查手机生成（`CheckPhone`，注意 `CameraApp` 多模态识图仍走主 API）、交换日记/日记社、小说、写歌歌词·Prompt、攻略本/手账、岁时记日历、约会/街角/记忆潜入、回忆标本馆（记忆提取、关联分析、认知消化和本地整理均复用文具盒副 API 的 Base URL / API Key）、小红书自由活动、页外剧院/VR·轨迹·对影、朋友圈生成、情侣空间、占卜、谈心、世界书/好友验证决策、番外仿真、角色卡生成/润色/导入、角色音乐主页、TTS 台词翻译、整理归档总结，等等。
 - **保持原样（各有独立配置 / 非文本线路）**：图片生成 `generateImage`、MiniMax 语音 / ACE 音乐合成；多模态识图（相机/相册/白色情人节巧克力）因需 vision 能力暂留主 API；情人节/白色情人节/520 等节日事件作为「聊天体验」的一部分暂留主 API。
-- **絮语今日作息 / 心情 buff**：`apps/Chat.tsx` 的日程生成、日程协调和情绪评估统一走 `emotionConfig.api`（UI 文案为「日程 / 心情 API」）；留空时直接使用主 API，不再默认回落全局副 API。
+- **絮语今日作息 / 心情 buff**：`apps/Chat.tsx` 的日程生成、日程协调走 `emotionConfig.scheduleApi`；情绪评估、心情 buff 与意识流走 `emotionConfig.moodApi`。旧版 `emotionConfig.api` 只作历史兜底；任一项留空时直接使用主 API，不再默认回落全局副 API。
 - 早期消费方（仍然适用）：`apps/Character.tsx` 的生活侧写。
 
 ### 角色生活侧写（剪影集 → 登场人物 → 底稿页）

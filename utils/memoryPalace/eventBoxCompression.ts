@@ -4,18 +4,17 @@
  * 当 EventBox 的活节点 ≥ COMPRESSION_THRESHOLD (4) 条时触发：
  *   1. LLM 把"旧 summary?(若有) + 所有活节点"整合成一段第一人称连贯回忆
  *   2. 创建/更新 box.summaryNodeId 指向的 MemoryNode（isBoxSummary=true）
- *   3. 总结节点向量化、写入本地+远程
- *   4. 所有活节点 archived=true（本地保存 + 远程 bulkSetArchived）
+ *   3. 所有活节点 archived=true（本地保存）
  *   5. 更新 box.archivedMemoryIds / liveMemoryIds=[] / compressionCount++
  *
  * 触发点：
- *   - pipeline.processNewMessages 在 vectorize 之后扫描 touched boxes
+ *   - pipeline.processNewMessages 在本地保存之后扫描 touched boxes
  *   - migration.migrateOldMemories 全部 chunk 处理完后扫描 touched boxes
  *
  * 重压缩：第 N 次时，"旧 summary + 新活节点" 一起送给 LLM 重写，覆盖旧 summary。
  */
 
-import type { EventBox, MemoryNode, EmbeddingConfig, MemoryRoom, RemoteVectorConfig } from './types';
+import type { EventBox, MemoryNode, MemoryRoom } from './types';
 import {
     EVENT_BOX_COMPRESSION_THRESHOLD,
     EVENT_BOX_SEAL_THRESHOLD,
@@ -24,8 +23,6 @@ import {
 } from './types';
 import { EventBoxDB, MemoryNodeDB } from './db';
 import type { LightLLMConfig } from './pipeline';
-import { vectorizeAndStore } from './vectorStore';
-import { bulkSetArchived } from './supabaseVector';
 import { extractJson } from '../safeApi';
 import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { callChatCompletion } from '../llmClient';
@@ -37,15 +34,6 @@ const VALID_ROOMS: MemoryRoom[] = [
 
 function generateNodeId(): string {
     return `mn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
-    try {
-        const raw = localStorage.getItem('os_remote_vector_config');
-        if (!raw) return undefined;
-        const c = JSON.parse(raw) as RemoteVectorConfig;
-        return (c.enabled && (c as any).initialized) ? c : undefined;
-    } catch { return undefined; }
 }
 
 interface CompressionLLMResult {
@@ -152,7 +140,7 @@ async function callCompressionLLM(
 3. **只保留关键信息**：具体人物、动作、对象、场景、转折、情绪。**去掉所有语气填充、修辞铺陈、重复感慨**（如「真是的」、「怎么说呢」、「不过话说回来」等）。事实先行。
 4. **带时间点但不冗余**：每件事标一次日期就够（「3 月 20 日…4 月 5 日…」），不要每句都重复时间。
 5. **连贯但简洁**：不套「起因/经过/结果」模板，但要让读者能按顺序看懂事情怎么发展的。
-6. **覆盖所有关键词**（这是给向量检索用的）—— 每条新增的旧记忆里出现过的具体名词、地点、人物必须在 content 里出现一次。
+6. **覆盖所有关键词**（这是给本地检索用的）—— 每条新增的旧记忆里出现过的具体名词、地点、人物必须在 content 里出现一次。
 7. **content 字符串内严禁使用半角双引号 \`"\`**。要引用人物原话、书名、外号、术语，一律用中文方角引号「」、《》或单引号 \`'\`。否则会破坏外层 JSON 解析、整批记忆白丢。
 
 附带输出 metadata：
@@ -233,7 +221,6 @@ async function callCompressionLLM(
 async function compressEventBox(
     box: EventBox,
     llmConfig: LightLLMConfig,
-    embeddingConfig: EmbeddingConfig,
     charName: string,
     userName: string | undefined,
 ): Promise<boolean> {
@@ -258,7 +245,7 @@ async function compressEventBox(
     // 3. LLM 整合
     const result = await callCompressionLLM(box, oldSummaryContent, liveNodes, llmConfig, charName, userName);
     if (!result) {
-        console.error(`🗜️ [Compression] ${box.id} "${box.name}" LLM 失败，跳过本次压缩 — 活节点 ${liveNodes.length} 条仍未归档，summary 未生成/未向量化`);
+        console.error(`🗜️ [Compression] ${box.id} "${box.name}" LLM 失败，跳过本次压缩 — 活节点 ${liveNodes.length} 条仍未归档，summary 未生成`);
         return false;
     }
 
@@ -274,7 +261,7 @@ async function compressEventBox(
             existing.mood = result.mood;
             existing.tags = result.tags;
             existing.lastAccessedAt = now;
-            existing.embedded = false;  // 重新向量化
+            existing.embedded = false;
             existing.eventBoxId = box.id;
             existing.isBoxSummary = true;
             existing.archived = false;
@@ -291,29 +278,17 @@ async function compressEventBox(
     }
     await MemoryNodeDB.save(summaryNode);
 
-    // 5. 向量化 summary（跳过去重，因为内容必然和 live 节点重叠）
-    const remoteCfg = getRemoteVectorConfig();
-    try {
-        await vectorizeAndStore([summaryNode], embeddingConfig, remoteCfg, { skipDedup: true });
-    } catch (e: any) {
-        console.warn(`🗜️ [Compression] summary 向量化失败（继续后续步骤）: ${e?.message}`);
-    }
-
-    // 6. 标记活节点 archived（本地）
+    // 5. 标记活节点 archived（本地）
     const liveIds = box.liveMemoryIds.slice();
     for (const id of liveIds) {
         const n = await MemoryNodeDB.getById(id);
         if (n && !n.archived) {
             n.archived = true;
-            await MemoryNodeDB.save(n);  // syncNodeMetadataToRemote 会同步 archived=true
+            await MemoryNodeDB.save(n);
         }
     }
-    // 远程批量加速（与上面 per-node sync 重复但幂等）
-    if (remoteCfg) {
-        await bulkSetArchived(remoteCfg, liveIds, true).catch(() => {});
-    }
 
-    // 7. 更新 box 状态
+    // 6. 更新 box 状态
     for (const id of liveIds) {
         if (!box.archivedMemoryIds.includes(id)) box.archivedMemoryIds.push(id);
     }
@@ -367,7 +342,6 @@ function createSummaryNode(box: EventBox, result: CompressionLLMResult, now: num
 export async function maybeCompressEventBoxes(
     boxIds: Iterable<string>,
     llmConfig: LightLLMConfig,
-    embeddingConfig: EmbeddingConfig,
     charName: string,
     userName?: string,
 ): Promise<{ compressed: number; skipped: number }> {
@@ -382,7 +356,7 @@ export async function maybeCompressEventBoxes(
             continue;
         }
         try {
-            const ok = await compressEventBox(box, llmConfig, embeddingConfig, charName, userName);
+            const ok = await compressEventBox(box, llmConfig, charName, userName);
             if (ok) compressed++;
             else skipped++;
         } catch (e: any) {
@@ -403,11 +377,10 @@ export async function maybeCompressEventBoxes(
 export async function compressAllEligibleBoxes(
     charId: string,
     llmConfig: LightLLMConfig,
-    embeddingConfig: EmbeddingConfig,
     charName: string,
     userName?: string,
 ): Promise<{ compressed: number; skipped: number }> {
     const allBoxes = await EventBoxDB.getByCharId(charId);
     const eligible = allBoxes.filter(b => b.liveMemoryIds.length >= EVENT_BOX_COMPRESSION_THRESHOLD);
-    return maybeCompressEventBoxes(eligible.map(b => b.id), llmConfig, embeddingConfig, charName, userName);
+    return maybeCompressEventBoxes(eligible.map(b => b.id), llmConfig, charName, userName);
 }

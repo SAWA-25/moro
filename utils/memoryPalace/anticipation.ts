@@ -56,7 +56,7 @@ export async function fulfillAnticipation(id: string): Promise<void> {
         tags: ['期盼实现', '温暖'],
         importance: 7,
         mood: 'grateful',
-        embedded: false, // 等后续向量化
+        embedded: false, // legacy flag; local-only nodes leave it false
         boxId: '',
         boxTopic: '期盼实现',
         createdAt: Date.now(),

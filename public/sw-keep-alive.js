@@ -1413,6 +1413,7 @@ function swResolveQuietHours(snap, now = Date.now()) {
 function swShouldGenerateProactive(snap, now = Date.now()) {
   if (!snap?.enabled) return { ok: false, reason: "disabled" };
   if (!snap.api?.baseUrl || !snap.api?.model) return { ok: false, reason: "missing_api" };
+  if (snap.activeOfflineSession) return { ok: false, reason: "offline_session_active" };
   if (snap.updatedAt && now - snap.updatedAt > 48 * 60 * 60 * 1e3) return { ok: false, reason: "stale_snapshot" };
   const quiet = swResolveQuietHours(snap, now);
   const hasPendingReply = !!snap.pendingUserMessages?.length;
@@ -1535,7 +1536,7 @@ function swCleanProactiveText(raw) {
 }
 
 // worker/sw-keep-alive.ts
-var SW_VERSION = "1.16.1";
+var SW_VERSION = "1.16.2";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";

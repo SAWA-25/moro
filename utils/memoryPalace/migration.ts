@@ -8,10 +8,9 @@
  */
 
 import type { MemoryFragment } from '../../types';
-import type { MemoryNode, MemoryRoom, EmbeddingConfig } from './types';
+import type { MemoryNode, MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { MemoryNodeDB } from './db';
-import { vectorizeAndStore } from './vectorStore';
 import { buildLinks } from './links';
 import { runConsolidation } from './consolidation';
 import { safeParseJsonArray } from './jsonUtils';
@@ -236,19 +235,18 @@ date 字段填记忆对应的大概日期。`;
 // ─── 主迁移函数 ─────────────────────────────────────
 
 export interface MigrationProgress {
-    phase: 'grouping' | 'extracting' | 'vectorizing' | 'linking' | 'done';
+    phase: 'grouping' | 'extracting' | 'storing' | 'linking' | 'done';
     current: number;
     total: number;
     currentMonth?: string;
 }
 
 /**
- * 按月把旧记忆送给 LLM 重新提取，然后向量化存入记忆宫殿
+ * 按月把旧记忆送给 LLM 重新提取，然后存入记忆宫殿
  *
  * @param charName 角色名（LLM 用第一人称时需要知道自己是谁）
  * @param memories 旧的 MemoryFragment[]（日度总结）
  * @param llmConfig 轻量 LLM 配置
- * @param embeddingConfig Embedding 配置
  * @param onProgress 进度回调
  */
 /**
@@ -315,13 +313,10 @@ export async function migrateOldMemories(
     memories: MemoryFragment[],
     _refinedMemories: Record<string, string> | undefined,
     llmConfig: LightLLMConfig,
-    embeddingConfig: EmbeddingConfig,
     onProgress?: (p: MigrationProgress) => void,
     charContext?: string,
     selectedMonths?: string[],
     userName?: string,
-    /** 可选：传入则迁移尾部的 consolidation room 变更会同步到 Supabase */
-    remoteConfig?: import('./types').RemoteVectorConfig,
 ): Promise<{ migrated: number; skipped: number; months: number }> {
 
     if (memories.length === 0) return { migrated: 0, skipped: 0, months: 0 };
@@ -387,10 +382,8 @@ export async function migrateOldMemories(
             logSnippets = buildLogSnippets(sortedLogs);
             strategy = 'per-sentence';
         }
-        // 迁移场景：候选池必须够大，LLM 才能在"新记忆 B"旁看到"旧记忆 A"
-        // 做匹配。threshold 放松一些，maxTotal 翻倍到 30。
-        const relatedRefs = await fetchRelatedMemoriesForExtraction(logSnippets, charId, embeddingConfig, {
-            threshold: 0.30,
+        // 迁移场景：候选池必须够大，LLM 才能在"新记忆 B"旁看到"旧记忆 A"。
+        const relatedRefs = await fetchRelatedMemoriesForExtraction(logSnippets, charId, {
             perQueryTopK: 3,
             maxTotal: 30,
         });
@@ -411,7 +404,7 @@ export async function migrateOldMemories(
 
         if (items.length === 0) continue;
 
-        // 3) 组装 MemoryNode 并立即向量化（让后续 chunk 能搜到）
+        // 3) 组装 MemoryNode 并立即本地保存（让后续 chunk 能搜到）
         const chunkNodes: MemoryNode[] = [];
         for (const item of items) {
             chunkNodes.push({
@@ -435,21 +428,12 @@ export async function migrateOldMemories(
             await new Promise(r => setTimeout(r, 2)); // 避免 ID 碰撞
         }
 
-        onProgress?.({ phase: 'vectorizing', current: i + 1, total, currentMonth: currentLabel });
-        const vecStart = Date.now();
-        // 走 0.9 cosine 去重：之前迁移路径关去重是因为怀疑加载全量 Float32Array 导致
-        // tab 冻死，后来查出真凶是 Supabase RPC CORS 放大 + Worker 并发 handler 覆盖
-        //（见 vectorSearch.ts / relatedMemories.ts 的熔断逻辑），跟这里的去重无关。
-        // 语义去重能挡掉"7-12 号某天又提到 3 号那件事"这种跨 sub-batch 重复。
-        //
-        // 远程同步：以前这里传 undefined 导致迁移写入的新节点只落本地 IDB，
-        // 跨设备或本地清空后就彻底丢失。现在跟着 pipeline.ts processNewMessages 一样
-        // 透传 remoteConfig，让每条新节点的向量也 fire-and-forget upsert 到 Supabase。
-        const vecResult = await vectorizeAndStore(chunkNodes, embeddingConfig, remoteConfig);
-        const vecElapsed = ((Date.now() - vecStart) / 1000).toFixed(1);
-        migrated += vecResult.stored;
-        skipped += vecResult.skipped;
-        console.log(`🏰 [Migration] [${i + 1}/${total}] 向量化完成：存储 ${vecResult.stored}，跳过 ${vecResult.skipped}，耗时 ${vecElapsed}s`);
+        onProgress?.({ phase: 'storing', current: i + 1, total, currentMonth: currentLabel });
+        const storeStart = Date.now();
+        await MemoryNodeDB.saveMany(chunkNodes);
+        const storeElapsed = ((Date.now() - storeStart) / 1000).toFixed(1);
+        migrated += chunkNodes.length;
+        console.log(`🏰 [Migration] [${i + 1}/${total}] 本地保存完成：${chunkNodes.length} 条，耗时 ${storeElapsed}s`);
 
         // 4) EventBox 绑定：rawRelated 引用 → 真实 memoryId 链接 + hints
         //    同时处理跨批次 O 引用 (refs) 和本批次 N 引用 (sameAsRefs)
@@ -498,7 +482,7 @@ export async function migrateOldMemories(
                 }
             }
         }
-        // 每个 sub-batch 跑完：短暂 idle，让 V8 回收本轮产生的 Float32Array / LLM 响应串
+        // 每个 sub-batch 跑完：短暂 idle，让 V8 回收本轮产生的 LLM 响应串
         // （单 chunk 跨多个 sub-batch 时避免堆压力累积导致后面分块崩 tab）
         if (sbIdx < subBatches.length - 1) {
             await new Promise(r => setTimeout(r, 200));
@@ -521,7 +505,7 @@ export async function migrateOldMemories(
     if (allTouchedBoxIds.size > 0) {
         console.log(`🗜️ [Migration] 开始压缩 ${allTouchedBoxIds.size} 个被触达的事件盒...`);
         try {
-            await maybeCompressEventBoxes(allTouchedBoxIds, llmConfig, embeddingConfig, charName, userName);
+            await maybeCompressEventBoxes(allTouchedBoxIds, llmConfig, charName, userName);
         } catch (e: any) {
             console.warn(`🗜️ [Migration] 压缩失败（不影响已存记忆）: ${e.message}`);
         }
@@ -551,13 +535,9 @@ export async function migrateOldMemories(
 
     // 7) 补跑巩固：迁移写入的节点没经过日常聊天管线的 processNewMessages，
     //    也就没跑过 runConsolidation。高 imp（≥8）和 imp≥6 且年代较老的节点
-    //    按规则本应从 living_room 晋升到 bedroom，不做这一步，它们会永远卡在
-    //    living_room（similarity 权重 0.50 + recency 几乎归零），导致检索时
-    //    高相关老家庭记忆排不上来。失败不影响迁移结果。
-    //    remoteConfig 已在 vectorizeAndStore 阶段把新节点推到 Supabase，
-    //    这里 consolidation 内部的 bulkSetRoom 会把 room 字段一并同步过去。
+    //    按规则本应从 living_room 晋升到 bedroom。失败不影响迁移结果。
     try {
-        const consolidationResult = await runConsolidation(charId, remoteConfig);
+        const consolidationResult = await runConsolidation(charId);
         if (consolidationResult.promoted.length > 0 || consolidationResult.evicted.length > 0) {
             console.log(`✅ [Migration] 迁移后巩固：${consolidationResult.promoted.length} 条晋升到 bedroom，${consolidationResult.evicted.length} 条因客厅容量转入 attic`);
         }
@@ -582,7 +562,7 @@ function buildLogSnippets(sortedLogs: MemoryFragment[]): string[] {
     if (sortedLogs.length === 0) return [];
     const MIN_FRAG_CHARS = 10;   // 过滤"好的"/"嗯"这种无效短句
     const MAX_FRAG_CHARS = 300;  // 单句过长（极少见）截断
-    const MAX_SNIPPETS = 20;     // 单 chunk 最多这么多 query，避免并行 vectorSearch 击穿浏览器
+    const MAX_SNIPPETS = 20;     // 单 chunk 最多这么多 query，避免文本检索卡住主线程
     const snippets: string[] = [];
     for (const log of sortedLogs) {
         const summary = (log.summary || '').trim();

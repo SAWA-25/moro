@@ -15,8 +15,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
-import { extractContent } from '../utils/safeApi';
-import { callChatCompletion, fetchModelList } from '../utils/llmClient';
+import { completeText, fetchModelList } from '../utils/llmClient';
 import { APIConfig, CharacterProfile } from '../types';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { Capacitor } from '@capacitor/core';
@@ -750,14 +749,13 @@ export const WhiteDaySession: React.FC<WhiteDaySessionProps> = ({ charId, onClos
   ]
 }`;
 
-            const data = await callChatCompletion(apiConfig, {
-                model: apiConfig.model,
-                messages: [
-                    { role: 'system', content: baseContext },
-                    { role: 'user', content: `[最近记录]:\n${recentMsgs}\n\n---\n\n${prompt}` },
-                ],
+            const content = await completeText(apiConfig, [
+                { role: 'system', content: baseContext },
+                { role: 'user', content: `[最近记录]:\n${recentMsgs}\n\n---\n\n${prompt}` },
+            ], {
                 temperature: 0.85,
-            }, {
+                presetScope: 'structured.tool',
+                presetMacros: { charName: c.name, userName: userProfile.name || '你' },
                 meta: makeApiUsageMeta('special.whiteDay.generate', {
                     charId: cId,
                     charName: c.name,
@@ -765,7 +763,6 @@ export const WhiteDaySession: React.FC<WhiteDaySessionProps> = ({ charId, onClos
                     apiBinding: '白色情人节活动 API',
                 }),
             });
-            const content = extractContent(data);
             if (!content) throw new Error('AI 返回为空');
 
             const parsed = extractJSON(content) as WhiteDayQuizData;
@@ -878,14 +875,13 @@ ${answerSummary}
   "chocolateDialogue": "（仅当 finalScore >= ${QUIZ_PASS_SCORE} 时填写）告诉 ${userProfile.name} 巧克力做好了，可以去装饰啦！"
 }`;
 
-            const data = await callChatCompletion(apiConfig, {
-                model: apiConfig.model,
-                messages: [
-                    { role: 'system', content: baseContext },
-                    { role: 'user', content: prompt },
-                ],
+            const content = await completeText(apiConfig, [
+                { role: 'system', content: baseContext },
+                { role: 'user', content: prompt },
+            ], {
                 temperature: 0.82,
-            }, {
+                presetScope: 'structured.tool',
+                presetMacros: { charName: char?.name || '角色', userName: userProfile.name || '你' },
                 meta: makeApiUsageMeta('special.whiteDay.generate', {
                     charId: selectedCharId,
                     charName: char?.name,
@@ -893,7 +889,6 @@ ${answerSummary}
                     apiBinding: '白色情人节活动 API',
                 }),
             });
-            const content = extractContent(data);
             if (!content) throw new Error('AI 返回为空');
 
             const parsed = extractJSON(content) as WhiteDayReviewData;
@@ -963,20 +958,19 @@ ${answerSummary}
 
             let content = '';
             try {
-                const data = await callChatCompletion(apiConfig, {
-                    model: apiConfig.model,
-                    messages: [
-                        { role: 'system', content: baseContext },
-                        {
-                            role: 'user',
-                            content: [
-                                { type: 'text', text: prompt },
-                                { type: 'image_url', image_url: { url: imageBase64 } },
-                            ],
-                        },
-                    ],
+                content = await completeText(apiConfig, [
+                    { role: 'system', content: baseContext },
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: imageBase64 } },
+                        ],
+                    },
+                ], {
                     temperature: 0.88,
-                }, {
+                    presetScope: 'creative.text',
+                    presetMacros: { charName: char.name, userName: userProfile.name || '你' },
                     meta: makeApiUsageMeta('special.whiteDay.generate', {
                         charId: selectedCharId,
                         charName: char.name,
@@ -985,18 +979,16 @@ ${answerSummary}
                     }),
                     maxRetries: 0,
                 });
-                content = extractContent(data) || '';
             } catch (err: any) {
                 if (!/API Error (400|422)/.test(String(err?.message || err))) throw err;
                 const fallbackPrompt = `你和 ${userProfile.name} 一起做了一块白色情人节巧克力（主要是你做的，${userProfile.name} 帮忙装饰了照片）。请用你的性格评价一下你们的作品，可以说说一起做的感受，也可以调皮地调侃。\n\n**仅限使用以下情绪标签**: ${availableEmotions.join(', ')}\n\n输出格式（每行一个节拍，2-4行）：\n[emotion] "你说的话"\n[emotion] 动作或表情描述`;
-                const data = await callChatCompletion(apiConfig, {
-                    model: apiConfig.model,
-                    messages: [
-                        { role: 'system', content: baseContext },
-                        { role: 'user', content: fallbackPrompt },
-                    ],
+                content = await completeText(apiConfig, [
+                    { role: 'system', content: baseContext },
+                    { role: 'user', content: fallbackPrompt },
+                ], {
                     temperature: 0.88,
-                }, {
+                    presetScope: 'creative.text',
+                    presetMacros: { charName: char.name, userName: userProfile.name || '你' },
                     meta: makeApiUsageMeta('special.whiteDay.generate', {
                         charId: selectedCharId,
                         charName: char.name,
@@ -1004,7 +996,6 @@ ${answerSummary}
                         apiBinding: '白色情人节活动 API',
                     }),
                 });
-                content = extractContent(data) || '';
             }
             if (!content) throw new Error('AI 返回为空');
 
@@ -1379,25 +1370,26 @@ ${answerSummary}
 
             if (apiConfig) {
                 try {
-                    const data = await callChatCompletion(apiConfig, {
-                        model: apiConfig.model,
-                        messages: [{
+                    const text = (await completeText(apiConfig, [
+                        { role: 'system', content: ContextBuilder.buildCoreContext(char, userProfile, true) },
+                        {
                             role: 'user',
                             content: [
                                 { type: 'text', text: `这是 ${char.name} 和 ${userProfile.name} 一起做的白色情人节巧克力（主要由 ${char.name} 制作）。请为它起一个可爱的家具名称（8字以内），以及一段简短的小屋摆件描述（30字以内，描述这块巧克力和你们一起制作的回忆）。\n\n严格按以下 JSON 格式回复，不要多余内容：\n{"name":"家具名","desc":"描述"}` },
                                 { type: 'image_url', image_url: { url: exportedBase64 } },
                             ],
-                        }],
+                        },
+                    ], {
                         temperature: 0.7,
-                    }, {
+                        presetScope: 'structured.tool',
+                        presetMacros: { charName: char.name, userName: userProfile.name || '你' },
                         meta: makeApiUsageMeta('special.whiteDay.generate', {
                             charId: char.id,
                             charName: char.name,
                             apiRole: 'main',
                             apiBinding: '白色情人节活动 API',
                         }),
-                    });
-                    const text = (extractContent(data) || '').trim();
+                    })).trim();
                     const jsonMatch = text.match(/\{[\s\S]*?\}/);
                     if (jsonMatch) {
                         const parsed = JSON.parse(jsonMatch[0]);

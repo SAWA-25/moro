@@ -95,3 +95,27 @@ describe('socialDating · 兜底 / prompt', () => {
         expect(entry.createdAt).toBe(123);
     });
 });
+
+describe('socialDating identity anchors', () => {
+    it('uses modelId anchors for same-name characters and avoids name guessing', () => {
+        const sameNameChars: CharBrief[] = [
+            { id: 'row-a', modelId: 'model-a', name: 'Same', avatar: 'a.png' },
+            { id: 'row-b', modelId: 'model-b', name: 'Same', avatar: 'b.png' },
+        ];
+        const byAnchor = parseDatingProfiles('[{"name":"Same","charId":"model-b","isChar":true,"intent":"date","distanceKm":1,"bio":"target"}]', sameNameChars);
+        expect(byAnchor[0].isChar).toBe(true);
+        expect(byAnchor[0].charId).toBe('row-b');
+        expect(byAnchor[0].avatar).toBe('b.png');
+
+        const ambiguous = parseDatingProfiles('[{"name":"Same","isChar":true,"intent":"date","distanceKm":1,"bio":"ambiguous"}]', sameNameChars);
+        expect(ambiguous[0].isChar).toBe(false);
+        expect(ambiguous[0].charId).toBeUndefined();
+    });
+
+    it('buildDatingPrompt prints model ids and identity rules', () => {
+        const prompt = buildDatingPrompt([{ id: 'row-a', modelId: 'model-a', name: 'Same' }], { name: 'User' } as any, 3);
+        expect(prompt).toContain('charId="model-a"');
+        expect(prompt).toContain('Identity rule');
+        expect(prompt).toContain('do not identify, merge, or substitute');
+    });
+});

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CharacterProfile, RelationshipNetworkEdge } from '../types';
 import {
   buildManualRelationshipEdge,
@@ -10,9 +10,15 @@ import {
   markAutoRelationshipRun,
   maybeSummarizeRelationshipMessages,
   normalizeRelationshipNetworkSettings,
+  organizeRelationshipNetwork,
   relationshipPairIds,
   relationshipPairKey,
 } from './relationshipNetwork';
+import { llmComplete } from './llmComplete';
+
+vi.mock('./llmComplete', () => ({
+  llmComplete: vi.fn(),
+}));
 
 const char = (id: string, name = id): CharacterProfile => ({
   id,
@@ -61,6 +67,39 @@ describe('relationship network helpers', () => {
       relationshipPairKey('a', 'c'),
       relationshipPairKey('b', 'c'),
     ].sort());
+  });
+
+  it('maps model identity anchors from AI relationship output back to local ids', async () => {
+    const a = { ...char('row-a', 'Same'), modelId: 'model-a' };
+    const b = { ...char('row-b', 'Same'), modelId: 'model-b' };
+    vi.mocked(llmComplete).mockResolvedValueOnce(JSON.stringify({
+      edges: [{
+        charIds: ['model-b', 'model-a'],
+        label: 'knows',
+        summary: 'same display name but different anchors',
+        confidence: 80,
+      }],
+      npcRelations: [{
+        ownerId: 'model-b',
+        name: 'Manager',
+        label: 'boss',
+        summary: 'work relation',
+      }],
+    }));
+
+    const edges = await organizeRelationshipNetwork({
+      characters: [a, b],
+      userProfile: { name: 'User' } as any,
+      api: { baseUrl: 'https://api.test', apiKey: 'k', model: 'm' } as any,
+    });
+
+    expect(edges.some(edge => edge.charIds.includes('row-a') && edge.charIds.includes('row-b'))).toBe(true);
+    expect(edges.some(edge => edge.charIds.includes('row-b') && edge.charIds.some(id => id.startsWith('npc_')))).toBe(true);
+    const prompt = String(vi.mocked(llmComplete).mock.calls[0]?.[1]?.[0]?.content || '');
+    expect(prompt).toContain('ID: model-a');
+    expect(prompt).toContain('ID: model-b');
+    expect(prompt).toContain('LocalRowId: row-a');
+    expect(prompt).toContain('LocalRowId: row-b');
   });
 
   it('stores manual relationships as per-owner perspectives and can sync first write', () => {

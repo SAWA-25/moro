@@ -480,7 +480,7 @@ export interface APIConfig {
   aceStepApiKey?: string;
   model: string;
   // Per-API streaming toggle. Some endpoints only support stream:true.
-  // Missing → false (默认非流式).
+  // Missing → true (文具盒主 API 默认流式).
   stream?: boolean;
   // Per-API temperature for chat / 约会 main calls. Missing → 0.85.
   temperature?: number;
@@ -699,12 +699,7 @@ export interface HotNewsSnapshot {
   fetchedAt: number;   // 拉取时间戳
 }
 
-export interface MemoryPalaceBackupConfig {
-  embedding: {
-    model: string;
-    dimensions: number;
-  };
-}
+export type MemoryPalaceBackupConfig = Record<string, never>;
 
 export interface MemoryFragment {
   id: string;
@@ -782,6 +777,7 @@ export interface ScheduleSlot {
 export interface DailySchedule {
     id: string;           // `${charId}_${date}`
     charId: string;
+    modelId?: string;     // model-visible character identity anchor used when this schedule was generated
     date: string;         // YYYY-MM-DD
     slots: ScheduleSlot[];
     generatedAt: number;
@@ -3358,14 +3354,34 @@ export interface CharacterProfile {
   emotionConfig?: {
     /** 心情 buff 独立开关；作息开启时，false 会停止情绪评估、注入和顶栏 buff 展示。 */
     enabled: boolean;
+    /** 旧版「日程 / 心情 API」字段：仅作历史兜底；新配置请使用 scheduleApi / moodApi。 */
     api?: {
+      baseUrl: string;
+      apiKey: string;
+      model: string;
+    };
+    /** 今日日程生成与聊天中日程协调使用的 API。留空时使用主 API。 */
+    scheduleApi?: {
+      baseUrl: string;
+      apiKey: string;
+      model: string;
+    };
+    /** 心情 buff / 意识流评估使用的 API。留空时使用主 API。 */
+    moodApi?: {
       baseUrl: string;
       apiKey: string;
       model: string;
     };
   };
 
-  // 记忆宫殿 (Memory Palace)
+  // 记忆宫殿 / 认知流记忆 (Memory Palace / Cognitive Flow)
+  /**
+   * 角色长期记忆底层：
+   * - cognitive_flow：默认，本地 IndexedDB 认知流（证据链 + Event/Episode/Saga/feel + 权重池）
+   * - classic：旧版回忆标本馆召回/整理语义
+   * - off：关闭长期记忆后台整理与注入
+   */
+  memoryMode?: 'cognitive_flow' | 'classic' | 'off';
   memoryPalaceEnabled?: boolean;
   /**
    * 是否启用"palace 提取后自动同步归档"：开启后每次 buffer 处理成功都会把新记忆按日期
@@ -3373,12 +3389,6 @@ export interface CharacterProfile {
    * 已处理的聊天。默认 false（opt-in）——首次启用建议让用户做一次 force 追平历史。
    */
   autoArchiveEnabled?: boolean;
-  embeddingConfig?: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;        // 默认 text-embedding-3-small
-    dimensions: number;   // 默认 1024
-  };
   personalityStyle?: 'emotional' | 'narrative' | 'imagery' | 'analytical';
   ruminationTendency?: number;  // 反刍倾向 0-1，默认 0.3
   memoryPalaceInjection?: string;  // 记忆宫殿检索结果，注入到 System Prompt（运行时填充，不持久化）
@@ -5676,7 +5686,6 @@ export interface FullBackupData {
     apiPresets?: ApiPreset[];
     availableModels?: string[];
     realtimeConfig?: RealtimeConfig;  // 实时感知配置（天气/新闻/Notion）
-    memoryPalaceConfig?: MemoryPalaceBackupConfig;
     customIcons?: Record<string, string>;
     appearancePresets?: AppearancePreset[];
     characters?: CharacterProfile[];
@@ -5820,7 +5829,6 @@ export interface FullBackupData {
 
     // Memory Palace (记忆宫殿)
     memoryNodes?: any[];
-    memoryVectors?: any[];
     memoryLinks?: any[];
     topicBoxes?: any[];
     anticipations?: any[];
@@ -5828,7 +5836,6 @@ export interface FullBackupData {
     memoryPalaceHighWaterMarks?: Record<string, number>; // charId → lastProcessedMsgId
     memoryPalaceFlags?: Record<string, string>; // mp_personality_tried_* / mp_first_archive_notice_* 等 UI 标记
     cloudBackupConfig?: CloudBackupConfig;
-    remoteVectorConfig?: { enabled: boolean; supabaseUrl: string; supabaseAnonKey: string; initialized: boolean };
 
     // Character daily schedule (角色日程表 — daily_schedule store)
     dailySchedules?: DailySchedule[];

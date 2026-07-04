@@ -5,6 +5,7 @@ import { DB } from './db';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 
 /**
  * Attempt to repair truncated JSON from LLM output.
@@ -85,6 +86,46 @@ export function isEmotionBuffFeatureOn(
     return char.emotionConfig?.enabled !== false;
 }
 
+function getScheduleTargetId(char: Pick<CharacterProfile, 'id' | 'modelId'>): string {
+    return getCharacterModelId(char) || char.id;
+}
+
+function buildScheduleIdentityContract(char: CharacterProfile): string {
+    const targetCharId = getScheduleTargetId(char);
+    return `
+## Target Character Contract
+- targetCharId: "${targetCharId}"
+- targetCharacter: ${formatCharacterWithId(char)}
+- localRowId: "${char.id}"
+
+This schedule task is only for the target character above. Do not merge, borrow, or substitute another character even if their name, persona, relationship, or recent plot is similar.
+Every JSON response for this task must include "targetCharId": "${targetCharId}". If you are unsure which character the schedule belongs to, return {"targetCharId":"${targetCharId}","changed":false} instead of writing another character's day.
+`;
+}
+
+function parsedScheduleTargetMatches(parsed: any, char: CharacterProfile, phase: string): boolean {
+    const expected = getScheduleTargetId(char);
+    const actual = String(parsed?.targetCharId || parsed?.charId || parsed?.characterId || '').trim();
+    if (actual !== expected) {
+        console.warn(`[Schedule/${phase}] targetCharId mismatch for ${char.name}: expected=${expected} actual=${actual || '(missing)'}`);
+        return false;
+    }
+    return true;
+}
+
+function scheduleBelongsToCharacter(schedule: DailySchedule, char: CharacterProfile, phase: string): boolean {
+    const expected = getScheduleTargetId(char);
+    if (schedule.charId !== char.id) {
+        console.warn(`[Schedule/${phase}] local charId mismatch: expected=${char.id} actual=${schedule.charId}`);
+        return false;
+    }
+    if (schedule.modelId && schedule.modelId !== expected) {
+        console.warn(`[Schedule/${phase}] modelId mismatch for ${char.name}: expected=${expected} actual=${schedule.modelId}`);
+        return false;
+    }
+    return true;
+}
+
 /**
  * 构建生活系（lifestyle）角色的日程生成 prompt。
  *
@@ -117,7 +158,7 @@ function formatChatHistoryForSchedule(
         const hh = String(d.getHours()).padStart(2, '0');
         const mi = String(d.getMinutes()).padStart(2, '0');
         const ts = `${mm}-${dd} ${hh}:${mi}`;
-        const sender = m.role === 'user' ? user.name : char.name;
+        const sender = m.role === 'user' ? user.name : formatCharacterWithId(char);
         // 图片/音频等非文本消息退化成占位符，避免把 base64 塞进 prompt
         let content: string;
         if (m.type === 'image') content = '[图片]';
@@ -137,6 +178,7 @@ function buildLifestylePrompt(
     chatHistoryBlock: string,
 ): string {
     return `${baseContext}
+${buildScheduleIdentityContract(char)}
 ${chatHistoryBlock}
 ## Task: 生成角色的今日日程 + 意识流独白
 
@@ -239,6 +281,7 @@ function buildMindfulPrompt(
     chatHistoryBlock: string,
 ): string {
     return `${baseContext}
+${buildScheduleIdentityContract(char)}
 ${chatHistoryBlock}
 ## Task: 生成角色的今日思绪 + 意识流独白
 
@@ -326,7 +369,10 @@ export async function generateDailyScheduleForChar(
     // Check if already exists
     if (!forceRegenerate) {
         const existing = await DB.getDailySchedule(char.id, today);
-        if (existing) return existing;
+        if (existing) {
+            if (!scheduleBelongsToCharacter(existing, char, 'Load')) return null;
+            return existing;
+        }
     }
 
     // Preserve cover image from previous schedules
@@ -395,6 +441,7 @@ export async function generateDailyScheduleForChar(
           const repaired = repairTruncatedJson(content);
           parsed = JSON.parse(repaired);
         }
+        if (!parsedScheduleTargetMatches(parsed, char, 'Generate')) return null;
         const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => ({
             startTime: s.startTime || '00:00',
             endTime: s.endTime || undefined,
@@ -427,6 +474,7 @@ export async function generateDailyScheduleForChar(
         const schedule: DailySchedule = {
             id: `${char.id}_${today}`,
             charId: char.id,
+            modelId: getScheduleTargetId(char),
             date: today,
             slots,
             generatedAt: Date.now(),
@@ -500,6 +548,7 @@ export async function reconcileScheduleWithChat(
 ): Promise<DailySchedule | null> {
     if (!isScheduleFeatureOn(char)) return null;
     if (!schedule || !schedule.slots || schedule.slots.length === 0) return null;
+    if (!scheduleBelongsToCharacter(schedule, char, 'Reconcile')) return null;
 
     // hideBeforeMessageId 过滤后取最近一段对话（协调只看近窗即可）
     const filtered = recentMessages
@@ -522,6 +571,7 @@ export async function reconcileScheduleWithChat(
 
     const prompt = `你是日程协调器。现在是 ${timeStr}。下面是角色「${char.name}」今天已有的日程，以及 ta 和「${user.name}」最近的聊天。
 
+${buildScheduleIdentityContract(char)}
 ${styleHint}
 
 ## 今天已有的日程
@@ -579,6 +629,7 @@ ${chatBlock}
             return null;
         }
 
+        if (!parsedScheduleTargetMatches(parsed, char, 'Reconcile')) return null;
         const slots: ScheduleSlot[] = parsed.slots.map((s: any) => {
             const anchored = s.anchored === true;
             const slot: ScheduleSlot = {
@@ -602,6 +653,9 @@ ${chatBlock}
 
         const updated: DailySchedule = {
             ...schedule,
+            id: `${char.id}_${schedule.date}`,
+            charId: char.id,
+            modelId: getScheduleTargetId(char),
             slots,
             // flowNarrative / coverImage 等保持原样；generatedAt 不动（这是协调不是重排）
         };

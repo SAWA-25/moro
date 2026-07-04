@@ -10,6 +10,7 @@ import { ContextBuilder } from '../utils/context';
 import { WorldbookRuntime } from '../utils/worldbookRuntime';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
+import { isMemoryFeatureEnabled } from '../utils/memoryPalace/cognitiveFlow';
 import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { ChatParser } from '../utils/chatParser';
@@ -49,6 +50,7 @@ import { groupVoiceStylePromptBlock, innerVoicePromptBody, liveGroupDraftPromptB
 import { createMessageFollowup } from '../utils/chatFollowups';
 import type { ParsedEmojiImport } from '../utils/emojiImport';
 import { buildChatLocationMap } from '../utils/chatLocationMap';
+import { mergeGroupProfileUpdate } from '../utils/profileUpdateMerge';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -2403,7 +2405,9 @@ const ChatHub: React.FC = () => {
     const applyGroupUpdate = async (updates: Partial<GroupProfile>): Promise<GroupProfile | null> => {
         if (!activeGroup) return null;
         const updated = await updateGroup(activeGroup.id, updates);
-        if (updated) setActiveGroup(updated);
+        if (updated) {
+            setActiveGroup(prev => prev?.id === updated.id ? mergeGroupProfileUpdate(prev, updates) : updated);
+        }
         return updated;
     };
 
@@ -2809,7 +2813,7 @@ const ChatHub: React.FC = () => {
         if (existing && !existing.ambientSocialSource?.entryId) {
             await updateCharacter(existing.id, { ambientSocialSource } as Partial<CharacterProfile>);
         }
-        if (!existing) await importCharacter(char);
+        if (!existing) await importCharacter(char, { preserveId: true });
         await syncAmbientPrivatePreviewMessage(entry, char.id);
         saveAmbientSocialEntry(entry.id, { linkedCharId: char.id, unread: 0 } as Partial<AmbientSocialEntry>);
         addToast(`${entry.name} 已加入名册`, 'success');
@@ -2848,7 +2852,7 @@ const ChatHub: React.FC = () => {
                 createdAt: entry.createdAt,
             };
             const char = ambientSocialToCharacter(shadowContact, userProfile.name || '我');
-            await importCharacter(char);
+            await importCharacter(char, { preserveId: true });
             memberIds.push(char.id);
             memberNameById.set(char.id, char.name);
         }
@@ -3328,29 +3332,23 @@ const ChatHub: React.FC = () => {
     const saveGroupConvoDraft = async (patch: Partial<GroupConvoSettings>) => {
         if (!activeGroup) return null;
         const normalizedPatch = normalizeGroupConvoPatch(patch);
-        const nextConvo = {
-            ...resolveGroupConvo(activeGroup),
-            ...tempGroupConvo,
-            ...normalizedPatch,
-        };
-        if (normalizedPatch.liveChatOverride === undefined && 'liveChatOverride' in normalizedPatch) {
-            delete nextConvo.liveChatOverride;
+        const hasLivePatch = 'liveChatOverride' in normalizedPatch;
+        if (typeof normalizedPatch.contextLimit === 'number') {
+            setContextLimit(normalizedPatch.contextLimit);
         }
-        if (typeof nextConvo.contextLimit === 'number') {
-            nextConvo.contextLimit = Math.max(20, Math.min(5000, Math.round(nextConvo.contextLimit)));
-            setContextLimit(nextConvo.contextLimit);
-        }
-        setTempGroupConvo(nextConvo);
-        const nextLiveOverride = nextConvo.liveChatOverride || 'inherit';
-        setTempLiveChatOverride(nextLiveOverride);
-        return applyGroupUpdate({
-            liveChatOverride: nextLiveOverride === 'inherit' ? undefined : nextLiveOverride,
-            convoSettings: {
-                ...(activeGroup.convoSettings || {}),
-                ...nextConvo,
-                liveChatOverride: nextLiveOverride === 'inherit' ? undefined : nextLiveOverride,
-            },
+        setTempGroupConvo(prev => {
+            const next = { ...prev, ...normalizedPatch };
+            if (hasLivePatch && normalizedPatch.liveChatOverride === undefined) {
+                delete next.liveChatOverride;
+            }
+            return next;
         });
+        if (hasLivePatch) {
+            setTempLiveChatOverride(normalizedPatch.liveChatOverride || 'inherit');
+        }
+        const updates: Partial<GroupProfile> = { convoSettings: normalizedPatch };
+        if (hasLivePatch) updates.liveChatOverride = normalizedPatch.liveChatOverride;
+        return applyGroupUpdate(updates);
     };
 
     const updateMemberLensDraft = (viewerId: string, targetId: string, value: string) => {
@@ -5333,7 +5331,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         // 时，下面这一次还是会按"那时还有人启用"的旧状态去触发 LLM 提取
         const liveCharacters = charactersRef.current;
         const membersForPalace = liveCharacters.filter(c => groupForPalace.members.includes(c.id));
-        const hasAnyEnabled = membersForPalace.some(m => m.memoryPalaceEnabled);
+        const hasAnyEnabled = membersForPalace.some(m => isMemoryFeatureEnabled(m));
         if (!hasAnyEnabled) return;
         processGroupNewMessages(
             groupForPalace,

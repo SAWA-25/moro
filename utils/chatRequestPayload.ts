@@ -166,7 +166,7 @@ function cleanApiMessages(apiMessages: Array<{ role: string; content: any }>): A
 /**
  * 构造完整 chat 请求载荷。顺序严格对齐 useChatAI.ts 现有实现：
  *
- *   1. injectMemoryPalace（向量召回挂到 char.memoryPalaceInjection）
+ *   1. injectMemoryPalace（本地记忆召回挂到 char.memoryPalaceInjection）
  *   2. ChatPrompts.buildSystemPrompt（核心人设 + 实时 + 记忆 + 音乐 + 日程内心独白）
  *   3. += 双语指令
  *   4. += HTML 模式提示词
@@ -229,7 +229,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         };
     }
 
-    // ── 1. Memory Palace 向量召回 ─────────────────────────
+    // ── 1. Memory Palace 本地记忆召回 ─────────────────────────
     if (!previewMode) {
         await injectMemoryPalace(char, recentMsgsHint, input.recallQueryHint, userProfile?.name);
     }

@@ -73,6 +73,16 @@ describe('sw proactive v2 bridge', () => {
     }), now)).toEqual({ ok: true, reason: 'ok' });
   });
 
+  it('skips SW proactive generation while the character is in offline mode', () => {
+    const now = 1_788_000_000_000;
+
+    expect(swShouldGenerateProactive(mkSnap({
+      updatedAt: now,
+      activeOfflineSession: true,
+      pendingUserMessages: [{ id: 9, content: '这句还没回' }],
+    }), now)).toEqual({ ok: false, reason: 'offline_session_active' });
+  });
+
   it('cleans directives and wrappers from SW generated text', () => {
     expect(swCleanProactiveText('```text\n「烦死了[[CALL_USER]]」\n```')).toBe('烦死了');
   });

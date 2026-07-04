@@ -59,7 +59,7 @@ const LlmApiConfigFields: React.FC<LlmApiConfigFieldsProps> = ({
   compact = false,
   showPresets = true,
   showSavePreset = true,
-  modelFetchFeatureId = 'chat.emotionApi.fetchModels',
+  modelFetchFeatureId = 'chat.customApi.fetchModels',
   apiRole = 'custom',
   apiBinding,
   modelCacheKey = 'os_available_models',

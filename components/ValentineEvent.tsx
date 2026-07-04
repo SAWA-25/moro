@@ -13,8 +13,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
-import { extractContent } from '../utils/safeApi';
-import { callChatCompletion, fetchModelList } from '../utils/llmClient';
+import { completeText, fetchModelList } from '../utils/llmClient';
 import { APIConfig, CharacterProfile, SpecialMomentRecord } from '../types';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { Capacitor } from '@capacitor/core';
@@ -616,14 +615,13 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
 
 禁止使用不在列表中的情绪标签。台词用双引号，动作直接写。`;
 
-            const data = await callChatCompletion(apiConfig, {
-                model: apiConfig.model,
-                messages: [
-                    { role: 'system', content: baseContext },
-                    { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` }
-                ],
-                temperature: 0.88
-            }, {
+            const content = await completeText(apiConfig, [
+                { role: 'system', content: baseContext },
+                { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` },
+            ], {
+                temperature: 0.88,
+                presetScope: 'creative.text',
+                presetMacros: { charName: c.name, userName: userProfile.name || '你' },
                 meta: makeApiUsageMeta('special.valentine.generate', {
                     charId: cId,
                     charName: c.name,
@@ -631,7 +629,6 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                     apiBinding: '情人节活动 API',
                 }),
             });
-            const content = extractContent(data);
             if (!content) throw new Error('AI 返回为空');
 
             hydrateSessionFromContent(content);

@@ -358,7 +358,7 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             // 1. Base Context (Identity & Worldview)
             // [优化] 记忆读取：跑团多人同场，不再倾倒每个角色逐日的详细日记（极易让 LLM 把
             //   A 的记忆安到 B 头上 = 串台）。改为 includeDetailedMemories=false（仅长期核心记忆）
-            //   + 下方按需注入的记忆宫殿向量召回（只取与当前情境相关的片段）。
+            //   + 下方按需注入的记忆宫殿召回（只取与当前情境相关的片段）。
             //   同时跳过共享场景里已铺过的用户档案 / 世界书 / 世界观，彻底去重。
             await injectMemoryPalace(p);
             const core = ContextBuilder.buildCoreContext(p, userProfile, false, undefined, {

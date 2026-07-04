@@ -255,7 +255,7 @@ describe('openDB blocked-then-unblocked 不泄漏连接', () => {
 });
 
 describe('character identity persistence', () => {
-  it('backfills modelId when saving and reading legacy character rows', async () => {
+  it('backfills modelId and defaults when saving and reading legacy character rows', async () => {
     await DB.deleteDB();
     const legacy = {
       id: 'legacy-char',
@@ -270,7 +270,9 @@ describe('character identity persistence', () => {
     await DB.saveCharacter(legacy);
 
     const chars = await DB.getAllCharacters();
-    expect(chars.find(c => c.id === 'legacy-char')?.modelId).toBe('legacy-char');
+    const saved = chars.find(c => c.id === 'legacy-char');
+    expect(saved?.modelId).toBe('legacy-char');
+    expect(saved?.emotionConfig).toEqual({ enabled: true });
   });
 });
 

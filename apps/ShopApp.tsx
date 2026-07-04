@@ -27,6 +27,7 @@ import {
 import type { ShopOrder } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
+import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import {
     PaperBackdrop, ScrapButton, WashiTape, Stamp, Polaroid,
     PaperDialog, PaperSheet, SectionTag, DashedRule,
@@ -498,7 +499,16 @@ const ShopApp: React.FC = () => {
                             userBalance: balance,
                         },
                     );
-                    const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.88, maxTokens: 620 });
+                    const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], {
+                        temperature: 0.88,
+                        maxTokens: 620,
+                        meta: makeApiUsageMeta('shop.generate', {
+                            apiRole: api.apiRole || 'aux',
+                            apiBinding: api.apiBinding || '陪逛反应',
+                            charId: char.id,
+                            charName: char.name,
+                        }),
+                    });
                     script = parseShopCompanionScript(raw, opts.item?.id);
                     if (!script) {
                         const legacy = parseShopCompanionReaction(raw, opts.item?.id);
@@ -740,7 +750,16 @@ const ShopApp: React.FC = () => {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
             const sys = `你是「${char.name}」。${char.systemPrompt ? `【人设】\n${String(char.systemPrompt).slice(0, 800)}` : ''}`;
             const usr = `${userProfile.name || '对方'} 让你帮 TA 代付购物车（共 ¥${formatPrice(total)}：${cartBrief}）。请完全按你的人设、你们的关系亲密度和这个金额决定愿不愿意付。\n只输出 JSON：{"pay": true 或 false, "reply": "你对 TA 说的一句话，第一人称，30字内，贴人设"}`;
-            const raw = await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: usr }], { temperature: 0.8, maxTokens: 200 });
+            const raw = await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: usr }], {
+                temperature: 0.8,
+                maxTokens: 200,
+                meta: makeApiUsageMeta('shop.generate', {
+                    apiRole: api.apiRole || 'aux',
+                    apiBinding: api.apiBinding || '代付回应',
+                    charId: char.id,
+                    charName: char.name,
+                }),
+            });
             const txt = raw.replace(/```(?:json)?/gi, '').trim();
             const s = txt.indexOf('{'); const e = txt.lastIndexOf('}');
             if (s >= 0 && e > s) { const o = JSON.parse(txt.slice(s, e + 1)); agree = !!o.pay; reply = String(o.reply || '').slice(0, 60); }
@@ -836,9 +855,19 @@ const ShopApp: React.FC = () => {
         const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.systemPrompt }, userProfile.name || '你', budget, shelf);
         let decision = null as ReturnType<typeof parseCharShopDecision>;
         try {
-            const raw = await llmComplete(resolveAuxApi(auxApiConfig, apiConfig), [
+            const api = resolveAuxApi(auxApiConfig, apiConfig);
+            const raw = await llmComplete(api, [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 0.9, maxTokens: 300 });
+            ], {
+                temperature: 0.9,
+                maxTokens: 300,
+                meta: makeApiUsageMeta('shop.generate', {
+                    apiRole: api.apiRole || 'aux',
+                    apiBinding: api.apiBinding || '角色逛心意铺',
+                    charId: char.id,
+                    charName: char.name,
+                }),
+            });
             decision = parseCharShopDecision(raw);
         } catch { /* 用兜底 */ }
         if (!decision) {

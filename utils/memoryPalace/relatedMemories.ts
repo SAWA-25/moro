@@ -7,37 +7,19 @@
  *   ① 避免误解隐式指代
  *   ② 输出 relatedTo 标记，把新记忆和旧事件绑成同一个 EventBox
  *
- * 核心策略：**细粒度 per-event 查询**，而不是把大段文本切 3 段 embed。
+ * 核心策略：**细粒度 per-event 查询**，而不是把大段文本揉成一段。
  * - 迁移路径：把 YAML 列表 (`- 事件X`) 拆成每个 bullet 一个 query
  * - 聊天 buffer 路径：每条 ≥4 字的 user 消息独立 query
  * - 切不出细粒度（非 YAML / 全是短消息）时自动 fallback 到旧的 3 段切法
  *
- * 结果合并：同一记忆取最高相似度；按相似度降序取 top N。
+ * 结果合并：同一记忆取最高文本分；按文本相关度降序取 top N。
  */
 
-import type { EmbeddingConfig, RemoteVectorConfig } from './types';
 import type { RelatedMemoryRef } from './extraction';
-import { getEmbeddings } from './embedding';
-import { vectorSearch, isRemoteSearchBroken } from './vectorSearch';
-import { ensureFloat32 } from './db';
-
-/** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径。
- *  关键：enabled=false 或未完成 initialized 时必须视为"没有远程配置"，
- *  否则用户在 UI 里关掉 Supabase 之后，这条路径还会把旧配置喂给 vectorSearch，
- *  继续尝试连远程 → 报连不上。其他模块（pipeline / digestion / db /
- *  eventBoxCompression）都是这个写法，这里是历史漏检。 */
-function getLocalRemoteConfig(): RemoteVectorConfig | undefined {
-    try {
-        const raw = localStorage.getItem('os_remote_vector_config');
-        if (!raw) return undefined;
-        const config = JSON.parse(raw) as RemoteVectorConfig;
-        return (config.enabled && config.initialized) ? config : undefined;
-    } catch { return undefined; }
-}
+import { MemoryNodeDB } from './db';
+import { bm25Search } from './bm25';
 
 export interface FetchRelatedOptions {
-    /** 单段查询的相似度阈值，默认 0.40（细粒度 query 下给点宽松度） */
-    threshold?: number;
     /** 单段查询取 top 几条，默认 3（太少会错过稍微改写的同事件） */
     perQueryTopK?: number;
     /** 合并后最多返回多少条，默认 15 */
@@ -53,29 +35,20 @@ export interface FetchRelatedOptions {
  * - 缓冲区提取：传每条 ≥4 字的 user 消息
  * - 旧记忆迁移：传拆分后的 bullet 列表
  *
- * @param snippets 用于做向量查询的文本片段（精细粒度，一条事件/一条消息一段）
+ * @param snippets 用于做文本查询的片段（精细粒度，一条事件/一条消息一段）
  */
 export async function fetchRelatedMemoriesForExtraction(
     snippets: string[],
     charId: string,
-    embeddingConfig: EmbeddingConfig,
     opts: FetchRelatedOptions = {},
 ): Promise<RelatedMemoryRef[]> {
     const validSnippets = snippets.map(s => s.trim()).filter(s => s.length > 0);
     if (validSnippets.length === 0) return [];
 
-    // 防御性 cap：即便调用方传入一大堆 snippet（比如 bullets 路径 80+），也不要全跑
-    // 否则 embedding/vectorSearch/内存都会炸。均匀抽样降到 MAX 条。
-    //
-    // 历史：曾经死扣到 15。原因是当时远程 Supabase RPC 一旦 CORS 失败会被
-    // 每条 query 各踩一次 + 回退本地全量加载，30 条 query 直接撕碎 V8
-    // typed-array arena。后来加了会话级远程熔断 + 本地批处理一次加载、
-    // 内存串行打分（vectorSearch.ts / relatedMemories.ts 远程熔断分支），
-    // 30 条已经不再是问题。
-    //
-    // 提到 25 是为了换召回质量：被抽样跳过的 bullet 没机会让 LLM 看到
+    // 防御性 cap：即便调用方传入一大堆 snippet（比如 bullets 路径 80+），也不要全跑。
+    // 提到 25 是为了召回质量：被抽样跳过的 bullet 没机会让 LLM 看到
     // "新事件 vs 旧事件"的关联提示，跨 sub-batch 的事件盒合并率会偏低。
-    // 25 比 15 多覆盖 67% 的 bullet，每 sub-batch 代价约 +5-10s embedding/打分。
+    // 现在只走本地 BM25，代价主要是 CPU 扫描。
     const HARD_MAX_SNIPPETS = 25;
     let workingSnippets = validSnippets;
     if (validSnippets.length > HARD_MAX_SNIPPETS) {
@@ -87,127 +60,37 @@ export async function fetchRelatedMemoriesForExtraction(
         console.log(`🏰 [RelatedMemories] ${validSnippets.length} 段 snippet 降采样到 ${HARD_MAX_SNIPPETS}（防主线程阻塞）`);
     }
 
-    const threshold = opts.threshold ?? 0.40;
     const perQueryTopK = opts.perQueryTopK ?? 3;
     const maxTotal = opts.maxTotal ?? 15;
     const contentTruncate = opts.contentTruncate ?? 100;
 
     try {
-        // 并行 batch embedding（一次请求拿回所有向量，便宜）
-        const vectors = await getEmbeddings(workingSnippets, embeddingConfig);
-
-        const searchResults: Array<{ node: any; similarity: number }[]> = [];
-
-        // 本地 vs 远程分路：本地路径之前每个 query 都独立 getAllByCharId 加载全量向量库，
-        // 30 次冗余加载 500+ × 1024 维 Float32Array 瞬间 60MB 分配，GC 跟不上就 OOM 崩 tab。
-        // 改成：本地路径**一次性**加载向量 + 节点索引，内存里串行打分；远程路径保留
-        // concurrency 4 的 Promise.all（每个 query 是独立 HTTP 无法合并）。
-        //
-        // ⚠️ 远程熔断：isRemoteSearchBroken() 在首次 Supabase RPC 抛网络错误
-        //（CORS / 500 无 CORS 头）后会置 true，从那一刻起本会话直接跳过远程
-        // 走"一次性加载、内存里串行打分"的本地快路径 —— 否则迁移批量
-        // 查询会每条都踩一次 CORS 失败 + 回退到本地 getAllByCharId，15 次冗余
-        // 全量加载能把 tab 冻住好几秒直到 GC。
-        const remoteCfg = getLocalRemoteConfig();
-        let usingRemote = !!(remoteCfg?.enabled && remoteCfg?.initialized) && !isRemoteSearchBroken();
-
-        // 本地快路径的 state（remote 中途熔断时复用，避免重复加载）
-        let localVectors: any[] | null = null;
-        let localNodeMap: Map<string, any> | null = null;
-        const { cosineSimilarity } = await import('./embedding');
-        async function ensureLocalIndex(): Promise<boolean> {
-            if (localVectors && localNodeMap) return localVectors.length > 0;
-            const { MemoryVectorDB, MemoryNodeDB } = await import('./db');
-            localVectors = await MemoryVectorDB.getAllByCharId(charId);
-            if (localVectors.length === 0) {
-                localNodeMap = new Map();
-                return false;
-            }
-            const allNodes = await MemoryNodeDB.getByCharId(charId);
-            localNodeMap = new Map(allNodes.map(n => [n.id, n]));
-            return true;
-        }
-        function localScoreOne(qv: Float32Array): { node: any; similarity: number }[] {
-            const scored: { memoryId: string; similarity: number }[] = [];
-            for (const ev of localVectors!) {
-                // ensureFloat32 兼容三种存储形态，防御式兜底；正常情况下
-                // ev.vector 出 DB 时已是 Float32Array，这一支几乎是 no-op。
-                const sim = cosineSimilarity(qv, ensureFloat32(ev.vector));
-                if (sim >= threshold) {
-                    scored.push({ memoryId: ev.memoryId, similarity: sim });
-                }
-            }
-            scored.sort((a, b) => b.similarity - a.similarity);
-            const top = scored.slice(0, perQueryTopK);
-            const hits: { node: any; similarity: number }[] = [];
-            for (const s of top) {
-                const node = localNodeMap!.get(s.memoryId);
-                if (node && !node.archived) hits.push({ node, similarity: s.similarity });
-            }
-            return hits;
-        }
-
-        if (usingRemote) {
-            const CONCURRENCY = 4;
-            let consumed = 0;
-            for (let i = 0; i < vectors.length; i += CONCURRENCY) {
-                // 每轮开始前重新检查熔断：只要前一批里有任何一条触发 markRemoteBroken，
-                // 剩余查询就立刻切到本地快路径，不再踩 CORS。
-                if (isRemoteSearchBroken()) {
-                    usingRemote = false;
-                    break;
-                }
-                const batch = vectors.slice(i, i + CONCURRENCY);
-                const batchResults = await Promise.all(
-                    batch.map(vec => vectorSearch(vec, charId, threshold, perQueryTopK, remoteCfg))
-                );
-                searchResults.push(...batchResults);
-                consumed = i + batch.length;
-                await new Promise(r => setTimeout(r, 0)); // 让出主线程
-            }
-            if (!usingRemote) {
-                // 远程中途挂了：剩余 query 走本地快路径（不丢弃已拿到的 batchResults）
-                const hasLocal = await ensureLocalIndex();
-                if (!hasLocal) {
-                    // 本地没东西：剩余全补空即可（保持 searchResults 长度与 vectors 对齐不是硬需求，
-                    // 因为后面是合并去重，空批次不会引入错误）
-                } else {
-                    console.log(`🏰 [RelatedMemories] 远程熔断后切本地：剩 ${vectors.length - consumed} 条 query 走本地路径`);
-                    for (let qi = consumed; qi < vectors.length; qi++) {
-                        searchResults.push(localScoreOne(vectors[qi]));
-                        if ((qi + 1) % 5 === 0 && qi < vectors.length - 1) {
-                            await new Promise(r => setTimeout(r, 0));
-                        }
-                    }
-                }
-            }
-        } else {
-            // 本地路径：一次性加载，内存里打分
-            const hasLocal = await ensureLocalIndex();
-            if (!hasLocal) return [];
-            for (let qi = 0; qi < vectors.length; qi++) {
-                searchResults.push(localScoreOne(vectors[qi]));
-                // 每 5 条 query 让一下主线程
-                if ((qi + 1) % 5 === 0 && qi < vectors.length - 1) {
-                    await new Promise(r => setTimeout(r, 0));
-                }
+        const allNodes = (await MemoryNodeDB.getByCharId(charId)).filter(n => !n.archived);
+        if (allNodes.length === 0) return [];
+        const searchResults: Array<{ node: any; score: number }[]> = [];
+        for (let qi = 0; qi < workingSnippets.length; qi++) {
+            const hits = bm25Search(workingSnippets[qi], allNodes, perQueryTopK)
+                .map(hit => ({ node: hit.node, score: hit.score }));
+            searchResults.push(hits);
+            if ((qi + 1) % 5 === 0 && qi < workingSnippets.length - 1) {
+                await new Promise(r => setTimeout(r, 0));
             }
         }
 
-        // 合并去重：同一记忆保留最高相似度
-        const seen = new Map<string, { node: any; similarity: number }>();
+        // 合并去重：同一记忆保留最高文本分
+        const seen = new Map<string, { node: any; score: number }>();
         for (const results of searchResults) {
             for (const r of results) {
                 const existing = seen.get(r.node.id);
-                if (!existing || r.similarity > existing.similarity) {
+                if (!existing || r.score > existing.score) {
                     seen.set(r.node.id, r);
                 }
             }
         }
 
-        // 按相似度降序
+        // 按文本相关度降序
         const related = [...seen.values()]
-            .sort((a, b) => b.similarity - a.similarity)
+            .sort((a, b) => b.score - a.score)
             .slice(0, maxTotal);
 
         return related.map(r => ({
@@ -269,7 +152,7 @@ export function splitYamlBullets(text: string): string[] {
 /**
  * 给迁移路径用的细粒度拆分：
  * 把一批 daily logs 拍平成 bullet 列表。
- * 每条 bullet 前缀上日期，方便 embedding 时保留时间线索。
+ * 每条 bullet 前缀上日期，方便文本检索时保留时间线索。
  *
  * 如果无法拆出 bullets（有些用户可能改过归档模板），返回空数组；
  * 调用方应 fallback 到传统的 3 段切法。
@@ -317,7 +200,7 @@ export function splitMessagesToSpikes(
         if (m.role !== 'user') continue;
         let text = (m.content || '').trim();
         if (!text) continue;
-        // 剥离 URL（embedding 里是随机噪声）
+        // 剥离 URL（对文本检索没有帮助，还会放大噪声）
         text = text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
         // 有意义字符数判断
         const meaningful = text.replace(/[\s\p{P}]/gu, '');

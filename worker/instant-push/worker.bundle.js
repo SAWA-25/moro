@@ -2411,6 +2411,9 @@ function sanitizeAssistantVisibleText(text) {
   return stripPromptPrivacyLeaks(strippedMeta);
 }
 
+// utils/callDirective.ts
+var CALL_USER_RE = /\[\[\s*CALL_USER\s*(?:[:：]\s*[^\]]*?)?\]\]/gi;
+
 // utils/sanitize.ts
 var stripLiteralBackslashN = (t) => t.replace(/\\n/g, "\n");
 var stripSourceTags = (t) => t.replace(/\s*\[(?:聊天|通话|约会)\]\s*/g, "\n");
@@ -2418,7 +2421,7 @@ var stripShopLineLabels = (t) => t.replace(/^\s*[\[【]\s*心意铺(?:陪逛)?\s
 var stripTimestamps = (t) => t.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*/g, "").replace(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*/gm, "").replace(/（[上下]午\d{1,2}[：:]\d{2}）/g, "").replace(/\(\d{1,2}:\d{2}\s*[AP]M\)/gi, "");
 var stripChineseDate = (t) => t.replace(/\[\d{4}[-/年]\d{1,2}[-/月]\d{1,2}.*?\]/g, "");
 var stripRoleNamePrefix = (t) => t.replace(/^[\w一-龥]+:\s*/, "");
-var stripBusinessTagsForBubble = (t) => t.replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[\s*BLOCK_USER\s*\]\]/gi, "").replace(/\[\[\s*CALL_USER\s*\]\]/gi, "").replace(/\[\[\s*WITHDRAW\s*\]\]/gi, "").replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, "").replace(/\[\[\s*PAT_SUFFIX\s*[:：][^\]]*\]\]/gi, "").replace(/\[\[\s*PAT\s*\]\]/gi, "").replace(/\[\[\s*FORCE_REPLY\s*[:：]?\s*[\s\S]*?\]\]/gi, "").replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, "").replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, "").replace(/\[schedule_message[^\]]*\]/g, "");
+var stripBusinessTagsForBubble = (t) => t.replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[\s*BLOCK_USER\s*\]\]/gi, "").replace(CALL_USER_RE, "").replace(/\[\[\s*WITHDRAW\s*\]\]/gi, "").replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, "").replace(/\[\[\s*PAT_SUFFIX\s*[:：][^\]]*\]\]/gi, "").replace(/\[\[\s*PAT\s*\]\]/gi, "").replace(/\[\[\s*FORCE_REPLY\s*[:：]?\s*[\s\S]*?\]\]/gi, "").replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, "").replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, "").replace(/\[schedule_message[^\]]*\]/g, "");
 var stripBusinessTagsForNotification = (t) => stripBusinessTagsForBubble(t).replace(/\[\[(?:READ_NOTE|XHS_[A-Z_]+)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[XHS_[A-Z_]+\]\]/g, "").replace(/\[\[(?:SHARE_SONG|NEWS_CARD)[:\s][\s\S]*?\]\]/g, "");
 var stripQuotes = (t) => t.replace(/\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g, "").replace(/\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g, "").replace(/\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g, "");
 var stripMarkdownHeaders = (t) => t.replace(/^#{1,6}\s+/gm, "");

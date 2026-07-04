@@ -11,8 +11,10 @@ import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPala
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { isMemoryFeatureEnabled } from '../utils/memoryPalace/cognitiveFlow';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { isMainApiStreamEnabled } from '../utils/apiConfigDefaults';
 import Modal from '../components/os/Modal';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
@@ -225,7 +227,7 @@ const DateApp: React.FC = () => {
                     { role: "user", content: `[最近记录 (Previous Context)]:${recentMsgs}${contextSeparator}${peekInstructions}\n\n(Start sensing...)` }
                 ],
                 temperature: apiConfig.temperature ?? 0.85,
-                stream: apiConfig.stream ?? false,
+                stream: isMainApiStreamEnabled(apiConfig),
             }, {
                 meta: makeApiUsageMeta('date.scene', {
                     charId: c.id,
@@ -250,9 +252,9 @@ const DateApp: React.FC = () => {
         // 用 charactersRef 读最新状态，避免见面流程中用户去 MemoryPalaceApp 关掉宫殿后
         // 这里仍然按 charForHook 闭包里的旧 enabled 触发一次 LLM 总结
         const liveBefore = charactersRef.current.find(c => c.id === charForHook.id) || null;
-        if (!liveBefore?.memoryPalaceEnabled) return;
-        const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
-        if (!mpEmb || !mpLLM) return;
+        if (!isMemoryFeatureEnabled(liveBefore)) return;
+        const { llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+        if (!mpLLM) return;
 
         const recentMsgs = await DB.getRecentMessagesByCharId(charForHook.id, 50);
         try {
@@ -260,7 +262,6 @@ const DateApp: React.FC = () => {
                 recentMsgs,
                 charForHook.id,
                 charForHook.name,
-                mpEmb,
                 mpLLM,
                 userProfile?.name || '',
                 false,
@@ -269,7 +270,7 @@ const DateApp: React.FC = () => {
 
             // pipeline 跑的过程中用户可能又关了宫殿，再 check 一次
             const liveAfter = charactersRef.current.find(c => c.id === charForHook.id) || null;
-            if (!liveAfter?.memoryPalaceEnabled) return;
+            if (!liveAfter || !isMemoryFeatureEnabled(liveAfter)) return;
 
             if (pipelineResult && pipelineResult.stored > 0) {
                 setMemoryPalaceResult(pipelineResult);
@@ -284,7 +285,7 @@ const DateApp: React.FC = () => {
                             pipelineResult.autoArchive.fragments,
                         );
                     }
-                    // 隐藏线追平到向量高水位：覆盖「关闭期推进了 hwm 但 hide 被冻结」的历史空档。
+                    // 隐藏线追平到处理高水位：覆盖「关闭期推进了 hwm 但 hide 被冻结」的历史空档。
                     // 只要全自动记忆开着，每次自动总结都把 hide 追平到 hwm，无需用户手动操作。
                     const hwm = getMemoryPalaceHighWaterMark(charForHook.id);
                     const curHide = ((liveAfter as any).hideBeforeMessageId as number) || 0;
@@ -304,7 +305,7 @@ const DateApp: React.FC = () => {
             if (shouldAutoDigest) {
                 setMemoryPalaceStatus(`${charForHook.name}闭上眼睛，开始整理内心…`);
                 const persona = [liveAfter.systemPrompt || '', liveAfter.worldview || ''].filter(Boolean).join('\n');
-                await runCognitiveDigestion(charForHook.id, charForHook.name, persona, mpLLM, false, userProfile?.name, mpEmb);
+                await runCognitiveDigestion(charForHook.id, charForHook.name, persona, mpLLM, false, userProfile?.name);
             }
         } catch (e: any) {
             console.error('❌ [DateApp MemoryPalace] 后台处理异常:', e?.message || e);
@@ -347,7 +348,7 @@ const DateApp: React.FC = () => {
         const limit = char.contextLimit || 500;
 
         // 与 chat app 完全对齐的历史构建：
-        // 1. 开了记忆宫殿 → 按高水位线过滤掉已被向量记忆替代的旧消息（chat 是在 DB 层做的；这里 allMsgs
+        // 1. 开了记忆宫殿 → 按高水位线过滤掉已被本地长期记忆替代的旧消息（chat 是在 DB 层做的；这里 allMsgs
         //    用 includeProcessed=true 因为 dateFiltered 显示 + injectMemoryPalace 还要全集，所以手动过一遍）
         // 2. 复用 ChatPrompts.buildMessageHistory：emoji / html_card / mcd_card / chat_forward / score_card
         //    等都会被压成短摘要，不再像旧版 mapper 那样把 m.content 原样塞，避免 prompt 暴涨。
@@ -406,7 +407,7 @@ const DateApp: React.FC = () => {
                 { role: 'user', content: `${text}\n\n(System Note: 严格遵守 VN 格式。每一行都要以 [emotion] 开头，根据内容逐行切换情绪标签，不要整段只用同一个。叙述行写出场景的呼吸感，不要罗列动作。)` }
             ],
             temperature: apiConfig.temperature ?? 0.85,
-            stream: apiConfig.stream ?? false,
+            stream: isMainApiStreamEnabled(apiConfig),
         }, {
             meta: makeApiUsageMeta('date.reply', {
                 charId: char.id,
@@ -480,7 +481,7 @@ const DateApp: React.FC = () => {
             ],
             // Reroll 略调高温度求多样性，但绝不低于用户配置的基线。
             temperature: Math.max(apiConfig.temperature ?? 0.85, 0.9),
-            stream: apiConfig.stream ?? false,
+            stream: isMainApiStreamEnabled(apiConfig),
         }, {
             meta: makeApiUsageMeta('date.reply', {
                 charId: char.id,
@@ -582,7 +583,7 @@ const DateApp: React.FC = () => {
     const openHistory = async (c: CharacterProfile) => {
         setActiveCharacterId(c.id);
         // includeProcessed=true：见面历史完全独立于聊天侧高水位，
-        // 否则用户开了向量记忆后老的见面记录会全部"消失"
+        // 否则用户开了长期记忆后老的见面记录会全部"消失"
         const msgs = await DB.getMessagesByCharId(c.id, true);
         // dateMsgs sorted DESCENDING (newest first)
         const dateMsgs = msgs.filter(m => m.metadata?.source === 'date').sort((a, b) => b.timestamp - a.timestamp);

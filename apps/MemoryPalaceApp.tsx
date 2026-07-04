@@ -1,21 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
-import { AppID } from '../types';
+import { AppID, Message } from '../types';
+import { DB } from '../utils/db';
 import {
     MemoryRoom, MemoryNode, ROOM_CONFIGS, getRoomLabel,
     MemoryNodeDB, AnticipationDB, MemoryLinkDB, EventBoxDB,
     migrateOldMemories, runCognitiveDigestion, getAvailableMonths, getAvailableChunks,
+    runLocalDreamDigestion,
     detectPersonalityStyle,
     manuallyBindMemories, removeMemoryFromBox, unbindAllLiveMemories,
     reviveArchivedMemory,
     setEventBoxSealed,
     wipeAllMemoryPalace,
-    inspectMemoryPalace, repairMemoryPalaceIntegrity, revectorizeMemoryNodes,
+    inspectMemoryPalace, repairMemoryPalaceIntegrity,
     runMemoryPalaceCatchUp, deleteTaggedLegacyMemories,
 } from '../utils/memoryPalace';
 import type { Anticipation, MigrationProgress, EventBox, MemoryPalaceInspection } from '../utils/memoryPalace';
 import MindMap, { type MindMapEdge } from '../components/memoryPalace/MindMap';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { getCognitiveMemoryLayer, type CognitiveMemoryLayer } from '../utils/memoryPalace/cognitiveFlow';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
 type LinkedMemoryUI = {
@@ -418,6 +421,107 @@ const ROOM_COLORS: Record<MemoryRoom, string> = {
     windowsill: '#3e3e3e',
 };
 
+const COGNITIVE_LAYER_LABELS: Record<CognitiveMemoryLayer | 'all', string> = {
+    all: '全部层',
+    event: 'Event',
+    episode: 'Episode',
+    episode_summary: 'Episode 摘要',
+    saga: 'Saga',
+    feel: 'Feel',
+};
+
+const COGNITIVE_LAYER_DESCRIPTIONS: Record<CognitiveMemoryLayer, string> = {
+    event: '可追溯事件',
+    episode: '连续片段',
+    episode_summary: '片段摘要',
+    saga: '长期主线',
+    feel: '梦境感受',
+};
+
+const COGNITIVE_LAYER_STYLES: Record<CognitiveMemoryLayer, { background: string; color: string; border: string }> = {
+    event: { background: '#fff', color: '#454545', border: '#bdbdbd' },
+    episode: { background: '#f4f4f4', color: '#343434', border: '#9f9f9f' },
+    episode_summary: { background: '#ececec', color: '#2f2f2f', border: '#8f8f8f' },
+    saga: { background: '#1a1a1a', color: '#fff', border: '#1a1a1a' },
+    feel: { background: '#f6f0e6', color: '#3f3327', border: '#9b8f7f' },
+};
+
+function formatEvidenceContent(content: string, max = 260): string {
+    const text = (content || '').trim();
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}...`;
+}
+
+function getEvidenceRoleLabel(message: Message, userName?: string, charName?: string): string {
+    const metadataName = typeof message.metadata?.senderName === 'string' ? message.metadata.senderName.trim()
+        : typeof message.metadata?.charName === 'string' ? message.metadata.charName.trim()
+        : '';
+    if (metadataName) return metadataName;
+    if (message.role === 'user') return userName || '你';
+    if (message.role === 'assistant') return charName || '角色';
+    return '系统';
+}
+
+const EvidenceChainBlock: React.FC<{
+    node: MemoryNode;
+    evidence: Message[];
+    loading: boolean;
+    charName?: string;
+    userName?: string;
+}> = ({ node, evidence, loading, charName, userName }) => {
+    const sourceMessageCount = node.sourceMessageIds?.length || 0;
+    const hasQuote = !!node.sourceQuote;
+    const hasNote = !!node.genNote;
+
+    return (
+        <div>
+            {hasQuote && (
+                <div style={{ marginBottom: hasNote || sourceMessageCount > 0 ? 8 : 0 }}>
+                    <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>原文摘录</div>
+                    <div style={{ fontSize: 12, lineHeight: 1.6, color: '#3a3a3a', background: '#fff', border: '1px solid #e0ddd5', borderLeft: '3px solid #b9b2a3', padding: '6px 9px', whiteSpace: 'pre-wrap' }}>{node.sourceQuote}</div>
+                </div>
+            )}
+            {hasNote && (
+                <div style={{ marginBottom: sourceMessageCount > 0 ? 8 : 0 }}>
+                    <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>当时的碎碎念</div>
+                    <div style={{ fontSize: 12, lineHeight: 1.6, color: '#4f4f4f', fontStyle: 'italic' }}>「{node.genNote}」</div>
+                </div>
+            )}
+            <div>
+                <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Icon name="link" size={10} />
+                    <span>证据链{sourceMessageCount > 0 ? `（${sourceMessageCount} 条本地消息）` : ''}</span>
+                </div>
+                {sourceMessageCount === 0 ? (
+                    <div style={{ fontSize: 11, color: '#a2a2a2', lineHeight: 1.6 }}>
+                        这条记忆没有保存原始消息 ID；早期记忆或手动创建的记忆可能只能看原文摘录。
+                    </div>
+                ) : loading ? (
+                    <div style={{ fontSize: 11, color: '#a2a2a2' }}>正在读取本地消息...</div>
+                ) : evidence.length === 0 ? (
+                    <div style={{ fontSize: 11, color: '#a2a2a2', lineHeight: 1.6 }}>
+                        本地消息已不存在，或不在当前角色 / 群聊档案里。
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {evidence.map(message => (
+                            <div key={message.id} style={{ background: '#fff', border: '1px solid #dedbd2', borderRadius: 3, padding: '6px 8px' }}>
+                                <div style={{ fontSize: 10, color: '#8f8f8f', display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
+                                    <span>{getEvidenceRoleLabel(message, userName, charName)}</span>
+                                    <span>{new Date(message.timestamp).toLocaleString('zh-CN')}</span>
+                                </div>
+                                <div style={{ fontSize: 12, lineHeight: 1.55, color: '#3f3f3f', whiteSpace: 'pre-wrap' }}>
+                                    {formatEvidenceContent(message.content)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // ─── 通用样式（黑白拼贴手账）─────────────────────────────────────────
 
 const inputClass = "w-full bg-white border-2 border-black px-4 py-2.5 text-sm font-mono focus:outline-none focus:bg-[#fdfdfd] transition-all";
@@ -427,10 +531,9 @@ const labelClass = "text-[10px] font-bold text-black uppercase tracking-[0.2em] 
 // ─── 主组件 ───────────────────────────────────────────
 
 export default function MemoryPalaceApp() {
-    const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, openApp, userProfile, auxApiConfig, memoryPalaceConfig, remoteVectorConfig, updateRemoteVectorConfig, addToast } = useOS();
+    const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, openApp, userProfile, auxApiConfig, addToast } = useOS();
     const char = characters.find(c => c.id === activeCharacterId);
-    const memoryPalaceAux = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
-    const palaceEmbedding = memoryPalaceAux.embedding;
+    const memoryPalaceAux = resolveMemoryPalaceAuxConfigs(auxApiConfig);
     const palaceLLM = memoryPalaceAux.llm;
 
     const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes' | 'browser' | 'mindmap' | 'health'>('picker');
@@ -478,7 +581,12 @@ export default function MemoryPalaceApp() {
     const [browserNodes, setBrowserNodes] = useState<MemoryNode[]>([]);
     const [browserQuery, setBrowserQuery] = useState('');
     const [browserRoom, setBrowserRoom] = useState<MemoryRoom | 'all'>('all');
+    const [browserLayer, setBrowserLayer] = useState<CognitiveMemoryLayer | 'all'>('all');
     const [browserExpanded, setBrowserExpanded] = useState<Set<string>>(new Set());
+    const [evidenceByNode, setEvidenceByNode] = useState<Record<string, Message[]>>({});
+    const [evidenceLoadingIds, setEvidenceLoadingIds] = useState<Set<string>>(new Set());
+    const evidenceLoadedRef = React.useRef<Set<string>>(new Set());
+    const evidenceLoadingRef = React.useRef<Set<string>>(new Set());
 
     // 心意图谱视图（记忆关联网络：char 怎样把两条记忆联系到一起）
     const [graphNodes, setGraphNodes] = useState<MemoryNode[]>([]);
@@ -490,13 +598,14 @@ export default function MemoryPalaceApp() {
     const [inspection, setInspection] = useState<MemoryPalaceInspection | null>(null);
     const [inspecting, setInspecting] = useState(false);
     const [repairing, setRepairing] = useState(false);
-    const [revectorizing, setRevectorizing] = useState(false);
     const [catchingUp, setCatchingUp] = useState(false);
     const [healthResult, setHealthResult] = useState<string | null>(null);
 
     // 认知消化状态
     const [digesting, setDigesting] = useState(false);
     const [digestResult, setDigestResult] = useState<string | null>(null);
+    const [dreaming, setDreaming] = useState(false);
+    const [dreamResult, setDreamResult] = useState<string | null>(null);
 
 
     // 一键清空
@@ -526,7 +635,6 @@ export default function MemoryPalaceApp() {
         charName: string;
         unprocessedCount: number;
         minutes: number;
-        mpEmb: any;
         mpLLM: any;
     } | null>(null);
 
@@ -538,20 +646,6 @@ export default function MemoryPalaceApp() {
     const [editRoom, setEditRoom] = useState<MemoryRoom>('living_room');
     const [editTags, setEditTags] = useState('');
     const [saving, setSaving] = useState(false);
-
-    // 远程向量存储配置
-    const [rvUrl, setRvUrl] = useState(remoteVectorConfig.supabaseUrl);
-    const [rvKey, setRvKey] = useState(remoteVectorConfig.supabaseAnonKey);
-    const [rvTestResult, setRvTestResult] = useState('');
-    const [rvTesting, setRvTesting] = useState(false);
-    const [rvSyncing, setRvSyncing] = useState(false);
-    const [showInitSQL, setShowInitSQL] = useState(false);
-
-    // 远程向量配置变更时同步到本地状态
-    useEffect(() => {
-        setRvUrl(remoteVectorConfig.supabaseUrl);
-        setRvKey(remoteVectorConfig.supabaseAnonKey);
-    }, [remoteVectorConfig.supabaseUrl, remoteVectorConfig.supabaseAnonKey]);
 
     // 人格风格 + 反刍倾向 检测
     const [detectingPersonality, setDetectingPersonality] = useState(false);
@@ -606,8 +700,6 @@ export default function MemoryPalaceApp() {
         // 依赖用原始字符串字段，避免 memoryPalaceConfig 对象每次新引用都重跑
     }, [char?.id, (char as any)?.personalityStyle, view, palaceAuxBaseUrl, palaceAuxApiKey]);
 
-    // 判断是否已配置（使用全局配置）
-    const hasEmbeddingConfig = !!palaceEmbedding;
     const hasLightApi = !!palaceLLM;
 
     // 加载数据
@@ -682,9 +774,43 @@ export default function MemoryPalaceApp() {
         setBrowserNodes(nodes);
         setBrowserQuery('');
         setBrowserRoom('all');
+        setBrowserLayer('all');
         setBrowserExpanded(new Set());
+        setEvidenceByNode({});
+        evidenceLoadedRef.current.clear();
+        evidenceLoadingRef.current.clear();
+        setEvidenceLoadingIds(new Set());
         setView('browser');
     };
+
+    const loadEvidenceForNode = useCallback(async (node: MemoryNode): Promise<void> => {
+        if (!char || !node.sourceMessageIds || node.sourceMessageIds.length === 0) return;
+        if (evidenceLoadedRef.current.has(node.id) || evidenceLoadingRef.current.has(node.id)) return;
+        evidenceLoadingRef.current.add(node.id);
+        setEvidenceLoadingIds(prev => new Set(prev).add(node.id));
+        try {
+            const wanted = new Set(node.sourceMessageIds);
+            const sourceMessages = node.groupId
+                ? await DB.getGroupMessages(node.groupId)
+                : await DB.getMessagesByCharId(char.id, true);
+            const matched = sourceMessages
+                .filter(m => wanted.has(m.id))
+                .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || a.id - b.id);
+            evidenceLoadedRef.current.add(node.id);
+            setEvidenceByNode(prev => ({ ...prev, [node.id]: matched }));
+        } catch (err: any) {
+            console.warn('[MemoryPalace] failed to load evidence messages', err?.message || err);
+            evidenceLoadedRef.current.add(node.id);
+            setEvidenceByNode(prev => ({ ...prev, [node.id]: [] }));
+        } finally {
+            evidenceLoadingRef.current.delete(node.id);
+            setEvidenceLoadingIds(prev => {
+                const next = new Set(prev);
+                next.delete(node.id);
+                return next;
+            });
+        }
+    }, [char]);
 
     // 心意图谱：拉全部节点 + 真实 MemoryLink + EventBox 合成边，默认聚焦关联最多的节点
     const openMindMap = async () => {
@@ -772,10 +898,10 @@ export default function MemoryPalaceApp() {
         setHealthResult(null);
         try {
             const result = await repairMemoryPalaceIntegrity(char.id);
-            const changed = result.deletedOrphanVectors + result.deletedBrokenLinks + result.cleanedBoxRefs
+            const changed = result.deletedBrokenLinks + result.cleanedBoxRefs
                 + result.fixedNodeBoxRefs + result.detachedMissingBoxes;
             setHealthResult(changed > 0
-                ? `[ok]结构修复完成：孤儿向量 ${result.deletedOrphanVectors}、断链 ${result.deletedBrokenLinks}、事件盒引用 ${result.cleanedBoxRefs}、节点盒关系 ${result.fixedNodeBoxRefs}、缺失盒脱离 ${result.detachedMissingBoxes}`
+                ? `[ok]结构修复完成：断链 ${result.deletedBrokenLinks}、事件盒引用 ${result.cleanedBoxRefs}、节点盒关系 ${result.fixedNodeBoxRefs}、缺失盒脱离 ${result.detachedMissingBoxes}`
                 : '[ok]结构检查完毕，未发现需要自动修复的问题');
             await refreshInspection();
             await loadStats();
@@ -786,43 +912,9 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const handleRevectorizeFromHealth = async () => {
-        if (!char || revectorizing) return;
-        const current = inspection || await refreshInspection();
-        if (!current) return;
-        const ids = Array.from(new Set([
-            ...current.issues.missingVectorNodeIds,
-            ...current.issues.unembeddedNodeIds,
-        ]));
-        if (ids.length === 0) {
-            setHealthResult('[ok]没有缺失向量或待修复向量');
-            return;
-        }
-        if (!palaceEmbedding) {
-            setHealthResult('[err]副 API 的 Embedding 未配置，无法重建向量；正文会保留为待修复状态。');
-            return;
-        }
-        setRevectorizing(true);
-        setHealthResult(`正在重建 ${ids.length} 条向量...`);
-        try {
-            const result = await revectorizeMemoryNodes(char.id, ids, palaceEmbedding, remoteVectorConfig);
-            if (result.failed > 0 || result.error) {
-                setHealthResult(`[warn]向量重建完成：成功 ${result.rebuilt} 条，失败 ${result.failed} 条${result.error ? `；${result.error}` : ''}`);
-            } else {
-                setHealthResult(`[ok]向量重建完成：${result.rebuilt} 条`);
-            }
-            await refreshInspection();
-            await loadStats();
-        } catch (e: any) {
-            setHealthResult(`[err]向量重建失败：${e?.message || e}`);
-        } finally {
-            setRevectorizing(false);
-        }
-    };
-
     const handleCatchUpFromHealth = async () => {
         if (!char || catchingUp) return;
-        if (!palaceEmbedding || !palaceLLM) {
+        if (!palaceLLM) {
             setHealthResult('[err]请先在文具盒开启并填好副 API，体检只能安全处理本地结构问题。');
             return;
         }
@@ -831,7 +923,6 @@ export default function MemoryPalaceApp() {
         try {
             const result = await runMemoryPalaceCatchUp({
                 char,
-                embeddingConfig: palaceEmbedding,
                 llmConfig: palaceLLM,
                 userName: userProfile?.name || '',
                 onProgress: stage => setHealthResult(stage),
@@ -856,8 +947,7 @@ export default function MemoryPalaceApp() {
 
     /** 把一条归档记忆复活成活节点。
      *  归档节点默认被压入 summary 不参与召回——手动点"复活"后回到活池独立参与召回。
-     *  数据层走 reviveArchivedMemory：archived=false + box.archivedMemoryIds → liveMemoryIds
-     *  + MemoryNodeDB.save 触发远程 upsertVector 同步 archived=false 到云。 */
+     *  数据层走 reviveArchivedMemory：archived=false + box.archivedMemoryIds → liveMemoryIds。 */
     const handleReviveArchived = async (box: EventBox, node: MemoryNode) => {
         if (!char) return;
         try {
@@ -887,7 +977,7 @@ export default function MemoryPalaceApp() {
     };
 
     /** 进入/退出某盒的名字+tag 编辑态。box.name/box.tags 只决定召回时的展示抬头，
-     *  不参与向量/BM25 检索打分（检索只认成员节点的 content/tags），改它不影响召回结果。 */
+     *  不参与本地文本检索打分（检索只认成员节点的 content/tags），改它不影响召回结果。 */
     const startEditBoxMeta = (box: EventBox) => {
         setEditingBoxId(box.id);
         setBoxNameDraft(box.name || '');
@@ -1072,6 +1162,7 @@ export default function MemoryPalaceApp() {
         setPrevView(from || 'room');
         setView('memory');
         loadLinkedMemories(node.id);
+        void loadEvidenceForNode(node);
     };
 
     const handleSaveEdit = async () => {
@@ -1090,17 +1181,11 @@ export default function MemoryPalaceApp() {
             if (contentChanged) {
                 updated.embedded = false;
                 await MemoryNodeDB.save(updated);
-                const rv = await revectorizeMemoryNodes(char.id, [updated.id], palaceEmbedding, remoteVectorConfig);
-                if (rv.error) {
-                    addToast(rv.error === 'embedding_missing' ? '记忆已保存，但副 API 未配置，暂时不会参与向量召回' : `记忆已保存，向量重建失败：${rv.error}`, 'error');
-                } else {
-                    addToast('记忆已保存并重新向量化', 'success');
-                }
+                addToast('记忆已保存，本地文本索引已更新', 'success');
                 const fresh = await MemoryNodeDB.getById(updated.id);
                 setSelectedNode(fresh || updated);
             } else {
                 await MemoryNodeDB.save(updated);
-                // 远程同步由 MemoryNodeDB.save 自动处理
                 setSelectedNode(updated);
             }
             setEditing(false);
@@ -1144,7 +1229,7 @@ export default function MemoryPalaceApp() {
         if (on) {
             updateCharacter(charId, { memoryPalaceEnabled: true } as any);
         } else {
-            // 关闭 palace 必然连带关闭全自动记忆；同时清空残留的向量召回注入，
+            // 关闭 palace 必然连带关闭全自动记忆；同时清空残留的记忆召回注入，
             // 否则旧的 memoryPalaceInjection 会被 saveCharacter 持久化并继续注入 prompt。
             updateCharacter(charId, { memoryPalaceEnabled: false, autoArchiveEnabled: false, memoryPalaceInjection: undefined } as any);
         }
@@ -1157,7 +1242,7 @@ export default function MemoryPalaceApp() {
 
         if (!on) {
             updateCharacter(charId, { autoArchiveEnabled: false } as any);
-            addToast('已关闭全自动记忆（palace 向量化仍在正常运行）', 'info');
+            addToast('已关闭全自动记忆（回忆标本馆仍可手动整理）', 'info');
             return;
         }
 
@@ -1165,9 +1250,8 @@ export default function MemoryPalaceApp() {
             addToast('请先启用回忆标本馆再打开全自动记忆', 'error');
             return;
         }
-        const mpEmb = palaceEmbedding;
         const mpLLM = palaceLLM;
-        if (!mpEmb || !mpLLM) {
+        if (!mpLLM) {
             addToast('请先在文具盒开启并填好副 API', 'error');
             return;
         }
@@ -1192,7 +1276,6 @@ export default function MemoryPalaceApp() {
             charName: target.name,
             unprocessedCount,
             minutes,
-            mpEmb,
             mpLLM,
         });
     };
@@ -1202,10 +1285,9 @@ export default function MemoryPalaceApp() {
         charId: string;
         charName: string;
         unprocessedCount: number;
-        mpEmb: any;
         mpLLM: any;
     }) => {
-        const { charId, charName, unprocessedCount, mpEmb, mpLLM } = params;
+        const { charId, charName, unprocessedCount, mpLLM } = params;
         const target = characters.find(c => c.id === charId);
         if (!target) return;
 
@@ -1214,7 +1296,6 @@ export default function MemoryPalaceApp() {
         try {
             const result = await runMemoryPalaceCatchUp({
                 char: target as any,
-                embeddingConfig: mpEmb,
                 llmConfig: mpLLM,
                 userName: userProfile.name,
                 onProgress: setAutoArchiveSyncProgress,
@@ -1240,86 +1321,8 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    // 远程向量：测试连接
-    const handleTestRemoteVector = async () => {
-        setRvTesting(true);
-        setRvTestResult('');
-        try {
-            const { testConnection } = await import('../utils/memoryPalace/supabaseVector');
-            const result = await testConnection({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized: false });
-            if (result.ok && result.tableExists) setRvTestResult('[ok]' + result.message);
-            else if (result.ok) setRvTestResult('[warn]' + result.message);
-            else setRvTestResult('[err]' + result.message);
-        } catch (e: any) { setRvTestResult('[err]' + e.message); }
-        setRvTesting(false);
-    };
-
-    // 远程向量：保存配置
-    const handleSaveRemoteVector = () => {
-        const initialized = rvTestResult.startsWith('[ok]');
-        updateRemoteVectorConfig({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized });
-        addToast('远程向量存储配置已保存', 'success');
-    };
-
-    // 远程向量：关闭
-    const handleDisableRemoteVector = () => {
-        updateRemoteVectorConfig({ enabled: false, initialized: false });
-        addToast('远程向量存储已关闭', 'info');
-    };
-
-    // 远程向量：同步本地到远程
-    const handleSyncToRemote = async () => {
-        setRvSyncing(true);
-        try {
-            const { syncLocalToRemote } = await import('../utils/memoryPalace/supabaseVector');
-            const { MemoryNodeDB } = await import('../utils/memoryPalace/db');
-            const result = await syncLocalToRemote(
-                remoteVectorConfig,
-                async () => {
-                    const allVectors = await (await import('../utils/db')).openDB().then(db => new Promise<any[]>((resolve, reject) => {
-                        const tx = db.transaction('memory_vectors', 'readonly');
-                        const req = tx.objectStore('memory_vectors').getAll();
-                        req.onsuccess = () => resolve(req.result || []);
-                        req.onerror = () => reject(req.error);
-                    }));
-                    const items = [];
-                    for (const v of allVectors) {
-                        const node = await MemoryNodeDB.getById(v.memoryId);
-                        if (node) items.push({ memoryId: v.memoryId, charId: node.charId, vector: v.vector, node, dimensions: v.dimensions, model: v.model });
-                    }
-                    return items;
-                },
-                () => {},
-            );
-            addToast(`同步完成: ${result.synced} 条成功, ${result.failed} 条失败`, result.failed > 0 ? 'error' : 'success');
-        } catch (e: any) { addToast(`同步失败: ${e.message}`, 'error'); }
-        setRvSyncing(false);
-    };
-
-    // 远程向量：复制初始化 SQL
-    const handleCopyInitSQL = async () => {
-        try {
-            const { INIT_SQL } = await import('../utils/memoryPalace/supabaseVector');
-            await navigator.clipboard.writeText(INIT_SQL).catch(() => {
-                const ta = document.createElement('textarea');
-                ta.value = INIT_SQL;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-            });
-            addToast('SQL 已复制到剪贴板', 'success');
-        } catch { addToast('复制失败', 'error'); }
-    };
-
     const handleMigrate = async () => {
         if (!char || migrating) return;
-        const emb = palaceEmbedding;
-        if (!emb) {
-            setMigrationResult('[err]请先在文具盒开启并填好副 API');
-            return;
-        }
-
         const oldMemories = char.memories || [];
         if (oldMemories.length === 0) {
             setMigrationResult('没有旧记忆可以迁移');
@@ -1346,12 +1349,10 @@ export default function MemoryPalaceApp() {
                 oldMemories,
                 char.refinedMemories,
                 lightApi,
-                emb,
                 (p) => setMigrationProgress(p),
                 charContext,
                 monthsToProcess,
                 userProfile?.name,
-                remoteVectorConfig,
             );
             setMigrationResult(`[ok]迁移完成：${result.months} 个月 → ${result.migrated} 件标本，${result.skipped} 条去重跳过`);
             loadStats(); // 刷新数据
@@ -1376,8 +1377,7 @@ export default function MemoryPalaceApp() {
 
         try {
             const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-            const embApi = palaceEmbedding || undefined;
-            const result = await runCognitiveDigestion(char.id, char.name, persona, lightApi, true, userProfile?.name, embApi);
+            const result = await runCognitiveDigestion(char.id, char.name, persona, lightApi, true, userProfile?.name);
             if (!result) {
                 setDigestResult('没有需要消化的内容');
             } else {
@@ -1408,7 +1408,43 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    /** 彻底删除一条记忆（node + vector + links + EventBox 成员引用 + 远程同步） */
+    /** 彻底删除一条记忆（node + links + EventBox 成员引用，并清掉旧版本本地索引残留） */
+    const handleDreamDigest = async () => {
+        if (!char || dreaming) return;
+        const lightApi = palaceLLM;
+        if (!lightApi) {
+            setDreamResult('[err]请先在「文具盒」里配置副 API');
+            return;
+        }
+        setDreaming(true);
+        setDreamResult(null);
+        try {
+            const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
+            const result = await runLocalDreamDigestion(
+                char.id,
+                char.name,
+                persona,
+                lightApi,
+                userProfile?.name,
+            );
+            if (result.status === 'no_material') {
+                setDreamResult('没有可做梦消化的记忆');
+            } else if (result.status === 'llm_empty') {
+                setDreamResult('这次没有沉淀出新的梦境感受');
+            } else {
+                const feelCount = result.dreams.filter(d => d.layer === 'feel').length;
+                const sagaCount = result.dreams.filter(d => d.layer === 'saga').length;
+                setDreamResult(`[ok]梦境消化完成：生成 ${feelCount} 条 feel、${sagaCount} 条主线，写入 ${result.stored} 条，内化 ${result.internalized} 条源记忆`);
+            }
+            await loadStats();
+            if (view === 'browser') await openMemoryBrowser();
+        } catch (err: any) {
+            setDreamResult(`[err]梦境消化失败：${err.message}`);
+        } finally {
+            setDreaming(false);
+        }
+    };
+
     const deleteMemory = async (nodeId: string) => {
         // 先从 EventBox 中移除（若属于某盒）
         try { await removeMemoryFromBox(nodeId); } catch { /* ignore */ }
@@ -1417,15 +1453,9 @@ export default function MemoryPalaceApp() {
         for (const link of links) {
             await MemoryLinkDB.delete(link.id);
         }
-        // 删向量（本地）
-        const { MemoryVectorDB } = await import('../utils/memoryPalace');
-        await MemoryVectorDB.delete(nodeId);
-        // 删向量（远程同步）
-        if (remoteVectorConfig?.enabled && remoteVectorConfig.initialized) {
-            import('../utils/memoryPalace/supabaseVector').then(({ deleteVector }) =>
-                deleteVector(remoteVectorConfig, nodeId).catch(() => {})
-            );
-        }
+        // 清掉旧版本可能留下的本地索引行。
+        const { LegacyIndexResidueDB } = await import('../utils/memoryPalace/db');
+        await LegacyIndexResidueDB.delete(nodeId);
         // 删节点
         await MemoryNodeDB.delete(nodeId);
     };
@@ -1485,29 +1515,22 @@ export default function MemoryPalaceApp() {
     };
 
     /** 清除所有已迁移数据 */
-    /** 一键清空回忆标本馆（本地 + 可选云端）。双重确认后执行。 */
-    const handleWipeAll = async (includeRemote: boolean) => {
-        const firstPrompt = includeRemote
-            ? '即将清空【本地 + 云端 Supabase】所有回忆标本馆数据，包括：\n\n' +
-              '- 所有角色的记忆节点、向量、关联、事件盒\n- 高水位标记\n- 云端 memory_vectors 全表\n\n' +
-              '此操作不可撤销。确定继续？'
-            : '即将清空【本地】所有回忆标本馆数据（云端保留）。\n\n' +
-              '包括所有角色的记忆节点、向量、关联、事件盒、高水位标记。\n\n' +
-              '此操作不可撤销。确定继续？';
+    /** 一键清空回忆标本馆（本地）。双重确认后执行。 */
+    const handleWipeAll = async () => {
+        const firstPrompt = '即将清空【本地】所有回忆标本馆数据。\n\n' +
+            '包括所有角色的记忆节点、关联、事件盒、旧本地索引残留和高水位标记。\n\n' +
+            '此操作不可撤销。确定继续？';
         if (!confirm(firstPrompt)) return;
         if (!confirm('再次确认：真的要清空？')) return;
 
         setWiping(true);
         setWipeResult(null);
         try {
-            const result = await wipeAllMemoryPalace({
-                remoteConfig: includeRemote ? remoteVectorConfig : undefined,
-                skipRemote: !includeRemote,
-            });
+            const result = await wipeAllMemoryPalace();
             // 友好分项：记忆节点才是"一条记忆"，其余是衍生数据
             const STORE_LABELS: Record<string, string> = {
                 memory_nodes: '记忆',
-                memory_vectors: '向量',
+                memory_vectors: '旧索引残留',
                 memory_links: '关联',
                 memory_batches: '批次',
                 anticipations: '期盼',
@@ -1519,7 +1542,7 @@ export default function MemoryPalaceApp() {
             }
             const breakdown = parts.length > 0 ? `（${parts.join('、')}）` : '';
             const msg = `本地已清空${breakdown}；高水位 ${result.highWatermarks} 条`
-                + (result.remoteAttempted ? `；云端向量 ${result.remote} 行` : '；云端未清');
+                + '；旧索引残留已一并清理';
             setWipeResult(msg);
             await loadStats();
         } catch (e: any) {
@@ -1600,21 +1623,21 @@ export default function MemoryPalaceApp() {
                             width: 36, height: 36, borderRadius: 3,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             cursor: 'pointer',
-                            background: hasEmbeddingConfig
+                            background: hasLightApi
                                 ? 'rgba(255,255,255,0.8)'
                                 : 'linear-gradient(135deg, #f1f1f1 0%, #e2e2e2 100%)',
-                            border: hasEmbeddingConfig
+                            border: hasLightApi
                                 ? '2px solid #1a1a1a'
                                 : '2px solid #1a1a1a',
-                            color: hasEmbeddingConfig ? '#626262' : '#686868',
-                            boxShadow: hasEmbeddingConfig
+                            color: hasLightApi ? '#626262' : '#686868',
+                            boxShadow: hasLightApi
                                 ? '3px 3px 0 #1a1a1a'
                                 : '3px 3px 0 #1a1a1a',
-                            animation: hasEmbeddingConfig ? undefined : 'pulse 2s ease-in-out infinite',
+                            animation: hasLightApi ? undefined : 'pulse 2s ease-in-out infinite',
                         }}
                     >
                         <Icon name="settings" size={16} />
-                        {!hasEmbeddingConfig && (
+                        {!hasLightApi && (
                             <span style={{
                                 position: 'absolute', top: -3, right: -3,
                                 width: 10, height: 10, borderRadius: '50%',
@@ -1625,7 +1648,7 @@ export default function MemoryPalaceApp() {
                 </div>
 
                 {/* 副 API 未配置高亮提醒 */}
-                {!hasEmbeddingConfig && (
+                {!hasLightApi && (
                     <div
                         onClick={() => setView('globalSettings')}
                         style={{
@@ -1652,7 +1675,7 @@ export default function MemoryPalaceApp() {
                                 未配置副 API
                             </div>
                             <div style={{ fontSize: 10, color: '#535353', marginTop: 2 }}>
-                                点击此处查看配置说明 · 不配置则无法向量化
+                                点击此处查看配置说明 · 不配置则无法整理/提取/消化
                             </div>
                         </div>
                         <span style={{ color: '#686868', flexShrink: 0 }}>
@@ -1843,7 +1866,7 @@ export default function MemoryPalaceApp() {
                                                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                                             }}
                                                         >
-                                                            七房间空间模型 · 向量检索
+                                                            七房间空间模型 · 本地文本索引
                                                         </div>
                                                     </div>
                                                 </div>
@@ -2091,7 +2114,6 @@ export default function MemoryPalaceApp() {
                                             charId: conf.charId,
                                             charName: conf.charName,
                                             unprocessedCount: conf.unprocessedCount,
-                                            mpEmb: conf.mpEmb,
                                             mpLLM: conf.mpLLM,
                                         });
                                     }}
@@ -2319,7 +2341,7 @@ export default function MemoryPalaceApp() {
         );
     }
 
-    // ─── 设置视图（Embedding 配置） ──────────────────────
+    // ─── 设置视图（副 API / 本地记忆处理） ──────────────────────
 
     if (view === 'settings' || view === 'globalSettings') {
         const isGlobal = view === 'globalSettings';
@@ -2373,7 +2395,7 @@ export default function MemoryPalaceApp() {
                         <span>副 API（唯一通道）</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#4f4f4f', lineHeight: 1.7, marginBottom: 12 }}>
-                        回忆标本馆现在只使用「文具盒 → 副 API」。记忆提取、认知消化和向量化都会复用同一套副 API 的 Base URL / API Key，不再在标本馆里单独保存模型密钥。
+                        回忆标本馆现在只使用「文具盒 → 副 API」。记忆提取、关联分析、认知消化和本地保存都会复用同一套副 API 的 Base URL / API Key，不再在标本馆里单独保存模型密钥。
                     </div>
                     <div style={{
                         padding: 12, borderRadius: 3, border: '2px solid #1a1a1a',
@@ -2383,8 +2405,7 @@ export default function MemoryPalaceApp() {
                         {hasLightApi ? (
                             <>
                                 <div><b>当前副 API：</b>{palaceLLM?.model}</div>
-                                <div><b>Embedding：</b>{palaceEmbedding?.model} · {palaceEmbedding?.dimensions} 维</div>
-                                <div style={{ color: '#727272', marginTop: 4 }}>如果服务商不支持 /embeddings 或该 embedding 模型名，需要在文具盒把副 API 切到兼容 OpenAI /embeddings 的服务。</div>
+                                <div style={{ color: '#727272', marginTop: 4 }}>后台只发起文本生成请求；记忆检索和索引都保存在本机 IndexedDB。</div>
                             </>
                         ) : (
                             <>
@@ -2392,7 +2413,7 @@ export default function MemoryPalaceApp() {
                                     <Icon name="warning" size={12} />
                                     <span>副 API 未配置</span>
                                 </div>
-                                <div style={{ marginTop: 4 }}>标本馆后台整理和向量化会暂停；请先去文具盒开启并填好副 API。</div>
+                                <div style={{ marginTop: 4 }}>标本馆后台整理、提取和消化会暂停；请先去文具盒开启并填好副 API。</div>
                             </>
                         )}
                     </div>
@@ -2406,179 +2427,8 @@ export default function MemoryPalaceApp() {
                     >
                         打开文具盒副 API
                     </button>
+
                 </div>
-                {/* 远程向量存储（Supabase，可选）— 默认折叠 */}
-                <details style={{ marginTop: 16, background: '#f8f8f8', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
-                    <summary style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#626262', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <Icon name="cloud" size={14} />
-                            <span>远程向量存储（可选 / Supabase）</span>
-                        </span>
-                        {remoteVectorConfig.enabled && (
-                            <span style={{
-                                fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3,
-                                color: remoteVectorConfig.initialized ? '#585858' : '#535353',
-                                background: remoteVectorConfig.initialized ? '#f0f0f0' : '#f1f1f1',
-                            }}>
-                                {remoteVectorConfig.initialized ? '已连接' : '待初始化'}
-                            </span>
-                        )}
-                    </summary>
-
-                    {/* 什么时候考虑用 */}
-                    <div style={{
-                        marginTop: 12, padding: 12, borderRadius: 3,
-                        background: '#fafafa', border: '2px solid #1a1a1a',
-                        fontSize: 11, color: '#454545', lineHeight: 1.7,
-                    }}>
-                        <div style={{ fontWeight: 700, marginBottom: 4 }}>什么时候考虑搞这个？</div>
-                        当你觉得<b>向量搜索变卡</b>的时候（一般要到 2–3 万条记忆以上才会有感觉）。
-                        万条以内本地完全跑得动，<b>不用折腾</b>。
-                        <div style={{ marginTop: 8, padding: 8, borderRadius: 3, background: '#f6f6f6', border: '2px solid #1a1a1a', color: '#414141', display: 'flex', alignItems: 'flex-start', gap: 5 }}>
-                            <span style={{ flexShrink: 0, marginTop: 2 }}><Icon name="warning" size={12} /></span>
-                            <div>
-                                <b>开了远程 ≠ 数据万事大吉。</b>
-                                目前是双写模式（本地也会存一份，不是挪到云上），
-                                Supabase 免费版也不保证永久可用。
-                                <b>该导出备份还是要导出备份</b>，别指望一开了就高枕无忧。
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 3 步操作提示 */}
-                    <div style={{ marginTop: 12, padding: 12, borderRadius: 3, background: '#f5f5f5', fontSize: 11, color: '#434343', lineHeight: 1.8 }}>
-                        <b>3 步搞定：</b><br/>
-                        1. 注册 Supabase（GitHub 一键登录，见上方教程）<br/>
-                        2. 在 Supabase SQL Editor 里运行下方初始化 SQL<br/>
-                        3. 填入 Project URL 和 anon key，点测试连接
-                        <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer"
-                            style={{
-                                marginTop: 8, display: 'inline-block', padding: '6px 12px', borderRadius: 3,
-                                background: '#626262', color: 'white', fontSize: 11, fontWeight: 700, textDecoration: 'none',
-                            }}>
-                            前往 Supabase →
-                        </a>
-                    </div>
-
-                    {/* 初始化 SQL */}
-                    <div style={{ marginTop: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11, color: '#727272', fontWeight: 600 }}>初始化 SQL</span>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <button onClick={() => setShowInitSQL(!showInitSQL)} style={{
-                                    fontSize: 10, color: '#626262', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer',
-                                }}>
-                                    {showInitSQL ? '收起' : '查看'}
-                                </button>
-                                <button onClick={handleCopyInitSQL} style={{
-                                    fontSize: 10, color: 'white', fontWeight: 700, background: '#626262',
-                                    border: 'none', borderRadius: 3, padding: '3px 10px', cursor: 'pointer',
-                                }}>
-                                    复制
-                                </button>
-                            </div>
-                        </div>
-                        {showInitSQL && (
-                            <pre style={{
-                                background: '#171717', color: '#c8c8c8', fontSize: 9, padding: 12, borderRadius: 3,
-                                overflow: 'auto', maxHeight: 200, lineHeight: 1.6, whiteSpace: 'pre-wrap',
-                            }}>{`create extension if not exists vector;
-create table if not exists memory_vectors (
-  memory_id text primary key, char_id text not null,
-  content text not null default '', vector vector(1024),
-  dimensions int default 1024, model text, room text,
-  importance int default 5, tags text[] default '{}',
-  mood text default '',
-  created_at bigint default (extract(epoch from now()) * 1000)::bigint,
-  last_accessed_at bigint default 0,
-  access_count int default 0
-);
--- 完整 SQL 请点"复制"按钮获取`}</pre>
-                        )}
-                        <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 4 }}>复制此 SQL → Supabase Dashboard → SQL Editor → 运行</div>
-                    </div>
-
-                    {/* Project URL & anon key */}
-                    <div style={{ marginTop: 12 }}>
-                        <label className={labelClass}>PROJECT URL</label>
-                        <input type="url" value={rvUrl} onChange={e => setRvUrl(e.target.value)}
-                            placeholder="https://xxxxx.supabase.co" className={inputClass} />
-                        <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 2, paddingLeft: 4 }}>Settings → API → Project URL</div>
-                    </div>
-                    <div style={{ marginTop: 10 }}>
-                        <label className={labelClass}>ANON / PUBLIC KEY</label>
-                        <input type="password" value={rvKey} onChange={e => setRvKey(e.target.value)}
-                            placeholder="eyJhbGciOiJIUzI1NiIs..." className={inputClass} />
-                        <div style={{ fontSize: 10, color: '#a2a2a2', marginTop: 2, paddingLeft: 4 }}>Settings → API → anon public key</div>
-                    </div>
-
-                    {/* 测试 + 保存 */}
-                    <button onClick={handleTestRemoteVector} disabled={rvTesting || !rvUrl || !rvKey}
-                        style={{
-                            width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 3,
-                            border: '2px solid #1a1a1a', fontWeight: 600, fontSize: 12,
-                            color: '#535353', background: 'white',
-                            cursor: (rvTesting || !rvUrl || !rvKey) ? 'not-allowed' : 'pointer',
-                            opacity: (rvTesting || !rvUrl || !rvKey) ? 0.5 : 1,
-                        }}
-                    >
-                        {rvTesting ? '测试中...' : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Icon name="beaker" size={13} />
-                                <span>测试连接</span>
-                            </span>
-                        )}
-                    </button>
-                    {rvTestResult && (
-                        <div style={{
-                            marginTop: 8, fontSize: 11, textAlign: 'center', fontWeight: 600,
-                            color: rvTestResult.startsWith('[ok]') ? '#6f6f6f' : rvTestResult.startsWith('[warn]') ? '#878787' : '#5c5c5c',
-                        }}>
-                            <StatusMessage msg={rvTestResult} />
-                        </div>
-                    )}
-                    <button onClick={handleSaveRemoteVector} disabled={!rvUrl || !rvKey}
-                        style={{
-                            width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 3,
-                            border: 'none', fontWeight: 700, fontSize: 13, color: 'white',
-                            background: (!rvUrl || !rvKey) ? '#d3d3d3' : '#626262',
-                            cursor: (!rvUrl || !rvKey) ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        保存配置
-                    </button>
-
-                    {/* 已启用后的操作 */}
-                    {remoteVectorConfig.enabled && remoteVectorConfig.initialized && (
-                        <button onClick={handleSyncToRemote} disabled={rvSyncing}
-                            style={{
-                                width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 3,
-                                border: '2px solid #1a1a1a', fontWeight: 600, fontSize: 12,
-                                color: '#626262', background: 'white',
-                                cursor: rvSyncing ? 'not-allowed' : 'pointer',
-                                opacity: rvSyncing ? 0.5 : 1,
-                            }}
-                        >
-                            {rvSyncing ? '同步中...' : (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                    <Icon name="refresh" size={13} />
-                                    <span>同步本地向量到远程</span>
-                                </span>
-                            )}
-                        </button>
-                    )}
-                    {remoteVectorConfig.enabled && (
-                        <button onClick={handleDisableRemoteVector}
-                            style={{
-                                width: '100%', marginTop: 8, padding: '8px 0',
-                                border: 'none', background: 'none',
-                                fontSize: 11, color: '#777777', fontWeight: 600, cursor: 'pointer',
-                            }}
-                        >
-                            关闭远程存储
-                        </button>
-                    )}
-                </details>
                 </>)}
 
                 {/* 人格风格 & 反刍倾向：由 LLM 自动推断，默认折叠 */}
@@ -2617,7 +2467,7 @@ create table if not exists memory_vectors (
                     </div>
                 </details>
 
-                {/* 聊天记录向量化 */}
+                {/* 导入旧记忆 */}
                 {/* 迁移旧记忆 */}
                 <div style={{ marginTop: 16, background: '#fafafa', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#535353', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2710,7 +2560,7 @@ create table if not exists memory_vectors (
                         <div style={{ fontSize: 11, color: '#535353', marginBottom: 8 }}>
                             {migrationProgress.phase === 'grouping' && `按月分组中...`}
                             {migrationProgress.phase === 'extracting' && `LLM 提取中... ${migrationProgress.currentMonth || ''} (${migrationProgress.current}/${migrationProgress.total} 块)`}
-                            {migrationProgress.phase === 'vectorizing' && `Embedding 向量化中... ${migrationProgress.current}/${migrationProgress.total} 条`}
+                            {migrationProgress.phase === 'storing' && `写入本地标本中... ${migrationProgress.current}/${migrationProgress.total} 条`}
                             {migrationProgress.phase === 'linking' && `建立记忆关联中...`}
                             {migrationProgress.phase === 'done' && `完成`}
                         </div>
@@ -2724,21 +2574,21 @@ create table if not exists memory_vectors (
 
                     <button
                         onClick={handleMigrate}
-                        disabled={migrating || !hasEmbeddingConfig}
+                        disabled={migrating || !hasLightApi}
                         style={{
                             width: '100%', padding: '10px 0', borderRadius: 3,
                             border: 'none', fontWeight: 700, fontSize: 13,
                             color: 'white',
-                            background: migrating ? '#d4d4d4' : !hasEmbeddingConfig ? '#d3d3d3' : '#a7a7a7',
-                            cursor: migrating || !hasEmbeddingConfig ? 'not-allowed' : 'pointer',
+                            background: migrating ? '#d4d4d4' : !hasLightApi ? '#d3d3d3' : '#a7a7a7',
+                            cursor: migrating || !hasLightApi ? 'not-allowed' : 'pointer',
                         }}
                     >
-                        {migrating ? '迁移中...' : !hasEmbeddingConfig ? '请先配置副 API' : selectedMonths.size > 0 ? `开始迁移（${selectedMonths.size} 个分块）` : '开始迁移（全部）'}
+                        {migrating ? '迁移中...' : !hasLightApi ? '请先配置副 API' : selectedMonths.size > 0 ? `开始迁移（${selectedMonths.size} 个分块）` : '开始迁移（全部）'}
                     </button>
 
                     <button
                         onClick={() => {
-                            if (confirm('确定清除带「旧记忆导入」来源标记的数据？\n\n只会删除新迁移时可识别的 legacy_memory 标本、向量和关联；早期未标记旧数据不会被猜测删除。')) {
+                            if (confirm('确定清除带「旧记忆导入」来源标记的数据？\n\n只会删除新迁移时可识别的 legacy_memory 标本和关联；早期未标记旧数据不会被猜测删除。')) {
                                 handleClearMigrated();
                             }
                         }}
@@ -2790,6 +2640,30 @@ create table if not exists memory_vectors (
                     >
                         {digesting ? `${char!.name}正在静静地回想…` : '手动触发消化'}
                     </button>
+
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #cfcfcf' }}>
+                        <div style={{ fontSize: 11, color: '#727272', marginBottom: 8, lineHeight: 1.6 }}>
+                            梦境消化只调用副 API 生成 feel / 主线，然后直接写入本地 IndexedDB；不需要额外检索服务。
+                        </div>
+                        {dreamResult && (
+                            <div style={{ fontSize: 12, marginBottom: 8, color: dreamResult.startsWith('[ok]') ? '#6f6f6f' : dreamResult.startsWith('[err]') ? '#5c5c5c' : '#727272' }}>
+                                <StatusMessage msg={dreamResult} />
+                            </div>
+                        )}
+                        <button
+                            onClick={handleDreamDigest}
+                            disabled={dreaming}
+                            style={{
+                                width: '100%', padding: '10px 0', borderRadius: 3,
+                                border: '2px solid #1a1a1a', fontWeight: 700, fontSize: 13,
+                                color: dreaming ? '#777' : '#1a1a1a',
+                                background: dreaming ? '#e0e0e0' : '#fff',
+                                cursor: dreaming ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            {dreaming ? `${char!.name}正在做一个很轻的梦…` : '本地梦境消化'}
+                        </button>
+                    </div>
                 </div>
                 </>)}
 
@@ -2798,11 +2672,10 @@ create table if not exists memory_vectors (
                 <div style={{ marginTop: 16, background: '#f6f6f6', borderRadius: 3, padding: 16, border: '2px solid #1a1a1a' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#414141', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Icon name="warning" size={14} />
-                        <span>危险区：一键清空向量记忆</span>
+                        <span>危险区：一键清空回忆标本馆</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#3a3a3a', marginBottom: 12, lineHeight: 1.7 }}>
-                        清空【所有角色】的记忆节点、向量、关联、事件盒、便利贴、期盼、高水位标记。
-                        可选择同时清空云端 Supabase <code>memory_vectors</code> 全表。
+                        清空【所有角色】的记忆节点、关联、事件盒、便利贴、期盼、高水位标记，并移除旧版本留下的本地索引残留。
                         <b> 此操作不可撤销。</b>
                     </div>
 
@@ -2817,7 +2690,7 @@ create table if not exists memory_vectors (
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <button
-                            onClick={() => handleWipeAll(false)}
+                            onClick={handleWipeAll}
                             disabled={wiping}
                             style={{
                                 width: '100%', padding: '10px 0', borderRadius: 3,
@@ -2829,32 +2702,7 @@ create table if not exists memory_vectors (
                             {wiping ? '清空中…' : (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                     <Icon name="trash" size={13} />
-                                    <span>仅清空本地</span>
-                                </span>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => handleWipeAll(true)}
-                            disabled={wiping || !remoteVectorConfig?.enabled || !remoteVectorConfig?.initialized}
-                            title={
-                                !remoteVectorConfig?.enabled ? '未启用云端向量存储'
-                                : !remoteVectorConfig?.initialized ? '云端向量存储未初始化'
-                                : undefined
-                            }
-                            style={{
-                                width: '100%', padding: '10px 0', borderRadius: 3,
-                                border: 'none', fontWeight: 700, fontSize: 13,
-                                color: 'white',
-                                background: (wiping || !remoteVectorConfig?.enabled || !remoteVectorConfig?.initialized)
-                                    ? '#d4d4d4' : '#5c5c5c',
-                                cursor: (wiping || !remoteVectorConfig?.enabled || !remoteVectorConfig?.initialized)
-                                    ? 'not-allowed' : 'pointer',
-                            }}
-                        >
-                            {wiping ? '清空中…' : (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                    <Icon name="bomb" size={13} />
-                                    <span>清空本地 + 云端 Supabase</span>
+                                    <span>清空本地标本馆</span>
                                 </span>
                             )}
                         </button>
@@ -3048,7 +2896,7 @@ create table if not exists memory_vectors (
                     )}
 
                     {/* 副 API 配置警告 */}
-                    {!hasEmbeddingConfig && (
+                    {!hasLightApi && (
                         <div
                             onClick={() => setView('globalSettings')}
                             style={{
@@ -3234,21 +3082,14 @@ create table if not exists memory_vectors (
     if (view === 'health') {
         const data = inspection;
         const stats = data?.processing;
-        const vectorRepairIds = data ? Array.from(new Set([
-            ...data.issues.missingVectorNodeIds,
-            ...data.issues.unembeddedNodeIds,
-        ])) : [];
         const issueRows = data ? [
-            { label: '缺失向量', count: data.issues.missingVectorNodeIds.length, detail: '节点说自己已向量化，但找不到对应向量。' },
-            { label: '待修复向量', count: data.issues.unembeddedNodeIds.length, detail: '编辑正文或向量失败后留下的待重建节点。' },
-            { label: '孤儿向量', count: data.issues.orphanVectorIds.length, detail: '向量还在，但对应记忆节点已不存在。' },
             { label: '断链', count: data.issues.brokenLinkIds.length, detail: '关联边指向了不存在的记忆。' },
             { label: '事件盒坏引用', count: data.issues.missingEventBoxRefs.length, detail: '事件盒成员、summary 或归档列表里有不存在的节点。' },
             { label: '节点盒关系不一致', count: data.issues.nodeEventBoxMismatchIds.length, detail: '节点写了 eventBoxId，但盒子成员列表里没有它。' },
             { label: '节点指向缺失盒', count: data.issues.nodesWithMissingBoxIds.length, detail: '节点还挂着已经不存在的事件盒。' },
         ] : [];
         const issueTotal = issueRows.reduce((sum, item) => sum + item.count, 0);
-        const busy = inspecting || repairing || revectorizing || catchingUp;
+        const busy = inspecting || repairing || catchingUp;
         const StatCard = ({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) => (
             <div style={{ border: '2px solid #1a1a1a', background: '#fbfbfb', padding: 10, borderRadius: 3 }}>
                 <div style={{ fontSize: 10, color: '#727272', marginBottom: 4, fontWeight: 700 }}>{label}</div>
@@ -3305,18 +3146,13 @@ create table if not exists memory_vectors (
                         <div style={{ border: '2px solid #1a1a1a', background: '#f8f8f8', padding: 12, borderRadius: 3, marginBottom: 12 }}>
                             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Icon name="robot" size={14} />
-                                <span>副 API / Embedding</span>
+                                <span>副 API</span>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                                 <StatCard
                                     label="副 API"
                                     value={palaceLLM ? '已配置' : '未配置'}
                                     hint={palaceLLM ? palaceLLM.model : '不能整理旧聊天、提取记忆或认知消化'}
-                                />
-                                <StatCard
-                                    label="Embedding"
-                                    value={palaceEmbedding ? '已配置' : '未配置'}
-                                    hint={palaceEmbedding ? `${palaceEmbedding.model} · ${palaceEmbedding.dimensions} 维` : '不能生成或修复向量'}
                                 />
                             </div>
                         </div>
@@ -3342,8 +3178,8 @@ create table if not exists memory_vectors (
                                 <span>馆藏统计</span>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                <StatCard label="记忆节点" value={data.counts.nodes} hint={`已向量 ${data.counts.embeddedNodes} · 待向量 ${data.counts.unembeddedNodes}`} />
-                                <StatCard label="向量" value={data.counts.vectors} hint={remoteVectorConfig.enabled ? '本地向量；远程向量为可选同步。' : '本地 IndexedDB 向量。'} />
+                                <StatCard label="记忆节点" value={data.counts.nodes} hint="本地 IndexedDB 标本。" />
+                                <StatCard label="旧索引残留" value={data.counts.legacyIndexRows} hint="旧版本索引表残留，只用于清理兼容。" />
                                 <StatCard label="关联" value={data.counts.links} hint="MemoryLink 结构边；事件盒连线另在图谱中合成。" />
                                 <StatCard label="事件盒" value={data.counts.eventBoxes} hint="含活节点、归档节点和整合回忆。" />
                                 <StatCard label="便利贴" value={data.counts.pinned} hint="仍在置顶期的记忆。" />
@@ -3385,29 +3221,15 @@ create table if not exists memory_vectors (
                                 <span>{repairing ? '修复中...' : '修复结构问题'}</span>
                             </button>
                             <button
-                                onClick={handleRevectorizeFromHealth}
-                                disabled={busy || vectorRepairIds.length === 0 || !palaceEmbedding}
-                                style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                                    padding: '10px 0', borderRadius: 3, border: '2px solid #1a1a1a',
-                                    background: vectorRepairIds.length > 0 && palaceEmbedding ? '#f6f6f6' : '#ededed',
-                                    color: '#3f3f3f', fontSize: 12, fontWeight: 800,
-                                    cursor: busy || vectorRepairIds.length === 0 || !palaceEmbedding ? 'not-allowed' : 'pointer',
-                                }}
-                            >
-                                <Icon name="sync" size={13} />
-                                <span>{revectorizing ? '重建中...' : `重建缺失向量（${vectorRepairIds.length}）`}</span>
-                            </button>
-                            <button
                                 onClick={handleCatchUpFromHealth}
-                                disabled={busy || !stats?.forceEligible || !palaceEmbedding || !palaceLLM}
+                                disabled={busy || !stats?.forceEligible || !palaceLLM}
                                 style={{
                                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                                     padding: '10px 0', borderRadius: 3, border: '2px solid #1a1a1a',
-                                    background: stats?.forceEligible && palaceEmbedding && palaceLLM ? '#1a1a1a' : '#ededed',
-                                    color: stats?.forceEligible && palaceEmbedding && palaceLLM ? '#fff' : '#727272',
+                                    background: stats?.forceEligible && palaceLLM ? '#1a1a1a' : '#ededed',
+                                    color: stats?.forceEligible && palaceLLM ? '#fff' : '#727272',
                                     fontSize: 12, fontWeight: 800,
-                                    cursor: busy || !stats?.forceEligible || !palaceEmbedding || !palaceLLM ? 'not-allowed' : 'pointer',
+                                    cursor: busy || !stats?.forceEligible || !palaceLLM ? 'not-allowed' : 'pointer',
                                 }}
                             >
                                 <Icon name="bolt" size={13} />
@@ -3423,14 +3245,16 @@ create table if not exists memory_vectors (
     // ─── 记忆浏览器视图（全部记忆 + 原文 + 碎碎念，方便找茬） ──────────
     if (view === 'browser') {
         const ROOM_ORDER: MemoryRoom[] = ['bedroom', 'living_room', 'study', 'user_room', 'self_room', 'attic', 'windowsill'];
+        const LAYER_OPTIONS: Array<CognitiveMemoryLayer | 'all'> = ['all', 'event', 'episode', 'episode_summary', 'saga', 'feel'];
         const q = browserQuery.trim().toLowerCase();
         const filtered = browserNodes.filter(n => {
             if (browserRoom !== 'all' && n.room !== browserRoom) return false;
+            if (browserLayer !== 'all' && getCognitiveMemoryLayer(n) !== browserLayer) return false;
             if (!q) return true;
             const hay = (n.content + ' ' + (n.tags || []).join(' ') + ' ' + n.mood + ' ' + (n.sourceQuote || '') + ' ' + (n.genNote || '')).toLowerCase();
             return q.split(/\s+/).every(kw => hay.includes(kw));
         });
-        const provenanceCount = browserNodes.filter(n => n.sourceQuote || n.genNote).length;
+        const provenanceCount = browserNodes.filter(n => n.sourceQuote || n.genNote || (n.sourceMessageIds?.length || 0) > 0).length;
 
         return (
             <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
@@ -3449,8 +3273,8 @@ create table if not exists memory_vectors (
                     <span>记忆浏览器</span>
                 </div>
                 <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 12, lineHeight: 1.6 }}>
-                    {char!.name} 的全部记忆都在这儿。展开能看到生成这条记忆所凭的<b>原文</b>（对账找茬）和当时的<b>碎碎念</b>。
-                    {provenanceCount === 0 && '（早期记忆没留原文/碎碎念，往后新记的会带上。）'}
+                    {char!.name} 的全部记忆都在这儿。展开能看到生成这条记忆所凭的<b>原文</b>、当时的<b>碎碎念</b>和本地<b>证据链</b>。
+                    {provenanceCount === 0 && '（早期记忆没留溯源线索，往后新记的会带上。）'}
                 </div>
 
                 {/* 搜索 */}
@@ -3483,15 +3307,48 @@ create table if not exists memory_vectors (
                     })}
                 </div>
 
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {LAYER_OPTIONS.map(layer => {
+                        const active = browserLayer === layer;
+                        return (
+                            <button
+                                key={layer}
+                                onClick={() => setBrowserLayer(layer)}
+                                style={{
+                                    padding: '3px 10px', borderRadius: 3, fontSize: 11, fontWeight: 700,
+                                    border: '2px solid #1a1a1a', cursor: 'pointer',
+                                    background: active ? '#1a1a1a' : 'white',
+                                    color: active ? '#fff' : '#626262',
+                                }}
+                            >{COGNITIVE_LAYER_LABELS[layer]}</button>
+                        );
+                    })}
+                </div>
+
                 {filtered.length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 40, fontSize: 13 }}>没有匹配的记忆</div>
                 ) : filtered.map((node: MemoryNode) => {
                     const expanded = browserExpanded.has(node.id);
-                    const hasProvenance = !!(node.sourceQuote || node.genNote);
+                    const layer = getCognitiveMemoryLayer(node);
+                    const layerStyle = COGNITIVE_LAYER_STYLES[layer];
+                    const sourceMessageCount = node.sourceMessageIds?.length || 0;
+                    const hasProvenance = !!(node.sourceQuote || node.genNote || sourceMessageCount > 0);
+                    const evidence = evidenceByNode[node.id] || [];
+                    const evidenceLoading = evidenceLoadingIds.has(node.id);
                     return (
-                        <div key={node.id} style={{ padding: 12, borderRadius: 3, marginBottom: 8, border: '2px solid #1a1a1a', backgroundColor: node.archived ? '#f0f0ee' : '#fafafa' }}>
+                        <div key={node.id} style={{ padding: 12, borderRadius: 3, marginBottom: 8, border: '2px solid #1a1a1a', backgroundColor: layer === 'feel' ? '#fbf6ec' : node.archived ? '#f0f0ee' : '#fafafa' }}>
                             <div style={{ fontSize: 13, lineHeight: 1.5 }}>{node.content}</div>
                             <div style={{ fontSize: 11, color: '#a2a2a2', marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    padding: '1px 7px', borderRadius: 3,
+                                    border: `1px solid ${layerStyle.border}`,
+                                    background: layerStyle.background,
+                                    color: layerStyle.color,
+                                    fontWeight: 800,
+                                }}>
+                                    {COGNITIVE_LAYER_LABELS[layer]} · {COGNITIVE_LAYER_DESCRIPTIONS[layer]}
+                                </span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                     <RoomIcon room={node.room} size={12} style={{ color: ROOM_COLORS[node.room] }} />
                                     {getRoomLabel(node.room, userProfile?.name)}
@@ -3501,6 +3358,11 @@ create table if not exists memory_vectors (
                                 <span>{new Date(node.createdAt).toLocaleDateString('zh-CN')}</span>
                                 <span>访问 {node.accessCount} 次</span>
                                 {node.archived && <span style={{ color: '#b08968' }}>已归档</span>}
+                                {node.internalized && <span>已内化</span>}
+                                {node.resolved && <span>已放下</span>}
+                                {node.protected && <span>保护</span>}
+                                {node.highlight && <span>高亮</span>}
+                                {sourceMessageCount > 0 && <span>证据 {sourceMessageCount}</span>}
                             </div>
                             {node.tags.length > 0 && (
                                 <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -3513,30 +3375,30 @@ create table if not exists memory_vectors (
                             {/* 原文 / 碎碎念 折叠区 */}
                             <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
                                 <span
-                                    onClick={() => setBrowserExpanded(prev => { const next = new Set(prev); next.has(node.id) ? next.delete(node.id) : next.add(node.id); return next; })}
+                                    onClick={() => {
+                                        const willExpand = !browserExpanded.has(node.id);
+                                        setBrowserExpanded(prev => {
+                                            const next = new Set(prev);
+                                            next.has(node.id) ? next.delete(node.id) : next.add(node.id);
+                                            return next;
+                                        });
+                                        if (willExpand) void loadEvidenceForNode(node);
+                                    }}
                                     style={{ fontSize: 11, fontWeight: 600, color: '#5a6c8a', cursor: 'pointer', userSelect: 'none' }}
                                 >
-                                    {expanded ? '收起 ▲' : (hasProvenance ? '看原文 · 碎碎念 ▼' : '溯源 ▼')}
+                                    {expanded ? '收起 ▲' : (hasProvenance ? '看证据链 ▼' : '溯源 ▼')}
                                 </span>
                                 <span onClick={() => openMemory(node, 'browser')} style={{ fontSize: 11, color: '#9a9a9a', cursor: 'pointer' }}>详情 / 编辑 →</span>
                             </div>
                             {expanded && (
                                 <div style={{ marginTop: 8, borderTop: '1px dashed #d2d2cc', paddingTop: 8 }}>
-                                    {node.sourceQuote ? (
-                                        <div style={{ marginBottom: node.genNote ? 8 : 0 }}>
-                                            <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>📄 原文（对账找茬）</div>
-                                            <div style={{ fontSize: 12, lineHeight: 1.6, color: '#3a3a3a', background: '#fff', border: '1px solid #e0ddd5', borderLeft: '3px solid #b9b2a3', padding: '6px 9px', whiteSpace: 'pre-wrap' }}>{node.sourceQuote}</div>
-                                        </div>
-                                    ) : null}
-                                    {node.genNote ? (
-                                        <div>
-                                            <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>💭 当时的碎碎念</div>
-                                            <div style={{ fontSize: 12, lineHeight: 1.6, color: '#6a5a7a', fontStyle: 'italic' }}>「{node.genNote}」</div>
-                                        </div>
-                                    ) : null}
-                                    {!hasProvenance && (
-                                        <div style={{ fontSize: 11, color: '#a2a2a2' }}>这是较早记下的，没留下原文和碎碎念。往后新记的记忆会带上。</div>
-                                    )}
+                                    <EvidenceChainBlock
+                                        node={node}
+                                        evidence={evidence}
+                                        loading={evidenceLoading}
+                                        charName={char?.name}
+                                        userName={userProfile?.name}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -4115,6 +3977,10 @@ create table if not exists memory_vectors (
     if (view === 'memory' && selectedNode) {
         const roomColor = ROOM_COLORS[editing ? editRoom : selectedNode.room];
         const MOODS = ['happy', 'sad', 'angry', 'anxious', 'tender', 'peaceful', 'excited', 'nostalgic', 'frustrated', 'hopeful', 'lonely', 'grateful'];
+        const selectedLayer = getCognitiveMemoryLayer(selectedNode);
+        const selectedLayerStyle = COGNITIVE_LAYER_STYLES[selectedLayer];
+        const selectedEvidence = evidenceByNode[selectedNode.id] || [];
+        const selectedEvidenceLoading = evidenceLoadingIds.has(selectedNode.id);
 
         return (
             <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
@@ -4245,16 +4111,26 @@ create table if not exists memory_vectors (
                                 </div>
                                 <div>重要性: {'★'.repeat(selectedNode.importance)}{'☆'.repeat(10 - selectedNode.importance)}</div>
                                 <div>情绪: {selectedNode.mood}</div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span>层级:</span>
+                                    <span style={{
+                                        padding: '1px 7px',
+                                        borderRadius: 3,
+                                        border: `1px solid ${selectedLayerStyle.border}`,
+                                        background: selectedLayerStyle.background,
+                                        color: selectedLayerStyle.color,
+                                        fontSize: 11,
+                                        fontWeight: 800,
+                                    }}>
+                                        {COGNITIVE_LAYER_LABELS[selectedLayer]} · {COGNITIVE_LAYER_DESCRIPTIONS[selectedLayer]}
+                                    </span>
+                                </div>
                                 <div>创建: {new Date(selectedNode.createdAt).toLocaleString('zh-CN')}</div>
                                 <div>最后访问: {new Date(selectedNode.lastAccessedAt).toLocaleString('zh-CN')}</div>
                                 <div>访问次数: {selectedNode.accessCount}</div>
+                                {(selectedNode.sourceMessageIds?.length || 0) > 0 && <div>证据消息: {selectedNode.sourceMessageIds!.length} 条</div>}
                                 {currentBox && <div>事件盒: {currentBox.name || '未命名'}</div>}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span>向量化:</span>
-                                    <span style={{ color: selectedNode.embedded ? '#6f6f6f' : '#5c5c5c', display: 'inline-flex' }}>
-                                        <Icon name={selectedNode.embedded ? 'check' : 'x'} size={12} />
-                                    </span>
-                                </div>
+                                <div>本地索引: 已收录</div>
                             </div>
 
                             {selectedNode.tags.length > 0 && (
@@ -4267,6 +4143,30 @@ create table if not exists memory_vectors (
                                     ))}
                                 </div>
                             )}
+
+                            {(selectedNode.internalized || selectedNode.resolved || selectedNode.protected || selectedNode.highlight) && (
+                                <div style={{ marginTop: 10, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                    {selectedNode.internalized && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: '#efefef', color: '#555', border: '1px solid #d6d6d6' }}>已内化</span>}
+                                    {selectedNode.resolved && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: '#efefef', color: '#555', border: '1px solid #d6d6d6' }}>已放下</span>}
+                                    {selectedNode.protected && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: '#fff', color: '#333', border: '1px solid #999' }}>保护</span>}
+                                    {selectedNode.highlight && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: '#1a1a1a', color: '#fff', border: '1px solid #1a1a1a' }}>高亮</span>}
+                                </div>
+                            )}
+
+                            {/* 证据链回看 */}
+                            <div style={{ marginTop: 14, padding: 10, borderRadius: 3, border: '1px solid #d8d4ca', background: '#f9f7f0' }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: '#727272', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                    <Icon name="link" size={12} />
+                                    <span>证据链回看</span>
+                                </div>
+                                <EvidenceChainBlock
+                                    node={selectedNode}
+                                    evidence={selectedEvidence}
+                                    loading={selectedEvidenceLoading}
+                                    charName={char?.name}
+                                    userName={userProfile?.name}
+                                />
+                            </div>
 
                             {/* 关联事件 */}
                             <div style={{ marginTop: 14 }}>
@@ -4457,7 +4357,7 @@ create table if not exists memory_vectors (
                             {/* 删除按钮 */}
                             <button
                                 onClick={() => {
-                                    if (confirm('确定删除这条记忆？（包括对应的向量和关联）')) {
+                                    if (confirm('确定删除这条记忆？（包括对应关联，并清理旧版本残留索引）')) {
                                         handleDeleteSingle(selectedNode.id);
                                     }
                                 }}

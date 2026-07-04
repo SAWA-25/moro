@@ -501,7 +501,7 @@ export function generateXunjiMonitorSnapshot(args: {
   return applyLocationSource(snapshot, args.locationSource);
 }
 
-async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 1600, signal?: AbortSignal): Promise<string> {
+async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 1600, signal?: AbortSignal, char?: CharacterProfile): Promise<string> {
   const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
   try {
@@ -516,7 +516,12 @@ async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 160
       ],
     }, {
       signal,
-      meta: makeApiUsageMeta('xunji.generate', { apiRole: 'aux', apiBinding: '循迹快照' }),
+      meta: makeApiUsageMeta('xunji.generate', {
+        apiRole: 'aux',
+        apiBinding: '循迹快照',
+        charId: char?.id,
+        charName: char?.name,
+      }),
     });
     return extractContent(data) || '';
   } catch {
@@ -689,7 +694,7 @@ export async function generateXunjiRealtimeSnapshot(args: {
       '}',
       '地点和 App 不要泛泛而谈；优先写 TA 所在城市里符合人设的日常地点、常用软件、通话对象和随手停留。不要写用户真实隐私。',
     ].join('\n');
-    const raw = await callXunjiLLM(args.api, prompt, 2200, args.signal);
+    const raw = await callXunjiLLM(args.api, prompt, 2200, args.signal, args.char);
     const parsed = extractJson<any>(raw);
     return parsed ? applyLocationSource(mergeAiSnapshot(fallback, parsed), args.locationSource) : fallback;
   } catch {
@@ -927,7 +932,7 @@ function buildLocalMoments(
   ];
 }
 
-async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: AbortSignal): Promise<string> {
+async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: AbortSignal, char?: CharacterProfile): Promise<string> {
   const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
   try {
@@ -942,7 +947,12 @@ async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: A
       ],
     }, {
       signal,
-      meta: makeApiUsageMeta('xunji.generate', { apiRole: 'aux', apiBinding: 'Screenlife 演出' }),
+      meta: makeApiUsageMeta('xunji.generate', {
+        apiRole: 'aux',
+        apiBinding: 'Screenlife 演出',
+        charId: char?.id,
+        charName: char?.name,
+      }),
     });
     return extractContent(data) || '';
   } catch {
@@ -999,7 +1009,7 @@ export async function generateXunjiScreenlifeRun(args: {
       '内容要体现：聊了什么、刷了什么、记了什么、右下角动态会弹什么，以及这些痕迹折射出的关系温度。',
       'socialInference 是给“絮语”聊天联动用的：写成角色能自然感知的近期生活线索，不要写成分析报告口吻。',
     ].join('\n');
-    const raw = await callScreenlifeLLM(args.api, prompt, args.signal);
+    const raw = await callScreenlifeLLM(args.api, prompt, args.signal, args.char);
     const parsed = extractJson<Partial<XunjiScreenlifeRun>>(raw);
     if (!parsed) return fallback;
     const stamp = `${args.seed || fallback.id}_ai`;

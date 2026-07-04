@@ -2,8 +2,8 @@
  * Group Memory Palace — 群聊后台总结管线
  *
  * 与私聊管线（pipeline.ts/processNewMessages）的关系：**完全平行、互不调用**。
- * 所有共享的只是底层 IndexedDB 表（memory_nodes / memory_vectors 等通用 CRUD）和
- * embedding/向量存储工具。私聊代码一行不动。
+ * 所有共享的只是底层 IndexedDB 表（memory_nodes 等通用 CRUD）和本地文本检索。
+ * 私聊代码一行不动。
  *
  * 核心数据流：
  * 1. 群聊导演响应后，GroupChat fire-and-forget 调用 processGroupNewMessages
@@ -16,21 +16,20 @@
  * 删除群时，调用 deleteGroupMemoriesByGroupId 清理所有相关记忆。
  */
 import type { Message, CharacterProfile, GroupProfile } from '../../types';
-import type { EmbeddingConfig, MemoryNode, RemoteVectorConfig, MemoryVector } from './types';
+import type { MemoryNode } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { DB } from '../db';
-import { MemoryNodeDB, MemoryVectorDB } from './db';
-import { getEmbeddings, cosineSimilarity } from './embedding';
+import { LegacyIndexResidueDB, MemoryNodeDB } from './db';
 import { extractGroupMemoriesFromBuffer } from './groupExtraction';
 import { isMessageSemanticallyRelevant } from '../messageFormat';
 import { formatCharacterWithId } from '../characterIdentity';
 import { resolveMemoryPalaceAuxConfigsFromStorage } from './auxConfig';
+import { isMemoryFeatureEnabled } from './cognitiveFlow';
 
 // ─── 群聊水位线：私聊用 200/100，群聊更宽松 300/200 ─────────────────
 const HOT_ZONE_SIZE_GROUP = 300;
 const BUFFER_THRESHOLD_GROUP = 200;
 const PROCESS_RATIO = 0.85;
-const DEDUP_THRESHOLD = 0.9;
 
 const LAST_MSG_KEY_GROUP = (groupId: string) => `mp_lastMsgId_group_${groupId}`;
 
@@ -47,31 +46,20 @@ function setLastProcessedGroupId(groupId: string, msgId: number): void {
 
 /** 全局记忆宫殿配置（自己读 localStorage，不调 pipeline.ts 的私有 getter） */
 function readGlobalMemoryPalaceConfig(): {
-    embedding?: EmbeddingConfig;
     lightLLM?: LightLLMConfig;
 } {
-    const { embedding, llm } = resolveMemoryPalaceAuxConfigsFromStorage();
+    const { llm } = resolveMemoryPalaceAuxConfigsFromStorage();
     return {
-        embedding: embedding || undefined,
         lightLLM: llm || undefined,
     };
 }
 
-function readRemoteVectorConfig(): RemoteVectorConfig | undefined {
-    try {
-        const raw = localStorage.getItem('os_remote_vector_config');
-        if (!raw) return undefined;
-        const config = JSON.parse(raw) as RemoteVectorConfig;
-        return (config.enabled && config.initialized) ? config : undefined;
-    } catch { return undefined; }
-}
-
-/**
- * 用成员的 embedding 配置（如果该成员有覆盖），否则用全局配置。
- * 任何 member 没配 → 返回 null，调用方跳过该成员。
- */
-function getEmbeddingConfigForMember(member: CharacterProfile, fallbackGlobal?: EmbeddingConfig): EmbeddingConfig | null {
-    return fallbackGlobal || null;
+function normalizeMemoryText(text: string): string {
+    return (text || '')
+        .replace(/\s+/g, '')
+        .replace(/[\p{P}\p{S}]/gu, '')
+        .toLowerCase()
+        .slice(0, 160);
 }
 
 function generateGroupMemoryId(): string {
@@ -95,7 +83,7 @@ const processingLocks = new Set<string>();
 /**
  * 删除某个群的所有群记忆（成员各自存的副本一并清掉）
  *
- * 群被删除时调用：扫描全表，删除 groupId 匹配的 MemoryNode + 对应 MemoryVector。
+ * 群被删除时调用：扫描全表，删除 groupId 匹配的 MemoryNode，并顺手清理旧版本索引残留。
  * 全表扫不快但删群是低频操作，可接受。
  */
 export async function deleteGroupMemoriesByGroupId(groupId: string): Promise<{ deleted: number }> {
@@ -116,8 +104,8 @@ export async function deleteGroupMemoriesByGroupId(groupId: string): Promise<{ d
         for (const node of targets) {
             try {
                 await MemoryNodeDB.delete(node.id);
-                // 对应向量也删掉
-                await MemoryVectorDB.delete(node.id);
+                // 顺手清掉旧版本可能留下的索引行。
+                await LegacyIndexResidueDB.delete(node.id);
             } catch (e: any) {
                 console.warn(`🗑️ [GroupPalace] 删除节点 ${node.id} 失败: ${e.message}`);
             }
@@ -136,7 +124,7 @@ export async function deleteGroupMemoriesByGroupId(groupId: string): Promise<{ d
  * - 至少需要 1 个成员开启了记忆宫殿才跑（否则直接 return null）
  * - 全程异常吞掉，console.warn 后返回 null，绝不影响 GroupChat 主流程
  * - 写出来的 MemoryNode 自带 groupId/groupName，私聊代码读到这俩字段不感知（无副作用）
- * - onProgress 回调：每进入一个关键阶段触发一次（"扫描缓冲区" / "LLM 提取中" / "向量化第 X 个成员"），
+ * - onProgress 回调：每进入一个关键阶段触发一次（"扫描缓冲区" / "LLM 提取中" / "保存第 X 个成员"），
  *   caller 用它做 toast/状态条等用户可见提示。skip 路径（hot_zone/threshold）**不触发** onProgress，
  *   避免水位线没到时也弹"在整理"造成误导。
  */
@@ -163,15 +151,14 @@ export async function processGroupNewMessages(
 
     try {
         // 1. 至少要有一个成员开启了记忆宫殿
-        const enabledMembers = members.filter(m => (m as any).memoryPalaceEnabled);
+        const enabledMembers = members.filter(m => isMemoryFeatureEnabled(m as any));
         if (enabledMembers.length === 0) {
             return { stored: 0, perMemberStored: {}, reason: 'no_enabled_member' };
         }
 
-        // 2. 解析全局 LLM/embedding 配置（每个成员可能各自覆盖 embedding）
+        // 2. 解析全局 LLM 配置
         const globalCfg = readGlobalMemoryPalaceConfig();
         const lightLLM = globalCfg.lightLLM;
-        const globalEmb = globalCfg.embedding;
         if (!lightLLM) {
             console.warn(`🏰 [GroupPalace] 群 ${group.name} 没有可用的 lightLLM 配置，跳过`);
             return { stored: 0, perMemberStored: {}, reason: 'no_config' };
@@ -203,6 +190,11 @@ export async function processGroupNewMessages(
         // 4. 取前 85%
         const processCount = Math.ceil(buffer.length * PROCESS_RATIO);
         const toProcess = buffer.slice(0, processCount);
+        const sourceMessageIds = Array.from(new Set(
+            toProcess
+                .map(m => m.id)
+                .filter((id): id is number => typeof id === 'number' && id > 0),
+        )).slice(-120);
         const keptTail = buffer.length - processCount;
         if (toProcess.length === 0) return { stored: 0, perMemberStored: {}, reason: 'threshold' };
 
@@ -228,39 +220,23 @@ export async function processGroupNewMessages(
         }
 
         console.log(`🏰 [GroupPalace] 群 ${group.name}：提取 ${drafts.length} 条群记忆，开始为 ${enabledMembers.length} 个成员各持久化一份`);
-        onProgress?.(`提取到 ${drafts.length} 条群记忆，正在向量化并存入 ${enabledMembers.length} 个成员的回忆标本馆...`);
+        onProgress?.(`提取到 ${drafts.length} 条群记忆，正在存入 ${enabledMembers.length} 个成员的回忆标本馆...`);
 
         // 6. 为每个开启记忆宫殿的成员各存一份
-        //    每个成员用 ta 自己的 embedding 配置——这样 retrieve 时向量空间一致
         const perMemberStored: Record<string, number> = {};
-        const remoteVectorCfg = readRemoteVectorConfig();
         let totalStored = 0;
 
         for (const member of enabledMembers) {
-            const memberEmb = getEmbeddingConfigForMember(member, globalEmb);
-            if (!memberEmb) {
-                console.warn(`🏰 [GroupPalace] 成员 ${member.name} 没有 embedding 配置，跳过 ta 这一份`);
-                perMemberStored[member.id] = 0;
-                continue;
-            }
-
             try {
-                // 6a. 这个成员现有向量（用于本批去重）
-                const existingVectors = await MemoryVectorDB.getAllByCharId(member.id);
-
-                // 6b. 嵌入这个成员的所有 drafts
-                const texts = drafts.map(d => d.content);
-                const vectors = await getEmbeddings(texts, memberEmb);
+                const existingNodes = await MemoryNodeDB.getByCharId(member.id);
+                const existingSignatures = new Set(existingNodes.map(n => normalizeMemoryText(n.content)).filter(Boolean));
 
                 let storedForMember = 0;
                 for (let i = 0; i < drafts.length; i++) {
                     const draft = drafts[i];
-                    const vector = vectors[i];
+                    const signature = normalizeMemoryText(draft.content);
 
-                    // 与该成员已有记忆去重（同样的群记忆草稿可能跟以前的群记忆撞）
-                    // MemoryVectorDB.getAllByCharId 出库即 ensureFloat32，运行时恒为 Float32Array
-                    const isDup = existingVectors.some(ev => cosineSimilarity(vector, ev.vector as Float32Array) > DEDUP_THRESHOLD);
-                    if (isDup) {
+                    if (signature && existingSignatures.has(signature)) {
                         console.log(`♻️ [GroupPalace] ${member.name}：重复群记忆跳过 "${draft.content.slice(0, 30)}..."`);
                         continue;
                     }
@@ -275,7 +251,7 @@ export async function processGroupNewMessages(
                         mood: draft.mood,
                         valence: draft.valence,
                         arousal: draft.arousal,
-                        embedded: true,
+                        embedded: false,
                         createdAt: draft.createdAt,
                         lastAccessedAt: draft.createdAt,
                         accessCount: 0,
@@ -284,27 +260,12 @@ export async function processGroupNewMessages(
                         groupId: group.id,
                         groupName: group.name,
                         source: { kind: 'group_chat', label: group.name, refId: group.id },
+                        cognitiveLayer: 'event',
+                        sourceMessageIds: sourceMessageIds.length > 0 ? sourceMessageIds : undefined,
+                        eventTime: draft.createdAt,
                     };
                     await MemoryNodeDB.save(node);
-
-                    const memVec: MemoryVector = {
-                        memoryId: node.id,
-                        charId: member.id,
-                        vector,
-                        dimensions: memberEmb.dimensions,
-                        model: memberEmb.model,
-                    };
-                    await MemoryVectorDB.save(memVec);
-
-                    // 远程向量异步同步（fire-and-forget）
-                    if (remoteVectorCfg?.enabled && remoteVectorCfg.initialized) {
-                        try {
-                            const { upsertVector } = await import('./supabaseVector');
-                            upsertVector(remoteVectorCfg, node.id, member.id, vector, node, memberEmb.dimensions, memberEmb.model).catch(() => {});
-                        } catch { /* 忽略动态导入失败 */ }
-                    }
-
-                    existingVectors.push(memVec);
+                    if (signature) existingSignatures.add(signature);
                     storedForMember++;
                 }
 

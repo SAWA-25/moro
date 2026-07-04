@@ -12,6 +12,7 @@ import { llmComplete } from './llmComplete';
 import { ContextBuilder } from './context';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { DB } from './db';
+import { formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
 
 export const RELATIONSHIP_NETWORK_UPDATED_EVENT = 'moro-relationship-network-updated';
 
@@ -355,9 +356,11 @@ function worldbookSnapshot(char: CharacterProfile): string {
 }
 
 function charRelationshipBlock(char: CharacterProfile, userProfile: UserProfile): string {
+  const modelId = getCharacterModelId(char);
   return [
-    `ID: ${char.id}`,
-    `Name: ${char.name}`,
+    `ID: ${modelId || char.id}`,
+    modelId && modelId !== char.id ? `LocalRowId: ${char.id}` : '',
+    `Name: ${formatCharacterWithId(char)}`,
     char.systemPrompt ? `systemPrompt:\n${clean(char.systemPrompt, '', 1200)}` : '',
     char.worldview ? `worldview:\n${clean(char.worldview, '', 800)}` : '',
     char.lifeProfile?.content ? `lifeProfile:\n${clean(char.lifeProfile.content, '', 900)}` : '',
@@ -367,10 +370,12 @@ function charRelationshipBlock(char: CharacterProfile, userProfile: UserProfile)
 }
 
 function normalizeEdgeFromAny(raw: any, characters: CharacterProfile[], now = Date.now()): RelationshipNetworkEdge | null {
-  const ids = new Set(characters.map(c => c.id));
   const byId = new Map(characters.map(c => [c.id, c]));
   const rawIds = Array.isArray(raw?.charIds) ? raw.charIds : [raw?.charAId, raw?.charBId];
-  const pair = rawIds.map((v: unknown) => clean(v, '', 80)).filter((id: string) => ids.has(id)).slice(0, 2);
+  const pair = rawIds
+    .map((v: unknown) => resolveCharacterByModelId(characters, clean(v, '', 80))?.id || '')
+    .filter(Boolean)
+    .slice(0, 2);
   if (pair.length !== 2 || pair[0] === pair[1]) return null;
   const pairKey = relationshipPairKey(pair[0], pair[1]);
   const a = byId.get(pair[0]);
@@ -406,9 +411,8 @@ function normalizeEdgeFromAny(raw: any, characters: CharacterProfile[], now = Da
 }
 
 function normalizeNpcRelationFromAny(raw: any, characters: CharacterProfile[], now = Date.now()): RelationshipNetworkEdge | null {
-  const byId = new Map(characters.map(c => [c.id, c]));
   const ownerId = clean(raw?.ownerId ?? raw?.charId ?? raw?.characterId, '', 80);
-  const owner = byId.get(ownerId);
+  const owner = resolveCharacterByModelId(characters, ownerId);
   if (!owner) return null;
   const name = clean(raw?.name ?? raw?.npcName ?? raw?.targetName, '', 60);
   if (!name) return null;
@@ -560,13 +564,16 @@ export async function generateCharPairInteraction(args: {
   const pairKey = relationshipPairKey(a.id, b.id);
   if (!api?.baseUrl || !api.model) return fallbackInteraction(a, b, edge, source);
   const now = Date.now();
+  const modelAId = getCharacterModelId(a) || a.id;
+  const modelBId = getCharacterModelId(b) || b.id;
   const recent = recentMessages.slice(-12).map(m => `${m.speakerName}: ${m.content}`).join('\n') || '(暂无角色间私聊记录)';
   const prompt = `你正在为 Moro 的关系网生成一小段角色与角色的后台私聊。用户不会默认看到完整记录，角色可以选择是否裁剪片段转发给用户。
 
 输出 JSON，格式：
-{"messages":[{"speakerId":"${a.id} 或 ${b.id}","content":"一句自然发言"}],"edgePatch":{"label":"可选","summary":"可选关系变化摘要","intimacy":0-100,"tension":0-100,"confidence":0-100,"signals":{"intimacy":[],"friction":[],"conflict":[]}},"forward":{"shouldForward":true/false,"forwarderId":"可选，必须是参与者","reason":"为什么想转发","excerptIndexes":[0,1]}}
+{"messages":[{"speakerId":"${modelAId} 或 ${modelBId}","content":"一句自然发言"}],"edgePatch":{"label":"可选","summary":"可选关系变化摘要","intimacy":0-100,"tension":0-100,"confidence":0-100,"signals":{"intimacy":[],"friction":[],"conflict":[]}},"forward":{"shouldForward":true/false,"forwarderId":"可选，必须是参与者","reason":"为什么想转发","excerptIndexes":[0,1]}}
 
 要求：
+- speakerId / forwarderId 必须逐字使用上面给出的身份锚 ID，不要按名字猜人；即使两人同名或设定相似，也不要互换。
 - 生成 2 到 5 条消息，像真实私聊，不要写旁白，不要出现 JSON 以外内容。
 - 两个角色都要符合自己的人设；不是围着用户转，但可以偶尔提到用户 ${userProfile.name || '用户'}。
 - 如果 shouldForward=true，代表转发角色自主决定给 user 看一小段，不一定完整。excerptIndexes 是 messages 的下标。
@@ -590,13 +597,15 @@ ${charRelationshipBlock(b, userProfile)}`;
   try {
     const raw = await llmComplete(api, [{ role: 'user', content: prompt }], { temperature: 0.82, maxTokens: 1400 });
     const parsed = extractJson(raw);
-    const validIds = new Set([a.id, b.id]);
+    const participants = [a, b];
+    const resolveParticipant = (value: unknown): CharacterProfile | undefined =>
+      resolveCharacterByModelId(participants, clean(value, '', 80));
     const rows = Array.isArray(parsed?.messages) ? parsed.messages : [];
     const messages: RelationshipNetworkMessage[] = rows
       .map((row: any, index: number) => {
-        const speakerId = clean(row?.speakerId, '', 80);
-        if (!validIds.has(speakerId)) return null;
-        const speaker = speakerId === a.id ? a : b;
+        const speaker = resolveParticipant(row?.speakerId);
+        if (!speaker) return null;
+        const speakerId = speaker.id;
         const content = clean(row?.content, '', 600);
         if (!content) return null;
         return {
@@ -632,9 +641,10 @@ ${charRelationshipBlock(b, userProfile)}`;
     const excerptMessageIds = excerptIndexes
       .map((idx: number) => messages[idx]?.id)
       .filter(Boolean);
+    const forwarder = resolveParticipant(fwd.forwarderId);
     const forward: RelationshipNetworkForwardDecision = {
-      shouldForward: !!fwd.shouldForward && validIds.has(clean(fwd.forwarderId, '', 80)),
-      forwarderId: validIds.has(clean(fwd.forwarderId, '', 80)) ? clean(fwd.forwarderId, '', 80) : undefined,
+      shouldForward: !!fwd.shouldForward && !!forwarder,
+      forwarderId: forwarder?.id,
       reason: clean(fwd.reason, '', 160),
       excerptMessageIds: excerptMessageIds.length ? excerptMessageIds : undefined,
     };

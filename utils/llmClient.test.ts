@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callChatCompletion, completeText, fetchModelList, testChatConnection } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { DB } from './db';
 
 const API = { baseUrl: 'https://api.example.test/v1/chat/completions', apiKey: '', model: 'm' };
 
@@ -31,6 +32,35 @@ describe('llmClient', () => {
         expect((init.headers as any).Authorization).toBe('Bearer sk-none');
         expect(init.__moroMeta.featureId).toBe('chat.privateReply');
         expect(JSON.parse(String(init.body)).model).toBe('m');
+    });
+
+    it('injects the model-visible character identity when meta has charId', async () => {
+        await DB.saveCharacter({
+            id: 'row-llm-identity',
+            modelId: 'model-llm-identity',
+            name: 'Same Name',
+            avatar: '',
+            description: '',
+            systemPrompt: '',
+            memories: [],
+        } as any);
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+        const meta = makeApiUsageMeta('chat.privateReply', {
+            apiRole: 'main',
+            charId: 'row-llm-identity',
+            charName: 'Same Name',
+        });
+
+        await callChatCompletion(API, { messages: [{ role: 'user', content: 'hi' }] }, { meta });
+
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.messages[0].role).toBe('system');
+        expect(body.messages[0].content).toContain('Moro Character Identity Anchor');
+        expect(body.messages[0].content).toContain('targetModelCharId: "model-llm-identity"');
+        expect(body.messages[0].content).toContain('targetLocalCharId: "row-llm-identity"');
+        expect(body.messages[1]).toEqual({ role: 'user', content: 'hi' });
     });
 
     it('fetches model lists through normalized endpoint', async () => {

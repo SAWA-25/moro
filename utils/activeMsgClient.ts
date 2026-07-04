@@ -17,6 +17,7 @@ import { activeMsg2ImportantRules, activeMsg2LegacyStyleHint, activeMsg2ModeInst
 import { buildOpenAiEndpoint } from './openAiCompat';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
+import { getCharacterModelId } from './characterIdentity';
 
 const ACTIVE_MSG_VAPID_PUBLIC_KEY = import.meta.env.VITE_AMSG_VAPID_PUBLIC_KEY || '';
 const ACTIVE_MSG_API_BASE_OVERRIDE = (import.meta.env.VITE_AMSG_API_BASE_URL || '').trim();
@@ -518,6 +519,7 @@ export const ActiveMsgClient = {
       pushSubscription,
       metadata: {
         charId: char.id,
+        charModelId: getCharacterModelId(char),
         charName: char.name,
         source: 'active_msg_2',
       },

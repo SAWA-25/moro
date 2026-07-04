@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { CharacterProfile } from '../types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CharacterProfile, UserProfile } from '../types';
 import { DB } from './db';
 import {
   clearOfflineSession,
   commitOfflineSessionToContext,
+  DEFAULT_OFFLINE_POV,
+  generateOfflineOpening,
   hasOfflineSession,
+  isOfflineSessionActive,
   loadOfflineSession,
+  markOfflineSessionActive,
   prepareOfflineGeneratedText,
   saveOfflineSession,
   type OfflineEntry,
@@ -21,6 +25,10 @@ describe('offline mode draft sessions', () => {
   beforeEach(async () => {
     localStorage.clear();
     await DB.deleteDB();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('keeps draft sessions isolated per character id', () => {
@@ -40,11 +48,25 @@ describe('offline mode draft sessions', () => {
   it('treats empty or missing draft data as no active session', () => {
     expect(loadOfflineSession('missing')).toEqual([]);
     expect(hasOfflineSession('missing')).toBe(false);
+    expect(isOfflineSessionActive('missing')).toBe(false);
 
     saveOfflineSession('empty', []);
 
     expect(loadOfflineSession('empty')).toEqual([]);
     expect(hasOfflineSession('empty')).toBe(false);
+    expect(isOfflineSessionActive('empty')).toBe(false);
+  });
+
+  it('tracks an active offline scene before the first draft entry exists', () => {
+    markOfflineSessionActive('char-1');
+
+    expect(loadOfflineSession('char-1')).toEqual([]);
+    expect(hasOfflineSession('char-1')).toBe(false);
+    expect(isOfflineSessionActive('char-1')).toBe(true);
+
+    clearOfflineSession('char-1');
+
+    expect(isOfflineSessionActive('char-1')).toBe(false);
   });
 
   it('prepares generated takeout directives without leaking them into offline entries', () => {
@@ -79,5 +101,40 @@ describe('offline mode draft sessions', () => {
     expect(messages[0].content).not.toContain('严格保持时间边界');
     expect(messages[0].content).not.toContain('外卖送达');
     expect(messages[0].content).not.toContain('总结报告');
+  });
+
+  it('generates offline openings with system-first messages so presets can apply', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '门口的雨声轻了。' }, finish_reason: 'stop' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const char = {
+      id: 'char-1',
+      name: 'Mia',
+      avatar: 'mia.png',
+      systemPrompt: '安静，话少，但很细心。',
+    } as CharacterProfile;
+    const userProfile = { name: 'Me', avatar: 'me.png', bio: '喜欢雨天。' } as UserProfile;
+
+    const result = await generateOfflineOpening(
+      char,
+      userProfile,
+      { baseUrl: 'https://api.example.test/v1', apiKey: 'test-key', model: 'test-model' },
+      DEFAULT_OFFLINE_POV,
+      'Me 到 Mia 家门口见面。',
+    );
+
+    expect(result).toBe('门口的雨声轻了。');
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.messages[0].role).toBe('system');
+    expect(body.messages[0].content).toContain('### [线下模式]');
+    expect(body.messages[0].content).toContain('Me 到 Mia 家门口见面。');
+    expect(body.messages[1]).toMatchObject({
+      role: 'user',
+      content: '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。',
+    });
   });
 });

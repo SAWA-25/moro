@@ -11,11 +11,13 @@ import {
     LEGACY_THEATER_QUIZ_SETTINGS,
     formatFauxExport,
     genExtraPiece,
+    genFauxPiece,
     normalizeFauxData,
     normalizeTheaterQuizSession,
     parseQuizResult,
 } from './theaterExtra';
 import { extraFauxPrompt } from './theaterPrompts';
+import { PresetRuntime } from './presets';
 
 const FAUX_KINDS: TheaterFauxKind[] = ['wechat', 'moments', 'xhs', 'forum', 'weibo', 'qzone', 'douban', 'campus', 'memo', 'schedule', 'receipt', 'browser'];
 const jsonResponse = (data: unknown) => new Response(JSON.stringify(data), {
@@ -143,6 +145,7 @@ describe('extraFauxPrompt', () => {
             expect(text).toContain('严格只输出 JSON');
             expect(text).toContain('所有内容用中文');
             expect(text).toContain('图片只返回 images 数量');
+            expect(text).toContain('用户「我」：喜欢夜跑。');
             expect(text).toMatch(/\{.+\}/s);
         }
     });
@@ -211,6 +214,8 @@ describe('formatFauxExport', () => {
 
 describe('theater extra API usage meta', () => {
     it('keeps custom API role and binding in llmComplete meta', async () => {
+        const genParamsSpy = vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        const presetSpy = vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
         const fetchFn = vi.fn(async () => jsonResponse({
             choices: [{ message: { content: '这是一段番外正文。' }, finish_reason: 'stop' }],
             usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
@@ -226,16 +231,51 @@ describe('theater extra API usage meta', () => {
                 apiBinding: '折子戏番外专用 API',
             },
             kind: 'diary',
-            char: { id: 'c1', name: '阿澈', systemPrompt: '冷静但嘴硬。' } as CharacterProfile,
-            userProfile: { name: '我', avatar: '', bio: '喜欢夜跑。' } as UserProfile,
-            prompt: '写一段晚饭后的番外',
+            char: { id: 'c1', name: '阿澈', systemPrompt: '冷静但嘴硬，常提醒{{user}}别逞强。' } as CharacterProfile,
+            userProfile: { name: '阿月', avatar: '', bio: '<char>认识的夜跑者。' } as UserProfile,
+            prompt: '写一段{{user}}和{{char}}晚饭后的番外',
         });
 
+        expect(genParamsSpy).toHaveBeenCalledWith('creative.text');
+        expect(presetSpy).toHaveBeenCalledWith('creative.text');
         const init = (fetchFn.mock.calls as any[])[0]?.[1] as RequestInit & { __moroMeta?: any };
         expect(init.__moroMeta).toMatchObject({
             featureId: 'theater.extra',
             apiRole: 'custom',
             apiBinding: '折子戏番外专用 API',
         });
+        const body = JSON.parse(String(init.body || '{}'));
+        const promptText = body.messages.map((m: any) => String(m.content || '')).join('\n');
+        expect(promptText).toContain('常提醒阿月别逞强');
+        expect(promptText).toContain('用户「阿月」：阿澈认识的夜跑者。');
+        expect(promptText).toContain('写一段阿月和阿澈晚饭后的番外');
+        expect(promptText).not.toContain('{{user}}');
+    });
+
+    it('uses the structured preset scope for faux JSON pieces', async () => {
+        const genParamsSpy = vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        const presetSpy = vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        const fetchFn = vi.fn(async () => jsonResponse({
+            choices: [{ message: { content: '{"title":"备忘录","updatedAt":"刚刚","lines":["记一下这件事。"]}' }, finish_reason: 'stop' }],
+        }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await genFauxPiece({
+            api: { baseUrl: 'https://custom.example.test/v1', apiKey: '', model: 'custom-model' },
+            kind: 'memo',
+            char: { id: 'c1', name: '阿澈', systemPrompt: '冷静但嘴硬，会给{{user}}留便利贴。' } as CharacterProfile,
+            userProfile: { name: '阿月', avatar: '', bio: '喜欢收集<char>写的纸条。' } as UserProfile,
+            keyword: '{{user}}的便利贴',
+        });
+
+        expect(genParamsSpy).toHaveBeenCalledWith('structured.tool');
+        expect(presetSpy).toHaveBeenCalledWith('structured.tool');
+        const init = (fetchFn.mock.calls as any[])[0]?.[1] as RequestInit;
+        const body = JSON.parse(String(init.body || '{}'));
+        const promptText = body.messages.map((m: any) => String(m.content || '')).join('\n');
+        expect(promptText).toContain('会给阿月留便利贴');
+        expect(promptText).toContain('用户「阿月」：喜欢收集阿澈写的纸条。');
+        expect(promptText).toContain('阿月的便利贴');
+        expect(promptText).not.toContain('{{user}}');
     });
 });

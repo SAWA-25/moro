@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect, MutableRefObject } from 'react';
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, AuxApiConfig } from '../types';
-import { resolveOptionalCustomApi } from '../utils/auxApi';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, AuxApiConfig, APIConfig } from '../types';
+import { resolveMoodApi } from '../utils/scheduleMoodApi';
 import { DB } from '../utils/db';
 import { KeepAlive } from '../utils/keepAlive';
 import { ProactiveChat } from '../utils/proactiveChat';
@@ -9,8 +9,9 @@ import { ProactiveChat } from '../utils/proactiveChat';
 import { useMusic, loadMusicHooks } from '../context/MusicContext';
 import { processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
+import { isMemoryFeatureEnabled } from '../utils/memoryPalace/cognitiveFlow';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
-// evolveFlowNarrative 保留为低频深刷新备用，日常意识流由日程 / 心情 API 的情绪评估同轮产出（innerState 字段）
+// evolveFlowNarrative 保留为低频深刷新备用，日常意识流由心情 API 的情绪评估同轮产出（innerState 字段）
 // import { evolveFlowNarrative } from '../utils/scheduleGenerator';
 import { isEmotionBuffFeatureOn } from '../utils/scheduleGenerator';
 import type { DigestResult } from '../utils/memoryPalace';
@@ -37,14 +38,47 @@ import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { replyQueuedUserMessageHint } from '../utils/laiwangPrompts';
 import { callChatCompletion } from '../utils/llmClient';
 import { buildOpenAiEndpoint, buildOpenAiHeaders } from '../utils/openAiCompat';
+import { isMainApiStreamEnabled } from '../utils/apiConfigDefaults';
 import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import { makeReplyTimerMetadata, type ReplyTimerMetadata } from '../utils/replyTimer';
+import { generateImage, IMAGE_GEN_MODEL_KEY } from '../utils/imageGen';
 
 const CHAT_REPLY_TIMEOUT_MS = 180_000;
 const CHAT_STREAM_TIMEOUT_MS = 90_000;
 
-// ─── 情绪评估（今日作息底部 API；留空走主 API，fire & forget）───
+const buildPerTurnImagePrompt = (
+    char: CharacterProfile,
+    userProfile: UserProfile,
+    assistantText: string,
+    contextMsgs: Message[],
+): string => {
+    const recentLines = contextMsgs
+        .filter(m => m.type === 'text' && typeof m.content === 'string' && m.content.trim())
+        .slice(-8)
+        .map(m => `${m.role === 'user' ? (userProfile.name || '用户') : char.name}: ${m.content.replace(/\s+/g, ' ').trim().slice(0, 180)}`)
+        .join('\n');
+    const appearance = (char.appearanceTags || '').trim();
+    const persona = [char.description, char.systemPrompt]
+        .filter(Boolean)
+        .join('\n')
+        .replace(/\s+/g, ' ')
+        .slice(0, 700);
+    const refHint = char.convoSettings?.spriteRefImage ? 'The user configured a character image reference in the app; keep the character visually consistent with that established portrait concept.' : '';
+
+    return [
+        'Create one polished illustration for the latest moment in a private character chat.',
+        `Character: ${char.name}.`,
+        appearance ? `Appearance tags: ${appearance}.` : '',
+        persona ? `Character profile excerpt: ${persona}` : '',
+        refHint,
+        recentLines ? `Recent chat context:\n${recentLines}` : '',
+        `Latest reply to illustrate:\n${assistantText.replace(/\s+/g, ' ').trim().slice(0, 900)}`,
+        'Show the actual scene, mood, character pose, setting, lighting, and emotional beat. No UI, no chat bubbles, no screenshots, no readable text, no watermark.',
+    ].filter(Boolean).join('\n\n');
+};
+
+// ─── 情绪评估（心情 API；留空走主 API，fire & forget）───
 
 function buildEmotionEvalPrompt(
     char: CharacterProfile,
@@ -330,7 +364,7 @@ export async function evaluateEmotionBackground(
             charId: charData.id,
             charName: charData.name,
             apiRole: api.apiRole || 'custom',
-            apiBinding: api.apiBinding || '日程 / 心情 API',
+            apiBinding: api.apiBinding || '心情 API',
             isBackgroundTask: true,
         }) });
 
@@ -346,7 +380,7 @@ interface UseChatAIProps {
     char: CharacterProfile | undefined;
     userProfile: UserProfile;
     apiConfig: any;
-    /** 副 API（聊天以外的辅助任务，如记忆整理）。情绪评估另走日程 / 心情 API。 */
+    /** 副 API（聊天以外的辅助任务，如记忆整理）。情绪评估另走心情 API。 */
     auxApiConfig?: AuxApiConfig;
     groups: GroupProfile[];
     emojis: Emoji[];
@@ -357,7 +391,7 @@ interface UseChatAIProps {
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     realtimeConfig?: RealtimeConfig; // 新增：实时配置
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string; style?: string };
-    memoryPalaceConfig?: { embedding?: { model: string; dimensions: number } };
+    memoryPalaceConfig?: unknown;
     /** 从 OSContext 传入，用于 palace 自动归档写 char.memories + hideBeforeMessageId */
     updateCharacter?: (id: string, partial: Partial<CharacterProfile>) => void;
     /** 麦当劳小程序当前快照 (cart/menu/nutrition); open=true 时把这段实时状态追加到 system prompt 末尾, 让 char 协同选餐 */
@@ -423,6 +457,68 @@ export const useChatAI = ({
     // LLM 提取（+ 50 轮认知消化）。用 ref 在 finally 里读最新状态。
     const charRef = useRef(char);
     charRef.current = char;
+    const perTurnImageErrorNotifiedRef = useRef<Record<string, boolean>>({});
+    const perTurnImageRunningRef = useRef<Record<string, boolean>>({});
+
+    const maybeGeneratePerTurnImage = async (
+        charSnapshot: CharacterProfile,
+        effectiveApi: APIConfig,
+        assistantMessages: Message[],
+        contextMsgs: Message[],
+    ): Promise<void> => {
+        if (!charSnapshot.convoSettings?.perTurnImageGen) return;
+        if (!assistantMessages.length) return;
+        if (perTurnImageRunningRef.current[charSnapshot.id]) return;
+        const assistantText = assistantMessages
+            .filter(m => m.type === 'text' && typeof m.content === 'string')
+            .map(m => m.content.trim())
+            .filter(Boolean)
+            .join('\n');
+        if (!assistantText) return;
+
+        perTurnImageRunningRef.current[charSnapshot.id] = true;
+        try {
+            let model = '';
+            try { model = localStorage.getItem(IMAGE_GEN_MODEL_KEY) || ''; } catch { /* ignore */ }
+            const prompt = buildPerTurnImagePrompt(charSnapshot, userProfile, assistantText, contextMsgs);
+            const imageUrl = await generateImage(prompt, effectiveApi, model);
+            await DB.saveMessage({
+                charId: charSnapshot.id,
+                role: 'assistant',
+                type: 'image',
+                content: imageUrl,
+                metadata: {
+                    aiGenerated: true,
+                    perTurnImageGen: true,
+                    genPrompt: prompt.slice(0, 1200),
+                },
+            } as any);
+            await DB.saveGalleryImage({
+                id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                charId: charSnapshot.id,
+                url: imageUrl,
+                timestamp: Date.now(),
+                title: assistantText.slice(0, 40) || '聊天配图',
+                savedDate: new Date().toISOString().split('T')[0],
+                source: 'generated',
+                chatContext: contextMsgs
+                    .slice(-10)
+                    .map(m => `${m.role === 'user' ? (userProfile.name || '用户') : charSnapshot.name}: ${String(m.content || '').slice(0, 120)}`),
+            });
+            delete perTurnImageErrorNotifiedRef.current[charSnapshot.id];
+            if (charRef.current?.id === charSnapshot.id) {
+                setMessages(await DB.getRecentMessagesByCharId(charSnapshot.id, 200));
+            }
+        } catch (e: any) {
+            console.warn('[perTurnImageGen] failed:', e);
+            if (!perTurnImageErrorNotifiedRef.current[charSnapshot.id]) {
+                perTurnImageErrorNotifiedRef.current[charSnapshot.id] = true;
+                addToast(e?.message || '每轮配图失败，请检查生图 API', 'error');
+            }
+        } finally {
+            delete perTurnImageRunningRef.current[charSnapshot.id];
+        }
+    };
 
     // beforeunload 保护：记忆宫殿后台处理中时，阻止用户意外关闭页面
     useEffect(() => {
@@ -440,7 +536,7 @@ export const useChatAI = ({
     const [tokenBreakdown, setTokenBreakdown] = useState<{ prompt: number; completion: number; total: number; msgCount: number; pass: string } | null>(null);
     const [lastSystemPrompt, setLastSystemPrompt] = useState<string>('');
 
-    // 意识流：由日程 / 心情 API 的情绪评估同轮产出（innerState 字段）
+    // 意识流：由心情 API 的情绪评估同轮产出（innerState 字段）
     // 下一轮 system prompt 会把它作为角色的内心状态注入
     const [evolvedNarrative, setEvolvedNarrative] = useState<string>('');
 
@@ -507,11 +603,8 @@ export const useChatAI = ({
                 try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
                 return;
             }
-            // 后台情绪评估：今日作息底部 API 优先；留空直接走主 API。
-            const emotionApi = resolveOptionalCustomApi(currentChar.emotionConfig?.api, deps.apiConfig, {
-                customBinding: '今日作息日程 / 心情 API',
-                mainBinding: '今日作息 API 留空，使用主 API',
-            });
+            // 后台情绪评估：心情 API 优先；留空直接走主 API。
+            const emotionApi = resolveMoodApi(currentChar, deps.apiConfig);
 
             try {
                 // 重新从 DB 拉 history (push msg 此刻已经在 DB 里, activeMsgRuntime 在 dispatch
@@ -574,7 +667,7 @@ export const useChatAI = ({
         };
         window.addEventListener('post-push-emotion-eval', handler);
 
-        // 1b. instant 模式: 情绪评估在 worker 跑（日程 / 心情 API，留空走主 API）, 结果走 emotion_update push → activeMsgRuntime
+        // 1b. instant 模式: 情绪评估在 worker 跑（心情 API，留空走主 API）, 结果走 emotion_update push → activeMsgRuntime
         //     flush 时 applyEmotionEvalRaw 落 buff 并广播 innerState. 这里只把 innerState 喂回 evolvedNarrative
         //     (下一轮 system prompt 用), buff 已在 activeMsgRuntime 落库.
         const innerStateHandler = (e: Event) => {
@@ -803,21 +896,18 @@ export const useChatAI = ({
             // Save for dev debug viewer
             setLastSystemPrompt(systemPrompt);
 
-            // 3. 情绪评估（日程 / 心情 API，留空走主 API）。直接复用已 build 好的 systemPrompt 和 cleanedApiMessages，确保情绪
+            // 3. 情绪评估（心情 API，留空走主 API）。直接复用已 build 好的 systemPrompt 和 cleanedApiMessages，确保情绪
             //    评估和主 API 看到的上下文完全一致；同时产出 innerState（意识流），注入下一轮 system prompt。
-            //    未单独配置日程 / 心情 API 时回退到主 apiConfig。
+            //    未单独配置心情 API 时回退到主 apiConfig。
             //    ── 路径分叉 ──
             //    - 本地 fetch 模式: 客户端 fire-and-forget 跑 eval (前端活着).
-            //    - instant 模式: 不在客户端跑, 改把 eval prompt + 日程 / 心情 API 凭据塞进 instant 请求 (emotionEval 字段),
+            //    - instant 模式: 不在客户端跑, 改把 eval prompt + 心情 API 凭据塞进 instant 请求 (emotionEval 字段),
             //      worker 跑完主回复后跑 eval 并推 emotion_update 回来, 客户端 flush 时落 buff —— 这样前端被杀也算数,
             //      且不会跟客户端 eval 双跑双扣费. 见下方 instant 分支 + worker/instant-push + activeMsgRuntime.
             const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffFeatureOn);
             const instantOn = !options?.suppressNotificationEvent && isInstantConfigReady();
             const emotionApi = emotionEvalEnabled
-                ? resolveOptionalCustomApi(char.emotionConfig?.api, apiConfig, {
-                    customBinding: '今日作息日程 / 心情 API',
-                    mainBinding: '今日作息 API 留空，使用主 API',
-                })
+                ? resolveMoodApi(char, apiConfig)
                 : null;
             if (emotionEvalEnabled && !instantOn && emotionApi) {
                 setEmotionStatus('evaluating');
@@ -844,7 +934,7 @@ export const useChatAI = ({
                 }
                 : undefined;
 
-            // instant 情绪评估在 worker 跑（日程 / 心情 API，留空走主 API）, 客户端看不到 LLM 调用时机, 但仍要给用户一个
+            // instant 情绪评估在 worker 跑（心情 API，留空走主 API）, 客户端看不到 LLM 调用时机, 但仍要给用户一个
             // "情绪更新中" 的可见信号 (header 徽章, 跟本地模式一致), 否则 "发送中" 消失后一片空白像死了.
             // 从这里点亮, 到 worker 推回 emotion_update (activeMsgRuntime fire 'instant-emotion-done')
             // 或安全超时 (worker 旧/失败/前端被杀) 时熄灭.
@@ -867,7 +957,7 @@ export const useChatAI = ({
 
             // 3. API Call (safe parsing: prevents "Unexpected token <" on HTML error pages)
             // 温度 / 流式：优先读 effectiveApi（用户在设置里保存的值或预设值），
-            // 缺省时回退到主 apiConfig，再回退默认值（temp=0.85, stream=false）。
+            // 缺省时回退到主 apiConfig，再回退默认值（temp=0.85, stream=true）。
             // safeResponseJson 已能透明拼接 SSE 响应，所以打开 stream 后无需改下游。
             const apiT0 = performance.now();
             // 预设 App 的采样参数（temperature / top_p / penalties / max_tokens 等）：
@@ -875,7 +965,7 @@ export const useChatAI = ({
             const presetGenParams = await PresetRuntime.getActiveGenParams('chat.private');
             const userTemp = presetGenParams?.temperature
                 ?? (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
-            const userStream = (effectiveApi as any).stream ?? apiConfig.stream ?? false;
+            const userStream = (effectiveApi as any).stream ?? isMainApiStreamEnabled(apiConfig);
             const requestStream = userStream && !payload.flags.mcdActive;
             const baseReqBody: any = {
                 model: effectiveApi.model,
@@ -938,7 +1028,7 @@ export const useChatAI = ({
                         charId: char.id,
                         ...(targetReplyTo ? { queuedReplyTarget: targetReplyTo } : {}),
                     },
-                    // 情绪评估: worker 跑完主回复后用这套日程 / 心情 API 跑 eval, 推 emotion_update 回来 (见 worker 包装层).
+                    // 情绪评估: worker 跑完主回复后用这套心情 API 跑 eval, 推 emotion_update 回来 (见 worker 包装层).
                     // 放顶层字段, 不进 metadata —— 框架不会回显它, API key 不会泄进 push.
                     ...(instantEmotionEval ? { emotionEval: instantEmotionEval } : {}),
                 }, char.id, undefined, onInstantPosted);
@@ -987,6 +1077,9 @@ export const useChatAI = ({
                             ...(prev || {}),
                             replyTimer: prev?.replyTimer || replyTimerMeta,
                         }))));
+                        if (!options?.suppressNotificationEvent) {
+                            void maybeGeneratePerTurnImage(char, effectiveApi as APIConfig, trailingAssistant, recentSaved);
+                        }
                     } catch (timerErr) {
                         console.warn('[replyTimer] failed to stamp instant reply timer', timerErr);
                     }
@@ -1228,6 +1321,9 @@ export const useChatAI = ({
                     if (recentSaved[i].role !== 'assistant') break;
                     trailingAssistant.unshift(recentSaved[i]);
                 }
+                if (trailingAssistant.length && !options?.suppressNotificationEvent) {
+                    void maybeGeneratePerTurnImage(char, effectiveApi as APIConfig, trailingAssistant, recentSaved);
+                }
                 if (trailingAssistant.length && typeof window !== 'undefined' && !options?.suppressNotificationEvent) {
                     const bodies = trailingAssistant
                         .map(m => String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80))
@@ -1284,27 +1380,27 @@ export const useChatAI = ({
             } catch { /* 校准衰减失败不影响主流程 */ }
 
             // Memory Palace — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
-            // 回忆标本馆只走文具盒副 API；未配置副 API 时完全跳过后台提取/向量化。
-            const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
+            // 回忆标本馆只走文具盒副 API；未配置副 API 时完全跳过后台提取/整理。
+            const { llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
             // 读 ref 拿到最新的 char 状态；同 id 才信任，否则保守跳过（用户已经切角色了）
             const liveChar = charRef.current?.id === char.id ? charRef.current : null;
-            if (liveChar?.memoryPalaceEnabled && mpEmb && mpLLM) {
+            if (isMemoryFeatureEnabled(liveChar) && mpLLM) {
                 const charName = char.name;
                 // 不再预置"正在回味"状态：pipeline 会在水位线未到时立刻 skip，
                 // 预置状态会让"沉思"指示器一闪让用户误以为在干活。
                 // onProgress 在 pipeline 真正进入处理路径后（过完 hot_zone/threshold 检查）
                 // 才首次触发 setMemoryPalaceStatus，这样 skip 路径下指示器不会亮。
 
-                // 缓冲区处理（LLM提取 + Embedding向量化）
+                // 缓冲区处理（LLM 提取 + 本地写入）
                 const recentMsgs = await DB.getRecentMessagesByCharId(char.id, 50);
-                processNewMessages(recentMsgs, char.id, charName, mpEmb, mpLLM, userProfile?.name || '', false, (stage) => {
+                processNewMessages(recentMsgs, char.id, charName, mpLLM, userProfile?.name || '', false, (stage) => {
                         setMemoryPalaceStatus(stage);
                     })
                     .then(async (pipelineResult) => {
                         // pipeline 跑的过程中用户可能又关掉了宫殿，跑完后所有"额外动作"
                         // （autoArchive 写 char.memories / 50 轮认知消化的 LLM 调用）都要再 check 一次。
                         const liveAfter = charRef.current?.id === char.id ? charRef.current : null;
-                        if (!liveAfter?.memoryPalaceEnabled) return;
+                        if (!isMemoryFeatureEnabled(liveAfter)) return;
 
                         // 显示结果让用户看到
                         if (pipelineResult && pipelineResult.stored > 0) {
@@ -1323,10 +1419,10 @@ export const useChatAI = ({
                                         pipelineResult.autoArchive.fragments,
                                     );
                                 }
-                                // 隐藏线追平到向量高水位：palace 向量化在 autoArchive 关闭期间会
+                                // 隐藏线追平到处理高水位：palace 在 autoArchive 关闭期间会
                                 // 无条件推进 hwm，而 hide 被 gate 冻结，于是「已中招」的角色会出现
                                 // hide 落后于 hwm 的空档。只要全自动记忆现在是开的，每次自动总结都把
-                                // hide 追平到 hwm（hwm 之前的消息都已向量化归档），无需用户手动操作。
+                                // hide 追平到 hwm（hwm 之前的消息都已整理归档），无需用户手动操作。
                                 // 即便本轮没有新批次（autoArchive 为空），这一步也会把历史空档补上。
                                 const hwm = getMemoryPalaceHighWaterMark(char.id);
                                 const curHide = ((liveAfter as any).hideBeforeMessageId as number) || 0;
@@ -1347,7 +1443,7 @@ export const useChatAI = ({
                             console.log(`🧠 [AutoDigest] 已达 50 轮，自动触发认知消化...`);
                             setMemoryPalaceStatus(`${charName}闭上眼睛，开始整理内心…`);
                             const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-                            const result = await runCognitiveDigestion(char.id, charName, persona, mpLLM, false, userProfile?.name, mpEmb);
+                            const result = await runCognitiveDigestion(char.id, charName, persona, mpLLM, false, userProfile?.name);
                             if (result) {
                                 // 持久化自我领悟词条到角色档案
                                 if (result.selfInsights.length > 0) {
@@ -1375,7 +1471,7 @@ export const useChatAI = ({
                     });
             }
 
-            // 意识流进化现在由日程 / 心情 API 的情绪评估同轮产出（innerState 字段），
+            // 意识流进化现在由心情 API 的情绪评估同轮产出（innerState 字段），
             // 不再需要独立的后台 API 调用，也不再分散主 API 注意力。
         }
     };

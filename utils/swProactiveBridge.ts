@@ -87,6 +87,8 @@ export interface SwProactiveSnapshot {
   lifeEvents?: SwLifeEventSnapshot[];
   /** v2：主动消息设置的轻量镜像。 */
   proactiveV2?: SwProactiveV2Config;
+  /** 该角色正处在线下模式现场中；现场结束前不生成线上主动消息。 */
+  activeOfflineSession?: boolean;
   updatedAt: number;
   /** SW 最近一次为该角色生成主动消息的时间（主线程据此对账，避免回前台重复触发） */
   lastGenAt?: number;
@@ -187,6 +189,7 @@ export function swResolveQuietHours(snap: SwProactiveSnapshot, now = Date.now())
 export function swShouldGenerateProactive(snap: SwProactiveSnapshot, now = Date.now()): { ok: boolean; reason: string } {
   if (!snap?.enabled) return { ok: false, reason: 'disabled' };
   if (!snap.api?.baseUrl || !snap.api?.model) return { ok: false, reason: 'missing_api' };
+  if (snap.activeOfflineSession) return { ok: false, reason: 'offline_session_active' };
   if (snap.updatedAt && now - snap.updatedAt > 48 * 60 * 60 * 1000) return { ok: false, reason: 'stale_snapshot' };
   const quiet = swResolveQuietHours(snap, now);
   const hasPendingReply = !!snap.pendingUserMessages?.length;

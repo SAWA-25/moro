@@ -42,6 +42,7 @@ import {
 import { queueManualDeepLink, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { fetchModelList, testChatConnection } from '../utils/llmClient';
+import { isMainApiStreamEnabled } from '../utils/apiConfigDefaults';
 import type { ApiErrorHelp } from '../utils/apiErrorHelp';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
@@ -420,7 +421,7 @@ const Settings: React.FC = () => {
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
   const [localModel, setLocalModel] = useState(apiConfig.model);
-  const [localStream, setLocalStream] = useState<boolean>(apiConfig.stream === true);
+  const [localStream, setLocalStream] = useState<boolean>(isMainApiStreamEnabled(apiConfig));
   const [localTemperature, setLocalTemperature] = useState<number>(
     typeof apiConfig.temperature === 'number' ? apiConfig.temperature : 0.85
   );
@@ -866,7 +867,7 @@ const Settings: React.FC = () => {
       setLocalUrl(apiConfig.baseUrl);
       setLocalKey(apiConfig.apiKey);
       setLocalModel(apiConfig.model);
-      setLocalStream(apiConfig.stream === true);
+      setLocalStream(isMainApiStreamEnabled(apiConfig));
       setLocalTemperature(typeof apiConfig.temperature === 'number' ? apiConfig.temperature : 0.85);
       setLocalMiniMaxKey(apiConfig.minimaxApiKey || '');
       setLocalMiniMaxGroupId(apiConfig.minimaxGroupId || '');
@@ -921,7 +922,7 @@ const Settings: React.FC = () => {
       setLocalUrl(preset.config.baseUrl);
       setLocalKey(preset.config.apiKey);
       setLocalModel(preset.config.model);
-      setLocalStream(preset.config.stream === true);
+      setLocalStream(isMainApiStreamEnabled(preset.config));
       setLocalTemperature(typeof preset.config.temperature === 'number' ? preset.config.temperature : 0.85);
       // MiniMax / AceStep settings are NOT overwritten by presets — typically one user
       // has only one MiniMax / Replicate account regardless of which LLM preset they use.
@@ -1826,7 +1827,7 @@ const Settings: React.FC = () => {
                     <InkSwitch on={mainContextBudgetOn} onChange={handleMainContextBudgetToggle} title="上下文防爆保护" />
                 </div>
 
-                {/* 高级（流式 / 温度）— 默认折叠，灰色低调，明确写"不建议修改" */}
+                {/* 高级（流式 / 温度）— 默认折叠，灰色低调 */}
                 <div className="pt-1">
                     <button
                         type="button"
@@ -1847,12 +1848,12 @@ const Settings: React.FC = () => {
                                 </div>
                             )}
                             <p className="text-[10px] text-[#26242a]/40 leading-relaxed">
-                                只在接口明确要求或你需要调整输出风格时再改这里。
+                                默认使用流式输出；如果你的接口不兼容，关掉后会等完整回复再显示。
                             </p>
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <span className="text-[10px] text-[#26242a]/60 font-bold">流式输出 (Stream)</span>
-                                    <p className="text-[9px] text-[#26242a]/40 mt-0.5">仅在你的 API 强制要求时打开</p>
+                                    <p className="text-[9px] text-[#26242a]/40 mt-0.5">默认开启；遇到半路断开、乱码或空白时可关闭</p>
                                 </div>
                                 <InkSwitch on={localStream} onChange={() => setLocalStream(v => !v)} />
                             </div>
@@ -1949,7 +1950,7 @@ const Settings: React.FC = () => {
         >
             <div className="space-y-4">
                 <InfoNote>
-                    开启后，<b>生活侧写、记忆整理、部分工具生成</b>会优先使用副 API。絮语「今日作息」和心情 buff 使用自己的日程 / 心情 API，留空时走主 API。
+                    开启后，<b>生活侧写、记忆整理、部分工具生成</b>会优先使用副 API。絮语「今日作息」和心情 buff 使用各自的日程 API / 心情 API，留空时走主 API。
                 </InfoNote>
 
                 <div className="flex items-center justify-between">

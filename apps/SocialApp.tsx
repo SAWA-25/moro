@@ -803,7 +803,7 @@ const SocialApp: React.FC = () => {
         try {
             const entry = datingProfileToAmbientContact(p, userProfile);
             const char = ambientSocialToCharacter(entry, userProfile.name || '我');
-            await importCharacter(char);
+            await importCharacter(char, { preserveId: true });
             const next = liked.map(l => l.id === p.id ? { ...l, convertedCharId: char.id, greeted: true } : l);
             if (!next.some(l => l.id === p.id)) next.unshift({ ...p, convertedCharId: char.id, greeted: true });
             saveLiked(next);

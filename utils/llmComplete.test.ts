@@ -78,6 +78,41 @@ describe('llmComplete 续写', () => {
         expect(body.messages).toEqual([{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }]);
     });
 
+    it('presetScope 的采样参数优先级高于调用点默认参数', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue({
+            temperature: 0.42,
+            max_tokens: 123,
+            top_p: 0.7,
+            frequency_penalty: 0.2,
+            presence_penalty: 0.3,
+            top_k: 40,
+            min_p: 0.1,
+            top_a: 0.25,
+            repetition_penalty: 1.12,
+        });
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        const fetchFn = queueFetch([res('ok。', 'stop')]);
+
+        await llmComplete(API, [{ role: 'user', content: 'hi' }], {
+            presetScope: 'creative.text',
+            temperature: 0.99,
+            maxTokens: 999,
+            top_p: 0.95,
+        });
+
+        const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(firstCall[1].body));
+        expect(body.temperature).toBe(0.42);
+        expect(body.max_tokens).toBe(123);
+        expect(body.top_p).toBe(0.7);
+        expect(body.frequency_penalty).toBe(0.2);
+        expect(body.presence_penalty).toBe(0.3);
+        expect(body.top_k).toBe(40);
+        expect(body.min_p).toBe(0.1);
+        expect(body.top_a).toBe(0.25);
+        expect(body.repetition_penalty).toBe(1.12);
+    });
+
     it('presetScope 开启且首条是 system 时套预设骨架', async () => {
         vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
         const preset = createDefaultPreset();
@@ -90,6 +125,25 @@ describe('llmComplete 续写', () => {
         const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
         const body = JSON.parse(String(firstCall[1].body));
         expect(body.messages.map((m: any) => m.content)).toEqual(['CORE', 'PRESET 用户', 'hi']);
+    });
+
+    it('presetScope can use caller-provided macro names', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        const preset = createDefaultPreset();
+        const main = preset.prompts.find(p => p.identifier === 'main')!;
+        main.content = 'PRESET {{char}} / {{user}}';
+        preset.prompt_order = [{ character_id: 100000, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }];
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(preset);
+        const fetchFn = queueFetch([res('ok。', 'stop')]);
+
+        await llmComplete(API, [{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }], {
+            presetScope: 'creative.text',
+            presetMacros: { charName: '阿澈', userName: '小雨' },
+        });
+
+        const firstCall = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(firstCall[1].body));
+        expect(body.messages.map((m: any) => m.content)).toEqual(['CORE', 'PRESET 阿澈 / 小雨', 'hi']);
     });
 
     it('structured presetScope keeps the default format guard in the request skeleton', async () => {

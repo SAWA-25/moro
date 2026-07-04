@@ -1,7 +1,7 @@
 /**
  * Memory Palace — 记忆提取 (Memory Extraction)
  *
- * 从聊天消息缓冲区提取 MemoryNode 数组，供后续向量化和 EventBox 绑定。
+ * 从聊天消息缓冲区提取 MemoryNode 数组，供后续本地收录和 EventBox 绑定。
  * 不同重要性对应不同的记忆详细程度。
  */
 
@@ -23,8 +23,8 @@ function generateId(): string {
 // 在"记忆归档设置"里选的模板影响。那里的模板只作用于手动归档路径
 // （Chat.tsx handleFullArchive / Character.tsx handleBatchSummarize /
 // handleForceArchiveDate）。
-// 理由：palace 产出的 memory.content 要参与向量检索，风格化（"末尾加喵"之类）
-// 会让 embedding 语义轻微漂移。保持 palace 内置风格稳定，手动归档路径提供
+// 理由：palace 产出的 memory.content 要参与本地检索，风格化（"末尾加喵"之类）
+// 会让关键词和语义提示变得不稳定。保持 palace 内置风格稳定，手动归档路径提供
 // 风格化的自由度——职责分离。
 
 function buildRulesBlock(charName: string, userLabel: string): string {
@@ -99,6 +99,11 @@ function parseMemoryNodesFromBuffer(
     const firstTs = msgTimestamps[0] ?? Date.now();
     const lastTs = msgTimestamps[msgTimestamps.length - 1] ?? firstTs;
     const midTime = Math.round((firstTs + lastTs) / 2);
+    const sourceMessageIds = Array.from(new Set(
+        messages
+            .map(m => m.id)
+            .filter((id): id is number => typeof id === 'number' && id > 0),
+    )).slice(-80);
 
     // 允许 LLM 写出的 date 略微越界（夜聊跨零点等），但要挡住完全不合理的（写错年月）
     const dayMs = 24 * 60 * 60 * 1000;
@@ -160,6 +165,9 @@ function parseMemoryNodesFromBuffer(
                 eventBoxId: null,  // 由 pipeline 在 binding 阶段设置
                 origin: 'extraction',
                 source: { kind: 'chat' },
+                cognitiveLayer: 'event',
+                sourceMessageIds: sourceMessageIds.length > 0 ? sourceMessageIds : undefined,
+                eventTime: createdAt,
                 sourceQuote,
                 genNote,
             };
@@ -305,9 +313,9 @@ export function parseRelatedToAndHints(
     return { crossTimeLinks, eventBoxHints };
 }
 
-// ─── 跨时间关联：传入向量检索命中的旧记忆供 LLM 关联 ───
+// ─── 跨时间关联：传入本地检索命中的旧记忆供 LLM 关联 ───
 
-/** 向量检索命中的已有记忆引用，用于跨时间事件关联 */
+/** 本地检索命中的已有记忆引用，用于跨时间事件关联 */
 export interface RelatedMemoryRef {
     id: string;       // MemoryNode.id
     room: string;
@@ -343,7 +351,7 @@ export interface BufferExtractionResult {
     eventBoxHints: EventBoxHint[];
     /** 应提前摘除的便利贴 ID */
     unpinIds: string[];
-    /** 纠正：把对应已有记忆的 content 追加一行"YYYY-MM-DD 纠正：note"，并重新向量化 */
+    /** 纠正：把对应已有记忆的 content 追加一行"YYYY-MM-DD 纠正：note" */
     corrections: { targetId: string; note: string }[];
 }
 
@@ -353,7 +361,7 @@ export interface BufferExtractionResult {
  * 从消息缓冲区直接提取记忆节点。
  * 用于缓冲区机制：积累的聊天消息达到阈值后，一次 LLM 调用提取记忆。
  *
- * @param relatedMemories 向量检索命中的已有记忆，供 LLM 判断跨时间事件关联（搭便车，不额外调用）
+ * @param relatedMemories 本地检索命中的已有记忆，供 LLM 判断跨时间事件关联（搭便车，不额外调用）
  * @param pinnedMemories 当前生效的便利贴，供 LLM 判断是否应提前摘除（搭便车）
  */
 export async function extractMemoriesFromBuffer(

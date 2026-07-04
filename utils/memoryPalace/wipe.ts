@@ -1,15 +1,14 @@
 /**
  * Memory Palace — 一键清空
  *
- * 把本地所有记忆宫殿数据清零；可选同步清空用户自己的 Supabase memory_vectors。
+ * 把本地所有记忆宫殿数据清零；包括旧版本留下的本地 memory_vectors 表。
  *
  * 使用场景：
- *  - 用户想"重来"（比如改了 embedding 模型、或希望应用新版 boxId 体系）
+ *  - 用户想"重来"（比如希望应用新版 boxId 体系）
  *  - 开发/测试重置
  */
 
 import { openDB } from '../db';
-import type { RemoteVectorConfig } from './types';
 import { bm25Index } from './bm25Index';
 
 const MP_STORES = [
@@ -82,66 +81,17 @@ async function clearLocalStores(): Promise<Record<string, number>> {
     });
 }
 
-/** 清空远程 Supabase 向量表（全表删除，跨所有角色） */
-async function clearRemoteVectors(config: RemoteVectorConfig): Promise<number> {
-    if (!config.enabled || !config.initialized) return 0;
-    try {
-        const headers = {
-            'apikey': config.supabaseAnonKey,
-            'Authorization': `Bearer ${config.supabaseAnonKey}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'count=exact,return=minimal',
-        };
-        const base = `${config.supabaseUrl.replace(/\/+$/, '')}/rest/v1/memory_vectors`;
-
-        // 先查总数（用 HEAD + count=exact）
-        let total = 0;
-        try {
-            const head = await fetch(`${base}?select=memory_id`, {
-                method: 'HEAD',
-                headers: { ...headers, 'Prefer': 'count=exact' },
-            });
-            const range = head.headers.get('content-range');
-            if (range) {
-                const m = range.match(/\/(\d+)/);
-                if (m) total = parseInt(m[1], 10);
-            }
-        } catch { /* ignore */ }
-
-        // PostgREST 要求 DELETE 必须带过滤条件；用 "memory_id=not.is.null" 匹配全部行
-        const delRes = await fetch(`${base}?memory_id=not.is.null`, {
-            method: 'DELETE',
-            headers,
-        });
-        if (!delRes.ok) {
-            console.warn(`🗑️ [Wipe] 远程删除返回 ${delRes.status}: ${await delRes.text().catch(() => '')}`);
-            return 0;
-        }
-        return total;
-    } catch (e: any) {
-        console.warn(`🗑️ [Wipe] 远程删除异常: ${e?.message || e}`);
-        return 0;
-    }
-}
-
 export interface WipeResult {
     local: Record<string, number>;
     localRowsTotal: number;
     highWatermarks: number;
-    remote: number;
-    remoteAttempted: boolean;
 }
 
 /**
  * 一键清空记忆宫殿数据。
  *
- * @param options.remoteConfig 若提供，会同时清空远程 Supabase memory_vectors（全表）
- * @param options.skipRemote  即使有 remoteConfig 也跳过远程（仅清本地）
  */
-export async function wipeAllMemoryPalace(options: {
-    remoteConfig?: RemoteVectorConfig;
-    skipRemote?: boolean;
-} = {}): Promise<WipeResult> {
+export async function wipeAllMemoryPalace(): Promise<WipeResult> {
     console.log(`🗑️ [Wipe] 开始一键清空记忆宫殿...`);
 
     const local = await clearLocalStores();
@@ -151,13 +101,6 @@ export async function wipeAllMemoryPalace(options: {
     // 同步清空内存中的 BM25 倒排索引（否则下次查询会拿到孤儿 nodeId）
     bm25Index.dropAll();
 
-    let remote = 0;
-    let remoteAttempted = false;
-    if (options.remoteConfig && !options.skipRemote) {
-        remoteAttempted = true;
-        remote = await clearRemoteVectors(options.remoteConfig);
-    }
-
-    console.log(`🗑️ [Wipe] 完成：本地 ${localRowsTotal} 行、高水位 ${hwm} 条、远程 ${remoteAttempted ? remote : '跳过'}`);
-    return { local, localRowsTotal, highWatermarks: hwm, remote, remoteAttempted };
+    console.log(`🗑️ [Wipe] 完成：本地 ${localRowsTotal} 行、高水位 ${hwm} 条`);
+    return { local, localRowsTotal, highWatermarks: hwm };
 }

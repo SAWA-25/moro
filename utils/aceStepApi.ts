@@ -18,6 +18,7 @@ import { DB } from './db';
 import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { formatCharacterWithId } from './characterIdentity';
 
 // ── Endpoint config ──
 // Same Cloudflare Worker domain that hosts /netease, /xhs, /webdav etc.
@@ -280,7 +281,7 @@ export async function generatePromptViaLLM(
     const writer = collaborator.writerPersona || '';
     const worldview = collaborator.worldview || '';
     charBlock = `【创作角色 — 这首歌是 TA 的歌】
-名字：${collaborator.name}
+名字：${formatCharacterWithId(collaborator)}
 
 人设：
 ${systemPrompt}${writer ? `\n\n写手 persona 速写：\n${writer}` : ''}${worldview ? `\n\n世界观：\n${worldview}` : ''}`;
@@ -315,7 +316,12 @@ ${trimmed ? '⚠️ 再次提醒: 用户 hint 里写明的具体音乐元素 (vo
     max_tokens: 8000,
   }, {
     signal,
-    meta: makeApiUsageMeta('creative.songwriting', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '写歌提示词' }),
+    meta: makeApiUsageMeta('creative.songwriting', {
+      apiRole: api.apiRole || 'aux',
+      apiBinding: api.apiBinding || '写歌提示词',
+      charId: collaborator?.id,
+      charName: collaborator?.name,
+    }),
   });
   const raw: string = extractContent(data) || '';
   if (!raw) throw new Error('LLM 没返回内容');

@@ -91,6 +91,7 @@ const callLlm = async (
     apiConfig: APIConfig,
     systemPrompt: string,
     userMessage: string,
+    char?: CharacterProfile,
 ): Promise<string> => {
     const data = await callChatCompletion(apiConfig, {
         model: apiConfig.model,
@@ -104,6 +105,8 @@ const callLlm = async (
         meta: makeApiUsageMeta('xhsFreeRoam.generate', {
             apiRole: (apiConfig as any).apiRole || 'aux',
             apiBinding: (apiConfig as any).apiBinding,
+            charId: char?.id,
+            charName: char?.name,
         }),
     });
     return extractContent(data) || '';
@@ -354,7 +357,7 @@ const handleViewDetail = async (
 
     // Let character react to detail + comments
     callbacks.onStatus(`${char.name}在看评论区...`);
-    const reactionRaw = await callLlm(apiConfig, systemPrompt, buildDetailReactionPrompt(noteTitle, noteContent, comments));
+    const reactionRaw = await callLlm(apiConfig, systemPrompt, buildDetailReactionPrompt(noteTitle, noteContent, comments), char);
     const reaction = parseJson<LlmDetailReaction>(reactionRaw);
 
     if (reaction?.thinking) {
@@ -474,7 +477,7 @@ export const XhsFreeRoamEngine = {
 
             // 4. Character decides
             callbacks.onStatus(`${char.name}在决定做什么...`);
-            const decisionRaw = await callLlm(apiConfig, systemPrompt, buildDecisionPrompt());
+            const decisionRaw = await callLlm(apiConfig, systemPrompt, buildDecisionPrompt(), char);
             const decision = parseJson<LlmDecision>(decisionRaw);
 
             if (!decision) {
@@ -576,7 +579,7 @@ export const XhsFreeRoamEngine = {
 
                     // Let character react to what they saw (normalized notes have proper title/author)
                     callbacks.onStatus(`${char.name}在看搜索结果...`);
-                    const reactionRaw = await callLlm(apiConfig, systemPrompt, buildReactionPrompt(notes));
+                    const reactionRaw = await callLlm(apiConfig, systemPrompt, buildReactionPrompt(notes), char);
                     const reaction = parseJson<LlmReaction>(reactionRaw);
 
                     if (reaction?.thinking) {
@@ -675,7 +678,7 @@ export const XhsFreeRoamEngine = {
                     callbacks.onStatus(`${char.name}在看搜索结果...`);
                     const reactionRaw = await callLlm(apiConfig, systemPrompt, buildProfileReactionPrompt(
                         `通过搜索「${char.name}」查看自己的帖子`, notes
-                    ));
+                    ), char);
                     const reaction = parseJson<LlmReaction & { wantToViewDetail?: { noteId: string; title: string } }>(reactionRaw);
                     if (reaction?.thinking) {
                         callbacks.onThinking(reaction.thinking);

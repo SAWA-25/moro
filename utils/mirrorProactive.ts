@@ -16,6 +16,7 @@ import { findPendingProactiveReplyMessages, makeQueuedReplyTarget } from './proa
 import { swPutSnapshot, swKeepOnly, swReadAll, type SwProactiveSnapshot } from './swProactiveBridge';
 import { swOfflineProactiveSystemPrompt } from './laiwangPrompts';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
+import { isOfflineSessionActive } from './offlineMode';
 
 interface MainApiLike { baseUrl?: string; apiKey?: string; model?: string }
 
@@ -153,6 +154,7 @@ async function buildSnapshot(
       materialSources,
       quietHours: char.proactiveConfig?.quietHours,
     },
+    activeOfflineSession: isOfflineSessionActive(char.id),
     updatedAt: Date.now(),
   };
 }

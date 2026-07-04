@@ -845,7 +845,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
             .filter(m => !m.metadata?.blockPeek)
             .filter(m => !isMessageBlockedByPromptSwitch(m, char))
             .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
-        // Memory Palace: 过滤已被记忆宫殿处理过的消息（由向量记忆替代，节省 token）
+        // Memory Palace: 过滤已被记忆宫殿处理过的消息（由本地长期记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
             effectiveHistory = effectiveHistory.filter(m => !processedExcludeIds.has(m.id));
         }

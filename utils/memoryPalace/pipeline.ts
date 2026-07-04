@@ -8,7 +8,7 @@
  * 缓冲区机制（替代旧的 TopicLoom + 封盒方案）：
  * - 热区：最近 200 条消息留在聊天上下文
  * - 缓冲区：热区之前、高水位之后的消息
- * - 缓冲区 >= 50 条时触发：LLM 提取记忆 → Embedding → 更新高水位
+ * - 缓冲区 >= 50 条时触发：LLM 提取记忆 → 本地保存 → 更新高水位
  * - 保留缓冲区尾部 15% 作为下次提取的上下文衔接
  *
  * LLM 调用策略：
@@ -17,27 +17,14 @@
  */
 
 import type { Message } from '../../types';
-import type { EmbeddingConfig, PersonalityStyle, RemoteVectorConfig, ScoredMemory } from './types';
-
-/** 从 localStorage 读取远程向量配置（避免在每个调用点都传参） */
-function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
-    try {
-        const raw = localStorage.getItem('os_remote_vector_config');
-        if (!raw) return undefined;
-        const config = JSON.parse(raw) as RemoteVectorConfig;
-        return (config.enabled && config.initialized) ? config : undefined;
-    } catch { return undefined; }
-}
+import type { PersonalityStyle, ScoredMemory } from './types';
 
 import { extractMemoriesFromBuffer } from './extraction';
 import type { RelatedMemoryRef, PinnedMemoryRef } from './extraction';
 import { fetchRelatedMemoriesForExtraction, sampleSnippetsFromMessages, splitMessagesToSpikes } from './relatedMemories';
 import { getReceiptIdsInRange } from './recallReceipts';
-import { vectorizeAndStore, checkModelConsistency, rebuildAllVectors } from './vectorStore';
 import { buildLinks, strengthenCoActivated } from './links';
 import { hybridSearch } from './hybridSearch';
-import { getEmbeddings } from './embedding';
-import { isRemoteSearchBroken } from './vectorSearch';
 import { spreadActivation } from './activation';
 import { applyPriming, checkRumination } from './priming';
 import { applyRecallFatigue } from './recallFatigue';
@@ -48,9 +35,14 @@ import {
     getCognitionNodes, applyCognitionBoost,
 } from './cognition';
 import { runConsolidation } from './consolidation';
-import { resolveMemoryPalaceAuxConfigsFromStorage } from './auxConfig';
+import {
+    filterCognitiveFlowResults,
+    isCognitiveFlowMode,
+    isMemoryFeatureEnabled,
+    mergeCognitiveFlowSurfaceResults,
+} from './cognitiveFlow';
 // 认知消化由用户在记忆宫殿 App 手动触发，不在聊天管线中自动运行
-import { MemoryNodeDB, MemoryVectorDB, AnticipationDB } from './db';
+import { MemoryNodeDB, AnticipationDB } from './db';
 import { DB } from '../db';
 import { isMessageSemanticallyRelevant, formatMessageForPrompt } from '../messageFormat';
 import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
@@ -59,7 +51,7 @@ import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
 
 /**
  * 轻量 LLM 配置，用于记忆提取等后台任务。
- * 来源是文具盒全局副 API，与日程 / 心情 API（emotionConfig.api）独立。
+ * 来源是文具盒全局副 API，与日程 API / 心情 API 独立。
  * 这样可以用便宜快速的小模型（如 DeepSeek-V2-Lite、GLM-4-Flash）
  * 而不是主聊天模型。
  */
@@ -142,7 +134,7 @@ function splitMessagesForExtraction(
 
 /**
  * 按 createdAt 区间从本地取记忆节点。
- * - 过滤当前 charId、仅 embedded、非 summary
+ * - 过滤当前 charId
  * - archived 节点也参与匹配（它们保留原事件的 createdAt）；命中后路由到其 EventBox 的 summary
  * - 每个 range 最多返回 5 条，整体去重
  */
@@ -155,7 +147,7 @@ async function loadMemoriesByDateRanges(
     const out: import('./types').MemoryNode[] = [];
     const seen = new Set<string>();
     for (const range of ranges) {
-        const inRange = all.filter(n => n.createdAt >= range.start && n.createdAt < range.end && n.embedded !== false);
+        const inRange = all.filter(n => n.createdAt >= range.start && n.createdAt < range.end);
         const sorted = inRange.sort((a, b) => b.importance - a.importance).slice(0, 5);
         for (const n of sorted) {
             // archived 节点 → 路由到其 box 的 summary（如果有）
@@ -349,20 +341,19 @@ function splitLastTurnQueries(messages: Message[]): {
 /**
  * 检索记忆并格式化为可注入 System Prompt 的 Markdown
  *
- * 注意：检索管线全程纯计算 + Embedding API，不调 LLM。
+ * 注意：检索管线全程本地计算，不调 LLM，不调额外检索服务。
  *
  * @param queryOverride App 自定义上下文（场景、题目等），会与最近一轮对话拼接后一起检索
  */
 export async function retrieveMemories(
     recentMessages: Message[],
     charId: string,
-    embeddingConfig: EmbeddingConfig,
     currentMood?: string,
     personalityStyle: PersonalityStyle = 'emotional',
     ruminationTendency: number = 0.3,
     queryOverride?: string,
     userName?: string,
-    remoteVectorConfig?: RemoteVectorConfig,
+    cognitiveFlow = true,
 ): Promise<string> {
     // ── 分段计时：定位 memoryPalace 到底是网络慢还是计算慢 ──
     // tag: NET = 远端 API RTT；IDB = IndexedDB 读写；CPU = 纯本地计算
@@ -376,14 +367,13 @@ export async function retrieveMemories(
     try {
         // 1. 构建查询 —— per-message 多路检索策略：
         //
-        //    问题：任何形式的"把多条 user 消息 join 成一段 embedding"都会出现
+        //    问题：任何形式的"把多条 user 消息 join 成一段 query"都会出现
         //          稀释问题。无论真正的意图在 burst 的开头、中间还是结尾，
         //          短而精的信号都会被周围的闲语/寒暄/语气词淹没。
         //
         //    方案：每条有意义的 user 消息（≥ 4 字，去重）独立跑一次 hybridSearch。
         //          合并时同一条记忆取所有 per-msg 搜索中的最高分，这样：
-        //          - "今天我要回家看家人啦" 作为独立 query 时 embedding 质心
-        //            直接落在"家/家人"语义空间，命中家庭类记忆
+        //          - "今天我要回家看家人啦" 作为独立 query 时更容易直接命中家庭类记忆
         //          - "晚上好" / "你在做什么" 这些独立 query 只会命中寒暄类
         //            记忆（分数低），不会干扰真正意图的召回
         //
@@ -394,7 +384,7 @@ export async function retrieveMemories(
         // 抽取每条有意义的 user 消息作为独立 spike + 二次拆分子 spike
         //
         // 过滤原则：
-        // 1. 剥离 URL（表情包/图片/外链 URL 在 embedding 里是随机噪声，没有语义）
+        // 1. 剥离 URL（表情包/图片/外链 URL 对文本检索没有帮助）
         // 2. 剥离 URL 后，再剥掉所有标点和空白来计算"有意义字符数"
         // 3. 有意义字符数 < MIN_SPIKE_LEN 的 pass（纯标点/单字语气词/"……"等）
         // 4. 同内容去重
@@ -402,7 +392,7 @@ export async function retrieveMemories(
         // MIN_SPIKE_LEN=2 而不是 4：中文里 2 字已经可以成词（"晚安""回家""想你"
         // "外公""生气"），如果阈值设 4 会误伤大量短而关键的中文测试性输入。
         // 被过滤的只有 1 字的"嗯""好""?""哦""哈"类纯语气词，以及"……""。。。"
-        // 这类纯标点输入——它们 embedding 方向随机，BM25 也匹配不上任何东西。
+        // 这类纯标点输入——BM25 匹配不上任何东西。
         //
         // 注意：query 文本仍然用"剥 URL 后"的原始 trim 版本（保留标点），
         // 只在判长度时才看"剥光标点的有意义字符数"。这样"晚安……"这种
@@ -530,54 +520,24 @@ export async function retrieveMemories(
             // 搜索面"的机制都让泛情感记忆凭 imp/recency 反超 topic-specific
             // 记忆。回滚。
 
-            // ─── Prefetch：把 K 路 hybridSearch 各自会做的公共 IO 抽上来一次性做完 ───
-            //
-            // 原实现：每路 hybridSearch 各自 ①调一次 embedding API ②扫一遍
-            //         memory_nodes 索引 ③扫一遍 memory_vectors 索引。
-            //         K 路 = 3K 倍重复 IO，Embedding API 还每路一次 RTT。
-            //
-            // 优化：
-            //   1. 所有 query 文本合批一次 getEmbeddings → 省 (K-1) 次 RTT。
-            //      Embedding API 对 input: [] 数组里的每条独立打向量，数学上等价。
-            //   2. allNodes / allVectors 在 pipeline 一次性预取，透传给每路
-            //      hybridSearch → K 路看同一份快照，retrieve 内部一致性反而更好。
-            //   3. 远程向量路径不消费 allVectors，所以远程开启且没熔断时跳过
-            //      allVectors 预取，避免无效 IO。
+            // ─── Prefetch：把 K 路文本搜索共用的 MemoryNode 快照抽上来一次性做完 ───
             const contextQueryTrimmed = contextQuery.trim();
-            const queriesToEmbed: string[] = [
-                ...effectiveSpikes.map(s => s.text),
-                ...(contextQueryTrimmed ? [contextQuery] : []),
-            ];
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
-            const [queryVectors, allNodes, allVectors] = await Promise.all([
-                tRetrieve(`getEmbeddings(${queriesToEmbed.length})`, 'NET', getEmbeddings(queriesToEmbed, embeddingConfig)),
-                tRetrieve('MemoryNodeDB.getByCharId', 'IDB', MemoryNodeDB.getByCharId(charId)),
-                useRemoteVector
-                    ? Promise.resolve(undefined)
-                    : tRetrieve('MemoryVectorDB.getAllByCharId', 'IDB', MemoryVectorDB.getAllByCharId(charId)),
-            ]);
+            const allNodes = await tRetrieve('MemoryNodeDB.getByCharId', 'IDB', MemoryNodeDB.getByCharId(charId));
 
-            const spikePromises = effectiveSpikes.map((s, i) =>
-                hybridSearch(s.text, charId, embeddingConfig, PER_QUERY_TOP_K, remoteVectorConfig, {
-                    queryVector: queryVectors[i],
+            const spikePromises = effectiveSpikes.map((s) =>
+                hybridSearch(s.text, charId, PER_QUERY_TOP_K, {
                     allNodes,
-                    allVectors,
                 })
             );
             const contextPromise = contextQueryTrimmed
-                ? hybridSearch(contextQuery, charId, embeddingConfig, PER_QUERY_TOP_K, remoteVectorConfig, {
-                    queryVector: queryVectors[effectiveSpikes.length],
+                ? hybridSearch(contextQuery, charId, PER_QUERY_TOP_K, {
                     allNodes,
-                    allVectors,
                 })
                 : Promise.resolve([] as ScoredMemory[]);
 
-            const hybridKind: 'NET' | 'CPU' = useRemoteVector ? 'NET' : 'CPU';
             const [contextResults, ...spikeResultsArr] = await tRetrieve(
                 `hybridSearch×${spikePromises.length + (contextQueryTrimmed ? 1 : 0)}`,
-                hybridKind,
+                'CPU',
                 Promise.all([contextPromise, ...spikePromises]),
             );
 
@@ -654,13 +614,10 @@ export async function retrieveMemories(
             console.log(`🏰 [Retrieve] 多路检索汇总：${effectiveSpikes.length} 个 spike + ${contextResults.length > 0 ? 'context' : '无 context'} → 合并 top ${results.length}`);
         } else {
             // 冷启动兜底：仅用 fallback 单 query
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
             results = await tRetrieve(
                 'hybridSearch(fallback)',
-                useRemoteVector ? 'NET' : 'CPU',
-                hybridSearch(fallbackQuery, charId, embeddingConfig, FINAL_TOP_K, remoteVectorConfig),
+                'CPU',
+                hybridSearch(fallbackQuery, charId, FINAL_TOP_K),
             );
             console.groupCollapsed(`🏰 [Retrieve] 单 query 兜底命中 ${results.length} 条（无末尾 user 消息）`);
             results.forEach((r, i) => console.log(fmt(r, `#${i + 1} `)));
@@ -668,7 +625,7 @@ export async function retrieveMemories(
         }
 
         // 2.5 日期引用路径：从 user 意图里抽"去年12月""3月4号""上周"这类
-        //     日期引用，直接按 createdAt 捞对应区间的记忆（vector/BM25 都对不准日期）。
+        //     日期引用，直接按 createdAt 捞对应区间的记忆（BM25 对日期表达容易对不准）。
         //     archived 节点参与日期匹配 → 路由到其 EventBox summary 返回。
         const dateT0 = performance.now();
         try {
@@ -707,6 +664,22 @@ export async function retrieveMemories(
             console.warn(`📅 [Retrieve] 日期解析失败（不影响常规召回）: ${e?.message || e}`);
         }
         retrieveTimings.push({ label: 'dateResolver', kind: 'IDB', ms: Math.round(performance.now() - dateT0) });
+
+        if (cognitiveFlow) {
+            const beforeCognitive = results.length;
+            const cognitiveQuery = [userQueryJoined, contextQuery, fallbackQuery, queryOverride]
+                .filter(Boolean)
+                .join('\n');
+            results = filterCognitiveFlowResults(results);
+            results = await tRetrieve(
+                'cognitiveFlowSurface',
+                'IDB',
+                mergeCognitiveFlowSurfaceResults(results, charId, cognitiveQuery),
+            );
+            if (results.length !== beforeCognitive) {
+                console.log(`🏰 [Retrieve] Cognitive Flow surface: ${beforeCognitive} -> ${results.length}`);
+            }
+        }
 
         if (results.length === 0) {
             console.log(`🏰 [Retrieve] 混合搜索 + 日期路径均无结果，跳过记忆注入`);
@@ -775,6 +748,15 @@ export async function retrieveMemories(
         }
 
         // 6+7. 更新访问记录 + 共同激活加强（并发写 IDB）
+        if (cognitiveFlow) {
+            const beforeFinalFilter = results.length;
+            results = filterCognitiveFlowResults(results);
+            if (results.length !== beforeFinalFilter) {
+                console.log(`🏰 [Retrieve] Cognitive Flow final filter: ${beforeFinalFilter} -> ${results.length}`);
+            }
+            if (results.length === 0) return '';
+        }
+
         const writeT0 = performance.now();
         const retrievedIds = results.map(r => r.node.id);
         await Promise.all([
@@ -829,34 +811,24 @@ export async function retrieveMemories(
  * @param queryHint 可选，App 自定义检索词（如场景描述、游戏叙事）。
  *                  传了就直接用这个检索，不走 getLastTurnMessages。
  */
-/**
- * 获取全局记忆宫殿 embedding 配置。
- * 优先使用全局配置（localStorage），如果没有则回退到角色级别配置。
- */
-function getEmbeddingConfig(charEmbeddingConfig?: any): EmbeddingConfig | null {
-    return resolveMemoryPalaceAuxConfigsFromStorage().embedding;
-}
-
 export async function injectMemoryPalace(
-    char: { memoryPalaceEnabled?: boolean; embeddingConfig?: any; activeBuffs?: any[]; personalityStyle?: string; ruminationTendency?: number; id: string; memoryPalaceInjection?: string },
+    char: { memoryMode?: any; memoryPalaceEnabled?: boolean; activeBuffs?: any[]; personalityStyle?: string; ruminationTendency?: number; id: string; memoryPalaceInjection?: string },
     recentMessages?: Message[],
     queryHint?: string,
     userName?: string,
 ): Promise<void> {
-    if (!char.memoryPalaceEnabled) return;
-    const embeddingConfig = getEmbeddingConfig(char.embeddingConfig);
-    if (!embeddingConfig) return;
+    if (!isMemoryFeatureEnabled(char)) return;
     try {
         const msgs = recentMessages ?? await DB.getMessagesByCharId(char.id);
         const currentMood = char.activeBuffs?.[0]?.name;
         const context = await retrieveMemories(
-            msgs, char.id, embeddingConfig,
+            msgs, char.id,
             currentMood,
             (char.personalityStyle as PersonalityStyle) || 'emotional',
             char.ruminationTendency ?? 0.3,
             queryHint,
             userName,
-            getRemoteVectorConfig(),
+            isCognitiveFlowMode(char),
         );
         if (context) {
             char.memoryPalaceInjection = context;
@@ -870,17 +842,17 @@ export async function injectMemoryPalace(
 
 /**
  * 把"交换日记"一次性塞进记忆宫殿。
- * 跟 processNewMessages 用的同一套抽取 + 向量化逻辑（lightLLM 副 API、extractMemoriesFromBuffer、
- * vectorizeAndStore），但不走缓冲区/高水位机制 —— 因为日记不是普通聊天消息，
+ * 跟 processNewMessages 用的同一套抽取逻辑（lightLLM 副 API、extractMemoriesFromBuffer），
+ * 但不走缓冲区/高水位机制 —— 因为日记不是普通聊天消息，
  * 是一篇独立的、用户主动触发的归档。
  *
  * 关键差异（对比 chat 自动归档）：
- *  - 时间戳来自 diary.date，不是 Date.now() —— 这样向量记忆按 createdAt 排序时
+ *  - 时间戳来自 diary.date，不是 Date.now() —— 这样记忆按 createdAt 排序时
  *    日记会落在它真正发生的那天而不是归档的那天
  *  - 不动 mp_lastMsgId_ 高水位 —— 防止把后续聊天处理跳过
  *  - 不写 EventBox 跨时间链接（日记是孤立事件，绑链接需要再过一遍消息流，价值不大）
  *
- * @param char 至少要 id / name / memoryPalaceEnabled / embeddingConfig
+ * @param char 至少要 id / name / memoryPalaceEnabled
  * @param dateStr 日记日期 YYYY-MM-DD，决定 MemoryNode.createdAt
  * @param userDiaryText 用户那页的正文
  * @param charDiaryText 角色那页的正文（可空）
@@ -891,7 +863,6 @@ export async function injectMemoryPalace(
 export type DiaryIngestResult =
     | { status: 'palace_disabled' }
     | { status: 'lightllm_missing' }
-    | { status: 'embedding_missing' }
     | { status: 'empty_input' }
     | { status: 'extracted_none'; stored: 0; skipped: 0 }
     | {
@@ -902,22 +873,17 @@ export type DiaryIngestResult =
     };
 
 export async function ingestDiaryToPalace(
-    char: { id: string; name: string; memoryPalaceEnabled?: boolean; embeddingConfig?: any; systemPrompt?: string; worldview?: string },
+    char: { id: string; name: string; memoryMode?: any; memoryPalaceEnabled?: boolean; systemPrompt?: string; worldview?: string },
     dateStr: string,
     userDiaryText: string,
     charDiaryText: string,
     lightLLMConfig: LightLLMConfig | null | undefined,
     userName: string,
 ): Promise<DiaryIngestResult> {
-    if (!char.memoryPalaceEnabled) return { status: 'palace_disabled' };
+    if (!isMemoryFeatureEnabled(char)) return { status: 'palace_disabled' };
     if (!lightLLMConfig?.baseUrl || !lightLLMConfig?.apiKey) {
         console.warn(`🏰 [DiaryIngest] 跳过：lightLLM 未配置`);
         return { status: 'lightllm_missing' };
-    }
-    const embeddingConfig = getEmbeddingConfig(char.embeddingConfig);
-    if (!embeddingConfig) {
-        console.warn(`🏰 [DiaryIngest] 跳过：embedding 配置未就绪`);
-        return { status: 'embedding_missing' };
     }
 
     // 构造时间戳：YYYY-MM-DD → 当地中午 12:00（避免时区把日期撇到前一天）
@@ -983,16 +949,17 @@ export async function ingestDiaryToPalace(
         node.createdAt = createdAt;
         node.lastAccessedAt = createdAt;
         node.origin = 'system';
+        node.cognitiveLayer = 'event';
+        node.eventTime = createdAt;
         node.source = { kind: 'diary', label: `交换日记 ${dateStr}`, refId: dateStr };
     }
 
-    const remoteConfig = getRemoteVectorConfig();
-    const result = await vectorizeAndStore(extracted.memories, embeddingConfig, remoteConfig);
-    console.log(`🏰 [DiaryIngest] 日记 ${dateStr} 入宫：提取 ${extracted.memories.length} 条，存储 ${result.stored}，去重跳过 ${result.skipped}`);
+    await MemoryNodeDB.saveMany(extracted.memories);
+    console.log(`🏰 [DiaryIngest] 日记 ${dateStr} 入宫：提取并保存 ${extracted.memories.length} 条`);
     return {
         status: 'done',
-        stored: result.stored,
-        skipped: result.skipped,
+        stored: extracted.memories.length,
+        skipped: 0,
         nodes: extracted.memories.map(n => ({
             content: n.content,
             room: n.room,
@@ -1117,11 +1084,11 @@ const processingLocks = new Set<string>();
  *
  * 1. 热区 = 最近 200 条消息（留在聊天上下文，不处理）
  * 2. 缓冲区 = 高水位标记之后、热区之前的消息
- * 3. 缓冲区 >= 阈值时：取前 85% → LLM 提取记忆 → Embedding → 更新高水位
+ * 3. 缓冲区 >= 阈值时：取前 85% → LLM 提取记忆 → 本地保存 → 更新高水位
  * 4. 保留尾部 15%，避免下次总结时事件没有起因
  *
  * 相比旧方案（每轮 TopicLoom + 封盒），LLM 调用频率大幅降低：
- * 只在缓冲区满时触发，且只需 1 次 LLM 提取 + Embedding。
+ * 只在缓冲区满时触发，且只需 1 次 LLM 提取。
  */
 /** Pipeline 处理结果 */
 export interface PipelineResult {
@@ -1157,10 +1124,9 @@ export async function processNewMessages(
     _allRecentMessages: Message[], // 保留参数兼容，但内部直接从 DB 加载
     charId: string,
     charName: string,
-    embeddingConfig: EmbeddingConfig,
     llmConfig: LightLLMConfig,
     userName: string = '',
-    /** 强制模式：跳过缓冲区阈值检查，用于一键向量化 */
+    /** 强制模式：跳过缓冲区阈值检查，用于一键整理旧聊天 */
     force: boolean = false,
     /** 进度回调：通知调用方当前阶段 */
     onProgress?: (stage: string) => void,
@@ -1241,7 +1207,7 @@ export async function processNewMessages(
                 );
             }
 
-            // 5c. 向量检索相关已有记忆，用于两个目的：
+            // 5c. 文本检索相关已有记忆，用于两个目的：
             //     ① 为 LLM 提取提供上下文（防止误解隐式指代）
             //     ② 收集结构化引用供 LLM 标注 relatedTo → EventBox 绑定
             //     细粒度策略：每条 ≥4 字的 user 消息独立 query（和 retrieval spike 对齐，避免把
@@ -1252,15 +1218,15 @@ export async function processNewMessages(
                 snippets = sampleSnippetsFromMessages(toProcess, 5, 300);
                 strategy = 'fallback-3seg';
             }
-            relatedMemoryRefs = await fetchRelatedMemoriesForExtraction(snippets, charId, embeddingConfig);
+            relatedMemoryRefs = await fetchRelatedMemoriesForExtraction(snippets, charId);
             if (relatedMemoryRefs.length > 0) {
                 console.log(`🏰 [Pipeline] 检索到 ${relatedMemoryRefs.length} 条相关记忆作为提取上下文（${strategy}，${snippets.length} 段 query）`);
             }
 
             // 5d. 召回回执补强：路径①召回时被实际注入 prompt 的 memoryId 一定
             //     参与了角色这段对话——这是判断"用户纠正了哪条旧记忆"的可靠线索。
-            //     向量召回经常漏掉这类目标（纠正话题离原记忆语义已偏移），所以用
-            //     回执查表保底。配额 5 条优先，剩余格子留给向量召回。
+            //     普通相关性召回经常漏掉这类目标（纠正话题离原记忆语义已偏移），所以用
+            //     回执查表保底。配额 5 条优先，剩余格子留给普通召回。
             try {
                 const RECEIPT_QUOTA = 5;
                 const RECEIPT_TIME_TOLERANCE_MS = 10 * 60 * 1000; // 消息 ts 与 receipt ts 的容差
@@ -1270,7 +1236,7 @@ export async function processNewMessages(
                     const toTs = Math.max(...tsList) + RECEIPT_TIME_TOLERANCE_MS;
                     const receiptIds = getReceiptIdsInRange(charId, fromTs, toTs, RECEIPT_QUOTA);
                     if (receiptIds.length > 0) {
-                        // 已经在向量召回里出现的就不重复加
+                            // 已经在文本召回里出现的就不重复加
                         const existingIds = new Set(relatedMemoryRefs.map(r => r.id));
                         const receiptRefs: RelatedMemoryRef[] = [];
                         for (const id of receiptIds) {
@@ -1286,7 +1252,7 @@ export async function processNewMessages(
                             });
                         }
                         if (receiptRefs.length > 0) {
-                            // 回执优先放前面（O0..On），向量召回继续往后排
+                            // 回执优先放前面（O0..On），普通召回继续往后排
                             relatedMemoryRefs = [...receiptRefs, ...relatedMemoryRefs];
                             console.log(`🧾 [Pipeline] 召回回执补强：从最近注入历史拉回 ${receiptRefs.length} 条记忆作为高优先级 relatedMemories`);
                         }
@@ -1369,37 +1335,18 @@ export async function processNewMessages(
 
         console.log(`🏰 [Pipeline] 提取完成：${chunks.length} 批共 ${memories.length} 条记忆`);
 
-        // 7. 检测 embedding 模型是否变更，如果变了则重建所有已有向量
-        try {
-            const consistency = await checkModelConsistency(charId, embeddingConfig.model);
-            if (consistency === 'mismatch') {
-                console.warn(`🔄 [Pipeline] 检测到 embedding 模型变更，开始重建已有向量...`);
-                const result = await rebuildAllVectors(charId, embeddingConfig, getRemoteVectorConfig());
-                console.log(`🔄 [Pipeline] 重建完成：${result.rebuilt} 条向量已更新`);
-            }
-        } catch (e: any) {
-            console.warn(`🔄 [Pipeline] 模型一致性检查失败（不影响新记忆存储）: ${e.message}`);
-        }
+        // 8. 本地保存节点。高水位由保存成功决定，不依赖旧索引表。
+        console.log(`🏰 [Pipeline] 开始保存 ${memories.length} 条本地记忆...`);
+        onProgress?.(`正在保存 ${memories.length} 条记忆...`);
+        await MemoryNodeDB.saveMany(memories);
+        const storedCount = memories.length;
+        console.log(`🏰 [Pipeline] 本地保存完成：${storedCount} 条`);
 
-        // 8. 向量化（Embedding API，按批次）
-        //    向量化失败则不更新高水位，下次重试 LLM 会重新提取。
-        //    skipDedup=true：聊天总结里"上周担心工作 / 这周担心工作"cosine 完全可能 > 0.9
-        //    但是两件不同时间的事，cosine 去重会精准误杀；而 high-water-mark 已保证
-        //    消息不会被重复处理，去重在这条路径上收益小、误伤大。
-        console.log(`🏰 [Pipeline] 开始向量化 ${memories.length} 条记忆...`);
-        onProgress?.(`正在向量化 ${memories.length} 条记忆...`);
-        const vectorResult = await vectorizeAndStore(memories, embeddingConfig, getRemoteVectorConfig(), { skipDedup: true });
-        console.log(`🏰 [Pipeline] 向量化完成：${vectorResult.stored} 条存储, ${vectorResult.skipped} 条去重跳过`);
-
-        // 9. 只有真的存成功了才更新高水位
-        if (vectorResult.stored === 0) {
-            console.warn(`🏰 [Pipeline] 向量化后 0 条存储成功，不更新高水位`);
-            return { stored: 0, skipped: vectorResult.skipped, memories: [], batches: batchResults };
-        }
+        // 9. 保存成功后更新高水位
         const newHighWaterMark = toProcess[toProcess.length - 1].id;
         setLastProcessedId(charId, newHighWaterMark);
-        console.log(`✅ [Pipeline] 缓冲区处理完成：${vectorResult.stored} 条记忆, hwm ${lastProcessedId} → ${newHighWaterMark}`);
-        onProgress?.(`记忆整理完成！新增 ${vectorResult.stored} 条记忆`);
+        console.log(`✅ [Pipeline] 缓冲区处理完成：${storedCount} 条记忆, hwm ${lastProcessedId} → ${newHighWaterMark}`);
+        onProgress?.(`记忆整理完成！新增 ${storedCount} 条记忆`);
 
         // 9b. 自动归档建议：按日期 group 新记忆 → YAML bullets → 合成 MemoryFragment
         //     caller（useChatAI / Chat）拿到后做"同日期 merge 进 char.memories + 推 hideBeforeMessageId"
@@ -1409,8 +1356,8 @@ export async function processNewMessages(
 
         // 构建返回结果
         const pipelineResult: PipelineResult = {
-            stored: vectorResult.stored,
-            skipped: vectorResult.skipped,
+            stored: storedCount,
+            skipped: 0,
             processedMessages: toProcess.length,
             memories: memories.map(m => ({ content: m.content, room: m.room, importance: m.importance, mood: m.mood, tags: m.tags })),
             batches: batchResults,
@@ -1446,7 +1393,7 @@ export async function processNewMessages(
         if (touchedBoxIds.size > 0) {
             try {
                 const { maybeCompressEventBoxes } = await import('./eventBoxCompression');
-                await maybeCompressEventBoxes(touchedBoxIds, llmConfig, embeddingConfig, charName, userName);
+                await maybeCompressEventBoxes(touchedBoxIds, llmConfig, charName, userName);
             } catch (e: any) {
                 console.warn(`🗜️ [Pipeline] EventBox 压缩失败（不影响已保存记忆）: ${e.message}`);
             }
@@ -1454,7 +1401,7 @@ export async function processNewMessages(
 
         // 10d. 应用纠正：把 LLM 标的"用户纠正了 OX"翻译成对原节点 content 的追加。
         //     设计：不新增节点、不动 EventBox 结构、不删原内容——只在 content 末尾
-        //     追加一行"（YYYY-MM-DD 纠正：xxx）"，重新向量化即可。下次召回时 LLM
+        //     追加一行"（YYYY-MM-DD 纠正：xxx）"。下次召回时 LLM
         //     看到带纠正标签的内容会自然采用新版本。
         //     放在压缩之后：避免刚改完 content 的节点被同轮压缩当 live 节点吞掉。
         if (allCorrections.length > 0) {
@@ -1468,7 +1415,6 @@ export async function processNewMessages(
                 }
 
                 const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-                const toRevectorize: import('./types').MemoryNode[] = [];
                 for (const [targetId, notes] of merged) {
                     const node = await MemoryNodeDB.getById(targetId);
                     if (!node) {
@@ -1483,17 +1429,9 @@ export async function processNewMessages(
                     const noteText = notes.map(n => n.trim()).filter(Boolean).join('；');
                     if (!noteText) continue;
                     node.content = `${node.content}\n（${dateStr} 纠正：${noteText}）`;
-                    node.embedded = false; // 触发重新向量化
                     node.lastAccessedAt = Date.now();
                     await MemoryNodeDB.save(node);
-                    toRevectorize.push(node);
                     console.log(`✏️ [Pipeline] 纠正应用 ${targetId}: "${noteText.slice(0, 40)}…"`);
-                }
-
-                if (toRevectorize.length > 0) {
-                    // skipDedup：内容刚改的节点必然和原向量"很像"，去重会误杀自己
-                    await vectorizeAndStore(toRevectorize, embeddingConfig, getRemoteVectorConfig(), { skipDedup: true });
-                    console.log(`✏️ [Pipeline] ${toRevectorize.length} 条纠正记忆已重新向量化`);
                 }
             } catch (e: any) {
                 console.warn(`✏️ [Pipeline] 应用纠正失败（不影响已保存记忆）: ${e.message}`);
@@ -1501,9 +1439,8 @@ export async function processNewMessages(
         }
 
         // 11. 巩固（纯计算）— 失败不影响已保存的记忆
-        //     传 remoteConfig 让 room 变更同步到 Supabase，跨设备一致
         try {
-            await runConsolidation(charId, getRemoteVectorConfig());
+            await runConsolidation(charId);
         } catch (e: any) {
             console.warn(`🏰 [Pipeline] 巩固失败（不影响已保存记忆）: ${e.message}`);
         }

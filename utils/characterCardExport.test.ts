@@ -152,6 +152,8 @@ describe('buildCharacterCardExportData', () => {
 
         expect(exportData).not.toHaveProperty('id');
         expect(exportData).not.toHaveProperty('modelId');
+        expect(JSON.stringify(exportData)).not.toContain('char-local');
+        expect(JSON.stringify(exportData)).not.toContain('stable-anchor');
         expect(exportData).not.toHaveProperty('memories');
         expect(exportData).not.toHaveProperty('refinedMemories');
         expect(exportData).not.toHaveProperty('activeMemoryMonths');

@@ -9,6 +9,7 @@ import { relationshipBlock, coreText, characterDialogueGuidance, lifeProfileIntr
 import { readTwitterContextSummary } from './twitterFeed';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { PROMPT_PRIVACY_RULE, wrapHiddenPromptBlock } from './promptPrivacy';
+import { isMemoryFeatureEnabled } from './memoryPalace/cognitiveFlow';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -61,7 +62,7 @@ export const ContextBuilder = {
      * 构建角色设定+记忆上下文（角色名、核心指令、世界观 + 月度总结 & 当月日度总结）
      * 用于情绪评估，不包含世界书、印象、用户画像等重型数据，不截断
      *
-     * @param options.skipMemories 跳过月度总结和日度记录（开启记忆宫殿时用向量记忆替代）
+     * @param options.skipMemories 跳过月度总结和日度记录（开启记忆宫殿时用本地长期记忆替代）
      */
     buildRoleSettingsContext: (char: CharacterProfile, options?: { skipMemories?: boolean }): string => {
         let context = `[System: Character Role Settings]\n\n${PROMPT_PRIVACY_RULE}\n\n`;
@@ -90,7 +91,7 @@ export const ContextBuilder = {
         }
 
         // 4. 记忆摘要（月度总结 + 当月日度总结）
-        //    开启记忆宫殿时 skipMemories=true，由调用方注入向量检索结果替代
+        //    开启记忆宫殿时 skipMemories=true，由调用方注入本地记忆检索结果替代
         if (!options?.skipMemories) {
             let memorySection = '';
 
@@ -411,14 +412,14 @@ export const ContextBuilder = {
             }
         }
 
-        // 5b. 记忆宫殿 (Memory Palace) — 向量检索结果
+        // 5b. 记忆宫殿 (Memory Palace) — 本地记忆检索结果
         // 仅在 includeDetailedMemories 时注入，与详细日志同级
         // buildCoreContext(false) 的调用点（情绪评估、轻量上下文等）靠月度总结即可
         // 必须用 memoryPalaceEnabled 把关：injectMemoryPalace 在关闭时直接 return、
         // 既不刷新也不清空 char.memoryPalaceInjection，而该字段又会被 saveCharacter
         // 持久化。若此处不校验总开关，关闭后旧的召回结果仍会被注入进 system prompt，
         // 表现为"宫殿已关、后台无召回，角色却还在精准复述记忆"。与下方 Buff 注入同理。
-        if (includeDetailedMemories && char.memoryPalaceEnabled) {
+        if (includeDetailedMemories && isMemoryFeatureEnabled(char)) {
             const mpContext = char.memoryPalaceInjection || memoryPalaceContext;
             if (mpContext && mpContext.trim()) {
                 context += `${mpContext}\n\n`;

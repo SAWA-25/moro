@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { APIConfig, ApiPreset, CharacterBuff, CharacterProfile } from '../../types';
 import { isEmotionBuffFeatureOn } from '../../utils/scheduleGenerator';
+import { getMoodApiConfig, getScheduleApiConfig } from '../../utils/scheduleMoodApi';
 import LlmApiConfigFields from '../settings/LlmApiConfigFields';
 
 interface EmotionSettingsPanelProps {
@@ -26,23 +27,36 @@ const INTENSITY_DOTS = (n: number | undefined | null) => {
 const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
     char, onSave, onClearBuffs
 }) => {
-    const [url, setUrl] = useState('');
-    const [key, setKey] = useState('');
-    const [model, setModel] = useState('');
-    const [dirty, setDirty] = useState(false);
+    const [scheduleDraft, setScheduleDraft] = useState({ baseUrl: '', apiKey: '', model: '' });
+    const [moodDraft, setMoodDraft] = useState({ baseUrl: '', apiKey: '', model: '' });
+    const [scheduleDirty, setScheduleDirty] = useState(false);
+    const [moodDirty, setMoodDirty] = useState(false);
 
     useEffect(() => {
-        const s = char.emotionConfig;
-        setUrl(s?.api?.baseUrl ?? '');
-        setKey(s?.api?.apiKey ?? '');
-        setModel(s?.api?.model ?? '');
-        setDirty(false);
-    }, [char.id]);
+        const scheduleApi = getScheduleApiConfig(char);
+        const moodApi = getMoodApiConfig(char);
+        setScheduleDraft({
+            baseUrl: scheduleApi?.baseUrl ?? '',
+            apiKey: scheduleApi?.apiKey ?? '',
+            model: scheduleApi?.model ?? '',
+        });
+        setMoodDraft({
+            baseUrl: moodApi?.baseUrl ?? '',
+            apiKey: moodApi?.apiKey ?? '',
+            model: moodApi?.model ?? '',
+        });
+        setScheduleDirty(false);
+        setMoodDirty(false);
+    }, [char.id, char.emotionConfig]);
 
     const handleSave = () => {
-        const api = url ? { baseUrl: url, apiKey: key, model } : undefined;
-        onSave({ enabled: char.emotionConfig?.enabled !== false, api });
-        setDirty(false);
+        onSave({
+            enabled: char.emotionConfig?.enabled !== false,
+            ...(scheduleDraft.baseUrl.trim() ? { scheduleApi: scheduleDraft } : {}),
+            ...(moodDraft.baseUrl.trim() ? { moodApi: moodDraft } : {}),
+        });
+        setScheduleDirty(false);
+        setMoodDirty(false);
     };
 
     const buffs: CharacterBuff[] = char.activeBuffs || [];
@@ -51,37 +65,57 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
     return (
         <div className="space-y-4 pt-4 border-t border-[#eed6df]">
             <div>
-                <div className="text-xs font-bold text-[#5a3140] mb-1">日程 / 心情 API</div>
+                <div className="text-xs font-bold text-[#5a3140] mb-1">日程 API / 心情 API</div>
                 <div className="text-[11px] text-[#8b6d79] leading-relaxed space-y-1">
                     <p>
-                        今日作息排表、聊天里的日程调整和心情 buff 都使用这里的线路。
+                        今日作息排表和聊天里的日程调整走日程 API；心情 buff 和意识流评估走心情 API。
                     </p>
                     <p className="text-[#8b5b6b] bg-[#fff4f7] border border-[#eed6df] rounded-lg px-2 py-1.5">
-                        不填 = 使用文具盒主 API。想让日程和情绪更细腻，可以填一套单独模型。
+                        任一项不填 = 该项使用文具盒主 API。旧版合并配置会自动带入两边，保存后就会分开。
                     </p>
                 </div>
             </div>
 
-            {!buffOn && (
-                <div className="text-[11px] text-[#a892a3] bg-[#fffdfa] border border-[#eed6df] rounded-lg px-3 py-2">
-                    心情 buff 已关闭。重新打开后，之后的新聊天才会继续更新状态。
-                </div>
-            )}
-
             <div className="space-y-3">
                 <LlmApiConfigFields
-                    label="日程 / 心情 API 配置"
-                    value={{ baseUrl: url, apiKey: key, model }}
+                    label="日程 API 配置"
+                    value={scheduleDraft}
                     onChange={next => {
-                        setUrl(next.baseUrl);
-                        setKey(next.apiKey);
-                        setModel(next.model);
-                        setDirty(true);
+                        setScheduleDraft(next);
+                        setScheduleDirty(true);
                     }}
                     onSaveConfig={handleSave}
-                    saveConfigLabel={dirty ? '保存日程 / 心情 API' : '✓ 已保存'}
-                    savePresetDefaultName={`${char.name} 日程心情 API`}
-                    apiBinding="日程 / 心情 API"
+                    saveConfigLabel={scheduleDirty || moodDirty ? '保存 API 设置' : '✓ 已保存'}
+                    savePresetDefaultName={`${char.name} 日程 API`}
+                    apiBinding="今日日程 API"
+                    modelFetchFeatureId="chat.scheduleApi.fetchModels"
+                    modelCacheKey="os_schedule_api_models"
+                    urlPlaceholder="留空 = 使用主 API"
+                    modelPlaceholder="claude-haiku-4-5 / gpt-4o-mini / ..."
+                    inputClassName="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                    buttonClassName="rounded-full bg-[#fff4f7] text-[#5a3140] border border-[#eed6df] px-3 py-2 text-xs font-bold shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                    primaryButtonClassName="rounded-xl bg-[#d8a5b7] text-[#fffdfa] px-3 py-2 text-xs font-bold shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                />
+
+                {!buffOn && (
+                    <div className="text-[11px] text-[#a892a3] bg-[#fffdfa] border border-[#eed6df] rounded-lg px-3 py-2">
+                        心情 buff 已关闭。可以先配置心情 API；重新打开后，之后的新聊天才会继续更新状态。
+                    </div>
+                )}
+
+                <LlmApiConfigFields
+                    label="心情 API 配置"
+                    value={moodDraft}
+                    onChange={next => {
+                        setMoodDraft(next);
+                        setMoodDirty(true);
+                    }}
+                    onSaveConfig={handleSave}
+                    saveConfigLabel={scheduleDirty || moodDirty ? '保存 API 设置' : '✓ 已保存'}
+                    savePresetDefaultName={`${char.name} 心情 API`}
+                    apiBinding="心情 API"
+                    modelFetchFeatureId="chat.moodApi.fetchModels"
+                    modelCacheKey="os_mood_api_models"
                     urlPlaceholder="留空 = 使用主 API"
                     modelPlaceholder="claude-haiku-4-5 / gpt-4o-mini / ..."
                     inputClassName="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"

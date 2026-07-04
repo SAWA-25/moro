@@ -40,7 +40,7 @@ const avatarNode = (c?: CharacterProfile, size = 28) => {
     return <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: size, height: size, background: '#F0E2CC', fontSize: size * 0.5 }}>{a || '🙂'}</span>;
 };
 
-async function llmOnce(apiConfig: APIConfig, system: string, user: string, temp = 0.85): Promise<string> {
+async function llmOnce(apiConfig: APIConfig, system: string, user: string, temp = 0.85, char?: CharacterProfile): Promise<string> {
     const api = apiConfig as APIConfig & { apiRole?: string; apiBinding?: string };
     const data = await callChatCompletion(api, {
         model: api.model,
@@ -49,7 +49,12 @@ async function llmOnce(apiConfig: APIConfig, system: string, user: string, temp 
         max_tokens: 8000,
         stream: false,
     }, {
-        meta: makeApiUsageMeta('bank.lifeAi', { apiRole: api.apiRole || 'aux', apiBinding: api.apiBinding || '互评账本' }),
+        meta: makeApiUsageMeta('bank.lifeAi', {
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding || '互评账本',
+            charId: char?.id,
+            charName: char?.name,
+        }),
     });
     return (extractContent(data) || '').trim();
 }
@@ -109,7 +114,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
 以你的人设，对这笔账说一句简短的点评/反应（关心、吐槽、调侃、心疼钱包都行）。
 - 只输出一句话，不超过 24 个字，第一人称，不要引号。
 - **必须使用用户常用语言**。`;
-            const text = stripQuotes(await llmOnce(apiConfig, base, prompt, 0.9));
+            const text = stripQuotes(await llmOnce(apiConfig, base, prompt, 0.9, char));
             if (!text) { addToast(`${char.name} 没说话`, 'info'); return; }
             const updated: BankTransaction = { ...tx, charComment: { charId: char.id, charName: char.name, text, ts: Date.now() } };
             await DB.saveTransaction(updated);
@@ -136,7 +141,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
 - 形如 {"type":"expense","amount":68,"note":"买了画材"}。
 - type 取 "income"(进账) 或 "expense"(支出)；amount 为正整数；note 不超过 12 字。
 - **必须使用用户常用语言**。`;
-            const parsed = parseEntryJson(await llmOnce(apiConfig, base, prompt, 0.95));
+            const parsed = parseEntryJson(await llmOnce(apiConfig, base, prompt, 0.95, char));
             if (!parsed) { addToast(`${char.name} 这次没记成`, 'info'); return; }
             const entry: CharLedgerEntry = {
                 id: `cl-${char.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -180,7 +185,7 @@ ${thread}
 以你的人设，回复 ${userProfile.name} 最新这条留言，一句话即可。
 - 只输出一句话，不超过 26 个字，第一人称，不要引号。
 - **必须使用用户常用语言**。`;
-            const text = stripQuotes(await llmOnce(apiConfig, base, prompt, 0.9));
+            const text = stripQuotes(await llmOnce(apiConfig, base, prompt, 0.9, char));
             if (text) {
                 const reply: LedgerComment = { author: 'character', text, ts: Date.now() };
                 updated = { ...updated, comments: [...(updated.comments || []), reply] };

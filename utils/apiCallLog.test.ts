@@ -11,6 +11,7 @@ const ALLOWED_RAW_ENDPOINT_FILES = new Set([
     'utils/openAiCompat.ts',
     'utils/openAiCompat.test.ts',
     'utils/llmClient.test.ts',
+    'utils/streamChat.test.ts',
     'utils/apiCallLog.ts',
     'utils/apiCallLog.test.ts',
     'utils/safeApi.ts',
@@ -100,7 +101,7 @@ const CORE_ANNOTATED_FILES: Record<string, string[]> = {
     'utils/pixelHomeDecoration.ts': ['room.decoration'],
     'utils/lifeProfile.ts': ['character.lifeProfile'],
     'utils/appearanceTags.ts': ['character.appearanceTags'],
-    'components/settings/LlmApiConfigFields.tsx': ['chat.emotionApi.fetchModels'],
+    'components/settings/LlmApiConfigFields.tsx': ['chat.customApi.fetchModels'],
     'utils/theaterTimeline.ts': [
         'theater.timeline',
         'theater.reflection',

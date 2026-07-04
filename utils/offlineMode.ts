@@ -1,11 +1,11 @@
 import { CharacterProfile, UserProfile, Message } from '../types';
 import { DB } from './db';
 import { ContextBuilder } from './context';
-import { extractContent } from './safeApi';
 import { RealtimeContextManager } from './realtimeContext';
-import { callChatCompletion } from './llmClient';
+import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractTakeoutOrderDirective } from './takeout';
+import type { PresetMacroCtx } from './presets';
 
 /**
  * 线下模式（自动线下）。
@@ -27,12 +27,21 @@ import { extractTakeoutOrderDirective } from './takeout';
  * API：线下场景默认走文具盒主 API / 主模型，让面对面现场和主聊天保持同一套角色声音。
  */
 
-export const OFFLINE_START_RE = /\[\[\s*OFFLINE_START\s*\]\]/gi;
+export const OFFLINE_START_RE = /\[\[\s*OFFLINE_START\s*(?:[:：]\s*[^\]]*?)?\]\]/gi;
 export const OFFLINE_START_EVENT = 'moro-offline-start';
 
 const pendingKey = (charId: string) => `moro_offline_pending_${charId}`;
 const sessionKey = (charId: string) => `moro_offline_session_${charId}`;
+const activeKey = (charId: string) => `moro_offline_active_${charId}`;
 export const OFFLINE_FOLLOWUP_DELAY_MS = 5 * 60 * 1000;
+export const OFFLINE_SESSION_STATE_EVENT = 'moro-offline-session-state';
+
+const emitOfflineSessionState = (charId: string, active: boolean): void => {
+    try {
+        if (typeof window === 'undefined') return;
+        window.dispatchEvent(new CustomEvent(OFFLINE_SESSION_STATE_EVENT, { detail: { charId, active } }));
+    } catch { /* ignore */ }
+};
 
 /** 从 AI 输出中剥离 [[OFFLINE_START]] 指令并返回是否命中 */
 export const extractOfflineStartDirective = (content: string): { content: string; offline: boolean } => {
@@ -92,13 +101,35 @@ export const loadOfflineSession = (charId: string): OfflineEntry[] => {
 
 export const saveOfflineSession = (charId: string, entries: OfflineEntry[]): void => {
     try { localStorage.setItem(sessionKey(charId), JSON.stringify(entries)); } catch { /* ignore */ }
+    if (entries.length > 0) markOfflineSessionActive(charId);
 };
 
 export const clearOfflineSession = (charId: string): void => {
-    try { localStorage.removeItem(sessionKey(charId)); } catch { /* ignore */ }
+    try {
+        localStorage.removeItem(sessionKey(charId));
+        localStorage.removeItem(activeKey(charId));
+    } catch { /* ignore */ }
+    emitOfflineSessionState(charId, false);
 };
 
 export const hasOfflineSession = (charId: string): boolean => loadOfflineSession(charId).length > 0;
+
+export const markOfflineSessionActive = (charId: string): void => {
+    let wasActive = false;
+    try {
+        wasActive = localStorage.getItem(activeKey(charId)) === '1';
+        localStorage.setItem(activeKey(charId), '1');
+    } catch { /* ignore */ }
+    if (!wasActive) emitOfflineSessionState(charId, true);
+};
+
+export const isOfflineSessionActive = (charId: string): boolean => {
+    try {
+        return localStorage.getItem(activeKey(charId)) === '1' || hasOfflineSession(charId);
+    } catch {
+        return hasOfflineSession(charId);
+    }
+};
 
 // ── 线下叙述人称（POV）：角色 / 用户 各可选 第一/第二/第三人称，自由组合 ──
 
@@ -151,18 +182,29 @@ interface OfflineApi {
     apiBinding?: string;
 }
 
-const callLLM = async (api: OfflineApi, prompt: string, temperature = 0.9): Promise<string> => {
-    const data = await callChatCompletion(api, {
-        model: api.model,
-        messages: [{ role: 'user', content: prompt }],
+const OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。';
+
+const callLLM = async (
+    api: OfflineApi,
+    prompt: string,
+    temperature = 0.9,
+    presetMacros?: PresetMacroCtx,
+    char?: Pick<CharacterProfile, 'id' | 'name'>,
+): Promise<string> => {
+    return (await completeText(api, [
+        { role: 'system', content: prompt },
+        { role: 'user', content: OFFLINE_DIRECT_OUTPUT_USER },
+    ], {
         temperature,
-    }, {
+        presetScope: 'creative.text',
+        presetMacros,
         meta: makeApiUsageMeta('chat.offlineMode', {
             apiRole: api.apiRole || 'main',
             apiBinding: api.apiBinding,
+            charId: char?.id,
+            charName: char?.name,
         }),
-    });
-    return (extractContent(data) || '').trim();
+    })).trim();
 };
 
 const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
@@ -262,7 +304,7 @@ ${rerollBlock}
 - 承接最近线上聊天里的约定、情绪或未说完的话，让这场见面像顺着上一句聊天自然发生；
 - 写「${char.name}」见到 ${userProfile.name} 的第一反应：一个具体动作/神态 + 一句贴合人设的开口，可以短、可以别扭、可以有停顿；
 - 不要替 ${userProfile.name} 说话或行动，不要把双方关系突然推进到人设不支持的亲密程度。
-按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`);
+按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char);
 };
 
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
@@ -295,7 +337,7 @@ ${rerollBlock}
 - 台词像真人面对面说话，可以短句、停顿、没说完、临时改口，不要每次都工整抒情；
 - 可以让「${char.name}」主动做点符合人设的事（递东西、让路、靠近/退开、转移话题、带着走），但不要替 ${userProfile.name} 说话或行动；
 - 保持当前关系的边界和熟悉度，不要硬转暧昧、硬制造冲突，也不要把现场写成剧情总结。
-按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`);
+按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char);
 };
 
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */

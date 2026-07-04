@@ -13,11 +13,14 @@
 import type {
     CharacterProfile, UserProfile, FauxScreenData, TheaterFauxKind,
     TheaterQuizResult, TheaterQuizResultDimension, TheaterQuizSession, TheaterQuizSettings,
+    PresetScopeKey,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractJson } from './safeApi';
 import { llmComplete } from './llmComplete';
+import type { PresetMacroCtx } from './presets';
+import { substituteMacros } from './macros';
 import {
     EXTRA_QUIZ_QUESTION_SYS, extraQuizQuestionUser, extraQuizAnswerSys, extraQuizAnswerUser,
     extraQuizCommentSys, extraQuizCommentUser,
@@ -60,11 +63,13 @@ export function normalizeTheaterQuizSession(session: TheaterQuizSession): Theate
 }
 
 /** 聊天补全（去思维链，按需续写）。短问答 / JSON 不续写；长篇番外传 continueRounds 自动写完。 */
-async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; continueRounds?: number }): Promise<string> {
+async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; continueRounds?: number; presetScope?: PresetScopeKey; presetMacros?: PresetMacroCtx }): Promise<string> {
     return llmComplete(api, messages, {
         temperature: opts?.temperature ?? 0.9,
         maxTokens: opts?.maxTokens ?? 900,
         continueRounds: opts?.continueRounds,
+        presetScope: opts?.presetScope,
+        presetMacros: opts?.presetMacros,
         signal: opts?.signal,
         meta: makeApiUsageMeta('theater.extra', {
             apiRole: api.apiRole || 'aux',
@@ -72,6 +77,18 @@ async function chat(api: ResolvedApi, messages: { role: string; content: string 
         }),
     });
 }
+
+const userNameOf = (userProfile: UserProfile | undefined, fallback: string): string =>
+    (userProfile?.name || '').trim() || fallback;
+
+const macroContextFor = (char: CharacterProfile, userName: string, userProfile?: UserProfile): PresetMacroCtx => ({
+    charName: char.name || '角色',
+    userName,
+    personaDescription: (userProfile?.bio || '').trim(),
+});
+
+const macroText = (text: string | undefined, ctx: PresetMacroCtx): string =>
+    substituteMacros(text || '', ctx).trim();
 
 /** 从问卷名里尽量解析题量（如「恋爱相性100问」「性癖测试50题」），解析不到给 50（且不少于 50）。 */
 export function inferQuestionCount(topic: string, fallback = 50): number {
@@ -111,7 +128,7 @@ export async function genNextQuestion(args: {
     const raw = await chat(api, [
         { role: 'system', content: EXTRA_QUIZ_QUESTION_SYS },
         { role: 'user', content: extraQuizQuestionUser({ topic, index, total, recent }) },
-    ], { temperature: 0.95, maxTokens: 800, continueRounds: 2, signal });
+    ], { temperature: 0.95, maxTokens: 800, continueRounds: 2, presetScope: 'creative.text', signal });
     return cleanQuestion(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || raw) || `（第 ${index + 1} 题生成失败，点重试）`;
 }
 
@@ -120,13 +137,23 @@ export async function genCharAnswer(args: {
     api: ResolvedApi; char: CharacterProfile; userProfile: UserProfile; topic: string; question: string; signal?: AbortSignal;
 }): Promise<string> {
     const { api, char, userProfile, topic, question, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '对方';
+    const userName = userNameOf(userProfile, '对方');
+    const macroCtx = macroContextFor(char, userName, userProfile);
     // ⚠️ 角色作答被截断显示半句（见 docs/divination-and-faux 同款坑）：推理模型先在 <think> 里耗预算，
     // 800 token 常只够吐半句正文。给足预算并在被长度截断时自动续写写完，避免「回答显示不全」。
     return (await chat(api, [
-        { role: 'system', content: extraQuizAnswerSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
-        { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question }) },
-    ], { temperature: 0.9, maxTokens: 1200, continueRounds: 3, signal })) || '……（TA 没说话）';
+        {
+            role: 'system',
+            content: extraQuizAnswerSys({
+                charName: char.name,
+                topic: macroText(topic, macroCtx),
+                description: macroText(char.systemPrompt, macroCtx),
+                userName,
+                userBio: macroText(userProfile?.bio, macroCtx),
+            }),
+        },
+        { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question: macroText(question, macroCtx) }) },
+    ], { temperature: 0.9, maxTokens: 1200, continueRounds: 3, presetScope: 'creative.text', presetMacros: macroCtx, signal })) || '……（TA 没说话）';
 }
 
 /** 角色在问卷某题的评论区继续接话。 */
@@ -143,23 +170,33 @@ export async function genCharComment(args: {
     signal?: AbortSignal;
 }): Promise<string> {
     const { api, char, userProfile, topic, question, userAnswer, charAnswer, recentComments, userComment, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '对方';
+    const userName = userNameOf(userProfile, '对方');
+    const macroCtx = macroContextFor(char, userName, userProfile);
     const recent = (recentComments || []).slice(-8).map(c => `${c.speakerName}：${c.text}`).join('\n');
     const raw = await chat(api, [
-        { role: 'system', content: extraQuizCommentSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
+        {
+            role: 'system',
+            content: extraQuizCommentSys({
+                charName: char.name,
+                topic: macroText(topic, macroCtx),
+                description: macroText(char.systemPrompt, macroCtx),
+                userName,
+                userBio: macroText(userProfile?.bio, macroCtx),
+            }),
+        },
         {
             role: 'user',
             content: extraQuizCommentUser({
-                question,
+                question: macroText(question, macroCtx),
                 userName,
-                userAnswer: userAnswer || '',
+                userAnswer: macroText(userAnswer, macroCtx),
                 charName: char.name,
-                charAnswer: charAnswer || '',
+                charAnswer: macroText(charAnswer, macroCtx),
                 recentComments: recent,
-                userComment,
+                userComment: macroText(userComment, macroCtx),
             }),
         },
-    ], { temperature: 0.9, maxTokens: 700, continueRounds: 1, signal });
+    ], { temperature: 0.9, maxTokens: 700, continueRounds: 1, presetScope: 'creative.text', presetMacros: macroCtx, signal });
     return raw.replace(/^["'“”]+|["'“”]+$/g, '').trim() || '……我先记下这句。';
 }
 
@@ -178,7 +215,7 @@ export async function genQuizHostNote(args: {
     const raw = await chat(api, [
         { role: 'system', content: EXTRA_QUIZ_HOST_SYS },
         { role: 'user', content: extraQuizHostUser({ topic, index, total, question, participantNames: participantNames.join('、'), previousQuestion }) },
-    ], { temperature: 0.85, maxTokens: 300, continueRounds: 1, signal });
+    ], { temperature: 0.85, maxTokens: 300, continueRounds: 1, presetScope: 'creative.text', signal });
     return raw.replace(/^["'“”]+|["'“”]+$/g, '').trim().split(/\r?\n/).find(Boolean) || '主持人把题卡翻过来，笑着看向大家。';
 }
 
@@ -196,22 +233,32 @@ export async function genCharPeerReview(args: {
     signal?: AbortSignal;
 }): Promise<string> {
     const { api, char, userProfile, topic, question, speakerAnswer, targetName, targetAnswer, recentComments, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '对方';
+    const userName = userNameOf(userProfile, '对方');
+    const macroCtx = macroContextFor(char, userName, userProfile);
     const recent = (recentComments || []).slice(-8).map(c => `${c.speakerName}：${c.text}`).join('\n');
     const raw = await chat(api, [
-        { role: 'system', content: extraQuizPeerReviewSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
+        {
+            role: 'system',
+            content: extraQuizPeerReviewSys({
+                charName: char.name,
+                topic: macroText(topic, macroCtx),
+                description: macroText(char.systemPrompt, macroCtx),
+                userName,
+                userBio: macroText(userProfile?.bio, macroCtx),
+            }),
+        },
         {
             role: 'user',
             content: extraQuizPeerReviewUser({
-                question,
+                question: macroText(question, macroCtx),
                 speakerName: char.name,
-                speakerAnswer: speakerAnswer || '',
+                speakerAnswer: macroText(speakerAnswer, macroCtx),
                 targetName,
-                targetAnswer: targetAnswer || '',
+                targetAnswer: macroText(targetAnswer, macroCtx),
                 recentComments: recent,
             }),
         },
-    ], { temperature: 0.9, maxTokens: 750, continueRounds: 1, signal });
+    ], { temperature: 0.9, maxTokens: 750, continueRounds: 1, presetScope: 'creative.text', presetMacros: macroCtx, signal });
     return raw.replace(/^["'“”]+|["'“”]+$/g, '').trim() || '……这句我先记下了。';
 }
 
@@ -284,12 +331,12 @@ export async function genQuizResult(args: {
     signal?: AbortSignal;
 }): Promise<TheaterQuizResult> {
     const { api, session, participantNamesById, userProfile, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '你';
+    const userName = userNameOf(userProfile, '你');
     const participantNames = [userName, ...session.participantIds.map(id => participantNamesById[id]).filter(Boolean)].join('、');
     const raw = await chat(api, [
         { role: 'system', content: EXTRA_QUIZ_RESULT_SYS },
         { role: 'user', content: extraQuizResultUser({ topic: session.topic, participantNames, transcript: quizTranscript(session, participantNamesById, userName) }) },
-    ], { temperature: 0.78, maxTokens: 1800, continueRounds: 2, signal });
+    ], { temperature: 0.78, maxTokens: 1800, continueRounds: 2, presetScope: 'structured.tool', presetMacros: { charName: participantNames, userName }, signal });
     return parseQuizResult(raw);
 }
 
@@ -314,10 +361,19 @@ export async function genExtraPiece(args: {
     api: ResolvedApi; kind: ExtraKind; char: CharacterProfile; userProfile: UserProfile; prompt?: string; options?: ExtraWorkshopOptions; signal?: AbortSignal;
 }): Promise<string> {
     const { api, kind, char, userProfile, prompt, options, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '我';
-    const { sys, user } = extraPiecePrompt({ kind, charName: char.name, description: char.systemPrompt || '', prompt, userName, options });
+    const userName = userNameOf(userProfile, '我');
+    const macroCtx = macroContextFor(char, userName, userProfile);
+    const { sys, user } = extraPiecePrompt({
+        kind,
+        charName: char.name,
+        description: macroText(char.systemPrompt, macroCtx),
+        prompt: prompt ? macroText(prompt, macroCtx) : prompt,
+        userName,
+        userBio: macroText(userProfile?.bio, macroCtx),
+        options,
+    });
     // 番外指令常要求「不少于 5000/10000 字」的长篇——大幅放宽 max_tokens，并在被长度截断时自动续写写完。
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 4096, continueRounds: 5, signal })) || '（这次没生成出来，换个说法再试试）';
+    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 4096, continueRounds: 5, presetScope: 'creative.text', presetMacros: macroCtx, signal })) || '（这次没生成出来，换个说法再试试）';
 }
 
 // ── 仿真图文番外（结构化 JSON，UI 渲染成仿微信/朋友圈/小红书/论坛等截图） ──────────────
@@ -551,9 +607,17 @@ export async function genFauxPiece(args: {
     api: ResolvedApi; kind: FauxKind; char: CharacterProfile; userProfile: UserProfile; keyword?: string; signal?: AbortSignal;
 }): Promise<FauxResult> {
     const { api, kind, char, userProfile, keyword, signal } = args;
-    const userName = (userProfile?.name || '').trim() || '我';
-    const { sys, user } = extraFauxPrompt({ kind, charName: char.name, description: char.systemPrompt || '', userName, userBio: userProfile?.bio || '', keyword });
-    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 2600, signal });
+    const userName = userNameOf(userProfile, '我');
+    const macroCtx = macroContextFor(char, userName, userProfile);
+    const { sys, user } = extraFauxPrompt({
+        kind,
+        charName: char.name,
+        description: macroText(char.systemPrompt, macroCtx),
+        userName,
+        userBio: macroText(userProfile?.bio, macroCtx),
+        keyword: keyword ? macroText(keyword, macroCtx) : keyword,
+    });
+    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 2600, presetScope: 'structured.tool', presetMacros: macroCtx, signal });
     const data = normalizeFauxData(kind, extractJson(raw));
     return { kind, data, fallbackText: raw || '（这次没生成出来，换个关键词再试试）' };
 }

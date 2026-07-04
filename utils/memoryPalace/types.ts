@@ -67,12 +67,39 @@ export interface MemoryNode {
     valence?: number;
     /** Russell 环形情感模型 · 唤醒度：-1 极平静 → +1 极激烈 */
     arousal?: number;
-    embedded: boolean;          // 是否已向量化
+    embedded: boolean;          // legacy flag; new local-only nodes leave it false
     createdAt: number;          // timestamp ms
     lastAccessedAt: number;     // timestamp ms
     accessCount: number;
     pinnedUntil?: number | null; // 便利贴置顶截止时间（timestamp ms），null/undefined = 不置顶
     sourceId?: string | null;   // 消化衍生记忆的源记忆 ID，null = 非衍生记忆
+    /**
+     * Cognitive Flow 本地记忆层级：
+     * - event：可追溯的原子事件/事实
+     * - episode：一段连续互动或事件盒片段
+     * - episode_summary：事件盒压缩后的剧情片段摘要
+     * - saga：跨周/月的长期主线
+     * - feel：角色第一人称沉淀下来的感受，不参与普通检索
+     */
+    cognitiveLayer?: 'event' | 'episode' | 'episode_summary' | 'saga' | 'feel';
+    /** 支撑该记忆的原始消息 ID；用于证据链回看和纠错。 */
+    sourceMessageIds?: number[];
+    /** 事件实际发生时间；缺省时使用 createdAt。 */
+    eventTime?: number;
+    /** 已解决/放下：默认沉底，但仍可被精准检索或在浏览器恢复。 */
+    resolved?: boolean;
+    /** 保护：防止衰减，适合绝不能忘的事实或准则。 */
+    protected?: boolean;
+    /** 高亮：回复前优先浮现，但仍允许后续被用户取消。 */
+    highlight?: boolean;
+    /** 已内化：源事件不再普通浮现，其意义已沉淀到 feel/认知里。 */
+    internalized?: boolean;
+    /** 被权重池主动浮现的次数。 */
+    surfaceCount?: number;
+    /** 被检索/注入命中的次数，独立于旧 accessCount 语义。 */
+    activationCount?: number;
+    /** 角色消化后的主观效价视角。 */
+    modelValence?: number;
     // 记忆来源：extraction=聊天提取, digestion=认知消化衍生, system=系统生成,
     // cognition=长期认知（由反复强共激活的记忆簇提炼的稳定理解，落 self_room、检索时置顶注入，见 cognition.ts）
     origin?: 'extraction' | 'digestion' | 'system' | 'cognition';
@@ -119,22 +146,6 @@ export interface MemoryNodeSource {
     label?: string;
     /** 可选来源 ID，如 groupId / eventBoxId / diary date */
     refId?: string;
-}
-
-// ─── 向量存储 ─────────────────────────────────────────
-
-export interface MemoryVector {
-    memoryId: string;           // 关联 MemoryNode.id
-    charId: string;             // 冗余角色 ID，用于 IndexedDB 索引直查，避免全表扫描
-    // 1024 维向量。三种形态：
-    //   - 在内存里检索时是 Float32Array（4 bytes / dim）
-    //   - 写入 IndexedDB 时是 Uint8Array（Float32 的原始字节，4 bytes / dim）
-    //   - 旧数据是 number[]（每个 number ~50 字节，惊人浪费），读取时会被透明
-    //     地转换并在下次写入时持久化为 Uint8Array。
-    // 出 DB 层之后调用方拿到的永远是 Float32Array。
-    vector: number[] | Float32Array | Uint8Array;
-    dimensions: number;
-    model?: string;             // 生成此向量的 embedding 模型名（用于换模型检测）
 }
 
 // ─── 关联网络 ─────────────────────────────────────────
@@ -263,30 +274,12 @@ export const PERSONALITY_WEIGHTS: Record<PersonalityStyle, Record<LinkType, numb
     analytical: { causal: 1.0, temporal: 0.4, person: 0.3, emotional: 0.2, metaphor: 0.2 },
 };
 
-// ─── Embedding 配置（由文具盒副 API 派生） ─────────────────
-
-export interface EmbeddingConfig {
-    baseUrl: string;            // OpenAI 兼容端点，如 https://api.siliconflow.cn/v1
-    apiKey: string;
-    model: string;              // 默认 text-embedding-3-small
-    dimensions: number;         // 默认 1024
-}
-
-// ─── 远程向量存储配置 (Supabase pgvector) ────────────
-
-export interface RemoteVectorConfig {
-    enabled: boolean;
-    supabaseUrl: string;        // e.g. https://xxxxx.supabase.co
-    supabaseAnonKey: string;    // anon / public key
-    initialized: boolean;       // 是否已建表
-}
-
 // ─── 检索结果 ─────────────────────────────────────────
 
 export interface ScoredMemory {
     node: MemoryNode;
     finalScore: number;
-    similarity: number;         // 向量余弦相似度
+    similarity: number;         // legacy field; local text search returns 0
     bm25Score: number;          // BM25 分数
     roomScore: number;          // 房间评分后的最终分
 }

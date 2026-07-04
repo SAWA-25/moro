@@ -5,7 +5,7 @@
  *   1. 在"有意义的已实装房间"里随机 roll 一个（图书馆永远可选；听歌房当角色
  *      有音乐人格、或房里正放着歌时可选）—— 每次只进一个房间、只做一件事，
  *      天然避免不同玩法的提示词互相打架。
- *   2. 取角色既有人设/向量记忆/最近 contextLimit 上下文（buildChatRequestPayload），
+ *   2. 取角色既有人设/本地记忆/最近 contextLimit 上下文（buildChatRequestPayload），
  *      叠加「页外」世界观 + 该房间现场（user turn）。
  *   3. 调一次 LLM（per-char API 覆盖 → 回落全局）。
  *   4. 解析输出，做房间各自的副作用（图书馆：落批注/推书签；听歌房：点歌进队列/
@@ -28,6 +28,7 @@ import { callChatCompletion } from '../llmClient';
 import { normalizeOpenAiBaseUrl } from '../openAiCompat';
 import { processNewMessages } from '../memoryPalace/pipeline';
 import { resolveMemoryPalaceAuxConfigsFromStorage } from '../memoryPalace/auxConfig';
+import { isMemoryFeatureEnabled } from '../memoryPalace/cognitiveFlow';
 import { loadMusicCfgStandalone } from '../../context/MusicContext';
 import { getCharLyricSnippet } from '../charLyricCache';
 import { getRoom, VR_DEFAULT_INTERVAL_MIN } from './constants';
@@ -47,7 +48,6 @@ import {
 
 /** 记忆管线所需配置的最小形状（避免从 OSContext 反向 import 造成循环依赖）。 */
 interface MemoryConfigLike {
-    embedding?: { baseUrl?: string; apiKey?: string; model?: string; dimensions?: number };
     lightLLM?: { baseUrl?: string; apiKey?: string; model?: string };
 }
 
@@ -178,7 +178,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         };
 
         // 先加载房间数据 + 攒"记忆召回提示"（在场玩家名/相关上下文）——
-        // 在 buildChatRequestPayload 之前算好，让向量召回能带上"对面这些人是谁"，
+        // 在 buildChatRequestPayload 之前算好，让记忆召回能带上"对面这些人是谁"，
         // 角色才记得起自己跟他们的关系，而不是只按聊天历史召回。
         let roomTurn: string;
         let novel: VRWorldNovel | null = null;
@@ -259,7 +259,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             // 把"眼前这封信聊的是什么"塞进召回 query —— 邮局没有在场玩家，
             // 召回若只靠聊天历史就抓不到角色对信里话题的相关记忆/观点。
             // 取要回的来信内容（forced > 随机来信）；只在读自己回信时取自己原信，
-            // 让角色召回"我当初为什么写这个"。截断到 200 字，够 embedding 抓语义即可。
+            // 让角色召回"我当初为什么写这个"。截断到 200 字，足够本地检索抓住主题。
             const recallLetter = (forcedTarget || poTarget)?.content || poReadTarget?.content;
             if (recallLetter) recallExtra.push(`一封信聊到：${recallLetter.slice(0, 200)}`);
         } else if (room.id === 'theater') {
@@ -277,7 +277,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         recallNames.delete(char.name);
         const namesArr = Array.from(recallNames).filter(Boolean);
         // 名字权重加重：同场角色的名字在召回 query 里重复多遍，并显式问"我跟这些人的关系/印象"，
-        // 否则向量/BM25 容易被房间情景词淹没，召不回角色之间的过往与互相印象。
+        // 否则本地相关性检索容易被房间情景词淹没，召不回角色之间的过往与互相印象。
         const namesBoost = namesArr.length > 0
             ? [
                 `此刻在《页外》同场的人：${namesArr.join('、')}。`,
@@ -544,10 +544,10 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
 
         // 记忆管线（fire-and-forget）
         try {
-            const { embedding: mpEmb, llm: mpLLM } = resolveMemoryPalaceAuxConfigsFromStorage();
-            if (char.memoryPalaceEnabled && mpEmb && mpLLM) {
+            const { llm: mpLLM } = resolveMemoryPalaceAuxConfigsFromStorage();
+            if (isMemoryFeatureEnabled(char) && mpLLM) {
                 const recentMsgs = await DB.getRecentMessagesByCharId(char.id, 50);
-                void processNewMessages(recentMsgs, char.id, char.name, mpEmb, mpLLM, userProfile?.name || '', false).catch(() => {});
+                void processNewMessages(recentMsgs, char.id, char.name, mpLLM, userProfile?.name || '', false).catch(() => {});
             }
         } catch { /* 记忆失败不影响主流程 */ }
 

@@ -363,6 +363,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     return (
         <div
+            data-manual-anchor="manual-personas-user"
             className="h-full w-full text-[#2f3432] flex flex-col animate-fade-in"
             style={DOT_BG}
         >

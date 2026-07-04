@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useOS } from '../context/OSContext';
 import Character from './Character';
 import PersonaApp from './PersonaApp';
+import { AppID } from '../types';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 import { CaretLeft } from '@phosphor-icons/react';
+import { scrollToManualAnchor, useManualDeepLink, type ManualDeepLinkTarget } from '../utils/manualDeepLink';
 
 /**
  * 剪影集：角色资料与用户身份的统一入口。
@@ -76,9 +78,11 @@ const EntryCard: React.FC<{
     tone: 'sage' | 'blue';
     photos: { id: string; src?: string; label: string }[];
     fallbackLabel: string;
+    manualAnchor?: string;
     onClick: () => void;
-}> = ({ title, eyebrow, desc, tone, photos, fallbackLabel, onClick }) => (
+}> = ({ title, eyebrow, desc, tone, photos, fallbackLabel, manualAnchor, onClick }) => (
     <button
+        data-manual-anchor={manualAnchor}
         onClick={onClick}
         className={`relative w-full min-h-[332px] p-6 max-[420px]:p-5 text-left select-none overflow-hidden flex flex-col justify-between gap-4 ${CARD}`}
         style={CARD_STYLE}
@@ -95,16 +99,52 @@ const EntryCard: React.FC<{
 );
 
 const PersonaHubApp: React.FC = () => {
-    const { closeApp, characters, userProfile } = useOS();
+    const { closeApp, characters, userProfile, activeApp } = useOS();
     const [section, setSection] = useState<'library' | 'char' | 'user'>('library');
+    const [manualChildTarget, setManualChildTarget] = useState<{ anchorId?: string; nonce: number } | null>(null);
     const previewCharacters = characters.slice(0, 2);
     const userPhotos = [{ id: 'user', src: userProfile.avatar, label: userProfile.name || '你' }];
 
-    if (section === 'char') return <Character onExit={() => setSection('library')} />;
-    if (section === 'user') return <PersonaApp onExit={() => setSection('library')} />;
+    const openManualTarget = useCallback((target: ManualDeepLinkTarget) => {
+        const anchorId = target.anchorId;
+        const route = target.route || '';
+        const payloadSection = typeof target.payload?.section === 'string' ? target.payload.section : '';
+        const wantsUser = payloadSection === 'user' || route.includes('user') || anchorId === 'manual-personas-user';
+        const wantsChar = payloadSection === 'char'
+            || route.includes('char')
+            || anchorId === 'manual-personas-characters'
+            || anchorId === 'manual-personas-character-export';
+
+        if (wantsUser) {
+            setManualChildTarget(null);
+            setSection('user');
+            window.setTimeout(() => {
+                if (!scrollToManualAnchor(anchorId)) scrollToManualAnchor('manual-personas-user');
+            }, 220);
+            return;
+        }
+
+        if (wantsChar) {
+            setManualChildTarget({ anchorId, nonce: Date.now() });
+            setSection('char');
+            return;
+        }
+
+        setManualChildTarget(null);
+        setSection('library');
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(anchorId)) scrollToManualAnchor('manual-personas-root');
+        }, 120);
+    }, []);
+
+    useManualDeepLink(AppID.Personas, openManualTarget, { enabled: activeApp === AppID.Personas });
+
+    if (section === 'char') return <Character onExit={() => { setManualChildTarget(null); setSection('library'); }} manualTarget={manualChildTarget || undefined} />;
+    if (section === 'user') return <PersonaApp onExit={() => { setManualChildTarget(null); setSection('library'); }} />;
 
     return (
         <div
+            data-manual-anchor="manual-personas-root"
             className="absolute inset-0 flex flex-col text-[#2f3432] animate-fade-in"
             style={DOT_BG}
         >
@@ -144,7 +184,8 @@ const PersonaHubApp: React.FC = () => {
                         tone="sage"
                         photos={previewCharacters.map(c => ({ id: c.id, src: c.avatar, label: c.name }))}
                         fallbackLabel="角色"
-                        onClick={() => setSection('char')}
+                        manualAnchor="manual-personas-characters"
+                        onClick={() => { setManualChildTarget(null); setSection('char'); }}
                     />
                     <EntryCard
                         title="用户身份"
@@ -153,7 +194,8 @@ const PersonaHubApp: React.FC = () => {
                         tone="blue"
                         photos={userPhotos}
                         fallbackLabel="身份"
-                        onClick={() => setSection('user')}
+                        manualAnchor="manual-personas-user"
+                        onClick={() => { setManualChildTarget(null); setSection('user'); }}
                     />
                 </div>
             </div>

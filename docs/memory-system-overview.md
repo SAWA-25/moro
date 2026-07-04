@@ -1,279 +1,142 @@
 # 记忆系统概览
 
-本项目包含两套并行运行的记忆系统：传统日度/月度总结（Legacy）和向量化记忆宫殿（主系统）。
+Moro 现在包含两层长期记忆：
 
----
+- **Legacy 日度 / 月度总结**：老的 `MemoryFragment[]` 与 `refinedMemories`，仍用于兼容、手动归档和旧资料迁移。
+- **回忆标本馆 / Cognitive Flow**：主系统，本地 IndexedDB 存储，使用副 API 做文本提取、关联分析、认知消化和梦境消化。检索只走本地文本索引，不连接云端检索库。
 
-## 系统一：传统日度/月度总结
+## 系统一：Legacy 日度 / 月度总结
 
 ### 数据结构
 
-- `memories: MemoryFragment[]` — 每日记录（date + mood + summary）
-- `refinedMemories: Record<string, string>` — LLM 生成的月度精炼总结
-- `activeMemoryMonths: string[]` — 哪些月份的详细日志要注入上下文
-
-### 输入
-
-- **日度记录**：`MemoryFragment`，含 `date`、`mood`、`summary`
-- **月度总结**：用户在 `MemoryArchivist` 组件手动点"生成"→ `handleRefineMonth()` 将该月所有日度记录送给 LLM 做精炼（temp=0.3）
-
-### 调用/输出（context.ts → ContextBuilder）
-
-- `buildRoleSettingsContext(char)`（用于情绪评估）：注入全部月度总结 + 当月日度记录
-- `buildCoreContext(char, user, true)`（用于聊天）：
-  - 月度总结 → "长期核心记忆"
-  - `activeMemoryMonths` 对应的详细日志 → "激活的详细回忆"
-- AI 可以用 `[[RECALL: YYYY-MM]]` 语法主动拉取某个月的详细日志
-
-### 管理
-
-- 用户可切换哪些月份"激活"（控制 token 用量）
-- 可编辑/重新精炼月度总结
-
----
-
-## 系统二：向量化记忆宫殿（主系统，仿大脑结构）
-
-### 一、仿大脑结构——七个房间
-
-| 房间 | 模拟脑区 | 职责 | 容量 | 衰减 |
-|------|---------|------|------|------|
-| **客厅** living_room | 海马体 | 日常闲聊、近期互动 | 200 | 快衰减（0.9972/h，1天剩6.5%） |
-| **卧室** bedroom | 新皮质 | 亲密情感、深层羁绊 | 无限 | 慢衰减（0.9995/h） |
-| **书房** study | 前额叶皮质 | 工作、学习、技能 | 无限 | 慢衰减 |
-| **用户房** user_room | 颞顶联合区 | 用户个人信息、习惯 | 无限 | 慢衰减 |
-| **自我房** self_room | 默认模式网络 | 角色自我认同演化 | 无限 | **永不衰减** |
-| **阁楼** attic | 杏仁核-海马 | 未消化的困惑/创伤 | 无限 | **永不衰减**（潜伏） |
-| **窗台** windowsill | 多巴胺奖赏系统 | 期盼、目标、愿望 | 无限 | **永不衰减** |
-
-### 二、存入逻辑（Input Pipeline）
-
-```
-聊天消息流
-    ↓
-[最近200条] ← 热区，直接在上下文中，不处理
-[缓冲N条]  ← 累积≥100条时触发处理（每次只做1次LLM调用）
-[已处理]   ← 高水位标记之前的
-```
+- `memories: MemoryFragment[]`：每日记录，含 date / mood / summary。
+- `refinedMemories: Record<string, string>`：月度精炼总结。
+- `activeMemoryMonths: string[]`：哪些月份的详细日记要注入上下文。
 
-#### Step 1 — 缓冲触发
+### 注入方式
 
-- `BUFFER_THRESHOLD = 100`，累积够了才处理
-- `PROCESS_RATIO = 0.85`，处理85%，留15%尾部保持上下文连续
-- 高水位标记（localStorage）记录每角色处理进度，防重复
+- `buildRoleSettingsContext(char)`：注入月度总结与当前月日度记录，用于角色设置分析。
+- `buildCoreContext(char, user, true)`：注入长期核心记忆与激活月份详情。
+- AI 仍可用 `[[RECALL: YYYY-MM]]` 主动拉取某月详细日志。
 
-#### Step 2 — LLM 提取记忆（extraction.ts）
+Legacy 数据可通过回忆标本馆设置里的「导入旧记忆」重新提取成 `MemoryNode`。新迁移数据会写 `source.kind='legacy_memory'`，便于之后安全清理。
 
-- 以角色第一人称视角叙事，用户称"TA"
-- LLM 输出 JSON 数组，每条含：
-  - `content`：第三人称叙事
-  - `room`：分配到哪个房间
-  - `importance`：1-10（越高叙事越完整，含因→事→反应）
-  - `mood`：happy/sad/angry/anxious/tender 等12种
-  - `tags`：2-5个关键词
+## 系统二：回忆标本馆 / Cognitive Flow
 
-#### Step 3 — 向量化（vectorStore.ts）
+### 七个房间
 
-- 批量调用文具盒副 API 的 `/embeddings` 端点（batch=20），默认模型 `BAAI/bge-m3`，1024维；回忆标本馆不再保存独立 Base URL / API Key
-- **去重**：余弦相似度 > 0.9 视为重复，跳过
-- 写入 IndexedDB：`MemoryNode`（embedded=true）+ `MemoryVector`（float[]）
+| 房间 | 用途 | 衰减 |
+|------|------|------|
+| `living_room` 客厅 | 日常闲聊、近期互动 | 有容量和衰减 |
+| `bedroom` 卧室 | 亲密情感、深层羁绊 | 慢衰减 |
+| `study` 书房 | 工作、学习、技能成长 | 慢衰减 |
+| `user_room` 用户房间 | 用户个人信息、习惯、人际关系 | 慢衰减 |
+| `self_room` 自我房间 | 角色自我认同、长期认知 | 不主动衰减 |
+| `attic` 阁楼 | 未消化的困惑、创伤、潜意识 | 不主动衰减 |
+| `windowsill` 窗台 | 期盼、目标、愿望 | 不主动衰减 |
 
-#### Step 4 — 链接构建（links.ts）
+## 存入管线
 
-- 自动规则（无需LLM）：
-  - **时间链**：24h内创建 → strength 0.3-0.5
-  - **情绪链**：相同mood → strength 0.4
-- LLM 分类（轻量模型，temp=0.2）：
-  - 类型：`causal` / `person` / `metaphor`
-  - 强度 0.3-0.8
+### 1. 缓冲区与高水位
 
-#### Step 5 — 巩固：短期→长期（consolidation.ts）
+- 最近 200 条语义消息是热区，继续留在聊天上下文，不整理。
+- 热区之前的旧聊天进入缓冲区。
+- 自动整理阈值是 100 条；手动整理最低 10 条。
+- `mp_lastMsgId_<charId>` 记录处理高水位，避免重复整理。
 
-- 客厅→卧室晋升条件：
-  - importance ≥ 8 → 立即晋升
-  - importance ≥ 6 且 age > 24h → 时间成熟晋升
-  - accessCount ≥ 3 → 频繁回忆晋升
-- 客厅超200条 → 按有效重要性（importance × 衰减^小时）淘汰最低者到**阁楼**
+### 2. LLM 提取
 
-### 三、检索逻辑（Retrieval Pipeline）
+`extraction.ts` 使用文具盒副 API，让模型把一段旧聊天提取为 `MemoryNode[]`：
 
-```
-最近3条消息(≤500字) → 查询构建
-        ↓
-   ┌────┴────┐
-向量搜索(85%)  BM25关键词(15%)    ← 混合检索
-   └────┬────┘
-        ↓ 融合分数
-   房间权重加权打分               ← 每个房间不同权重侧重
-        ↓
-   扩散激活(Spreading Activation) ← 沿链接找关联记忆，最多+5条
-        ↓
-   情绪启动(Mood Priming)        ← 匹配当前mood的记忆×1.3
-        ↓
-   连续性/认知引导加权            ← 上轮快照同语义×1.08、认知同语义×1.06
-        ↓
-   召回疲劳/习惯化(Recall Fatigue) ← 连续多轮被注入的同一条记忆逐步降权（防复读）
-        ↓
-   反刍检查(Rumination)          ← 概率性从阁楼冒出1条创伤记忆
-        ↓
-   格式化输出 → 注入System Prompt
-```
+- 第一人称叙事，用户用稳定称呼。
+- 写入房间、重要性、情绪、标签。
+- 尽量保存 `sourceQuote`、`genNote`、`sourceMessageIds`，供证据链回看。
+- 可带 `relatedTo`、`corrections`，用于跨时间事件盒关联和旧记忆纠错。
 
-#### 召回疲劳 / 习惯化（防止"揪着一件小事反复提"）
+### 3. 本地保存与关联
 
-连续性加权、情绪启动、共激活强化、accessCount 自增会形成正反馈：一条记忆一旦冒头就倾向于**每轮都冒头**，角色像复读机一样反复把同一件小事当锚点拎出来。`recallFatigue.ts` 加一层反向的「习惯化」：
+新节点直接写入 IndexedDB：
 
-- 用召回回执（`recallReceipts.ts`）看一条记忆在最近 6 轮里被注入了几次；
-- 出现 ≤1 次不罚（偶尔重提正常），≥2 次起按 `0.8^(次数-1)` 指数降权，**地板 0.45**（真正高度相关的仍能压回来，只是不再霸榜）；
-- 认知节点（`origin==='cognition'`）和便利贴（`pinnedUntil` 未过期）豁免；
-- 隔几轮不再出现 → 近窗频次掉下去 → 惩罚自动解除（自愈）。
+- `MemoryNodeDB.saveMany(memories)`
+- `eventBox.ts` / `links.ts` 建立事件盒和结构关联。
+- 不生成额外检索索引，不写远程表。
 
-作用点在检索打分末尾（扩散/启动/连续性/认知引导之后、最终排序之前），见 `pipeline.ts` 4.7 步。
+### 4. 事件盒压缩
 
-#### 窗台期盼/锚点的"出现节流"
+EventBox 把同一件事的多条记忆绑在一起：
 
-`active`/`anchor` 期盼此前是**每轮全量注入**，于是一条"锚点"会被角色每句话拎出来念叨。`formatter.ts` 的 `pickAnticipationsToShow` 给锚点加冷却：同一锚点最多每 3 轮露一次面、单轮最多 2 条（按"最久没出现"优先，localStorage 维护轮次游标）；新近的 `active` 期盼仍正常展示。让锚点从"时刻悬在嘴边"退回"偶尔想起"。
+- 活节点达到阈值后，副 API 把旧 summary + 活节点压缩成新的整合回忆。
+- 原活节点标记 `archived=true`，默认不再单独普通浮现，但可在 UI 里复活。
+- 事件盒支持手动改名、改标签、封盒、解封、移出成员。
 
-#### 房间权重差异
+## 检索管线
 
-| 房间 | 相似度权重 | 时近性权重 | 重要性权重 |
-|------|-----------|-----------|-----------|
-| 客厅 | 0.50 | 0.30 | 0.20 |
-| 卧室 | 0.60 | 0.10 | 0.30 |
-| 阁楼 | 0.70 | 0.00 | 0.30 |
-| 书房/用户房/自我房/窗台 | 0.55 | 0.15 | 0.30 |
+检索全程本地计算：
 
-#### 扩散激活（按角色性格）
+1. 从最近消息或 `queryHint` 构造查询文本。
+2. `hybridSearch.ts` 使用 BM25 / 关键词 / tag / room 权重打分。
+3. `dateResolver.ts` 对“去年 12 月”“昨天”等日期表达做额外时间范围召回。
+4. `activation.ts` 做扩散激活，沿 MemoryLink 和 EventBox 找相关记忆。
+5. `priming.ts` 做情绪启动与反刍概率。
+6. `recallFatigue.ts` 根据召回回执降权近期反复出现的同一条记忆。
+7. `cognition.ts` 的工作记忆快照让下一轮沿着相近语义延续。
+8. `formatter.ts` 把结果格式化后注入 system prompt。
 
-- **感性型**：情绪链×1.0, 人物链×0.6
-- **叙事型**：时间链×1.0, 人物链×0.8
-- **意象型**：隐喻链×1.0, 情绪链×0.5
-- **分析型**：因果链×1.0, 时间链×0.4
+## Cognitive Flow 层级
 
-#### 输出格式
+`MemoryNode.cognitiveLayer` 用于区分不同长期记忆层：
 
-检索结果格式化为 Markdown，注入到系统提示词：
+- `event`：可追溯的原子事件 / 事实。
+- `episode`：一段连续互动或事件盒片段。
+- `episode_summary`：事件盒压缩后的剧情片段摘要。
+- `saga`：跨周/月的长期主线。
+- `feel`：角色第一人称沉淀下来的感受，普通召回更克制。
 
-```markdown
-### 记忆宫殿
+## 认知消化
 
-**[卧室 · 亲密情感]** (2026-03-20, 重要性: 8)
-TA第一次对我说……我当时心里……
+### 普通认知消化
 
-**[客厅 · 日常闲聊]** (2026-03-19, 重要性: 5)
-今天和TA聊了……
+`digestion.ts` 会定期或手动触发：
 
-> **窗台期盼**:
-> - ✨ 期盼: 希望能一起……
-> - 🔒 锚点: 长期心愿……
-```
+- 阁楼困惑：解决、加深或淡化。
+- 窗台期盼：达成或落空。
+- 书房知识：内化为自我理解。
+- 强共激活簇可被 `cognition.ts` 提炼成稳定认知，落入 `self_room`。
 
-上限12条记忆，每个话题盒最多展开3条兄弟记忆。
+### 本地梦境消化
 
-### 四、认知消化过程（高级仿脑机制）
+`dreamDigestion.ts` 只调用副 API：
 
-#### 认知消化（digestion.ts）
+- 从已有记忆中挑选材料。
+- 生成 `feel` 感受层和少量 `saga` 主线。
+- 继承源记忆线索和证据链。
+- 将普通源记忆标记为已内化 / 已解决，让低权重旧事更少反复冒出。
 
-每 50 轮聊天自动触发 + 随时可手动触发（无冷却限制）。触发后在聊天界面弹窗反馈消化结果。角色以第一人称反思：
+## UI 与维护
 
-- 阁楼创伤 → 解决（移入卧室）/ 加深 / 淡化
-- 窗台期盼 → 达成（移入卧室）/ 失望（移入阁楼）
-- 书房知识 → 内化为自我认同（移入自我房）
+回忆标本馆 UI 在 `apps/MemoryPalaceApp.tsx`：
 
-#### 期盼生命周期（anticipation.ts）
-
-```
-active(新建) → anchor(7天+，心理锚点) → fulfilled / disappointed
-```
-
-#### 共激活学习
-
-多条记忆被同时检索时，它们之间的链接强度 +0.05（最大1.0），模拟记忆网络强化。
-
-### 五、认知网络（联想增强 + 长期认知）
-
-在扩散激活 / 共激活之上再补两层，让角色「越聊越合得来」（见 `cognition.ts`）：
-
-#### 短期 · 工作记忆快照（WorkingMemorySnapshot）
-
-- 每轮检索后，把命中记忆聚成一个语义快照：主导 tags（词频 Top-4）+ 主导情绪 + 主题行 + 簇成员 id，存 localStorage（`mp_working_memory_<charId>`，只留最近一条）。
-- **下一轮**用上一轮快照做**连续性加权**：与上轮同 tag 的记忆 ×1.08、同簇成员 ×1.05 —— 联想顺着同一条线延续，不会每轮乱跳（"聚集关联语意"）。
-- 检索输出顶部插一行 `🧠 此刻的思绪`，提示模型顺着当前思绪接话。
-
-#### 长期 · 认知节点（origin==='cognition'）
-
-- 反复「一起被想起」（link strength ≥ 0.65 且簇内 accessCount 之和 ≥ 8）的记忆簇，说明它们在角色脑里已长在一起 → 用并查集聚团检出。
-- 认知消化（digestion）收尾时，对这样的簇用 LLM 提炼成**一句稳定的「认知」**（对用户/关系/自我的理解，≤40字，第一人称），落 `self_room`、`origin='cognition'`、`tags:['认知','长期']`。每次消化最多新形成 `MAX_NEW_PER_RUN=2` 条（控成本 + 防刷屏），簇签名记 localStorage 防重复提炼。
-- 检索时认知**置顶注入**（`### 你对TA的认知`），不占常规 15 名额；formatter 跳过 `origin==='cognition'` 防重复。越聊，认知越多越准 → 角色越来越「懂你」。
-
-#### 认知参与召回（精度提升）
-
-认知不只是「置顶展示」，还**实际参与召回**：
-
-- **引导召回**：认知节点带上来源簇的语义标签；检索时 `applyCognitionBoost` 给「与认知同语义」的记忆召回分小幅上浮（×1.06）——稳定理解会把相关记忆「带出来」。
-- **相关性置顶**：认知节点本身已向量化、进入混合检索池；`formatCognitions` 用本轮检索里认知拿到的分数排序，**和当下最相关的认知优先注入**（而非只按重要性），无相关命中时回退重要性。
-- 与工作记忆快照的连续性加权叠加，整体让召回更聚焦当前语义、精度更高。
-
-| 文件 | 职责 |
-|------|------|
-| `cognition.ts` | 工作记忆快照（load/save/build/continuityBoost/format）+ 认知簇检测 + LLM 提炼 + 认知注入 |
-| `pipeline.ts` | 检索末尾接连续性加权、保存快照、拼接认知/工作记忆注入块 |
-| `digestion.ts` | `runCognitiveDigestion` 收尾调用 `formCognitions` |
-| `formatter.ts` | 跳过 `origin==='cognition'`（由 pipeline 顶部专段注入） |
-
-### 六、认知网络 UI（回忆标本馆里看：记忆浏览器 + 心意图谱）
-
-回忆标本馆（`apps/MemoryPalaceApp.tsx`）概览页新增两个入口：
-
-- **记忆浏览器**（`view==='browser'`）：直观看 char 的**全部记忆**，按房间筛 + 搜索；每条可展开看到
-  - **原文**（`MemoryNode.sourceQuote`）：生成这条记忆所凭的对话原话（逐字摘录），方便用户回看 / 找茬；
-  - **碎碎念**（`MemoryNode.genNote`）：提取当下 char 的一句私心话（第一人称）。
-  - 两者在 `extraction.ts` 提取时由 LLM 一并给出（prompt 里的 `quote` / `aside` 字段），早期记忆没有则优雅缺省。
-- **心意图谱**（`view==='mindmap'`，组件 `components/memoryPalace/MindMap.tsx`）：把记忆关联网络画成 ego-graph——
-  以一条记忆为中心，四周是与它直接相连的记忆，边按关联类型上色（时间 / 情绪 / 因果 / 人物 / 隐喻），
-  点任一节点即可把焦点切过去顺着网络走。下方「连接清单」逐条讲清**怎么连上的**，重点呈现「隐喻 / 因果」
-  这类「看似不相干却被 char 连到一起」的处理。数据 = 全部 `MemoryNode` + 逐节点聚合去重的 `MemoryLink`。
-  UI 层会额外把 EventBox 的 summary / live / archived 成员合成为 `event_box` 边，展示「同一事件」关系；这只是图谱展示边，不写回 IndexedDB 的 `MemoryLink` schema。
-- **体检 / 修复**（`view==='health'`，维护逻辑在 `maintenance.ts`）：展示副 API / Embedding 状态、高水位、热区保护、可处理缓冲、节点 / 向量 / 断链 / EventBox 引用问题。
-  安全修复只做可证明无害的结构处理：删除孤儿向量、删除断链、清理 EventBox 坏引用、修正盒成员节点状态、让指向缺失盒的节点脱离；不会猜测删除来源不明的旧记忆。
-  编辑记忆正文后会先删除旧向量并把节点标为 `embedded=false`，再尝试重建；Embedding 失败时正文仍保存，但节点留在待修复状态，避免继续用旧向量召回。
-  新迁移数据会写 `source.kind='legacy_memory'`，一键清理只删除这个可识别来源；旧的未标记数据需要用户在记忆浏览器手动筛选。
-
-| 文件 | 职责 |
-|------|------|
-| `MemoryPalaceApp.tsx` | `browser` / `mindmap` 两个 view 块 + 数据加载（openMemoryBrowser / openMindMap） |
-| `components/memoryPalace/MindMap.tsx` | 心意图谱 SVG ego-graph（纯展示组件） |
-
----
-
-## 系统对比
-
-| | 传统日/月总结 | 向量化记忆宫殿 |
-|---|---|---|
-| **输入** | 旧 MemoryFragment 批量迁移 | 实时聊天缓冲 → LLM提取 |
-| **存储** | 转为 MemoryNode（桥梁） | IndexedDB + 向量 + 链接图 |
-| **检索** | 无主动检索 | 混合搜索 + 扩散激活 + 情绪启动 |
-| **输出** | 迁移后融入新系统 | Markdown 注入 System Prompt |
-| **仿脑** | 无 | 7脑区 + 衰减 + 巩固 + 消化 + 反刍 |
-| **状态** | 遗留/迁移用 | **主力系统** |
+- **记忆浏览器**：按房间、层级、关键词浏览；展开可看原文、碎碎念和证据链。
+- **心意图谱**：展示 MemoryLink 和 EventBox 合成边，解释记忆为什么连在一起。
+- **事件盒**：查看整合回忆、活节点、归档节点，支持封盒 / 解封 / 复活 / 移出。
+- **体检 / 修复**：只做本地结构检查和安全修复，包含高水位、热区、可处理缓冲、断链、坏事件盒引用、节点盒关系不一致等。
+- **危险区清空**：清空本地记忆节点、关联、事件盒、期盼、高水位，并移除旧版本留下的本地索引残留表数据。
 
 ## 关键文件索引
 
 | 文件 | 职责 |
 |------|------|
-| `types.ts` | 所有类型定义 |
-| `db.ts` | IndexedDB CRUD |
-| `pipeline.ts` | 主编排（存入+检索） |
-| `extraction.ts` | LLM记忆提取 |
-| `vectorStore.ts` | 向量化+去重 |
-| `links.ts` | 链接构建 |
-| `consolidation.ts` | 短期→长期晋升 |
-| `hybridSearch.ts` | 向量+BM25融合 |
-| `bm25.ts` | 关键词搜索 |
-| `activation.ts` | 扩散激活 |
-| `priming.ts` | 情绪启动+反刍 |
-| `recallFatigue.ts` | 召回疲劳/习惯化（防反复提同一件小事） |
-| `formatter.ts` | 输出格式化 + 窗台锚点出现节流 |
-| `digestion.ts` | 认知消化 |
-| `anticipation.ts` | 期盼生命周期 |
-| `migration.ts` | 旧格式迁移 |
+| `types.ts` | MemoryNode / EventBox / MemoryLink 等类型 |
+| `db.ts` | IndexedDB CRUD 与旧数据清理 |
+| `pipeline.ts` | 存入、检索、注入、日记吞吐 |
+| `extraction.ts` | 副 API 记忆提取 |
+| `eventBox.ts` / `eventBoxCompression.ts` | 事件盒创建、绑定、压缩 |
+| `links.ts` | 结构关联 |
+| `hybridSearch.ts` / `bm25.ts` / `bm25Index.ts` | 本地文本检索 |
+| `activation.ts` / `priming.ts` | 扩散激活、情绪启动、反刍 |
+| `recallFatigue.ts` / `recallReceipts.ts` | 防复读和召回回执 |
+| `formatter.ts` | 注入文本格式化 |
+| `digestion.ts` / `dreamDigestion.ts` | 认知消化与本地梦境消化 |
+| `cognition.ts` / `cognitiveFlow.ts` | 工作记忆快照、长期认知、模式判断 |
+| `migration.ts` | 旧日度 / 月度记忆迁移 |
+| `maintenance.ts` | 体检、结构修复、旧聊天追平 |

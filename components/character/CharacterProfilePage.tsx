@@ -54,7 +54,7 @@ const FriendSettingsPage: React.FC<{
     const specialCareNotify = convoSettings.specialCareNotify !== false;
     const specialCareTone = convoSettings.specialCareRingtone || convoSettings.ringtone || 'chime';
     const updateConvoSettings = (updates: Partial<NonNullable<CharacterProfile['convoSettings']>>) => {
-        updateCharacter(char.id, { convoSettings: { ...(char.convoSettings || {}), ...updates } });
+        updateCharacter(char.id, { convoSettings: updates });
     };
 
     // 行容器用 div：开关行内部有自己的 <button>，嵌套 button 是非法 HTML

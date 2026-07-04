@@ -332,7 +332,7 @@ ${lines}
 /**
  * 形成长期认知：检测强共激活簇 → LLM 提炼 → 落 self_room（origin='cognition'）。
  * 在认知消化(digestion)收尾时调用。返回新形成的认知条数。
- * 新节点 embedded:false，由 digestion 的 vectorizeOrphanedNodes 顺手向量化。
+ * 新节点直接保存到本地 IndexedDB。
  */
 export async function formCognitions(
     charId: string,

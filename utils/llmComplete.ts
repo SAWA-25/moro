@@ -16,11 +16,12 @@
 import type { ResolvedApi } from './auxApi';
 import type { ApiCallMeta } from './apiCallLog';
 import type { PresetScopeKey } from '../types';
+import type { PresetGenParams, PresetMacroCtx } from './presets';
 import { completeText, stripThink, type ChatMsg } from './llmClient';
 
 export type { ChatMsg } from './llmClient';
 
-export interface CompleteOptions {
+export interface CompleteOptions extends PresetGenParams {
     temperature?: number;
     maxTokens?: number;
     signal?: AbortSignal;
@@ -30,6 +31,8 @@ export interface CompleteOptions {
     meta?: ApiCallMeta;
     /** 可选：按活字盘作用范围套预设；默认不套，保护 JSON/工具任务。 */
     presetScope?: PresetScopeKey;
+    /** 可选：给活字盘里的 {{char}} / {{user}} 等宏提供真实上下文。 */
+    presetMacros?: PresetMacroCtx;
 }
 
 export { stripThink };

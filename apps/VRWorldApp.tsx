@@ -295,13 +295,13 @@ const VRWorldApp: React.FC = () => {
             // 记忆宫殿高水位线（mp_lastMsgId_<charId>）、归档隐藏起点（hideBeforeMessageId）影响。
             // 这些机制只管「LLM 上下文能不能看到」——而页外动态是用户自己的浏览界面，
             // 只要消息还在 IndexedDB 里就该一直能看到：
-            //   · 记忆宫殿后台向量化推高水位 → 动态不该突然清零；
+            //   · 记忆宫殿后台整理推高水位 → 动态不该突然清零；
             //   · 角色记忆归档把旧聊天标记为"对 AI 隐藏" → 这些动态依旧存在，用户仍要能回看；
             //   · 聊天攒多了把旧 vr_card 挤出最近窗口 → 不该因此从动态流消失。
             // （清空聊天会真删消息，删掉就没了——那是预期行为，逻辑不变。）
             const msgs = await DB.getVRCardsByCharId(c.id);
             // 「对 AI 不可见」判定：归档隐藏起点（hideBeforeMessageId，m.id < 它即隐藏）
-            // 或记忆宫殿高水位（mp_lastMsgId，m.id <= 它即被向量记忆替代）。
+            // 或记忆宫殿高水位（mp_lastMsgId，m.id <= 它即被本地长期记忆替代）。
             // 两者都让 LLM 读不到原文——动态本身仍在，只是上下文看不到，UI 里暗显并标「已隐藏」。
             const hideBefore = (c as any).hideBeforeMessageId || 0;
             let mpHwm = 0;
