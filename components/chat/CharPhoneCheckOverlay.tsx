@@ -18,6 +18,7 @@ import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import {
     buildPhoneCheckSessionSummary,
     createPhoneCheckSession,
+    formatCharPhoneCheckVisibleRecord,
     makePhoneCheckAction,
     normalizePhoneCheckStep,
 } from '../../utils/checkPhone';
@@ -1098,18 +1099,24 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                     const where = s.app === 'chat-thread' && s.targetName
                         ? `点开了与「${s.targetName}」的对话`
                         : `看了${STEP_LABEL[s.app]}`;
-                    return `${i + 1}. ${where}，心想：${s.thought}`;
-                }).join('\n');
+                    return where;
+                });
             const exitDesc = exitMode === 'finished' ? `${char.name} 自己翻完了，把手机还了回去。`
                 : exitMode === 'consent' ? `${userProfile.name} 开口请求拿回手机，${char.name} 同意了。`
                 : exitMode === 'questions' ? `${userProfile.name} 回答了 ${char.name} 出的三个问题，通过后拿回了手机。`
                 : `${userProfile.name} 强行抢回了手机。`;
-            const ops = actionLogRef.current.length ? `\n${char.name} 翻手机期间做的事：\n${actionLogRef.current.map(l => `- ${l}`).join('\n')}` : '';
             const systemMessageId = await DB.saveMessage({
                 charId: char.id,
                 role: 'system',
                 type: 'text',
-                content: `[查岗记录] 刚才 ${char.name} 拿走了 ${userProfile.name} 的手机翻看。\n${char.name} 的浏览过程与内心想法：\n${browsed || '（刚拿到就被打断了）'}${ops}\n${exitDesc}${extra ? `\n${extra}` : ''}${script?.endHint ? `\n${char.name} 此刻的心情基调：${script.endHint}` : ''}\n（这段经历你们双方都知情，接下来请 ${char.name} 主动就刚才看到的内容发消息。）`,
+                content: formatCharPhoneCheckVisibleRecord({
+                    charName: char.name,
+                    userName: userProfile.name || '用户',
+                    browsed,
+                    actions: actionLogRef.current,
+                    exitDesc,
+                    extra,
+                }),
                 metadata: { charPhoneCheck: true },
             } as any);
             savePhoneCheckSession(prev => {
@@ -1120,20 +1127,18 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                     endedAt,
                     status: exitMode === 'forced' ? 'interrupted' : 'finished',
                     exitMode,
-                    moodAfter: script?.endHint,
                     systemMessageId,
                     summary: buildPhoneCheckSessionSummary({
                         ...prev,
                         endedAt,
                         exitMode,
                         status: exitMode === 'forced' ? 'interrupted' : 'finished',
-                        moodAfter: script?.endHint,
                         systemMessageId,
                     }, char.name, userProfile.name || '用户'),
                     actions: [...prev.actions, makePhoneCheckAction({
                         type: 'exit',
                         label: exitDesc,
-                        detail: extra || script?.endHint,
+                        detail: extra,
                         riskDelta: 0,
                         at: endedAt,
                     })],

@@ -31,6 +31,16 @@ export interface ProactiveSchedule {
   random?: boolean;
 }
 
+export interface ProactiveTriggerInfo {
+  /** 本轮原本应该触发的时间；离线补发时会早于当前时间。 */
+  scheduledAt: number;
+  /** true 表示这是用户回来后补上的离线期间主动消息。 */
+  offlineReplay?: boolean;
+  replayIndex?: number;
+  replayTotal?: number;
+  missedCount?: number;
+}
+
 // 随机模式的间隔档位（分钟）：对应「用户超过 1 小时 / 2 小时 / … / 1 天没回复」
 const RANDOM_INTERVAL_CHOICES_MIN = [60, 120, 240, 480, 720, 1440];
 
@@ -150,7 +160,7 @@ function syncSchedulesToSW() {
 }
 
 // --- Trigger callback management ---
-let triggerCallback: ((charId: string) => void | Promise<void>) | null = null;
+let triggerCallback: ((charId: string, info?: ProactiveTriggerInfo) => void | Promise<void>) | null = null;
 let swListener: ((e: MessageEvent) => void) | null = null;
 let visibilityListener: (() => void) | null = null;
 let focusListener: (() => void) | null = null;
@@ -162,6 +172,8 @@ let preciseTimer: ReturnType<typeof setTimeout> | null = null;
 // throttled in a background tab.  20 s is cheap (just a localStorage read)
 // and keeps the worst-case delay under one bucket for hidden-tab throttling.
 const MAIN_THREAD_CHECK_INTERVAL = 20_000;
+const OFFLINE_REPLAY_GRACE_MS = 60_000;
+const MAX_REPLAY_FIRES_PER_CHECK = 3;
 
 function handleSWMessage(e: MessageEvent) {
   if (e.data?.type !== 'proactive-trigger') return;
@@ -190,7 +202,7 @@ function handleSWMessage(e: MessageEvent) {
   setLastFireTime(charId, now);
   rerollRandomInterval(charId);
   schedulePreciseTimer();
-  void triggerCallback(charId);
+  void triggerCallback(charId, { scheduledAt: now, replayIndex: 1, replayTotal: 1, missedCount: 1 });
 }
 
 /** Check all schedules and fire any that are overdue. */
@@ -199,6 +211,7 @@ function checkOverdueSchedules() {
 
   const schedules = Object.values(loadSchedules());
   const now = Date.now();
+  let firedAny = false;
 
   for (const schedule of schedules) {
     const lastFire = getLastFireTime(schedule.charId);
@@ -213,14 +226,37 @@ function checkOverdueSchedules() {
 
     const elapsed = now - lastFire;
     if (elapsed >= schedule.intervalMs) {
-      console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed`);
-      setLastFireTime(schedule.charId, now);
-      rerollRandomInterval(schedule.charId);
-      syncSchedulesToSW();
-      void triggerCallback(schedule.charId);
+      const missedCount = Math.max(1, Math.floor(elapsed / schedule.intervalMs));
+      const replayTotal = schedule.random ? 1 : Math.min(missedCount, MAX_REPLAY_FIRES_PER_CHECK);
+      const startIndex = schedule.random
+        ? 1
+        : Math.max(1, missedCount - replayTotal + 1);
+      const scheduledTimes = Array.from({ length: replayTotal }, (_, i) => {
+        const slotIndex = startIndex + i;
+        return lastFire + schedule.intervalMs * slotIndex;
+      }).filter(ts => ts <= now);
+      if (scheduledTimes.length === 0) continue;
+
+      const shouldDropOldBacklog = schedule.random || missedCount > scheduledTimes.length;
+      const nextLastFire = shouldDropOldBacklog ? now : lastFire + schedule.intervalMs * missedCount;
+      console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed, replay ${scheduledTimes.length}/${missedCount}`);
+      setLastFireTime(schedule.charId, nextLastFire);
+      if (schedule.random) rerollRandomInterval(schedule.charId);
+      firedAny = true;
+
+      scheduledTimes.forEach((scheduledAt, idx) => {
+        void triggerCallback?.(schedule.charId, {
+          scheduledAt,
+          offlineReplay: now - scheduledAt > OFFLINE_REPLAY_GRACE_MS,
+          replayIndex: idx + 1,
+          replayTotal: scheduledTimes.length,
+          missedCount,
+        });
+      });
     }
   }
 
+  if (firedAny) syncSchedulesToSW();
   schedulePreciseTimer();
 }
 
@@ -321,7 +357,7 @@ export const ProactiveChat = {
    * Call this once from app code. The callback should inject a system hint
    * and call the normal AI flow.
    */
-  onTrigger(callback: (charId: string) => void | Promise<void>) {
+  onTrigger(callback: (charId: string, info?: ProactiveTriggerInfo) => void | Promise<void>) {
     triggerCallback = callback;
     attachListeners();
     // Catch up anything that came due while the callback wasn't registered

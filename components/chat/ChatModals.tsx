@@ -575,8 +575,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             </div>
                             <span className="text-sm text-slate-600">清空时保留最后10条记录 (维持语境)</span>
                         </div>
+                        <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
+                            清空絮语上下文会同时重置该角色的软件状态和已生成内容，角色设定与外观配置会保留。
+                        </p>
                         <button onClick={onClearChatContextOnly} className="w-full py-3 mb-2 bg-slate-50 text-slate-700 font-bold rounded-2xl border border-slate-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
-                            仅清空絮语上下文
+                            清空絮语上下文
                         </button>
                         <button onClick={onClearHistory} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 active:scale-95 transition-transform flex items-center justify-center gap-2">
                             执行清空

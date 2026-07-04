@@ -15,6 +15,7 @@ import {
     diffPresetSnapshot,
     ensureDefaultPresetSeed,
     exportTavernPreset,
+    getEditablePresetOrderForScope,
     getPresetOrderForScope,
     getPresetGenParams,
     importTavernPreset,
@@ -440,6 +441,26 @@ describe('applyPresetToMessages', () => {
         expect(applyPresetToMessages(baseMessages, p, { macros: MACROS, presetScope: 'chat.phoneText' }).map(m => m.content)).toEqual([
             'CORE', 'phone', 'u1', 'a1', 'u2', 'a2',
         ]);
+    });
+
+    it('scope 对应的 ST 顺序为空时，开关编辑会沿用可见顺序而不是清空列表', () => {
+        const p = createDefaultPreset();
+        p.prompts.push({ identifier: 'single-main', name: 'Single', role: 'system', content: 'single' });
+        p.prompt_order = [
+            { character_id: ORDER_CHAR_ID_SINGLE, order: [{ identifier: 'single-main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+            { character_id: ORDER_CHAR_ID_GROUP, order: [] },
+        ];
+
+        expect(getPresetOrderForScope(p, 'chat.groupText').map(e => e.identifier)).toEqual(['single-main', 'chatHistory']);
+
+        const editable = getEditablePresetOrderForScope(p, 'chat.groupText');
+        editable[0].enabled = false;
+
+        expect(p.prompt_order.find(po => po.character_id === ORDER_CHAR_ID_GROUP)?.order).toEqual([
+            { identifier: 'single-main', enabled: false },
+            { identifier: 'chatHistory', enabled: true },
+        ]);
+        expect(p.prompt_order.find(po => po.character_id === ORDER_CHAR_ID_SINGLE)?.order[0].enabled).toBe(true);
     });
 
     it('tailMessages 总是在预设骨架之后追加，用于 JSON 守卫', () => {

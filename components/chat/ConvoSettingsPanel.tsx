@@ -1405,7 +1405,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                             }
                         />
                     )}
-                    <Entry mark="❒" title="清空记录" note="清空本会话的聊天记录，操作前请确认已经导出或保存需要的内容。">
+                    <Entry mark="❒" title="清空记录" note="清空本会话的聊天记录；清空絮语上下文还会重置这个角色的软件状态和已生成内容，角色设定与外观配置会保留。">
                         <div className="rounded-[14px] p-3" style={{ border: '1px solid #f1c6d1', background: '#fff5f7' }}>
                             <div className="flex items-center gap-2 mb-2.5 cursor-pointer select-none" onClick={onTogglePreserveContext}>
                                 <div

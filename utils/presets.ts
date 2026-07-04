@@ -438,8 +438,20 @@ export function clonePresetOrderEntries(order?: PresetPromptOrderEntry[] | null)
 
 function getOrderForCharId(preset: TavernPreset, characterId: number): PresetPromptOrderEntry[] {
     const exact = preset.prompt_order.find(po => po.character_id === characterId);
+    if (exact?.order?.length) return exact.order;
+    const firstNonEmpty = preset.prompt_order.find(po => po.order.length > 0);
+    if (firstNonEmpty) return firstNonEmpty.order;
     if (exact) return exact.order;
     return preset.prompt_order[0]?.order ?? [];
+}
+
+function getOrCreateOrderForCharId(preset: TavernPreset, characterId: number): PresetPromptOrderEntry[] {
+    let exact = preset.prompt_order.find(po => po.character_id === characterId);
+    if (!exact) {
+        exact = { character_id: characterId, order: clonePresetOrderEntries(preset.prompt_order[0]?.order) };
+        preset.prompt_order.push(exact);
+    }
+    return exact.order;
 }
 
 export function isGroupPresetScope(scope?: PresetScopeKey): boolean {
@@ -482,6 +494,19 @@ export function setPresetScopeOrder(
     if (Object.keys(preset.moroPromptOrdersByScope).length === 0) {
         delete preset.moroPromptOrdersByScope;
     }
+}
+
+export function getEditablePresetOrderForScope(preset: TavernPreset, scope: PresetScopeKey): PresetPromptOrderEntry[] {
+    const scoped = clonePresetOrderEntries(preset.moroPromptOrdersByScope?.[scope]);
+    if (scoped.length > 0) return preset.moroPromptOrdersByScope![scope]!;
+
+    const fallbackOrder = getPresetOrderForScope(preset, scope);
+    const characterId = getFallbackOrderCharacterIdForScope(scope);
+    const order = getOrCreateOrderForCharId(preset, characterId);
+    if (order.length === 0 && fallbackOrder.length > 0) {
+        order.splice(0, order.length, ...clonePresetOrderEntries(fallbackOrder));
+    }
+    return order;
 }
 
 export function getPresetOrderSource(preset: TavernPreset, scope: PresetScopeKey): {
@@ -787,16 +812,8 @@ function ensurePromptDefinition(preset: TavernPreset, identifier: string): void 
 }
 
 function getMutableOrderForScope(preset: TavernPreset, scope?: PresetScopeKey): PresetPromptOrderEntry[] {
-    if (scope && preset.moroPromptOrdersByScope?.[scope]?.length) {
-        return preset.moroPromptOrdersByScope[scope]!;
-    }
-    const characterId = scope ? getFallbackOrderCharacterIdForScope(scope) : ORDER_CHAR_ID_SINGLE;
-    let po = preset.prompt_order.find(item => item.character_id === characterId);
-    if (!po) {
-        po = { character_id: characterId, order: [] };
-        preset.prompt_order.push(po);
-    }
-    return po.order;
+    if (scope) return getEditablePresetOrderForScope(preset, scope);
+    return getOrCreateOrderForCharId(preset, ORDER_CHAR_ID_SINGLE);
 }
 
 export function diagnosePreset(preset: TavernPreset, scope?: PresetScopeKey): PresetDiagnosticIssue[] {

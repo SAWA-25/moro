@@ -5,6 +5,7 @@ import {
   buildCheckPhoneStatusSummary,
   CHECK_PHONE_APP_DEFS,
   formatCharPhoneCheckRecordForContext,
+  formatCharPhoneCheckVisibleRecord,
   buildPhoneCheckSessionSummary,
   calculatePhoneCheckRisk,
   createPhoneCheckSession,
@@ -220,12 +221,36 @@ describe('check phone utilities', () => {
 
     expect(context).toContain('伊萨克');
     expect(context).toContain('看了朋友圈');
-    expect(context).toContain('伊萨克这名字出现得挺勤啊');
     expect(context).not.toContain('以我的性格');
     expect(context).not.toContain('更隐晦');
     expect(context).not.toContain('这条消息可以是');
+    expect(context).not.toContain('心情基调');
+    expect(context).not.toContain('余波');
     expect(context).not.toContain('浏览过程与内心想法');
     expect(context).not.toContain('接下来请');
+    expect(context).not.toContain('不要复述');
+  });
+
+  it('formats visible reverse phone check records as factual notes only', () => {
+    const record = formatCharPhoneCheckVisibleRecord({
+      charName: '阿迟',
+      userName: '用户',
+      browsed: ['点开了与「伊萨克」的对话', '看了朋友圈'],
+      actions: ['给「伊萨克」回了一句：先别找我。'],
+      exitDesc: '用户 强行抢回了手机。',
+      extra: '问答内容：用户说只是朋友。',
+    });
+
+    expect(record).toContain('[查岗记录]');
+    expect(record).toContain('点开了与「伊萨克」的对话');
+    expect(record).toContain('给「伊萨克」回了一句');
+    expect(record).not.toContain('心想');
+    expect(record).not.toContain('内心想法');
+    expect(record).not.toContain('心情基调');
+    expect(record).not.toContain('有点吃醋');
+    expect(record).not.toContain('接下来请');
+    expect(record).not.toContain('以我的性格');
+    expect(record).not.toContain('这条消息可以是');
   });
 
   it('accumulates check-phone risk from actions and evidence', () => {

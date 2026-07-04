@@ -27,7 +27,7 @@ import {
     ensureDefaultPresetSeed,
     estimateTokens,
     exportTavernPreset,
-    getFallbackOrderCharacterIdForScope,
+    getEditablePresetOrderForScope,
     getPresetOrderForScope,
     getPresetOrderSource,
     importTavernPreset,
@@ -735,17 +735,7 @@ const PresetApp: React.FC = () => {
 
     const mutateOrder = (fn: (order: PresetPromptOrderEntry[]) => void) => {
         mutateActive(d => {
-            if (d.moroPromptOrdersByScope?.[activeScope]?.length) {
-                fn(d.moroPromptOrdersByScope[activeScope]!);
-                return;
-            }
-            const characterId = getFallbackOrderCharacterIdForScope(activeScope);
-            let po = d.prompt_order.find(p => p.character_id === characterId);
-            if (!po) {
-                po = { character_id: characterId, order: [] };
-                d.prompt_order.push(po);
-            }
-            fn(po.order);
+            fn(getEditablePresetOrderForScope(d, activeScope));
         });
     };
 
@@ -768,17 +758,7 @@ const PresetApp: React.FC = () => {
         const identifier = createPresetLocalId('prompt');
         mutateActive(d => {
             d.prompts.push({ identifier, name: '新提示词', role: 'system', content: '', system_prompt: false });
-            if (d.moroPromptOrdersByScope?.[activeScope]?.length) {
-                d.moroPromptOrdersByScope[activeScope]!.push({ identifier, enabled: true });
-            } else {
-                const characterId = getFallbackOrderCharacterIdForScope(activeScope);
-                let po = d.prompt_order.find(p => p.character_id === characterId);
-                if (!po) {
-                    po = { character_id: characterId, order: [] };
-                    d.prompt_order.push(po);
-                }
-                po.order.push({ identifier, enabled: true });
-            }
+            getEditablePresetOrderForScope(d, activeScope).push({ identifier, enabled: true });
         });
         setEditingId(identifier);
     };
@@ -844,17 +824,7 @@ const PresetApp: React.FC = () => {
                 setPresets(prev => prev.map(p => {
                     if (p.id !== activeId) return p;
                     const copy: TavernPreset = JSON.parse(JSON.stringify(p));
-                    const order = copy.moroPromptOrdersByScope?.[activeScope]?.length
-                        ? copy.moroPromptOrdersByScope[activeScope]!
-                        : (() => {
-                            const characterId = getFallbackOrderCharacterIdForScope(activeScope);
-                            let po = copy.prompt_order.find(item => item.character_id === characterId);
-                            if (!po) {
-                                po = { character_id: characterId, order: [] };
-                                copy.prompt_order.push(po);
-                            }
-                            return po.order;
-                        })();
+                    const order = getEditablePresetOrderForScope(copy, activeScope);
                     const [moved] = order.splice(from, 1);
                     if (moved) {
                         order.splice(to, 0, moved);
@@ -990,16 +960,12 @@ const PresetApp: React.FC = () => {
     };
 
     const batchSetEnabled = (on: boolean) => batchMutate(on ? '批量启用提示词' : '批量停用提示词', d => {
-        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
-            ? d.moroPromptOrdersByScope[activeScope]!
-            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        const order = getEditablePresetOrderForScope(d, activeScope);
         for (const entry of order) if (selectedPromptSet.has(entry.identifier)) entry.enabled = on;
     });
 
     const batchMove = (where: 'top' | 'bottom') => batchMutate(where === 'top' ? '批量移到顶部' : '批量移到底部', d => {
-        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
-            ? d.moroPromptOrdersByScope[activeScope]!
-            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        const order = getEditablePresetOrderForScope(d, activeScope);
         const moving = order.filter(e => selectedPromptSet.has(e.identifier));
         const rest = order.filter(e => !selectedPromptSet.has(e.identifier));
         order.splice(0, order.length, ...(where === 'top' ? [...moving, ...rest] : [...rest, ...moving]));
@@ -1021,9 +987,7 @@ const PresetApp: React.FC = () => {
     });
 
     const batchDetach = () => batchMutate('批量从当前顺序移除', d => {
-        const order = d.moroPromptOrdersByScope?.[activeScope]?.length
-            ? d.moroPromptOrdersByScope[activeScope]!
-            : d.prompt_order.find(po => po.character_id === getFallbackOrderCharacterIdForScope(activeScope))?.order || [];
+        const order = getEditablePresetOrderForScope(d, activeScope);
         const removable = new Set(selectedPromptIds.filter(id => !CORE_CONTEXT_MARKERS.has(id) && id !== CHAT_HISTORY_MARKER));
         const next = order.filter(e => !removable.has(e.identifier));
         order.splice(0, order.length, ...next);

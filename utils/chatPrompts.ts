@@ -1116,7 +1116,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     if (meta.callOutcome === 'declined') {
                         outcomeText = meta.callDirection === 'incoming'
                             ? `${uName}没有接`
-                            : `你没有接${meta.declineReason ? `（你当时的想法：${meta.declineReason}）` : ''}`;
+                            : '你没有接';
                     } else if (meta.callOutcome === 'missed') {
                         outcomeText = meta.callDirection === 'incoming' ? `${uName}没有接到` : '你没有接到';
                     } else if (meta.callOutcome === 'cancelled') {

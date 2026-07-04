@@ -20,124 +20,158 @@ export interface StreamChatResult {
     id?: string;
 }
 
+export interface StreamChatInit {
+    headers: Record<string, string>;
+    body: any;
+    meta?: ApiCallMeta;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+}
+
 export async function streamChatCompletion(
     url: string,
-    init: { headers: Record<string, string>; body: any; meta?: ApiCallMeta },
+    init: StreamChatInit,
     onDelta: (accumulated: string) => void,
 ): Promise<StreamChatResult> {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: init.headers,
-        body: JSON.stringify({ ...init.body, stream: true, stream_options: { include_usage: true } }),
-        ...(init.meta ? { __moroMeta: init.meta } : {}),
-    } as RequestInit & { __moroMeta?: unknown });
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let signal = init.signal;
+    let controller: AbortController | null = null;
+    let removeAbortListener: (() => void) | null = null;
 
-    if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`API ${response.status}${text ? `: ${text.slice(0, 300)}` : ''}`);
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    const isSse = /text\/event-stream/i.test(contentType);
-
-    // 非 SSE：可能是不支持流式的代理直接回了完整 JSON，原样解析返回
-    if (!isSse && !response.body) {
-        return await response.json();
-    }
-
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let content = '';
-    let reasoning = '';
-    let usage: any = undefined;
-    let finishReason: string | undefined;
-    let model: string | undefined;
-    let id: string | undefined;
-    let sawSseData = false;
-    let rawAll = '';
-    // 节流：每 ~60ms 推一次 UI，避免高频 setState 拖垮渲染
-    let lastEmit = 0;
-    const emit = (force = false) => {
-        const now = Date.now();
-        if (!force && now - lastEmit < 60) return;
-        lastEmit = now;
-        onDelta(content);
-    };
-
-    const consumeLine = (line: string) => {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) return;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === '[DONE]') return;
-        let json: any;
-        try { json = JSON.parse(payload); } catch { return; }
-        sawSseData = true;
-        if (json.usage) usage = json.usage;
-        if (json.model) model = json.model;
-        if (json.id) id = json.id;
-        const choice = json.choices?.[0];
-        if (!choice) return;
-        if (choice.finish_reason) finishReason = choice.finish_reason;
-        // delta 流（标准）与 message 整段（部分代理一次性 SSE）两种形态都接
-        const delta = choice.delta;
-        if (delta) {
-            content += flattenContent(delta.content);
-            reasoning += flattenContent(
-                delta.reasoning_content
-                ?? delta.reasoning
-                ?? delta.reasoningContent
-                ?? delta.thinking_content
-                ?? delta.thinking
-                ?? delta.thought,
-            );
-        } else if (choice.message) {
-            const msg = choice.message;
-            content += flattenContent(msg.content);
-            reasoning = flattenContent(
-                msg.reasoning_content
-                ?? msg.reasoning
-                ?? msg.reasoningContent
-                ?? msg.thinking_content
-                ?? msg.thinking
-                ?? msg.thought,
-            );
+    if ((init.timeoutMs || 0) > 0) {
+        controller = new AbortController();
+        timeoutHandle = setTimeout(() => controller?.abort(new Error(`timeout ${init.timeoutMs}ms`)), init.timeoutMs);
+        signal = controller.signal;
+        if (init.signal) {
+            if (init.signal.aborted) {
+                if (timeoutHandle) clearTimeout(timeoutHandle);
+                throw new Error('aborted');
+            }
+            const onAbort = () => controller?.abort();
+            init.signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => init.signal?.removeEventListener('abort', onAbort);
         }
-        emit();
-    };
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        rawAll += chunk;
-        buffer += chunk;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 最后一行可能不完整，留到下个 chunk
-        for (const line of lines) consumeLine(line);
-    }
-    if (buffer) consumeLine(buffer);
-    emit(true);
-
-    // 整条流里没有任何 data: 帧 → 多半是代理无视 stream 参数回了普通 JSON
-    if (!sawSseData) {
-        try {
-            const json = JSON.parse(rawAll);
-            if (json?.choices) return json;
-        } catch { /* fallthrough */ }
-        if (!content) throw new Error('流式响应为空（无 SSE 数据帧，正文也不是 JSON）');
     }
 
-    return {
-        choices: [{
-            message: {
-                content,
-                ...(reasoning ? { reasoning_content: reasoning } : {}),
-            },
-            finish_reason: finishReason,
-        }],
-        ...(usage ? { usage } : {}),
-        ...(model ? { model } : {}),
-        ...(id ? { id } : {}),
-    };
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: init.headers,
+            body: JSON.stringify({ ...init.body, stream: true, stream_options: { include_usage: true } }),
+            signal,
+            ...(init.meta ? { __moroMeta: init.meta } : {}),
+        } as RequestInit & { __moroMeta?: unknown });
+
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new Error(`API ${response.status}${text ? `: ${text.slice(0, 300)}` : ''}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        const isSse = /text\/event-stream/i.test(contentType);
+
+        // 非 SSE：可能是不支持流式的代理直接回了完整 JSON，原样解析返回
+        if (!isSse && !response.body) {
+            return await response.json();
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let content = '';
+        let reasoning = '';
+        let usage: any = undefined;
+        let finishReason: string | undefined;
+        let model: string | undefined;
+        let id: string | undefined;
+        let sawSseData = false;
+        let rawAll = '';
+        // 节流：每 ~60ms 推一次 UI，避免高频 setState 拖垮渲染
+        let lastEmit = 0;
+        const emit = (force = false) => {
+            const now = Date.now();
+            if (!force && now - lastEmit < 60) return;
+            lastEmit = now;
+            onDelta(content);
+        };
+
+        const consumeLine = (line: string) => {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) return;
+            const payload = trimmed.slice(5).trim();
+            if (!payload || payload === '[DONE]') return;
+            let json: any;
+            try { json = JSON.parse(payload); } catch { return; }
+            sawSseData = true;
+            if (json.usage) usage = json.usage;
+            if (json.model) model = json.model;
+            if (json.id) id = json.id;
+            const choice = json.choices?.[0];
+            if (!choice) return;
+            if (choice.finish_reason) finishReason = choice.finish_reason;
+            // delta 流（标准）与 message 整段（部分代理一次性 SSE）两种形态都接
+            const delta = choice.delta;
+            if (delta) {
+                content += flattenContent(delta.content);
+                reasoning += flattenContent(
+                    delta.reasoning_content
+                    ?? delta.reasoning
+                    ?? delta.reasoningContent
+                    ?? delta.thinking_content
+                    ?? delta.thinking
+                    ?? delta.thought,
+                );
+            } else if (choice.message) {
+                const msg = choice.message;
+                content += flattenContent(msg.content);
+                reasoning = flattenContent(
+                    msg.reasoning_content
+                    ?? msg.reasoning
+                    ?? msg.reasoningContent
+                    ?? msg.thinking_content
+                    ?? msg.thinking
+                    ?? msg.thought,
+                );
+            }
+            emit();
+        };
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            rawAll += chunk;
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 最后一行可能不完整，留到下个 chunk
+            for (const line of lines) consumeLine(line);
+        }
+        if (buffer) consumeLine(buffer);
+        emit(true);
+
+        // 整条流里没有任何 data: 帧 → 多半是代理无视 stream 参数回了普通 JSON
+        if (!sawSseData) {
+            try {
+                const json = JSON.parse(rawAll);
+                if (json?.choices) return json;
+            } catch { /* fallthrough */ }
+            if (!content) throw new Error('流式响应为空（无 SSE 数据帧，正文也不是 JSON）');
+        }
+
+        return {
+            choices: [{
+                message: {
+                    content,
+                    ...(reasoning ? { reasoning_content: reasoning } : {}),
+                },
+                finish_reason: finishReason,
+            }],
+            ...(usage ? { usage } : {}),
+            ...(model ? { model } : {}),
+            ...(id ? { id } : {}),
+        };
+    } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        removeAbortListener?.();
+    }
 }

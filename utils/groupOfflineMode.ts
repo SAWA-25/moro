@@ -201,15 +201,20 @@ export const generateGroupOfflineOpening = async (
   api: GroupOfflineApi,
   pov: GroupOfflinePov = loadGroupOfflinePov(group.id),
   scenario?: string,
+  rerollPrevious?: string,
 ): Promise<string> => {
   const base = await buildGroupOfflineBase(group, members, userProfile);
   const scenarioBlock = scenario?.trim()
     ? `\n### [选定开场]\n${scenario.trim()}\n请按这个设定安排大家在哪里见面、谁先出现、第一刻怎么开始。`
     : '\n### [选定开场]\n请根据最近群聊推断一个合理的见面地点和开场方式。';
+  const rerollBlock = rerollPrevious?.trim()
+    ? `\n### [这次是重写]\n上一版群体开场已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请保留同一场赴约的基本关系和时间线，但换一种现场切入、成员反应和措辞重新写，不要照抄上一版，也不要故意反着写成突兀剧情。`
+    : '';
   return callGroupOfflineLLM(api, `${base}
 
 ${buildGroupPovInstruction(pov, userProfile.name || '你')}
 ${scenarioBlock}
+${rerollBlock}
 
 ### [任务]
 写出群体线下面对面见面的开场（120-280字）：
@@ -228,6 +233,7 @@ export const generateGroupOfflineTurn = async (
   entries: GroupOfflineEntry[],
   userInput?: string,
   pov: GroupOfflinePov = loadGroupOfflinePov(group.id),
+  rerollPrevious?: string,
 ): Promise<string> => {
   const base = await buildGroupOfflineBase(group, members, userProfile);
   const userName = userProfile.name || '你';
@@ -235,6 +241,9 @@ export const generateGroupOfflineTurn = async (
   const action = userInput?.trim()
     ? `${userName} 刚刚说了/做了：${userInput.trim()}`
     : `${userName} 暂时没有新的行动；让群成员按现场气氛自然继续。`;
+  const rerollBlock = rerollPrevious?.trim()
+    ? `\n### [这次是重写]\n上一版续写已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请基于同一个现场重新接这一拍，保留前文事实和用户刚刚的行动/发言，但换一种更自然的成员反应、动作和措辞，不要照抄上一版。`
+    : '';
   return callGroupOfflineLLM(api, `${base}
 
 ${buildGroupPovInstruction(pov, userName)}
@@ -244,6 +253,7 @@ ${transcript || '（大家刚刚见面）'}
 
 ### [用户刚刚的行动]
 ${action}
+${rerollBlock}
 
 ### [任务]
 续写接下来的一小段群体现场互动（80-220字）：
@@ -267,7 +277,7 @@ export const commitGroupOfflineSessionToContext = async (
     groupId: group.id,
     role: 'system',
     type: 'text',
-    content: `[group offline session] [群聊线下记录] ${userName} 刚刚和「${group.name}」一起线下见面了。下面是这次面对面发生的现场记录。见面已经结束，这段经历已经写入群聊上下文，但这不是要求成员们立刻补一轮线上消息。之后群聊接着聊时，成员们应当把这些当作真实发生过、彼此记得的共同经历：可以自然延续当时的情绪、玩笑、尴尬、未说完的话和现场细节；有人可以轻描淡写地提起，有人也可以嘴硬、装作没事或接着群聊原本的话题。严格保持时间边界：没有在下面记录中明确发生的外卖送达、快递到达、电话接通、约定完成等事件，都还不能说成已经发生。不要表现得像没见过面，也不要把这段经历复述成整齐的总结报告。\n${transcript}`,
+    content: `[group offline session] [群聊线下记录] ${userName} 刚刚和「${group.name}」一起线下见面。现场简记如下：\n${transcript}`,
     metadata: {
       groupId: group.id,
       groupName: group.name,

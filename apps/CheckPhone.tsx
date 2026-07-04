@@ -716,7 +716,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
             charId: targetChar.id,
             role: 'system',
             type: 'text',
-            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，冒用 ${targetChar.name} 的名义给「${selectedChatRecord.title}」发了一条消息：「${text}」。这件事可能会被 ${targetChar.name} 察觉。`,
+            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，冒用 ${targetChar.name} 的名义给「${selectedChatRecord.title}」发了一条消息：「${text}」。`,
             metadata: { userSentAsCharacter: true },
         } as any);
         recordPhoneCheckAction({
@@ -774,7 +774,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
             charId: targetChar.id,
             role: 'system',
             type: 'text',
-            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，用 ${targetChar.name} 的此刻发布了一条动态：「${text}」。这件事可能会被 ${targetChar.name} 察觉。`,
+            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，用 ${targetChar.name} 的此刻发布了一条动态：「${text}」。`,
             metadata: { userPostedMomentAsCharacter: true, momentPostId: post.id },
         } as any);
         setMomentText('');

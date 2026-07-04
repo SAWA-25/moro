@@ -55,7 +55,7 @@ describe('offline mode draft sessions', () => {
     expect(result.content).not.toContain('TAKEOUT_ORDER');
   });
 
-  it('commits offline sessions with a follow-up anchor and explicit time boundaries', async () => {
+  it('commits offline sessions as concise event records without leaking follow-up rules', async () => {
     const char = { id: 'char-1', name: 'Mia', avatar: 'mia.png' } as CharacterProfile;
 
     const info = await commitOfflineSessionToContext(char, 'Me', [
@@ -70,9 +70,14 @@ describe('offline mode draft sessions', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].id).toBe(info?.messageId);
     expect(messages[0].timestamp).toBe(info?.timestamp);
-    expect(messages[0].content).toContain('这不是要求你立刻补一条线上消息');
-    expect(messages[0].content).toContain('外卖送达');
-    expect(messages[0].content).toContain('还不能说成已经发生');
+    expect(messages[0].content).toContain('[线下模式记录]');
+    expect(messages[0].content).toContain('你（Mia）和 Me 刚刚线下见面');
+    expect(messages[0].content).toContain('现场简记如下');
     expect(messages[0].content).toContain('外卖还没有到');
+    expect(messages[0].content).not.toContain('上下文');
+    expect(messages[0].content).not.toContain('这不是要求');
+    expect(messages[0].content).not.toContain('严格保持时间边界');
+    expect(messages[0].content).not.toContain('外卖送达');
+    expect(messages[0].content).not.toContain('总结报告');
   });
 });

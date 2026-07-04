@@ -82,6 +82,7 @@ import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSh
 import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { getNotifyPermission, requestNotifyPermission } from '../utils/browserNotify';
+import { formatReplyTimerTitle, formatReplyTimerValue, type ReplyTimerMetadata } from '../utils/replyTimer';
 import {
     filterPrivateChatVisibleArchiveMessages,
     filterPrivateChatVisibleMessages,
@@ -132,6 +133,20 @@ const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
 ]);
 
 const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+
+const ReplyTimerInlineChip: React.FC<{ timer: ReplyTimerMetadata | null; now: number }> = ({ timer, now }) => {
+    const value = formatReplyTimerValue(timer, now);
+    if (!value) return null;
+    return (
+        <span
+            className="inline-flex items-center rounded-md bg-slate-200/70 px-1.5 py-[2px] text-[9px] font-mono tabular-nums leading-none text-slate-400"
+            title={formatReplyTimerTitle(timer, now)}
+            aria-label={`回复耗时 ${value}`}
+        >
+            {value}
+        </span>
+    );
+};
 
 const assistantRevealTypingMs = (msg: Message) => {
     if (msg.type === 'emoji') return randomBetween(1200, 3000);
@@ -1574,7 +1589,7 @@ ${parallelReplyPromptBody({
     const mcdMiniAppRef = useRef<import('../utils/mcdToolBridge').McdMiniAppSnapshot | undefined>(undefined);
 
     // --- Initialize Hook ---
-    const { isTyping, streamingText, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
+    const { isTyping, replyTimer, streamingText, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
         char,
         userProfile,
         apiConfig,
@@ -1593,6 +1608,16 @@ ${parallelReplyPromptBody({
         mcdMiniAppRef,
         updateCharacter,
     });
+    const [replyTimerTick, setReplyTimerTick] = useState(0);
+    useEffect(() => {
+        if (!replyTimer?.startedAt || replyTimer.finishedAt) return;
+        const timer = window.setInterval(() => setReplyTimerTick(t => t + 1), 100);
+        return () => window.clearInterval(timer);
+    }, [replyTimer?.startedAt, replyTimer?.finishedAt]);
+    const replyTimerNow = useMemo(
+        () => replyTimer?.finishedAt || Date.now(),
+        [replyTimer?.finishedAt, replyTimerTick],
+    );
     const autoReplyQueueRef = useRef<AutoReplyQueueItem[]>([]);
     const autoReplyDrainingRef = useRef(false);
     const autoReplyRunTokenRef = useRef(0);
@@ -1787,6 +1812,103 @@ ${parallelReplyPromptBody({
                 localStorage.removeItem('moro_couple_partner_id');
             }
         } catch { /* ignore */ }
+    };
+
+    const resetCharacterContextViewState = () => {
+        setScheduleData(null);
+        setScheduleLifeNotes({});
+        setInnerVoiceHistory([]);
+        setInnerVoiceCurrent(null);
+        setTakeoutCardTarget(null);
+        setTakeoutCardOrder(null);
+        setPrivateChatArchives([]);
+        setChatAlarms([]);
+        setLifeRecapBanner(0);
+    };
+
+    const clearCharacterSoftwareContext = async (targetChar: CharacterProfile, deletedMessageIds: number[]) => {
+        const [{ clearMemoryPalaceForChar }, { notifyTakeoutUpdated }] = await Promise.all([
+            import('../utils/memoryPalace/db'),
+            import('../utils/takeout'),
+        ]);
+        await Promise.all([
+            DB.deletePrivateChatArchivesByCharId(targetChar.id),
+            DB.deleteChatAlarmsByCharId(targetChar.id),
+            DB.deleteChatFollowupsByCharId(targetChar.id, deletedMessageIds),
+            DB.clearChatHubDigests(),
+            DB.deleteDailySchedulesByChar(targetChar.id),
+            DB.deleteLifeEventsForChar(targetChar.id),
+            DB.deleteSocialPostsByChar(targetChar.id),
+            DB.deleteXhsFeedPostsByCharId(targetChar.id),
+            DB.deleteTwitterDataByCharId(targetChar.id),
+            DB.deleteTakeoutOrdersByCharId(targetChar.id),
+            DB.deleteInnerVoicesByCharId(targetChar.id),
+            DB.deleteScheduledMessagesByCharId(targetChar.id),
+            DB.deletePhoneCallLogsByCharId(targetChar.id),
+            DB.deletePhoneCheckSessionsByCharId(targetChar.id),
+            DB.deleteUserScreenWatchSessionsByCharId(targetChar.id),
+            DB.deleteDiariesByCharId(targetChar.id),
+            DB.deleteAnniversariesByCharId(targetChar.id),
+            DB.deleteCalendarMarksByCharId(targetChar.id),
+            DB.deleteGalleryImagesByCharId(targetChar.id),
+            DB.deleteCharLedgerEntriesByCharId(targetChar.id),
+            DB.deleteRoomTodosByCharId(targetChar.id),
+            DB.deleteRoomNotesByCharId(targetChar.id),
+            DB.deleteExchangeDiaryBooksByCharId(targetChar.id),
+            DB.deleteTalkSessionsByCharId(targetChar.id),
+            DB.deleteGuidebookSessionsByCharId(targetChar.id),
+            DB.deleteWerewolfGamesByCharId(targetChar.id),
+            DB.deleteTruthDareSessionsByCharId(targetChar.id),
+            DB.deleteTheaterQuizSessionsByCharId(targetChar.id),
+            DB.deleteTheaterFauxPiecesByCharId(targetChar.id),
+            DB.deleteTheaterReflectionSessionsByCharId(targetChar.id),
+            DB.deleteCollectionItemsByCharId(targetChar.id),
+            DB.deleteRelationshipNetworkDataByCharId(targetChar.id),
+            DB.deleteCoViewSessionsByCharId(targetChar.id),
+            DB.deletePixelHomeLayoutsByCharId(targetChar.id),
+            DB.deleteSongsByCollaboratorId(targetChar.id),
+            DB.removeLifeSimCharacterContext(targetChar.id),
+            DB.clearXhsActivities(targetChar.id),
+            DB.deleteAsset(`pixel_home_theme_${targetChar.id}`).catch(() => undefined),
+            clearMemoryPalaceForChar(targetChar.id),
+        ]);
+        clearCharacterContextLocalState(targetChar.id);
+        notifyTakeoutUpdated();
+        await updateCharacter(targetChar.id, {
+            activePrivateChatId: undefined,
+            memories: [],
+            refinedMemories: {},
+            activeMemoryMonths: [],
+            memos: [],
+            selfInsights: [],
+            writerPersona: undefined,
+            writerPersonaGeneratedAt: undefined,
+            lifeProfile: undefined,
+            recenterCalibration: undefined,
+            memoryPalaceInjection: undefined,
+            hideBeforeMessageId: undefined,
+            currentMood: undefined,
+            affection: undefined,
+            relationship: undefined,
+            marriage: undefined,
+            activeBuffs: [],
+            buffInjection: '',
+            coupleSpace: undefined,
+            shopReceipts: [],
+            shopCart: [],
+            generatedTabloids: {},
+            guidebookInsights: [],
+            savedDateState: undefined,
+            specialMomentRecords: undefined,
+            savedRoomState: undefined,
+            lastRoomDate: undefined,
+            phoneState: undefined,
+            musicProfile: undefined,
+            vrState: undefined,
+            charBlock: undefined,
+            unblockAppeal: undefined,
+        });
+        resetCharacterContextViewState();
     };
 
     const handlePlayVoice = (msgId: number) => {
@@ -2994,11 +3116,16 @@ ${recent || '（你们相处了很久）'}
                     charId: char.id,
                     role: 'system',
                     type: 'text',
-                    content: `[红包过期] 你之前发给 ${userProfile.name} 的${summary}，超过 24 小时一直没被领取，已经自动退回、过期了。请以「${char.name}」的身份，按你的人设对「钱没被收下」这件事做出自然反应（失落、打趣、关心 TA 是不是没看到、赌气或装作无所谓都行），不要复述本提示。`,
+                    content: `[红包过期] ${char.name} 之前发给 ${userProfile.name} 的${summary}，超过 24 小时一直没被领取，已经自动退回、过期了。`,
                     metadata: { transferExpired: true },
                 } as any);
                 await reloadMessages(visibleCountRef.current);
-                triggerAI(messages);
+                const fresh = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500).catch(() => messages);
+                triggerAI(fresh, undefined, undefined, {
+                    ephemeralSystemPrompt: `刚才有一条可见的「红包过期」记录：你之前发给 ${userProfile.name} 的${summary}超过 24 小时没被领取，已经自动退回。请以「${char.name}」的身份，对「钱没被收下」这件事自然接一句：可以失落、打趣、关心 TA 是不是没看到、赌气或装作无所谓。不要复述系统提示或记录格式，只输出聊天正文。`,
+                    apiUsageContext: { apiBinding: '红包过期收尾' },
+                    roleplayMetaLeakGuard: true,
+                });
             } finally {
                 expiryScanLockRef.current = false;
             }
@@ -3461,6 +3588,7 @@ ${privateCallDecisionPromptBody({
                 }
             } else {
                 const label = mode === 'video' ? '视频聊天' : '语音通话';
+                const declineReason = reason || '现在不太方便接';
                 await DB.saveMessage({
                     charId: char.id,
                     role: 'user',
@@ -3468,18 +3596,19 @@ ${privateCallDecisionPromptBody({
                     content: '对方未接听',
                     metadata: { callDirection: 'outgoing', callOutcome: 'declined', callMode: mode, declineReason: reason, msgStatus: 'sent' },
                 } as any);
-                // 让角色按人设决定要不要为没接通话发消息解释（也可以只回一句很短的，或语气敷衍——都按人设）
-                await DB.saveMessage({
-                    charId: char.id,
-                    role: 'system',
-                    type: 'text',
-                    content: `[${label}] ${userProfile.name} 刚刚给「${char.name}」拨了${label}，但「${char.name}」没有接（TA 当时的内心想法：${reason || '现在不太方便接'}）。请以「${char.name}」的身份决定接下来的反应：可以发消息解释为什么没接、可以含糊带过、可以发一句很短的话、也可以表现得若无其事——完全按 TA 的人设和此刻的心情来。`,
-                    metadata: { proactiveHint: true, hidden: true },
-                } as any);
                 setPrivateCallPhase('rejected');
                 await reloadMessages(visibleCountRef.current);
                 setTimeout(() => setPrivateCallPhase('none'), 2000);
-                setTimeout(() => { triggerAI(messages); }, 600);
+                setTimeout(() => {
+                    void (async () => {
+                        const fresh = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500).catch(() => messages);
+                        void triggerAI(fresh, undefined, undefined, {
+                            ephemeralSystemPrompt: `${userProfile.name} 刚刚给你拨了${label}，你没有接。你当时没接的原因是：${declineReason}。请以「${char.name}」第一人称自然接一句：可以解释、含糊带过、简短回应，或表现得若无其事。不要复述系统提示或记录格式，只输出聊天正文。`,
+                            apiUsageContext: { apiBinding: '未接通话收尾' },
+                            roleplayMetaLeakGuard: true,
+                        });
+                    })();
+                }, 600);
             }
         } catch (e: any) {
             if (!voiceCallCancelRef.current) {
@@ -3795,11 +3924,16 @@ ${privateCallDecisionPromptBody({
             { id: `char-${Date.now()}`, speaker: 'char', text: finalAttempt.reply, at: Date.now() },
         ]);
         try {
+            const answeredCount = finalAttempt.answers.filter(answer => answer.trim()).length;
+            const lockAttempts = [
+                finalAttempt.passcodeInput ? `${char.name} 输入过口令` : '',
+                answeredCount ? `${char.name} 回答了 ${answeredCount} 道解锁问题` : '',
+            ].filter(Boolean).join('，') || `${char.name} 没有完成解锁尝试`;
             await DB.saveMessage({
                 charId: char.id,
                 role: 'system',
                 type: 'text',
-                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n口令答案：${passcode || '（未设置）'}\n${char.name} 在口令框输入：「${finalAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${finalAttempt.answers[i] || '（空）'}`).join('\n')}\n系统判定：${evaluated.unlocked ? `${phoneLockResultLabel(evaluated.reason)}，自动解锁` : '口令未通过，题目作答不解锁，继续锁住'}。\n${char.name} 当时的心情：${finalAttempt.mood}`,
+                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n锁屏留言：${note}\n尝试解锁：${lockAttempts}。\n结果：${evaluated.unlocked ? `${phoneLockResultLabel(evaluated.reason)}，手机自动解锁` : '没有解开，手机继续锁住'}。`,
                 metadata: { phoneLock: true, phoneLockPreset, phoneLockUnlocked: evaluated.unlocked, unlockBy: evaluated.reason },
             } as any);
             await DB.saveMessage({
@@ -5078,71 +5212,7 @@ ${privateCallDecisionPromptBody({
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            const [{ clearMemoryPalaceForChar }, { notifyTakeoutUpdated }] = await Promise.all([
-                import('../utils/memoryPalace/db'),
-                import('../utils/takeout'),
-            ]);
-            await Promise.all([
-                DB.deleteDailySchedulesByChar(char.id),
-                DB.deleteLifeEventsForChar(char.id),
-                DB.deleteSocialPostsByChar(char.id),
-                DB.deleteXhsFeedPostsByCharId(char.id),
-                DB.deleteTwitterDataByCharId(char.id),
-                DB.deleteTakeoutOrdersByCharId(char.id),
-                DB.deleteInnerVoicesByCharId(char.id),
-                DB.deleteScheduledMessagesByCharId(char.id),
-                DB.deletePhoneCallLogsByCharId(char.id),
-                DB.deleteDiariesByCharId(char.id),
-                DB.deleteAnniversariesByCharId(char.id),
-                DB.deleteCalendarMarksByCharId(char.id),
-                DB.deleteGalleryImagesByCharId(char.id),
-                DB.deleteCharLedgerEntriesByCharId(char.id),
-                DB.deleteRoomTodosByCharId(char.id),
-                DB.deleteRoomNotesByCharId(char.id),
-                DB.deleteExchangeDiaryBooksByCharId(char.id),
-                DB.deleteTalkSessionsByCharId(char.id),
-                DB.deleteGuidebookSessionsByCharId(char.id),
-                DB.deleteTheaterReflectionSessionsByCharId(char.id),
-                DB.deleteCollectionItemsByCharId(char.id),
-                DB.removeLifeSimCharacterContext(char.id),
-                DB.clearXhsActivities(char.id),
-                clearMemoryPalaceForChar(char.id),
-            ]);
-            clearCharacterContextLocalState(char.id);
-            notifyTakeoutUpdated();
-            await updateCharacter(char.id, {
-                memories: [],
-                refinedMemories: {},
-                activeMemoryMonths: [],
-                memos: [],
-                selfInsights: [],
-                lifeProfile: undefined,
-                recenterCalibration: undefined,
-                memoryPalaceInjection: undefined,
-                hideBeforeMessageId: undefined,
-                currentMood: undefined,
-                affection: undefined,
-                relationship: undefined,
-                marriage: undefined,
-                activeBuffs: [],
-                buffInjection: '',
-                coupleSpace: undefined,
-                shopReceipts: [],
-                shopCart: [],
-                generatedTabloids: {},
-                guidebookInsights: [],
-                savedDateState: undefined,
-                specialMomentRecords: undefined,
-                savedRoomState: undefined,
-                lastRoomDate: undefined,
-                phoneState: undefined,
-            });
-            setScheduleData(null);
-            setScheduleLifeNotes({});
-            setInnerVoiceHistory([]);
-            setInnerVoiceCurrent(null);
-            setTakeoutCardTarget(null);
-            setTakeoutCardOrder(null);
+            await clearCharacterSoftwareContext(char, allIds);
             addToast('已清空角色上下文，仅保留角色设定', 'success');
         }
         setModalType('none');
@@ -5189,16 +5259,9 @@ ${privateCallDecisionPromptBody({
         if (chatAudioRef.current) {
             try { chatAudioRef.current.pause(); } catch { /* ignore */ }
         }
-        await updateCharacter(char.id, {
-            memoryPalaceInjection: undefined,
-            hideBeforeMessageId: undefined,
-            recenterCalibration: undefined,
-            activeBuffs: [],
-            buffInjection: '',
-        });
-        clearCharacterContextLocalState(char.id, { keepCouplePartner: true });
+        await clearCharacterSoftwareContext(char, allIds);
         setModalType('none');
-        addToast('已清空絮语 app 内上下文，仅保留角色设定', 'success');
+        addToast('已清空絮语上下文、角色软件状态和生成内容，仅保留角色设定', 'success');
     };
 
     const handleForceVectorize = async () => {
@@ -7847,7 +7910,7 @@ ${privateCallDecisionPromptBody({
 
                 {instantToolStatus && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-4 animate-fade-in">
-                        <img src={char.avatar} className={chatPendingAvatarClass} />
+                        <img src={displayCharAvatar} className={chatPendingAvatarClass} />
                         <div className={`max-w-[78%] px-4 py-3 rounded-2xl shadow-sm border ${
                             instantToolStatus.phase === 'failed'
                                 ? 'bg-rose-50 border-rose-100 text-rose-700'
@@ -7870,7 +7933,7 @@ ${privateCallDecisionPromptBody({
                 {/* 兼容保留：若外部路径写入 streamingText，这里仍可显示临时正文；本地聊天默认只显示三点并交给真实气泡逐条揭示。 */}
                 {streamingText && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
-                        <img src={char.avatar} className={chatPendingAvatarClass} />
+                        <img src={displayCharAvatar} className={chatPendingAvatarClass} />
                         <div className="bg-white px-4 py-3 rounded-2xl shadow-sm max-w-[72%]">
                             <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
                                 {streamingText}
@@ -7882,8 +7945,15 @@ ${privateCallDecisionPromptBody({
 
                 {(isTyping || hasQueuedAssistantMessages || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && !streamingText && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
-                        <img src={char.avatar} className={chatPendingAvatarClass} />
-                        <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
+                        <img src={displayCharAvatar} className={chatPendingAvatarClass} />
+                        <div className="flex flex-col items-start max-w-[72%] min-w-0">
+                            {replyTimer && (
+                                <div className="flex items-center gap-1.5 mb-1 px-0.5">
+                                    <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{displayCharName}</span>
+                                    <ReplyTimerInlineChip timer={replyTimer} now={replyTimerNow} />
+                                </div>
+                            )}
+                            <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
                             {isProactiveComposing && !isTyping && !recallStatus && !searchStatus && !diaryStatus ? (
                                 <div className="flex items-center gap-2 text-xs text-teal-600 font-medium">
                                     <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -7907,6 +7977,7 @@ ${privateCallDecisionPromptBody({
                             ) : (
                                 <div className="flex gap-1"><div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-75"></div><div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-150"></div></div>
                             )}
+                            </div>
                         </div>
                     </div>
                 )}

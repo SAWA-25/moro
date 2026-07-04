@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parseOpenMeteoForecast, forecastDayLabel } from './realtimeContext';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { defaultRealtimeConfig, forecastDayLabel, parseOpenMeteoForecast, RealtimeContextManager } from './realtimeContext';
 
 /** Open-Meteo forecast 响应样例（裁剪到我们用到的字段）。 */
 const sample = {
@@ -17,6 +17,15 @@ const sample = {
         precipitation_probability_max: [20, 0, 60, 90],
     },
 };
+
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+afterEach(() => {
+    RealtimeContextManager.clearCache();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
 
 describe('parseOpenMeteoForecast', () => {
     it('解析当前实况：温度/体感/湿度四舍五入，天气码映射中文', () => {
@@ -63,6 +72,59 @@ describe('parseOpenMeteoForecast', () => {
         const f = parseOpenMeteoForecast(sample, '', Date.now())!;
         expect(f.city).toBe('当前位置');
         expect(f.current.city).toBe('当前位置');
+    });
+});
+
+describe('fetchWeather geolocation permission', () => {
+    it('自动取天气时，定位权限未决定也不会弹浏览器定位授权', async () => {
+        const getCurrentPosition = vi.fn();
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('get.geojs.io')) return jsonResponse({ latitude: '31.23', longitude: '121.47' });
+            if (url.includes('open-meteo.com')) return jsonResponse({ current: sample.current });
+            if (url.includes('bigdatacloud.net')) return jsonResponse({ city: '上海' });
+            return jsonResponse({}, 404);
+        }));
+
+        const weather = await RealtimeContextManager.fetchWeather({
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'geo',
+            cacheMinutes: 0,
+        });
+
+        expect(getCurrentPosition).not.toHaveBeenCalled();
+        expect(weather?.city).toBe('上海');
+        expect(weather?.description).toBe('小雨');
+    });
+
+    it('主动测试天气时，仍允许请求浏览器定位', async () => {
+        const getCurrentPosition = vi.fn((success: PositionCallback) => success({
+            coords: { latitude: 31.23, longitude: 121.47 } as GeolocationCoordinates,
+            timestamp: Date.now(),
+        } as GeolocationPosition));
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('open-meteo.com')) return jsonResponse({ current: sample.current });
+            if (url.includes('bigdatacloud.net')) return jsonResponse({ city: '上海' });
+            return jsonResponse({}, 404);
+        }));
+
+        const weather = await RealtimeContextManager.fetchWeather({
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'geo',
+            cacheMinutes: 0,
+        }, { requestLocationPermission: true });
+
+        expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+        expect(weather?.city).toBe('上海');
     });
 });
 

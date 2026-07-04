@@ -486,7 +486,6 @@ export function buildPhoneCheckSessionSummary(session: PhoneCheckSession, fallba
       ? `发生动作：${session.actions.filter(action => action.type !== 'start' && action.type !== 'browse_step').slice(0, 5).map(action => action.label).join('；')}。`
       : '',
     session.exitMode ? `结局：${session.exitMode}。` : '',
-    session.moodAfter ? `余波：${sanitizeAssistantVisibleText(session.moodAfter)}` : '',
   ].filter(Boolean);
   return parts.join('\n');
 }
@@ -497,7 +496,7 @@ export function formatCharPhoneCheckRecordForContext(raw: unknown, charName = 'T
     .map(match => sanitizeAssistantVisibleText(match[1]))
     .filter(Boolean)
     .slice(0, 6);
-  const actionBlock = text.match(new RegExp(`${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} 翻手机期间做的事：\\n([\\s\\S]*?)(?:\\n[^-]|$)`));
+  const actionBlock = text.match(new RegExp(`${charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} 翻手机期间做(?:的事|过)：\\n([\\s\\S]*?)(?:\\n[^-]|$)`));
   const actions = actionBlock?.[1]
     ?.split(/\r?\n/)
     .map(line => sanitizeAssistantVisibleText(line.replace(/^-\s*/, '').trim()))
@@ -506,14 +505,31 @@ export function formatCharPhoneCheckRecordForContext(raw: unknown, charName = 'T
   const exit = sanitizeAssistantVisibleText(
     text.match(/((?:自己翻完了，把手机还了回去|开口请求拿回手机[^。\n]*|回答了[^。\n]*拿回了手机|强行抢回了手机)[^。\n]*。?)/)?.[1] || '',
   );
-  const mood = sanitizeAssistantVisibleText(text.match(/心情基调：([^\n]+)/)?.[1] || '');
   return [
     `[查岗记录] 刚才 ${charName} 拿走了 ${userName} 的手机翻看。`,
     stepLines.length ? `浏览过：${stepLines.join('；')}。` : '刚拿到手机就被打断了。',
     actions.length ? `做过的事：${actions.join('；')}。` : '',
     exit ? `结局：${exit}` : '',
-    mood ? `余波：${mood}` : '',
-    `这是真实发生在你们之间的查岗经历；可以自然提到看到的人和内容，但只说${charName}会真正发给${userName}的话，不要复述内心分析、脚本说明或系统记录。`,
+    `这是刚才真实发生在你们之间的查岗经历。`,
+  ].filter(Boolean).join('\n');
+}
+
+export function formatCharPhoneCheckVisibleRecord(args: {
+  charName: string;
+  userName: string;
+  browsed: string[];
+  actions?: string[];
+  exitDesc: string;
+  extra?: string;
+}): string {
+  const browsed = args.browsed.map(item => sanitizeAssistantVisibleText(item)).filter(Boolean);
+  const actions = (args.actions || []).map(item => sanitizeAssistantVisibleText(item)).filter(Boolean);
+  return [
+    `[查岗记录] 刚才 ${args.charName} 拿走了 ${args.userName} 的手机翻看。`,
+    browsed.length ? `浏览过：\n${browsed.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '浏览过：（刚拿到就被打断了）',
+    actions.length ? `${args.charName} 翻手机期间做过：\n${actions.map(item => `- ${item}`).join('\n')}` : '',
+    `结局：${sanitizeAssistantVisibleText(args.exitDesc)}`,
+    args.extra ? sanitizeAssistantVisibleText(args.extra) : '',
   ].filter(Boolean).join('\n');
 }
 

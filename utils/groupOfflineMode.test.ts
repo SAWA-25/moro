@@ -116,10 +116,13 @@ describe('group offline mode', () => {
     expect(messages[0].content).toContain('[group offline session]');
     expect(messages[0].content).toContain('Weekend Table');
     expect(messages[0].content).toContain('Mia: I saved you a seat.');
-    expect(messages[0].content).toContain('这不是要求成员们立刻补一轮线上消息');
-    expect(messages[0].content).toContain('外卖送达');
-    expect(messages[0].content).toContain('还不能说成已经发生');
+    expect(messages[0].content).toContain('现场简记如下');
     expect(messages[0].content).toContain('外卖还没到');
+    expect(messages[0].content).not.toContain('上下文');
+    expect(messages[0].content).not.toContain('这不是要求');
+    expect(messages[0].content).not.toContain('严格保持时间边界');
+    expect(messages[0].content).not.toContain('外卖送达');
+    expect(messages[0].content).not.toContain('总结报告');
     expect(messages[0].metadata).toEqual(expect.objectContaining({
       groupId: group.id,
       groupOfflineSession: true,

@@ -51,6 +51,40 @@ interface LlmDetailReaction {
     wantToComment?: { comment: string };
 }
 
+export function formatXhsActivityChatRecord(activity: XhsActivityRecord, charName: string): string {
+    if (activity.result !== 'success' || activity.actionType === 'idle') return '';
+    switch (activity.actionType) {
+        case 'post': {
+            const tagsStr = activity.content.tags?.length ? ` #${activity.content.tags.join(' #')}` : '';
+            return `📕 ${charName}的自由活动: 发了一条小红书「${activity.content.title}」\n${activity.content.body || ''}${tagsStr}`;
+        }
+        case 'search': {
+            const lines = [`📕 ${charName}的自由活动: 搜索了「${activity.content.keyword}」`];
+            if (activity.content.notesViewed?.length) {
+                lines.push(`看到的帖子: ${activity.content.notesViewed.map(n => `「${n.title}」by ${n.author}`).join('、')}`);
+            }
+            if (activity.content.savedTopics?.length) {
+                lines.push(`保存的话题: ${activity.content.savedTopics.map(t => `「${t.title}」${t.desc ? ` - ${t.desc}` : ''}`).join('、')}`);
+            }
+            return lines.join('\n');
+        }
+        case 'browse': {
+            const lines = [`📕 ${charName}的自由活动: 刷了小红书首页`];
+            if (activity.content.notesViewed?.length) {
+                lines.push(`看到的帖子: ${activity.content.notesViewed.map(n => `「${n.title}」by ${n.author}`).join('、')}`);
+            }
+            if (activity.content.savedTopics?.length) {
+                lines.push(`保存的话题: ${activity.content.savedTopics.map(t => `「${t.title}」${t.desc ? ` - ${t.desc}` : ''}`).join('、')}`);
+            }
+            return lines.join('\n');
+        }
+        case 'comment':
+            return `📕 ${charName}的自由活动: 评论了「${activity.content.commentTarget?.title || '某条笔记'}」: "${activity.content.commentText || ''}"`;
+        default:
+            return '';
+    }
+}
+
 // ==================== LLM Helpers ====================
 
 const callLlm = async (
@@ -669,43 +703,10 @@ export const XhsFreeRoamEngine = {
             for (const activity of session.activities) {
                 await DB.saveXhsActivity(activity);
 
-                // 写入聊天记录作为系统消息（🔔），让私聊时 AI 知道自由活动做了什么
-                // 包含完整的思考和内容，确保角色在后续聊天中能记住自由活动的细节
+                // 写入聊天记录作为系统消息（🔔），只保留对用户可见的行动事实。
+                // 完整 thinking 仍留在自由活动记录里，避免聊天流水爆出内部想法/决策说明。
                 if (activity.result === 'success' && activity.actionType !== 'idle') {
-                    let msgContent = '';
-                    const thinkingLine = activity.thinking ? `\n💭 内心想法: ${activity.thinking}` : '';
-                    switch (activity.actionType) {
-                        case 'post': {
-                            const tagsStr = activity.content.tags?.length ? ` #${activity.content.tags.join(' #')}` : '';
-                            msgContent = `📕 ${char.name}的自由活动: 发了一条小红书「${activity.content.title}」\n${activity.content.body || ''}${tagsStr}${thinkingLine}`;
-                            break;
-                        }
-                        case 'search': {
-                            msgContent = `📕 ${char.name}的自由活动: 搜索了「${activity.content.keyword}」`;
-                            if (activity.content.notesViewed?.length) {
-                                msgContent += `\n看到的帖子: ${activity.content.notesViewed.map(n => `「${n.title}」by ${n.author}`).join('、')}`;
-                            }
-                            if (activity.content.savedTopics?.length) {
-                                msgContent += `\n保存的话题: ${activity.content.savedTopics.map(t => `「${t.title}」${t.desc ? ` - ${t.desc}` : ''}`).join('、')}`;
-                            }
-                            msgContent += thinkingLine;
-                            break;
-                        }
-                        case 'browse': {
-                            msgContent = `📕 ${char.name}的自由活动: 刷了小红书首页`;
-                            if (activity.content.notesViewed?.length) {
-                                msgContent += `\n看到的帖子: ${activity.content.notesViewed.map(n => `「${n.title}」by ${n.author}`).join('、')}`;
-                            }
-                            if (activity.content.savedTopics?.length) {
-                                msgContent += `\n保存的话题: ${activity.content.savedTopics.map(t => `「${t.title}」${t.desc ? ` - ${t.desc}` : ''}`).join('、')}`;
-                            }
-                            msgContent += thinkingLine;
-                            break;
-                        }
-                        case 'comment':
-                            msgContent = `📕 ${char.name}的自由活动: 评论了「${activity.content.commentTarget?.title || '某条笔记'}」: "${activity.content.commentText || ''}"${thinkingLine}`;
-                            break;
-                    }
+                    const msgContent = formatXhsActivityChatRecord(activity, char.name);
                     if (msgContent) {
                         await DB.saveMessage({
                             charId: char.id,

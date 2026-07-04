@@ -7,8 +7,8 @@ import WeatherDetail from './WeatherDetail';
 
 /**
  * 桌面天气小组件（参照手帐桌面设计稿：浅灰圆角卡 + 大号温度 + 灰色天气图标）。
- * 数据走 文具盒 → 风向标（实时感知）的天气配置：默认「定位 + Open-Meteo」免密钥取
- * 用户所在地实时天气，也兼容旧版手填 OpenWeatherMap Key（RealtimeContextManager 内置缓存）。
+ * 数据走 文具盒 → 风向标（实时感知）的天气配置：默认用已授权定位 / 缓存 / IP 兜底 +
+ * Open-Meteo 免密钥取本地实时天气，也兼容旧版手填 OpenWeatherMap Key（RealtimeContextManager 内置缓存）。
  * 未开启时点击直达文具盒；已开启时点击展开「天气预报」详情页（未来七天）。
  */
 

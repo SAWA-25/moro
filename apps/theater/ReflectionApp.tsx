@@ -81,7 +81,6 @@ const formatSessionText = (session: TheaterReflectionSession, userName: string) 
         session.subtitle || '',
         `角色：${session.charName}`,
         `节点：${session.nodes.past.when}「${session.nodes.past.title}」 / ${session.nodes.now.when}「${session.nodes.now.title}」`,
-        `调味：${reflectionOptionsLabel(session.options)}`,
         '',
     ];
     [...session.initialScene.lines, ...(session.continuationLines || [])].forEach(line => {

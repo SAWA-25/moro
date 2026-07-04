@@ -14,6 +14,7 @@ import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCo
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
 import { stickerImageSrc } from '../../utils/stickerImage';
 import { formatMoroUsage, sanitizeUserScreenWatchComment } from '../../utils/userScreenWatch';
+import { formatReplyTimerTitle, formatReplyTimerValue, normalizeReplyTimerMetadata } from '../../utils/replyTimer';
 
 const stripShopChatLineLabels = (text: string): string =>
     text.replace(/^\s*[\[【]\s*心意铺(?:陪逛)?\s*[\]】]\s*/gm, '');
@@ -40,6 +41,20 @@ const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
                 <path d="M1 5.5 L4 8.5 L9.5 1.5" />
                 {isRead && <path d="M7 5.5 L10 8.5 L15.5 1.5" />}
             </svg>
+        </span>
+    );
+};
+
+const ReplyTimerChip: React.FC<{ timer: unknown; className?: string }> = ({ timer, className = '' }) => {
+    const value = formatReplyTimerValue(timer);
+    if (!value) return null;
+    return (
+        <span
+            className={`inline-flex items-center rounded-md bg-slate-200/70 px-1.5 py-[2px] text-[9px] font-mono tabular-nums leading-none text-slate-400 ${className}`}
+            title={formatReplyTimerTitle(timer)}
+            aria-label={`回复耗时 ${value}`}
+        >
+            {value}
         </span>
     );
 };
@@ -1007,6 +1022,7 @@ const MessageItem = React.memo(({
     const isSystem = m.role === 'system';
     // 消息回执（Telegram 式勾勾）：旧消息没有 msgStatus 时不显示
     const msgStatus = (m.metadata?.msgStatus as string) || '';
+    const hasReplyTimer = !isUser && !!normalizeReplyTimerMetadata(m.metadata?.replyTimer);
     const spacingClass = messageSpacing === 'compact' ? (isLastInGroup ? 'mb-3' : 'mb-0.5') : messageSpacing === 'spacious' ? (isLastInGroup ? 'mb-8' : 'mb-2.5') : (isLastInGroup ? 'mb-6' : 'mb-1.5');
     const marginBottom = spacingClass;
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
@@ -1607,6 +1623,7 @@ const MessageItem = React.memo(({
                     {isPlainBubble && ((!isUser) || (isUser && isFirstInGroup && showTimestamp !== 'never')) && (
                         <div className="flex items-center gap-1.5 mb-1 px-0.5">
                             {!isUser && <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{charName}</span>}
+                            {!isUser && <ReplyTimerChip timer={m.metadata?.replyTimer} />}
                             {showTimestamp !== 'never' && <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>}
                         </div>
                     )}
@@ -1636,8 +1653,9 @@ const MessageItem = React.memo(({
                         {content}
                     </div>
                     {/* 时间戳：极简皮肤已挪到组上方，这里只在非极简时保留组下方时间；读取回执 ticks 两种皮肤都保留 */}
-                    {(((isLastInGroup && showTimestamp !== 'never') && !isPlainBubble) || msgStatus) && (
+                    {(((isLastInGroup && showTimestamp !== 'never') && !isPlainBubble) || msgStatus || (hasReplyTimer && !isPlainBubble)) && (
                         <div className="flex items-center gap-1 px-1 mt-1">
+                            {hasReplyTimer && !isPlainBubble && <ReplyTimerChip timer={m.metadata?.replyTimer} />}
                             {isLastInGroup && showTimestamp !== 'never' && !isPlainBubble && (
                                 <span className={`text-[9px] text-slate-400/80 font-medium ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</span>
                             )}

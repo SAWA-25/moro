@@ -292,6 +292,8 @@ export interface PostProcessCtx {
     historyMsgCount: number;
     /** 当 MCD MiniApp 打开时附加到每条 assistant message 的 metadata patch */
     mcdInheritMeta?: any;
+    /** 附加到本轮可见 assistant message 的通用 metadata patch。 */
+    assistantMeta?: any;
     /** XHS 跨消息缓存 (调用方持有的 ref) */
     xhsCaches: XhsCaches;
     /**
@@ -356,6 +358,7 @@ export async function applyAssistantPostProcessing(
         initialData,
         historyMsgCount,
         mcdInheritMeta,
+        assistantMeta,
         xhsCaches,
         api,
         hooks,
@@ -383,6 +386,9 @@ export async function applyAssistantPostProcessing(
         commentAuthorNameCache: commentAuthorNameCacheRef,
         commentParentIdCache: commentParentIdCacheRef,
     } = xhsCaches;
+    const inheritedAssistantMeta = (assistantMeta || mcdInheritMeta)
+        ? { ...(assistantMeta || {}), ...(mcdInheritMeta || {}) }
+        : undefined;
 
     const postProcessMeta = (featureId: string, apiBinding?: string) => makeApiUsageMeta(featureId, {
         charId: char.id,
@@ -762,7 +768,7 @@ export async function applyAssistantPostProcessing(
                             if (!chunk) continue;
                             const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                             await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
-                            await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                            await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(inheritedAssistantMeta) } as any);
                             savedCount++;
                             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                             globalMsgIndex++;
@@ -778,7 +784,7 @@ export async function applyAssistantPostProcessing(
                         : (originalText || translatedText);
                     const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                     await new Promise(r => setTimeout(r, Math.min(Math.max(biContent.length * 30, 400), 2000)));
-                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(inheritedAssistantMeta) } as any);
                     savedCount++;
                     setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                     globalMsgIndex++;
@@ -797,7 +803,7 @@ export async function applyAssistantPostProcessing(
                         if (!chunk) continue;
                         const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                         await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
-                        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(inheritedAssistantMeta) } as any);
                         savedCount++;
                         setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                         globalMsgIndex++;
@@ -809,7 +815,7 @@ export async function applyAssistantPostProcessing(
                 const foundEmoji = emojis.find(e => e.name === emojiName);
                 if (foundEmoji) {
                     await new Promise(r => setTimeout(r, Math.random() * 500 + 300));
-                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any);
+                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(inheritedAssistantMeta) } as any);
                     savedCount++;
                     setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                 }
@@ -825,7 +831,7 @@ export async function applyAssistantPostProcessing(
                     const foundEmoji = emojis.find(e => e.name === part.content);
                     if (foundEmoji) {
                         await new Promise(r => setTimeout(r, Math.random() * 500 + 300));
-                        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any);
+                        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(inheritedAssistantMeta) } as any);
                         savedCount++;
                         setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                     }
@@ -851,7 +857,7 @@ export async function applyAssistantPostProcessing(
                             const richText = sanitizeAssistantVisibleText(resolved.text);
                             if (richText) {
                                 const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
-                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: richText, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: richText, replyTo: replyData, metadata: takeMeta(inheritedAssistantMeta) } as any);
                                 savedCount++;
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
@@ -872,7 +878,7 @@ export async function applyAssistantPostProcessing(
                         if (ChatParser.hasDisplayContent(chunk)) {
                             const cleanChunk = ChatParser.sanitize(chunk);
                             if (cleanChunk) {
-                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(inheritedAssistantMeta) } as any);
                                 savedCount++;
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
@@ -1997,7 +2003,7 @@ export async function applyAssistantPostProcessing(
                     metadata: mergeAssistantMeta({
                         htmlSource: blk.html,
                         htmlTextPreview: textPreview,
-                        ...(mcdInheritMeta || {}),
+                        ...(inheritedAssistantMeta || {}),
                     }),
                 } as any);
                 visibleAssistantSavedCount++;

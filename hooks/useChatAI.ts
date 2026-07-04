@@ -39,6 +39,10 @@ import { callChatCompletion } from '../utils/llmClient';
 import { buildOpenAiEndpoint, buildOpenAiHeaders } from '../utils/openAiCompat';
 import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
+import { makeReplyTimerMetadata, type ReplyTimerMetadata } from '../utils/replyTimer';
+
+const CHAT_REPLY_TIMEOUT_MS = 180_000;
+const CHAT_STREAM_TIMEOUT_MS = 90_000;
 
 // ─── 情绪评估（今日作息底部 API；留空走主 API，fire & forget）───
 
@@ -399,6 +403,7 @@ export const useChatAI = ({
     const music = useMusic();
 
     const [isTyping, setIsTyping] = useState(false);
+    const [replyTimer, setReplyTimer] = useState<ReplyTimerMetadata | null>(null);
     // 本地 fetch 路径仍优先走 SSE，但不把完整正文提前预览；真实气泡会在落库后逐条揭示。
     // 空串 = 聊天页显示普通"正在输入"指示器。
     const [streamingText, setStreamingText] = useState('');
@@ -670,7 +675,9 @@ export const useChatAI = ({
             } catch { /* 回执失败不影响消息本体 */ }
         };
 
+        const replyTimerStartedAt = Date.now();
         setIsTyping(true);
+        setReplyTimer({ startedAt: replyTimerStartedAt });
         setRecallStatus('');
 
         // Keep the Service Worker alive while we make potentially long AI calls
@@ -869,12 +876,13 @@ export const useChatAI = ({
             const userTemp = presetGenParams?.temperature
                 ?? (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
             const userStream = (effectiveApi as any).stream ?? apiConfig.stream ?? false;
+            const requestStream = userStream && !payload.flags.mcdActive;
             const baseReqBody: any = {
                 model: effectiveApi.model,
                 messages: fullMessages,
                 temperature: userTemp,
                 max_tokens: presetGenParams?.max_tokens ?? 8000,
-                stream: userStream,
+                stream: requestStream,
             };
             if (presetGenParams) {
                 const { temperature: _t, max_tokens: _m, ...rest } = presetGenParams;
@@ -897,7 +905,7 @@ export const useChatAI = ({
                 baseReqBody.extra_body = { ...(baseReqBody.extra_body || {}), thinking: { type: 'enabled', budget_tokens: 4000 } };
             }
             // 流式时显式要求 usage 统计随末尾 chunk 一起返回，否则 token 徽标拿不到数据
-            if (userStream) {
+            if (requestStream) {
                 baseReqBody.stream_options = { include_usage: true };
             }
             // 小程序模式: 给 LLM 一个 UI 钩子工具 propose_cart_items, 推荐时可调用,
@@ -961,17 +969,39 @@ export const useChatAI = ({
                 // instant 失败不标「发送失败」：SSE 报错 ≠ 未送达（push 可能晚到，见
                 // docs/instant-push-dual-channel.md），只在确认成功时升级已读。
                 if (instantResult.ok) {
+                    const replyTimerMeta = makeReplyTimerMetadata({
+                        startedAt: replyTimerStartedAt,
+                        finishedAt: Date.now(),
+                        model: effectiveApi.model,
+                        source: 'instant',
+                    });
+                    setReplyTimer(replyTimerMeta);
+                    try {
+                        const recentSaved = await DB.getRecentMessagesByCharId(char.id, 20);
+                        const trailingAssistant: typeof recentSaved = [];
+                        for (let i = recentSaved.length - 1; i >= 0; i--) {
+                            if (recentSaved[i].role !== 'assistant') break;
+                            trailingAssistant.unshift(recentSaved[i]);
+                        }
+                        await Promise.all(trailingAssistant.map(m => DB.updateMessageMetadata(m.id, (prev: any) => ({
+                            ...(prev || {}),
+                            replyTimer: prev?.replyTimer || replyTimerMeta,
+                        }))));
+                    } catch (timerErr) {
+                        console.warn('[replyTimer] failed to stamp instant reply timer', timerErr);
+                    }
                     await markUserMessagesRead();
                     return true;
                 }
                 return false;
             }
 
-            // ── 流式输出：本地 fetch 路径默认走 SSE 累积完整回复；聊天页只显示"正在输入"，
+            // ── 流式输出：只在主 API 开启流式时走 SSE；否则直接走普通 JSON，保持与连接测试一致。
             //    结束后照常走完整后处理管线（拆条落库 + 前端逐条揭示）。工具调用（麦当劳小程序）与
             //    流式不兼容，仍走整包；流式失败时回退 safeFetchJson 保持旧行为。
             let data: any = null;
             let streamedOk = false;
+            let attemptedStream = false;
             const chatReplyUsageFeatureId = options?.apiUsageFeatureId || 'chat.privateReply';
             const chatReplyUsageContext = {
                 charId: char.id,
@@ -980,9 +1010,15 @@ export const useChatAI = ({
                 ...(options?.apiUsageContext || {}),
             };
             const chatReplyMeta = makeApiUsageMeta(chatReplyUsageFeatureId, chatReplyUsageContext);
-            if (!payload.flags.mcdActive) {
+            if (requestStream) {
+                attemptedStream = true;
                 try {
-                    data = await streamChatCompletion(buildOpenAiEndpoint(effectiveApi.baseUrl, 'chat.completions'), { headers, body: baseReqBody, meta: chatReplyMeta }, () => {});
+                    data = await streamChatCompletion(buildOpenAiEndpoint(effectiveApi.baseUrl, 'chat.completions'), {
+                        headers,
+                        body: baseReqBody,
+                        meta: chatReplyMeta,
+                        timeoutMs: CHAT_STREAM_TIMEOUT_MS,
+                    }, () => {});
                     streamedOk = true;
                 } catch (streamErr) {
                     console.warn('[Stream] 流式请求失败，回退非流式:', streamErr);
@@ -990,7 +1026,14 @@ export const useChatAI = ({
                 }
             }
             if (!data) {
-                data = await callChatCompletion(effectiveApi, baseReqBody, { meta: chatReplyMeta });
+                const fallbackBody = attemptedStream
+                    ? { ...baseReqBody, stream: false, stream_options: undefined }
+                    : baseReqBody;
+                data = await callChatCompletion(effectiveApi, fallbackBody, {
+                    meta: chatReplyMeta,
+                    timeoutMs: CHAT_REPLY_TIMEOUT_MS,
+                    maxRetries: 0,
+                });
             }
             apiResponded = true;
             console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms${streamedOk ? ' (streamed)' : ''}`);
@@ -1092,7 +1135,7 @@ export const useChatAI = ({
                     data = await callChatCompletion(effectiveApi, followBody, { meta: makeApiUsageMeta(chatReplyUsageFeatureId, {
                         ...chatReplyUsageContext,
                         apiBinding: '麦当劳点餐工具续写',
-                    }) });
+                    }), timeoutMs: CHAT_REPLY_TIMEOUT_MS, maxRetries: 0 });
                     updateTokenUsage(data, historyMsgCount, `mcd-propose-${it + 1}`);
                     // 第二轮跳过 (我们已经禁用了 tools)
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
@@ -1117,6 +1160,14 @@ export const useChatAI = ({
             // Phase 2 会让 worker 端把识别的副作用打包成 directives 传过来重放。
             let rawAiContent = flattenContent(data.choices?.[0]?.message?.content);
             rawAiContent = sanitizeAssistantVisibleText(rawAiContent) || options?.emptyReplyFallback || '';
+            const replyTimerMeta = makeReplyTimerMetadata({
+                startedAt: replyTimerStartedAt,
+                finishedAt: Date.now(),
+                tokenCount: data.usage?.completion_tokens,
+                model: data.model || effectiveApi.model,
+                source: streamedOk ? 'stream' : 'fetch',
+            });
+            setReplyTimer(replyTimerMeta);
             const xhsCaches: XhsCaches = {
                 xsecTokenCache: xsecTokenCacheRef.current,
                 noteTitleCache: noteTitleCacheRef.current,
@@ -1154,6 +1205,7 @@ export const useChatAI = ({
                     // instant push 路径 (activeMsgRuntime) 共享同一份, 见 MusicContext.loadMusicHooks.
                     musicHooks: loadMusicHooks() ?? undefined,
                 },
+                assistantMeta: { replyTimer: replyTimerMeta },
                 // Phase 0: 本地 fetch 路径保持原逻辑, 不跳 2nd-pass LLM, 也没有结构化 directives。
                 skipSecondPassLLM: false,
                 directives: [],
@@ -1211,6 +1263,7 @@ export const useChatAI = ({
         } finally {
             KeepAlive.stop();
             setIsTyping(false);
+            setReplyTimer(null);
             setStreamingText('');
             setRecallStatus('');
             setSearchStatus('');
@@ -1347,6 +1400,7 @@ export const useChatAI = ({
 
     return {
         isTyping,
+        replyTimer,
         streamingText,
         recallStatus,
         searchStatus,

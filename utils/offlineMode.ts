@@ -241,17 +241,21 @@ export const resolveOpeningFrame = (
 
 /** 线下开场：生成见面的开场情景（旁白 + 角色的第一句话/动作） */
 export const generateOfflineOpening = async (
-    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov, scenario?: string,
+    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov, scenario?: string, rerollPrevious?: string,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
     const sceneFrame = scenario && scenario.trim()
         ? `\n### [这场见面是怎么开始的]\n${scenario.trim()}\n请严格按这个方式来安排开场。\n`
         : '';
+    const rerollBlock = rerollPrevious?.trim()
+        ? `\n### [这次是重写]\n上一版开场已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请保留同一场见面的基本关系和时间线，但换一种角度、动作和措辞重新写，不要照抄上一版，也不要故意反着写成突兀剧情。\n`
+        : '';
     return callLLM(api, `${base}
 
 ${povText}
 ${sceneFrame}
+${rerollBlock}
 ### [任务]
 写出见面那一刻的开场（120-250字）：
 - 交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，但只写会被当场注意到的细节；
@@ -264,7 +268,7 @@ ${sceneFrame}
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
 export const generateOfflineTurn = async (
     char: CharacterProfile, userProfile: UserProfile, api: OfflineApi,
-    entries: OfflineEntry[], userInput?: string, pov?: OfflinePov,
+    entries: OfflineEntry[], userInput?: string, pov?: OfflinePov, rerollPrevious?: string,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
@@ -272,6 +276,9 @@ export const generateOfflineTurn = async (
     const tail = userInput
         ? `刚刚 ${userProfile.name} 的行动/发言：${userInput}`
         : `${userProfile.name} 暂时没有行动，由「${char.name}」主动推进现场（说点什么、做点什么、或带着对方做点什么）。`;
+    const rerollBlock = rerollPrevious?.trim()
+        ? `\n### [这次是重写]\n上一版续写已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请基于同一个现场重新接这一拍，保留前文事实和用户刚刚的行动/发言，但换一种更自然的反应、动作和措辞，不要照抄上一版。\n`
+        : '';
     return callLLM(api, `${base}
 
 ${povText}
@@ -280,6 +287,7 @@ ${povText}
 ${transcript || '（刚见面）'}
 
 ${tail}
+${rerollBlock}
 
 ### [任务]
 以「${char.name}」的身份续写现场接下来的一小段（80-200字）：
@@ -301,10 +309,7 @@ export const commitOfflineSessionToContext = async (
         charId: char.id,
         role: 'system',
         type: 'text',
-        content: `[线下模式记录] 你（${char.name}）和 ${userName} 刚刚线下见面了，下面是这次见面现场发生的全部情景。`
-            + `见面已经结束，这段经历已经写入你们共同的上下文，但这不是要求你立刻补一条线上消息。`
-            + `之后线上接着聊时，可以自然提起见面时的细节、延续当时的心情和话题；如果刚才有尴尬、未说完、好笑或亲近的瞬间，可以像真人事后回味那样轻轻带到聊天里。`
-            + `严格保持时间边界：没有在下面记录中明确发生的外卖送达、快递到达、电话接通、约定完成等事件，都还不能说成已经发生。不要表现得好像没见过面，也不要把这段经历硬写成总结报告。\n${transcript}`,
+        content: `[线下模式记录] 你（${char.name}）和 ${userName} 刚刚线下见面。现场简记如下：\n${transcript}`,
         metadata: { offlineSession: true },
         timestamp,
     } as any);

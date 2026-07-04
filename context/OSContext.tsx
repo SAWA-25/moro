@@ -153,6 +153,7 @@ type JSZipCtorLike = {
 let jszipCtorPromise: Promise<JSZipCtorLike> | null = null;
 
 export const IMPORT_IN_PROGRESS_KEY = 'moro_import_in_progress_v1';
+const PROACTIVE_CHAT_REPLY_TIMEOUT_MS = 180_000;
 
 type ImportProgressUpdate = {
   sourceSize?: number;
@@ -2094,7 +2095,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [sendProactiveNativeNotification]);
 
   const proactiveRunningRef = useRef(false);
-  type ProactiveRunOptions = { customHint?: string; eventSource?: string; notificationData?: any; skipSystemNotify?: boolean };
+  type ProactiveRunOptions = {
+      customHint?: string;
+      eventSource?: string;
+      notificationData?: any;
+      skipSystemNotify?: boolean;
+      scheduledAt?: number;
+      offlineReplay?: boolean;
+      replayIndex?: number;
+      replayTotal?: number;
+      missedCount?: number;
+  };
   const proactiveQueueRef = useRef<Array<{ charId: string; opts?: ProactiveRunOptions }>>([]);
   // Per-character innerState cache for proactive turns — mirrors useChatAI's
   // evolvedNarrative state so consecutive proactive triggers carry continuity.
@@ -2262,8 +2273,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       const runProactive = async (charId: string, opts?: ProactiveRunOptions) => {
           const customHint = opts?.customHint;
+          const scheduledAt = typeof opts?.scheduledAt === 'number' && Number.isFinite(opts.scheduledAt) ? opts.scheduledAt : undefined;
+          const runNowMs = scheduledAt ?? Date.now();
+          const offlineReplay = !!opts?.offlineReplay;
           if (proactiveRunningRef.current) {
-              if (customHint || !proactiveQueueRef.current.some(item => item.charId === charId && !item.opts?.customHint)) {
+              if (customHint || offlineReplay || scheduledAt !== undefined || !proactiveQueueRef.current.some(item => item.charId === charId && !item.opts?.customHint)) {
                   proactiveQueueRef.current.push({ charId, opts });
               }
               return;
@@ -2314,7 +2328,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               .slice(-6)
                               .map(m => `${m.role === 'user' ? userName : char.name}：${String(m.content).replace(/\s+/g, ' ').slice(0, 60)}`)
                               .join('\n');
-                          const ev = await advanceLife(char, lifeApi, { source: 'proactive', triggerSource: 'proactive', recentChat });
+                          const ev = await advanceLife(char, lifeApi, { source: 'proactive', triggerSource: offlineReplay ? 'offline_replay' : 'proactive', recentChat, now: runNowMs });
                           if (ev) window.dispatchEvent(new CustomEvent('autonomous-life-advanced', { detail: { charId: char.id, charName: char.name, blocked: true } }));
                       } catch (e) {
                           console.warn('[Proactive/Global] blocked life-only advance skipped:', e);
@@ -2351,7 +2365,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   m => m.role === 'user' && !m.metadata?.proactiveHint
               );
 
-              const now = new Date();
+              const now = new Date(runNowMs);
               const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
               let timeSinceUser = '';
@@ -2360,7 +2374,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 必须用真实分钟数判断。
               let userGapLong = false;
               if (lastRealUserMsg) {
-                  const gapMin = Math.floor((now.getTime() - lastRealUserMsg.timestamp) / 60000);
+                  const gapMin = Math.floor((runNowMs - lastRealUserMsg.timestamp) / 60000);
                   userGapLong = gapMin >= 120;
                   if (gapMin < 60) timeSinceUser = `${gapMin}分钟`;
                   else if (gapMin < 1440) timeSinceUser = `${Math.floor(gapMin / 60)}小时${gapMin % 60 > 0 ? gapMin % 60 + '分钟' : ''}`;
@@ -2370,7 +2384,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 随机时间模式：以「用户超过一段时间没回复」为前提——最近 1 小时内回过
               // 消息就这轮不打扰，等下一个随机间隔再说（finally 会正常释放运行锁）。
               // 事件驱动的反应（customHint）是对具体事件的即时回应，不受此限。
-              if (!customHint && !hasPendingProactiveReply && pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
+              if (!customHint && !hasPendingProactiveReply && pCfg?.randomMode && lastRealUserMsg && runNowMs - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
                   console.log(`🔕 [Proactive/Global] Random mode: ${char.name} skipped (user replied recently)`);
                   return;
               }
@@ -2398,6 +2412,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const lifePlan = await planAutonomousProactiveTurn(char, lifeApi, {
                       recentChat,
                       randomMode: pCfg?.randomMode,
+                      now: runNowMs,
                   });
                   lifeEvent = lifePlan.event;
                   if (lifePlan.decision !== 'send' && !hasPendingProactiveReply) {
@@ -2430,15 +2445,37 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed })
                   : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed });
 
+              const proactiveDeliveryMeta = {
+                  ...(scheduledAt !== undefined ? { proactiveScheduledAt: scheduledAt } : {}),
+                  ...(offlineReplay ? {
+                      proactiveOfflineReplay: true,
+                      proactiveGeneratedAt: Date.now(),
+                      proactiveReplayIndex: opts?.replayIndex,
+                      proactiveReplayTotal: opts?.replayTotal,
+                      proactiveMissedCount: opts?.missedCount,
+                  } : {}),
+              };
+              const withProactiveDeliveryMeta = (meta?: Record<string, any>): Record<string, any> | undefined => {
+                  const base = Object.fromEntries(Object.entries(proactiveDeliveryMeta).filter(([, v]) => v !== undefined));
+                  if (!Object.keys(base).length) return meta;
+                  return { ...(meta || {}), ...base, ...(offlineReplay ? { source: 'proactive_offline_replay' } : {}) };
+              };
+              const assistantMetadataPatch = (meta?: Record<string, any>) => {
+                  const metadata = withProactiveDeliveryMeta(meta);
+                  return metadata ? { metadata } : {};
+              };
+
               await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
                   content: hintContent,
+                  ...(scheduledAt !== undefined ? { timestamp: scheduledAt } : {}),
                   metadata: {
                       proactiveHint: true,
                       hidden: true,
                       ...(pendingReplyIds.length ? { pendingProactiveReplyIds: pendingReplyIds } : {}),
+                      ...(withProactiveDeliveryMeta() || {}),
                   }
               });
               // 3. Build prompt & message history — 走和 useChatAI / emotion eval 同一个 helper，
@@ -2519,6 +2556,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   charName: char.name,
                   apiRole: 'main',
                 }),
+                timeoutMs: PROACTIVE_CHAT_REPLY_TIMEOUT_MS,
+                maxRetries: 0,
               });
 
               // 5. Process & save response
@@ -2559,7 +2598,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               const savedPreviewChunks: string[] = [];
-              const baseTimestamp = Date.now();
+              const baseTimestamp = scheduledAt ?? Date.now();
               let offset = 0;
               let pendingReplyToConsumed = false;
               const consumePendingReplyTo = () => {
@@ -2590,11 +2629,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               content: textPreview ? `[HTML卡片] ${textPreview}` : '[HTML卡片]',
                               replyTo: consumePendingReplyTo(),
                               timestamp: baseTimestamp + offset,
-                              metadata: {
+                              metadata: withProactiveDeliveryMeta({
                                   htmlSource: blk.html,
                                   htmlTextPreview: textPreview,
                                   ...(meta || {}),
-                              },
+                              }),
                           } as any);
                           if (textPreview) savedPreviewChunks.push(textPreview);
                           offset += 1;
@@ -2641,7 +2680,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                           content: chunk,
                                           replyTo: consumePendingReplyTo(),
                                           timestamp: baseTimestamp + offset,
-                                          ...(meta ? { metadata: meta } : {}),
+                                          ...assistantMetadataPatch(meta),
                                       });
                                       savedPreviewChunks.push(chunk);
                                       offset += 1;
@@ -2663,7 +2702,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   content: biContent,
                                   replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
-                                  ...(meta ? { metadata: meta } : {}),
+                                  ...assistantMetadataPatch(meta),
                               });
                               savedPreviewChunks.push(originalText || translatedText);
                               offset += 1;
@@ -2686,7 +2725,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       content: chunk,
                                       replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
-                                      ...(meta ? { metadata: meta } : {}),
+                                      ...assistantMetadataPatch(meta),
                                   });
                                   savedPreviewChunks.push(chunk);
                                   offset += 1;
@@ -2705,7 +2744,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   content: foundEmoji.url,
                                   replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
-                                  ...(meta ? { metadata: meta } : {}),
+                                  ...assistantMetadataPatch(meta),
                               });
                               offset += 1;
                           }
@@ -2726,7 +2765,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       content: foundEmoji.url,
                                       replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
-                                      ...(meta ? { metadata: meta } : {}),
+                                      ...assistantMetadataPatch(meta),
                                   });
                               } else {
                                   const fallbackText = `发送了表情包：${part.content}`;
@@ -2738,7 +2777,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                       content: fallbackText,
                                       replyTo: consumePendingReplyTo(),
                                       timestamp: baseTimestamp + offset,
-                                      ...(meta ? { metadata: meta } : {}),
+                                      ...assistantMetadataPatch(meta),
                                   });
                                   savedPreviewChunks.push(fallbackText);
                               }
@@ -2767,7 +2806,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                                   content: chunk,
                                   replyTo: consumePendingReplyTo(),
                                   timestamp: baseTimestamp + offset,
-                                  ...(meta ? { metadata: meta } : {}),
+                                  ...assistantMetadataPatch(meta),
                               });
                               savedPreviewChunks.push(chunk);
                               offset += 1;
@@ -2786,6 +2825,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 6. Notify OS for unread badge + toast。bodies = 本轮逐条气泡正文，
                   //    供灵动岛/锁屏逐条弹横幅；count = 本轮实际落库的气泡条数，
                   //    未读数按它累加（每个消息气泡算一条，而不是每轮事件算一条）
+                  const proactiveEventSource = opts?.eventSource || (offlineReplay ? 'proactive-offline-replay' : undefined);
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
                       detail: {
                           charId,
@@ -2793,9 +2833,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           body: preview,
                           bodies: savedPreviewChunks.slice(0, 8),
                           count: offset,
-                          source: opts?.eventSource,
+                          source: proactiveEventSource,
                           notificationData: opts?.notificationData,
-                          skipSystemNotify: !!opts?.skipSystemNotify,
+                          skipSystemNotify: !!opts?.skipSystemNotify || offlineReplay,
+                          sentAt: baseTimestamp,
+                          offlineReplay,
                       }
                   }));
                   if (pendingForceReplyReason !== undefined || (forceReplyAllowed && forceReplyExtract.forceReply)) {
@@ -2804,14 +2846,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               charId,
                               reason: pendingForceReplyReason,
                               body: preview,
-                              source: opts?.eventSource || 'proactive-1.0',
+                              source: proactiveEventSource || 'proactive-1.0',
                               requestedAt: Date.now(),
                           } satisfies ForceReplyEventDetail,
                       }));
                   }
                   // 这条生活事件确实生成了可见主动消息后，才在回顾里标注「已跟你说过」。
                   if (lifeEvent) {
-                      void DB.markLifeEventSurfaced(lifeEvent.id, Date.now());
+                      void DB.markLifeEventSurfaced(lifeEvent.id, baseTimestamp);
                       void runCoupleAutoCareForSource(charId, {
                           source: 'proactive',
                           id: lifeEvent.id,
@@ -2824,7 +2866,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 7. 角色主动拨语音电话：页面可见时弹来电界面（IncomingCallOverlay 接管），
               //    页面不可见则按"未接来电"落库并走普通未读通知
               if (charWantsCall) {
-                  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                  if (!offlineReplay && typeof document !== 'undefined' && document.visibilityState === 'visible') {
                       window.dispatchEvent(new CustomEvent('char-call-incoming', {
                           detail: { charId, charName: char.name }
                       }));
@@ -2834,15 +2876,39 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           role: 'assistant',
                           type: 'call_log',
                           content: '未接来电',
-                          metadata: { callDirection: 'incoming', callOutcome: 'missed' },
+                          timestamp: baseTimestamp + offset,
+                          metadata: withProactiveDeliveryMeta({ callDirection: 'incoming', callOutcome: 'missed' }),
                       } as any);
                       window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                          detail: { charId, charName: char.name, body: '[语音通话] 未接来电' }
+                          detail: {
+                              charId,
+                              charName: char.name,
+                              body: '[语音通话] 未接来电',
+                              count: 1,
+                              source: opts?.eventSource || (offlineReplay ? 'proactive-offline-replay' : undefined),
+                              skipSystemNotify: !!opts?.skipSystemNotify || offlineReplay,
+                              sentAt: baseTimestamp + offset,
+                              offlineReplay,
+                          }
                       }));
                   }
               }
-          } catch (err) {
+          } catch (err: any) {
               console.error(`[Proactive/Global] Error for ${char.name}:`, err);
+              try {
+                  const msg = String(err?.message || err || '');
+                  const isTimeout = err?.name === 'AbortError' || /timeout|abort/i.test(msg);
+                  await DB.saveMessage({
+                      charId,
+                      role: 'system',
+                      type: 'text',
+                      content: isTimeout
+                          ? '[主动消息生成超时：本轮已停止等待，请稍后检查主 API 或重试。]'
+                          : '[主动消息生成失败：本轮已停止等待，请稍后检查主 API 或重试。]',
+                      timestamp: Date.now(),
+                  } as any);
+                  setLastMsgTimestamp(Date.now());
+              } catch { /* failure notice should never block queue cleanup */ }
           } finally {
               proactiveRunningRef.current = false;
               setProactiveComposingChars(prev => {
@@ -2855,8 +2921,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
-      ProactiveChat.onTrigger((charId: string) => {
-          void runProactive(charId);
+      ProactiveChat.onTrigger((charId: string, info) => {
+          void runProactive(charId, info ? {
+              scheduledAt: info.scheduledAt,
+              offlineReplay: !!info.offlineReplay,
+              replayIndex: info.replayIndex,
+              replayTotal: info.replayTotal,
+              missedCount: info.missedCount,
+              eventSource: info.offlineReplay ? 'proactive-offline-replay' : undefined,
+              skipSystemNotify: !!info.offlineReplay,
+          } : undefined);
       });
 
       const collectNativeAlarmOccurrences = (alarm: ChatAlarm, now: number): number[] => {

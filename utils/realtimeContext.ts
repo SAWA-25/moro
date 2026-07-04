@@ -3,6 +3,8 @@
  * Real-time Context Manager - Give AI characters awareness of the real world
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import { safeResponseJson } from './safeApi';
 import { DB } from './db';
 
@@ -52,7 +54,7 @@ export interface RealtimeConfig {
     weatherEnabled: boolean;
     /**
      * 取数方式：
-     * - 'geo'（默认）：浏览器定位 + Open-Meteo（免密钥、实时取用户所在地天气）
+     * - 'geo'（默认）：已授权定位 / 缓存 / IP + Open-Meteo（免密钥、实时取本地天气）
      * - 'manual'：旧版手填 OpenWeatherMap Key + 城市名
      */
     weatherMode?: 'geo' | 'manual';
@@ -95,6 +97,11 @@ export interface RealtimeConfig {
 export interface BuildRealtimeContextOptions {
     /** false 时不注入当前日期/时间；天气/热点仍按各自开关注入。 */
     includeTime?: boolean;
+}
+
+export interface FetchWeatherOptions {
+    /** true 时允许主动弹出定位授权；默认 false，避免页面加载时打扰用户。 */
+    requestLocationPermission?: boolean;
 }
 
 // 默认配置
@@ -163,8 +170,58 @@ const ipGeolocate = async (): Promise<{ lat: number; lon: number } | null> => {
     return null;
 };
 
+const cacheGeoPosition = (lat: number, lon: number) => {
+    try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
+};
+
+const hasNativeGeoPermission = (status: any): boolean => (
+    status?.location === 'granted' || status?.coarseLocation === 'granted'
+);
+
+const canRequestNativeGeoPermission = (status: any): boolean => (
+    ['prompt', 'prompt-with-rationale'].includes(status?.location)
+    || ['prompt', 'prompt-with-rationale'].includes(status?.coarseLocation)
+);
+
+/** 安装版定位：走 Capacitor 原生权限，避免 WebView 把天气授权显示成网站授权。 */
+const nativeGeoPosition = async (maxAgeMs: number, options?: FetchWeatherOptions): Promise<{ lat: number; lon: number } | null> => {
+    try {
+        if (!Capacitor.isNativePlatform()) return null;
+        let perm = await Geolocation.checkPermissions();
+        if (!hasNativeGeoPermission(perm)) {
+            if (!options?.requestLocationPermission) return null;
+            if (!canRequestNativeGeoPermission(perm)) return null;
+            perm = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+            if (!hasNativeGeoPermission(perm)) return null;
+        }
+        const pos = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: Math.max(maxAgeMs, 600000),
+        });
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        cacheGeoPosition(lat, lon);
+        return { lat, lon };
+    } catch {
+        return null;
+    }
+};
+
+const queryBrowserGeoPermission = async (): Promise<PermissionState | 'unsupported'> => {
+    try {
+        if (typeof navigator === 'undefined' || !navigator.permissions?.query) return 'unsupported';
+        return (await navigator.permissions.query({ name: 'geolocation' as PermissionName })).state;
+    } catch {
+        return 'unsupported';
+    }
+};
+
 /** 仅浏览器定位：成功缓存坐标；拒绝/超时/不支持返回 null（不在此处兜底）。 */
-const browserGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
+const browserGeoPosition = async (maxAgeMs: number, options?: FetchWeatherOptions): Promise<{ lat: number; lon: number } | null> => {
+    if (!options?.requestLocationPermission) {
+        const permission = await queryBrowserGeoPermission();
+        if (permission !== 'granted') return null;
+    }
     return new Promise(resolve => {
         if (typeof navigator === 'undefined' || !navigator.geolocation) { resolve(null); return; }
         let settled = false;
@@ -174,7 +231,7 @@ const browserGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: numbe
             pos => {
                 clearTimeout(fallbackTimer);
                 const lat = pos.coords.latitude, lon = pos.coords.longitude;
-                try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
+                cacheGeoPosition(lat, lon);
                 done({ lat, lon });
             },
             () => { clearTimeout(fallbackTimer); done(null); },
@@ -183,10 +240,17 @@ const browserGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: numbe
     });
 };
 
-/** 取坐标（全程免密钥）：浏览器定位 → 上次缓存 → IP 定位兜底。三者皆失败才 null。
+/** 取坐标（全程免密钥）：安装版原生定位 / 网页端浏览器定位 → 上次缓存 → IP 定位兜底。三者皆失败才 null。
  *  这样天气不依赖任何 API Key，也不强制定位授权——拒绝授权时仍能按 IP 取到本地实时天气。 */
-const getGeoPosition = async (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
-    const browser = await browserGeoPosition(maxAgeMs);
+const getGeoPosition = async (maxAgeMs: number, options?: FetchWeatherOptions): Promise<{ lat: number; lon: number } | null> => {
+    if (Capacitor.isNativePlatform()) {
+        const native = await nativeGeoPosition(maxAgeMs, options);
+        if (native) return native;
+        const cached = readCachedGeoCoords();
+        if (cached) return cached;
+        return await ipGeolocate();
+    }
+    const browser = await browserGeoPosition(maxAgeMs, options);
     if (browser) return browser;
     const cached = readCachedGeoCoords();
     if (cached) return cached;
@@ -212,8 +276,8 @@ const reverseGeocodeCity = async (lat: number, lon: number): Promise<string> => 
 };
 
 /** 定位 + Open-Meteo（免密钥）取实时天气 */
-const fetchWeatherByGeolocation = async (cacheMs: number): Promise<WeatherData | null> => {
-    const pos = await getGeoPosition(cacheMs);
+const fetchWeatherByGeolocation = async (cacheMs: number, options?: FetchWeatherOptions): Promise<WeatherData | null> => {
+    const pos = await getGeoPosition(cacheMs, options);
     if (!pos) return null;
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${pos.lat}&longitude=${pos.lon}`
         + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&timezone=auto`;
@@ -337,10 +401,10 @@ export const RealtimeContextManager = {
 
     /**
      * 获取天气信息。
-     * 默认走「定位 + Open-Meteo」（免密钥，实时取用户所在地天气）；
+     * 默认走「已授权定位 / 缓存 / IP 兜底 + Open-Meteo」（免密钥，实时取本地天气）；
      * weatherMode==='manual' 时回退到旧版 OpenWeatherMap（手填 Key + 城市）。
      */
-    fetchWeather: async (config: RealtimeConfig): Promise<WeatherData | null> => {
+    fetchWeather: async (config: RealtimeConfig, options?: FetchWeatherOptions): Promise<WeatherData | null> => {
         if (!config.weatherEnabled) return null;
 
         const now = Date.now();
@@ -358,7 +422,7 @@ export const RealtimeContextManager = {
                 weather = await fetchWeatherOpenWeatherMap(config);
             } else {
                 // 定位 + 免密钥 Open-Meteo（无定位权限时若配了 Key 再回退 OWM）
-                weather = await fetchWeatherByGeolocation(cacheMs);
+                weather = await fetchWeatherByGeolocation(cacheMs, options);
                 if (!weather && config.weatherApiKey) {
                     weather = await fetchWeatherOpenWeatherMap(config);
                 }
@@ -373,10 +437,10 @@ export const RealtimeContextManager = {
 
     /**
      * 获取多天天气预报（当前实况 + 未来 7 天逐日）。
-     * 全程免密钥：坐标来自浏览器/IP 定位（geo 模式）或 Open-Meteo 地理编码（manual 模式手填城市），
+     * 全程免密钥：坐标来自已授权定位/缓存/IP 兜底（geo 模式）或 Open-Meteo 地理编码（manual 模式手填城市），
      * 预报数据统一走 Open-Meteo daily。结果按 cacheMinutes 缓存，并顺带刷新当前天气缓存。
      */
-    fetchWeatherForecast: async (config: RealtimeConfig): Promise<WeatherForecast | null> => {
+    fetchWeatherForecast: async (config: RealtimeConfig, options?: FetchWeatherOptions): Promise<WeatherForecast | null> => {
         if (!config.weatherEnabled) return null;
 
         const now = Date.now();
@@ -395,7 +459,7 @@ export const RealtimeContextManager = {
                 if (geo) { coords = { lat: geo.lat, lon: geo.lon }; cityName = geo.name; }
             }
             if (!coords) {
-                coords = await getGeoPosition(cacheMs);
+                coords = await getGeoPosition(cacheMs, options);
                 if (coords) cityName = await reverseGeocodeCity(coords.lat, coords.lon);
             }
             if (!coords) return null;

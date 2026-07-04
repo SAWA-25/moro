@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Binoculars,
     BookmarkSimple,
@@ -185,6 +185,64 @@ const ModeTabs: React.FC<{ mode: MainMode; setMode: (m: MainMode) => void }> = (
                     </button>
                 ))}
             </div>
+        </div>
+    );
+};
+
+const ScrollRail: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => {
+    const railRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{ pointerId: number; startX: number; scrollLeft: number; moved: boolean } | null>(null);
+    const suppressClickRef = useRef(false);
+
+    const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (drag.moved) {
+            suppressClickRef.current = true;
+            window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+        }
+        try { railRef.current?.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+        dragRef.current = null;
+    };
+
+    return (
+        <div
+            ref={railRef}
+            className={`w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain no-scrollbar cursor-grab active:cursor-grabbing ${className}`}
+            style={{ WebkitOverflowScrolling: 'touch' }}
+            onWheel={event => {
+                const el = event.currentTarget;
+                if (el.scrollWidth <= el.clientWidth) return;
+                if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                    event.preventDefault();
+                    el.scrollLeft += event.deltaY;
+                }
+            }}
+            onPointerDown={event => {
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                const el = railRef.current;
+                if (!el || el.scrollWidth <= el.clientWidth) return;
+                dragRef.current = { pointerId: event.pointerId, startX: event.clientX, scrollLeft: el.scrollLeft, moved: false };
+                try { el.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+            }}
+            onPointerMove={event => {
+                const drag = dragRef.current;
+                const el = railRef.current;
+                if (!drag || drag.pointerId !== event.pointerId || !el) return;
+                const dx = event.clientX - drag.startX;
+                if (Math.abs(dx) > 3) drag.moved = true;
+                el.scrollLeft = drag.scrollLeft - dx;
+                if (drag.moved) event.preventDefault();
+            }}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+            onClickCapture={event => {
+                if (!suppressClickRef.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+            }}
+        >
+            {children}
         </div>
     );
 };
@@ -792,7 +850,7 @@ const SocialApp: React.FC = () => {
     }, [filteredPosts]);
 
     const renderPostGrid = (emptyTitle: string, emptyHint?: string) => (
-        <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-2 pb-10 relative z-10">
+        <div className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden no-scrollbar px-3 pt-2 pb-10 relative z-10">
             {!loaded ? (
                 <div className="mt-16 text-center text-[12.5px]" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}>翻箱倒柜中…</div>
             ) : filteredPosts.length === 0 && generating ? (
@@ -809,7 +867,7 @@ const SocialApp: React.FC = () => {
                     )}
                 </div>
             ) : (
-                <div className="flex gap-3 items-start">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-start min-w-0">
                     <div className="flex-1 min-w-0">{colA.map(p => <PostCard key={p.id} post={p} onClick={() => setDetailId(p.id)} />)}</div>
                     <div className="flex-1 min-w-0">{colB.map(p => <PostCard key={p.id} post={p} onClick={() => setDetailId(p.id)} />)}</div>
                 </div>
@@ -819,8 +877,8 @@ const SocialApp: React.FC = () => {
 
     const renderSearchAndFilters = () => (
         <>
-            <div className="flex items-center gap-2 px-3 pb-2 shrink-0 relative z-10">
-                <div className="flex-1 flex items-center gap-2 px-3.5 py-2.5 min-w-0 rounded-full" style={{ background: '#fff', boxShadow: '0 1px 2px rgba(38,38,38,0.04)', border: '1px solid rgba(0,0,0,0.05)' }}>
+            <div className="flex flex-wrap items-center gap-2 px-3 pb-2 shrink-0 relative z-10 max-w-full min-w-0 overflow-hidden">
+                <div className="flex-[1_1_9.5rem] flex items-center gap-2 px-3.5 py-2.5 min-w-0 rounded-full" style={{ background: '#fff', boxShadow: '0 1px 2px rgba(38,38,38,0.04)', border: '1px solid rgba(0,0,0,0.05)' }}>
                     <MagnifyingGlass className="w-4 h-4 shrink-0" weight="bold" style={{ color: INK_SOFT }} />
                     <input
                         value={searchInput}
@@ -831,29 +889,33 @@ const SocialApp: React.FC = () => {
                     />
                 </div>
                 {mode === 'feed' && (
-                    <InsButton variant="solid" accent={AC} onClick={() => void refreshFeed()} disabled={generating} className="px-3 py-2.5 text-[12px]" title={`再剪 ${FEED_BATCH_SIZE} 张贴上`} icon={<Shuffle className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} weight="bold" />}>
+                    <InsButton variant="solid" accent={AC} onClick={() => void refreshFeed()} disabled={generating} className="shrink-0 px-3 py-2.5 text-[12px] whitespace-nowrap" title={`再剪 ${FEED_BATCH_SIZE} 张贴上`} icon={<Shuffle className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} weight="bold" />}>
                         {generating ? '生成中' : '翻新页'}
                     </InsButton>
                 )}
-                <IconCircle onClick={() => setComposeOpen(true)} title="发一条"><Plus className="w-4 h-4" weight="bold" /></IconCircle>
-                <IconCircle onClick={() => setConfirmClear(true)} title="清空整簿"><Broom className="w-4 h-4" weight="bold" /></IconCircle>
+                <IconCircle size={36} onClick={() => setComposeOpen(true)} title="发一条"><Plus className="w-4 h-4" weight="bold" /></IconCircle>
+                <IconCircle size={36} onClick={() => setConfirmClear(true)} title="清空整簿"><Broom className="w-4 h-4" weight="bold" /></IconCircle>
             </div>
-            <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
-                <span className="text-[10px] font-bold shrink-0" style={{ color: INK_SOFT }}>分类</span>
-                <Chip active={categoryFilter === 'all'} accent={AC} onClick={() => setCategoryFilter('all')}>全部</Chip>
-                {XHS_FEED_CATEGORIES.map(c => (
-                    <Chip key={c.key} active={categoryFilter === c.key} accent={AC} onClick={() => setCategoryFilter(c.key)}>{c.label}</Chip>
-                ))}
-            </div>
-            {topicChips.length > 0 && (
-                <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
-                    <span className="text-[10px] font-bold shrink-0" style={{ color: INK_SOFT }}>话题</span>
-                    {keyword && <Chip active accent={AC} onClick={() => { setKeyword(''); setSearchInput(''); }}>✕ 全部</Chip>}
-                    {topicChips.map(t => {
-                        const active = keyword.trim().toLowerCase() === t.toLowerCase();
-                        return <Chip key={t} active={active} accent={AC} onClick={() => { const next = active ? '' : t; setKeyword(next); setSearchInput(next); }}>#{t}</Chip>;
-                    })}
+            <ScrollRail className="shrink-0 relative z-10">
+                <div className="flex items-center gap-2 px-3 pb-2 min-w-max">
+                    <span className="text-[10px] font-bold shrink-0" style={{ color: INK_SOFT }}>分类</span>
+                    <Chip active={categoryFilter === 'all'} accent={AC} onClick={() => setCategoryFilter('all')}>全部</Chip>
+                    {XHS_FEED_CATEGORIES.map(c => (
+                        <Chip key={c.key} active={categoryFilter === c.key} accent={AC} onClick={() => setCategoryFilter(c.key)}>{c.label}</Chip>
+                    ))}
                 </div>
+            </ScrollRail>
+            {topicChips.length > 0 && (
+                <ScrollRail className="shrink-0 relative z-10">
+                    <div className="flex items-center gap-2 px-3 pb-2 min-w-max">
+                        <span className="text-[10px] font-bold shrink-0" style={{ color: INK_SOFT }}>话题</span>
+                        {keyword && <Chip active accent={AC} onClick={() => { setKeyword(''); setSearchInput(''); }}>✕ 全部</Chip>}
+                        {topicChips.map(t => {
+                            const active = keyword.trim().toLowerCase() === t.toLowerCase();
+                            return <Chip key={t} active={active} accent={AC} className="max-w-[8.5rem] truncate" onClick={() => { const next = active ? '' : t; setKeyword(next); setSearchInput(next); }}>#{t}</Chip>;
+                        })}
+                    </div>
+                </ScrollRail>
             )}
         </>
     );
@@ -866,7 +928,7 @@ const SocialApp: React.FC = () => {
         });
         const char = authorView.id ? characters.find(c => c.id === authorView.id) : undefined;
         return (
-            <InsShell accent={AC}>
+            <InsShell accent={AC} className="min-w-0 max-w-full">
                 <AppHeader title={authorView.name} sub={`${authorPosts.length} 条见闻 · ${authorView.kind === 'character' ? '熟人主页' : authorView.kind === 'user' ? '我的主页' : '路人主页'}`} onBack={() => setAuthorView(null)}
                     right={authorView.kind === 'character' && char ? <InsButton variant="solid" accent={AC} onClick={() => openChatWith(char.id)} className="px-3 py-2 text-[12px]">去来往</InsButton> : <UserCircle className="w-8 h-8" style={{ color: A.solid }} weight="fill" />} />
                 <div className="px-4 pb-3 relative z-10">
@@ -880,11 +942,11 @@ const SocialApp: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-10 relative z-10">
+                <div className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden no-scrollbar px-3 pb-10 relative z-10">
                     {authorPosts.length === 0 ? (
                         <div className="text-center text-[12.5px] mt-16" style={{ color: INK_SOFT }}>还没有留下见闻</div>
                     ) : (
-                        <div className="flex gap-3 items-start">
+                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-start min-w-0">
                             <div className="flex-1 min-w-0">{authorPosts.filter((_, i) => i % 2 === 0).map(p => <PostCard key={p.id} post={p} onClick={() => setDetailId(p.id)} />)}</div>
                             <div className="flex-1 min-w-0">{authorPosts.filter((_, i) => i % 2 === 1).map(p => <PostCard key={p.id} post={p} onClick={() => setDetailId(p.id)} />)}</div>
                         </div>
@@ -896,7 +958,7 @@ const SocialApp: React.FC = () => {
 
     if (detail) {
         return (
-            <InsShell accent={AC}>
+            <InsShell accent={AC} className="min-w-0 max-w-full">
                 <AppHeader
                     title={detail.author}
                     sub={`${fmtTime(detail.createdAt)} · ${postAuthorKind(detail)} · ${CATEGORY_LABELS[postCategory(detail)]}`}
@@ -982,7 +1044,7 @@ const SocialApp: React.FC = () => {
         const cur = deck[datingIdx];
         const remaining = deck.length - datingIdx;
         return (
-            <InsShell accent={AC}>
+            <InsShell accent={AC} className="min-w-0 max-w-full">
                 <AppHeader
                     title="发现"
                     sub="附近正在交友的人，各有各的目的"
@@ -1000,12 +1062,14 @@ const SocialApp: React.FC = () => {
                     }
                 />
                 <ModeTabs mode={mode} setMode={setMode} />
-                <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
-                    <Chip active={meetFilter === 'all'} accent={AC} onClick={() => { setMeetFilter('all'); setDatingIdx(0); }}>全部</Chip>
-                    {DATING_INTENTS.map(it => (
-                        <Chip key={it.key} active={meetFilter === it.key} accent={AC} onClick={() => { setMeetFilter(it.key); setDatingIdx(0); }}>{it.emoji} {it.label}</Chip>
-                    ))}
-                </div>
+                <ScrollRail className="shrink-0 relative z-10">
+                    <div className="flex items-center gap-2 px-3 pb-2 min-w-max">
+                        <Chip active={meetFilter === 'all'} accent={AC} onClick={() => { setMeetFilter('all'); setDatingIdx(0); }}>全部</Chip>
+                        {DATING_INTENTS.map(it => (
+                            <Chip key={it.key} active={meetFilter === it.key} accent={AC} onClick={() => { setMeetFilter(it.key); setDatingIdx(0); }}>{it.emoji} {it.label}</Chip>
+                        ))}
+                    </div>
+                </ScrollRail>
                 <div className="px-4 pb-2 relative z-10">
                     <input
                         value={greetInput}
@@ -1074,7 +1138,7 @@ const SocialApp: React.FC = () => {
     }
 
     return (
-        <InsShell accent={AC}>
+        <InsShell accent={AC} className="min-w-0 max-w-full">
             <AppHeader
                 title="见闻簿"
                 sub={mode === 'favorites' ? `收藏 ${favoritePosts.length} 张` : mode === 'friends' ? '熟人的公开近况' : posts.length > 0 ? `已贴 ${posts.length} 张卡片` : '一本贴满见闻的簿子'}
@@ -1099,19 +1163,21 @@ const SocialApp: React.FC = () => {
             <ModeTabs mode={mode} setMode={setMode} />
 
             {mode === 'friends' && (
-                <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
-                    <Chip active={friendFilter === 'all'} accent={AC} onClick={() => setFriendFilter('all')}>全部熟人</Chip>
-                    {characters.map(c => (
-                        <button
-                            key={c.id}
-                            onClick={() => setFriendFilter(c.id)}
-                            className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold press-soft"
-                            style={{ color: friendFilter === c.id ? '#fff' : A.ink, background: friendFilter === c.id ? A.solid : A.soft }}
-                        >
-                            <Avatar name={c.name} src={c.avatar} size={18} />{c.convoSettings?.remarkName?.trim() || c.name}
-                        </button>
-                    ))}
-                </div>
+                <ScrollRail className="shrink-0 relative z-10">
+                    <div className="flex items-center gap-2 px-3 pb-2 min-w-max">
+                        <Chip active={friendFilter === 'all'} accent={AC} onClick={() => setFriendFilter('all')}>全部熟人</Chip>
+                        {characters.map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => setFriendFilter(c.id)}
+                                className="shrink-0 inline-flex items-center gap-1.5 max-w-[10rem] px-2.5 py-1 rounded-full text-[11px] font-bold press-soft"
+                                style={{ color: friendFilter === c.id ? '#fff' : A.ink, background: friendFilter === c.id ? A.solid : A.soft }}
+                            >
+                                <Avatar name={c.name} src={c.avatar} size={18} /><span className="min-w-0 truncate">{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                </ScrollRail>
             )}
 
             {renderSearchAndFilters()}

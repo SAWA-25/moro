@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, PencilSimple, Signpost, UsersThree, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check, PencilSimple, Signpost, UsersThree, X } from '@phosphor-icons/react';
 import type { CharacterProfile, GroupProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { CUTE_STACK, MONO_STACK, SERIF_STACK } from '../handbook/paper';
@@ -104,6 +104,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     const [customOpen, setCustomOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
+    const openingScenarioRef = useRef('');
     const isEditing = editingIndex !== null;
 
     const persistEntries = (next: GroupOfflineEntry[]) => {
@@ -160,6 +161,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
             return;
         }
         openingStartedRef.current = true;
+        openingScenarioRef.current = scenario;
         setPreset(choice);
         setOpeningChosen(true);
         setBusy(true);
@@ -192,6 +194,69 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
             }
         } catch (e: any) {
             addToast(`群聊赴约推进失败：${e?.message || e}`, 'error');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const lastUserInputOf = (items: GroupOfflineEntry[]): string | undefined => {
+        for (let i = items.length - 1; i >= 0; i--) {
+            if (items[i].role === 'user') return items[i].text;
+        }
+        return undefined;
+    };
+
+    const handleRerollLastGenerated = async () => {
+        if (busy || ending || isEditing) return;
+        const last = entries[entries.length - 1];
+        if (!last) {
+            addToast('还没有可重写的线下内容', 'info');
+            return;
+        }
+        if (last.role === 'user') {
+            addToast('先让大家接一下，再重写上一段现场', 'info');
+            return;
+        }
+        const original = entries;
+        const baseEntries = entries.slice(0, -1);
+        persistEntries(baseEntries);
+        setBusy(true);
+        try {
+            if (last.role === 'scene') {
+                const opening = await generateGroupOfflineOpening(
+                    group,
+                    members,
+                    userProfile,
+                    apiConfig,
+                    pov,
+                    openingScenarioRef.current || undefined,
+                    last.text,
+                );
+                persistEntries(opening ? [...baseEntries, { role: 'scene', text: opening, at: Date.now() }] : baseEntries);
+            } else {
+                const reply = await generateGroupOfflineTurn(
+                    group,
+                    members,
+                    userProfile,
+                    apiConfig,
+                    baseEntries,
+                    lastUserInputOf(baseEntries),
+                    pov,
+                    last.text,
+                );
+                persistEntries(reply ? [...baseEntries, {
+                    role: 'char',
+                    speakerId: group.id,
+                    speakerName: group.name,
+                    speakerAvatar: groupAvatar,
+                    text: reply,
+                    at: Date.now(),
+                }] : baseEntries);
+            }
+            addToast('上一段线下现场已重写', 'success');
+        } catch (e: any) {
+            persistEntries(original);
+            addToast(`群聊赴约重写失败：${e?.message || e}`, 'error');
         } finally {
             setBusy(false);
         }
@@ -316,6 +381,18 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                         </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => void handleRerollLastGenerated()}
+                            disabled={busy || ending || isEditing || entries.length === 0}
+                            className="px-2.5 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(255,253,250,0.72)', border: '1px solid rgba(210,204,199,0.72)', color: '#6f686c', boxShadow: '0 1px 2px rgba(38,38,38,0.06)' }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : '重写上一段线下现场'}
+                            aria-label="重写上一段线下现场"
+                        >
+                            <ArrowsClockwise size={13} weight="bold" />
+                            重写
+                        </button>
                         <button
                             onClick={handleSuspend}
                             disabled={busy || ending || isEditing || entries.length === 0}

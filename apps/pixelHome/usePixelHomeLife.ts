@@ -144,9 +144,10 @@ export function usePixelHomeLife({
       const lastMsg = recentMsgs[recentMsgs.length - 1];
       await injectMemoryPalace(char, recentMsgs);
 
-      const baseContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+      const effectiveUserProfile: UserProfile = userProfile || { name: '用户', avatar: '', bio: '' };
+      const baseContext = ContextBuilder.buildCoreContext(char, effectiveUserProfile, true);
       const chatContext = recentMsgs.slice(-50).map(m => {
-        const role = m.role === 'user' ? (userProfile?.name || '用户') : char.name;
+        const role = m.role === 'user' ? effectiveUserProfile.name : char.name;
         return `${role}: ${String(m.content || '').slice(0, 80)}`;
       }).join('\n');
       const interactables = buildFurnitureList(homeState, assets);

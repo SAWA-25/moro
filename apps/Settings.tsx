@@ -1242,7 +1242,7 @@ const Settings: React.FC = () => {
           setRtTestStatus('手填模式请先填写 API Key');
           return;
       }
-      setRtTestStatus(rtWeatherMode === 'geo' ? '正在获取定位天气…（首次可能要授权定位）' : '正在测试…');
+      setRtTestStatus(rtWeatherMode === 'geo' ? '正在获取天气…（如需更准，首次会请求定位；拒绝也会按 IP 估算）' : '正在测试…');
       try {
           RealtimeContextManager.clearCache(); // 强制重新取，别命中缓存
           const weather = await RealtimeContextManager.fetchWeather({
@@ -1251,7 +1251,7 @@ const Settings: React.FC = () => {
               weatherMode: rtWeatherMode,
               weatherApiKey: rtWeatherKey,
               weatherCity: rtWeatherCity,
-          });
+          }, { requestLocationPermission: true });
           if (weather) {
               setRtTestStatus(`看到了！${weather.city}: ${weather.description}, ${weather.temp}°C（体感 ${weather.feelsLike}°C）`);
           } else {
@@ -2899,7 +2899,7 @@ const Settings: React.FC = () => {
                           </div>
                           {rtWeatherMode === 'geo' ? (
                               <p className="text-xs text-[#26242a]/60 leading-relaxed">
-                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。优先用{nativeRuntime ? '手机系统定位' : '浏览器定位'}（更准，首次会弹窗请求授权）；<b>即使拒绝授权或没有定位权限，也会自动按 IP 取城市级的本地实时天气</b>，无需填任何 Key。「手填 Key」仅作老用户兼容保留。
+                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。日常自动刷新不会主动弹定位授权；已授权时优先用{nativeRuntime ? '手机系统定位' : '浏览器定位'}，未授权时会用本地缓存或按 IP 取城市级的本地实时天气。只有点「测试天气连接」这类主动操作时，才可能请求定位。「手填 Key」仅作老用户兼容保留。
                               </p>
                           ) : (
                               <>

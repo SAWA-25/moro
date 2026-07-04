@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, PencilSimple, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check, PencilSimple, X } from '@phosphor-icons/react';
 import { CharacterProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
@@ -72,7 +72,13 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     };
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
+    const openingScenarioRef = useRef('');
     const isEditing = editingIndex !== null;
+
+    const persistEntries = (next: OfflineEntry[]) => {
+        setEntries(next);
+        saveOfflineSession(char.id, next);
+    };
 
     const pushEntries = (...added: OfflineEntry[]) => {
         setEntries(prev => {
@@ -127,6 +133,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         const scenario = resolveOpeningFrame(preset, customScenario, char.name, userProfile.name || '你');
         if (preset === 'custom' && !scenario) { addToast('写一句这场见面怎么开始吧～', 'info'); return; }
         openingStartedRef.current = true;
+        openingScenarioRef.current = scenario;
         setOpeningChosen(true);
         setBusy(true);
         try {
@@ -156,6 +163,60 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             if (reply) pushEntries({ role: 'char', text: reply, at: Date.now() });
         } catch (e: any) {
             addToast(`线下情景生成失败：${e?.message || e}`, 'error');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const lastUserInputOf = (items: OfflineEntry[]): string | undefined => {
+        for (let i = items.length - 1; i >= 0; i--) {
+            if (items[i].role === 'user') return items[i].text;
+        }
+        return undefined;
+    };
+
+    const handleRerollLastGenerated = async () => {
+        if (busy || ending || isEditing) return;
+        const last = entries[entries.length - 1];
+        if (!last) {
+            addToast('还没有可重写的线下内容', 'info');
+            return;
+        }
+        if (last.role === 'user') {
+            addToast('先让 TA 接一下，再重写上一段现场', 'info');
+            return;
+        }
+        const original = entries;
+        const baseEntries = entries.slice(0, -1);
+        persistEntries(baseEntries);
+        setBusy(true);
+        try {
+            if (last.role === 'scene') {
+                const opening = consumeGeneratedText(await generateOfflineOpening(
+                    char,
+                    userProfile,
+                    apiConfig,
+                    pov,
+                    openingScenarioRef.current || undefined,
+                    last.text,
+                ));
+                persistEntries(opening ? [...baseEntries, { role: 'scene', text: opening, at: Date.now() }] : baseEntries);
+            } else {
+                const reply = consumeGeneratedText(await generateOfflineTurn(
+                    char,
+                    userProfile,
+                    apiConfig,
+                    baseEntries,
+                    lastUserInputOf(baseEntries),
+                    pov,
+                    last.text,
+                ));
+                persistEntries(reply ? [...baseEntries, { role: 'char', text: reply, at: Date.now() }] : baseEntries);
+            }
+            addToast('上一段线下现场已重写', 'success');
+        } catch (e: any) {
+            persistEntries(original);
+            addToast(`线下重写失败：${e?.message || e}`, 'error');
         } finally {
             setBusy(false);
         }
@@ -272,6 +333,18 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => void handleRerollLastGenerated()}
+                            disabled={busy || ending || isEditing || entries.length === 0}
+                            className="px-2.5 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 active:scale-95 transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(255,253,250,0.72)', border: '1px solid #eed6df', color: '#8a6478', boxShadow: '0 1px 2px rgba(122,90,114,0.08)' }}
+                            title={isEditing ? '先保存或取消正在修改的内容' : '重写上一段线下现场'}
+                            aria-label="重写上一段线下现场"
+                        >
+                            <ArrowsClockwise size={13} weight="bold" />
+                            重写
+                        </button>
                         <button
                             onClick={handleSuspend}
                             disabled={busy || ending || isEditing || entries.length === 0}

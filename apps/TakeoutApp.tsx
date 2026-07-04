@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     MagnifyingGlass, Star, Minus, Plus, Receipt, MapPin, ArrowClockwise, CheckCircle, Bicycle,
     Warning, Sparkle, ShieldWarning, SealCheck, HandCoins, Coins, PushPin, Shuffle, CookingPot,
@@ -137,6 +137,64 @@ const ChoiceChip: React.FC<{ on?: boolean; onClick?: () => void; children: React
         {icon}{children}
     </button>
 );
+
+const ScrollRail: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => {
+    const railRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{ pointerId: number; startX: number; scrollLeft: number; moved: boolean } | null>(null);
+    const suppressClickRef = useRef(false);
+
+    const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (drag.moved) {
+            suppressClickRef.current = true;
+            window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+        }
+        try { railRef.current?.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+        dragRef.current = null;
+    };
+
+    return (
+        <div
+            ref={railRef}
+            className={`w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain no-scrollbar cursor-grab active:cursor-grabbing ${className}`}
+            style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+            onWheel={event => {
+                const el = event.currentTarget;
+                if (el.scrollWidth <= el.clientWidth) return;
+                if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                    event.preventDefault();
+                    el.scrollLeft += event.deltaY;
+                }
+            }}
+            onPointerDown={event => {
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                const el = railRef.current;
+                if (!el || el.scrollWidth <= el.clientWidth) return;
+                dragRef.current = { pointerId: event.pointerId, startX: event.clientX, scrollLeft: el.scrollLeft, moved: false };
+                try { el.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+            }}
+            onPointerMove={event => {
+                const drag = dragRef.current;
+                const el = railRef.current;
+                if (!drag || drag.pointerId !== event.pointerId || !el) return;
+                const dx = event.clientX - drag.startX;
+                if (Math.abs(dx) > 3) drag.moved = true;
+                el.scrollLeft = drag.scrollLeft - dx;
+                if (drag.moved) event.preventDefault();
+            }}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+            onClickCapture={event => {
+                if (!suppressClickRef.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+            }}
+        >
+            {children}
+        </div>
+    );
+};
 
 // ── 门脸：去色 emoji 装进小纸框（店铺/菜品 logo）──
 const Shopfront: React.FC<{ e?: string; size?: number; box?: number }> = ({ e, size = 30, box = 56 }) => (
@@ -1167,27 +1225,31 @@ const TakeoutApp: React.FC = () => {
                 )}
 
                 {/* 品类纸标签 */}
-                <div className="relative z-10 shrink-0 flex gap-2 overflow-x-auto no-scrollbar px-5 pt-3 pb-1">
-                    {CATS.map(c => (
-                        <ChoiceChip key={c} on={cat === c} onClick={() => setCat(c)}>{c === '全部' ? '不挑食' : c}</ChoiceChip>
-                    ))}
-                </div>
+                <ScrollRail className="relative z-10 shrink-0 pt-3 pb-1">
+                    <div className="flex gap-2 px-5 min-w-max">
+                        {CATS.map(c => (
+                            <ChoiceChip key={c} on={cat === c} onClick={() => setCat(c)}>{c === '全部' ? '不挑食' : c}</ChoiceChip>
+                        ))}
+                    </div>
+                </ScrollRail>
 
                 {/* 美团式：排序 + 筛选 */}
-                <div className="relative z-10 shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar px-5 pt-1.5 pb-0.5">
-                    {(([['recommend', '综合'], ['sales', '销量'], ['rating', '评分'], ['distance', '距离'], ['delivery', '最快']]) as [StoreSort, string][]).map(([k, label]) => (
-                        <button key={k} onClick={() => setSort(k)} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
-                            style={sort === k ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
-                    ))}
-                    <span className="shrink-0 w-px h-4" style={{ background: 'rgba(176,170,158,0.5)' }} />
-                    {(([['freeDelivery', '免配送费'], ['zeroMinOrder', '0起送'], ['promoOnly', '有优惠'], ['goodOnly', '4.5+']]) as [keyof StoreFilter, string][]).map(([k, label]) => {
-                        const on = !!filter[k];
-                        return (
-                            <button key={k} onClick={() => setFilter(f => ({ ...f, [k]: !f[k] }))} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
-                                style={on ? { background: '#d2452f', color: '#fff' } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
-                        );
-                    })}
-                </div>
+                <ScrollRail className="relative z-10 shrink-0 pt-1.5 pb-0.5">
+                    <div className="flex items-center gap-1.5 px-5 min-w-max">
+                        {(([['recommend', '综合'], ['sales', '销量'], ['rating', '评分'], ['distance', '距离'], ['delivery', '最快']]) as [StoreSort, string][]).map(([k, label]) => (
+                            <button key={k} onClick={() => setSort(k)} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
+                                style={sort === k ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
+                        ))}
+                        <span className="shrink-0 w-px h-4" style={{ background: 'rgba(176,170,158,0.5)' }} />
+                        {(([['freeDelivery', '免配送费'], ['zeroMinOrder', '0起送'], ['promoOnly', '有优惠'], ['goodOnly', '4.5+']]) as [keyof StoreFilter, string][]).map(([k, label]) => {
+                            const on = !!filter[k];
+                            return (
+                                <button key={k} onClick={() => setFilter(f => ({ ...f, [k]: !f[k] }))} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
+                                    style={on ? { background: '#d2452f', color: '#fff' } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
+                            );
+                        })}
+                    </div>
+                </ScrollRail>
 
                 {/* 铺子列表 */}
                 <div className="relative z-10 px-5 pt-2 pb-10">

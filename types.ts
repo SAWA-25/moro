@@ -649,7 +649,7 @@ export interface CharacterBuff {
 export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
-  /** 取数方式：'geo'（默认，浏览器定位 + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
+  /** 取数方式：'geo'（默认，已授权定位/缓存/IP + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
   weatherMode?: 'geo' | 'manual';
   weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
   weatherCity: string;    // 城市名（仅 manual 模式用）
@@ -2647,7 +2647,7 @@ export type CharLifeProactiveAngle =
   | 'silence'
   | 'other';
 
-export type CharLifeTriggerSource = 'proactive' | 'leave' | 'catchup' | 'sw' | 'manual';
+export type CharLifeTriggerSource = 'proactive' | 'leave' | 'catchup' | 'sw' | 'manual' | 'offline_replay';
 
 export interface CharLifeEvent {
   /** `life_${charId}_${timestamp}_${rand}` */

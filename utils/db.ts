@@ -1352,6 +1352,10 @@ export const DB = {
       });
   },
 
+  deletePixelHomeLayoutsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex('pixel_home_layouts', 'charId', charId);
+  },
+
   getAllCharacters: async (): Promise<CharacterProfile[]> => {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -2585,6 +2589,58 @@ export const DB = {
       });
   },
 
+  deleteRelationshipNetworkDataByCharId: async (charId: string): Promise<number> => {
+      const pairKeys = new Set<string>();
+      const pairKeyHasChar = (pairKey?: string): boolean => {
+          if (typeof pairKey !== 'string') return false;
+          const m = pairKey.match(/^rn_(.+)__(.+)$/);
+          return !!m && (m[1] === charId || m[2] === charId);
+      };
+      const edgeDeleted = await DB.deleteByCursor(STORE_RELATIONSHIP_NETWORK_EDGES, (edge: RelationshipNetworkEdge) => {
+          const related = (Array.isArray(edge?.charIds) && edge.charIds.includes(charId)) || pairKeyHasChar(edge?.pairKey);
+          if (related && edge?.pairKey) pairKeys.add(edge.pairKey);
+          return related;
+      });
+      const messageDeleted = await DB.deleteByCursor(STORE_RELATIONSHIP_NETWORK_MESSAGES, (message: RelationshipNetworkMessage) => {
+          const relatedPair = (message?.pairKey && pairKeys.has(message.pairKey)) || pairKeyHasChar(message?.pairKey);
+          const relatedSpeaker = message?.speakerId === charId;
+          const relatedForward = Array.isArray(message?.forwardedByCharIds) && message.forwardedByCharIds.includes(charId);
+          return !!(relatedPair || relatedSpeaker || relatedForward);
+      });
+      const settings = await DB.getRelationshipNetworkAutoSettings().catch(() => undefined);
+      let settingsTouched = 0;
+      if (settings) {
+          const nextSelected = (settings.selectedCharIds || []).filter(id => id !== charId);
+          const cleanRecord = (record: Record<string, number> = {}, mode: 'char' | 'pair') => {
+              const next: Record<string, number> = {};
+              for (const [key, value] of Object.entries(record)) {
+                  if (mode === 'char' && key === charId) continue;
+                  if (mode === 'pair' && (pairKeys.has(key) || pairKeyHasChar(key))) continue;
+                  next[key] = value;
+              }
+              return next;
+          };
+          const nextSettings: RelationshipNetworkAutoSettings = {
+              ...settings,
+              selectedCharIds: nextSelected,
+              lastRunAtByChar: cleanRecord(settings.lastRunAtByChar, 'char'),
+              lastRunAtByPair: cleanRecord(settings.lastRunAtByPair, 'pair'),
+              forwardedCountByPair: cleanRecord(settings.forwardedCountByPair, 'pair'),
+              updatedAt: Date.now(),
+          };
+          const changed =
+              nextSettings.selectedCharIds.length !== (settings.selectedCharIds || []).length ||
+              Object.keys(nextSettings.lastRunAtByChar || {}).length !== Object.keys(settings.lastRunAtByChar || {}).length ||
+              Object.keys(nextSettings.lastRunAtByPair || {}).length !== Object.keys(settings.lastRunAtByPair || {}).length ||
+              Object.keys(nextSettings.forwardedCountByPair || {}).length !== Object.keys(settings.forwardedCountByPair || {}).length;
+          if (changed) {
+              await DB.saveRelationshipNetworkAutoSettings(nextSettings);
+              settingsTouched = 1;
+          }
+      }
+      return edgeDeleted + messageDeleted + settingsTouched;
+  },
+
   // ─── 折子戏·谈心会话 ───
   getAllTalkSessions: async (): Promise<TalkSession[]> => {
       const db = await openDB();
@@ -2655,6 +2711,11 @@ export const DB = {
           tx.onerror = () => reject(tx.error);
       });
   },
+  deleteWerewolfGamesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_WEREWOLF_GAMES, (game: WerewolfGame) => (
+          Array.isArray(game?.players) && game.players.some(player => player?.charId === charId)
+      ));
+  },
 
   // ─── 折子戏·真心话大冒险 ───
   getAllTruthDareSessions: async (): Promise<TruthDareSession[]> => {
@@ -2683,6 +2744,11 @@ export const DB = {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
       });
+  },
+  deleteTruthDareSessionsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_TRUTHDARE_SESSIONS, (session: TruthDareSession) => (
+          Array.isArray(session?.players) && session.players.some(player => player?.charId === charId || player?.id === charId)
+      ));
   },
 
   // ─── 折子戏·番外问卷会话 ───
@@ -2713,6 +2779,11 @@ export const DB = {
           tx.onerror = () => reject(tx.error);
       });
   },
+  deleteTheaterQuizSessionsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_THEATER_QUIZ_SESSIONS, (session: TheaterQuizSession) => (
+          Array.isArray(session?.participantIds) && session.participantIds.includes(charId)
+      ));
+  },
 
   getAllChatFollowups: async (): Promise<ChatFollowup[]> => (
       await getAllStoreItems<ChatFollowup>(STORE_CHAT_FOLLOWUPS)
@@ -2723,6 +2794,14 @@ export const DB = {
 
   deleteChatFollowup: (id: string): Promise<void> =>
       deleteStoreItem(STORE_CHAT_FOLLOWUPS, id),
+
+  deleteChatFollowupsByCharId: async (charId: string, messageIds?: number[]): Promise<number> => {
+      const messageIdSet = new Set(messageIds || []);
+      return DB.deleteByCursor(STORE_CHAT_FOLLOWUPS, (followup: ChatFollowup) => (
+          (followup?.targetKind === 'char' && followup.targetId === charId) ||
+          (typeof followup?.messageId === 'number' && messageIdSet.has(followup.messageId))
+      ));
+  },
 
   updateChatFollowupStatus: async (id: string, status: ChatFollowup['status']): Promise<ChatFollowup | null> => {
       const existing = await getStoreItem<ChatFollowup>(STORE_CHAT_FOLLOWUPS, id);
@@ -2745,6 +2824,18 @@ export const DB = {
 
   saveChatHubDigest: (digest: ChatHubDigest): Promise<void> =>
       putStoreItem(STORE_CHAT_HUB_DIGESTS, digest),
+
+  clearChatHubDigests: async (): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAT_HUB_DIGESTS)) return;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_CHAT_HUB_DIGESTS, 'readwrite');
+          tx.objectStore(STORE_CHAT_HUB_DIGESTS).clear();
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
 
   // ─── 折子戏·仿真图文历史 ───
   getAllTheaterFauxPieces: async (): Promise<TheaterFauxPiece[]> => {
@@ -4971,6 +5062,25 @@ export const DB = {
       });
   },
 
+  deleteCoViewSessionsByCharId: async (charId: string): Promise<number> => {
+      const sessions = (await DB.getCoViewSessions()).filter(session => session.charId === charId);
+      if (sessions.length === 0) return 0;
+      await Promise.all(sessions.map(session => DB.clearCoViewMessages(session.id).catch(() => undefined)));
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          if (!db.objectStoreNames.contains(STORE_COVIEW_SESSIONS)) {
+              resolve(0);
+              return;
+          }
+          const tx = db.transaction(STORE_COVIEW_SESSIONS, 'readwrite');
+          const store = tx.objectStore(STORE_COVIEW_SESSIONS);
+          sessions.forEach(session => store.delete(session.id));
+          tx.oncomplete = () => resolve(sessions.length);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
   // --- VR World 「页外」 全局小说库 ---
   getVRNovels: async (): Promise<VRWorldNovel[]> => {
       const db = await openDB();
@@ -5388,6 +5498,24 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_SONGS, 'readwrite');
       transaction.objectStore(STORE_SONGS).delete(id);
+  },
+
+  deleteSongsByCollaboratorId: async (charId: string): Promise<number> => {
+      const songs = (await DB.getAllSongs()).filter(song => song.collaboratorId === charId);
+      if (songs.length === 0) return 0;
+      const db = await openDB();
+      await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_SONGS, 'readwrite');
+          const store = tx.objectStore(STORE_SONGS);
+          songs.forEach(song => store.delete(song.id));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+      await Promise.all(songs.map(song => (
+          song.audio?.assetKey ? DB.deleteAsset(song.audio.assetKey).catch(() => undefined) : Promise.resolve()
+      )));
+      return songs.length;
   },
 
   // --- Music Library (Music App) ---

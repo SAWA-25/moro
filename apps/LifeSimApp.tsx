@@ -1019,7 +1019,7 @@ const LifeSimApp: React.FC = () => {
         };
     });
 
-    const recentEventNodes: MapNode[] = gameState.actionLog.slice(-4).map((action, index) => {
+    const recentEventNodes: MapNode[] = gameState.actionLog.slice(-4).map((action, index): MapNode => {
         const involved = action.involvedNpcIds?.map(id => gameState.npcs.find(npc => npc.id === id)).filter(Boolean) as SimNPC[] | undefined;
         const base = involved?.[0] ? npcMapPoint(gameState, involved[0]) : fallbackPoint(action.id);
         const point = jitterPoint(`event-${action.id}`, base, 6);
