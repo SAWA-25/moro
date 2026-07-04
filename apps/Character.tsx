@@ -5,7 +5,7 @@
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
-import { AppID, CharacterProfile, CharacterExportData, MemoryFragment } from '../types';
+import { AppID, CharacterProfile, CharacterExportData, MemoryFragment, Worldbook } from '../types';
 import {
     Waveform, VinylRecord, UserPlus, TrayArrowDown, TrayArrowUp, PaperPlaneTilt, X, Binoculars,
 } from '@phosphor-icons/react';
@@ -26,6 +26,7 @@ import { generateLifeProfile } from '../utils/lifeProfile';
 import { generateAppearanceTags } from '../utils/appearanceTags';
 import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
+import { buildCharacterCardExportData } from '../utils/characterCardExport';
 import { createCharacterId } from '../utils/characterIdentity';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 import { callChatCompletion } from '../utils/llmClient';
@@ -142,7 +143,7 @@ const CharacterCard: React.FC<{
 
 /** onExit：剪影集（PersonaHubApp）嵌入时返回封面页；不传则关闭 App 回桌面（旧行为） */
 const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-  const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, auxApiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, auxApiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook, worldbookGroupSettings } = useOS();
   // 角色卡生成/润色/导入属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
   const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const [isGeneratingLifeProfile, setIsGeneratingLifeProfile] = useState(false);
@@ -792,23 +793,16 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const handleExportCard = async () => {
       if (!formData) return;
 
-      const {
-          id, modelId, memories, refinedMemories, activeMemoryMonths, guidebookInsights,
-          ...cardProps
-      } = formData;
-
-      const exportData: CharacterExportData = {
-          ...cardProps,
-          version: 1,
-          type: 'moro_character_card'
-      };
-
-      if (formData.bubbleStyle) {
-          const customTheme = customThemes.find(t => t.id === formData.bubbleStyle);
-          if (customTheme) {
-              exportData.embeddedTheme = customTheme;
-          }
-      }
+      const { exportData, worldbookCount, regexScriptCount } = buildCharacterCardExportData(formData, {
+          customThemes,
+          worldbooks,
+          worldbookGroupSettings,
+      });
+      const packedParts = [
+          worldbookCount > 0 ? `${worldbookCount} 条世界书` : '',
+          regexScriptCount > 0 ? `${regexScriptCount} 条正则` : '',
+      ].filter(Boolean);
+      const packedSuffix = packedParts.length > 0 ? `（含 ${packedParts.join('、')}）` : '';
 
       const json = JSON.stringify(exportData, null, 2);
       const fileName = `${formData.name || 'Character'}_Card.json`;
@@ -829,7 +823,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   title: '导出角色卡',
                   files: [uriResult.uri],
               });
-              addToast('已调起分享', 'success');
+              addToast(`已调起分享${packedSuffix}`, 'success');
               return;
           } catch (e: any) {
               console.error("Native Export Error", e);
@@ -850,7 +844,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   title: '导出角色卡',
                   files: [file],
               });
-              addToast('已调起分享', 'success');
+              addToast(`已调起分享${packedSuffix}`, 'success');
               return;
           }
       } catch (e: any) {
@@ -870,7 +864,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          addToast('角色卡已导出', 'success');
+          addToast(`角色卡已导出${packedSuffix}`, 'success');
   };
 
   /**
@@ -965,32 +959,53 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       // Sync mounted worldbooks into the global worldbook app so they
       // appear under their original category (or the character's name
       // as a sensible fallback when the card has no category set).
-      const incomingMounted = (data.mountedWorldbooks || []).map(wb => ({ ...wb }));
+      const now = Date.now();
       const fallbackCategory = `${data.name || '导入角色'} 的世界书`;
-      let importedWbCount = 0;
-      for (const wb of incomingMounted) {
-          if (!wb.id || worldbooks.some(existing => existing.id === wb.id)) continue;
+      const incomingMounted: Worldbook[] = (data.mountedWorldbooks || []).map((wb, index) => {
           const category = wb.category && wb.category.trim() ? wb.category : fallbackCategory;
-          wb.category = category;
-          await addWorldbook({
-              id: wb.id,
+          return {
+              ...wb,
+              id: wb.id || `wb-import-${now}-${index}`,
               title: wb.title || '未命名设定',
               content: wb.content || '',
               category,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-          });
+              createdAt: typeof wb.createdAt === 'number' ? wb.createdAt : now,
+              updatedAt: typeof wb.updatedAt === 'number' ? wb.updatedAt : now,
+          };
+      });
+      let importedWbCount = 0;
+      for (const wb of incomingMounted) {
+          if (!wb.id || worldbooks.some(existing => existing.id === wb.id)) continue;
+          await addWorldbook(wb);
           importedWbCount++;
       }
 
+      const {
+          id: _id,
+          modelId: _modelId,
+          version: _version,
+          type: _type,
+          embeddedTheme: _embeddedTheme,
+          spec: _spec,
+          spec_version: _specVersion,
+          data: _stCompatData,
+          mountedWorldbooks: _exportMounted,
+          ...characterFields
+      } = data as CharacterExportData & { id?: string; modelId?: string };
+
       const newChar: CharacterProfile = {
-          ...data,
+          ...characterFields,
           id: createCharacterId('import'),
           memories: [],
           refinedMemories: {},
           activeMemoryMonths: [],
-          mountedWorldbooks: incomingMounted,
-          embeddedTheme: undefined
+          mountedWorldbooks: incomingMounted.map(wb => ({
+              id: wb.id,
+              title: wb.title,
+              content: wb.content,
+              category: wb.category,
+              enabled: wb.enabled,
+          })),
       } as CharacterProfile;
 
       // 旧实现：DB.saveCharacter + addCharacter()「naive 刷新」+ reload —— 整页重启之外，
@@ -1459,7 +1474,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                    <TrayArrowUp size={15} weight="bold" />
                                    导出角色卡
                                </button>
-                               <p className="text-[12px] text-center mt-2" style={{ color: PAPER_TONES.inkFaint }}>导出的角色卡不包含记忆档案和聊天记录。</p>
+                               <p className="text-[12px] text-center mt-2" style={{ color: PAPER_TONES.inkFaint }}>导出的角色卡会带上已绑定世界书和角色正则，不包含记忆档案和聊天记录。</p>
                            </div>
                        </div>
                    )}

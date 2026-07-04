@@ -71,6 +71,30 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-04-character-card-export-attachments',
+    date: '2026-07-04',
+    title: '角色卡导出会带上世界书和正则了',
+    kind: 'improvement',
+    summary: '剪影集导出单张角色卡时，会一并打包这个角色绑定的剪报夹世界书和只给 TA 生效的正则补丁。',
+    items: [
+      '已绑定的世界书会按整本分组带走；如果绑定后又在同一本书里新增了条目，导出时也会一起收进去。',
+      '角色局部正则会写进角色卡的兼容数据里，方便在支持 SillyTavern 角色卡结构的工具里继续识别。',
+      '单张角色卡仍不会包含聊天记录、长期记忆档案或整机设置；这些内容需要用完整备份保存。',
+    ],
+  },
+  {
+    id: '2026-07-04-worldbook-export',
+    date: '2026-07-04',
+    title: '剪报夹可以导出世界书了',
+    kind: 'feature',
+    summary: '剪报夹里的每本世界书现在都能单独导出为 JSON 文件，方便备份、迁移或拿到外部工具里继续整理。',
+    items: [
+      '展开或浏览世界书分组时，点分组右侧的下载按钮即可导出这一整本世界书。',
+      '导出的文件会保留条目标题、正文、关键词、常驻 / 关键词触发、@Depth、顺序、概率、预算豁免和整本递归 / 预算等信息。',
+      '导出不会修改剪报夹里的原数据；之后也可以把 JSON 再导回剪报夹继续使用。',
+    ],
+  },
+  {
     id: '2026-07-04-takeout-filter-scroll-fix',
     date: '2026-07-04',
     title: '饭票分类筛选可以左右滑动了',
@@ -4074,12 +4098,12 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'persona-card-import-export',
             title: '导入 / 导出角色卡',
-            description: '导入适合把外部角色带进 Moro；导出适合备份或分享单个角色。导入后会变成新的本地角色，不会直接覆盖原角色。',
-            defaultBehavior: '单张角色卡导出主要保存角色内容；完整备份才更适合整机迁移。',
+            description: '导入适合把外部角色带进 Moro；导出适合备份或分享单个角色，也会带上这个角色绑定的世界书和角色局部正则。导入后会变成新的本地角色，不会直接覆盖原角色。',
+            defaultBehavior: '单张角色卡导出会保存角色内容、已绑定世界书和角色正则；聊天记录、长期记忆档案和整机设置仍建议用完整备份迁移。',
             options: [
               { label: '导入前', description: '先确认来源可信，再检查头像、名字、人设、开场白有没有被识别。' },
               { label: '导入后', description: '建议立刻试聊几句，发现称呼、关系、语气不对就回编辑页补。' },
-              { label: '分享前', description: '检查角色卡里有没有你不想公开的私密信息。' },
+              { label: '分享前', description: '检查角色卡、绑定世界书和角色正则里有没有你不想公开的私密信息。' },
             ],
             path: ['剪影集', '登场人物', '导入 / 导出'],
             deepLink: link(AppID.Personas, 'manual-personas-characters', 'section:char', { section: 'char' }),
@@ -4213,6 +4237,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
     summary: '设定资料夹，用条目保存世界观、背景、规则、禁忌和长期补充信息。',
     features: [
       '创建世界书分组和条目，设置关键词、内容、启用状态、全局 / 局部作用域。',
+      '可把单本世界书导出为 JSON，保留条目内容、触发规则、插入位置和整本高级设置。',
       '支持递归扫描、触发概率、整书预算、整词匹配和四种二级词逻辑。',
       '可选择条目适用的角色或群聊，控制哪些设定在对应聊天里生效。',
       '提供世界书写作说明：哪些内容适合放世界书、条目怎么拆、常驻和关键词怎么选。',
@@ -4284,6 +4309,19 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
             ],
             path: ['剪报夹', '书架分组', '整本策略'],
             deepLink: link(AppID.Worldbook, 'manual-worldbook-group-scope', 'group-settings'),
+          },
+          {
+            id: 'worldbook-export',
+            title: '导出世界书',
+            description: '把当前整本世界书导出为 JSON 文件，适合备份、迁移或拿到外部工具继续整理。',
+            defaultBehavior: '每个世界书分组右侧都有下载按钮；导出不会删除或改动原条目。',
+            options: [
+              { label: '导出内容', description: '包含条目标题、正文、关键词、常驻 / 关键词、顺序、@Depth、概率、预算豁免等条目设置。' },
+              { label: '整本设置', description: '会记录整本开关、全局 / 局部标记、递归扫描、预算和递归轮数等信息。' },
+              { label: '再导入', description: '导出的 JSON 可重新导回剪报夹，导入时会生成新的本地条目编号。' },
+            ],
+            path: ['剪报夹', '世界书分组', '导出按钮'],
+            deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'group-settings'),
           },
           {
             id: 'worldbook-entry-toggle',
@@ -4445,6 +4483,74 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
             ],
             path: ['剪报夹', '世界书写作排错'],
             deepLink: link(AppID.Worldbook, 'manual-worldbook-root'),
+          },
+        ],
+      },
+    ],
+  },
+  {
+    app: '剪报夹·导出世界书',
+    en: 'Worldbook Export',
+    category: 'system',
+    summary: '把剪报夹里的单本世界书打包成 JSON，方便备份、迁移和外部整理。',
+    features: [
+      '从世界书分组右侧的下载按钮导出当前整本书，不会修改原条目。',
+      '导出文件会保留条目标题、正文、关键词、常驻 / 关键词触发和启用状态。',
+      '会带上插入位置、@Depth、顺序、触发概率、整词匹配和预算豁免等高级设置。',
+      '整本递归扫描、预算和递归轮数等书级设置也会写进文件。',
+    ],
+    beginnerSteps: [
+      '先在剪报夹确认要导出的分组名称和条目内容都正确。',
+      '点该分组右侧的下载按钮，保存生成的 JSON 文件。',
+      '迁移到另一台设备时，在剪报夹导入这个 JSON；导入会生成新的本地条目编号。',
+    ],
+    commonQuestions: [
+      {
+        title: '导出会删除原世界书吗？',
+        answer: '不会。导出只是生成一份 JSON 文件，剪报夹里的原分组、条目和挂载关系都会留在本机。',
+      },
+      {
+        title: '角色绑定关系会一起导出吗？',
+        answer: '单独导出世界书只保存这本书本身。想让角色卡也带上已绑定世界书，请从剪影集导出角色卡；想迁移整机关系，用完整备份。',
+      },
+      {
+        title: '导出的 JSON 可以再导回来吗？',
+        answer: '可以。导回剪报夹时会创建新的本地条目，避免直接覆盖原有世界书。',
+      },
+    ],
+    tips: ['分享世界书前先检查正文、关键词和作者备注里有没有不想公开的剧情或私人信息。'],
+    settingSections: [
+      {
+        id: 'worldbook-export-flow',
+        title: '导出检查清单',
+        settings: [
+          {
+            id: 'worldbook-export-entry-content',
+            title: '条目内容',
+            description: '确认标题、正文、关键词和二级关键词都是想分享或迁移的版本。',
+            path: ['剪报夹', '世界书分组', '条目列表'],
+            deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'group-settings'),
+          },
+          {
+            id: 'worldbook-export-entry-rules',
+            title: '条目触发规则',
+            description: '常驻 / 关键词、启用状态、概率、整词匹配和预算豁免会跟着文件走。',
+            path: ['剪报夹', '编辑条目', '触发设置'],
+            deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'entry-settings'),
+          },
+          {
+            id: 'worldbook-export-position-rules',
+            title: '插入位置',
+            description: '角色卡前后、@Depth role、depth 数字和顺序会保留，导入后仍可再改。',
+            path: ['剪报夹', '编辑条目', '插入位置'],
+            deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'entry-settings'),
+          },
+          {
+            id: 'worldbook-export-book-settings',
+            title: '整本设置',
+            description: '递归扫描、预算和递归轮数属于整本书设置，导出前可在分组策略里检查。',
+            path: ['剪报夹', '世界书分组', '整本策略'],
+            deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'group-settings'),
           },
         ],
       },
@@ -10355,8 +10461,8 @@ const MANUAL_ENTRY_EXTENSIONS: Record<string, ManualEntryExtension> = {
     tips: ['角色是谁写在剪影集，世界规则写在剪报夹，聊天风格和请求结构写在活字盘；不要把三者全塞进一个地方。'],
   },
   '剪报夹': {
-    keywords: ['世界书', 'Worldbook', '关键词', '全局世界书', '局部世界书', '@Depth', '条目开关', '作用域', '递归扫描', '触发概率', '预算', '整词匹配'],
-    tips: ['世界书适合写稳定背景和规则；短期剧情、临时命令或聊天语气通常放在聊天或预设里更清楚。复杂酒馆世界书可再调整递归、概率和预算。'],
+    keywords: ['世界书', 'Worldbook', '关键词', '全局世界书', '局部世界书', '@Depth', '条目开关', '作用域', '递归扫描', '触发概率', '预算', '整词匹配', '导出世界书', 'JSON 备份'],
+    tips: ['世界书适合写稳定背景和规则；短期剧情、临时命令或聊天语气通常放在聊天或预设里更清楚。复杂酒馆世界书可再调整递归、概率和预算。需要迁移或备份某本书时，用分组右侧的下载按钮导出 JSON。'],
   },
   '活字盘': {
     keywords: ['预设', 'preset', 'SillyTavern', '提示词', 'marker', '@Depth', '采样参数', '作用范围'],
@@ -10626,8 +10732,15 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '剪报夹': {
     appId: AppID.Worldbook,
     path: ['桌面', '剪报夹'],
-    details: ['管理世界书分组、条目、全局 / 局部作用域、插入位置、关键词触发和整书高级设置。'],
+    details: ['管理世界书分组、条目、全局 / 局部作用域、插入位置、关键词触发、整书高级设置和单本 JSON 导出。'],
     deepLink: link(AppID.Worldbook, 'manual-worldbook-root'),
+  },
+  '剪报夹·导出世界书': {
+    appId: AppID.Worldbook,
+    path: ['桌面', '剪报夹', '世界书分组', '下载按钮'],
+    details: ['导出当前整本世界书为 JSON 文件，用于备份、迁移或外部整理；原世界书不会被修改。'],
+    jumpText: '打开剪报夹',
+    deepLink: link(AppID.Worldbook, 'manual-worldbook-export', 'group-settings'),
   },
   '活字盘': {
     appId: AppID.Presets,

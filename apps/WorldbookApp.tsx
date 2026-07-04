@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     BookOpen,
     CaretDown,
+    DownloadSimple,
     FileText,
     GlobeSimple,
     Key,
@@ -20,6 +21,7 @@ import {
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { AppID, Worldbook, WorldbookPosition, WorldbookSelectiveLogic } from '../types';
+import { stringifyWorldbookExport, worldbookExportFileName } from '../utils/worldbookExport';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
 import {
     DEFAULT_WB_CATEGORY,
@@ -122,6 +124,9 @@ const positionShort = (p?: WorldbookPosition) =>
 
 const formatDate = (time?: number) =>
     new Date(time || Date.now()).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+
+const sortBooksForExport = (books: Worldbook[]) =>
+    [...books].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
 const snippet = (text: string, len = 84) => {
     const clean = (text || '').replace(/\s+/g, ' ').trim();
@@ -628,6 +633,32 @@ const WorldbookApp: React.FC = () => {
         }
     };
 
+    const handleExportCategory = (category: string) => {
+        const normalizedCategory = category || DEFAULT_WB_CATEGORY;
+        const books = sortBooksForExport(groupedBooks[normalizedCategory] || []);
+        if (books.length === 0) {
+            addToast('这本世界书还没有可导出的条目', 'info');
+            return;
+        }
+        const payload = stringifyWorldbookExport({
+            category: normalizedCategory,
+            books,
+            groupEnabled: worldbookGroupToggles[normalizedCategory] !== false,
+            groupScope: isGroupGlobal(normalizedCategory) ? 'global' : 'local',
+            groupSettings: worldbookGroupSettings[normalizedCategory],
+        });
+        const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = worldbookExportFileName(normalizedCategory);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        addToast(`已导出「${normalizedCategory}」`, 'success');
+    };
+
     const confirmDelete = async () => {
         if (!editingBook) return;
         await deleteWorldbook(editingBook.id);
@@ -754,7 +785,7 @@ const WorldbookApp: React.FC = () => {
         );
     };
 
-    const renderCategoryPanel = ([category, visibleBooks]: [string, Worldbook[]]) => {
+    const renderCategoryPanel = ([category, visibleBooks]: [string, Worldbook[]], panelIndex = 0) => {
         const allBooks = groupedBooks[category] || visibleBooks;
         const totalCount = allBooks.length;
         const sortedBooks = [...visibleBooks].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || b.updatedAt - a.updatedAt);
@@ -834,6 +865,15 @@ const WorldbookApp: React.FC = () => {
                         </button>
 
                         <div className="flex shrink-0 items-center gap-2" onClick={e => e.stopPropagation()}>
+                            <span data-manual-anchor={panelIndex === 0 ? 'manual-worldbook-export' : undefined}>
+                                <IconCircle
+                                    size={34}
+                                    onClick={() => handleExportCategory(category)}
+                                    title="导出这本世界书"
+                                >
+                                    <DownloadSimple size={15} weight="bold" />
+                                </IconCircle>
+                            </span>
                             <IconCircle
                                 size={34}
                                 onClick={() => setDeleteCategoryConfirm({ category, count: totalCount })}

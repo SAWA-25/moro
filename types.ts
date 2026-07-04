@@ -4037,10 +4037,19 @@ export interface GroupProfile {
     dissolvedAt?: number;
 }
 
-export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'modelId' | 'memories' | 'refinedMemories' | 'activeMemoryMonths'> {
+export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'modelId' | 'memories' | 'refinedMemories' | 'activeMemoryMonths' | 'guidebookInsights' | 'mountedWorldbooks'> {
     version: number;
     type: 'moro_character_card';
     embeddedTheme?: ChatTheme;
+    /**
+     * 单卡导出时使用完整世界书快照：Moro 导回可恢复本地剪报夹条目，
+     * SillyTavern 兼容数据则写在 data.character_book。
+     */
+    mountedWorldbooks?: Worldbook[];
+    /** SillyTavern / Character Card V2 兼容载体，供外部工具读取 character_book 与 scoped regex。 */
+    spec?: 'chara_card_v2';
+    spec_version?: '2.0';
+    data?: Record<string, any>;
 }
 
 /** 絮语·用户社交背景：不是正式神经链接角色，而是用户人际关系里的影子联系人/群聊。 */
