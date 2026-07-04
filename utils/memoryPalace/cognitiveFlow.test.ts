@@ -60,7 +60,7 @@ describe('cognitiveFlow memory mode defaults', () => {
 });
 
 describe('cognitiveFlow recall policy', () => {
-    it('derives layers from existing Memory Palace fields', () => {
+    it('derives layers from existing 回忆标本馆 fields', () => {
         expect(getCognitiveMemoryLayer(node('plain'))).toBe('event');
         expect(getCognitiveMemoryLayer(node('box', { eventBoxId: 'box-1' }))).toBe('episode');
         expect(getCognitiveMemoryLayer(node('summary', { isBoxSummary: true }))).toBe('episode_summary');

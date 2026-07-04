@@ -114,12 +114,14 @@ const Icon: React.FC<{ name: string; size?: number; style?: React.CSSProperties 
         style: { display: 'inline-block', verticalAlign: 'middle', flexShrink: 0, ...style },
     };
     switch (name) {
-        case 'palace': // 回忆标本馆总图标：大脑 + 圆顶
+        case 'palace': // 回忆标本馆总图标：标本盒
             return (
                 <svg {...p}>
-                    <path d="M12 3a7 7 0 0 0-7 7v8h14v-8a7 7 0 0 0-7-7Z" />
-                    <path d="M9 18v3M15 18v3M5 18h14" />
-                    <path d="M12 9v6M9 12h6" />
+                    <path d="M5 5h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+                    <path d="M4 10h16" />
+                    <path d="M8 14h8" />
+                    <path d="M10 5V3h4v2" />
+                    <path d="M9 19v2h6v-2" />
                 </svg>
             );
         case 'search':

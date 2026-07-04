@@ -97,6 +97,16 @@ describe('manual guide data', () => {
     }
   });
 
+  it('keeps the stock gallery as a gallery sub-entry instead of a legacy app', () => {
+    expect(MANUAL_ENTRIES.find(entry => entry.app === '拾光图库')).toBeUndefined();
+    expect(MANUAL_DESTINATIONS['拾光图库']).toBeUndefined();
+
+    const stockEntry = MANUAL_ENTRIES.find(entry => entry.app === '相册·拾光素材');
+    expect(stockEntry).toBeTruthy();
+    expect(stockEntry?.keywords || []).toContain('拾光图库');
+    expect(MANUAL_DESTINATIONS['相册·拾光素材']?.deepLink?.route).toBe('stock');
+  });
+
   it('uses unique setting ids', () => {
     const ids = flattenManualSettings().map(({ setting }) => setting.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -254,6 +264,61 @@ describe('manual guide data', () => {
     expect(text).toContain('自动关闭');
     expect(text).toContain('手动点「见面」仍可进入');
     expect(text).toContain('不影响你手动点“见面 / 赴个约”');
+  });
+
+  it('documents user-requested private chat avatar changes', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-05-chat-user-request-avatar-change');
+    const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-photo-assets')?.setting;
+    const destination = MANUAL_DESTINATIONS['絮语·单聊设置'];
+    const entry = MANUAL_ENTRIES.find(item => item.app === '絮语·单聊设置');
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      setting?.title,
+      setting?.description,
+      ...(setting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+      ...(entry?.features || []),
+      ...(entry?.tips || []),
+      ...(entry?.keywords || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(text).toContain('用户发出的图片');
+    expect(text).toContain('TA 同意');
+    expect(text).toContain('头像会自动变化');
+    expect(text).toContain('可撤回');
+    expect(text).toContain('同步到角色卡');
+  });
+
+  it('documents automatic offline detection for private and group chats', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-05-chat-auto-offline-detection');
+    const groupEntry = MANUAL_ENTRIES.find(entry => entry.app === '絮语·群聊设置');
+    const groupSetting = flattenManualSettings().find(({ setting }) => setting.id === 'group-voice-and-words')?.setting;
+    const destination = MANUAL_DESTINATIONS['絮语·群聊设置'];
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      ...(groupEntry?.features || []),
+      groupSetting?.description,
+      groupSetting?.defaultBehavior,
+      ...(groupSetting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+      ...(groupEntry?.keywords || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(groupSetting).toBeTruthy();
+    expect(text).toContain('聊着聊着就见面');
+    expect(text).toContain('聊着聊着就赴约');
+    expect(text).toContain('默认关闭');
+    expect(text).toContain('到场');
+    expect(text).toContain('碰头');
+    expect(text).toContain('同处现场');
+    expect(text).toContain('自动赴约');
+    expect(text).toContain('明天下午三点楼下见');
+    expect(text).toContain('到点再自动');
   });
 
   it('documents local map cards for chat locations', () => {

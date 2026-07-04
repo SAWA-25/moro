@@ -519,10 +519,10 @@ Structure:
     };
 
     // 手动归档: 把一条日记总结成神经链接条目 (char.memories), 跟 chatapp 的自动归档对齐 —
-    //   - 开了记忆宫殿: 走副 API extractMemoriesFromBuffer 一次提取多条 MemoryNode → 节点入宫,
+    //   - 开了回忆标本馆: 走副 API extractMemoriesFromBuffer 一次提取多条 MemoryNode → 节点入馆,
     //     同一组节点 bullets 化拼成 MemoryFragment 写 char.memories (mood='diary_palace')。
-    //     不再调主 API。神经链接里那条 bullets 跟宫殿节点严格一比一对应。
-    //   - 没开记忆宫殿 / 副 API 缺失 / 副 API 没提取出: 回落主 API + 升级 prompt 出 150~300 字
+    //     不再调主 API。神经链接里那条 bullets 跟标本馆节点严格一比一对应。
+    //   - 没开回忆标本馆 / 副 API 缺失 / 副 API 没提取出: 回落主 API + 升级 prompt 出 150~300 字
     //     散文式总结 → 写 char.memories (mood='diary')。这条沿用老路径升级版。
     //
     // mood 用 'diary_palace' / 'diary' 跟 chatapp 自动归档的 'palace' 区分,
@@ -538,7 +538,7 @@ Structure:
 
         setArchivingId(diary.id);
 
-        // 主 API 散文式总结 — 当宫殿没开 / 副 API 缺失 / 提取为空时的 fallback
+        // 主 API 散文式总结 — 当标本馆没开 / 副 API 缺失 / 提取为空时的 fallback
         const generateProseSummary = async (): Promise<string> => {
             const baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile);
             const charPart = diary.charPage?.text?.trim() || '(对方没有回复)';
@@ -578,7 +578,7 @@ ${charPart}
         };
 
         try {
-            // 1. 如果开了宫殿,先走副 API 一次提取,成败决定神经链接走哪条路径
+            // 1. 如果开了标本馆,先走副 API 一次提取,成败决定神经链接走哪条路径
             let palaceResult: DiaryIngestResult | null = null;
             if (selectedChar.memoryPalaceEnabled) {
                 try {
@@ -591,7 +591,7 @@ ${charPart}
                         userProfile.name,
                     );
                 } catch (e: any) {
-                    console.warn('🏰 [Journal] 入宫失败:', e);
+                    console.warn('🏰 [Journal] 写入标本馆失败:', e);
                     palaceResult = null;
                 }
             } else {
@@ -599,7 +599,7 @@ ${charPart}
             }
 
             // 2. 决定神经链接那条的 summary / mood
-            //    宫殿成功 (status==='done' 且 nodes 非空) → bullets 化, mood='diary_palace'
+            //    标本馆成功 (status==='done' 且 nodes 非空) → bullets 化, mood='diary_palace'
             //    其它一切情况 → 主 API 散文 fallback, mood='diary'
             let summary: string;
             let mood: string;
@@ -758,7 +758,7 @@ ${charPart}
     const archiveResultModal = archiveResult ? (() => {
         const p = archiveResult.palace;
         const userName = userProfile.name || '我';
-        // 宫殿状态文案
+        // 标本馆状态文案
         let palaceStatus: { tone: 'on' | 'off' | 'warn' | 'fail'; title: string; detail: string } = { tone: 'off', title: '', detail: '' };
         if (!p) {
             palaceStatus = { tone: 'fail', title: '回忆标本馆 · 写入失败', detail: '处理过程抛了异常，详情看控制台。往事柜已 fallback 走主 API 散文版，写入成功。' };

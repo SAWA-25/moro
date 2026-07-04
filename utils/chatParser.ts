@@ -2,7 +2,7 @@
 import { DB } from './db';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { CharPlaylistSong, ConvoSettings } from '../types';
-import { sanitizeForBubble } from './sanitize';
+import { sanitizeForBubble, stripAssistantReplyQuoteMarkers } from './sanitize';
 import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 export interface MusicActionSnapshot {
@@ -360,7 +360,7 @@ export const ChatParser = {
             .replace(/^#{1,6}\s+/gm, '')
             .replace(/^\s*[-*+]\s*$/gm, '')
             .trim();
-        return stripped.length > 0;
+        return stripAssistantReplyQuoteMarkers(stripped).trim().length > 0;
     },
 
     // Split text into bubbles (text and emojis).

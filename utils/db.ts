@@ -6,7 +6,7 @@ import {
     HealthModuleSettings, HealthRecord, HealthReminder, HealthPlan, HealthSummary, HealthModuleId,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, CoViewBook, CoViewMedia, CoViewMessage, CoViewSession, Emoji, EmojiCategory,
-    BankTransaction, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
+    BankTransaction, BankFullState, DollhouseState, BankDollhousesByShopId, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
@@ -928,7 +928,7 @@ export const openDB = (): Promise<IDBDatabase> => {
 
       createStore(STORE_HOTNEWS, { keyPath: 'id' });
 
-      // ─── Memory Palace (记忆宫殿) stores ───
+      // ─── 回忆标本馆 stores ───
       if (!db.objectStoreNames.contains('memory_nodes')) {
           const mnStore = db.createObjectStore('memory_nodes', { keyPath: 'id' });
           mnStore.createIndex('charId', 'charId', { unique: false });
@@ -985,7 +985,7 @@ export const openDB = (): Promise<IDBDatabase> => {
           ebStore.createIndex('charId', 'charId', { unique: false });
       }
 
-      // ─── v48 一次性强制清空记忆宫殿（EventBox 体系，旧 boxId 数据不兼容） ───
+      // ─── v48 一次性强制清空回忆标本馆（EventBox 体系，旧 boxId 数据不兼容） ───
       //     oldVersion === 0 = 全新安装，没东西可清
       //     oldVersion >= 48 = 已经清过，跳过
       //     0 < oldVersion < 48 = 现有用户升级 → 清一次
@@ -1420,7 +1420,7 @@ export const DB = {
 
   /**
    * 获取角色的私聊消息。
-   * @param includeProcessed 是否包含已被记忆宫殿处理的消息（默认 false，即自动过滤）。
+   * @param includeProcessed 是否包含已被回忆标本馆处理的消息（默认 false，即自动过滤）。
    *                         记忆归档、批量总结等需要完整历史的场景应传 true。
    */
   getMessagesByCharId: async (charId: string, includeProcessed: boolean = false): Promise<Message[]> => {
@@ -1432,7 +1432,7 @@ export const DB = {
       const request = index.getAll(IDBKeyRange.only(charId));
       request.onsuccess = () => {
           let results = (request.result || []).filter((m: Message) => !m.groupId);
-          // 记忆宫殿：过滤已处理的消息（高水位标记之前的），用本地长期记忆替代
+          // 回忆标本馆：过滤已处理的消息（高水位标记之前的），用本地长期记忆替代
           if (!includeProcessed) {
               try {
                   const hwm = parseInt(localStorage.getItem(`mp_lastMsgId_${charId}`) || '0', 10);
@@ -1473,7 +1473,7 @@ export const DB = {
     });
   },
 
-  // 页外动态专用：捞某角色全部 vr_card，不受"最近 N 条窗口"、记忆宫殿高水位
+  // 页外动态专用：捞某角色全部 vr_card，不受"最近 N 条窗口"、回忆标本馆高水位
   // （mp_lastMsgId）、归档隐藏起点（char.hideBeforeMessageId）影响。
   // 这些机制只管「LLM 上下文能否看到」；页外动态是用户自己的浏览界面，
   // 只要消息还在 IndexedDB 里就应当永远可见——哪怕它早被新聊天挤出聊天取数窗口、
@@ -5419,8 +5419,18 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_BANK_DATA, 'readwrite');
       // Strip dollhouse from the main state save (dollhouse is saved separately)
-      const { dollhouse: _dh, ...shopWithoutDollhouse } = (state.shop || {}) as any;
-      const cleanState = { ...state, shop: shopWithoutDollhouse };
+      const stripShopDollhouse = (shop: any) => {
+          const { dollhouse: _dh, ...shopWithoutDollhouse } = (shop || {}) as any;
+          return shopWithoutDollhouse;
+      };
+      const cleanPortfolio = state.shopPortfolio ? {
+          ...state.shopPortfolio,
+          branches: (state.shopPortfolio.branches || []).map(branch => ({
+              ...branch,
+              shop: stripShopDollhouse(branch.shop),
+          })),
+      } : state.shopPortfolio;
+      const cleanState = { ...state, shop: stripShopDollhouse(state.shop), shopPortfolio: cleanPortfolio };
       transaction.objectStore(STORE_BANK_DATA).put({ ...cleanState, id: 'main_state' });
       return new Promise((resolve, reject) => {
           transaction.oncomplete = () => resolve();
@@ -5445,6 +5455,28 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_BANK_DATA, 'readwrite');
       transaction.objectStore(STORE_BANK_DATA).put({ id: 'dollhouse_state', data: state });
+      return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  getBankDollhouses: async (): Promise<BankDollhousesByShopId | null> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          if (!db.objectStoreNames.contains(STORE_BANK_DATA)) { resolve(null); return; }
+          const transaction = db.transaction(STORE_BANK_DATA, 'readonly');
+          const store = transaction.objectStore(STORE_BANK_DATA);
+          const req = store.get('dollhouses_by_shop');
+          req.onsuccess = () => resolve(req.result?.data || null);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveBankDollhouses: async (state: BankDollhousesByShopId): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_BANK_DATA, 'readwrite');
+      transaction.objectStore(STORE_BANK_DATA).put({ id: 'dollhouses_by_shop', data: state });
       return new Promise((resolve, reject) => {
           transaction.oncomplete = () => resolve();
           transaction.onerror = () => reject(transaction.error);
@@ -5819,12 +5851,14 @@ export const DB = {
 
       const mainState = bankData.find((d: any) => d.id === 'main_state');
       const dollhouseRecord = bankData.find((d: any) => d.id === 'dollhouse_state');
+      const dollhousesRecord = bankData.find((d: any) => d.id === 'dollhouses_by_shop');
       const coviewMedia = (coviewMediaRaw as CoViewMedia[]).map(({ blob: _blob, ...media }) => media as CoViewMedia);
 
       return {
           characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMedia, coviewBooks, coviewSessions, coviewMessages,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
+          bankDollhouses: dollhousesRecord?.data || undefined,
           bankTransactions: bankTx,
           xhsActivities,
           xhsStockImages,
@@ -6601,7 +6635,7 @@ export const DB = {
           data.twitterSearchRecords = undefined as any;
       }, data.twitterSearchRecords?.length || 0);
 
-      // Memory Palace (记忆宫殿)
+      // 回忆标本馆
       await runSection('记忆节点', data.memoryNodes !== undefined, async () => {
           await clearAndAdd('memory_nodes', data.memoryNodes, '记忆节点', false);
           data.memoryNodes = undefined as any;
@@ -6677,20 +6711,30 @@ export const DB = {
           data.userProfile = undefined as any;
       }, data.userProfile ? 1 : 0);
 
-      await runSection('银行状态', data.bankState !== undefined || data.bankDollhouse !== undefined, async () => {
+      await runSection('银行状态', data.bankState !== undefined || data.bankDollhouse !== undefined || data.bankDollhouses !== undefined, async () => {
           if (!hasStore(STORE_BANK_DATA)) return;
-          await beforeWrite([data.bankState, data.bankDollhouse], '银行状态', true);
+          await beforeWrite([data.bankState, data.bankDollhouse, data.bankDollhouses], '银行状态', true);
           await withStore(STORE_BANK_DATA, store => {
               store.clear();
               if (data.bankState) {
                   store.put({ ...data.bankState, id: 'main_state' });
               }
+              let dollhousesByShop = data.bankDollhouses;
+              if (!dollhousesByShop && data.bankDollhouse) {
+                  const portfolio = data.bankState?.shopPortfolio;
+                  const firstShopId = portfolio?.activeShopId || portfolio?.branches?.[0]?.id || 'shop-main';
+                  dollhousesByShop = { [firstShopId]: data.bankDollhouse };
+              }
               if (data.bankDollhouse) {
                   store.put({ id: 'dollhouse_state', data: data.bankDollhouse });
+              }
+              if (dollhousesByShop) {
+                  store.put({ id: 'dollhouses_by_shop', data: dollhousesByShop });
               }
           });
           data.bankState = undefined as any;
           data.bankDollhouse = undefined as any;
-      }, (data.bankState ? 1 : 0) + (data.bankDollhouse ? 1 : 0));
+          data.bankDollhouses = undefined as any;
+      }, (data.bankState ? 1 : 0) + (data.bankDollhouse ? 1 : 0) + (data.bankDollhouses ? 1 : 0));
   }
 };

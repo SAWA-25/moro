@@ -18,7 +18,11 @@ import {
     computeCreditProfile,
     buyStock,
     createDefaultBankLifeState,
+    claimBankShopDailyReward,
     foundCompany,
+    getDefaultBankBranchName,
+    migrateBankShopPortfolioState,
+    openBankShopBranch,
     applyCompanyIssueWithResult,
     leaveJob,
     loanTotal,
@@ -28,6 +32,7 @@ import {
     repayLoan,
     sellStock,
     startJobApplication,
+    switchActiveBankShop,
     updateResumeProfile,
     withdrawCompanyDividend,
 } from './bankLife';
@@ -133,6 +138,42 @@ describe('bankLife', () => {
         expect(migrated.life?.stockMarket.length).toBeGreaterThan(0);
     });
 
+    it('migrates legacy shop data into the first portfolio branch and keeps mirrors aligned', () => {
+        const legacy = {
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: {
+                actionPoints: 7,
+                shopName: '旧饮品铺',
+                shopLevel: 2,
+                appeal: 180,
+                background: '',
+                staff: [{ id: 's1', name: '阿明', avatar: '🙂', role: 'waiter', fatigue: 12, maxFatigue: 100, hireDate: 1 }],
+                unlockedRecipes: ['recipe-coffee-001', 'recipe-tea'],
+                totalRevenue: 66,
+                stock: { 'recipe-coffee-001': 3 },
+            },
+            firedStaff: [{ id: 'f1', name: '小周', avatar: '🙂', role: 'waiter', fatigue: 0, maxFatigue: 100, hireDate: 1 }],
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: {
+                ...createDefaultBankLifeState('2026-06-01', true),
+                shopBusinessName: '旧饮品铺',
+                shopProducts: [{ id: 'p1', name: '旧菜单', price: 10, cost: 4, stock: 2, appeal: 8 }],
+            },
+        } as unknown as BankFullState;
+
+        const migrated = migrateBankShopPortfolioState(migrateBankLifeState(legacy));
+        const branch = migrated.shopPortfolio?.branches[0];
+
+        expect(branch?.id).toBe('shop-main');
+        expect(branch?.shop.shopName).toBe('旧饮品铺');
+        expect(branch?.firedStaff[0].id).toBe('f1');
+        expect(branch?.shopProducts[0].name).toBe('旧菜单');
+        expect(migrated.shop.shopName).toBe(branch?.shop.shopName);
+        expect(migrated.life?.shopBusinessName).toBe(branch?.shop.shopName);
+    });
+
     it('migrates AI extension fields with safe defaults', () => {
         const migrated = migrateBankLifeState({
             config: { dailyBudget: 100, currencySymbol: '¥' },
@@ -204,6 +245,99 @@ describe('bankLife', () => {
         expect(life.shopBusinessType).toBe('flower');
         expect(life.shopBusinessName).toBe('花间一角');
         expect(life.shopProducts?.map(p => p.name)).toEqual(flower.products.map(p => p.name));
+    });
+
+    it('opens repeat business-type branches with startup costs and headquarters energy checks', () => {
+        const base = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '镜像', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState);
+
+        const first = openBankShopBranch(base, 'drinks', '', { walletBalance: 10000, dateStr: '2026-06-01' });
+        expect(first.ok).toBe(true);
+        expect(first.cost).toBe(10000);
+        expect(first.state.shopPortfolio?.branches).toHaveLength(1);
+        expect(first.state.shopPortfolio?.headquartersEnergy).toBe(50);
+
+        const defaultName = getDefaultBankBranchName('drinks', first.state.shopPortfolio?.branches || []);
+        expect(defaultName).toBe('饮品店 2号店');
+        const second = openBankShopBranch(first.state, 'drinks', defaultName, { walletBalance: 10000, dateStr: '2026-06-02' });
+        expect(second.ok).toBe(true);
+        expect(second.state.shopPortfolio?.branches).toHaveLength(2);
+        expect(second.branch?.shop.shopName).toBe('饮品店 2号店');
+
+        const walletBlocked = openBankShopBranch(second.state, 'convenience', '', { walletBalance: 21999, dateStr: '2026-06-03' });
+        expect(walletBlocked.ok).toBe(false);
+        expect(walletBlocked.reason).toBe('wallet');
+        expect(walletBlocked.state.shopPortfolio?.branches).toHaveLength(2);
+
+        const energyBlocked = openBankShopBranch(second.state, 'snack', '', { walletBalance: 7000, dateStr: '2026-06-03' });
+        expect(energyBlocked.ok).toBe(false);
+        expect(energyBlocked.reason).toBe('energy');
+        expect(energyBlocked.state.shopPortfolio?.branches).toHaveLength(2);
+    });
+
+    it('switches active branches without mixing stock, staff, reputation, or fired pools', () => {
+        const base = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '镜像', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState);
+        const first = openBankShopBranch(base, 'drinks', 'A店', { walletBalance: 10000, dateStr: '2026-06-01' }).state;
+        const secondResult = openBankShopBranch(first, 'flower', 'B店', { walletBalance: 14000, dateStr: '2026-06-01' });
+        const second = secondResult.state;
+        const [a, b] = second.shopPortfolio!.branches;
+        const editedActive = {
+            ...second,
+            shop: {
+                ...second.shop,
+                actionPoints: 3,
+                stock: { 'fl-bouquet': 1 },
+                staff: [{ id: 'b-staff', name: '花店员', avatar: '🙂', role: 'waiter', fatigue: 0, maxFatigue: 100, hireDate: 1 }],
+                reviews: [{ id: 'r1', authorName: '客人', avatar: '🙂', rating: 5, text: '好看', ts: 1 }],
+            },
+            firedStaff: [{ id: 'b-fired', name: '旧花店员', avatar: '🙂', role: 'waiter', fatigue: 0, maxFatigue: 100, hireDate: 1 }],
+        } as BankFullState;
+        const switched = switchActiveBankShop(editedActive, a.id);
+
+        expect(switched.shop.shopName).toBe('A店');
+        expect(switched.shop.staff.some(s => s.id === 'b-staff')).toBe(false);
+        const savedB = switched.shopPortfolio?.branches.find(branch => branch.id === b.id);
+        expect(savedB?.shop.stock?.['fl-bouquet']).toBe(1);
+        expect(savedB?.shop.reviews?.[0].rating).toBe(5);
+        expect(savedB?.firedStaff[0].id).toBe('b-fired');
+    });
+
+    it('claims daily shop lessons once per date and per branch', () => {
+        const base = openBankShopBranch(migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '镜像', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState), 'drinks', 'A店', { walletBalance: 10000, dateStr: '2026-06-01' }).state;
+        const hqBefore = base.shopPortfolio!.headquartersEnergy;
+        const patrol = claimBankShopDailyReward(base, 'headquartersPatrol', { dateStr: '2026-06-01' });
+        expect(patrol.claimed).toBe(true);
+        expect(patrol.state.shopPortfolio!.headquartersEnergy).toBe(hqBefore + 25);
+        expect(claimBankShopDailyReward(patrol.state, 'headquartersPatrol', { dateStr: '2026-06-01' }).claimed).toBe(false);
+
+        const shopBefore = patrol.state.shop.actionPoints;
+        const shelf = claimBankShopDailyReward(patrol.state, 'shelf', { dateStr: '2026-06-01' });
+        expect(shelf.claimed).toBe(true);
+        expect(shelf.state.shop.actionPoints).toBe(shopBefore + 18);
+        expect(claimBankShopDailyReward(shelf.state, 'shelf', { dateStr: '2026-06-01' }).claimed).toBe(false);
+
+        const nextDay = claimBankShopDailyReward(shelf.state, 'shelf', { dateStr: '2026-06-02' });
+        expect(nextDay.claimed).toBe(true);
     });
 
     it('enforces the planned capital thresholds for shop and company unlocks', () => {

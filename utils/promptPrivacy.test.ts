@@ -27,6 +27,26 @@ describe('prompt privacy helpers', () => {
     expect(sanitizeAssistantVisibleText(text)).toBe('我在。');
   });
 
+  it('removes leaked queued-reply task wording', () => {
+    const text = [
+      '当前要回应的消息（2026/7/5 07:00:00）：「你就说你换不换吧」',
+      '不要提前回答后面还没轮到的消息。',
+      '嗯。',
+    ].join('\n');
+
+    expect(sanitizeAssistantVisibleText(text)).toBe('嗯。');
+  });
+
+  it('removes leaked proactive catch-up task wording', () => {
+    const text = [
+      '未回复消息：',
+      '写法要求：像真人隔了一会儿才回消息。',
+      '我刚才看到了，没装没看见。',
+    ].join('\n');
+
+    expect(sanitizeAssistantVisibleText(text)).toBe('我刚才看到了，没装没看见。');
+  });
+
   it('keeps ordinary roleplay text intact', () => {
     expect(sanitizeAssistantVisibleText('我把伞放门口了，等雨停再走。')).toBe('我把伞放门口了，等雨停再走。');
     expect(sanitizeAssistantVisibleText('这个 3D 模型做得挺细。')).toBe('这个 3D 模型做得挺细。');

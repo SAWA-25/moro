@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 关联网络 (Memory Links)
+ * 回忆标本馆 — 关联网络 (Memory Links)
  *
  * 记忆之间的五种连接：temporal, emotional, causal, person, metaphor。
  * - temporal / emotional: 自动规则建立

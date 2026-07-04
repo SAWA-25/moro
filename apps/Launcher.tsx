@@ -10,7 +10,7 @@ import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/sc
 import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
-import { isImageWallpaper } from '../utils/defaultWallpapers';
+import { isImageWallpaper, toWallpaperBackground } from '../utils/defaultWallpapers';
 import { getLatestPrivateMessage, previewForMessage } from '../utils/messageNotifications';
 
 // --- Isolated Components to prevent full re-renders ---
@@ -416,7 +416,6 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         AppID.Forum,
         AppID.DesktopPet,
         AppID.CoView,
-        AppID.XhsStock,
         AppID.Manual,
     ];
     pageThreeApps.forEach((id, index) => {
@@ -1040,7 +1039,7 @@ const Launcher: React.FC = () => {
       const walk = (x - startX.current);
       scrollContainerRef.current.scrollLeft = scrollLeftRef.current - walk;
 
-      dragMoved.current = Math.abs(x - (startX.current + scrollContainerRef.current.offsetLeft));
+      dragMoved.current = Math.abs(x - startX.current);
   };
 
   const handleMouseUp = () => {
@@ -1069,6 +1068,13 @@ const Launcher: React.FC = () => {
   // 设了自定义壁纸时（图片或非默认底色），桌面让出自己那层不透明底色，
   // 把 PhoneShell 渲染在底下的壁纸透出来 —— 否则桌面壁纸设了却被盖住，看不见。
   const hasCustomWallpaper = !!theme.wallpaper && (theme.wallpaper !== DEFAULT_WALLPAPER || isImageWallpaper(theme.wallpaper));
+  const desktopBackdropStyle: React.CSSProperties = {
+      backgroundColor: '#f4f2ed',
+      background: toWallpaperBackground(theme.wallpaper || DEFAULT_WALLPAPER),
+      backgroundPosition: 'center',
+      backgroundSize: 'cover',
+      backgroundRepeat: 'no-repeat',
+  };
   const dockStyle = theme.desktopDockStyle || 'glass';
   const dockShellStyle: React.CSSProperties =
       dockStyle === 'minimal' ? {
@@ -1180,8 +1186,11 @@ const Launcher: React.FC = () => {
       className="moro-desktop-root h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none isolate"
       data-has-wallpaper={hasCustomWallpaper ? 'true' : undefined}
       style={{
+        ...desktopBackdropStyle,
         color: contentColor,
         '--moro-desktop-hue': themeHue,
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
       } as React.CSSProperties}
     >
 
@@ -1265,13 +1274,18 @@ const Launcher: React.FC = () => {
         onClickCapture={handleClickCapture}
         className="moro-desktop-scroll relative z-10 flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
         style={{
+            backgroundColor: 'rgba(244,242,237,0.001)',
             scrollBehavior: 'smooth',
             overscrollBehaviorX: 'none',
             overscrollBehaviorY: 'none',
             touchAction: 'pan-x',
             willChange: 'scroll-position',
-            transform: 'translateZ(0)',
+            transform: 'translate3d(0,0,0)',
             WebkitOverflowScrolling: 'touch',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            contain: 'layout paint style',
+            isolation: 'isolate',
         }}
       >
           {/* Render Desk Pages（统一网格：组件 + 图标按装箱位置摆放，全部可拖拽） */}
@@ -1286,7 +1300,8 @@ const Launcher: React.FC = () => {
                     paddingRight: 'var(--moro-desktop-page-x, 1.25rem)',
                     paddingTop: 'var(--moro-desktop-page-top, calc(var(--chrome-top) + 2.35rem))',
                     paddingBottom: 'var(--moro-desktop-page-bottom, 1.75rem)',
-                    transform: 'translateZ(0)',
+                    backgroundColor: 'rgba(244,242,237,0.001)',
+                    transform: 'translate3d(0,0,0)',
                     backfaceVisibility: 'hidden',
                     WebkitBackfaceVisibility: 'hidden',
                     contain: 'layout paint style',

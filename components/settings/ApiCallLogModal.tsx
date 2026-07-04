@@ -345,7 +345,7 @@ const EntryRow: React.FC<{
     onOpenManualHelp?: (help: ApiErrorHelp) => void;
 }> = ({ entry: e, expanded, onToggle, onOpenManualHelp }) => {
     const { day, time } = formatTime(e.timestamp);
-    const error = nonEmpty(e.errorMessage);
+    const error = e.ok ? undefined : nonEmpty(e.errorMessage);
     const response = nonEmpty(e.responsePreview);
     const request = nonEmpty(e.requestPreview);
     const hasDetails = !!(error || response || request || e.baseUrl);

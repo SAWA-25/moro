@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeForBubble, sanitizeForNotification, sanitizeIntoSegments } from './sanitize';
+import { matchAssistantReplyQuoteMarker, sanitizeForBubble, sanitizeForNotification, sanitizeIntoSegments } from './sanitize';
 
 // ─── Oracle: 原版 chatParser.sanitize (来自 commit e97f9ed) ─────────────────
 // 用来跟 sanitizeForBubble 字节对齐校验. refactor 后改 sanitize.ts 就立刻能
@@ -431,6 +431,38 @@ describe('sanitizeIntoSegments', () => {
     expect(segs).toHaveLength(1);
     expect(segs[0].raw).toBe('[回复 "在干嘛"]: 在工作呀');
     expect(segs[0].sanitized).toBe('在工作呀');
+  });
+
+  it('自然语言引用横幅保留 raw 给客户端配引用, banner 剥光', () => {
+    const input = '[你引用了阿妄说的「你就说你换不换吧」，并回复了 ↓] 嗯。';
+    const segs = sanitizeIntoSegments(input);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].raw).toBe(input);
+    expect(segs[0].sanitized).toBe('嗯。');
+  });
+
+  it('历史上下文里的引用横幅也能剥光', () => {
+    const input = '[用户引用了你之前说的「你的占有欲还真是一点都没变。」，并回复了 ↓]\n你就说你换不换吧';
+    const segs = sanitizeIntoSegments(input);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].raw).toBe('你就说你换不换吧');
+    expect(segs[0].sanitized).toBe('你就说你换不换吧');
+  });
+
+  it('自然语言引用横幅能提取被引用原文', () => {
+    const match = matchAssistantReplyQuoteMarker('[你引用了阿妄说的「你就说你换不换吧」，并回复了 ↓] 嗯。');
+    expect(match?.[1]).toBe('你就说你换不换吧');
+  });
+
+  it('历史引用横幅能提取被引用原文', () => {
+    const match = matchAssistantReplyQuoteMarker('[用户引用了你之前说的「你的占有欲还真是一点都没变。」，并回复了 ↓]\n你就说你换不换吧');
+    expect(match?.[1]).toBe('你的占有欲还真是一点都没变。');
+  });
+
+  it('自然语言引用横幅在终态清洗里不会显示成气泡正文', () => {
+    const input = '[你引用了阿妄说的「你就说你换不换吧」，并回复了 ↓] 嗯。';
+    expect(sanitizeForBubble(input)).toBe('嗯。');
+    expect(sanitizeForNotification(input)).toBe('嗯。');
   });
 
   it('空串 / 全空白 → 空数组', () => {

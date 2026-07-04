@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 记忆提取 (Memory Extraction)
+ * 回忆标本馆 — 记忆提取 (Memory Extraction)
  *
  * 从聊天消息缓冲区提取 MemoryNode 数组，供后续本地收录和 EventBox 绑定。
  * 不同重要性对应不同的记忆详细程度。

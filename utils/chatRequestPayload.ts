@@ -229,7 +229,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         };
     }
 
-    // ── 1. Memory Palace 本地记忆召回 ─────────────────────────
+    // ── 1. 回忆标本馆 本地记忆召回 ─────────────────────────
     if (!previewMode) {
         await injectMemoryPalace(char, recentMsgsHint, input.recallQueryHint, userProfile?.name);
     }

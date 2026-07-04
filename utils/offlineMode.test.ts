@@ -8,10 +8,12 @@ import {
   generateOfflineOpening,
   hasOfflineSession,
   isOfflineSessionActive,
+  loadOfflineWordLimit,
   loadOfflineSession,
   markOfflineSessionActive,
   prepareOfflineGeneratedText,
   saveOfflineSession,
+  saveOfflineWordLimit,
   type OfflineEntry,
 } from './offlineMode';
 
@@ -67,6 +69,16 @@ describe('offline mode draft sessions', () => {
     clearOfflineSession('char-1');
 
     expect(isOfflineSessionActive('char-1')).toBe(false);
+  });
+
+  it('persists custom word limits per character id', () => {
+    saveOfflineWordLimit('char-1', { maxChars: 160 });
+
+    expect(loadOfflineWordLimit('char-1')).toEqual({ maxChars: 160 });
+    expect(loadOfflineWordLimit('char-2')).toEqual({});
+
+    saveOfflineWordLimit('char-1', {});
+    expect(loadOfflineWordLimit('char-1')).toEqual({});
   });
 
   it('prepares generated takeout directives without leaking them into offline entries', () => {
@@ -136,5 +148,37 @@ describe('offline mode draft sessions', () => {
       role: 'user',
       content: '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。',
     });
+  });
+
+  it('adds custom word limits to offline generation prompts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '短短一段。' }, finish_reason: 'stop' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const char = {
+      id: 'char-1',
+      name: 'Mia',
+      avatar: 'mia.png',
+      systemPrompt: '安静，话少。',
+    } as CharacterProfile;
+    const userProfile = { name: 'Me', avatar: 'me.png' } as UserProfile;
+
+    await generateOfflineOpening(
+      char,
+      userProfile,
+      { baseUrl: 'https://api.example.test/v1', apiKey: 'test-key', model: 'test-model' },
+      DEFAULT_OFFLINE_POV,
+      'Me 到 Mia 家门口见面。',
+      undefined,
+      { maxChars: 90 },
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const prompt = body.messages[0].content;
+    expect(prompt).toContain('写出见面那一刻的开场（不超过90字）');
+    expect(prompt).toContain('字数上限是 90 字');
   });
 });

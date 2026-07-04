@@ -1,5 +1,5 @@
 /**
- * Memory Palace — IndexedDB CRUD 操作
+ * 回忆标本馆 — IndexedDB CRUD 操作
  *
  * 封装 6 张表的增删改查，复用主 db.ts 的 openDB()。
  */
@@ -336,7 +336,7 @@ export interface ClearMemoryPalaceForCharResult {
     localState: number;
 }
 
-/** 清掉某个角色的本地记忆宫殿数据，并移除旧版本本地索引残留。 */
+/** 清掉某个角色的本地回忆标本馆数据，并移除旧版本本地索引残留。 */
 export async function clearMemoryPalaceForChar(charId: string): Promise<ClearMemoryPalaceForCharResult> {
     const db = await openDB();
     const stores = [

@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 期盼生命周期 (Anticipation Lifecycle)
+ * 回忆标本馆 — 期盼生命周期 (Anticipation Lifecycle)
  *
  * 窗台上的期盼经历以下状态流转：
  * - active → 7 天后变成 anchor（人生锚点）

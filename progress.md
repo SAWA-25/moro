@@ -348,15 +348,15 @@ pm run build passes after the time-gap grouping fix.
   - **共享积木库** `components/ui/insKit.tsx`（对标折子戏专属的 `apps/theater/scrapbook.tsx`，但本库全系统通用）：暖白画布 + 暖墨字 token、`ACCENTS` 16 色（取自 constants 各 App 的 color → 实色/浅底/浅底字色）+ `accent()`；积木 `InsShell`（暖白外壳 + 顶部强调色微光）/`InsHeader`（软圆返回 + 中文粗标 + 等宽英文小标）/`InsScroll`/`IconCircle`/`Polaroid`（**彩色**拍立得相框 + 显影动画 + 手写题字 + 日期戳）/`StoryRing`（IG 彩环头像）/`InsCard`/`InsButton`（实色/浅底/幽灵/IG 渐变）/`SectionLabel`/`Chip`/`InsEmpty`/`InsDialog`/`InsSheet`。各 App 换肤从此取用，「结构语言一致、各家用自己的强调色」。
   - **旗舰 App·相册（`apps/Gallery.tsx`）整体重做**（逻辑零改动，仅换渲染层）：① 相册墙＝每位角色一张**彩色拍立得**（头像 + 手写名 + 张数角标 + 错落微旋转 + 逐张显影）；② 网格＝**IG 个人主页式**（顶部彩色故事环头像 + 名字 + 张数，下方紧密三列彩照网格 + 留言/日期角标 + 逐张显影）；③ 详情＝**暖调灯箱 + 拍立得照片**（轻旋显影），底部「背面题字」白卡（故事环头像 + 手写留言 + 换句留言/翻看对话）。撕→删/清空文案去手账化。强调色＝orange。
   - `pnpm tsc --noEmit` 0 非 api 错误，`vite build` 通过。后续逐个 App 沿用 insKit 换肤（絮语/Chat 不动）。
-- 逐 App 换肤（简约版 Ins + 拍立得）·第二批：拾光图库 + 热点
-  - **拾光图库**（`apps/XhsStockApp.tsx`，red）：`InsShell`+`InsHeader`（标题 + 入库数 + 右上角红色 + 钮），标签筛选改 `Chip` 行，网格瀑布显影（`.animate-photo-develop`）+ 标签/使用次数浮层 + hover 删除，新增图预览改**拍立得式相框**，提交按钮 `InsButton` IG 渐变，空状态 `InsEmpty`。逻辑零改动。
+- 逐 App 换肤（简约版 Ins + 拍立得）·第二批：相册·拾光素材 + 热点
+  - **相册·拾光素材面板**（`apps/GalleryStockPanel.tsx`，red）：`InsShell`+`InsHeader`（标题 + 入库数 + 右上角红色 + 钮），标签筛选改 `Chip` 行，网格瀑布显影（`.animate-photo-develop`）+ 标签/使用次数浮层 + hover 删除，新增图预览改**拍立得式相框**，提交按钮 `InsButton` IG 渐变，空状态 `InsEmpty`。逻辑零改动。
   - **热点**（`apps/HotNewsApp.tsx`，red）：从报纸 serif 风改清爽 ins 杂志信息流——`InsShell`+`InsHeader`（热点 / HOT NOW + 刷新），保留「Moro Daily / 今日热点」刊头但用 `.ins-gradient-text` 渐变点睛，每个平台一张 `InsCard` 白卡（前 3 名红色序号 + 外链 + 转发），声明条改 `InsCard` 左缘强调，转发选人改 `StoryRing`。逻辑零改动。
-  - 演示页 `demo-gallery.tsx` 升级为**多 App 预览**（相册 + 拾光图库 + 热点分区登场）。`tsc` 0 非 api 错误，`vite build` 通过。
+  - 演示页 `demo-gallery.tsx` 升级为**多 App 预览**（相册 + 拾光素材 + 热点分区登场）。`tsc` 0 非 api 错误，`vite build` 通过。
 - 逐 App 换肤·收尾与第三个：拆演示脚手架 + 弹窗补全 + 见闻簿完整重做
   - **拆演示页**：删 `demo-gallery.html`/`demo-gallery.tsx`，`vite.config.ts` 恢复单入口（按反馈不再做预览页）。
-  - **弹窗补全单独设计**：拾光图库删除确认改 `InsDialog`（红主题，替原通用 ConfirmDialog）；热点转发选人改 `InsSheet` 底部抽屉（彩色故事环网格，替原通用 Modal）。
+  - **弹窗补全单独设计**：拾光素材删除确认改 `InsDialog`（红主题，替原通用 ConfirmDialog）；热点转发选人改 `InsSheet` 底部抽屉（彩色故事环网格，替原通用 Modal）。
   - **见闻簿**（`apps/SocialApp.tsx`，rose）**完整 bespoke 重做**（逻辑零改动）：黑白手账 → 彩色小红书瀑布流——`Avatar` 彩色圆头像（无图用日落渐变首字）、`PostCard` 白色大圆角 + 彩色封面 + 瀑布显影、见闻/交友改胶囊滑块段控、`DatingCard` 彩照圆角软卡 + 三键互动、详情页彩色封面 + 评论 + 底部赞/藏/剪互动栏、`InsDialog`「剪下来」/「清空整簿（新增确认）」、`InsSheet`「我喜欢的」、`InsDialog`「打招呼回应」，话题/筛选改 `Chip`。
-  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 4/28**（相册·拾光图库·热点·见闻簿）。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 4/28**（相册·拾光素材·热点·见闻簿）。
 - 逐 App 换肤·连续作业（按指示一次性推进，频繁提交）：
   - **自由活动**（`apps/XhsFreeRoamApp.tsx`，rose）：rose/白 → 完整 ins。返回/角色切换故事环、`InsCard` 实况与历史、运行态实况面板、`InsSheet` 角色选择 + 活动详情、`InsDialog` 确认，底部开始按钮 IG 渐变。逻辑零改。
   - **茶话亭**（`apps/ForumApp.tsx`，amber 茶馆暖调）：851 行重度 scrapbook → ins。用「同名原语 ins 化」shim 法（PaperBackdrop/ScrapButton/WashiTape/Stamp/StickyNote/SectionTag/DashedRule/PaperDialog 就地换 ins 实现，保持 API 全文零改调用点）+ PANEL/paperInput/chip/Header/Empty 重定向 + 虚线描边统一为发丝线 + FAB 改 amber。逻辑零改。

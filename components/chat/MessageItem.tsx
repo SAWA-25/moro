@@ -965,6 +965,8 @@ interface MessageItemProps {
     isLastUserMsg?: boolean;
     /** 点击最后一轮的 user 头像：打开「行动选择器」（生成可编辑的行动选项）。 */
     onUserAvatarClick?: () => void;
+    /** 当前气泡实际说话人的显示名；群聊/历史消息兜底时优先于会话名。 */
+    speakerName?: string;
 }
 
 const SWIPE_REPLY_TRIGGER = 56; // px：左滑超过此距离松手即触发引用
@@ -1017,9 +1019,18 @@ const MessageItem = React.memo(({
     musicPlaying = false,
     isLastUserMsg = false,
     onUserAvatarClick,
+    speakerName,
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
+    const metadataSpeakerName = typeof m.metadata?.senderName === 'string'
+        ? m.metadata.senderName
+        : typeof m.metadata?.charName === 'string'
+            ? m.metadata.charName
+            : typeof m.metadata?.characterName === 'string'
+                ? m.metadata.characterName
+                : '';
+    const displayCharName = speakerName?.trim() || charName.trim() || metadataSpeakerName.trim() || 'Ta';
     // 消息回执（Telegram 式勾勾）：旧消息没有 msgStatus 时不显示
     const msgStatus = (m.metadata?.msgStatus as string) || '';
     const hasReplyTimer = !isUser && !!normalizeReplyTimerMetadata(m.metadata?.replyTimer);
@@ -1619,12 +1630,16 @@ const MessageItem = React.memo(({
                     style={canSwipeReply ? { transform: `translateX(${swipeX}px)`, transition: swipeActive.current ? 'none' : 'transform 0.22s cubic-bezier(0.22,1,0.36,1)' } : undefined}
                     {...interactionProps}
                 >
-                    {/* 极简皮肤：每条对方消息都带昵称，和逐条头像保持一致；我方时间仍按组首条显示。 */}
-                    {isPlainBubble && ((!isUser) || (isUser && isFirstInGroup && showTimestamp !== 'never')) && (
-                        <div className="flex items-center gap-1.5 mb-1 px-0.5">
-                            {!isUser && <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{charName}</span>}
-                            {!isUser && <ReplyTimerChip timer={m.metadata?.replyTimer} />}
-                            {showTimestamp !== 'never' && <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>}
+                    {/* 每条对方消息都带昵称，和逐条头像保持一致；极简皮肤继续把耗时/时间放到同一行。 */}
+                    {((!isUser) || (isPlainBubble && isUser && isFirstInGroup && showTimestamp !== 'never')) && (
+                        <div className="mb-1 flex max-w-full min-w-0 flex-wrap items-center gap-1.5 px-0.5">
+                            {!isUser && (
+                                <span className="moro-group-name inline-flex max-w-full min-w-0 shrink items-center rounded-md bg-white/85 px-2 py-[3px] text-[11px] font-semibold leading-none text-slate-600 shadow-sm ring-1 ring-slate-200/70">
+                                    <span className="min-w-0 truncate">{displayCharName}</span>
+                                </span>
+                            )}
+                            {!isUser && isPlainBubble && <ReplyTimerChip timer={m.metadata?.replyTimer} />}
+                            {isPlainBubble && showTimestamp !== 'never' && <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>}
                         </div>
                     )}
                     {!isUser && m.metadata?.thinkingChain && (
@@ -3354,6 +3369,7 @@ const MessageItem = React.memo(({
            prev.activeTheme === next.activeTheme &&
            prev.charAvatar === next.charAvatar &&
            prev.charName === next.charName &&
+           prev.speakerName === next.speakerName &&
            prev.userAvatar === next.userAvatar &&
            prev.selectionMode === next.selectionMode &&
            prev.isSelected === next.isSelected &&

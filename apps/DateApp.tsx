@@ -22,17 +22,17 @@ import { BookOpen } from '@phosphor-icons/react';
 
 const DateApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, auxApiConfig, addToast, updateCharacter, virtualTime, userProfile, memoryPalaceConfig } = useOS();
-    // 约会（街角·DateApp）属「聊天以外」的功能：走副 API；记忆宫殿也统一复用文具盒副 API。
+    // 约会（街角·DateApp）属「聊天以外」的功能：走副 API；回忆标本馆也统一复用文具盒副 API。
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
-    // 记忆宫殿（与聊天侧共用同一套上下文：同 charId、同高水位线）
+    // 回忆标本馆（与聊天侧共用同一套上下文：同 charId、同高水位线）
     // 见面流也需要在 AI 回复后跑一次缓冲区检查 + 自动归档，否则只有"读"没有"写"。
     const [memoryPalaceStatus, setMemoryPalaceStatus] = useState<string>('');
     const [memoryPalaceResult, setMemoryPalaceResult] = useState<PipelineResult | null>(null);
     const memoryPalaceStatusRef = useRef(memoryPalaceStatus);
     memoryPalaceStatusRef.current = memoryPalaceStatus;
 
-    // characters ref：见面 hook 跑完后用户可能已经在 MemoryPalaceApp 里关掉了宫殿，
+    // characters ref：见面 hook 跑完后用户可能已经在 MemoryPalaceApp 里关掉了回忆标本馆，
     // 直接闭包里的 charForHook 是回复开始时捕获的，会读到 stale memoryPalaceEnabled=true。
     const charactersRef = useRef(characters);
     charactersRef.current = characters;
@@ -246,10 +246,10 @@ const DateApp: React.FC = () => {
         }
     };
 
-    // 与聊天侧 useChatAI 完全一致的 Memory Palace 后台流程：
+    // 与聊天侧 useChatAI 完全一致的 回忆标本馆 后台流程：
     // 触发缓冲区处理 + 自动归档（如开启） + 50 轮认知消化。
     const runMemoryPalacePostHook = useCallback(async (charForHook: CharacterProfile) => {
-        // 用 charactersRef 读最新状态，避免见面流程中用户去 MemoryPalaceApp 关掉宫殿后
+        // 用 charactersRef 读最新状态，避免见面流程中用户去 MemoryPalaceApp 关掉回忆标本馆后
         // 这里仍然按 charForHook 闭包里的旧 enabled 触发一次 LLM 总结
         const liveBefore = charactersRef.current.find(c => c.id === charForHook.id) || null;
         if (!isMemoryFeatureEnabled(liveBefore)) return;
@@ -268,7 +268,7 @@ const DateApp: React.FC = () => {
                 (stage) => setMemoryPalaceStatus(stage),
             );
 
-            // pipeline 跑的过程中用户可能又关了宫殿，再 check 一次
+            // pipeline 跑的过程中用户可能又关了回忆标本馆，再 check 一次
             const liveAfter = charactersRef.current.find(c => c.id === charForHook.id) || null;
             if (!liveAfter || !isMemoryFeatureEnabled(liveAfter)) return;
 
@@ -348,7 +348,7 @@ const DateApp: React.FC = () => {
         const limit = char.contextLimit || 500;
 
         // 与 chat app 完全对齐的历史构建：
-        // 1. 开了记忆宫殿 → 按高水位线过滤掉已被本地长期记忆替代的旧消息（chat 是在 DB 层做的；这里 allMsgs
+        // 1. 开了回忆标本馆 → 按高水位线过滤掉已被本地长期记忆替代的旧消息（chat 是在 DB 层做的；这里 allMsgs
         //    用 includeProcessed=true 因为 dateFiltered 显示 + injectMemoryPalace 还要全集，所以手动过一遍）
         // 2. 复用 ChatPrompts.buildMessageHistory：emoji / html_card / mcd_card / chat_forward / score_card
         //    等都会被压成短摘要，不再像旧版 mapper 那样把 m.content 原样塞，避免 prompt 暴涨。
@@ -425,7 +425,7 @@ const DateApp: React.FC = () => {
         const freshMsgs = await DB.getMessagesByCharId(char.id, true);
         setDateMessages(freshMsgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp));
 
-        // Memory Palace 后台流程（不阻塞返回，与聊天侧一致）
+        // 回忆标本馆 后台流程（不阻塞返回，与聊天侧一致）
         runMemoryPalacePostHook(char);
 
         return content;
@@ -498,7 +498,7 @@ const DateApp: React.FC = () => {
         const freshMsgs = await DB.getMessagesByCharId(char.id, true);
         setDateMessages(freshMsgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp));
 
-        // Memory Palace 后台流程（Reroll 也算一轮新输出）
+        // 回忆标本馆 后台流程（Reroll 也算一轮新输出）
         runMemoryPalacePostHook(char);
 
         return content;
@@ -852,7 +852,7 @@ const DateApp: React.FC = () => {
                                 >
                                     <span style={{ fontSize: 26 }}>🗂️</span>
                                 </div>
-                                <div className="text-[10px] tracking-[0.25em] uppercase font-semibold" style={{ color: '#6366f1' }}>Memory Palace</div>
+                                <div className="text-[10px] tracking-[0.25em] uppercase font-semibold" style={{ color: '#6366f1' }}>Memory Gallery</div>
                                 <p className="text-[17px] font-bold mt-1" style={{ color: '#0f172a' }}>记忆整理完成</p>
                                 <p className="text-[11px] text-slate-400 mt-1">
                                     新增 {memoryPalaceResult.stored} 条 · 去重跳过 {memoryPalaceResult.skipped} 条

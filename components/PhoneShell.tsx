@@ -75,7 +75,6 @@ const GameApp = lazyApp(() => import('../apps/GameApp'));
 const WorldbookApp = lazyApp(() => import('../apps/WorldbookApp'));
 const NovelApp = lazyApp(() => import('../apps/NovelApp'));
 const BankApp = lazyApp(() => import('../apps/BankApp'));
-const XhsStockApp = lazyApp(() => import('../apps/XhsStockApp'));
 const CoViewApp = lazyApp(() => import('../apps/CoViewApp'));
 const BrowserApp = lazyApp(() => import('../apps/BrowserApp'));
 const SongwritingApp = lazyApp(() => import('../apps/SongwritingApp'));
@@ -115,7 +114,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   CheckPhone, DiaryApp, ScheduleApp, MusicApp, CallApp, PhoneApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaHubApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
-  XhsStockApp, CoViewApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
+  CoViewApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
   XunjiApp, TwitterApp, DesktopPetApp, HealthApp, ManualApp,
 ];
@@ -134,7 +133,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Journal]: DiaryApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
   [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
-  [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp, [AppID.XhsStock]: XhsStockApp,
+  [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp,
   [AppID.CoView]: CoViewApp, [AppID.XhsFreeRoam]: CoViewApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
   [AppID.Music]: MusicApp, [AppID.Call]: CallApp, [AppID.Phone]: PhoneApp,
   [AppID.VoiceDesigner]: VoiceDesignerApp,
@@ -873,7 +872,6 @@ const PhoneShell: React.FC = () => {
       case AppID.Manual: return <ManualApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
-      case AppID.XhsStock: return <XhsStockApp />;
       case AppID.CoView: return <CoViewApp />;
       case AppID.XhsFreeRoam: return <CoViewApp initialMode="free_roam" />;
       case AppID.Browser: return <BrowserApp />;

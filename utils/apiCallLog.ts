@@ -26,7 +26,7 @@ export interface ApiCallMeta {
     featureId?: string;
     /** AppID 字符串，如 'chat' / 'lifesim'，可空 */
     appId?: string;
-    /** App 显示名，如 '消息' / '记忆宫殿'，列表里直接展示这个 */
+    /** App 显示名，如 '消息' / '回忆标本馆'，列表里直接展示这个 */
     appName?: string;
     /** 角色 id，可空 */
     charId?: string;
@@ -384,7 +384,7 @@ export function recordApiCall(input: {
             metaSource,
             requestPreview: requestPreview(input.body),
             responsePreview: responsePreview(input.response, input.responseText, input.ok),
-            errorMessage: extractErrorMessage(input),
+            errorMessage: input.ok ? undefined : extractErrorMessage(input),
             promptTokens: usage.prompt,
             completionTokens: usage.completion,
             totalTokens: usage.total,

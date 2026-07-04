@@ -3,7 +3,12 @@ import { ArrowsClockwise, Check, PencilSimple, Signpost, UsersThree, X } from '@
 import type { CharacterProfile, GroupProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { CUTE_STACK, MONO_STACK, SERIF_STACK } from '../handbook/paper';
-import type { OfflineCommitInfo, OfflinePovPerson } from '../../utils/offlineMode';
+import {
+    normalizeOfflineWordLimitValue,
+    type OfflineCommitInfo,
+    type OfflinePovPerson,
+    type OfflineWordLimit,
+} from '../../utils/offlineMode';
 import {
     clearGroupOfflineSession,
     commitGroupOfflineSessionToContext,
@@ -11,8 +16,10 @@ import {
     generateGroupOfflineTurn,
     loadGroupOfflinePov,
     loadGroupOfflineSession,
+    loadGroupOfflineWordLimit,
     saveGroupOfflinePov,
     saveGroupOfflineSession,
+    saveGroupOfflineWordLimit,
     type GroupOfflineEntry,
     type GroupOfflinePov,
 } from '../../utils/groupOfflineMode';
@@ -23,6 +30,8 @@ interface GroupOfflineModeModalProps {
     userProfile: UserProfile;
     /** 群聊线下场景生成用的 API。宿主传文具盒主 API，让赴约现场跟主聊天模型保持一致。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
+    /** 自动线下触发时传入：跳过手动开场选择，直接承接最近群聊生成第一幕。 */
+    autoStartScenario?: string;
     onEnd: (info: OfflineCommitInfo | null) => void;
     onSuspend: (entryCount: number) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
@@ -79,6 +88,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     members,
     userProfile,
     apiConfig,
+    autoStartScenario,
     onEnd,
     onSuspend,
     addToast,
@@ -98,14 +108,35 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [editingText, setEditingText] = useState('');
     const [pov, setPov] = useState<GroupOfflinePov>(() => loadGroupOfflinePov(group.id));
-    const [openingChosen, setOpeningChosen] = useState(() => loadGroupOfflineSession(group.id).length > 0);
+    const [openingChosen, setOpeningChosen] = useState(() => loadGroupOfflineSession(group.id).length > 0 || !!autoStartScenario?.trim());
     const [preset, setPreset] = useState<GroupOpeningPreset>('appointment');
     const [customScenario, setCustomScenario] = useState('');
     const [customOpen, setCustomOpen] = useState(false);
+    const [wordLimitText, setWordLimitText] = useState(() => {
+        const saved = loadGroupOfflineWordLimit(group.id).maxChars;
+        return saved ? String(saved) : '';
+    });
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
     const openingScenarioRef = useRef('');
     const isEditing = editingIndex !== null;
+
+    const currentWordLimit = (): OfflineWordLimit => {
+        const maxChars = normalizeOfflineWordLimitValue(wordLimitText);
+        return maxChars ? { maxChars } : {};
+    };
+
+    const updateWordLimitText = (value: string) => {
+        const nextText = value.replace(/[^\d]/g, '').slice(0, 4);
+        setWordLimitText(nextText);
+        const maxChars = normalizeOfflineWordLimitValue(nextText);
+        saveGroupOfflineWordLimit(group.id, maxChars ? { maxChars } : {});
+    };
+
+    const normalizeWordLimitText = () => {
+        const maxChars = normalizeOfflineWordLimitValue(wordLimitText);
+        setWordLimitText(maxChars ? String(maxChars) : '');
+    };
 
     const persistEntries = (next: GroupOfflineEntry[]) => {
         setEntries(next);
@@ -148,6 +179,24 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [entries, busy, openingChosen]);
 
+    const startOpeningFromScenario = async (scenario: string, failurePrefix = '群聊赴约开场生成失败') => {
+        if (busy || openingStartedRef.current) return;
+        openingStartedRef.current = true;
+        openingScenarioRef.current = scenario;
+        setOpeningChosen(true);
+        setBusy(true);
+        try {
+            const opening = await generateGroupOfflineOpening(group, members, userProfile, apiConfig, pov, scenario, undefined, currentWordLimit());
+            if (opening) persistEntries([...entries, { role: 'scene', text: opening, at: Date.now() }]);
+        } catch (e: any) {
+            addToast(`${failurePrefix}：${e?.message || e}`, 'error');
+            openingStartedRef.current = false;
+            setOpeningChosen(false);
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const startOpening = async (choice: GroupOpeningPreset) => {
         if (busy || openingStartedRef.current) return;
         if (choice === 'custom' && !customOpen) {
@@ -160,28 +209,22 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
             addToast('写一句这场见面怎么开始吧', 'info');
             return;
         }
-        openingStartedRef.current = true;
-        openingScenarioRef.current = scenario;
         setPreset(choice);
-        setOpeningChosen(true);
-        setBusy(true);
-        try {
-            const opening = await generateGroupOfflineOpening(group, members, userProfile, apiConfig, pov, scenario);
-            if (opening) persistEntries([...entries, { role: 'scene', text: opening, at: Date.now() }]);
-        } catch (e: any) {
-            addToast(`群聊赴约开场生成失败：${e?.message || e}`, 'error');
-            openingStartedRef.current = false;
-            setOpeningChosen(false);
-        } finally {
-            setBusy(false);
-        }
+        await startOpeningFromScenario(scenario);
     };
+
+    useEffect(() => {
+        const scenario = autoStartScenario?.trim();
+        if (!scenario || entries.length > 0 || openingStartedRef.current) return;
+        void startOpeningFromScenario(scenario, '群聊自动赴约开场生成失败');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoStartScenario, group.id]);
 
     const runGroupTurn = async (baseEntries: GroupOfflineEntry[], userInput?: string) => {
         if (isEditing) return;
         setBusy(true);
         try {
-            const reply = await generateGroupOfflineTurn(group, members, userProfile, apiConfig, baseEntries, userInput, pov);
+            const reply = await generateGroupOfflineTurn(group, members, userProfile, apiConfig, baseEntries, userInput, pov, undefined, currentWordLimit());
             if (reply) {
                 persistEntries([...baseEntries, {
                     role: 'char',
@@ -231,6 +274,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                     pov,
                     openingScenarioRef.current || undefined,
                     last.text,
+                    currentWordLimit(),
                 );
                 persistEntries(opening ? [...baseEntries, { role: 'scene', text: opening, at: Date.now() }] : baseEntries);
             } else {
@@ -243,6 +287,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                     lastUserInputOf(baseEntries),
                     pov,
                     last.text,
+                    currentWordLimit(),
                 );
                 persistEntries(reply ? [...baseEntries, {
                     role: 'char',
@@ -360,6 +405,8 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
         );
     };
 
+    const displayedWordLimit = normalizeOfflineWordLimitValue(wordLimitText);
+
     return (
         <div className="moro-offline-modal-backdrop absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }}>
             {modalStyle.customCss && <style>{modalStyle.customCss}</style>}
@@ -444,6 +491,37 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                             })}
                         </div>
                     ))}
+                </div>
+
+                <div className="shrink-0 px-4 py-2 flex items-center gap-2 border-b" style={{ borderColor: 'rgba(210,204,199,0.72)' }}>
+                    <span className="text-[10px] font-bold tracking-wider shrink-0" style={{ ...MONO_STACK, color: '#918a8e' }}>字数</span>
+                    <input
+                        value={wordLimitText}
+                        onChange={e => updateWordLimitText(e.target.value)}
+                        onBlur={normalizeWordLimitText}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="默认"
+                        aria-label="群聊线下生成字数上限"
+                        className="w-[76px] px-2 py-1 rounded-[8px] text-[11px] font-bold outline-none"
+                        style={{ background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(210,204,199,0.72)', color: modalInk, caretColor: modalAccent, ...MONO_STACK }}
+                    />
+                    <span className="text-[10.5px] shrink-0" style={{ color: '#918a8e' }}>字以内</span>
+                    {displayedWordLimit && (
+                        <button
+                            type="button"
+                            onClick={() => updateWordLimitText('')}
+                            className="w-6 h-6 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(210,204,199,0.72)', color: '#918a8e' }}
+                            title="恢复默认字数"
+                            aria-label="恢复默认字数"
+                        >
+                            <X size={12} weight="bold" />
+                        </button>
+                    )}
+                    <span className="text-[10px] min-w-0 truncate" style={{ color: '#918a8e' }}>
+                        {displayedWordLimit ? `${displayedWordLimit} 字上限` : '开场和续写沿用默认长度'}
+                    </span>
                 </div>
 
                 <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 space-y-4">

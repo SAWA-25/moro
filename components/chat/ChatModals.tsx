@@ -126,7 +126,7 @@ interface ChatModalsProps {
     onToggleScheduleFeature?: () => void;
     isEmotionBuffFeatureEnabled?: boolean;
     onToggleEmotionBuffFeature?: () => void;
-    // Memory Palace manual catch-up
+    // 回忆标本馆 manual catch-up
     isMemoryPalaceEnabled?: boolean;
     isMemoryOrganizing?: boolean;
     onOrganizeMemory?: () => void;
@@ -550,7 +550,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                          <p className="text-[10px] text-slate-400 mt-2 text-center">可选择从某条消息开始显示，隐藏之前的记录（不被 AI 读取）。</p>
                      </div>
                      
-                     {/* 记忆宫殿：一键整理可处理旧聊天 */}
+                     {/* 回忆标本馆：一键整理可处理旧聊天 */}
                      {isMemoryPalaceEnabled && onOrganizeMemory && (
                          <div className="pt-2 border-t border-slate-100">
                              <button

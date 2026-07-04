@@ -16,11 +16,15 @@ import {
     markOfflineSessionActive,
     loadOfflinePov,
     saveOfflinePov,
+    loadOfflineWordLimit,
+    normalizeOfflineWordLimitValue,
+    saveOfflineWordLimit,
     generateOfflineOpening,
     generateOfflineTurn,
     commitOfflineSessionToContext,
     prepareOfflineGeneratedText,
     type OfflineCommitInfo,
+    type OfflineWordLimit,
 } from '../../utils/offlineMode';
 import { TAKEOUT_ORDER_EVENT } from '../../utils/takeout';
 
@@ -36,6 +40,8 @@ interface OfflineModeModalProps {
     userProfile: UserProfile;
     /** 线下场景生成用的 API。宿主传文具盒主 API，让面对面现场跟主聊天模型保持一致。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
+    /** 自动线下触发时传入：跳过手动开场选择，直接承接最近聊天生成第一幕。 */
+    autoStartScenario?: string;
     /** 结束线下模式：情景已落库后回调，宿主负责 reload + 延迟收尾 */
     onEnd: (info: OfflineCommitInfo | null) => void;
     /** 挂起线下模式：只收起窗口，保留 localStorage 草稿，不落库、不触发收尾 */
@@ -43,7 +49,7 @@ interface OfflineModeModalProps {
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
 
-const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, onEnd, onSuspend, addToast }) => {
+const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, autoStartScenario, onEnd, onSuspend, addToast }) => {
     const { theme } = useOS();
     const modalStyle = theme.offlineModeStyle || {};
     const modalBg = modalStyle.background || 'linear-gradient(180deg,#fffdfa,#fff4f7)';
@@ -60,9 +66,13 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const [pov, setPov] = useState<OfflinePov>(() => loadOfflinePov(char.id));
     // 开场白方式：新会话先让用户挑这场见面怎么开始（靠近/造访/偶遇/赴约/自定义）；
     // 续上的会话（已有情景）直接跳过选择。
-    const [openingChosen, setOpeningChosen] = useState(() => loadOfflineSession(char.id).length > 0);
+    const [openingChosen, setOpeningChosen] = useState(() => loadOfflineSession(char.id).length > 0 || !!autoStartScenario?.trim());
     const [customScenario, setCustomScenario] = useState('');
     const [customOpen, setCustomOpen] = useState(false);
+    const [wordLimitText, setWordLimitText] = useState(() => {
+        const saved = loadOfflineWordLimit(char.id).maxChars;
+        return saved ? String(saved) : '';
+    });
 
     const setPovFor = (who: 'char' | 'user', person: OfflinePovPerson) => {
         setPov(prev => {
@@ -75,6 +85,23 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const openingStartedRef = useRef(false);
     const openingScenarioRef = useRef('');
     const isEditing = editingIndex !== null;
+
+    const currentWordLimit = (): OfflineWordLimit => {
+        const maxChars = normalizeOfflineWordLimitValue(wordLimitText);
+        return maxChars ? { maxChars } : {};
+    };
+
+    const updateWordLimitText = (value: string) => {
+        const nextText = value.replace(/[^\d]/g, '').slice(0, 4);
+        setWordLimitText(nextText);
+        const maxChars = normalizeOfflineWordLimitValue(nextText);
+        saveOfflineWordLimit(char.id, maxChars ? { maxChars } : {});
+    };
+
+    const normalizeWordLimitText = () => {
+        const maxChars = normalizeOfflineWordLimitValue(wordLimitText);
+        setWordLimitText(maxChars ? String(maxChars) : '');
+    };
 
     useEffect(() => {
         markOfflineSessionActive(char.id);
@@ -131,27 +158,39 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         setEditingText('');
     };
 
-    // 选定开场白方式后才生成见面开场（不再一打开就自动生成）。
-    const startOpening = async (preset: OfflineOpeningPreset) => {
+    const startOpeningFromScenario = async (scenario: string, failurePrefix = '线下开场生成失败') => {
         if (busy || openingStartedRef.current) return;
-        if (preset === 'custom' && !customOpen) { setCustomOpen(true); return; }
-        const scenario = resolveOpeningFrame(preset, customScenario, char.name, userProfile.name || '你');
-        if (preset === 'custom' && !scenario) { addToast('写一句这场见面怎么开始吧～', 'info'); return; }
         openingStartedRef.current = true;
         openingScenarioRef.current = scenario;
         setOpeningChosen(true);
         setBusy(true);
         try {
-            const opening = consumeGeneratedText(await generateOfflineOpening(char, userProfile, apiConfig, pov, scenario));
+            const opening = consumeGeneratedText(await generateOfflineOpening(char, userProfile, apiConfig, pov, scenario, undefined, currentWordLimit()));
             if (opening) pushEntries({ role: 'scene', text: opening, at: Date.now() });
         } catch (e: any) {
-            addToast(`线下开场生成失败：${e?.message || e}`, 'error');
+            addToast(`${failurePrefix}：${e?.message || e}`, 'error');
             openingStartedRef.current = false;
             setOpeningChosen(false); // 允许重新选
         } finally {
             setBusy(false);
         }
     };
+
+    // 选定开场白方式后才生成见面开场；自动线下会传入 scenario 并跳过选择。
+    const startOpening = async (preset: OfflineOpeningPreset) => {
+        if (busy || openingStartedRef.current) return;
+        if (preset === 'custom' && !customOpen) { setCustomOpen(true); return; }
+        const scenario = resolveOpeningFrame(preset, customScenario, char.name, userProfile.name || '你');
+        if (preset === 'custom' && !scenario) { addToast('写一句这场见面怎么开始吧～', 'info'); return; }
+        await startOpeningFromScenario(scenario);
+    };
+
+    useEffect(() => {
+        const scenario = autoStartScenario?.trim();
+        if (!scenario || entries.length > 0 || openingStartedRef.current) return;
+        void startOpeningFromScenario(scenario, '自动线下开场生成失败');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoStartScenario, char.id]);
 
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -164,7 +203,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             const base = userInput
                 ? [...entries, { role: 'user' as const, text: userInput, at: Date.now() }]
                 : entries;
-            const reply = consumeGeneratedText(await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov));
+            const reply = consumeGeneratedText(await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov, undefined, currentWordLimit()));
             if (reply) pushEntries({ role: 'char', text: reply, at: Date.now() });
         } catch (e: any) {
             addToast(`线下情景生成失败：${e?.message || e}`, 'error');
@@ -204,6 +243,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     pov,
                     openingScenarioRef.current || undefined,
                     last.text,
+                    currentWordLimit(),
                 ));
                 persistEntries(opening ? [...baseEntries, { role: 'scene', text: opening, at: Date.now() }] : baseEntries);
             } else {
@@ -215,6 +255,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     lastUserInputOf(baseEntries),
                     pov,
                     last.text,
+                    currentWordLimit(),
                 ));
                 persistEntries(reply ? [...baseEntries, { role: 'char', text: reply, at: Date.now() }] : baseEntries);
             }
@@ -313,6 +354,8 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         );
     };
 
+    const displayedWordLimit = normalizeOfflineWordLimitValue(wordLimitText);
+
     return (
         <div className="moro-offline-modal-backdrop absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }}>
             {modalStyle.customCss && <style>{modalStyle.customCss}</style>}
@@ -395,6 +438,37 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             })}
                         </div>
                     ))}
+                </div>
+
+                <div className="shrink-0 px-4 py-2 flex items-center gap-2 border-b" style={{ borderColor: '#eed6df' }}>
+                    <span className="text-[10px] font-bold tracking-wider shrink-0" style={{ ...MONO_STACK, color: '#a892a3' }}>字数</span>
+                    <input
+                        value={wordLimitText}
+                        onChange={e => updateWordLimitText(e.target.value)}
+                        onBlur={normalizeWordLimitText}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="默认"
+                        aria-label="线下生成字数上限"
+                        className="w-[76px] px-2 py-1 rounded-[8px] text-[11px] font-bold outline-none"
+                        style={{ background: 'rgba(255,255,255,0.65)', border: '1px solid #eed6df', color: modalInk, caretColor: modalAccent, ...MONO_STACK }}
+                    />
+                    <span className="text-[10.5px] shrink-0" style={{ color: '#a892a3' }}>字以内</span>
+                    {displayedWordLimit && (
+                        <button
+                            type="button"
+                            onClick={() => updateWordLimitText('')}
+                            className="w-6 h-6 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: 'rgba(255,255,255,0.65)', border: '1px solid #eed6df', color: '#a892a3' }}
+                            title="恢复默认字数"
+                            aria-label="恢复默认字数"
+                        >
+                            <X size={12} weight="bold" />
+                        </button>
+                    )}
+                    <span className="text-[10px] min-w-0 truncate" style={{ color: '#a892a3' }}>
+                        {displayedWordLimit ? `${displayedWordLimit} 字上限` : '开场和续写沿用默认长度'}
+                    </span>
                 </div>
 
                 {/* 情景流 */}

@@ -1,7 +1,7 @@
 /**
- * Memory Palace — 一键清空
+ * 回忆标本馆 — 一键清空
  *
- * 把本地所有记忆宫殿数据清零；包括旧版本留下的本地 memory_vectors 表。
+ * 把本地所有回忆标本馆数据清零；包括旧版本留下的本地 memory_vectors 表。
  *
  * 使用场景：
  *  - 用户想"重来"（比如希望应用新版 boxId 体系）
@@ -38,7 +38,7 @@ function clearHighWatermarks(): number {
     return n;
 }
 
-/** 清空本地 IndexedDB 的所有记忆宫殿表 */
+/** 清空本地 IndexedDB 的所有回忆标本馆表 */
 async function clearLocalStores(): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
     const db = await openDB();
@@ -88,11 +88,11 @@ export interface WipeResult {
 }
 
 /**
- * 一键清空记忆宫殿数据。
+ * 一键清空回忆标本馆数据。
  *
  */
 export async function wipeAllMemoryPalace(): Promise<WipeResult> {
-    console.log(`🗑️ [Wipe] 开始一键清空记忆宫殿...`);
+    console.log(`🗑️ [Wipe] 开始一键清空回忆标本馆...`);
 
     const local = await clearLocalStores();
     const localRowsTotal = Object.values(local).reduce((s, v) => s + v, 0);

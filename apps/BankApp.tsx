@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -30,13 +30,13 @@ import {
 } from './ui/insScrapKit';
 import {
     BANK_LIFE_VERSION,
+    BANK_OPEN_BRANCH_ENERGY_COST,
     BUSINESS_TEMPLATES,
     COMPANY_DIRECTIONS,
     COMPANY_FOUND_COST,
     JOB_CATEGORIES,
     JOB_POSTINGS,
     LOAN_PRODUCTS,
-    SHOP_UNLOCK_COST,
     createDefaultBankLifeState,
     advanceJobApplicationStageWithAi,
     appendBankActionRecord,
@@ -47,6 +47,7 @@ import {
     applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
+    claimBankShopDailyReward,
     computeCreditProfile,
     createBankActionResult,
     buyStock,
@@ -58,11 +59,17 @@ import {
     mergeAiJobPostings,
     migrateBankLifeState,
     movingAverage,
+    getDefaultBankBranchName,
+    openBankShopBranch,
     openLifeShop,
     repayLoan,
     sellStock,
+    SHOP_UNLOCK_COST,
     startJobApplication,
+    switchActiveBankShop,
     stockMarketValue,
+    syncActiveBranchFromMirror,
+    syncActiveShopMirror,
     updateResumeProfile,
     withdrawCompanyDividend,
 } from '../utils/bankLife';
@@ -128,6 +135,15 @@ const isDeadImg = (u?: string | null): boolean =>
 
 // 营业冷却：每 3 小时可「营业」一轮赚一笔进钱包
 const BUSINESS_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+const BUSINESS_ENERGY_COST = 12;
+
+const cloneDollhouseState = (state: DollhouseState): DollhouseState => ({
+    ...state,
+    rooms: (state.rooms || []).map(room => ({
+        ...room,
+        stickers: [...(room.stickers || [])],
+    })),
+});
 
 // 当前每小时挂机产出：基础(人气×等级) × 天气倍率 × 雇员/精力加成（有店员才产出）。
 type IdleShopShape = { staff: { id: string; fatigue?: number }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number; weather?: { id: string; until: number } };
@@ -294,12 +310,14 @@ const BankApp: React.FC = () => {
     const [state, setState] = useState<BankFullState>(INITIAL_STATE);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [dollhouseState, setDollhouseState] = useState<DollhouseState>(INITIAL_DOLLHOUSE);
+    const [dollhousesByShopId, setDollhousesByShopId] = useState<BankDollhousesByShopId>({});
     const [isBankDataLoaded, setIsBankDataLoaded] = useState(false);
 
     // Refs to track latest state synchronously (React 18 batches setState,
     // so we can't rely on setState's updater callback running before DB.save)
     const stateRef = useRef<BankFullState>(INITIAL_STATE);
     const dollhouseRef = useRef<DollhouseState>(INITIAL_DOLLHOUSE);
+    const dollhousesByShopIdRef = useRef<BankDollhousesByShopId>({});
     
     const [activeTab, setActiveTab] = useState<'life' | 'jobs' | 'shop' | 'invest' | 'company' | 'loans' | 'report'>('life');
     const [shopView, setShopView] = useState<'game' | 'manage'>('game');
@@ -351,6 +369,25 @@ const BankApp: React.FC = () => {
     // Guestbook Processing
     const [isRefreshingGuestbook, setIsRefreshingGuestbook] = useState(false);
 
+    const normalizeBankStateForSave = (next: BankFullState): BankFullState =>
+        syncActiveBranchFromMirror(migrateBankLifeState(next));
+
+    const commitBankStateSync = (next: BankFullState): BankFullState => {
+        const normalized = normalizeBankStateForSave(next);
+        stateRef.current = normalized;
+        setState(normalized);
+        void DB.saveBankState(normalized);
+        return normalized;
+    };
+
+    const commitBankState = async (next: BankFullState): Promise<BankFullState> => {
+        const normalized = normalizeBankStateForSave(next);
+        stateRef.current = normalized;
+        setState(normalized);
+        await DB.saveBankState(normalized);
+        return normalized;
+    };
+
     // Load Data
     useEffect(() => {
         loadData();
@@ -362,12 +399,7 @@ const BankApp: React.FC = () => {
             if (!tx?.id) return;
             setTransactions(prev => prev.some(x => x.id === tx.id) ? prev : [tx, ...prev].sort((a, b) => b.timestamp - a.timestamp));
             if (tx.dateStr === new Date().toISOString().split('T')[0] && tx.type === 'expense') {
-                setState(prev => {
-                    const next = { ...prev, todaySpent: (prev.todaySpent || 0) + tx.amount };
-                    stateRef.current = next;
-                    void DB.saveBankState(next);
-                    return next;
-                });
+                commitBankStateSync({ ...stateRef.current, todaySpent: (stateRef.current.todaySpent || 0) + tx.amount });
             }
         };
         window.addEventListener('moro-bank-transaction-added', onAutoTx as EventListener);
@@ -377,25 +409,32 @@ const BankApp: React.FC = () => {
     // 挂机营业额累计 + 天气轮换：每 30s 折算待收金币、到点换天气（仅在有变化时落库）
     useEffect(() => {
         const t = window.setInterval(() => {
-            const cur = stateRef.current;
-            if (!cur?.shop) return;
+            const cur = syncActiveBranchFromMirror(migrateBankLifeState(stateRef.current));
+            const portfolio = cur.shopPortfolio;
+            if (!portfolio?.branches?.length) return;
             const now = Date.now();
-            const weather = ensureWeather(cur.shop, now);
-            const weatherChanged = weather.id !== cur.shop.weather?.id || weather.until !== cur.shop.weather?.until;
-            const baseShop = weatherChanged ? { ...cur.shop, weather } : cur.shop;
-            const idle = (baseShop.staff?.length || 0) > 0
-                ? accrueShopIdle(baseShop, now)
-                : { pendingRevenue: baseShop.pendingRevenue || 0, lastAccrualAt: baseShop.lastAccrualAt || now };
-            const pendingChanged = idle.pendingRevenue !== Math.max(0, cur.shop.pendingRevenue || 0);
-            if (weatherChanged || pendingChanged) {
-                const ns = { ...cur, shop: { ...baseShop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
-                stateRef.current = ns;
-                setState(ns);
-                void DB.saveBankState(ns);
-                if (weatherChanged && cur.shop.weather) {
+            let changed = false;
+            let activeWeatherToast: string | null = null;
+            const branches = portfolio.branches.map(branch => {
+                const weather = ensureWeather(branch.shop, now);
+                const weatherChanged = weather.id !== branch.shop.weather?.id || weather.until !== branch.shop.weather?.until;
+                const baseShop = weatherChanged ? { ...branch.shop, weather } : branch.shop;
+                const idle = (baseShop.staff?.length || 0) > 0
+                    ? accrueShopIdle(baseShop, now)
+                    : { pendingRevenue: baseShop.pendingRevenue || 0, lastAccrualAt: baseShop.lastAccrualAt || now };
+                const pendingChanged = idle.pendingRevenue !== Math.max(0, branch.shop.pendingRevenue || 0);
+                if (!weatherChanged && !pendingChanged) return branch;
+                changed = true;
+                if (weatherChanged && branch.id === portfolio.activeShopId && branch.shop.weather) {
                     const w = getWeatherDef(weather.id);
-                    addToast(`${w.emoji} 天气转${w.label} —— ${w.note}`, 'info');
+                    activeWeatherToast = `${w.emoji} ${branch.shop.shopName} 天气转${w.label} —— ${w.note}`;
                 }
+                return { ...branch, shop: { ...baseShop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+            });
+            if (changed) {
+                const ns = syncActiveShopMirror({ ...cur, shopPortfolio: { ...portfolio, branches } });
+                commitBankStateSync(ns);
+                if (activeWeatherToast) addToast(activeWeatherToast, 'info');
             }
         }, 30000);
         return () => window.clearInterval(t);
@@ -416,18 +455,39 @@ const BankApp: React.FC = () => {
     // run before DB.save, causing data to never be persisted (root cause of data loss).
     const persistStateUpdate = async (updater: (prev: BankFullState) => BankFullState): Promise<BankFullState> => {
         const nextState = updater(stateRef.current);
-        stateRef.current = nextState;
-        setState(nextState);
-        await DB.saveBankState(nextState);
-        return nextState;
+        return commitBankState(nextState);
     };
 
     const persistDollhouseUpdate = async (updater: DollhouseState | ((prev: DollhouseState) => DollhouseState)): Promise<DollhouseState> => {
         const nextDollhouse = typeof updater === 'function'
             ? (updater as (prev: DollhouseState) => DollhouseState)(dollhouseRef.current)
             : updater;
+        const activeShopId = stateRef.current.shopPortfolio?.activeShopId;
         dollhouseRef.current = nextDollhouse;
         setDollhouseState(nextDollhouse);
+        if (activeShopId) {
+            const nextMap = { ...dollhousesByShopIdRef.current, [activeShopId]: nextDollhouse };
+            dollhousesByShopIdRef.current = nextMap;
+            setDollhousesByShopId(nextMap);
+            await DB.saveBankDollhouses(nextMap);
+        }
+        await DB.saveBankDollhouse(nextDollhouse);
+        return nextDollhouse;
+    };
+
+    const activateDollhouseForShop = async (shopId?: string): Promise<DollhouseState> => {
+        const id = shopId || stateRef.current.shopPortfolio?.activeShopId;
+        const nextDollhouse = id
+            ? (dollhousesByShopIdRef.current[id] || cloneDollhouseState(INITIAL_DOLLHOUSE))
+            : cloneDollhouseState(INITIAL_DOLLHOUSE);
+        dollhouseRef.current = nextDollhouse;
+        setDollhouseState(nextDollhouse);
+        if (id && !dollhousesByShopIdRef.current[id]) {
+            const nextMap = { ...dollhousesByShopIdRef.current, [id]: nextDollhouse };
+            dollhousesByShopIdRef.current = nextMap;
+            setDollhousesByShopId(nextMap);
+            await DB.saveBankDollhouses(nextMap);
+        }
         await DB.saveBankDollhouse(nextDollhouse);
         return nextDollhouse;
     };
@@ -513,22 +573,36 @@ const BankApp: React.FC = () => {
             }
         }
 
-        // --- Dollhouse: Load separately (same pattern as RoomApp's roomConfig) ---
-        let loadedDollhouse = await DB.getBankDollhouse();
+        currentState = syncActiveBranchFromMirror(migrateBankLifeState(currentState));
 
-        // Migration: If dollhouse was embedded in shop state, extract and save separately
+        // --- Dollhouse: Load separately. New saves are keyed by shop id; legacy single save becomes the first branch's decor. ---
+        const loadedDollhouses = await DB.getBankDollhouses();
+        let loadedDollhouse = await DB.getBankDollhouse();
+        const activeShopId = currentState.shopPortfolio?.activeShopId;
+        let dollhouseMap: BankDollhousesByShopId = loadedDollhouses ? { ...loadedDollhouses } : {};
+
+        // Migration: If dollhouse was embedded in shop state, extract and save separately.
         if (!loadedDollhouse && currentState.shop.dollhouse) {
             loadedDollhouse = currentState.shop.dollhouse;
             await DB.saveBankDollhouse(loadedDollhouse);
         }
+        if (loadedDollhouse && activeShopId && Object.keys(dollhouseMap).length === 0) {
+            dollhouseMap[activeShopId] = loadedDollhouse;
+        }
+        for (const branch of currentState.shopPortfolio?.branches || []) {
+            if (!dollhouseMap[branch.id]) dollhouseMap[branch.id] = cloneDollhouseState(INITIAL_DOLLHOUSE);
+        }
 
-        // Use loaded dollhouse or initialize fresh
-        let dh = loadedDollhouse || INITIAL_DOLLHOUSE;
+        let dh = activeShopId ? (dollhouseMap[activeShopId] || cloneDollhouseState(INITIAL_DOLLHOUSE)) : (loadedDollhouse || cloneDollhouseState(INITIAL_DOLLHOUSE));
         dollhouseRef.current = dh;
         setDollhouseState(dh);
+        dollhousesByShopIdRef.current = dollhouseMap;
+        setDollhousesByShopId(dollhouseMap);
 
-        // If this is a fresh install with no saved dollhouse, persist the initial state
-        if (!loadedDollhouse) {
+        if (activeShopId || Object.keys(dollhouseMap).length > 0) {
+            await DB.saveBankDollhouses(dollhouseMap);
+        }
+        if (!loadedDollhouse || activeShopId) {
             await DB.saveBankDollhouse(dh);
         }
 
@@ -536,31 +610,60 @@ const BankApp: React.FC = () => {
         // 幂等——没有死链就什么都不做、不写库。
         {
             let shopChanged = false;
-            const cleanStaff = currentState.shop.staff.map(s =>
-                isDeadImg(s.avatar)
-                    ? (shopChanged = true, { ...s, avatar: s.id === 'staff-001' ? '🐱' : '🙂' })
-                    : s
-            );
-            let cleanBg = currentState.shop.background;
-            if (isDeadImg(cleanBg)) { cleanBg = ''; shopChanged = true; }
-            if (shopChanged) {
-                currentState = { ...currentState, shop: { ...currentState.shop, staff: cleanStaff, background: cleanBg } };
+            const portfolio = currentState.shopPortfolio;
+            if (portfolio?.branches?.length) {
+                const branches = portfolio.branches.map(branch => {
+                    let branchChanged = false;
+                    const cleanStaff = branch.shop.staff.map(s =>
+                        isDeadImg(s.avatar)
+                            ? (branchChanged = true, { ...s, avatar: s.id === 'staff-001' ? '🐱' : '🙂' })
+                            : s
+                    );
+                    let cleanBg = branch.shop.background;
+                    if (isDeadImg(cleanBg)) { cleanBg = ''; branchChanged = true; }
+                    if (!branchChanged) return branch;
+                    shopChanged = true;
+                    return { ...branch, shop: { ...branch.shop, staff: cleanStaff, background: cleanBg } };
+                });
+                if (shopChanged) {
+                    currentState = syncActiveShopMirror({ ...currentState, shopPortfolio: { ...portfolio, branches } });
+                }
+            } else {
+                const cleanStaff = currentState.shop.staff.map(s =>
+                    isDeadImg(s.avatar)
+                        ? (shopChanged = true, { ...s, avatar: s.id === 'staff-001' ? '🐱' : '🙂' })
+                        : s
+                );
+                let cleanBg = currentState.shop.background;
+                if (isDeadImg(cleanBg)) { cleanBg = ''; shopChanged = true; }
+                if (shopChanged) {
+                    currentState = { ...currentState, shop: { ...currentState.shop, staff: cleanStaff, background: cleanBg } };
+                }
             }
 
             let dhChanged = false;
-            const cleanRooms = dh.rooms.map(r => {
-                let room = r;
-                if (isDeadImg(room.roomTextureUrl)) { room = { ...room, roomTextureUrl: undefined }; dhChanged = true; }
-                if (room.stickers?.some(st => isDeadImg(st.url))) {
-                    room = { ...room, stickers: room.stickers.map(st => isDeadImg(st.url) ? { ...st, url: '⭐' } : st) };
-                    dhChanged = true;
-                }
-                return room;
-            });
+            const cleanOneDollhouse = (source: DollhouseState): DollhouseState => {
+                let changed = false;
+                const cleanRooms = source.rooms.map(r => {
+                    let room = r;
+                    if (isDeadImg(room.roomTextureUrl)) { room = { ...room, roomTextureUrl: undefined }; changed = true; }
+                    if (room.stickers?.some(st => isDeadImg(st.url))) {
+                        room = { ...room, stickers: room.stickers.map(st => isDeadImg(st.url) ? { ...st, url: '⭐' } : st) };
+                        changed = true;
+                    }
+                    return room;
+                });
+                if (changed) dhChanged = true;
+                return changed ? { ...source, rooms: cleanRooms } : source;
+            };
+            dollhouseMap = Object.fromEntries(Object.entries(dollhouseMap).map(([shopId, source]) => [shopId, cleanOneDollhouse(source)]));
+            dh = activeShopId ? (dollhouseMap[activeShopId] || dh) : cleanOneDollhouse(dh);
             if (dhChanged) {
-                dh = { ...dh, rooms: cleanRooms };
                 dollhouseRef.current = dh;
                 setDollhouseState(dh);
+                dollhousesByShopIdRef.current = dollhouseMap;
+                setDollhousesByShopId(dollhouseMap);
+                await DB.saveBankDollhouses(dollhouseMap);
                 await DB.saveBankDollhouse(dh);
             }
         }
@@ -575,19 +678,36 @@ const BankApp: React.FC = () => {
 
         // Migration: Link "系统" staff to its owner via pet-owner matching
         if (characters.length > 0) {
-            const systemStaff = currentState.shop.staff.find(s => s.id === 'staff-001');
-            if (systemStaff && systemStaff.isPet && (!systemStaff.ownerCharId || systemStaff.ownerCharId === '')) {
-                // Find Moro by name match, fallback to first character
-                const moro = characters.find(c => c.name.toLowerCase().includes('moro')) || characters[0];
-                currentState = {
-                    ...currentState,
-                    shop: {
-                        ...currentState.shop,
-                        staff: currentState.shop.staff.map(s =>
-                            s.id === 'staff-001' ? { ...s, ownerCharId: moro.id } : s
-                        )
-                    }
-                };
+            const moro = characters.find(c => c.name.toLowerCase().includes('moro')) || characters[0];
+            const portfolio = currentState.shopPortfolio;
+            if (portfolio?.branches?.length) {
+                let changed = false;
+                const branches = portfolio.branches.map(branch => {
+                    const systemStaff = branch.shop.staff.find(s => s.id === 'staff-001');
+                    if (!systemStaff || !systemStaff.isPet || (systemStaff.ownerCharId && systemStaff.ownerCharId !== '')) return branch;
+                    changed = true;
+                    return {
+                        ...branch,
+                        shop: {
+                            ...branch.shop,
+                            staff: branch.shop.staff.map(s => s.id === 'staff-001' ? { ...s, ownerCharId: moro.id } : s),
+                        },
+                    };
+                });
+                if (changed) currentState = syncActiveShopMirror({ ...currentState, shopPortfolio: { ...portfolio, branches } });
+            } else {
+                const systemStaff = currentState.shop.staff.find(s => s.id === 'staff-001');
+                if (systemStaff && systemStaff.isPet && (!systemStaff.ownerCharId || systemStaff.ownerCharId === '')) {
+                    currentState = {
+                        ...currentState,
+                        shop: {
+                            ...currentState.shop,
+                            staff: currentState.shop.staff.map(s =>
+                                s.id === 'staff-001' ? { ...s, ownerCharId: moro.id } : s
+                            )
+                        }
+                    };
+                }
             }
         }
 
@@ -629,6 +749,13 @@ const BankApp: React.FC = () => {
                         r.id === 'room-1f-left' ? { ...r, roomTextureUrl: expectedShopTexture } : r
                     )
                 };
+                dh = updatedDh;
+                if (activeShopId) {
+                    dollhouseMap = { ...dollhouseMap, [activeShopId]: updatedDh };
+                    dollhousesByShopIdRef.current = dollhouseMap;
+                    setDollhousesByShopId(dollhouseMap);
+                    await DB.saveBankDollhouses(dollhouseMap);
+                }
                 dollhouseRef.current = updatedDh;
                 setDollhouseState(updatedDh);
                 await DB.saveBankDollhouse(updatedDh);
@@ -637,56 +764,80 @@ const BankApp: React.FC = () => {
             // Mark migration as done so it never runs again
             currentState = { ...currentState, dataVersion: 2 };
         }
+        currentState = syncActiveBranchFromMirror(migrateBankLifeState(currentState));
 
         // DAILY RESET LOGIC
         const today = new Date().toISOString().split('T')[0];
 
         if (currentState.lastLoginDate !== today) {
-            // 店员精力来自店铺每日补给：登录奖励 + 人气分红。
-            const appealNow = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
-            const dailyEnergy = 10 + Math.floor(appealNow / 25);
-            // 过夜营业额已并入「挂机营业额」——离店时间会在下方折算成待收金币，不再一次性补发。
-
-            // Recover Fatigue
-            const updatedStaff = currentState.shop.staff.map(s => ({
-                ...s,
-                fatigue: Math.max(0, s.fatigue - 30)
-            }));
-
-            // 每日把在售商品的库存「保底」补到 DAILY_STOCK_FLOOR——不至于完全断货卡死，
-            // 但量很小，真正的供货还得靠进货。已高于保底线的不动（不覆盖囤的货）。
-            const replenishedStock = { ...(currentState.shop.stock || {}) };
-            for (const id of currentState.shop.unlockedRecipes) {
-                replenishedStock[id] = Math.max(replenishedStock[id] || 0, DAILY_STOCK_FLOOR);
+            const portfolio = currentState.shopPortfolio;
+            if (portfolio?.branches?.length) {
+                let totalDailyEnergy = 0;
+                const branches = portfolio.branches.map(branch => {
+                    const appealNow = branch.shop.appeal || calculateAppeal(branch.shop.staff.length, branch.shop.unlockedRecipes);
+                    const dailyEnergy = 10 + Math.floor(appealNow / 25);
+                    totalDailyEnergy += dailyEnergy;
+                    const updatedStaff = branch.shop.staff.map(s => ({
+                        ...s,
+                        fatigue: Math.max(0, s.fatigue - 30)
+                    }));
+                    const replenishedStock = { ...(branch.shop.stock || {}) };
+                    for (const id of branch.shop.unlockedRecipes) {
+                        replenishedStock[id] = Math.max(replenishedStock[id] || 0, DAILY_STOCK_FLOOR);
+                    }
+                    const shopProducts = branch.shopProducts.map(p => ({ ...p, stock: Math.max(p.stock || 0, DAILY_STOCK_FLOOR) }));
+                    return {
+                        ...branch,
+                        shopProducts,
+                        shop: {
+                            ...branch.shop,
+                            actionPoints: (branch.shop.actionPoints || 0) + dailyEnergy,
+                            staff: updatedStaff,
+                            activeVisitor: undefined,
+                            stock: replenishedStock,
+                        },
+                    };
+                });
+                currentState = syncActiveShopMirror({
+                    ...currentState,
+                    todaySpent: 0,
+                    lastLoginDate: today,
+                    shopPortfolio: {
+                        ...portfolio,
+                        branches,
+                        dailyRewards: {
+                            dateStr: today,
+                            headquartersPatrol: false,
+                            shelfByShopId: {},
+                            reviewByShopId: {},
+                            idleBonusByShopId: {},
+                        },
+                    },
+                });
+                addToast(`新的一天！${branches.length} 家店经营精力共 +${totalDailyEnergy}`, 'success');
+            } else {
+                currentState = { ...currentState, todaySpent: 0, lastLoginDate: today };
+                addToast('新的一天！今日预算已重置', 'success');
             }
-
-            currentState = {
-                ...currentState,
-                todaySpent: 0,
-                lastLoginDate: today,
-                shop: {
-                    ...currentState.shop,
-                    actionPoints: (currentState.shop.actionPoints || 0) + dailyEnergy,
-                    staff: updatedStaff,
-                    activeVisitor: undefined,
-                    stock: replenishedStock,
-                }
-            };
-
-            await DB.saveBankState(currentState);
-            addToast(`新的一天！店员精力 +${dailyEnergy}`, 'success');
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
         const spent = todayTx.reduce((sum, t) => sum + (t.type === 'income' ? 0 : t.amount), 0);
-        const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
 
-        // 挂机营业额 + 天气：先定天气（影响挂机产出），再按离店时长折算待收金币
+        // 挂机营业额 + 天气：每家已开分店都折算待收金币，当前活跃店同步到兼容镜像。
         const nowTs = Date.now();
-        const weather = ensureWeather(currentState.shop, nowTs);
-        const shopWithWeather = { ...currentState.shop, appeal, weather };
-        const idle = accrueShopIdle(shopWithWeather, nowTs);
-        const finalState = { ...currentState, todaySpent: spent, shop: { ...shopWithWeather, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+        const portfolio = currentState.shopPortfolio;
+        if (portfolio?.branches?.length) {
+            const branches = portfolio.branches.map(branch => {
+                const appeal = branch.shop.appeal || calculateAppeal(branch.shop.staff.length, branch.shop.unlockedRecipes);
+                const weather = ensureWeather(branch.shop, nowTs);
+                const shopWithWeather = { ...branch.shop, appeal, weather };
+                const idle = accrueShopIdle(shopWithWeather, nowTs);
+                return { ...branch, shop: { ...shopWithWeather, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+            });
+            currentState = syncActiveShopMirror({ ...currentState, shopPortfolio: { ...portfolio, branches } });
+        }
+        const finalState = syncActiveBranchFromMirror(migrateBankLifeState({ ...currentState, todaySpent: spent }));
         stateRef.current = finalState;
         setState(finalState);
         setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
@@ -743,9 +894,7 @@ const BankApp: React.FC = () => {
         });
         actionResult = await enrichResultWithAi(actionResult, 'ledger', () => generateAiLedgerInsight(auxApi, cur.life!, { transaction: newTx, todaySpent: newSpent, dailyBudget: cur.config.dailyBudget }));
         const newState = { ...cur, todaySpent: newSpent, life: appendBankActionRecord(cur.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
 
         setTransactions(prev => [newTx, ...prev]);
 
@@ -782,26 +931,41 @@ const BankApp: React.FC = () => {
         }
 
         const newState = { ...cur, todaySpent: newSpent };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         setTransactions(prev => prev.filter(t => t.id !== id));
         addToast('记录已删除', 'success');
     };
 
     // --- Game Logic ---
 
+    const consumeHeadquartersEnergy = async (cost: number, label = '装修'): Promise<boolean> => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const portfolio = cur.shopPortfolio;
+        const currentEnergy = portfolio?.headquartersEnergy ?? 0;
+        if (currentEnergy < cost) {
+            addToast(`总部精力不够，${label}需要 ${cost} 点`, 'error');
+            return false;
+        }
+        await persistStateUpdate(prev => {
+            const withPortfolio = migrateBankLifeState(prev);
+            const p = withPortfolio.shopPortfolio!;
+            return {
+                ...withPortfolio,
+                shopPortfolio: { ...p, headquartersEnergy: Math.max(0, (p.headquartersEnergy || 0) - cost) },
+            };
+        });
+        return true;
+    };
+
     const consumeShopEnergy = async (cost: number): Promise<boolean> => {
         const cur = stateRef.current;
         if (cur.shop.actionPoints < cost) {
-            addToast(`店员精力不够（需要 ${cost} 点）`, 'error');
+            addToast(`当前店精力不够（需要 ${cost} 点）`, 'error');
             return false;
         }
         const nextEnergy = cur.shop.actionPoints - cost;
         const newState = { ...cur, shop: { ...cur.shop, actionPoints: nextEnergy } };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         return true;
     };
 
@@ -814,9 +978,7 @@ const BankApp: React.FC = () => {
         const ap = 1 + Math.floor(Math.random() * 2);
         const cur = stateRef.current;
         const newState = { ...cur, shop: { ...cur.shop, actionPoints: (cur.shop.actionPoints || 0) + ap } };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         return ap;
     };
 
@@ -843,9 +1005,7 @@ const BankApp: React.FC = () => {
         });
 
         const newState = { ...cur, shop: { ...cur.shop, staff: updatedStaff }, life: appendBankActionRecord(cur.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast('店员休息好了！', 'success');
         showActionResult(actionResult);
     };
@@ -883,9 +1043,7 @@ const BankApp: React.FC = () => {
             },
             life: appendBankActionRecord(cur.life!, actionResult),
         };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast(`新商品上架！附赠 ${STARTING_STOCK} 份起始库存，营业时就能卖了`, 'success');
         showActionResult(actionResult);
     };
@@ -928,9 +1086,7 @@ const BankApp: React.FC = () => {
         actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, migrateBankLifeState(cur).life!, { action: 'restock', product: r.name, cost, quantity: RESTOCK_BATCH }));
         const migrated = migrateBankLifeState(cur);
         const newState = { ...migrated, shop: { ...migrated.shop, stock: newStock }, life: appendBankActionRecord(migrated.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         adjustUserBalance(-cost, { note: `${r.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: recipeId });
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
         showActionResult(actionResult);
@@ -1010,9 +1166,7 @@ const BankApp: React.FC = () => {
         const migrated = migrateBankLifeState(cur);
         actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, migrated.life!, { action: 'shop-upgrade', fromLevel: level, toLevel: level + 1, cost }));
         const newState = { ...migrated, shop: { ...migrated.shop, shopLevel: level + 1 }, life: appendBankActionRecord(migrated.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         adjustUserBalance(-cost, { note: `店铺升级 Lv.${level + 1}`, category: 'shop', kind: 'shop-upgrade', sourceApp: '人生拟' });
         addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
         showActionResult(actionResult);
@@ -1039,13 +1193,24 @@ const BankApp: React.FC = () => {
             ],
             payload: { amount },
         });
-        const newState = { ...migrated, shop: { ...migrated.shop, pendingRevenue: 0, lastAccrualAt: Date.now(), totalRevenue: (migrated.shop.totalRevenue || 0) + amount }, life: appendBankActionRecord(migrated.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        let newState: BankFullState = { ...migrated, shop: { ...migrated.shop, pendingRevenue: 0, lastAccrualAt: Date.now(), totalRevenue: (migrated.shop.totalRevenue || 0) + amount }, life: appendBankActionRecord(migrated.life!, actionResult) };
+        const reward = claimBankShopDailyReward(newState, 'idleBonus');
+        if (reward.claimed) newState = reward.state;
+        await commitBankState(newState);
         adjustUserBalance(amount, { note: '领取挂机营业额', category: 'shop', kind: 'shop-idle', sourceApp: '人生拟' });
-        addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}`, 'success');
+        addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}${reward.claimed ? '，当前店精力 +6' : ''}`, 'success');
         showActionResult(actionResult);
+    };
+
+    const handleClaimShopDailyReward = async (kind: 'headquartersPatrol' | 'shelf' | 'review') => {
+        const result = claimBankShopDailyReward(stateRef.current, kind);
+        if (!result.claimed) {
+            addToast('今天这项已经领取过了', 'info');
+            return;
+        }
+        await commitBankState(result.state);
+        addToast(result.target === 'headquarters' ? `总部精力 +${result.amount}` : `当前店精力 +${result.amount}`, 'success');
+        showActionResult(result.actionResult);
     };
 
     // --- Fire / Rehire / Delete Staff ---
@@ -1077,9 +1242,7 @@ const BankApp: React.FC = () => {
             firedStaff: firedPool,
             life: appendBankActionRecord(cur.life!, actionResult),
         };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast(`${staff.name} 已被解雇`, 'info');
         showActionResult(actionResult);
     };
@@ -1113,9 +1276,7 @@ const BankApp: React.FC = () => {
             firedStaff: updatedFired,
             life: appendBankActionRecord(cur.life!, actionResult),
         };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast(`${staff.name} 已重新入职！`, 'success');
         showActionResult(actionResult);
     };
@@ -1126,9 +1287,7 @@ const BankApp: React.FC = () => {
         const updatedFired = (cur.firedStaff || []).filter(s => s.id !== staffId);
 
         const newState = { ...cur, firedStaff: updatedFired };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast(`${staff?.name || '员工'} 已彻底删除`, 'success');
     };
 
@@ -1164,9 +1323,7 @@ const BankApp: React.FC = () => {
             },
             life: appendBankActionRecord(cur.life!, actionResult),
         };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast('新店员入职！', 'success');
         showActionResult(actionResult);
     };
@@ -1340,9 +1497,7 @@ ${previousGuestbook}
         const cur = stateRef.current;
         const updatedStaffList = cur.shop.staff.map(s => s.id === editingStaff.id ? editingStaff : s);
         const newState = { ...cur, shop: { ...cur.shop, staff: updatedStaffList } };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         setShowStaffEdit(false);
         setEditingStaff(null);
         addToast('员工信息已更新', 'success');
@@ -1369,9 +1524,7 @@ ${previousGuestbook}
         const updatedStaffList = [updatedManager, ...cur.shop.staff.slice(1)];
 
         const newState = { ...cur, shop: { ...cur.shop, staff: updatedStaffList } };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
     };
 
     const handleConfigUpdate = async (updates: Partial<typeof state.config>) => {
@@ -1382,9 +1535,7 @@ ${previousGuestbook}
             normalizedUpdates.dailyBudget = Math.max(0, Math.floor(normalizedUpdates.dailyBudget));
         }
         const newState = { ...cur, config: { ...cur.config, ...normalizedUpdates } };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         addToast('设置已保存', 'success');
     };
 
@@ -1553,26 +1704,34 @@ ${previousGuestbook}
 
     const handleUnlockLifeShop = async () => {
         const wallet = Math.round(userProfile.balance || 0);
-        if (wallet < SHOP_UNLOCK_COST) { addToast(`开店至少需要 ¥${SHOP_UNLOCK_COST}`, 'error'); return; }
         const tpl = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
-        const shopName = newShopName.trim() || `${tpl.name}`;
-        const nextState = await persistStateUpdate(prev => {
-            const withLife = migrateBankLifeState(prev);
-            return {
-                ...withLife,
-                life: openLifeShop(withLife.life!, tpl.id, shopName),
-                shop: { ...withLife.shop, shopName },
-            };
-        });
-        adjustUserBalance(-SHOP_UNLOCK_COST, { note: '人生拟开店启动金', category: 'shop', kind: 'shop-open', sourceApp: '人生拟' });
+        const current = migrateBankLifeState(stateRef.current);
+        const shopName = newShopName.trim() || getDefaultBankBranchName(tpl.id, current.shopPortfolio?.branches || []);
+        const opened = openBankShopBranch(current, tpl.id, shopName, { walletBalance: wallet, dateStr: current.life?.dateStr });
+        if (!opened.ok) {
+            if (opened.reason === 'wallet') addToast(`钱包不够开这家店（需要 ¥${opened.cost}）`, 'error');
+            else addToast(`总部精力不够开新店（需要 ${opened.energyCost} 点）`, 'error');
+            return;
+        }
+        const nextState = await commitBankState(opened.state);
+        if (opened.branch) await activateDollhouseForShop(opened.branch.id);
+        adjustUserBalance(-opened.cost, { note: `${shopName} 开店启动金`, category: 'shop', kind: 'shop-open', sourceApp: '人生拟', sourceId: opened.branch?.id });
         addToast(`${shopName} 准备开张`, 'success');
-        const record = nextState.life?.actionHistory?.[0];
-        if (record) {
-            let result = actionRecordToResult(record);
-            result = await enrichResultWithAi(result, 'shop', () => generateAiShopActionDraft(auxApi, nextState.life!, { action: 'shop-open', businessType: tpl.name, shopName, cost: SHOP_UNLOCK_COST }));
+        setNewShopName('');
+        setBankModal(null);
+        if (opened.actionResult) {
+            let result: BankLifeActionResult = opened.actionResult;
+            result = await enrichResultWithAi(result, 'shop', () => generateAiShopActionDraft(auxApi, nextState.life!, { action: 'shop-open', businessType: tpl.name, shopName, cost: opened.cost }));
             await syncActionHistoryResult(result);
             showActionResult(result);
         }
+    };
+
+    const handleSwitchBankShop = async (shopId: string) => {
+        const next = await commitBankState(switchActiveBankShop(stateRef.current, shopId));
+        await activateDollhouseForShop(next.shopPortfolio?.activeShopId || shopId);
+        const branch = next.shopPortfolio?.branches.find(b => b.id === shopId);
+        if (branch) addToast(`已切到 ${branch.shop.shopName}`, 'success');
     };
 
     const handleBuyStock = async (symbol: string) => {
@@ -1788,9 +1947,7 @@ ${previousGuestbook}
             payload: { goalId: newGoal.id, targetAmount: parsedTarget },
         });
         const newState = { ...cur, goals: [...cur.goals, newGoal], life: appendBankActionRecord(cur.life!, actionResult) };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         setShowGoalModal(false);
         setGoalName('');
         setGoalTarget('');
@@ -1865,6 +2022,10 @@ ${JSON.stringify(list, null, 2)}
             const mins = Math.ceil((BUSINESS_COOLDOWN_MS - elapsed) / 60000);
             const txt = mins >= 60 ? `${Math.floor(mins / 60)} 小时 ${mins % 60} 分` : `${mins} 分钟`;
             addToast(`店员们还在歇着，${txt}后再开门吧`, 'info');
+            return;
+        }
+        if ((cur.shop.actionPoints || 0) < BUSINESS_ENERGY_COST) {
+            addToast(`当前店精力不够（营业需要 ${BUSINESS_ENERGY_COST} 点）`, 'error');
             return;
         }
         const staff = cur.shop.staff;
@@ -2027,6 +2188,7 @@ ${JSON.stringify(list, null, 2)}
                 { label: '差错', value: `${mishaps}`, tone: mishaps > 0 ? 'warn' : 'good' },
                 { label: '流失', value: `${lostSales}`, tone: lostSales > 0 ? 'warn' : 'good' },
                 { label: '天气', value: weather.label },
+                { label: '消耗精力', value: `${BUSINESS_ENERGY_COST}`, tone: 'warn' },
             ],
             nextActions: lostSales > 0 ? ['先补货再营业'] : ['查看顾客评价'],
             payload: { total, base, tips, customerCount, soldItems, lostSales, mishaps },
@@ -2036,6 +2198,7 @@ ${JSON.stringify(list, null, 2)}
             shop: {
                 ...cur.shop,
                 staff: updatedStaff,
+                actionPoints: Math.max(0, (cur.shop.actionPoints || 0) - BUSINESS_ENERGY_COST),
                 lastBusinessAt: Date.now(),
                 totalRevenue: (cur.shop.totalRevenue || 0) + total,
                 reviews: mergedReviews,
@@ -2052,9 +2215,7 @@ ${JSON.stringify(list, null, 2)}
                     : lifeState.shopEvents,
             }, actionResult),
         };
-        stateRef.current = newState;
-        setState(newState);
-        await DB.saveBankState(newState);
+        await commitBankState(newState);
         adjustUserBalance(total, { note: '店铺营业收入', category: 'shop', kind: 'shop-business', sourceApp: '人生拟' });
 
         for (const ev of loyaltyEvents.filter(e => e.tier === 'vip')) {
@@ -2087,7 +2248,13 @@ ${JSON.stringify(list, null, 2)}
     const lowStockCount = state.shop.unlockedRecipes.reduce(
         (n, id) => n + ((state.shop.stock?.[id] ?? 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
     const hasLowStock = lowStockCount > 0;
-    const life = migrateBankLifeState(state).life!;
+    const migratedViewState = migrateBankLifeState(state);
+    const life = migratedViewState.life!;
+    const shopPortfolio = migratedViewState.shopPortfolio;
+    const shopBranches = shopPortfolio?.branches || [];
+    const activeShopId = shopPortfolio?.activeShopId || '';
+    const activeBranch = shopBranches.find(b => b.id === activeShopId) || shopBranches[0];
+    const dailyRewards = shopPortfolio?.dailyRewards?.dateStr === life.dateStr ? shopPortfolio.dailyRewards : undefined;
     const stockValue = stockMarketValue(life);
     const debtValue = loanTotal(life);
     const netWorth = Math.round((userProfile.balance || 0) + stockValue + (life.company?.cash || 0) - debtValue);
@@ -2484,7 +2651,7 @@ ${JSON.stringify(list, null, 2)}
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <div className="text-[22px] font-black" style={{ color: INK, fontFamily: HAND_FONT }}>选择你的第一间店</div>
-                                <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>准备开业资金 ¥{SHOP_UNLOCK_COST}</div>
+                                <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>启动金 ¥{selectedBusiness.startupCost} · 总部精力 {BANK_OPEN_BRANCH_ENERGY_COST}</div>
                             </div>
                             <div className="w-14 h-14 rounded-[18px] flex items-center justify-center text-[26px]" style={{ background: '#faf8f5', border: '1px solid rgba(43,41,51,0.06)' }}>{selectedBusiness.icon}</div>
                         </div>
@@ -2495,7 +2662,7 @@ ${JSON.stringify(list, null, 2)}
                                         <span className="w-9 h-9 rounded-2xl flex items-center justify-center text-[20px]" style={{ background: '#faf8f5' }}>{b.icon}</span>
                                         <div className="min-w-0">
                                             <div className="text-[13px] font-black truncate" style={{ color: INK }}>{b.name}</div>
-                                            <div className="text-[10px]" style={{ color: INK_SOFT }}>毛利 {Math.round(b.margin * 100)}% · 风险 {b.risk}/5</div>
+                                            <div className="text-[10px]" style={{ color: INK_SOFT }}>¥{b.startupCost} · 毛利 {Math.round(b.margin * 100)}% · 风险 {b.risk}/5</div>
                                         </div>
                                     </div>
                                 </button>
@@ -2518,7 +2685,7 @@ ${JSON.stringify(list, null, 2)}
                             {selectedBusiness.products.map(p => <CleanBadge key={p.id} tone="default">{p.name} ¥{p.price}</CleanBadge>)}
                         </div>
                         <button onClick={() => setBankModal({ kind: 'shopUnlock' })} className="w-full py-3 text-[15px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
-                            投入 ¥{SHOP_UNLOCK_COST} 开始营业
+                            投入 ¥{selectedBusiness.startupCost} 开始营业
                         </button>
                     </PaperCard>
                 </div>
@@ -2529,7 +2696,7 @@ ${JSON.stringify(list, null, 2)}
         return (
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="px-3.5 pt-3 shrink-0">
-                    <PaperCard className="p-3">
+                    <PaperCard className="p-3 space-y-3">
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex items-center gap-3">
                                 <span className="w-12 h-12 rounded-[18px] flex items-center justify-center text-[24px]" style={{ background: '#faf8f5' }}>{tpl.icon}</span>
@@ -2539,6 +2706,26 @@ ${JSON.stringify(list, null, 2)}
                                 </div>
                             </div>
                             <button onClick={handleOperate} className="px-4 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>营业</button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                            <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>总部</b><br />{shopPortfolio?.headquartersEnergy ?? 0} 精力</div>
+                            <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>当前店</b><br />{state.shop.actionPoints || 0} 精力</div>
+                            <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>分店</b><br />{shopBranches.length || 1} 家</div>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                            {shopBranches.map(branch => {
+                                const branchTpl = BUSINESS_TEMPLATES.find(b => b.id === branch.businessTypeId) || BUSINESS_TEMPLATES[0];
+                                const active = branch.id === activeShopId;
+                                return (
+                                    <button key={branch.id} onClick={() => { void handleSwitchBankShop(branch.id); }} className="shrink-0 px-3 py-2 text-left active:scale-95 transition-transform" style={chipStyle(active)}>
+                                        <span className="text-[12px] font-black">{branchTpl.icon} {branch.shop.shopName}</span>
+                                        <span className="block text-[10px] opacity-75">Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
+                                    </button>
+                                );
+                            })}
+                            <button onClick={() => { setNewShopName(''); setBankModal({ kind: 'shopUnlock' }); }} className="shrink-0 px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>
+                                + 开新店
+                            </button>
                         </div>
                     </PaperCard>
                     <div className="flex gap-2 pt-2 pb-2">
@@ -2559,11 +2746,10 @@ ${JSON.stringify(list, null, 2)}
                                 characters={characters}
                                 userProfile={userProfile}
                                 apiConfig={auxApi}
+                                onConsumeDecorEnergy={consumeHeadquartersEnergy}
                                 updateState={async (updater) => {
                                     const nextState = { ...stateRef.current, shop: updater(stateRef.current.shop) };
-                                    stateRef.current = nextState;
-                                    setState(nextState);
-                                    await DB.saveBankState(nextState);
+                                    await commitBankState(nextState);
                                 }}
                                 onStaffClick={handleOpenStaffEdit}
                                 onOpenGuestbook={() => setShowGuestbook(true)}
@@ -2613,6 +2799,33 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                 ) : (
                     <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pb-4 space-y-3">
+                        <PaperCard className="p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <SectionTag en="daily">经营日课</SectionTag>
+                                    <div className="text-[11px] mt-1" style={{ color: INK_SOFT }}>总部精力和当前店精力分开恢复</div>
+                                </div>
+                                <CleanBadge tone="amber">{life.dateStr.slice(5)}</CleanBadge>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mt-3 max-[420px]:grid-cols-1">
+                                {([
+                                    ['headquartersPatrol', '每日巡店', '+25 总部', !!dailyRewards?.headquartersPatrol],
+                                    ['shelf', '整理货架', '+18 当前店', !!dailyRewards?.shelfByShopId?.[activeShopId]],
+                                    ['review', '营业复盘', '+10 当前店', !!dailyRewards?.reviewByShopId?.[activeShopId]],
+                                ] as const).map(([kind, label, gain, claimed]) => (
+                                    <button
+                                        key={kind}
+                                        disabled={claimed}
+                                        onClick={() => { void handleClaimShopDailyReward(kind); }}
+                                        className="rounded-2xl px-3 py-2 text-left active:scale-95 transition-transform disabled:opacity-55"
+                                        style={{ background: claimed ? '#f5f3ef' : '#faf8f5', color: claimed ? INK_SOFT : INK, border: '1px solid rgba(43,41,51,0.06)' }}
+                                    >
+                                        <div className="text-[12px] font-black">{label}</div>
+                                        <div className="text-[10px]" style={{ color: INK_SOFT }}>{claimed ? '今日已领' : gain}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </PaperCard>
                         <PaperCard className="p-4">
                             <SectionTag en="goods">今日货架</SectionTag>
                             <div className="grid grid-cols-2 gap-2 mt-3">
@@ -2771,15 +2984,16 @@ ${JSON.stringify(list, null, 2)}
         }
         if (modal.kind === 'shopUnlock') {
             return (
-                <BankModal open title="开店确认" sub="这是一笔 Moro 内虚拟启动金" onClose={close} footer={confirmBtn(`投入 ${state.config.currencySymbol}${SHOP_UNLOCK_COST} 开店`, handleUnlockLifeShop, '#f43f5e')}>
+                <BankModal open title={life.shopUnlocked ? '开新分店' : '开店确认'} sub="本版支持同业态重复开分店，暂不支持关店" onClose={close} footer={confirmBtn(`投入 ${state.config.currencySymbol}${selectedBusiness.startupCost} 开店`, handleUnlockLifeShop, '#f43f5e')}>
                     <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-2">
-                            <div><FieldLabel>店铺名字</FieldLabel><input value={newShopName} onChange={e => setNewShopName(e.target.value)} placeholder={`${selectedBusiness.name}小店`} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
+                            <div><FieldLabel>店铺名字</FieldLabel><input value={newShopName} onChange={e => setNewShopName(e.target.value)} placeholder={getDefaultBankBranchName(selectedBusiness.id, shopBranches)} className="w-full px-3 py-2 outline-none" style={bankModalInputStyle} /></div>
                             <div><FieldLabel>业态</FieldLabel><div className="px-3 py-2 text-[13px] font-black" style={bankModalInputStyle}>{selectedBusiness.icon} {selectedBusiness.name}</div></div>
                         </div>
                         <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{selectedBusiness.vibe}</p>
                         <BankMetricGrid items={[
-                            { label: '启动金', value: `${state.config.currencySymbol}${SHOP_UNLOCK_COST}`, tone: 'warn' },
+                            { label: '启动金', value: `${state.config.currencySymbol}${selectedBusiness.startupCost}`, tone: 'warn' },
+                            { label: '总部精力', value: `${BANK_OPEN_BRANCH_ENERGY_COST}`, tone: (shopPortfolio?.headquartersEnergy || 0) >= BANK_OPEN_BRANCH_ENERGY_COST ? 'good' : 'warn' },
                             { label: '毛利', value: `${Math.round(selectedBusiness.margin * 100)}%` },
                             { label: '风险', value: `${selectedBusiness.risk}/5`, tone: selectedBusiness.risk >= 4 ? 'warn' : 'info' },
                             { label: '钱包', value: `${state.config.currencySymbol}${Math.round(userProfile.balance || 0)}` },

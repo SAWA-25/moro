@@ -1,5 +1,5 @@
 /**
- * Memory Palace maintenance helpers.
+ * 回忆标本馆 maintenance helpers.
  *
  * These helpers keep UI repair actions out of React components: inspect what is
  * safe to inspect locally and repair only structural references.

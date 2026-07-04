@@ -27,7 +27,17 @@ import UnblockAppealModal from '../components/chat/UnblockAppealModal';
 import GroupOfflineModeModal from '../components/chat/GroupOfflineModeModal';
 import EmojiImportModal from '../components/chat/EmojiImportModal';
 import LocationMapCard from '../components/chat/LocationMapCard';
-import { OFFLINE_FOLLOWUP_DELAY_MS, hasOfflineSession, type OfflineCommitInfo } from '../utils/offlineMode';
+import {
+    OFFLINE_FOLLOWUP_DELAY_MS,
+    buildOfflineAutoStartScenario,
+    consumeDueOfflineAutoStarts,
+    detectOfflineAutoStart,
+    detectOfflineScheduledStart,
+    extractOfflineStartDirective,
+    hasOfflineSession,
+    scheduleOfflineAutoStart,
+    type OfflineCommitInfo,
+} from '../utils/offlineMode';
 import { hasGroupOfflineSession } from '../utils/groupOfflineMode';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { resolveUnblockAppealDecision, type UnblockAppealDecision } from '../utils/unblockAppealActions';
@@ -38,6 +48,7 @@ import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialCharacterForUser as isAmbientSocialCharacterForProfile, isAmbientSocialGroupForUser as isAmbientSocialGroupForProfile, isRejectedAmbientGeneratedName, patchAmbientSocialEntry, removeAmbientSocialEntry, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
+import { parseGroupMemberLensMap, resolveGroupMemberStorageId } from '../utils/groupCharacterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
@@ -106,7 +117,7 @@ type GroupOpeningBubble = { charId: string; content: string };
 type GroupInnerVoicePeek = { charId: string; charName: string; content: string; timestamp: number };
 
 const GROUP_JSON_ARRAY_GUARD = `[本轮最高优先级输出守卫]
-只输出 JSON Array，不要 Markdown，不要解释，不要前后缀。每个元素必须包含 "charId" 和 "content" 字段；charId 必须使用本轮花名册中的角色 ID。`;
+只输出 JSON Array，不要 Markdown，不要解释，不要前后缀。每个元素必须包含 "charId" 和 "content" 字段；charId 必须使用本轮花名册中 "(ID: ...)" 里的角色 ID。`;
 const DEFAULT_GROUP_CONTEXT_LIMIT = 30;
 const LANG_OPTIONS = ['中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español'];
 
@@ -280,7 +291,6 @@ const GROUP_ASSISTANT_REVEAL_CHAR_MAX_MS = 2600;
 type ConvoKind = 'char' | 'group' | 'ambient';
 type ConvoHiddenWindows = Record<string, number>;
 type GroupMemberLensDraft = Record<string, Record<string, string>>;
-const MEMBER_LENS_MAX_LENGTH = 500;
 type ConvoListItem = {
     kind: ConvoKind;
     id: string;
@@ -359,56 +369,6 @@ const pruneGroupMemberLenses = (lenses: GroupProfile['memberLenses'] | undefined
 const groupMemberLensCount = (lenses: GroupProfile['memberLenses'] | undefined, memberIds: string[]): number =>
     Object.values(pruneGroupMemberLenses(lenses, memberIds)).reduce((sum, targets) => sum + Object.keys(targets).length, 0);
 
-const cleanGeneratedMemberLens = (value: unknown): string => String(value || '')
-    .replace(/```(?:json)?/gi, '')
-    .replace(/```/g, '')
-    .replace(/^["'“”]+|["'“”]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MEMBER_LENS_MAX_LENGTH);
-
-const parseGeneratedMemberLensMap = (raw: string, targetIds: string[]): Record<string, string> => {
-    const targetSet = new Set(targetIds);
-    const out: Record<string, string> = {};
-    const cleaned = String(raw || '').replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-    const jsonText = (() => {
-        const objStart = cleaned.indexOf('{');
-        const objEnd = cleaned.lastIndexOf('}');
-        if (objStart >= 0 && objEnd > objStart) return cleaned.slice(objStart, objEnd + 1);
-        const arrStart = cleaned.indexOf('[');
-        const arrEnd = cleaned.lastIndexOf(']');
-        if (arrStart >= 0 && arrEnd > arrStart) return cleaned.slice(arrStart, arrEnd + 1);
-        return cleaned;
-    })();
-
-    try {
-        const parsed = JSON.parse(jsonText);
-        const source = parsed?.relations || parsed?.lenses || parsed?.items || parsed;
-        if (Array.isArray(source)) {
-            source.forEach((item: any) => {
-                const id = String(item?.targetId || item?.charId || item?.id || '').trim();
-                if (!targetSet.has(id)) return;
-                const text = cleanGeneratedMemberLens(item?.text ?? item?.relation ?? item?.summary ?? item?.note);
-                if (text) out[id] = text;
-            });
-        } else if (source && typeof source === 'object') {
-            targetIds.forEach(id => {
-                const value = source[id];
-                const text = typeof value === 'string'
-                    ? cleanGeneratedMemberLens(value)
-                    : cleanGeneratedMemberLens(value?.text ?? value?.relation ?? value?.summary ?? value?.note);
-                if (text) out[id] = text;
-            });
-        }
-    } catch {
-        if (targetIds.length === 1) {
-            const text = cleanGeneratedMemberLens(cleaned);
-            if (text) out[targetIds[0]] = text;
-        }
-    }
-    return out;
-};
-
 const buildGroupMemberLensBlock = (
     group: GroupProfile,
     viewer: CharacterProfile,
@@ -427,18 +387,6 @@ const buildGroupMemberLensBlock = (
         .filter(Boolean);
     if (!lines.length) return '';
     return `[角色之间的关系 - 只供 ${displayName(viewer.id)} 自己参考]\n${lines.join('\n')}\n这些是“在你眼里别人是谁、彼此什么关系、有没有过节”的私密视角。只影响你的发言，不是群公告，也不是所有人都知道的事实；请用它调整称呼、熟稔度、避让、调侃或旧账感，不要照抄成设定说明。\n`;
-};
-
-const resolveGroupMemberStorageId = (
-    group: Pick<GroupProfile, 'members'>,
-    members: CharacterProfile[],
-    rawId: unknown,
-): string | undefined => {
-    const id = String(rawId || '').trim();
-    if (!id) return undefined;
-    if (group.members.includes(id)) return id;
-    const byModelId = members.find(member => getCharacterModelId(member) === id);
-    return byModelId && group.members.includes(byModelId.id) ? byModelId.id : undefined;
 };
 
 const readLegacyGroupContextLimit = (): number => {
@@ -479,6 +427,7 @@ const resolveGroupConvo = (group?: GroupProfile | null): GroupConvoSettings => {
         liveChatOverride: resolveGroupLiveOverride(group),
         autoReplyEachUserMessage: !!raw.autoReplyEachUserMessage,
         narrationMode: !!raw.narrationMode,
+        autoOffline: !!raw.autoOffline,
         innerVoiceEnabled: raw.innerVoiceEnabled !== false,
         translationEnabled: !!raw.translationEnabled,
         translateSourceLang: raw.translateSourceLang || '中文',
@@ -1301,14 +1250,18 @@ const GroupMessageItem = React.memo(({
 
             <div className={`flex flex-col ${isUser ? 'items-end mr-3' : 'items-start'} max-w-[72%] min-w-0 ${selectionMode ? 'pointer-events-none' : ''}`}>
                 {(!isUser || isFirstInGroup) && (
-                    <div className={`text-[10px] text-slate-400 mb-1 flex items-center gap-1.5 px-0.5 ${isUser ? 'mr-1 justify-end' : 'ml-0'}`}>
+                    <div className={`mb-1 flex max-w-full min-w-0 flex-wrap items-center gap-1.5 px-0.5 text-[10px] text-slate-400 ${isUser ? 'mr-1 justify-end' : 'ml-0'}`}>
                         {specialCare && !isUser && (
                             <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
                         )}
                         {memberTitle && !isUser && (
                             <span className="px-1 py-px rounded bg-[#f8f8f8] text-slate-500 border border-slate-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
                         )}
-                        {!isUser && <span className="truncate max-w-[140px] bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{name}</span>}
+                        {!isUser && (
+                            <span className="moro-group-name inline-flex max-w-full min-w-0 shrink items-center rounded-md bg-white/85 px-2 py-[3px] text-[11px] font-semibold leading-none text-slate-600 shadow-sm ring-1 ring-slate-200/70">
+                                <span className="min-w-0 truncate">{name}</span>
+                            </span>
+                        )}
                         {!hideTimestamp && <span className="text-slate-300 shrink-0">{timeStr}</span>}
                     </div>
                 )}
@@ -1457,7 +1410,7 @@ const ChatHub: React.FC = () => {
     const [isTyping, setIsTyping] = useState(false);
     const isTypingRef = useRef(isTyping);
     isTypingRef.current = isTyping;
-    /** 群记忆宫殿"提取中"状态文本——非空时显示顶部胶囊状态条 */
+    /** 群回忆标本馆"提取中"状态文本——非空时显示顶部胶囊状态条 */
     const [groupPalaceStatus, setGroupPalaceStatus] = useState<string>('');
 
     const groupApiModelPickerView = useMemo(() => {
@@ -1469,7 +1422,7 @@ const ChatHub: React.FC = () => {
         };
     }, [availableModels, groupApiModelFilter]);
 
-    // ref 出最新 characters，让 finally 里跑的群记忆宫殿能读到"用户刚关掉某个成员宫殿"
+    // ref 出最新 characters，让 finally 里跑的群回忆标本馆能读到"用户刚关掉某个成员的回忆标本馆"
     // 的最新状态——闭包里的 characters 还是发消息那一刻捕获的旧值，会让关闭后还触发一次
     const charactersRef = useRef(characters);
     charactersRef.current = characters;
@@ -1484,6 +1437,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showGroupOfflineMode, setShowGroupOfflineMode] = useState(false);
+    const [groupOfflineAutoStartScenario, setGroupOfflineAutoStartScenario] = useState<string | undefined>(undefined);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showEmojiImportModal, setShowEmojiImportModal] = useState(false);
     const [groupCall, setGroupCall] = useState<GroupCallSession | null>(null);
@@ -2622,6 +2576,7 @@ const ChatHub: React.FC = () => {
         try { localStorage.removeItem(`moro_group_unread_${group.id}`); } catch { /* ignore */ }
         setActiveGroup(group);
         setView('chat');
+        setGroupOfflineAutoStartScenario(undefined);
         setShowGroupOfflineMode(hasGroupOfflineSession(group.id));
         if (typeof messageId === 'number') {
             setHighlightMsgId(messageId);
@@ -2662,6 +2617,7 @@ const ChatHub: React.FC = () => {
         try { localStorage.removeItem(`moro_group_unread_${group.id}`); } catch { /* ignore */ }
         setActiveGroup(group);
         setView('chat');
+        setGroupOfflineAutoStartScenario(undefined);
 
         if (hasGroupOfflineSession(group.id)) {
             setShowGroupOfflineMode(true);
@@ -2669,6 +2625,7 @@ const ChatHub: React.FC = () => {
                 clearSuspendedOfflineSession();
             }
         } else {
+            setGroupOfflineAutoStartScenario(undefined);
             setShowGroupOfflineMode(false);
             if (suspendedOfflineSession?.kind === 'group' && suspendedOfflineSession.groupId === group.id) {
                 clearSuspendedOfflineSession();
@@ -2676,6 +2633,28 @@ const ChatHub: React.FC = () => {
             addToast('这场群聊线下现场已经不在了', 'info');
         }
     }, [activeApp, groups, suspendedOfflineSession, clearSuspendedOfflineSession, addToast]);
+
+    // ── 群聊未来约定到点：例如“明天下午三点包厢见”，到时间后自动打开群聊赴约 ──
+    useEffect(() => {
+        if (activeApp !== AppID.GroupChat || !activeGroup || !activeGroupConvo.autoOffline) return;
+        const checkDueGroupOffline = () => {
+            if (!activeGroup || showGroupOfflineMode || hasGroupOfflineSession(activeGroup.id)) return;
+            const due = consumeDueOfflineAutoStarts({ mode: 'group', targetId: activeGroup.id })[0];
+            if (!due) return;
+            setGroupOfflineAutoStartScenario(due.scenario);
+            setShowGroupOfflineMode(true);
+            addToast('到了约好的赴约时间，已打开群聊线下现场', 'info');
+        };
+        checkDueGroupOffline();
+        const timer = window.setInterval(checkDueGroupOffline, 60 * 1000);
+        window.addEventListener('focus', checkDueGroupOffline);
+        document.addEventListener('visibilitychange', checkDueGroupOffline);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('focus', checkDueGroupOffline);
+            document.removeEventListener('visibilitychange', checkDueGroupOffline);
+        };
+    }, [activeApp, activeGroup?.id, activeGroupConvo.autoOffline, showGroupOfflineMode, addToast]);
 
     useEffect(() => {
         const handler = (e: Event) => {
@@ -2696,6 +2675,7 @@ const ChatHub: React.FC = () => {
             try { localStorage.removeItem(`moro_group_unread_${group.id}`); } catch { /* ignore */ }
             setActiveGroup(group);
             setView('chat');
+            setGroupOfflineAutoStartScenario(undefined);
 
             if (hasGroupOfflineSession(group.id)) {
                 setShowGroupOfflineMode(true);
@@ -2703,6 +2683,7 @@ const ChatHub: React.FC = () => {
                     clearSuspendedOfflineSession();
                 }
             } else {
+                setGroupOfflineAutoStartScenario(undefined);
                 setShowGroupOfflineMode(false);
                 if (suspendedOfflineSession?.kind === 'group' && suspendedOfflineSession.groupId === group.id) {
                     clearSuspendedOfflineSession();
@@ -3479,7 +3460,7 @@ ${innerVoicePromptBody({
     const buildMemberLensGenerationPrompt = (group: GroupProfile, viewer: CharacterProfile, targets: CharacterProfile[]): string => {
         const clip = (value: unknown, max = 700) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
         const charBrief = (char: CharacterProfile) => [
-            `- id: ${char.id}`,
+            `- id: ${getCharacterModelId(char)}`,
             `  群内称呼: ${displayNameOf(group, char.id)}`,
             `  身份锚: ${formatCharacterWithId(char, displayNameOf(group, char.id))}`,
             char.description ? `  简介: ${clip(char.description, 260)}` : '',
@@ -3503,7 +3484,7 @@ ${innerVoicePromptBody({
             .map(([targetId, text]) => `- ${displayNameOf(group, viewer.id)} 眼里的 ${displayNameOf(group, targetId)}: ${text}`)
             .join('\n');
         const outputShape = JSON.stringify(Object.fromEntries(targets.map(target => [
-            target.id,
+            getCharacterModelId(target),
             `${displayNameOf(group, viewer.id)}眼里的${displayNameOf(group, target.id)}关系备注`,
         ])));
 
@@ -3513,7 +3494,7 @@ ${innerVoicePromptBody({
 
 群聊：${group.name}
 用户：${userProfile.name || '用户'}
-当前视角角色：${displayNameOf(group, viewer.id)}（id: ${viewer.id}）
+当前视角角色：${displayNameOf(group, viewer.id)}（id: ${getCharacterModelId(viewer)}）
 
 群成员资料：
 ${[viewer, ...targets].map(charBrief).join('\n\n')}
@@ -3526,7 +3507,7 @@ ${recentLines || '暂无'}
 
 要求：
 - 只输出 JSON，不要 Markdown，不要解释。
-- JSON 的 key 必须使用目标角色 id，value 是 1-2 句中文备注，每条不超过 120 字。
+- JSON 的 key 必须使用目标角色身份锚 id，也就是资料里 id / "(ID: ...)" 的值；value 是 1-2 句中文备注，每条不超过 120 字。
 - 不要写「我是 AI」「系统提示」之类元叙事。
 - 不要把双方关系写成所有人都知道的公共设定，要带一点当前视角角色的偏见、熟稔度或边界感。
 
@@ -3537,7 +3518,6 @@ ${outputShape}`;
     const generateMemberLensDrafts = async (viewer: CharacterProfile, targets: CharacterProfile[]) => {
         if (!activeGroup || !targets.length) return;
         const group = activeGroup;
-        const targetIds = targets.map(target => target.id);
         const key = targets.length === 1 ? `${viewer.id}:${targets[0].id}` : `${viewer.id}:all`;
         const api = resolveAuxApi(auxApiConfig, apiConfig);
         if (!api.baseUrl?.trim() || !api.model?.trim()) {
@@ -3551,7 +3531,7 @@ ${outputShape}`;
                 [{ role: 'user', content: buildMemberLensGenerationPrompt(group, viewer, targets) }],
                 { temperature: 0.68, maxTokens: Math.min(2600, 650 + targets.length * 280) },
             );
-            const generated = parseGeneratedMemberLensMap(raw, targetIds);
+            const generated = parseGroupMemberLensMap(raw, targets);
             const entries = Object.entries(generated).filter(([, text]) => text.trim());
             if (!entries.length) throw new Error('empty lens generation');
             setTempMemberLenses(prev => {
@@ -4135,7 +4115,7 @@ ${outputShape}`;
 
     // 彻底删除：清理群记忆后真删
     const handleDeleteGroup = async (id: string) => {
-        // 先清理群记忆宫殿数据（成员各自存的副本一并删），再删群
+        // 先清理群回忆标本馆数据（成员各自存的副本一并删），再删群
         // 异常吞掉——清理失败不阻塞删除流程
         try {
             const result = await deleteGroupMemoriesByGroupId(id);
@@ -4765,6 +4745,7 @@ ${logText.substring(0, 10000)}
         if (suspendedOfflineSession?.kind === 'group' && suspendedOfflineSession.groupId === activeGroup.id) {
             clearSuspendedOfflineSession();
         }
+        setGroupOfflineAutoStartScenario(undefined);
         setShowGroupOfflineMode(false);
         await refreshGroupMessagesState(activeGroup.id);
         addToast('群聊赴约已结束，回到线上聊天', 'info');
@@ -4782,6 +4763,7 @@ ${logText.substring(0, 10000)}
             suspendedAt: Date.now(),
             entryCount,
         });
+        setGroupOfflineAutoStartScenario(undefined);
         setShowGroupOfflineMode(false);
         addToast('群聊线下现场已挂起，结束线下前不会写回群聊上下文', 'success');
     };
@@ -5170,7 +5152,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         addToast(`群聊电话已结束 · ${formatGroupCallDuration(durationSec)}`, 'info');
     };
 
-    // 群聊归档：把群聊「现在就」整理进群记忆宫殿
+    // 群聊归档：把群聊「现在就」整理进群回忆标本馆
     const archiveGroupMemory = async () => {
         if (!activeGroup || isSummarizing) return;
         const members = characters.filter(c => activeGroup.members.includes(c.id));
@@ -5179,7 +5161,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         setSummaryProgress('整理群记忆中…');
         try {
             const res = await processGroupNewMessages(activeGroup, members, userProfile.name, (s) => setSummaryProgress(s));
-            if (!res || res.reason === 'no_config' || res.reason === 'no_enabled_member') addToast('先给群成员开启记忆宫殿再归档', 'info');
+            if (!res || res.reason === 'no_config' || res.reason === 'no_enabled_member') addToast('先给群成员开启回忆标本馆再归档', 'info');
             else if (res.reason) addToast('暂时没有需要归档的新内容', 'info');
             else addToast(`已归档 ${res.stored} 条群记忆`, 'success');
         } catch { addToast('归档失败，稍后再试', 'error'); }
@@ -5475,7 +5457,7 @@ ${sharedScene.text}`;
             for (const member of groupMembers) {
                 // Fetch Private Logs
                 const privateMsgs = await DB.getMessagesByCharId(member.id);
-                // Inject memory palace before building context
+                // Inject memory gallery before building context
                 await injectMemoryPalace(member, privateMsgs);
                 // 角色块：跳过共享场景已包含的部分（用户档案 / 共有 worldview / 共有世界书）
                 const coreContext = ContextBuilder.buildCoreContext(member, userProfile, true, undefined, {
@@ -5617,6 +5599,11 @@ ${recentPrivate || '(暂无私聊)'}
             const attachedImagesNote = attachedImages.length > 0
                 ? `\n（本轮附带 ${attachedImages.length} 张最近的图片，对应记录里的 [图片#1] ~ [图片#${attachedImages.length}]。请基于实际图片内容自然反应，不要无视，也不要瞎猜没附上的旧图。）\n`
                 : '';
+            const recentGroupAutoOfflineTexts = recentGroupMsgs
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .slice(-8);
 
             // NEW: Build Categorized Emoji Context (filtered by group member visibility)
             const emojiContextStr = (() => {
@@ -5690,6 +5677,15 @@ ${recentPrivate || '(暂无私聊)'}
 - **严禁**把 PRIVATE 当"吐槽群友"的工具——这是低成本制造修罗场的来源，禁止。
 - **严禁**多个角色同一轮都发 PRIVATE。最多一个。
 - 格式: \`[[PRIVATE: 私聊内容]]\`。这条消息只进私聊频道，不在群里显示。`;
+            const groupOfflineDirectiveBlock = groupConvo.autoOffline && !isLiveDraftRun
+                ? `#### 五点五、聊着聊着就赴约（自动线下）
+- 本群开启了「聊着聊着就赴约」。只有当群聊剧情已经明确进入线下现场时，才可以在某条 content 末尾单独输出 \`[[OFFLINE_START]]\`。
+- 可以触发的场景：大家已经到场/到齐/碰头/汇合，已经坐到同一张桌边/包厢/现场，正在门口或楼下相认，或者线上群聊即将自然切进现实聚会。
+- 「明天见」「明天下午三点楼下见」这类未来约定不要输出 \`[[OFFLINE_START]]\`，只把约定自然说出来；系统会在约定时间自动打开群聊赴约窗口。
+- 严禁因为「想见」「改天约」「要不要吃饭」「如果见面」「回忆上次聚会」这类假设、提议、回忆或口嗨就触发。
+- 输出后不要解释这个指令；继续把当前这条群消息写自然，系统会自动打开群聊赴约窗口承接现场。`
+                : `#### 五点五、聊着聊着就赴约（自动线下）
+- 本群没有开启自动赴约，或当前是未发送草稿感知。本轮严禁输出 \`[[OFFLINE_START]]\`；即使剧情提到约见，也保持在线上群聊里自然讨论。`;
 
             const prompt = `${context}
 
@@ -5742,6 +5738,8 @@ ${attachedImagesNote}
 
 ${groupPrivateRuleBlock}
 
+${groupOfflineDirectiveBlock}
+
 #### 六、表情和气泡
 - **表情包**: ${groupEmojiAssociation ? `允许低频使用格式 [[SEND_EMOJI: 表情名称]]。**可用表情 (按分类)**: ${emojiContextStr}` : '本群关闭斗图的兴致，严禁输出 [[SEND_EMOJI: ...]]。'}
 - **气泡分段**: ${groupBubbleMode === 'whole' ? '本群偏向一大段说完；不要故意把一个人的一句完整意思拆得很碎。' : '本群偏向一句一句蹦；在一条内容里可用换行符分隔不同气泡，一行一个气泡。'}
@@ -5768,7 +5766,7 @@ ${groupPrivateRuleBlock}
 [
   {
     "charId": "角色的ID",
-    "content": "发言内容... (可以是文本${groupEmojiAssociation ? '、[[SEND_EMOJI: name]]' : ''} 或 [[PRIVATE: content]])"
+    "content": "发言内容... (可以是文本${groupEmojiAssociation ? '、[[SEND_EMOJI: name]]' : ''} 或 [[PRIVATE: content]]${groupConvo.autoOffline && !isLiveDraftRun ? '，真正进入线下现场时可加 [[OFFLINE_START]]' : ''})"
   },
   ...
 ]
@@ -5833,6 +5831,7 @@ ${groupPrivateRuleBlock}
                 const callableMembers = groupMembers.filter(member => !isMuted(activeGroup, member.id));
                 for (const member of callableMembers) {
                     const targetName = displayNameOf(activeGroup, member.id);
+                    const targetModelId = getCharacterModelId(member);
                     const memberChatApi = resolveMemberChatApi(member.id);
                     if (!memberChatApi) {
                         skippedApiMembers.push(targetName);
@@ -5844,12 +5843,12 @@ ${groupPrivateRuleBlock}
 现在只调用一个成员：${formatCharacterWithId(member, targetName)}
 - 你只决定「${targetName}」这一位成员此刻要不要说话。
 - 允许沉默：如果此刻更像真实群聊里的潜水、看见但不接、只在心里反应，请输出 []。
-- 如果要说，只输出 1 个对象，charId 必须是 "${member.id}"；不要替其他成员说话，也不要安排别人下一句。
+- 如果要说，只输出 1 个对象，charId 必须是 "${targetModelId}"；不要替其他成员说话，也不要安排别人下一句。
 - 你可以使用上面允许的群工具指令，但仍保持低频、自然。
 
 输出必须是 JSON Array，格式：
 [
-  { "charId": "${member.id}", "content": "这一位成员的发言" }
+  { "charId": "${targetModelId}", "content": "这一位成员的发言" }
 ]
 或者：
 []
@@ -5898,8 +5897,38 @@ ${groupPrivateRuleBlock}
             // 群签到：本轮可签的目标＝今天的签到卡（角色用 [[CHECKIN: 心情]] 打卡）
             const todayCheckinKey = todayKey();
             const latestCheckinMsg = [...currentMsgs].reverse().find(m => m.type === 'checkin_card' && (m.metadata as any)?.date === todayCheckinKey);
+            const canGroupAutoOffline = !!groupConvo.autoOffline && !isLiveDraftRun;
+            let groupAutoOfflineScenario: string | undefined;
+            const captureGroupAutoOffline = (latestText: string, directiveHit: boolean) => {
+                if (!canGroupAutoOffline || groupAutoOfflineScenario) return;
+                const detectionInput = {
+                    mode: 'group' as const,
+                    recentTexts: recentGroupAutoOfflineTexts,
+                    latestText,
+                    userName: activeGroup.memberNicknames?.['user'] || userProfile.name || '用户',
+                    groupName: activeGroup.name,
+                };
+                const detection = detectOfflineAutoStart(detectionInput);
+                if (!directiveHit && !detection.offline) {
+                    const scheduled = detectOfflineScheduledStart(detectionInput);
+                    if (scheduled.scheduled && scheduled.dueAt && scheduled.scenario) {
+                        scheduleOfflineAutoStart({
+                            mode: 'group',
+                            targetId: runGroupId,
+                            dueAt: scheduled.dueAt,
+                            scenario: scheduled.scenario,
+                            matchedText: scheduled.matchedText,
+                        });
+                    }
+                    return;
+                }
+                groupAutoOfflineScenario = detection.scenario || buildOfflineAutoStartScenario(detectionInput);
+            };
             for (const action of actions) {
                 if (typeof action.content !== 'string') action.content = '';
+                const offlineDirective = extractOfflineStartDirective(action.content);
+                action.content = offlineDirective.content;
+                captureGroupAutoOffline(action.content, offlineDirective.offline);
                 const rawActionCharId = String(action.charId || '').trim().toLowerCase();
                 if ((rawActionCharId === 'narrator' || rawActionCharId === 'system') && groupConvo.narrationMode) {
                     const narrationText = action.content
@@ -6173,7 +6202,15 @@ ${groupPrivateRuleBlock}
 
             const freshAfterRound = await DB.getGroupMessages(runGroupId);
             const hasGroupProgress = freshAfterRound.length > currentMsgs.length || groupChanged;
-            if (remainingAutoRounds > 0 && hasGroupProgress) {
+            const shouldOpenGroupAutoOffline = !!groupAutoOfflineScenario
+                && canGroupAutoOffline
+                && isCurrentGroupRun()
+                && !hasGroupOfflineSession(runGroupId);
+            if (shouldOpenGroupAutoOffline) {
+                setGroupOfflineAutoStartScenario(groupAutoOfflineScenario);
+                setShowGroupOfflineMode(true);
+            }
+            if (!shouldOpenGroupAutoOffline && remainingAutoRounds > 0 && hasGroupProgress) {
                 await new Promise(r => setTimeout(r, 650));
                 await triggerDirector(freshAfterRound, {
                     ...options,
@@ -6189,7 +6226,7 @@ ${groupPrivateRuleBlock}
         } finally {
             if (!options.suppressMemoryPalace) {
                 setIsTyping(false);
-                // 群记忆宫殿：fire-and-forget，水位线/阈值/异常都在内部 swallow，不影响主流程
+                // 群回忆标本馆：fire-and-forget，水位线/阈值/异常都在内部 swallow，不影响主流程
                 kickGroupMemoryPalace(runGroup);
             }
         }
@@ -7130,7 +7167,7 @@ ${groupPrivateRuleBlock}
     // CHAT VIEW
     return (
         <div className="h-full w-full bg-[#ededed] moro-laiwang flex flex-col font-sans relative overflow-hidden">
-            {/* 群记忆宫殿"提取中"浮动胶囊 — 不阻塞交互 */}
+            {/* 群回忆标本馆"提取中"浮动胶囊 — 不阻塞交互 */}
             {groupPalaceStatus && (
                 <div
                     className="absolute top-[100px] left-1/2 z-[150] animate-fade-in"
@@ -7586,7 +7623,7 @@ ${groupPrivateRuleBlock}
                             {/* 群聊共用动作 */}
                             <div className="drawer-tag col-span-2"><span>群 里 一 起</span></div>
                             {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '发起群聊电话', () => void startGroupVoiceCall())}
-                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '单独线下窗口', () => { setShowActions(false); setShowGroupOfflineMode(true); })}
+                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '单独线下窗口', () => { setShowActions(false); setGroupOfflineAutoStartScenario(undefined); setShowGroupOfflineMode(true); })}
                             {strip(<Detective size={20} weight="bold" />, '成员查岗', '选择一位群友查看手机', () => openMemberPicker('check-phone', '查谁的岗？'))}
                             {strip(<EnvelopeOpen size={20} weight="bold" />, '成员主动消息', '选择一位群友设置主动消息', () => openMemberPicker('proactive', '设置谁主动消息？'))}
                             {strip(<Scroll size={20} weight="bold" />, '成员日常', '选择一位群友看离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
@@ -7664,6 +7701,7 @@ ${groupPrivateRuleBlock}
                     members={characters.filter(c => activeGroup.members.includes(c.id))}
                     userProfile={userProfile}
                     apiConfig={apiConfig}
+                    autoStartScenario={groupOfflineAutoStartScenario}
                     addToast={addToast}
                     onEnd={(info) => { void handleGroupOfflineEnd(info); }}
                     onSuspend={handleGroupOfflineSuspend}
@@ -8131,6 +8169,12 @@ ${groupPrivateRuleBlock}
                                     title="舞台旁白"
                                     note="打开后，模型能单独发一条动作/场景旁白气泡，写此刻神态、动作和环境；不会归属某个成员。"
                                     side={<GroupConvoToggle on={!!groupConvo.narrationMode} onToggle={() => void saveGroupConvoDraft({ narrationMode: !groupConvo.narrationMode })} />}
+                                />
+
+                                <GroupConvoEntry
+                                    title="聊着聊着就赴约"
+                                    note="打开后，本群剧情真的已经到场、碰头或同处现场时，会自动弹出群聊赴约窗口；只是想见、约以后或回忆上次不会触发。"
+                                    side={<GroupConvoToggle on={!!groupConvo.autoOffline} onToggle={() => void saveGroupConvoDraft({ autoOffline: !groupConvo.autoOffline })} />}
                                 />
 
                                 <GroupConvoEntry

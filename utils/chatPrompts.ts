@@ -150,7 +150,7 @@ export const ChatPrompts = {
             finally { timings[label] = Math.round(performance.now() - t0); }
         };
 
-        // 记忆宫殿检索结果现在从 char.memoryPalaceInjection 读取，由 buildCoreContext 统一注入
+        // 回忆标本馆检索结果现在从 char.memoryPalaceInjection 读取，由 buildCoreContext 统一注入
         const coreT0 = performance.now();
         let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true, undefined,
             (omitDepthWorldbooks || presetMarkerSplit)
@@ -845,7 +845,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
             .filter(m => !m.metadata?.blockPeek)
             .filter(m => !isMessageBlockedByPromptSwitch(m, char))
             .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
-        // Memory Palace: 过滤已被记忆宫殿处理过的消息（由本地长期记忆替代，节省 token）
+        // 回忆标本馆: 过滤已被回忆标本馆处理过的消息（由本地长期记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
             effectiveHistory = effectiveHistory.filter(m => !processedExcludeIds.has(m.id));
         }

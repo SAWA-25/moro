@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 启动效应 (Priming) + 反刍 (Rumination)
+ * 回忆标本馆 — 启动效应 (Priming) + 反刍 (Rumination)
  *
  * 启动效应：当前情绪偏置检索结果（开心时更容易想起开心的事）
  * 反刍：阁楼里的记忆有概率"不请自来"地浮现

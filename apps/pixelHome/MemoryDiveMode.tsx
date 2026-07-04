@@ -603,7 +603,7 @@ const MemoryDiveMode: React.FC<Props> = ({
 
     // 后台向角色发射情绪（若启用了 emotionConfig）——角色不记得发生了什么，
     // 但潜意识里会留一层情绪底色，与 chat app 的 buff 系统共用同一套机制
-    // 心情 API 未单独配置时回退到主 apiConfig（与记忆宫殿副 API 完全独立）
+    // 心情 API 未单独配置时回退到主 apiConfig（与回忆标本馆副 API 完全独立）
     if (isEmotionBuffFeatureOn(charProfile)) {
       const emotionApi = resolveMoodApi(charProfile, apiConfig);
       // fire-and-forget

@@ -1070,7 +1070,7 @@ export async function runLike520CallA(
     // 关键：传空 recentMessages，强制 retrieveMemories 走"冷启动 fallback"路径——
     // 用 queryHint 作为唯一 query 单路检索，不会被近期闲聊话题稀释成"随便 15 条"。
     await injectMemoryPalace(char as any, [], LIKE520_QUERY_HINT);
-    console.log('[520][CallA] memory palace injection:\n', (char as any).memoryPalaceInjection || '(none)');
+    console.log('[520][CallA] memory gallery injection:\n', (char as any).memoryPalaceInjection || '(none)');
 
     const baseContext = ContextBuilder.buildCoreContext(char, userProfile, true);
     const contextLimit = char.contextLimit || 500;

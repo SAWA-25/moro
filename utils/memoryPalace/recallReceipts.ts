@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 召回回执 (Recall Receipts)
+ * 回忆标本馆 — 召回回执 (Recall Receipts)
  *
  * 记录"路径①召回"每次实际注入到主聊天 prompt 的 memoryId 列表。
  * 用途：路径②extraction 处理 buffer 时，用回执反查"这段对话期间角色被

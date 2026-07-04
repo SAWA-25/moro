@@ -1,6 +1,13 @@
 import type { CharacterProfile, GroupProfile, Message, UserProfile } from '../types';
 import { DB } from './db';
-import type { OfflineCommitInfo, OfflinePovPerson } from './offlineMode';
+import {
+  formatOfflineLengthRange,
+  normalizeOfflineWordLimit,
+  offlineWordLimitRule,
+  type OfflineCommitInfo,
+  type OfflinePovPerson,
+  type OfflineWordLimit,
+} from './offlineMode';
 import { formatCharacterWithId } from './characterIdentity';
 import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
@@ -38,6 +45,7 @@ export const DEFAULT_GROUP_OFFLINE_POV: GroupOfflinePov = { members: 'third', us
 
 const sessionKey = (groupId: string) => `moro_group_offline_session_${groupId}`;
 const povKey = (groupId: string) => `moro_group_offline_pov_${groupId}`;
+const wordLimitKey = (groupId: string) => `moro_group_offline_word_limit_${groupId}`;
 
 const isPerson = (value: unknown): value is OfflinePovPerson =>
   value === 'first' || value === 'second' || value === 'third';
@@ -85,6 +93,27 @@ export const loadGroupOfflinePov = (groupId: string): GroupOfflinePov => {
 export const saveGroupOfflinePov = (groupId: string, pov: GroupOfflinePov): void => {
   try {
     localStorage.setItem(povKey(groupId), JSON.stringify(pov));
+  } catch {
+    // ignore
+  }
+};
+
+export const loadGroupOfflineWordLimit = (groupId: string): OfflineWordLimit => {
+  try {
+    const raw = localStorage.getItem(wordLimitKey(groupId));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return normalizeOfflineWordLimit(parsed);
+  } catch {
+    // ignore
+  }
+  return {};
+};
+
+export const saveGroupOfflineWordLimit = (groupId: string, limit: OfflineWordLimit): void => {
+  try {
+    const normalized = normalizeOfflineWordLimit(limit);
+    if (normalized.maxChars) localStorage.setItem(wordLimitKey(groupId), JSON.stringify(normalized));
+    else localStorage.removeItem(wordLimitKey(groupId));
   } catch {
     // ignore
   }
@@ -205,8 +234,11 @@ export const generateGroupOfflineOpening = async (
   pov: GroupOfflinePov = loadGroupOfflinePov(group.id),
   scenario?: string,
   rerollPrevious?: string,
+  wordLimit?: OfflineWordLimit,
 ): Promise<string> => {
   const base = await buildGroupOfflineBase(group, members, userProfile);
+  const lengthRange = formatOfflineLengthRange(wordLimit, '120-280字');
+  const lengthRule = offlineWordLimitRule(wordLimit);
   const scenarioBlock = scenario?.trim()
     ? `\n### [选定开场]\n${scenario.trim()}\n请按这个设定安排大家在哪里见面、谁先出现、第一刻怎么开始。`
     : '\n### [选定开场]\n请根据最近群聊推断一个合理的见面地点和开场方式。';
@@ -220,7 +252,8 @@ ${scenarioBlock}
 ${rerollBlock}
 
 ### [任务]
-写出群体线下面对面见面的开场（120-280字）：
+写出群体线下面对面见面的开场（${lengthRange}）：
+${lengthRule}
 - 交代地点、氛围、谁已经到了/谁刚到，但只写现场会注意到的具体细节；
 - 至少让一位最适合接这个场的人有反应，可以是台词、小动作、插科打诨或沉默；
 - 承接最近群聊里的话题或约定，让这场见面像自然落地；
@@ -237,8 +270,11 @@ export const generateGroupOfflineTurn = async (
   userInput?: string,
   pov: GroupOfflinePov = loadGroupOfflinePov(group.id),
   rerollPrevious?: string,
+  wordLimit?: OfflineWordLimit,
 ): Promise<string> => {
   const base = await buildGroupOfflineBase(group, members, userProfile);
+  const lengthRange = formatOfflineLengthRange(wordLimit, '80-220字');
+  const lengthRule = offlineWordLimitRule(wordLimit);
   const userName = userProfile.name || '你';
   const transcript = formatGroupOfflineTranscript(entries, userName);
   const action = userInput?.trim()
@@ -259,7 +295,8 @@ ${action}
 ${rerollBlock}
 
 ### [任务]
-续写接下来的一小段群体现场互动（80-220字）：
+续写接下来的一小段群体现场互动（${lengthRange}）：
+${lengthRule}
 - 先回应 ${userName} 刚刚的行动/发言，没人需要回应时就让现场自然流动；
 - 让一位或几位最适合的人接话，不要强行全员轮流，不要写成主持人总结；
 - 可以穿插小动作、视线、停顿、身边环境和成员之间的打岔，但要短、具体、像真人聚在一起；

@@ -486,6 +486,30 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         onContextLimitChange(v);
         updateCharacter(char.id, { contextLimit: v });
     };
+    const charAvatarSourceLabel = cs.charAvatarChangeSource === 'user_request' ? '你请求后 TA 同意换上' : 'TA 自己从你发的图片里挑中';
+    const charAvatarUpdatedLabel = cs.charAvatarUpdatedAt
+        ? new Date(cs.charAvatarUpdatedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+        : '';
+    const restoreCharacterAvatar = () => updateConvo({
+        charAvatarOverride: undefined,
+        charAvatarChangeReason: undefined,
+        charAvatarChangeSource: undefined,
+        charAvatarSourceMessageId: undefined,
+        charAvatarPreviousOverride: undefined,
+    });
+    const syncConvoAvatarToCharacter = () => {
+        if (!cs.charAvatarOverride) return;
+        updateCharacter(char.id, {
+            avatar: cs.charAvatarOverride,
+            convoSettings: {
+                charAvatarOverride: undefined,
+                charAvatarPreviousOverride: undefined,
+                charAvatarUpdatedAt: Date.now(),
+                charAvatarHistory: (cs.charAvatarHistory || []).map((h, i) => i === 0 ? { ...h, syncedToCharacter: true } : h),
+            },
+        });
+        addToast('已同步到角色卡头像', 'success');
+    };
 
     return (
         <div
@@ -1120,9 +1144,58 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 <Page no="06" title="照片与立绘" en="Photo Assets" tape="blush" pattern="plain" paper="plain">
                     <Entry
                         mark="❅" title="TA 会自己挑头像"
-                        note="打开后，TA 看到你发来的合适图片时，可以自主把那张图设成自己的头像；关掉后不再注入这条能力提示。"
+                        note="打开后，TA 可以从你发出的图片里挑头像；你发图请求 TA 换上时，只要 TA 同意，当前单聊头像会立刻变化。"
                         side={<CandyToggle on={!!cs.allowCharAvatarFromUserImage} onToggle={() => updateConvo({ allowCharAvatarFromUserImage: !cs.allowCharAvatarFromUserImage })} />}
-                    />
+                    >
+                        <div className="space-y-2.5">
+                            <div className="rounded-xl p-2.5 text-[11.5px] leading-relaxed" style={{ background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)', color: PAPER_TONES.inkSoft }}>
+                                只会使用你在当前单聊里发出的图片；TA 自己发的配图、表情包和系统卡片不会被拿来当头像。
+                            </div>
+                            {(cs.charAvatarOverride || cs.charAvatarUpdatedAt || cs.charAvatarChangeReason) && (
+                                <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.58)', border: '1px solid rgba(176,122,141,0.18)' }}>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0" style={{ background: '#faf3f6', border: '2px solid #fff' }}>
+                                            {(cs.charAvatarOverride || char.avatar)
+                                                ? <img src={cs.charAvatarOverride || char.avatar} className="w-full h-full object-cover" alt="" />
+                                                : <span className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>头像</span>}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-[12px] font-bold truncate" style={{ color: PAPER_TONES.ink }}>
+                                                {cs.charAvatarOverride ? '当前单聊头像已覆盖' : '当前沿用角色卡头像'}
+                                            </div>
+                                            <div className="text-[10px] mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>
+                                                {cs.charAvatarUpdatedAt ? `${charAvatarUpdatedLabel} · ${charAvatarSourceLabel}` : '还没有 TA 主动换头像记录'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {cs.charAvatarChangeReason && (
+                                        <div className="rounded-lg px-2.5 py-2 text-[11.5px] leading-relaxed" style={{ background: 'rgba(176,122,141,0.08)', color: PAPER_TONES.inkSoft }}>
+                                            {cs.charAvatarChangeReason}
+                                        </div>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        {cs.charAvatarOverride && <PinButton onClick={restoreCharacterAvatar}>恢复沿用角色卡</PinButton>}
+                                        {cs.charAvatarOverride && <PinButton tone="mint" onClick={syncConvoAvatarToCharacter}>同步到角色卡</PinButton>}
+                                    </div>
+                                    {!!cs.charAvatarHistory?.length && (
+                                        <details className="text-[11px]" style={{ color: PAPER_TONES.inkFaint }}>
+                                            <summary className="cursor-pointer select-none py-1">TA 换过的头像记录（{cs.charAvatarHistory.length}）</summary>
+                                            <ul className="mt-1 space-y-1.5">
+                                                {cs.charAvatarHistory.map((h, i) => (
+                                                    <li key={`${h.at}-${i}`} className="border-l-2 pl-2" style={{ borderColor: 'rgba(176,122,141,0.3)' }}>
+                                                        <div className="font-bold" style={{ color: PAPER_TONES.inkSoft }}>
+                                                            {new Date(h.at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} · {h.source === 'user_request' ? '你请求后换上' : 'TA 自己挑中'}{h.syncedToCharacter ? ' · 已同步角色卡' : ''}
+                                                        </div>
+                                                        {h.reason && <div className="leading-snug mt-0.5">{h.reason}</div>}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </Entry>
 
                     <Entry manualAnchor="manual-chat-photo-assets" mark="❅" title="聊天立绘" note="立绘会半透明地显示在聊天界面右下角；「生图底图」是 img2img / edits 用的参考图。">
                         <div className="grid grid-cols-3 gap-3">

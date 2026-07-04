@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 旧记忆迁移工具 (Migration)
+ * 回忆标本馆 — 旧记忆迁移工具 (Migration)
  *
  * 按月把旧的 MemoryFragment[] 日度总结送给 LLM，
  * 以角色第一人称视角重新提取为 MemoryNode。
@@ -242,7 +242,7 @@ export interface MigrationProgress {
 }
 
 /**
- * 按月把旧记忆送给 LLM 重新提取，然后存入记忆宫殿
+ * 按月把旧记忆送给 LLM 重新提取，然后存入回忆标本馆
  *
  * @param charName 角色名（LLM 用第一人称时需要知道自己是谁）
  * @param memories 旧的 MemoryFragment[]（日度总结）

@@ -86,12 +86,33 @@ const stripBusinessTagsForNotification = (t: string): string =>
     // 但通知是终态、不会再渲染卡片，残留原文反而难看，这里剥掉只保留正文。
     .replace(/\[\[(?:SHARE_SONG|NEWS_CARD)[:\s][\s\S]*?\]\]/g, '');
 
-/** 引用类: `[[QUOTE|引用]] / [QUOTE|引用] / [回复 "..."]` */
-const stripQuotes = (t: string): string =>
-  t
-    .replace(/\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g, '')
-    .replace(/\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g, '')
-    .replace(/\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g, '');
+/** 引用类: `[[QUOTE|引用]] / [QUOTE|引用] / [回复 "..."] / [用户引用了某某说的「...」，并回复了 ↓]` */
+const ASSISTANT_QUOTE_RE_DOUBLE = /\[\[(?:QU[OA]TE|引用)[：:]\s*([\s\S]*?)\]\]/;
+const ASSISTANT_QUOTE_RE_SINGLE = /\[(?:QU[OA]TE|引用)[：:]\s*([^\]]*)\]/;
+const ASSISTANT_REPLY_QUOTE_RE = /\[回复\s*["“「『]([^"”」』]*?)["”」』](?:\.{0,3})\]\s*[：:]?\s*/;
+const ASSISTANT_NATURAL_REPLY_QUOTE_RE = /\[\s*(?:[^\]\n「『“"]{0,40}?)?引用了(?:[^\]\n「『“"]{0,80}?)?(?:说的)?\s*[「『“"]([\s\S]{1,500}?)[」』”"]\s*(?:[,，]\s*)?(?:并\s*)?(?:回复了?|回了|回应了)\s*(?:[↓:：]|如下)?\s*\]\s*[：:]?\s*/;
+
+const ASSISTANT_QUOTE_CLEAN_DOUBLE = /\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g;
+const ASSISTANT_QUOTE_CLEAN_SINGLE = /\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g;
+const ASSISTANT_REPLY_QUOTE_CLEAN = /\[回复\s*["“「『][^"”」』]*?["”」』](?:\.{0,3})\]\s*[：:]?\s*/g;
+const ASSISTANT_NATURAL_REPLY_QUOTE_CLEAN = /\[\s*(?:[^\]\n「『“"]{0,40}?)?引用了(?:[^\]\n「『“"]{0,80}?)?(?:说的)?\s*[「『“"]([\s\S]{1,500}?)[」』”"]\s*(?:[,，]\s*)?(?:并\s*)?(?:回复了?|回了|回应了)\s*(?:[↓:：]|如下)?\s*\]\s*[：:]?\s*/g;
+
+export function matchAssistantReplyQuoteMarker(text: string): RegExpMatchArray | null {
+  return text.match(ASSISTANT_QUOTE_RE_DOUBLE)
+    || text.match(ASSISTANT_QUOTE_RE_SINGLE)
+    || text.match(ASSISTANT_REPLY_QUOTE_RE)
+    || text.match(ASSISTANT_NATURAL_REPLY_QUOTE_RE);
+}
+
+export function stripAssistantReplyQuoteMarkers(text: string): string {
+  return text
+    .replace(ASSISTANT_QUOTE_CLEAN_DOUBLE, '')
+    .replace(ASSISTANT_QUOTE_CLEAN_SINGLE, '')
+    .replace(ASSISTANT_REPLY_QUOTE_CLEAN, '')
+    .replace(ASSISTANT_NATURAL_REPLY_QUOTE_CLEAN, '');
+}
+
+const stripQuotes = stripAssistantReplyQuoteMarkers;
 
 /** markdown 标题 `# heading` → `heading` (保留文字) */
 const stripMarkdownHeaders = (t: string): string => t.replace(/^#{1,6}\s+/gm, '');
@@ -305,7 +326,7 @@ interface ProtectedAtomSegment {
  *
  * 不切句号 — 客户端 chunkText 也不切, 保持气泡数 == banner 数.
  *
- * 引用 ([[QUOTE|引用]] / [回复 "..."]) 跟 SEND_EMOJI 一样**不**剥, 留给客户端
+ * 引用 ([[QUOTE|引用]] / [回复 "..."] / 自然语言引用横幅) 跟 SEND_EMOJI 一样**不**剥, 留给客户端
  * applyAssistantPostProcessing Step 7 / per-chunk QUOTE_RE 配对设置 aiReplyTarget.
  * banner 那边在 sanitizeTextForBanner 里单独剥, 保证通知干净.
  *

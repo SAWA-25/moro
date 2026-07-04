@@ -16,7 +16,7 @@
  *  8. 双语 <翻译><原文>...<译文>... 拆为单独 bubble
  *  9. ChatParser.splitResponse — 拆 [[SEND_EMOJI:]]
  * 10. --- 分块 + ChatParser.chunkText (换行 / CJK 空格)
- * 11. per-chunk 引用解析 ([[QUOTE:]]/[QUOTE:]/[回复 "..."]) → replyTo
+ * 11. per-chunk 引用解析 ([[QUOTE:]]/[QUOTE:]/[回复 "..."]/自然语言引用横幅) → replyTo
  * 12. hasDisplayContent + per-chunk sanitize
  * 13. 拟人打字延迟 (setTimeout)
  *
@@ -40,14 +40,27 @@ import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
 import { TAKEOUT_ORDER_EVENT, extractTakeoutOrderDirective } from './takeout';
 import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
-import { extractCharAvatarDirective, CHAR_AVATAR_FROM_USER_IMAGE_EVENT } from './charAvatarSystem';
+import {
+    assistantAcceptsAvatarRequest,
+    extractCharAvatarDirective,
+    findPendingUserAvatarRequest,
+    CHAR_AVATAR_FROM_USER_IMAGE_EVENT,
+} from './charAvatarSystem';
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractWithdrawDirective, stripFakeWithdrawNotice, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
 import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
 import { extractPatSuffixDirective, extractPatDirective, CHAR_PAT_SUFFIX_EVENT, CHAR_PAT_EVENT } from './patSuffix';
-import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
+import {
+    buildOfflineAutoStartScenario,
+    detectOfflineAutoStart,
+    detectOfflineScheduledStart,
+    extractOfflineStartDirective,
+    scheduleOfflineAutoStart,
+    setOfflinePending,
+    OFFLINE_START_EVENT,
+} from './offlineMode';
 import { sanitizeAssistantVisibleText } from './promptPrivacy';
 import { dispatchForceReplyRequest, extractForceReplyDirective } from './forceReply';
 import {
@@ -63,6 +76,7 @@ import {
     runXhsMyProfile,
     runXhsDetail,
 } from './agenticTools';
+import { matchAssistantReplyQuoteMarker, stripAssistantReplyQuoteMarkers } from './sanitize';
 
 // ─── 模块内辅助 ──────────────────────────────────────────────────────────────
 
@@ -506,16 +520,36 @@ export async function applyAssistantPostProcessing(
         }
     }
 
-    // ─── Step 1.57: [[SET_CHAR_AVATAR_FROM_LAST_IMAGE]] 角色主动把用户刚发的图当自己的头像 ───
+    // ─── Step 1.57: [[SET_CHAR_AVATAR_FROM_LAST_IMAGE]] / 用户请求换头像后同意 ───
     {
         const avatarExtract = extractCharAvatarDirective(aiContent);
+        const pendingAvatarRequest = findPendingUserAvatarRequest(contextMsgs);
         if (avatarExtract.useAvatar) {
             aiContent = avatarExtract.content;
             if (char.convoSettings?.allowCharAvatarFromUserImage && typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, {
-                    detail: { charId: char.id, reason: avatarExtract.reason },
+                    detail: {
+                        charId: char.id,
+                        reason: avatarExtract.reason,
+                        source: pendingAvatarRequest ? 'user_request' : 'autonomous',
+                        sourceMessageId: pendingAvatarRequest?.imageMessageId,
+                    },
                 }));
             }
+        } else if (
+            pendingAvatarRequest &&
+            assistantAcceptsAvatarRequest(aiContent) &&
+            char.convoSettings?.allowCharAvatarFromUserImage &&
+            typeof window !== 'undefined'
+        ) {
+            window.dispatchEvent(new CustomEvent(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, {
+                detail: {
+                    charId: char.id,
+                    reason: 'TA 同意使用你发来的图片',
+                    source: 'user_request',
+                    sourceMessageId: pendingAvatarRequest.imageMessageId,
+                },
+            }));
         }
     }
 
@@ -540,16 +574,52 @@ export async function applyAssistantPostProcessing(
         }
     }
 
-    // ─── Step 1.6: [[OFFLINE_START]] 线下模式指令 ───
-    // 自动线下开启时角色在见面情境输出该指令。先剥后播：Chat.tsx 监听事件弹线下窗口；
-    // 用户不在该角色聊天页时落 pending 标记，下次进聊天兜底弹。
+    // ─── Step 1.6: [[OFFLINE_START]] / 本地剧情检测 → 线下模式 ───
+    // 自动线下开启时，既接受模型显式指令，也用本地文本检测兜底识别“已经碰头/同处现场”。
+    // 先剥后播：Chat.tsx 监听事件弹线下窗口；用户不在该角色聊天页时落 pending 标记。
     {
         const offlineExtract = extractOfflineStartDirective(aiContent);
-        if (offlineExtract.offline) {
-            aiContent = offlineExtract.content;
-            if (char.convoSettings?.autoOffline && !char.convoSettings?.longDistanceMode && typeof window !== 'undefined') {
-                setOfflinePending(char.id);
-                window.dispatchEvent(new CustomEvent(OFFLINE_START_EVENT, { detail: { charId: char.id } }));
+        if (offlineExtract.offline) aiContent = offlineExtract.content;
+        const canAutoOffline = !!char.convoSettings?.autoOffline && !char.convoSettings?.longDistanceMode;
+        if (canAutoOffline && typeof window !== 'undefined') {
+            const recentTexts = contextMsgs
+                .filter(m => m.role !== 'system' && typeof m.content === 'string')
+                .slice(-6)
+                .map(m => `${m.role === 'user' ? (userProfile.name || '用户') : char.name}: ${String(m.content)}`);
+            const detection = detectOfflineAutoStart({
+                mode: 'private',
+                recentTexts,
+                latestText: aiContent,
+                userName: userProfile.name || '用户',
+                charName: char.name,
+            });
+            if (offlineExtract.offline || detection.offline) {
+                const scenario = detection.scenario || buildOfflineAutoStartScenario({
+                    mode: 'private',
+                    recentTexts,
+                    latestText: aiContent,
+                    userName: userProfile.name || '用户',
+                    charName: char.name,
+                });
+                setOfflinePending(char.id, scenario);
+                window.dispatchEvent(new CustomEvent(OFFLINE_START_EVENT, { detail: { charId: char.id, scenario } }));
+            } else {
+                const scheduled = detectOfflineScheduledStart({
+                    mode: 'private',
+                    recentTexts,
+                    latestText: aiContent,
+                    userName: userProfile.name || '用户',
+                    charName: char.name,
+                });
+                if (scheduled.scheduled && scheduled.dueAt && scheduled.scenario) {
+                    scheduleOfflineAutoStart({
+                        mode: 'private',
+                        targetId: char.id,
+                        dueAt: scheduled.dueAt,
+                        scenario: scheduled.scenario,
+                        matchedText: scheduled.matchedText,
+                    });
+                }
             }
         }
     }
@@ -653,14 +723,6 @@ export async function applyAssistantPostProcessing(
     }
 
     // ── 渲染基础设施 (提前声明, 供"执行功能前先展示本轮正文 A" + 末尾展示二轮结果 B 复用) ──
-    // 引用/回复标签的匹配 + 清理正则 (提前声明避免 lead-in 渲染时落入 TDZ)。
-    const QUOTE_RE_DOUBLE = /\[\[(?:QU[OA]TE|引用)[：:]\s*([\s\S]*?)\]\]/;
-    const QUOTE_RE_SINGLE = /\[(?:QU[OA]TE|引用)[：:]\s*([^\]]*)\]/;
-    const REPLY_RE_CN = /\[回复\s*[""“]([^""”]*?)[""”](?:\.{0,3})\]\s*[：:]?\s*/;
-    const QUOTE_CLEAN_DOUBLE = /\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g;
-    const QUOTE_CLEAN_SINGLE = /\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g;
-    const REPLY_CLEAN_CN = /\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g;
-
     // 把一段文本 (parseAndExecuteActions / HTML 之外的部分) 渲染成气泡并落库 —— 双语 / 表情 / 引用 / 分段
     // 与原 inline 末尾逻辑一致。抽出来是为了让"执行功能前的本轮正文 A"能在二轮前先展示, 二轮结果 B 复用同一套。
     const renderAndPersist = async (rawContent: string, firstThinkingChain: string | null): Promise<number> => {
@@ -672,7 +734,7 @@ export async function applyAssistantPostProcessing(
             return merged;
         };
 
-        // 把 [[QUOTE: ...]] / [回复 "..."] 的引用文本解析成"被回复的那条用户消息"。
+        // 把 [[QUOTE: ...]] / [回复 "..."] / 自然语言引用横幅的引用文本解析成"被回复的那条用户消息"。
         // 开了翻译的外语/粤语角色，引用文本往往是外语、或被 <原文>/<译文> 翻译标签包裹，
         // 跟库里中文用户消息逐字 includes 匹配会失败 → 之前表现为丢引用 / 空引用气泡。
         // 这里先剥掉翻译标签再逐字/前缀精确定位；匹配不到就兜底到「最近一条用户文字消息」
@@ -704,7 +766,7 @@ export async function applyAssistantPostProcessing(
 
         // Quote/Reply 目标 (双语路径用)
         let aiReplyTarget: { id: number, content: string, name: string } | undefined;
-        const firstQuoteMatch = rawContent.match(QUOTE_RE_DOUBLE) || rawContent.match(QUOTE_RE_SINGLE) || rawContent.match(REPLY_RE_CN);
+        const firstQuoteMatch = matchAssistantReplyQuoteMarker(rawContent);
         if (firstQuoteMatch) aiReplyTarget = resolveQuoteTarget(firstQuoteMatch[1]);
         if (!aiReplyTarget) aiReplyTarget = defaultReplyTo;
 
@@ -867,10 +929,10 @@ export async function applyAssistantPostProcessing(
                         chunk = resolved.text;
 
                         let chunkReplyTarget: { id: number, content: string, name: string } | undefined;
-                        const chunkQuoteMatch = chunk.match(QUOTE_RE_DOUBLE) || chunk.match(QUOTE_RE_SINGLE) || chunk.match(REPLY_RE_CN);
+                        const chunkQuoteMatch = matchAssistantReplyQuoteMarker(chunk);
                         if (chunkQuoteMatch) {
                             chunkReplyTarget = resolveQuoteTarget(chunkQuoteMatch[1]);
-                            chunk = chunk.replace(QUOTE_CLEAN_DOUBLE, '').replace(QUOTE_CLEAN_SINGLE, '').replace(REPLY_CLEAN_CN, '').trim();
+                            chunk = stripAssistantReplyQuoteMarkers(chunk).trim();
                         }
 
                         const replyData = chunkReplyTarget || (globalMsgIndex === 0 ? aiReplyTarget : undefined);

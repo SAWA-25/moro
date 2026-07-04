@@ -604,7 +604,7 @@ const CallApp: React.FC = () => {
   };
   const loadCallRecords = async (charId?: string) => {
     if (!charId) return setCallRecords([]);
-    // includeProcessed=true：通话消息与聊天消息同存一个 store，记忆宫殿处理后会推进
+    // includeProcessed=true：通话消息与聊天消息同存一个 store，回忆标本馆处理后会推进
     // 高水位标记 mp_lastMsgId_<charId>，默认的 getMessagesByCharId 会过滤掉水位线之前的
     // 消息——这会导致继续聊天后通话记录被"清空"。这里必须读取全部消息。
     const all = await DB.getMessagesByCharId(charId, true);

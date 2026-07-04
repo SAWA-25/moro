@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { CharacterProfile, GroupProfile, UserProfile } from '../types';
 import { DB } from './db';
 import {
@@ -11,8 +12,10 @@ import {
   hasGroupOfflineSession,
   loadGroupOfflinePov,
   loadGroupOfflineSession,
+  loadGroupOfflineWordLimit,
   saveGroupOfflinePov,
   saveGroupOfflineSession,
+  saveGroupOfflineWordLimit,
   type GroupOfflineEntry,
   type GroupOfflinePov,
 } from './groupOfflineMode';
@@ -90,6 +93,16 @@ describe('group offline mode', () => {
     expect(loadGroupOfflinePov('group-2')).toEqual(DEFAULT_GROUP_OFFLINE_POV);
   });
 
+  it('persists custom word limits per group id', () => {
+    saveGroupOfflineWordLimit('group-1', { maxChars: 180 });
+
+    expect(loadGroupOfflineWordLimit('group-1')).toEqual({ maxChars: 180 });
+    expect(loadGroupOfflineWordLimit('group-2')).toEqual({});
+
+    saveGroupOfflineWordLimit('group-1', {});
+    expect(loadGroupOfflineWordLimit('group-1')).toEqual({});
+  });
+
   it('formats a mixed group offline transcript with speaker names', () => {
     expect(formatGroupOfflineTranscript(entries, 'Me')).toBe([
       '(scene) The table by the window is already set.',
@@ -127,6 +140,18 @@ describe('group offline mode', () => {
       groupId: group.id,
       groupOfflineSession: true,
     }));
+  });
+
+  it('keeps group auto-offline opt-in and documents the director trigger rule', () => {
+    const source = readFileSync('apps/ChatHub.tsx', 'utf8');
+
+    expect(source).toContain('autoOffline: !!raw.autoOffline');
+    expect(source).toContain('聊着聊着就赴约');
+    expect(source).toContain('[[OFFLINE_START]]');
+    expect(source).toContain('只有当群聊剧情已经明确进入线下现场时');
+    expect(source).toContain('明天下午三点楼下见');
+    expect(source).toContain('系统会在约定时间自动打开群聊赴约窗口');
+    expect(source).toContain('本群没有开启自动赴约');
   });
 
   it('generates a group opening with roster, recent chat, and selected scenario', async () => {
@@ -175,8 +200,8 @@ describe('group offline mode', () => {
   it('keeps same-name group members separate with hidden ids in prompts', async () => {
     const fetchMock = mockFetchContent('Opening scene');
     const sameNameMembers = [
-      { id: 'char-a', name: 'Same', avatar: 'a.png' },
-      { id: 'char-b', name: 'Same', avatar: 'b.png' },
+      { id: 'char-a', modelId: 'model-a', name: 'Same', avatar: 'a.png' },
+      { id: 'char-b', modelId: 'model-b', name: 'Same', avatar: 'b.png' },
     ] as CharacterProfile[];
 
     await generateGroupOfflineOpening(
@@ -190,8 +215,10 @@ describe('group offline mode', () => {
 
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     const prompt = body.messages[0].content;
-    expect(prompt).toContain('Same (ID: char-a)');
-    expect(prompt).toContain('Same (ID: char-b)');
+    expect(prompt).toContain('Same (ID: model-a)');
+    expect(prompt).toContain('Same (ID: model-b)');
+    expect(prompt).not.toContain('Same (ID: char-a)');
+    expect(prompt).not.toContain('Same (ID: char-b)');
   });
 
   it('generates a group turn from the local scene transcript and user action', async () => {
@@ -205,6 +232,8 @@ describe('group offline mode', () => {
       entries,
       'I wave at the table.',
       DEFAULT_GROUP_OFFLINE_POV,
+      undefined,
+      { maxChars: 120 },
     );
 
     expect(result).toBe('Next turn');
@@ -214,5 +243,7 @@ describe('group offline mode', () => {
     expect(prompt).toContain('Mia: I saved you a seat.');
     expect(prompt).toContain('Noah: We ordered tea.');
     expect(prompt).toContain('I wave at the table.');
+    expect(prompt).toContain('续写接下来的一小段群体现场互动（不超过120字）');
+    expect(prompt).toContain('字数上限是 120 字');
   });
 });

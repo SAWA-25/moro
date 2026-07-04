@@ -19,7 +19,7 @@ import BankAssetIcon, { isBankAssetUrl } from './BankAssetIcon';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { processImage } from '../../utils/file';
-import { Armchair, PaintBucket, SquaresFour, Image as ImageIcon, HouseSimple, PencilSimple, type Icon } from '@phosphor-icons/react';
+import { Armchair, PaintBucket, SquaresFour, Image as ImageIcon, HouseSimple, PencilSimple, Trash, type Icon } from '@phosphor-icons/react';
 
 const ROOM_UNLOCK_COSTS: Record<string, number> = {
     'room-1f-left': 0,
@@ -68,6 +68,7 @@ interface Props {
     userProfile: UserProfile;
     apiConfig: APIConfig;
     updateState: (updater: (prev: BankShopState) => BankShopState) => Promise<void>;
+    onConsumeDecorEnergy?: (cost: number, label: string) => Promise<boolean>;
     onStaffClick?: (staff: ShopStaff) => void;
     onOpenGuestbook: () => void;
     /** 擦吧台攒 AP：返回本次实得 AP（0 = 冷却中） */
@@ -207,7 +208,7 @@ const CafeBackdrop = React.memo(() => (
 ));
 
 const BankDollhouse: React.FC<Props> = ({
-    shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook, onWipeCounter
+    shopState, dollhouseState, onDollhouseChange, characters, updateState, onConsumeDecorEnergy, onStaffClick, onOpenGuestbook, onWipeCounter
 }) => {
     const { addToast } = useOS();
 
@@ -476,6 +477,11 @@ const BankDollhouse: React.FC<Props> = ({
 
     const getLayout = (layoutId: string): RoomLayout | undefined => ROOM_LAYOUTS.find(l => l.id === layoutId);
 
+    const consumeDecorEnergy = async (cost: number, label: string): Promise<boolean> => {
+        if (!onConsumeDecorEnergy) return true;
+        return onConsumeDecorEnergy(cost, label);
+    };
+
     const handleUnlockRoom = async (roomId: string) => {
         const cost = ROOM_UNLOCK_COSTS[roomId] || 150;
         if (shopState.actionPoints < cost) {
@@ -590,7 +596,8 @@ const BankDollhouse: React.FC<Props> = ({
         return moved;
     };
 
-    const handleSetWallpaper = async (roomId: string, style: string) => {
+    const handleSetWallpaper = async (roomId: string, style: string, chargeEnergy = true) => {
+        if (chargeEnergy && !(await consumeDecorEnergy(2, '更换墙纸'))) return;
         await saveDollhouse(prev => ({
             ...prev,
             rooms: prev.rooms.map(r => r.id === roomId ? { ...r, wallpaperLeft: style, wallpaperRight: style } : r)
@@ -598,7 +605,8 @@ const BankDollhouse: React.FC<Props> = ({
         addToast('墙纸已更换', 'success');
     };
 
-    const handleSetFloor = async (roomId: string, style: string) => {
+    const handleSetFloor = async (roomId: string, style: string, chargeEnergy = true) => {
+        if (chargeEnergy && !(await consumeDecorEnergy(2, '更换地板'))) return;
         await saveDollhouse(prev => ({
             ...prev,
             rooms: prev.rooms.map(r => r.id === roomId ? { ...r, floorStyle: style } : r)
@@ -607,6 +615,7 @@ const BankDollhouse: React.FC<Props> = ({
     };
 
     const handleAddFurniture = async (roomId: string, stickerUrl: string, surface: 'floor' | 'leftWall', pos?: { x: number; y: number }) => {
+        if (!(await consumeDecorEnergy(1, '摆放家具'))) return;
         const newSticker: DollhouseSticker = {
             id: `stk-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
             url: stickerUrl,
@@ -704,6 +713,19 @@ const BankDollhouse: React.FC<Props> = ({
         }
     };
 
+    useEffect(() => {
+        if (!draggingStickerInfo) return;
+        const finishDrag = (event: PointerEvent) => {
+            void handleStickerPointerUp(event);
+        };
+        window.addEventListener('pointerup', finishDrag);
+        window.addEventListener('pointercancel', finishDrag);
+        return () => {
+            window.removeEventListener('pointerup', finishDrag);
+            window.removeEventListener('pointercancel', finishDrag);
+        };
+    }, [draggingStickerInfo, overTrash, localStickerPos]);
+
     const handleStickerScaleChange = async (roomId: string, stickerId: string, delta: number) => {
         await saveDollhouse(prev => ({
             ...prev,
@@ -740,21 +762,16 @@ const BankDollhouse: React.FC<Props> = ({
     const handleChangeLayout = async (roomId: string, layoutId: string) => {
         const layout = getLayout(layoutId);
         if (!layout) return;
-        if (layout.apCost > 0 && shopState.actionPoints < layout.apCost) {
-            addToast(`店员精力不够（需要 ${layout.apCost} 点）`, 'error');
+        const room = dollhouseState.rooms.find(r => r.id === roomId);
+        if (room?.layoutId === layoutId) {
+            addToast('已经是这个房型了', 'info');
             return;
         }
-        // Save dollhouse changes separately from AP deduction
+        if (!(await consumeDecorEnergy(8, '切换房型'))) return;
         await saveDollhouse(prev => ({
             ...prev,
             rooms: prev.rooms.map(r => r.id === roomId ? { ...r, layoutId } : r)
         }));
-        if (layout.apCost > 0) {
-            await updateState(prev => ({
-                ...prev,
-                actionPoints: prev.actionPoints - layout.apCost,
-            }));
-        }
         addToast('房型已更换！', 'success');
     };
 
@@ -810,6 +827,7 @@ const BankDollhouse: React.FC<Props> = ({
         }
         // Use full-res image if available (local upload), otherwise use the URL as-is
         const url = (textureFullRef.current || textureUrl).trim();
+        if (!(await consumeDecorEnergy(6, '上传装修素材'))) return;
         if (textureTarget === 'room') {
             // Store base64 or URL directly in dollhouse state (same as RoomApp's roomConfig)
             await saveDollhouse(prev => ({
@@ -818,9 +836,9 @@ const BankDollhouse: React.FC<Props> = ({
             }));
             addToast('背景图已更新', 'success');
         } else if (textureTarget === 'wallpaper') {
-            await handleSetWallpaper(activeRoom.id, url);
+            await handleSetWallpaper(activeRoom.id, url, false);
         } else {
-            await handleSetFloor(activeRoom.id, url);
+            await handleSetFloor(activeRoom.id, url, false);
         }
         textureFullRef.current = '';
         setShowTextureModal(false);
@@ -1004,6 +1022,12 @@ const BankDollhouse: React.FC<Props> = ({
                                                 onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
                                                 className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
                                             >-</button>
+                                            <button
+                                                title="删除家具"
+                                                onClick={(e) => { e.stopPropagation(); void handleDeleteSticker(room.id, sticker.id).then(() => addToast('家具已删除', 'success')); }}
+                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
+                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#F2B8B5] shadow-sm flex items-center justify-center text-[#B42318] active:scale-90 transition-transform"
+                                            ><Trash size={12} weight="bold" /></button>
                                         </div>
                                     )}
                                 </div>
@@ -1045,6 +1069,12 @@ const BankDollhouse: React.FC<Props> = ({
                                                 onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
                                                 className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
                                             >-</button>
+                                            <button
+                                                title="删除家具"
+                                                onClick={(e) => { e.stopPropagation(); void handleDeleteSticker(room.id, sticker.id).then(() => addToast('家具已删除', 'success')); }}
+                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
+                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#F2B8B5] shadow-sm flex items-center justify-center text-[#B42318] active:scale-90 transition-transform"
+                                            ><Trash size={12} weight="bold" /></button>
                                         </div>
                                     )}
                                 </div>
@@ -1419,9 +1449,9 @@ const BankDollhouse: React.FC<Props> = ({
                                                     <div className="text-[10px] text-[#B8956E] mt-0.5">{layout.description}</div>
                                                 </div>
                                                 <div className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
-                                                    isActive ? 'bg-[#FF8E6B] text-white' : layout.apCost > 0 ? 'bg-[#FFF4E8] text-[#C4956A]' : 'bg-[#E8F5E9] text-[#4CAF50]'
+                                                    isActive ? 'bg-[#FF8E6B] text-white' : 'bg-[#FFF4E8] text-[#C4956A]'
                                                 }`}>
-                                                    {isActive ? '当前' : layout.apCost > 0 ? shopEnergyText(layout.apCost) : '免费'}
+                                                    {isActive ? '当前' : '总部 8'}
                                                 </div>
                                             </button>
                                         );

@@ -22,7 +22,6 @@ export enum AppID {
   Worldbook = 'worldbook', 
   Novel = 'novel', 
   Bank = 'bank', // New App
-  XhsStock = 'xhs_stock', // XHS image stock for publishing
   SpecialMoments = 'special_moments', // Valentine's Day & future events
   XhsFreeRoam = 'xhs_free_roam', // Character autonomous XHS activity
   Songwriting = 'songwriting', // Songwriting / Lyric creation app
@@ -30,7 +29,7 @@ export enum AppID {
   VoiceDesigner = 'voice_designer', // 捏声音 — MiniMax 音色设计器
   Guidebook = 'guidebook', // 攻略本 — 角色攻略用户小游戏
   LifeSim = 'lifesim', // 模拟人生 — 与角色共同经营的小世界
-  MemoryPalace = 'memory_palace', // 记忆宫殿 — 七个房间可视化
+  MemoryPalace = 'memory_palace', // 回忆标本馆 — 七个房间可视化
   Handbook = 'handbook', // 手账 — 跨角色聚合的生活留痕本（LLM 代笔 + 角色生活流陪伴）
   QQBridge = 'qq_bridge', // QQ 桥接 — 通过 NapCat 把 QQ 私聊接入当前角色，共享 IndexedDB 上下文
   HotNews = 'hot_news', // 热点 — 分时段召回的多平台热榜可视化（决定角色可能聊起的话题）
@@ -1918,6 +1917,7 @@ export interface BankBusinessTemplate {
     id: string;
     name: string;
     icon: string;
+    startupCost: number;
     vibe: string;
     customerGroups: string[];
     margin: number;
@@ -2409,10 +2409,40 @@ export interface BankLifeState {
     aiLastGeneratedAt?: Record<string, string>;
 }
 
+export type BankDollhousesByShopId = Record<string, DollhouseState>;
+
+export interface BankShopBranch {
+    id: string;
+    businessTypeId: string;
+    businessName: string;
+    openedAt: string;
+    shop: BankShopState;
+    firedStaff: ShopStaff[];
+    shopProducts: BankLifeShopProduct[];
+    shopCustomers: string[];
+    shopEvents: BankLifeEvent[];
+}
+
+export interface BankShopDailyRewards {
+    dateStr: string;
+    headquartersPatrol?: boolean;
+    shelfByShopId?: Record<string, boolean>;
+    reviewByShopId?: Record<string, boolean>;
+    idleBonusByShopId?: Record<string, boolean>;
+}
+
+export interface BankShopPortfolioState {
+    activeShopId: string;
+    headquartersEnergy: number;
+    branches: BankShopBranch[];
+    dailyRewards?: BankShopDailyRewards;
+}
+
 export interface BankFullState {
     config: BankConfig;
     shop: BankShopState;
     life?: BankLifeState;
+    shopPortfolio?: BankShopPortfolioState;
     goals: SavingsGoal[];
     firedStaff?: ShopStaff[]; // Fired staff pool: can rehire or permanently delete
     todaySpent: number;
@@ -3374,7 +3404,7 @@ export interface CharacterProfile {
     };
   };
 
-  // 记忆宫殿 / 认知流记忆 (Memory Palace / Cognitive Flow)
+  // 回忆标本馆 / Cognitive Flow
   /**
    * 角色长期记忆底层：
    * - cognitive_flow：默认，本地 IndexedDB 认知流（证据链 + Event/Episode/Saga/feel + 权重池）
@@ -3391,7 +3421,7 @@ export interface CharacterProfile {
   autoArchiveEnabled?: boolean;
   personalityStyle?: 'emotional' | 'narrative' | 'imagery' | 'analytical';
   ruminationTendency?: number;  // 反刍倾向 0-1，默认 0.3
-  memoryPalaceInjection?: string;  // 记忆宫殿检索结果，注入到 System Prompt（运行时填充，不持久化）
+  memoryPalaceInjection?: string;  // 回忆标本馆检索结果，注入到 System Prompt（运行时填充，不持久化）
 
   // 自我领悟词条：消化过程中 self_room 反刍产生的常驻认知
   // 像情绪 buff 一样注入到 contextBuilder 的角色设定下方
@@ -3900,6 +3930,18 @@ export interface ConvoSettings {
     charAvatarOverride?: string;
     /** 允许 TA 自主把用户发来的图片设为自己的头像。 */
     allowCharAvatarFromUserImage?: boolean;
+    /** TA 最近一次换本会话头像的理由。 */
+    charAvatarChangeReason?: string;
+    /** TA 最近一次换本会话头像的时间戳。 */
+    charAvatarUpdatedAt?: number;
+    /** TA 最近一次换头像的来源：主动挑图 / 用户请求后同意。 */
+    charAvatarChangeSource?: 'autonomous' | 'user_request';
+    /** TA 最近一次使用的用户图片消息 id。 */
+    charAvatarSourceMessageId?: number;
+    /** 撤回最近一次头像更换时恢复的旧本会话头像；undefined 表示恢复沿用角色卡头像。 */
+    charAvatarPreviousOverride?: string;
+    /** TA 历次挑头像的轻量记录（不重复存图片内容，最新在前）。 */
+    charAvatarHistory?: Array<{ sourceMessageId?: number; reason?: string; source?: 'autonomous' | 'user_request'; at: number; syncedToCharacter?: boolean }>;
     /** 主控·本会话头像（覆盖用户头像，仅本会话展示） */
     userAvatarOverride?: string;
     /** 角色立绘：聊天界面右下角半透明立绘（galgame 式） */
@@ -3929,6 +3971,8 @@ export interface GroupConvoSettings {
     liveChatOverride?: LiveChatOverride;
     autoReplyEachUserMessage?: boolean;
     narrationMode?: boolean;
+    /** 群聊自动线下：群聊发展到大家已经碰头/同处现场时自动进入群聊赴约窗口。 */
+    autoOffline?: boolean;
     innerVoiceEnabled?: boolean;
     translationEnabled?: boolean;
     translateSourceLang?: string;
@@ -5760,6 +5804,7 @@ export interface FullBackupData {
     // Bank Data
     bankState?: BankFullState;
     bankDollhouse?: DollhouseState;
+    bankDollhouses?: BankDollhousesByShopId;
     bankTransactions?: BankTransaction[];
 
     socialAppData?: {
@@ -5827,7 +5872,7 @@ export interface FullBackupData {
     // LifeSim
     lifeSimState?: LifeSimState | null;
 
-    // Memory Palace (记忆宫殿)
+    // 回忆标本馆
     memoryNodes?: any[];
     memoryLinks?: any[];
     topicBoxes?: any[];
@@ -5847,7 +5892,7 @@ export interface FullBackupData {
     trackers?: Tracker[];
     trackerEntries?: TrackerEntry[];
 
-    // Memory Palace 批次处理元数据
+    // 回忆标本馆 批次处理元数据
     memoryBatches?: any[];
 
     // Pixel Home（小屋像素界面）

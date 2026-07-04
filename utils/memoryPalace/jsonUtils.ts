@@ -1,5 +1,5 @@
 /**
- * Memory Palace — JSON 安全解析工具
+ * 回忆标本馆 — JSON 安全解析工具
  *
  * LLM 返回的 JSON 经常有格式问题：
  * - 未转义的引号

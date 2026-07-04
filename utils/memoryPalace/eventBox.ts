@@ -1,5 +1,5 @@
 /**
- * Memory Palace — EventBox 创建/合并/管理
+ * 回忆标本馆 — EventBox 创建/合并/管理
  *
  * EventBox 把"同一件事"的多条记忆绑在一起。
  * 创建源：

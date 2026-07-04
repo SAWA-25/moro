@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 巩固 (Consolidation)
+ * 回忆标本馆 — 巩固 (Consolidation)
  *
  * 模拟短期记忆 → 长期记忆的过程：
  * - 客厅 → 卧室晋升

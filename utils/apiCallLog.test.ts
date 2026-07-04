@@ -2,8 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { API_USAGE_CATALOG, getApiUsageFeature, hydrateApiUsageMeta, isApiUsageFeatureId, makeApiUsageMeta } from './apiUsageCatalog';
+import { recordApiCall, type ApiCallLogEntry } from './apiCallLog';
+import { DB } from './db';
 import { llmComplete } from './llmComplete';
 import type { ResolvedApi } from './auxApi';
+
+vi.mock('./db', () => ({
+    DB: {
+        appendApiCallLog: vi.fn(async () => undefined),
+    },
+}));
 
 const ROOT = process.cwd();
 const SCAN_DIRS = ['apps', 'components', 'utils', 'hooks', 'context', 'worker'];
@@ -130,6 +138,14 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+async function waitForApiLogAppend() {
+    const append = vi.mocked(DB.appendApiCallLog);
+    for (let i = 0; i < 10 && append.mock.calls.length === 0; i++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    return append;
+}
+
 describe('API 后台流水登记表', () => {
     it('featureId 能解析出唯一 App / 功能 / 入口路径', () => {
         const ids = API_USAGE_CATALOG.map(item => item.featureId);
@@ -165,6 +181,48 @@ describe('API 后台流水登记表', () => {
         expect(legacy.appName).toBe('消息');
         expect(legacy.purpose).toBe('聊天回复');
         expect(legacy.apiRole).toBe('main');
+    });
+});
+
+describe('recordApiCall API 后台流水内容', () => {
+    it('成功的流式响应不会被写成报错文案', async () => {
+        const append = vi.mocked(DB.appendApiCallLog);
+        append.mockClear();
+
+        recordApiCall({
+            url: 'https://api.example.test/v1/chat/completions',
+            method: 'POST',
+            body: JSON.stringify({ model: 'stream-model', messages: [{ role: 'user', content: 'hi' }] }),
+            status: 200,
+            statusText: 'OK',
+            ok: true,
+            responseText: 'data: {"choices":[{"delta":{"content":"你好"}}]}\n\ndata: [DONE]',
+        });
+
+        await waitForApiLogAppend();
+        const entry = append.mock.calls[0]?.[0] as ApiCallLogEntry;
+        expect(entry.ok).toBe(true);
+        expect(entry.errorMessage).toBeUndefined();
+    });
+
+    it('失败响应仍会保留报错文案', async () => {
+        const append = vi.mocked(DB.appendApiCallLog);
+        append.mockClear();
+
+        recordApiCall({
+            url: 'https://api.example.test/v1/chat/completions',
+            method: 'POST',
+            body: JSON.stringify({ model: 'bad-model', messages: [{ role: 'user', content: 'hi' }] }),
+            status: 401,
+            statusText: 'Unauthorized',
+            ok: false,
+            response: { error: { message: 'Invalid API key' } },
+        });
+
+        await waitForApiLogAppend();
+        const entry = append.mock.calls[0]?.[0] as ApiCallLogEntry;
+        expect(entry.ok).toBe(false);
+        expect(entry.errorMessage).toBe('Invalid API key');
     });
 });
 

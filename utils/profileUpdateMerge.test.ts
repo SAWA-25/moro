@@ -16,6 +16,8 @@ const baseChar = (): CharacterProfile => ({
     autoOffline: true,
     allowCharAvatarFromUserImage: true,
     liveChatOverride: 'on',
+    charAvatarChangeReason: '就用这张',
+    charAvatarHistory: [{ sourceMessageId: 9, reason: '就用这张', source: 'user_request', at: 100 }],
   },
   socialProfile: {
     handle: 'moro_a',
@@ -76,6 +78,20 @@ describe('profile update merging', () => {
 
     expect(merged.convoSettings).toHaveProperty('liveChatOverride', undefined);
     expect(merged.convoSettings?.proactiveCallEnabled).toBe(true);
+  });
+
+  it('keeps char avatar change metadata while merging sibling convo settings', () => {
+    const merged = mergeCharacterProfileUpdate(baseChar(), {
+      convoSettings: { charAvatarOverride: 'data:image/png;base64,new' },
+    });
+
+    expect(merged.convoSettings?.allowCharAvatarFromUserImage).toBe(true);
+    expect(merged.convoSettings?.charAvatarChangeReason).toBe('就用这张');
+    expect(merged.convoSettings?.charAvatarHistory?.[0]).toMatchObject({
+      sourceMessageId: 9,
+      source: 'user_request',
+    });
+    expect(merged.convoSettings?.charAvatarOverride).toBe('data:image/png;base64,new');
   });
 
   it('merges other private settings bags used by the chat settings page', () => {

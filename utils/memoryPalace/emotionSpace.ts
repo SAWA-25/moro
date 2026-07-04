@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 情感空间 (Russell Circumplex of Affect)
+ * 回忆标本馆 — 情感空间 (Russell Circumplex of Affect)
  *
  * 把情绪从离散字符串（'happy' / 'sad'）升级成二维连续坐标：
  *   - valence（效价）: -1 极痛苦 → +1 极愉悦

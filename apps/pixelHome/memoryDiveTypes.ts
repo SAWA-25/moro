@@ -109,7 +109,7 @@ export interface DiveLLMRequest {
   slotId?: string;
   slotName?: string;
   slotCategory?: string;
-  /** 从记忆宫殿检索到的相关记忆 */
+  /** 从回忆标本馆检索到的相关记忆 */
   memories: string[];
   /** 探索模式 */
   mode: DiveMode;

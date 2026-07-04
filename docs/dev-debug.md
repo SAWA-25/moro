@@ -306,7 +306,7 @@ LLM 日志里的聊天历史动辄几十条，整段塞进 localStorage 很快�
 | `utils/activeMsgRuntime.ts` | 183 | `[ActiveMsg] restore xhs session notes failed` | xhs note 恢复失败 |
 | `utils/activeMsgRuntime.ts` | 237 | `[push:toast]` | 通知文案 |
 | `utils/activeMsgRuntime.ts` | 346 | `[DevDebug] instant-push LLM log failed` | **自身的元错误，别接！会绕死或加重 bug** |
-| `utils/activeMsgRuntime.ts` | 385 / 387 / 390 | `[push:memory-palace]` 几条 | 记忆宫殿 stage / 异常 |
+| `utils/activeMsgRuntime.ts` | 385 / 387 / 390 | `[push:memory-palace]` 几条 | 回忆标本馆 stage / 异常 |
 | `utils/activeMsgRuntime.ts` | 445 | `[flush:emotion_update] apply failed` | 情绪更新落库失败 |
 | `utils/activeMsgRuntime.ts` | 569 | `[instant-push] runPendingToolCalls failed` | 工具调用待办失败 |
 | `utils/activeMsgRuntime.ts` | 604 | `[ActiveMsg] backfill reasoning failed` | reasoning 回填失败 |

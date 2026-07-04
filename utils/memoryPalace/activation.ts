@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 扩散激活 (Spreading Activation)
+ * 回忆标本馆 — 扩散激活 (Spreading Activation)
  *
  * 检索命中的记忆沿关联网络"联想"到相关记忆。
  * 人格风格影响不同关联类型的权重。

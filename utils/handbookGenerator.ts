@@ -78,7 +78,7 @@ async function getTodayChatLines(
     userName: string,
 ): Promise<{ lines: string[]; userMsgCount: number }> {
     const { start, end } = dayRange(date);
-    // includeProcessed=true 绕过记忆宫殿水位线，拿到 raw 数据
+    // includeProcessed=true 绕过回忆标本馆水位线，拿到 raw 数据
     const all = await DB.getMessagesByCharId(char.id, true);
     const today = all
         .filter(m => m.timestamp >= start && m.timestamp < end)

@@ -88,7 +88,7 @@ function buildEmotionEvalPrompt(
     includeContext: boolean = true
 ): string {
     // 直接复用主 API 的完整 system prompt 和消息历史，确保 100% 信息对齐
-    // （包含：角色设定、印象档案、世界书、记忆宫殿、实时信息、日程内心旁白、群聊、日记标题等）
+    // （包含：角色设定、印象档案、世界书、回忆标本馆、实时信息、日程内心旁白、群聊、日记标题等）
     const currentBuffs = char.activeBuffs || [];
 
     // 将主 API 的消息数组展平成文本（保留时间戳、引用、特殊消息类型等格式）
@@ -451,8 +451,8 @@ export const useChatAI = ({
     const memoryPalaceStatusRef = useRef(memoryPalaceStatus);
     memoryPalaceStatusRef.current = memoryPalaceStatus;
 
-    // triggerAI 的 finally 在 AI 流式回复完后才跑记忆宫殿后台任务。
-    // 闭包里捕获的 char 是 hook 调用时那一份，如果用户在流式中途把宫殿关了，
+    // triggerAI 的 finally 在 AI 流式回复完后才跑回忆标本馆后台任务。
+    // 闭包里捕获的 char 是 hook 调用时那一份，如果用户在流式中途把回忆标本馆关了，
     // 这里读 char.memoryPalaceEnabled 仍然是 true，导致关掉后还会再触发一次
     // LLM 提取（+ 50 轮认知消化）。用 ref 在 finally 里读最新状态。
     const charRef = useRef(char);
@@ -520,7 +520,7 @@ export const useChatAI = ({
         }
     };
 
-    // beforeunload 保护：记忆宫殿后台处理中时，阻止用户意外关闭页面
+    // beforeunload 保护：回忆标本馆后台处理中时，阻止用户意外关闭页面
     useEffect(() => {
         const handler = (e: BeforeUnloadEvent) => {
             if (memoryPalaceStatusRef.current) {
@@ -1008,7 +1008,7 @@ export const useChatAI = ({
             // ─── Instant Push 分支 ───
             // 与本地 fetch 对称：sendInstantPushAndAwaitReply 内部完成 sub 获取 / push 监听 /
             // 300s 超时兜底，返回时 push 已落库（或失败）。外层 finally 统一清 isTyping /
-            // KeepAlive / 跑 memory palace 后处理，与本地路径完全对齐。
+            // KeepAlive / 跑 memory gallery 后处理，与本地路径完全对齐。
             // worker 端跑完 LLM → push → SW → activeMsgRuntime.flushInboxToChat 写 DB 并刷 UI。
             if (instantOn) {
                 const instantResult = await sendInstantPushAndAwaitReply({
@@ -1367,7 +1367,7 @@ export const useChatAI = ({
             setXhsStatus('');
 
             // 回神校准：每完成一轮 AI 回复，剩余生效轮数 -1，归零即清除（让校准自然淡出回到常态）。
-            // 放在 finally 顶部，确保无论记忆宫殿是否开启都会衰减；读 charRef 拿最新状态。
+            // 放在 finally 顶部，确保无论回忆标本馆是否开启都会衰减；读 charRef 拿最新状态。
             try {
                 const liveCharForRecenter = charRef.current?.id === char.id ? charRef.current : null;
                 const rc = liveCharForRecenter?.recenterCalibration;
@@ -1379,7 +1379,7 @@ export const useChatAI = ({
                 }
             } catch { /* 校准衰减失败不影响主流程 */ }
 
-            // Memory Palace — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
+            // 回忆标本馆 — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
             // 回忆标本馆只走文具盒副 API；未配置副 API 时完全跳过后台提取/整理。
             const { llm: mpLLM } = resolveMemoryPalaceAuxConfigs(auxApiConfig, memoryPalaceConfig);
             // 读 ref 拿到最新的 char 状态；同 id 才信任，否则保守跳过（用户已经切角色了）
@@ -1397,7 +1397,7 @@ export const useChatAI = ({
                         setMemoryPalaceStatus(stage);
                     })
                     .then(async (pipelineResult) => {
-                        // pipeline 跑的过程中用户可能又关掉了宫殿，跑完后所有"额外动作"
+                        // pipeline 跑的过程中用户可能又关掉了回忆标本馆，跑完后所有"额外动作"
                         // （autoArchive 写 char.memories / 50 轮认知消化的 LLM 调用）都要再 check 一次。
                         const liveAfter = charRef.current?.id === char.id ? charRef.current : null;
                         if (!isMemoryFeatureEnabled(liveAfter)) return;

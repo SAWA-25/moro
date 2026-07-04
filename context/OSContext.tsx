@@ -263,7 +263,7 @@ const defaultRealtimeConfig: RealtimeConfig = {
   cacheMinutes: 30
 };
 
-// 记忆宫殿全局配置。API 渠道统一走文具盒副 API；旧检索配置已废弃。
+// 回忆标本馆全局配置。API 渠道统一走文具盒副 API；旧检索配置已废弃。
 export type MemoryPalaceGlobalConfig = Record<string, never>;
 
 const defaultMemoryPalaceConfig: MemoryPalaceGlobalConfig = {};
@@ -349,7 +349,7 @@ interface OSContextType {
   realtimeConfig: RealtimeConfig;
   updateRealtimeConfig: (updates: Partial<RealtimeConfig>) => void;
 
-  // 记忆宫殿全局配置（所有角色共用）
+  // 回忆标本馆全局配置（所有角色共用）
   memoryPalaceConfig: MemoryPalaceGlobalConfig;
   updateMemoryPalaceConfig: (updates: Partial<MemoryPalaceGlobalConfig>) => void;
 
@@ -645,7 +645,7 @@ const OSContext = createContext<OSContextType | undefined>(undefined);
 export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // ... (State declarations same as before) ...
   const [activeApp, setActiveApp] = useState<AppID>(AppID.Launcher);
-  // App 导航历史：openApp 时压入来源 App，goBack 时弹出回到上一个；用于子 App（如拾光图库/自由活动）按来源返回而非直接回桌面
+  // App 导航历史：openApp 时压入来源 App，goBack 时弹出回到上一个；用于子 App（如相册内拾光素材/自由活动）按来源返回而非直接回桌面
   const appHistoryRef = useRef<AppID[]>([]);
   const [theme, setTheme] = useState<OSTheme>(defaultTheme);
   const [apiConfig, setApiConfig] = useState<APIConfig>(defaultApiConfig);
@@ -684,7 +684,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [activeCharacterId, setActiveCharacterId] = useState<string>('');
   const charactersRef = useRef<CharacterProfile[]>([]);
 
-  // 刷新后能恢复"上一次聊的角色"：所有调用方（聊天切换/通知 onclick/记忆宫殿 handleSwitchChar）
+  // 刷新后能恢复"上一次聊的角色"：所有调用方（聊天切换/通知 onclick/回忆标本馆 handleSwitchChar）
   // 都走裸 setActiveCharacterId，集中在这里同步到 localStorage，避免每个调用点各写一遍
   useEffect(() => {
     if (activeCharacterId) {
@@ -2449,7 +2449,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const fullMessages = payload.fullMessages;
 
               // 3c. 情绪评估 fire-and-forget — 与主 API 并行，沿用 useChatAI 的 API 选择逻辑：
-              //     心情 API > 主 apiConfig（与文具盒副 API / 记忆宫殿副 API 独立）
+              //     心情 API > 主 apiConfig（与文具盒副 API / 回忆标本馆副 API 独立）
               if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && emotionBuffOn) {
                   const emotionApi = resolveMoodApi(char, apiConfigRef.current);
                   if (emotionApi.baseUrl && currentUserProfile) {
@@ -4586,7 +4586,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               pushVapid: (mode === 'text_only' || mode === 'full') ? (() => { try { const s = localStorage.getItem('push_vapid_v1'); return s ? JSON.parse(s) : undefined; } catch { return undefined; } })() : undefined,
 
 
-              // Memory Palace 水位线
+              // 回忆标本馆 水位线
               memoryPalaceHighWaterMarks: (mode === 'text_only' || mode === 'full') ? (() => {
                   const hwm: Record<string, number> = {};
                   for (let i = 0; i < localStorage.length; i++) {
@@ -4599,7 +4599,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   return Object.keys(hwm).length > 0 ? hwm : undefined;
               })() : undefined,
 
-              // Memory Palace 每角色的 UI 标记（人格检测已跑过、首次归档 banner 已看过等）
+              // 回忆标本馆 每角色的 UI 标记（人格检测已跑过、首次归档 banner 已看过等）
               // 丢了会导致重弹一次人格确认 / 首次 banner，体验噪声但不丢数据，仍然应该备份
               memoryPalaceFlags: (mode === 'text_only' || mode === 'full') ? (() => {
                   const flags: Record<string, string> = {};
@@ -5234,7 +5234,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (data.pushVapid) localStorage.setItem('push_vapid_v1', JSON.stringify(data.pushVapid));
 
 
-          // Restore Memory Palace 水位线
+          // Restore 回忆标本馆 水位线
           if (data.memoryPalaceHighWaterMarks) {
               for (const [charId, hwm] of Object.entries(data.memoryPalaceHighWaterMarks)) {
                   if (typeof hwm === 'number' && hwm > 0) {
@@ -5243,7 +5243,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
           }
 
-          // Restore Memory Palace UI flags（人格检测已跑过 / 首次 banner 已见等）
+          // Restore 回忆标本馆 UI flags（人格检测已跑过 / 首次 banner 已见等）
           if (data.memoryPalaceFlags && typeof data.memoryPalaceFlags === 'object') {
               for (const [key, val] of Object.entries(data.memoryPalaceFlags)) {
                   if (typeof val === 'string') {

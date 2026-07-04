@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 召回疲劳 / 习惯化 (Recall Fatigue / Habituation)
+ * 回忆标本馆 — 召回疲劳 / 习惯化 (Recall Fatigue / Habituation)
  *
  * 解决「角色揪着一件小事不放、把一件事当锚点反复提及」的问题。
  *

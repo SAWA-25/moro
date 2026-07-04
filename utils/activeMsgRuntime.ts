@@ -310,7 +310,7 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
   }
 
   // ─── Phase 2 Round 2 (2f): push 尾段 ───
-  // Memory Palace 缓冲区处理仍在这里 (跟本地 fetch 路径 finally 段对齐, 不依赖 React).
+  // 回忆标本馆 缓冲区处理仍在这里 (跟本地 fetch 路径 finally 段对齐, 不依赖 React).
   // 情绪评估**不再这里跑** — push-tail 用 char.systemPrompt + 50 条聊天的 degraded ctx,
   // 会污染 useChatAI line 613 用 full ctx 算的 buff 状态. 改为 Option B:
   //   - 写一条 pending 标记到 KV (charId → lastPushMsgId)
@@ -401,9 +401,9 @@ async function logInstantPushLlmExchange(message: ActiveMsg2InboxMessage): Promi
 }
 
 /**
- * 跑 push 路径的尾段: Memory Palace 缓冲区处理 + 情绪 eval pending 标记.
+ * 跑 push 路径的尾段: 回忆标本馆 缓冲区处理 + 情绪 eval pending 标记.
  *
- * Memory Palace 直接在这里跑 (pipeline 内部 self-contained, 不依赖 React state).
+ * 回忆标本馆 直接在这里跑 (pipeline 内部 self-contained, 不依赖 React state).
  * 情绪评估走 Option B:
  *   - 写 KV pending 标记 (charId → lastPushMsgId); 用户切回这个 chat 时 useChatAI useEffect drain
  *   - 同时 dispatch 'post-push-emotion-eval' 事件; 如果 useChatAI 已 mount 这个 char 就立即跑
@@ -414,7 +414,7 @@ async function runPushTailPipeline(
   char: import('../types').CharacterProfile,
   userProfile: UserProfile,
 ): Promise<void> {
-  // 1. Memory Palace
+  // 1. 回忆标本馆
   const { llm: mpLLM } = resolveMemoryPalaceAuxConfigsFromStorage();
 
   if (isMemoryFeatureEnabled(char as any) && mpLLM) {

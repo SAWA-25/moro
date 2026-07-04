@@ -36,12 +36,12 @@ const MAX_SLOTS = 12;
 type CarryPack = { fromPlaythrough: number; notes: string[] } | null;
 interface SaveSlot { id: string; name: string; meta: StorySaveMeta; state: StoryState; }
 
-// 宫廷红金底色：同一套朱墙金灯气质，随时辰微调明暗。
+// 宫廷纸本底色：保留宫廷气质，但降低红金对比，避免小屏第一眼过重。
 const TIME_WASH: Record<TimeSlot, string> = {
-    晨: 'radial-gradient(120% 80% at 50% 0%, rgba(244,212,138,0.26) 0%, transparent 58%), linear-gradient(180deg, #7b1724 0%, #4b1018 100%)',
-    午: 'radial-gradient(120% 80% at 50% 0%, rgba(255,238,174,0.32) 0%, transparent 58%), linear-gradient(180deg, #8f1e2b 0%, #55131b 100%)',
-    晚: 'radial-gradient(120% 80% at 50% 0%, rgba(198,110,64,0.26) 0%, transparent 58%), linear-gradient(180deg, #68151f 0%, #351014 100%)',
-    夜: 'radial-gradient(120% 90% at 50% 0%, rgba(49,93,138,0.25) 0%, transparent 62%), linear-gradient(180deg, #35101a 0%, #16080b 100%)',
+    晨: 'radial-gradient(120% 80% at 50% 0%, rgba(224,197,137,0.16) 0%, transparent 58%), linear-gradient(180deg, #4a3030 0%, #342324 100%)',
+    午: 'radial-gradient(120% 80% at 50% 0%, rgba(238,215,161,0.18) 0%, transparent 58%), linear-gradient(180deg, #513032 0%, #3a2426 100%)',
+    晚: 'radial-gradient(120% 80% at 50% 0%, rgba(185,126,92,0.14) 0%, transparent 58%), linear-gradient(180deg, #40282a 0%, #261b1c 100%)',
+    夜: 'radial-gradient(120% 90% at 50% 0%, rgba(76,96,122,0.16) 0%, transparent 62%), linear-gradient(180deg, #28212a 0%, #181415 100%)',
 };
 const TIME_GLYPH: Record<TimeSlot, string> = { 晨: '🌅', 午: '☀️', 晚: '🌇', 夜: '🌙' };
 
@@ -54,6 +54,16 @@ const writeSaves = (s: SaveSlot[]) => { try { localStorage.setItem(SAVES_KEY, JS
 const RISK_LABEL: Record<string, string> = { low: '稳妥', mid: '微澜', high: '行险' };
 const RISK_PIPS: Record<string, number> = { low: 1, mid: 2, high: 3 };
 const RESOURCE_KEYS_UI: StoryResourceKey[] = ['power', 'reputation', 'silver', 'energy', 'rumor'];
+const activePillStyle: React.CSSProperties = {
+    background: 'rgba(58,35,35,0.88)',
+    color: PAPER,
+    border: '1px solid rgba(234,213,157,0.22)',
+};
+const quietPillStyle: React.CSSProperties = {
+    background: 'rgba(251,244,234,0.74)',
+    color: INK,
+    border: '1px solid rgba(180,168,146,0.46)',
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -380,10 +390,10 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <ScrapHeader title="椒房记 · 文游" en="A HAREM TALE" onBack={onBack} />
                 <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-4 pb-3">
                     <div className="relative px-5 py-4 mb-4 text-center overflow-hidden" style={openPanel}>
-                        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
-                        <WashiTape color="ink" rotate={-4} className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-24 h-5 rounded-[2px]" />
-                        <BookOpen size={32} weight="fill" className="relative mx-auto mb-2" style={{ color: INK }} />
-                        <p className="relative text-[13px] leading-relaxed" style={{ color: '#48443c' }}>
+                        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
+                        <WashiTape color="amber" rotate={-4} className="absolute -top-2 left-1/2 -translate-x-1/2 w-20 h-4 rounded-[2px]" />
+                        <BookOpen size={28} weight="fill" className="relative mx-auto mb-2" style={{ color: INK_SOFT }} />
+                        <p className="relative text-[13px] leading-relaxed" style={{ color: '#5d554c' }}>
                             一卷由 AI 现写的后宫恋爱文字游戏。<br />你的每一次抉择都改写好感、信任、嫉妒与人心；剧情顺着你而长，绝不重来同一段。
                         </p>
                         {carryRef.current && (
@@ -401,7 +411,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             return (
                                 <button key={p.key} onClick={() => { setPGender(p.gender); setPTitle(p.title); }} title={p.hint}
                                     className="px-2.5 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-transform"
-                                    style={on ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                    style={on ? activePillStyle : quietPillStyle}>
                                     {p.label}
                                 </button>
                             );
@@ -422,7 +432,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             {STORY_STYLES.map(st => (
                                 <button key={st.key} onClick={() => setPStyle(st.key)} title={st.hint}
                                     className="px-2.5 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-transform"
-                                    style={pStyle === st.key ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                    style={pStyle === st.key ? activePillStyle : quietPillStyle}>
                                     {st.label}
                                 </button>
                             ))}
@@ -439,7 +449,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 {PACE_OPTIONS.map(p => (
                                     <button key={p.key} onClick={() => setPPace(p.key)} title={p.hint}
                                         className="px-2 py-1.5 rounded-lg text-[11px] font-bold active:scale-95 transition-transform"
-                                        style={pPace === p.key ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                        style={pPace === p.key ? activePillStyle : quietPillStyle}>
                                         {p.label}
                                     </button>
                                 ))}
@@ -474,7 +484,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     <SectionTag en="THEIR GENDER" className="mb-2">入选诸位 · 各自性别</SectionTag>
                                     <div className="space-y-1.5">
                                         {characters.filter(c => picked.has(c.id)).map(c => (
-                                            <div key={c.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl" style={{ background: 'rgba(255,253,247,0.75)', border: '1px solid rgba(176,170,158,0.6)' }}>
+                                            <div key={c.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl" style={{ background: 'rgba(251,244,234,0.68)', border: '1px solid rgba(180,168,146,0.44)' }}>
                                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-7 h-7 rounded-full object-cover shrink-0" />
                                                 <span className="text-[13px] font-bold flex-1 min-w-0 truncate" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</span>
                                                 <GenderCycle value={charGenders[c.id] || 'unknown'} onChange={g => setCharGenders(m => ({ ...m, [c.id]: g }))} />
@@ -488,7 +498,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <div className="h-3" />
                 </div>
                 <div className="relative z-10 shrink-0 p-4 pb-safe">
-                    <ScrapButton variant="ink" onClick={start} disabled={picked.size === 0} className="w-full py-3.5 text-[15px]" icon={<Sparkle size={16} weight="fill" />}>
+                    <ScrapButton variant="ink" onClick={start} disabled={picked.size === 0} className="w-full py-3 text-[14px]" icon={<Sparkle size={15} weight="fill" />}>
                         开篇 · 入宫
                     </ScrapButton>
                 </div>
@@ -517,11 +527,11 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <button onClick={() => setMenu(true)} className="p-2 -mr-1 active:scale-90 transition-transform" style={{ color: INK }} title="菜单"><List size={20} weight="bold" /></button>
             </div>
             {/* 在场角色关系小条 + 氛围 + 换写 */}
-            <div className="relative z-20 shrink-0 mx-3 mb-1 px-2 py-1.5 rounded-xl flex items-center gap-1.5 flex-wrap" style={{ background: 'rgba(255,247,232,0.9)', border: '1px solid rgba(201,154,58,0.34)', boxShadow: '0 8px 18px -16px rgba(31,29,26,0.62)' }}>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black" style={{ background: 'rgba(255,253,247,0.78)', border: '1px dashed rgba(150,144,132,0.78)', color: INK }}>{tm.label}回合</span>
+            <div className="relative z-20 shrink-0 mx-3 mb-1 px-2 py-1.5 rounded-xl flex items-center gap-1.5 flex-wrap" style={{ background: 'rgba(251,244,234,0.78)', border: '1px solid rgba(185,149,82,0.24)', boxShadow: '0 8px 18px -17px rgba(31,29,26,0.48)' }}>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-black" style={{ background: 'rgba(251,244,234,0.7)', border: '1px dashed rgba(150,144,132,0.5)', color: INK }}>{tm.label}回合</span>
                 {scene?.mood && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: INK, color: PAPER }}>{scene.mood}</span>}
                 {activeChars.map(c => (
-                    <span key={c.charId} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(255,253,247,0.86)', border: '1px solid rgba(176,170,158,0.68)' }}>
+                    <span key={c.charId} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(251,244,234,0.72)', border: '1px solid rgba(180,168,146,0.46)' }}>
                         {game.route.charId === c.charId && <Crown size={10} weight="fill" style={{ color: INK }} />}
                         <span className="font-bold" style={{ color: INK }}>{c.name}</span>
                         <span style={{ color: INK_SOFT }}>{stageOf(c.affection).label}</span>
@@ -531,13 +541,13 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     {scene?.sceneTitle || game.location} · {game.location}
                 </span>
                 {scene && !busy && (
-                    <button onClick={regenerate} className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.72)', color: INK }} title="对这一场不满意？换一种写法">
+                    <button onClick={regenerate} className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(251,244,234,0.74)', border: '1px solid rgba(180,168,146,0.5)', color: INK }} title="对这一场不满意？换一种写法">
                         <ArrowsClockwise size={11} weight="bold" />换种写法
                     </button>
                 )}
             </div>
             <div className="relative z-20 shrink-0 px-3 pb-1.5 flex flex-wrap items-center gap-1.5">
-                <button onClick={() => setProgressOpen(true)} className="min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={{ maxWidth: 'calc(100% - 104px)', background: 'rgba(255,247,232,0.92)', border: '1px solid rgba(201,154,58,0.45)', color: INK }}>
+                <button onClick={() => setProgressOpen(true)} className="min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-black active:scale-95 transition-transform" style={{ maxWidth: 'calc(100% - 104px)', background: 'rgba(251,244,234,0.78)', border: '1px solid rgba(185,149,82,0.26)', color: INK }}>
                     <FlagBanner size={12} weight="fill" className="shrink-0" />
                     <span className="min-w-0 truncate">第 {game.chapter.index} 章 · {game.chapter.title}</span>
                     <span className="shrink-0" style={{ color: INK_SOFT }}>{game.chapter.progress}/{game.chapter.goal}</span>
@@ -546,7 +556,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <Crown size={12} weight="fill" />宠爱经营台
                 </button>
                 {champion && (
-                    <span className="min-w-[120px] flex-1 px-2 py-1 rounded-full text-[10px] font-bold truncate" style={{ background: 'rgba(255,247,232,0.82)', border: '1px solid rgba(201,154,58,0.34)', color: INK_SOFT }}>
+                    <span className="min-w-[120px] flex-1 px-2 py-1 rounded-full text-[10px] font-bold truncate" style={{ background: 'rgba(251,244,234,0.68)', border: '1px solid rgba(185,149,82,0.22)', color: INK_SOFT }}>
                         君心 {champion.name} · 好感 {champion.affection}
                     </span>
                 )}
@@ -867,7 +877,7 @@ const ResourceStrip: React.FC<{ resources: StoryState['resources']; wrap?: boole
     return (
         <div className={`${wrap ? 'basis-full min-w-0 flex flex-wrap' : 'shrink-0 flex items-center'} gap-1.5`}>
             {RESOURCE_KEYS_UI.map(k => (
-                <span key={k} className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(255,247,232,0.86)', border: '1px solid rgba(201,154,58,0.4)', color: INK }}>
+                <span key={k} className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(251,244,234,0.72)', border: '1px solid rgba(185,149,82,0.26)', color: INK }}>
                     {iconOf[k]}{STORY_RESOURCE_LABELS[k]} {resources[k]}
                 </span>
             ))}
@@ -894,8 +904,8 @@ const StageQuickButton: React.FC<{ icon: React.ReactNode; label: string; onClick
         title={title || label}
         className="min-w-0 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-black active:scale-95 transition-transform disabled:opacity-40"
         style={dark
-            ? { background: INK, color: PAPER, border: '1px solid rgba(201,154,58,0.55)' }
-            : { background: 'rgba(255,247,232,0.88)', color: INK, border: '1px solid rgba(201,154,58,0.42)' }}
+            ? { background: 'rgba(58,35,35,0.88)', color: PAPER, border: '1px solid rgba(185,149,82,0.28)' }
+            : { background: 'rgba(251,244,234,0.76)', color: INK, border: '1px solid rgba(185,149,82,0.26)' }}
     >
         <span className="shrink-0">{icon}</span>
         <span className="truncate">{label}</span>
@@ -981,16 +991,16 @@ const SceneStage: React.FC<{
                 className="relative overflow-hidden rounded-xl"
                 style={{
                     height: '100%',
-                    background: 'linear-gradient(135deg, rgba(255,247,232,0.92), rgba(232,206,150,0.76) 48%, rgba(92,22,28,0.7))',
-                    border: '1px solid rgba(201,154,58,0.5)',
-                    boxShadow: '0 18px 38px -24px rgba(22,8,11,0.75)',
+                    background: 'linear-gradient(135deg, rgba(251,244,234,0.86), rgba(226,207,169,0.58) 52%, rgba(74,43,44,0.42))',
+                    border: '1px solid rgba(185,149,82,0.3)',
+                    boxShadow: '0 16px 34px -26px rgba(22,18,17,0.68)',
                 }}
             >
-                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: HALFTONE, backgroundSize: '8px 8px' }} />
-                <span aria-hidden className="absolute -right-1 -top-5 text-[92px] leading-none opacity-[0.08] select-none">{TIME_GLYPH[game.time]}</span>
+                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.05]" style={{ backgroundImage: HALFTONE, backgroundSize: '8px 8px' }} />
+                <span aria-hidden className="absolute -right-1 -top-5 text-[92px] leading-none opacity-[0.05] select-none">{TIME_GLYPH[game.time]}</span>
                 <div className="relative h-full grid grid-cols-[minmax(0,1fr)_minmax(132px,40%)] gap-2 p-2">
                     <div className="min-w-0 min-h-0 flex flex-col gap-2">
-                        <section className="shrink-0 rounded-lg px-3 py-2" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                        <section className="shrink-0 rounded-lg px-3 py-2" style={{ background: 'rgba(251,244,234,0.78)', border: '1px solid rgba(180,168,146,0.4)' }}>
                             <div className="flex items-start gap-2">
                                 <div className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: INK, color: PAPER }}>
                                     <CastleTurret size={18} weight="fill" />
@@ -1020,13 +1030,13 @@ const SceneStage: React.FC<{
                             {hint && <div className="mt-1.5 text-[10px] leading-snug line-clamp-2" style={{ color: '#694036' }}>{hint}</div>}
                         </section>
 
-                        <section className="min-h-0 flex-1 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(255,253,247,0.76)', border: '1px solid rgba(176,170,158,0.48)' }}>
+                        <section className="min-h-0 flex-1 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(251,244,234,0.64)', border: '1px solid rgba(180,168,146,0.34)' }}>
                             <div className="shrink-0 flex items-center gap-1.5 text-[10px] font-black" style={{ color: INK }}>
                                 <Scroll size={12} weight="fill" />宫廷情报
                             </div>
                             <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1.5">
                                 {intelItems.map(item => (
-                                    <button key={item.key} onClick={item.onClick} className="w-full min-w-0 text-left rounded-lg px-2 py-1.5 active:scale-[0.99] transition-transform" style={{ background: 'rgba(255,247,232,0.68)', border: '1px solid rgba(201,154,58,0.28)' }}>
+                                    <button key={item.key} onClick={item.onClick} className="w-full min-w-0 text-left rounded-lg px-2 py-1.5 active:scale-[0.99] transition-transform" style={{ background: 'rgba(251,244,234,0.56)', border: '1px solid rgba(185,149,82,0.2)' }}>
                                         <div className="flex items-center gap-1.5 min-w-0">
                                             <span className="shrink-0" style={{ color: INK }}>{item.icon}</span>
                                             <span className="shrink-0 px-1.5 py-0.5 rounded text-[8.5px] font-black" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{item.tag}</span>
@@ -1047,7 +1057,7 @@ const SceneStage: React.FC<{
                         </div>
                     </div>
 
-                    <section className="min-w-0 min-h-0 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(255,253,247,0.84)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                    <section className="min-w-0 min-h-0 rounded-lg p-2 flex flex-col" style={{ background: 'rgba(251,244,234,0.68)', border: '1px solid rgba(180,168,146,0.38)' }}>
                         <div className="shrink-0 flex items-center gap-1.5">
                             <UsersThree size={13} weight="fill" style={{ color: INK }} />
                             <span className="text-[11px] font-black" style={{ color: INK }}>在场诸位</span>
@@ -1063,7 +1073,7 @@ const SceneStage: React.FC<{
                             {activeChars.map(c => {
                                 const speaking = speakingId === c.charId;
                                 return (
-                                    <div key={c.charId} className="rounded-lg px-2 py-1.5" style={{ background: speaking ? 'rgba(255,247,232,0.96)' : 'rgba(255,253,247,0.64)', border: `1px solid ${speaking ? 'rgba(31,29,26,0.45)' : 'rgba(176,170,158,0.38)'}`, opacity: speakingId && !speaking ? 0.68 : 1 }}>
+                                    <div key={c.charId} className="rounded-lg px-2 py-1.5" style={{ background: speaking ? 'rgba(251,244,234,0.84)' : 'rgba(251,244,234,0.52)', border: `1px solid ${speaking ? 'rgba(58,35,35,0.34)' : 'rgba(180,168,146,0.3)'}`, opacity: speakingId && !speaking ? 0.68 : 1 }}>
                                         <div className="flex items-start gap-2">
                                             <button onClick={() => onSprite(c.charId)} className="shrink-0 relative active:scale-95 transition-transform" title="查看状态 / 快捷行动">
                                                 {c.avatar
@@ -1542,7 +1552,7 @@ const GenderCycle: React.FC<{ value: Gender; onChange: (g: Gender) => void }> = 
     return (
         <button onClick={() => onChange(GENDER_ORDER[(GENDER_ORDER.indexOf(value) + 1) % GENDER_ORDER.length])}
             className="shrink-0 px-2.5 py-2 rounded-lg text-[12.5px] font-black active:scale-95 transition-transform"
-            style={value === 'unknown' ? { background: 'rgba(31,29,26,0.06)', color: INK_SOFT, border: '1px solid rgba(176,170,158,0.6)' } : { background: INK, color: PAPER }}
+            style={value === 'unknown' ? { background: 'rgba(58,35,35,0.06)', color: INK_SOFT, border: '1px solid rgba(180,168,146,0.5)' } : activePillStyle}
             title="点按切换性别">
             {m.g} {m.label}
         </button>
@@ -1632,21 +1642,21 @@ const MemoryReview: React.FC<{ open: boolean; onClose: () => void; game: StorySt
 };
 
 const Chip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
-    <button onClick={onClick} className="px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 active:scale-95 transition-transform" style={active ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.6)' }}>{children}</button>
+    <button onClick={onClick} className="px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 active:scale-95 transition-transform" style={active ? activePillStyle : quietPillStyle}>{children}</button>
 );
 
 const openPanel: React.CSSProperties = {
-    background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)',
-    border: '1px solid rgba(176,170,158,0.7)', outline: '1px dashed rgba(150,144,132,0.5)', outlineOffset: '-5px',
-    borderRadius: 16, boxShadow: '0 12px 24px -16px rgba(31,29,26,0.5)',
+    background: 'linear-gradient(180deg, rgba(251,246,236,0.92), rgba(238,229,211,0.88))',
+    border: '1px solid rgba(180,168,146,0.46)', outline: '1px dashed rgba(150,144,132,0.28)', outlineOffset: '-5px',
+    borderRadius: 14, boxShadow: '0 10px 20px -17px rgba(31,29,26,0.42)',
 };
 const inputStyle: React.CSSProperties = {
-    background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.8)', color: INK,
+    background: 'rgba(251,244,234,0.84)', border: '1px solid rgba(180,168,146,0.5)', color: INK,
 };
 const dialogueBox: React.CSSProperties = {
-    background: 'linear-gradient(180deg, rgba(251,249,242,0.97), rgba(243,240,232,0.97))',
-    border: '1px solid rgba(176,170,158,0.85)', outline: '1px dashed rgba(150,144,132,0.45)', outlineOffset: -4,
-    boxShadow: '0 14px 28px -18px rgba(31,29,26,0.5)',
+    background: 'linear-gradient(180deg, rgba(251,246,236,0.95), rgba(239,233,222,0.95))',
+    border: '1px solid rgba(180,168,146,0.52)', outline: '1px dashed rgba(150,144,132,0.26)', outlineOffset: -4,
+    boxShadow: '0 12px 24px -19px rgba(31,29,26,0.44)',
 };
 
 export default StoryMode;

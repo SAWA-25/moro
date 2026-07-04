@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 召回结果格式化（EventBox 感知）
+ * 回忆标本馆 — 召回结果格式化（EventBox 感知）
  *
  * 输入：hybridSearch + spreadActivation 后排序好的 ScoredMemory[]
  * 输出：注入 system prompt 的 markdown 文本
@@ -241,7 +241,7 @@ export async function expandAndFormat(
     console.groupEnd();
 
     // 4. 按房间分组渲染
-    let output = `### 记忆宫殿 (Memory Palace)\n`;
+    let output = `### 回忆标本馆\n`;
     output += `以下是你脑海中浮现的相关记忆片段，它们可能影响你此刻的感受和反应：\n\n`;
 
     // 4a. 便利贴置顶记忆

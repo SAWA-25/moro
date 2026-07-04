@@ -358,7 +358,7 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             // 1. Base Context (Identity & Worldview)
             // [优化] 记忆读取：跑团多人同场，不再倾倒每个角色逐日的详细日记（极易让 LLM 把
             //   A 的记忆安到 B 头上 = 串台）。改为 includeDetailedMemories=false（仅长期核心记忆）
-            //   + 下方按需注入的记忆宫殿召回（只取与当前情境相关的片段）。
+            //   + 下方按需注入的回忆标本馆召回（只取与当前情境相关的片段）。
             //   同时跳过共享场景里已铺过的用户档案 / 世界书 / 世界观，彻底去重。
             await injectMemoryPalace(p);
             const core = ContextBuilder.buildCoreContext(p, userProfile, false, undefined, {
@@ -368,11 +368,11 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             });
             fullContext += `\n<<< 角色档案: ${p.name} (ID: ${p.id}) >>>\n${core}\n`;
 
-            // 记忆宫殿召回（includeDetailedMemories=false 时 buildCoreContext 不会自动带，这里按需补回）
+            // 回忆标本馆召回（includeDetailedMemories=false 时 buildCoreContext 不会自动带，这里按需补回）
             // [防串台] 召回文本自带的标题是泛指的"你脑海中浮现…"，多角色同场时"你"会混淆。
             //   这里用显式归属把它锁死到当前角色名下，并提醒 LLM 严禁挪用给别人。
             if (p.memoryPalaceEnabled && p.memoryPalaceInjection && p.memoryPalaceInjection.trim()) {
-                fullContext += `\n【注意：以下记忆宫殿召回【仅属于 ${p.name}】，是 TA 一个人的私人记忆，绝不可当成其他角色的经历或挪用给别人】\n`;
+                fullContext += `\n【注意：以下回忆标本馆召回【仅属于 ${p.name}】，是 TA 一个人的私人记忆，绝不可当成其他角色的经历或挪用给别人】\n`;
                 fullContext += `${p.memoryPalaceInjection}\n`;
                 fullContext += `【${p.name} 的私人记忆结束】\n`;
             }

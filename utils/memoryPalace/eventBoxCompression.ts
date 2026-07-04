@@ -1,5 +1,5 @@
 /**
- * Memory Palace — EventBox 压缩
+ * 回忆标本馆 — EventBox 压缩
  *
  * 当 EventBox 的活节点 ≥ COMPRESSION_THRESHOLD (4) 条时触发：
  *   1. LLM 把"旧 summary?(若有) + 所有活节点"整合成一段第一人称连贯回忆

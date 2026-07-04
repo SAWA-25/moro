@@ -31,6 +31,8 @@ export const OFFLINE_START_RE = /\[\[\s*OFFLINE_START\s*(?:[:：]\s*[^\]]*?)?\]\
 export const OFFLINE_START_EVENT = 'moro-offline-start';
 
 const pendingKey = (charId: string) => `moro_offline_pending_${charId}`;
+const pendingScenarioKey = (charId: string) => `moro_offline_pending_scenario_${charId}`;
+const scheduledStartsKey = 'moro_offline_scheduled_starts_v1';
 const sessionKey = (charId: string) => `moro_offline_session_${charId}`;
 const activeKey = (charId: string) => `moro_offline_active_${charId}`;
 export const OFFLINE_FOLLOWUP_DELAY_MS = 5 * 60 * 1000;
@@ -52,9 +54,361 @@ export const extractOfflineStartDirective = (content: string): { content: string
     return { content: content.replace(OFFLINE_START_RE, '').trim(), offline: true };
 };
 
+export type OfflineAutoStartMode = 'private' | 'group';
+
+export interface OfflineAutoStartDetection {
+    offline: boolean;
+    scenario?: string;
+    reason?: string;
+    matchedText?: string;
+}
+
+export interface OfflineScheduledStartDetection {
+    scheduled: boolean;
+    dueAt?: number;
+    scenario?: string;
+    reason?: string;
+    matchedText?: string;
+}
+
+export interface OfflineAutoStartSchedule {
+    id: string;
+    mode: OfflineAutoStartMode;
+    targetId: string;
+    dueAt: number;
+    scenario: string;
+    createdAt: number;
+    matchedText?: string;
+}
+
+export interface OfflineAutoStartInput {
+    mode?: OfflineAutoStartMode;
+    latestText?: string;
+    recentTexts?: string[];
+    userName?: string;
+    charName?: string;
+    groupName?: string;
+}
+
+const cleanOfflineDetectionText = (text: string): string =>
+    String(text || '')
+        .replace(OFFLINE_START_RE, ' ')
+        .replace(/\[\[[\s\S]*?\]\]/g, ' ')
+        .replace(/https?:\/\/\S+/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const offlineBlockingNegativeRe = /(?:如果|假如|要是|以后|未来|改天|下次|哪天|有空|找时间|约个|约一下|要不要|想不想|可以.*见|明天|后天|周[一二三四五六日天末]|星期[一二三四五六日天]|上次|之前|以前|回忆|记得.*见|梦里|模拟|番外|假设|还没|没有|没到|不到|别来|不用来|不要来)/;
+const offlineEmotionOnlyRe = /(?:想见|好想见|想你)/;
+const offlineProposalOnlyRe = /(?:一起|出来|出门|见面|碰面|吃饭|喝咖啡|逛街|看电影).{0,12}(?:吗|嘛|吧|不|好不好|怎么样|\?)/;
+
+const privateOfflinePositiveRes: RegExp[] = [
+    /(?:我|你|他|她|ta|TA|咱们|我们).{0,10}(?:到|到了|刚到|已经到|快到).{0,16}(?:楼下|门口|路口|店门口|校门|公司楼下|家门口|你家|我家|现场|约定地点|咖啡馆|餐厅|车站|地铁口)/i,
+    /(?:我|你|他|她|ta|TA|咱们|我们).{0,10}(?:在|已经在|就在).{0,14}(?:楼下|门口|路口|店门口|校门|公司楼下|家门口|你家|我家|现场|约定地点|咖啡馆|餐厅|车站|地铁口)/i,
+    /(?:楼下|门口|路口|店门口|家门口|电梯口|地铁口).{0,12}(?:等你|等我|见|碰头|汇合|会合|到了|到啦|开门)/,
+    /(?:已经|刚刚|现在|终于).{0,8}(?:见面|碰面|碰头|汇合|会合|碰上|遇见)/,
+    /(?:开门|推门|敲门|按门铃|下楼|上楼|进门|出门).{0,18}(?:看见|见到|看到|碰见|碰头|遇见|迎上)/,
+    /(?:开门|推门|进门).{0,8}(?:进来|进去|走进|进了)/,
+    /(?:见面|碰面|碰头|汇合|会合|碰上|遇见).{0,10}(?:了|啦|到了|终于|现在|刚刚|已经)/,
+    /(?:面对面|同处一地|同处一室|同一个房间|同一张桌|坐在.*旁边|站在.*面前|就在.*身边)/,
+    /(?:一起|现在).{0,10}(?:出门|走吧|进店|上车|落座|坐下|进去|下楼)/,
+];
+
+const groupOfflinePositiveRes: RegExp[] = [
+    /(?:大家|人|我们|咱们).{0,10}(?:到齐|到场|集合|碰头|汇合|会合|落座|坐下|进店|出门|上车|开门)/,
+    /(?:大家|我们|咱们).{0,10}(?:已经在|就在|同处).{0,14}(?:现场|包厢|桌边|餐厅|咖啡馆|门口|楼下|约定地点)/,
+    /(?:群里|群友|成员|他们|她们).{0,12}(?:到齐|碰头|汇合|会合|见上|见面|到场)/,
+    /(?:包厢|桌边|餐厅|咖啡馆|现场|门口|楼下|车站|地铁口).{0,14}(?:到齐|碰头|汇合|坐下|落座|见面|等人)/,
+    /(?:线下|现场|赴约|聚会|饭局).{0,12}(?:开始|到了|到齐|碰头|落地|开场)/,
+];
+
+const futureAppointmentTimeRe = /(?:今天|今晚|明天|明早|明晚|明儿|明日|后天|周[一二三四五六日天末]|星期[一二三四五六日天]|礼拜[一二三四五六日天]|下周[一二三四五六日天末])/;
+const futureAppointmentActionRe = /(?:见|见面|碰面|碰头|汇合|会合|赴约|约定|聚|聚会|楼下|门口|路口|店门口|校门|地铁口|车站|餐厅|咖啡馆|包厢|现场|一起出门|一起吃饭|一起走)/;
+const futureAppointmentBlockingRe = /(?:如果|假如|要是|要不要|想不想|可不可以|可以吗|好吗|好不好|怎么样|吗|嘛|么|也许|可能|大概|改天|下次|哪天|有空|找时间|再说|上次|之前|以前|回忆|记得.*见|梦里|模拟|番外)/;
+
+const cnDigitMap: Record<string, number> = {
+    零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+};
+
+const parseChineseNumber = (raw: string): number | undefined => {
+    const text = raw.trim();
+    if (!text) return undefined;
+    if (/^\d+$/.test(text)) return parseInt(text, 10);
+    if (text === '十') return 10;
+    const tenIdx = text.indexOf('十');
+    if (tenIdx >= 0) {
+        const left = text.slice(0, tenIdx);
+        const right = text.slice(tenIdx + 1);
+        const tens = left ? cnDigitMap[left] : 1;
+        const ones = right ? cnDigitMap[right] : 0;
+        if (typeof tens === 'number' && typeof ones === 'number') return tens * 10 + ones;
+        return undefined;
+    }
+    if (text.length === 1) return cnDigitMap[text];
+    return undefined;
+};
+
+const defaultFutureHourOf = (text: string): number => {
+    if (/(?:明早|早上|上午)/.test(text)) return 8;
+    if (/(?:中午)/.test(text)) return 12;
+    if (/(?:明晚|今晚|晚上|傍晚|夜里)/.test(text)) return 19;
+    if (/(?:下午)/.test(text)) return 15;
+    return 9;
+};
+
+const parseFutureTimeOfDay = (text: string): { hour: number; minute: number; explicit: boolean } => {
+    const colon = /(?:^|[^\d])([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)(?:[^\d]|$)/.exec(text);
+    if (colon) return { hour: parseInt(colon[1], 10), minute: parseInt(colon[2], 10), explicit: true };
+
+    const point = /([零〇一二两三四五六七八九十\d]{1,3})\s*点(?:\s*([零〇一二两三四五六七八九十\d]{1,3})\s*分?)?(\s*半)?/.exec(text);
+    if (point) {
+        let hour = parseChineseNumber(point[1]) ?? defaultFutureHourOf(text);
+        let minute = point[3] ? 30 : (point[2] ? (parseChineseNumber(point[2]) ?? 0) : 0);
+        if (/(?:下午|晚上|傍晚|今晚|明晚|夜里)/.test(text) && hour >= 1 && hour < 12) hour += 12;
+        if (/(?:中午)/.test(text) && hour >= 1 && hour < 11) hour += 12;
+        hour = Math.max(0, Math.min(23, hour));
+        minute = Math.max(0, Math.min(59, minute));
+        return { hour, minute, explicit: true };
+    }
+
+    return { hour: defaultFutureHourOf(text), minute: 0, explicit: false };
+};
+
+const weekdayIndexOf = (text: string): number | undefined => {
+    const hit = /(?:下?周|星期|礼拜)([一二三四五六日天末])/.exec(text);
+    if (!hit) return undefined;
+    const char = hit[1];
+    if (char === '一') return 1;
+    if (char === '二') return 2;
+    if (char === '三') return 3;
+    if (char === '四') return 4;
+    if (char === '五') return 5;
+    if (char === '六') return 6;
+    return 0;
+};
+
+const resolveFutureOfflineDueAt = (text: string, nowMs: number): number | undefined => {
+    const now = new Date(nowMs);
+    let dayOffset: number | undefined;
+    if (/(?:后天)/.test(text)) dayOffset = 2;
+    else if (/(?:明天|明早|明晚|明儿|明日)/.test(text)) dayOffset = 1;
+    else {
+        const weekday = weekdayIndexOf(text);
+        if (typeof weekday === 'number') {
+            const today = now.getDay();
+            const wantsNextWeek = /下周/.test(text);
+            let delta = (weekday - today + 7) % 7;
+            if (delta === 0 || wantsNextWeek) delta += 7;
+            dayOffset = delta;
+        } else if (/(?:今天|今晚)/.test(text)) {
+            dayOffset = 0;
+        }
+    }
+    if (typeof dayOffset !== 'number') return undefined;
+
+    const time = parseFutureTimeOfDay(text);
+    const due = new Date(now);
+    due.setDate(now.getDate() + dayOffset);
+    due.setHours(time.hour, time.minute, 0, 0);
+    if (due.getTime() <= nowMs + 5 * 60 * 1000) return undefined;
+    return due.getTime();
+};
+
+const formatOfflineDueAt = (dueAt: number): string => {
+    try {
+        return new Date(dueAt).toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    } catch {
+        return '约定时间';
+    }
+};
+
+const isOfflineLineNegative = (text: string, hasPositiveSignal: boolean): boolean =>
+    offlineBlockingNegativeRe.test(text)
+    || offlineProposalOnlyRe.test(text)
+    || (!hasPositiveSignal && offlineEmotionOnlyRe.test(text));
+
+export const buildOfflineAutoStartScenario = ({
+    mode = 'private',
+    latestText,
+    recentTexts,
+    userName,
+    charName,
+    groupName,
+}: OfflineAutoStartInput): string => {
+    const recent = (recentTexts || [])
+        .map(cleanOfflineDetectionText)
+        .filter(Boolean)
+        .slice(-6);
+    const latest = cleanOfflineDetectionText(latestText || '');
+    const lines = [...recent, latest].filter(Boolean).slice(-7);
+    const title = mode === 'group'
+        ? `群聊「${groupName || '当前群聊'}」已经从线上聊到线下现场`
+        : `${userName || '用户'} 和 ${charName || 'TA'} 已经从线上聊到线下现场`;
+    const body = lines.length ? lines.map(line => `- ${line.slice(0, 180)}`).join('\n') : '- 最近聊天已经明确进入见面现场。';
+    return `${title}。请承接下面最近几句，直接从已经碰头/同处现场的那一刻开始，不要重新安排很久以后的约定：\n${body}`;
+};
+
+export const detectOfflineAutoStart = (input: OfflineAutoStartInput): OfflineAutoStartDetection => {
+    const mode = input.mode || 'private';
+    const candidates = [
+        ...(input.recentTexts || []).slice(-6),
+        input.latestText || '',
+    ]
+        .map(cleanOfflineDetectionText)
+        .filter(Boolean);
+    const positiveRes = mode === 'group'
+        ? [...privateOfflinePositiveRes, ...groupOfflinePositiveRes]
+        : privateOfflinePositiveRes;
+    for (const line of candidates) {
+        const hit = positiveRes.find(re => re.test(line));
+        if (!hit || isOfflineLineNegative(line, true)) continue;
+        if (hit) {
+            return {
+                offline: true,
+                matchedText: line,
+                reason: hit.source,
+                scenario: buildOfflineAutoStartScenario(input),
+            };
+        }
+    }
+    return { offline: false };
+};
+
+export const buildOfflineScheduledStartScenario = (
+    input: OfflineAutoStartInput,
+    dueAt: number,
+): string => {
+    const recent = (input.recentTexts || [])
+        .map(cleanOfflineDetectionText)
+        .filter(Boolean)
+        .slice(-6);
+    const latest = cleanOfflineDetectionText(input.latestText || '');
+    const lines = [...recent, latest].filter(Boolean).slice(-7);
+    const title = input.mode === 'group'
+        ? `群聊「${input.groupName || '当前群聊'}」此前已经约好线下赴约`
+        : `${input.userName || '用户'} 和 ${input.charName || 'TA'} 此前已经约好见面`;
+    const body = lines.length ? lines.map(line => `- ${line.slice(0, 180)}`).join('\n') : '- 最近聊天里已经约好了线下见面。';
+    return `${title}，现在已经到了约定时间（${formatOfflineDueAt(dueAt)}）。请承接下面最近几句，直接从抵达/碰头/同处现场的那一刻开始，不要重新询问要不要见面，也不要改成未来约定：\n${body}`;
+};
+
+export const detectOfflineScheduledStart = (
+    input: OfflineAutoStartInput,
+    nowMs = Date.now(),
+): OfflineScheduledStartDetection => {
+    const candidates = [
+        input.latestText || '',
+        ...(input.recentTexts || []).slice(-6).reverse(),
+    ]
+        .map(cleanOfflineDetectionText)
+        .filter(Boolean);
+    for (const line of candidates) {
+        if (!futureAppointmentTimeRe.test(line) || !futureAppointmentActionRe.test(line)) continue;
+        if (futureAppointmentBlockingRe.test(line) || /[?？]$/.test(line.trim())) continue;
+        const dueAt = resolveFutureOfflineDueAt(line, nowMs);
+        if (!dueAt) continue;
+        return {
+            scheduled: true,
+            dueAt,
+            matchedText: line,
+            reason: 'future-appointment',
+            scenario: buildOfflineScheduledStartScenario({ ...input, latestText: input.latestText || line }, dueAt),
+        };
+    }
+    return { scheduled: false };
+};
+
+const readOfflineAutoStartSchedules = (): OfflineAutoStartSchedule[] => {
+    try {
+        const raw = localStorage.getItem(scheduledStartsKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((item: any) =>
+                item
+                && (item.mode === 'private' || item.mode === 'group')
+                && typeof item.targetId === 'string'
+                && typeof item.dueAt === 'number'
+                && typeof item.scenario === 'string'
+            )
+            .map((item: any) => ({
+                id: String(item.id || `${item.mode}_${item.targetId}_${item.dueAt}`),
+                mode: item.mode,
+                targetId: item.targetId,
+                dueAt: item.dueAt,
+                scenario: item.scenario,
+                createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+                matchedText: typeof item.matchedText === 'string' ? item.matchedText : undefined,
+            }));
+    } catch {
+        return [];
+    }
+};
+
+const writeOfflineAutoStartSchedules = (items: OfflineAutoStartSchedule[]): void => {
+    try {
+        const clean = items
+            .filter(item => item.dueAt > Date.now() - 24 * 60 * 60 * 1000)
+            .sort((a, b) => a.dueAt - b.dueAt)
+            .slice(0, 80);
+        if (clean.length) localStorage.setItem(scheduledStartsKey, JSON.stringify(clean));
+        else localStorage.removeItem(scheduledStartsKey);
+    } catch { /* ignore */ }
+};
+
+export const scheduleOfflineAutoStart = (item: Omit<OfflineAutoStartSchedule, 'id' | 'createdAt'>): OfflineAutoStartSchedule | undefined => {
+    if (!item.targetId || !item.scenario.trim() || item.dueAt <= Date.now() + 5 * 60 * 1000) return undefined;
+    const current = readOfflineAutoStartSchedules();
+    const existingIdx = current.findIndex(old =>
+        old.mode === item.mode
+        && old.targetId === item.targetId
+        && (Math.abs(old.dueAt - item.dueAt) <= 30 * 60 * 1000 || (!!item.matchedText && old.matchedText === item.matchedText))
+    );
+    const next: OfflineAutoStartSchedule = {
+        ...item,
+        scenario: item.scenario.slice(0, 1800),
+        matchedText: item.matchedText?.slice(0, 240),
+        id: `${item.mode}_${item.targetId}_${Math.round(item.dueAt / 60000)}`,
+        createdAt: Date.now(),
+    };
+    if (existingIdx >= 0) current[existingIdx] = { ...current[existingIdx], ...next };
+    else current.push(next);
+    writeOfflineAutoStartSchedules(current);
+    return next;
+};
+
+export const consumeDueOfflineAutoStarts = ({
+    mode,
+    targetId,
+    nowMs = Date.now(),
+}: {
+    mode: OfflineAutoStartMode;
+    targetId: string;
+    nowMs?: number;
+}): OfflineAutoStartSchedule[] => {
+    const current = readOfflineAutoStartSchedules();
+    const due: OfflineAutoStartSchedule[] = [];
+    const rest: OfflineAutoStartSchedule[] = [];
+    for (const item of current) {
+        if (item.mode === mode && item.targetId === targetId && item.dueAt <= nowMs) due.push(item);
+        else rest.push(item);
+    }
+    if (due.length > 0) writeOfflineAutoStartSchedules(rest);
+    return due.sort((a, b) => a.dueAt - b.dueAt);
+};
+
 /** 用户不在该角色聊天页时标记 pending，进聊天时兜底弹窗 */
-export const setOfflinePending = (charId: string): void => {
-    try { localStorage.setItem(pendingKey(charId), '1'); } catch { /* ignore */ }
+export const setOfflinePending = (charId: string, scenario?: string): void => {
+    try {
+        localStorage.setItem(pendingKey(charId), '1');
+        const cleanScenario = String(scenario || '').trim();
+        if (cleanScenario) localStorage.setItem(pendingScenarioKey(charId), cleanScenario.slice(0, 1600));
+        else localStorage.removeItem(pendingScenarioKey(charId));
+    } catch { /* ignore */ }
 };
 export const consumeOfflinePending = (charId: string): boolean => {
     try {
@@ -62,6 +416,14 @@ export const consumeOfflinePending = (charId: string): boolean => {
         if (hit) localStorage.removeItem(pendingKey(charId));
         return hit;
     } catch { return false; }
+};
+export const consumeOfflinePendingScenario = (charId: string): string | undefined => {
+    try {
+        const raw = localStorage.getItem(pendingScenarioKey(charId));
+        localStorage.removeItem(pendingScenarioKey(charId));
+        const text = raw?.trim();
+        return text || undefined;
+    } catch { return undefined; }
 };
 
 // ── 线下场景会话（窗口内的情景记录，落 localStorage 防误关丢失）──
@@ -140,6 +502,54 @@ export interface OfflinePov { char: OfflinePovPerson; user: OfflinePovPerson }
 export const DEFAULT_OFFLINE_POV: OfflinePov = { char: 'third', user: 'third' };
 const povKey = (charId: string) => `moro_offline_pov_${charId}`;
 const isPerson = (v: any): v is OfflinePovPerson => v === 'first' || v === 'second' || v === 'third';
+
+// ── 线下字数上限：留空沿用默认范围；填数字则让开场/续写统一按上限收束 ──
+
+export interface OfflineWordLimit { maxChars?: number }
+
+export const OFFLINE_WORD_LIMIT_MIN = 20;
+export const OFFLINE_WORD_LIMIT_MAX = 2000;
+
+const wordLimitKey = (charId: string) => `moro_offline_word_limit_${charId}`;
+
+export const normalizeOfflineWordLimitValue = (value: unknown): number | undefined => {
+    if (value === '' || value === null || value === undefined) return undefined;
+    const n = typeof value === 'number' ? value : parseInt(String(value), 10);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return Math.max(OFFLINE_WORD_LIMIT_MIN, Math.min(OFFLINE_WORD_LIMIT_MAX, Math.round(n)));
+};
+
+export const normalizeOfflineWordLimit = (limit?: OfflineWordLimit | null): OfflineWordLimit => {
+    const maxChars = normalizeOfflineWordLimitValue(limit?.maxChars);
+    return maxChars ? { maxChars } : {};
+};
+
+export const loadOfflineWordLimit = (charId: string): OfflineWordLimit => {
+    try {
+        const raw = localStorage.getItem(wordLimitKey(charId));
+        const parsed = raw ? JSON.parse(raw) : null;
+        return normalizeOfflineWordLimit(parsed);
+    } catch { /* ignore */ }
+    return {};
+};
+
+export const saveOfflineWordLimit = (charId: string, limit: OfflineWordLimit): void => {
+    try {
+        const normalized = normalizeOfflineWordLimit(limit);
+        if (normalized.maxChars) localStorage.setItem(wordLimitKey(charId), JSON.stringify(normalized));
+        else localStorage.removeItem(wordLimitKey(charId));
+    } catch { /* ignore */ }
+};
+
+export const formatOfflineLengthRange = (limit: OfflineWordLimit | undefined, defaultRange: string): string => {
+    const maxChars = normalizeOfflineWordLimit(limit).maxChars;
+    return maxChars ? `不超过${maxChars}字` : defaultRange;
+};
+
+export const offlineWordLimitRule = (limit?: OfflineWordLimit): string => {
+    const maxChars = normalizeOfflineWordLimit(limit).maxChars;
+    return maxChars ? `- 字数上限是 ${maxChars} 字，宁可短一点，也不要超过这个上限；\n` : '';
+};
 
 export const loadOfflinePov = (charId: string): OfflinePov => {
     try {
@@ -283,10 +693,12 @@ export const resolveOpeningFrame = (
 
 /** 线下开场：生成见面的开场情景（旁白 + 角色的第一句话/动作） */
 export const generateOfflineOpening = async (
-    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov, scenario?: string, rerollPrevious?: string,
+    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov, scenario?: string, rerollPrevious?: string, wordLimit?: OfflineWordLimit,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
+    const lengthRange = formatOfflineLengthRange(wordLimit, '120-250字');
+    const lengthRule = offlineWordLimitRule(wordLimit);
     const sceneFrame = scenario && scenario.trim()
         ? `\n### [这场见面是怎么开始的]\n${scenario.trim()}\n请严格按这个方式来安排开场。\n`
         : '';
@@ -299,7 +711,8 @@ ${povText}
 ${sceneFrame}
 ${rerollBlock}
 ### [任务]
-写出见面那一刻的开场（120-250字）：
+写出见面那一刻的开场（${lengthRange}）：
+${lengthRule}
 - 交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，但只写会被当场注意到的细节；
 - 承接最近线上聊天里的约定、情绪或未说完的话，让这场见面像顺着上一句聊天自然发生；
 - 写「${char.name}」见到 ${userProfile.name} 的第一反应：一个具体动作/神态 + 一句贴合人设的开口，可以短、可以别扭、可以有停顿；
@@ -310,10 +723,12 @@ ${rerollBlock}
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
 export const generateOfflineTurn = async (
     char: CharacterProfile, userProfile: UserProfile, api: OfflineApi,
-    entries: OfflineEntry[], userInput?: string, pov?: OfflinePov, rerollPrevious?: string,
+    entries: OfflineEntry[], userInput?: string, pov?: OfflinePov, rerollPrevious?: string, wordLimit?: OfflineWordLimit,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
+    const lengthRange = formatOfflineLengthRange(wordLimit, '80-200字');
+    const lengthRule = offlineWordLimitRule(wordLimit);
     const transcript = formatEntries(entries, char.name, userProfile.name);
     const tail = userInput
         ? `刚刚 ${userProfile.name} 的行动/发言：${userInput}`
@@ -332,7 +747,8 @@ ${tail}
 ${rerollBlock}
 
 ### [任务]
-以「${char.name}」的身份续写现场接下来的一小段（80-200字）：
+以「${char.name}」的身份续写现场接下来的一小段（${lengthRange}）：
+${lengthRule}
 - 先回应 ${userProfile.name} 刚刚的行动/发言，再用一个很小的动作、神态或环境细节把现场往前推；
 - 台词像真人面对面说话，可以短句、停顿、没说完、临时改口，不要每次都工整抒情；
 - 可以让「${char.name}」主动做点符合人设的事（递东西、让路、靠近/退开、转移话题、带着走），但不要替 ${userProfile.name} 说话或行动；

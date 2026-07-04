@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 认知消化 (Cognitive Digestion)
+ * 回忆标本馆 — 认知消化 (Cognitive Digestion)
  *
  * 模拟大脑的后台认知过程。每次封盒后触发一次"消化循环"，
  * 角色带着自己的人设和记忆，对所有待消化的内容做一次统一审视：
@@ -604,7 +604,7 @@ async function executeActions(
  * 运行一次认知消化循环
  *
  * 触发时机：每次封盒后由 pipeline 调用（有冷却时间控制频率）
- * 也可以在记忆宫殿 App 里手动触发（用于测试）
+ * 也可以在回忆标本馆 App 里手动触发（用于测试）
  *
  * @param charId 角色 ID
  * @param charName 角色名
@@ -670,7 +670,7 @@ const VALID_STYLES: PersonalityStyle[] = ['emotional', 'narrative', 'imagery', '
 
 /**
  * 根据角色人设 + 已有记忆，让 LLM 判断角色的人格风格。
- * 首次启用记忆宫殿时自动调用一次，结果写入 self_room 并返回。
+ * 首次启用回忆标本馆时自动调用一次，结果写入 self_room 并返回。
  *
  * @returns 推断出的 PersonalityStyle，失败时返回 'emotional' 作为默认值
  */

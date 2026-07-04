@@ -1,5 +1,5 @@
 /**
- * Group Memory Palace — 群聊后台总结管线
+ * 群聊回忆标本馆 — 群聊后台总结管线
  *
  * 与私聊管线（pipeline.ts/processNewMessages）的关系：**完全平行、互不调用**。
  * 所有共享的只是底层 IndexedDB 表（memory_nodes 等通用 CRUD）和本地文本检索。
@@ -44,7 +44,7 @@ function setLastProcessedGroupId(groupId: string, msgId: number): void {
     try { localStorage.setItem(LAST_MSG_KEY_GROUP(groupId), String(msgId)); } catch {}
 }
 
-/** 全局记忆宫殿配置（自己读 localStorage，不调 pipeline.ts 的私有 getter） */
+/** 全局回忆标本馆配置（自己读 localStorage，不调 pipeline.ts 的私有 getter） */
 function readGlobalMemoryPalaceConfig(): {
     lightLLM?: LightLLMConfig;
 } {
@@ -121,7 +121,7 @@ export async function deleteGroupMemoriesByGroupId(groupId: string): Promise<{ d
 /**
  * 群聊后台缓冲区处理。
  *
- * - 至少需要 1 个成员开启了记忆宫殿才跑（否则直接 return null）
+ * - 至少需要 1 个成员开启了回忆标本馆才跑（否则直接 return null）
  * - 全程异常吞掉，console.warn 后返回 null，绝不影响 GroupChat 主流程
  * - 写出来的 MemoryNode 自带 groupId/groupName，私聊代码读到这俩字段不感知（无副作用）
  * - onProgress 回调：每进入一个关键阶段触发一次（"扫描缓冲区" / "LLM 提取中" / "保存第 X 个成员"），
@@ -150,7 +150,7 @@ export async function processGroupNewMessages(
     processingLocks.add(lockKey);
 
     try {
-        // 1. 至少要有一个成员开启了记忆宫殿
+        // 1. 至少要有一个成员开启了回忆标本馆
         const enabledMembers = members.filter(m => isMemoryFeatureEnabled(m as any));
         if (enabledMembers.length === 0) {
             return { stored: 0, perMemberStored: {}, reason: 'no_enabled_member' };
@@ -222,7 +222,7 @@ export async function processGroupNewMessages(
         console.log(`🏰 [GroupPalace] 群 ${group.name}：提取 ${drafts.length} 条群记忆，开始为 ${enabledMembers.length} 个成员各持久化一份`);
         onProgress?.(`提取到 ${drafts.length} 条群记忆，正在存入 ${enabledMembers.length} 个成员的回忆标本馆...`);
 
-        // 6. 为每个开启记忆宫殿的成员各存一份
+        // 6. 为每个开启回忆标本馆的成员各存一份
         const perMemberStored: Record<string, number> = {};
         let totalStored = 0;
 

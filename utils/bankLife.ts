@@ -21,7 +21,12 @@ import {
     BankLifeActionRecord,
     BankLifeActionResult,
     BankLifeActionTone,
+    BankLifeShopProduct,
     BankShopActionResult,
+    BankShopBranch,
+    BankShopDailyRewards,
+    BankShopPortfolioState,
+    BankShopState,
     BankStockOrderResult,
     BankStockHolding,
     BankStockQuote,
@@ -29,13 +34,32 @@ import {
     BankLoanCreditProfile,
     BankMarketPulse,
     BankResumeProfile,
+    ShopStaff,
 } from '../types';
 
-export const BANK_LIFE_VERSION = 3;
+export const BANK_LIFE_VERSION = 4;
 export const SHOP_UNLOCK_COST = 10000;
+export const BANK_OPEN_BRANCH_ENERGY_COST = 30;
+export const INITIAL_HEADQUARTERS_ENERGY = 80;
 export const COMPANY_FOUND_COST = 100000;
 
 const genId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const DEFAULT_SHOP_RECIPE_ID = 'recipe-coffee-001';
+const DEFAULT_SHOP_RECIPE_STOCK = 12;
+
+const createDefaultSystemStaff = (): ShopStaff => ({
+    id: 'staff-001',
+    name: '系统',
+    avatar: '🐱',
+    role: 'manager',
+    fatigue: 0,
+    maxFatigue: 100,
+    hireDate: Date.now(),
+    x: 50,
+    y: 50,
+    personality: 'Moro的专属宠物，负责看店',
+    isPet: true,
+});
 
 export const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -395,6 +419,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'drinks',
         name: '饮品店',
         icon: '🥤',
+        startupCost: 10000,
         vibe: '早晚高峰客流稳定，靠新品和口碑拉复购。',
         customerGroups: ['上班族', '学生', '散步邻居'],
         margin: 0.58,
@@ -410,6 +435,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'snack',
         name: '小吃摊',
         icon: '🍢',
+        startupCost: 7000,
         vibe: '翻台快、现金流轻，天气和位置很影响生意。',
         customerGroups: ['夜宵客', '通勤人群', '附近摊主'],
         margin: 0.62,
@@ -425,6 +451,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'convenience',
         name: '便利店',
         icon: '🏪',
+        startupCost: 22000,
         vibe: '品类多、复购稳，库存管理决定利润。',
         customerGroups: ['社区居民', '夜班族', '快递员'],
         margin: 0.35,
@@ -440,6 +467,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'flower',
         name: '花店',
         icon: '🌷',
+        startupCost: 14000,
         vibe: '客单价漂亮，节日波动明显，审美和损耗都重要。',
         customerGroups: ['情侣', '办公室', '探病客'],
         margin: 0.55,
@@ -455,6 +483,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'dessert',
         name: '甜品店',
         icon: '🍰',
+        startupCost: 16000,
         vibe: '靠颜值和口味出圈，研发新品能抬高客单。',
         customerGroups: ['闺蜜聚会', '打卡客', '亲子客'],
         margin: 0.5,
@@ -470,6 +499,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'pet',
         name: '宠物用品',
         icon: '🐾',
+        startupCost: 15000,
         vibe: '复购强，熟客会带来稳定口碑。',
         customerGroups: ['养宠家庭', '救助志愿者', '新手铲屎官'],
         margin: 0.42,
@@ -485,6 +515,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'stationery',
         name: '文具杂货',
         icon: '✒️',
+        startupCost: 8000,
         vibe: '单价不高但很有氛围，靠选品和陈列打动人。',
         customerGroups: ['学生', '手账爱好者', '办公室'],
         margin: 0.48,
@@ -500,6 +531,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'secondhand',
         name: '二手小铺',
         icon: '🧺',
+        startupCost: 9000,
         vibe: '淘货感强，进价低但成色和故事决定成交。',
         customerGroups: ['学生党', '复古爱好者', '邻里熟客'],
         margin: 0.64,
@@ -515,6 +547,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'handmade',
         name: '手作店',
         icon: '🧶',
+        startupCost: 12000,
         vibe: '制作慢、毛利高，订单排期和口碑很关键。',
         customerGroups: ['礼物买家', '手作同好', '定制客户'],
         margin: 0.68,
@@ -530,6 +563,7 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         id: 'online',
         name: '线上小店',
         icon: '📦',
+        startupCost: 9000,
         vibe: '不吃地段，吃选品、流量和售后。',
         customerGroups: ['网购用户', '粉丝客群', '回购客户'],
         margin: 0.46,
@@ -654,14 +688,394 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
     return { ...base, dailyPlan: buildDailyPlan(base) };
 }
 
-export function migrateBankLifeState(state: BankFullState): BankFullState {
-    const hasOldShopProgress = !!(
+export type BankShopDailyRewardKind = 'headquartersPatrol' | 'shelf' | 'review' | 'idleBonus';
+
+export function getBankBusinessTemplate(businessTypeId?: string): BankBusinessTemplate {
+    return BUSINESS_TEMPLATES.find(b => b.id === businessTypeId) || BUSINESS_TEMPLATES[0];
+}
+
+export function getBankShopStartupCost(businessTypeId?: string): number {
+    return getBankBusinessTemplate(businessTypeId).startupCost;
+}
+
+export function createDefaultBankShopState(shopName = '我的小店'): BankShopState {
+    return {
+        actionPoints: 100,
+        shopName,
+        shopLevel: 1,
+        appeal: 100,
+        background: '',
+        staff: [createDefaultSystemStaff()],
+        unlockedRecipes: [DEFAULT_SHOP_RECIPE_ID],
+        stock: { [DEFAULT_SHOP_RECIPE_ID]: DEFAULT_SHOP_RECIPE_STOCK },
+        activeVisitor: undefined,
+        guestbook: [],
+        reviews: [],
+        regulars: {},
+        pendingRevenue: 0,
+        totalRevenue: 0,
+        lastAccrualAt: Date.now(),
+    };
+}
+
+function normalizeBankShopState(shop: Partial<BankShopState> | undefined, shopName: string): BankShopState {
+    const base = createDefaultBankShopState(shopName);
+    const unlockedRecipes = (shop?.unlockedRecipes?.length ? shop.unlockedRecipes : base.unlockedRecipes).filter(Boolean);
+    const stock = { ...base.stock, ...(shop?.stock || {}) };
+    for (const id of unlockedRecipes) {
+        if (stock[id] === undefined) stock[id] = DEFAULT_SHOP_RECIPE_STOCK;
+    }
+    return {
+        ...base,
+        ...(shop || {}),
+        shopName: (shop?.shopName || shopName || base.shopName).trim() || base.shopName,
+        actionPoints: Math.max(0, Math.floor(shop?.actionPoints ?? base.actionPoints)),
+        shopLevel: Math.max(1, Math.floor(shop?.shopLevel ?? base.shopLevel)),
+        appeal: Math.max(0, Math.floor(shop?.appeal ?? base.appeal)),
+        staff: shop?.staff?.length ? shop.staff : base.staff,
+        unlockedRecipes,
+        stock,
+        guestbook: shop?.guestbook || [],
+        reviews: shop?.reviews || [],
+        regulars: shop?.regulars || {},
+        pendingRevenue: Math.max(0, shop?.pendingRevenue || 0),
+        totalRevenue: Math.max(0, shop?.totalRevenue || 0),
+    };
+}
+
+export function getDefaultBankBranchName(businessTypeId: string, branches: BankShopBranch[] = []): string {
+    const tpl = getBankBusinessTemplate(businessTypeId);
+    const sameTypeCount = branches.filter(b => b.businessTypeId === tpl.id).length;
+    return sameTypeCount <= 0 ? tpl.name : `${tpl.name} ${sameTypeCount + 1}号店`;
+}
+
+export function createBankShopBranch(
+    businessTypeId: string,
+    shopName?: string,
+    dateStr = todayStr(),
+    overrides: Partial<BankShopBranch> = {}
+): BankShopBranch {
+    const tpl = getBankBusinessTemplate(businessTypeId);
+    const name = (shopName || '').trim() || tpl.name;
+    const shop = normalizeBankShopState(overrides.shop, name);
+    return {
+        id: overrides.id || genId('shop'),
+        businessTypeId: tpl.id,
+        businessName: tpl.name,
+        openedAt: overrides.openedAt || dateStr,
+        shop,
+        firedStaff: overrides.firedStaff || [],
+        shopProducts: overrides.shopProducts?.length ? overrides.shopProducts : buildShopProducts(tpl.id),
+        shopCustomers: overrides.shopCustomers?.length ? overrides.shopCustomers : tpl.customerGroups,
+        shopEvents: overrides.shopEvents || [],
+    };
+}
+
+function hasLegacyShopProgress(state: BankFullState): boolean {
+    return !!(
+        state.life?.shopUnlocked ||
         state.shop?.lastBusinessAt ||
         state.shop?.totalRevenue ||
         (state.shop?.reviews?.length || 0) > 0 ||
         (state.shop?.regulars && Object.keys(state.shop.regulars).length > 0) ||
         (state.shop?.unlockedRecipes?.length || 0) > 1
     );
+}
+
+function normalizeDailyRewards(rewards: BankShopDailyRewards | undefined, dateStr: string): BankShopDailyRewards {
+    if (!rewards || rewards.dateStr !== dateStr) {
+        return {
+            dateStr,
+            headquartersPatrol: false,
+            shelfByShopId: {},
+            reviewByShopId: {},
+            idleBonusByShopId: {},
+        };
+    }
+    return {
+        dateStr,
+        headquartersPatrol: !!rewards.headquartersPatrol,
+        shelfByShopId: rewards.shelfByShopId || {},
+        reviewByShopId: rewards.reviewByShopId || {},
+        idleBonusByShopId: rewards.idleBonusByShopId || {},
+    };
+}
+
+function normalizePortfolio(portfolio: BankShopPortfolioState | undefined, dateStr: string): BankShopPortfolioState {
+    const branches = (portfolio?.branches || []).map((branch, index) => createBankShopBranch(
+        branch.businessTypeId || 'drinks',
+        branch.shop?.shopName || branch.businessName,
+        branch.openedAt || dateStr,
+        {
+            ...branch,
+            id: branch.id || `shop-${index + 1}`,
+            shop: branch.shop,
+            firedStaff: branch.firedStaff || [],
+            shopProducts: branch.shopProducts || [],
+            shopCustomers: branch.shopCustomers || [],
+            shopEvents: branch.shopEvents || [],
+        }
+    ));
+    const activeShopId = branches.some(b => b.id === portfolio?.activeShopId)
+        ? portfolio!.activeShopId
+        : (branches[0]?.id || '');
+    return {
+        activeShopId,
+        headquartersEnergy: Math.max(0, Math.floor(portfolio?.headquartersEnergy ?? INITIAL_HEADQUARTERS_ENERGY)),
+        branches,
+        dailyRewards: normalizeDailyRewards(portfolio?.dailyRewards, dateStr),
+    };
+}
+
+export function getActiveShopBranch(state: BankFullState): BankShopBranch | undefined {
+    const portfolio = state.shopPortfolio;
+    if (!portfolio?.branches?.length) return undefined;
+    return portfolio.branches.find(b => b.id === portfolio.activeShopId) || portfolio.branches[0];
+}
+
+export function syncActiveShopMirror(state: BankFullState): BankFullState {
+    const dateStr = state.life?.dateStr || state.lastLoginDate || todayStr();
+    const portfolio = normalizePortfolio(state.shopPortfolio, dateStr);
+    const active = portfolio.branches.find(b => b.id === portfolio.activeShopId) || portfolio.branches[0];
+    if (!active) {
+        const life = state.life ? {
+            ...state.life,
+            shopUnlocked: false,
+            shopBusinessType: undefined,
+            shopBusinessName: undefined,
+            shopProducts: [],
+            shopCustomers: [],
+            shopEvents: [],
+        } : state.life;
+        return {
+            ...state,
+            life: life ? { ...life, dailyPlan: buildDailyPlan(life) } : life,
+            shopPortfolio: { ...portfolio, activeShopId: '' },
+        };
+    }
+    const life = state.life || createDefaultBankLifeState(dateStr, true);
+    const syncedLife: BankLifeState = {
+        ...life,
+        shopUnlocked: true,
+        shopBusinessType: active.businessTypeId,
+        shopBusinessName: active.shop.shopName || active.businessName,
+        shopProducts: active.shopProducts,
+        shopCustomers: active.shopCustomers,
+        shopEvents: active.shopEvents,
+    };
+    return {
+        ...state,
+        shop: active.shop,
+        firedStaff: active.firedStaff,
+        life: { ...syncedLife, dailyPlan: buildDailyPlan(syncedLife) },
+        shopPortfolio: portfolio,
+    };
+}
+
+export function syncActiveBranchFromMirror(state: BankFullState): BankFullState {
+    const dateStr = state.life?.dateStr || state.lastLoginDate || todayStr();
+    const portfolio = normalizePortfolio(state.shopPortfolio, dateStr);
+    const active = portfolio.branches.find(b => b.id === portfolio.activeShopId) || portfolio.branches[0];
+    if (!active) return syncActiveShopMirror({ ...state, shopPortfolio: portfolio });
+    const life = state.life || createDefaultBankLifeState(dateStr, true);
+    const activeShopName = state.shop?.shopName || life.shopBusinessName || active.shop.shopName || active.businessName;
+    const branches = portfolio.branches.map(branch => branch.id === active.id ? {
+        ...branch,
+        shop: normalizeBankShopState({ ...state.shop, shopName: activeShopName }, activeShopName),
+        firedStaff: state.firedStaff || [],
+        shopProducts: life.shopProducts || branch.shopProducts,
+        shopCustomers: life.shopCustomers || branch.shopCustomers,
+        shopEvents: life.shopEvents || branch.shopEvents,
+    } : branch);
+    return syncActiveShopMirror({
+        ...state,
+        shopPortfolio: { ...portfolio, branches },
+    });
+}
+
+export function migrateBankShopPortfolioState(state: BankFullState): BankFullState {
+    const dateStr = state.life?.dateStr || state.lastLoginDate || todayStr();
+    if (state.shopPortfolio?.branches?.length) {
+        return syncActiveShopMirror({
+            ...state,
+            shopPortfolio: normalizePortfolio(state.shopPortfolio, dateStr),
+        });
+    }
+
+    if (!hasLegacyShopProgress(state)) {
+        return syncActiveShopMirror({
+            ...state,
+            shopPortfolio: normalizePortfolio(state.shopPortfolio, dateStr),
+        });
+    }
+
+    const businessTypeId = state.life?.shopBusinessType || 'drinks';
+    const tpl = getBankBusinessTemplate(businessTypeId);
+    const shopName = state.life?.shopBusinessName || state.shop?.shopName || tpl.name;
+    const legacyBranch = createBankShopBranch(tpl.id, shopName, dateStr, {
+        id: 'shop-main',
+        openedAt: state.lastLoginDate || dateStr,
+        shop: state.shop,
+        firedStaff: state.firedStaff || [],
+        shopProducts: state.life?.shopProducts?.length ? state.life.shopProducts : buildShopProducts(tpl.id),
+        shopCustomers: state.life?.shopCustomers?.length ? state.life.shopCustomers : tpl.customerGroups,
+        shopEvents: state.life?.shopEvents || [],
+    });
+    return syncActiveShopMirror({
+        ...state,
+        shopPortfolio: {
+            activeShopId: legacyBranch.id,
+            headquartersEnergy: Math.max(0, Math.floor(state.shopPortfolio?.headquartersEnergy ?? INITIAL_HEADQUARTERS_ENERGY)),
+            branches: [legacyBranch],
+            dailyRewards: normalizeDailyRewards(state.shopPortfolio?.dailyRewards, dateStr),
+        },
+    });
+}
+
+export function switchActiveBankShop(state: BankFullState, shopId: string): BankFullState {
+    const withCurrentSaved = syncActiveBranchFromMirror(state);
+    const portfolio = withCurrentSaved.shopPortfolio;
+    if (!portfolio?.branches?.some(b => b.id === shopId)) return withCurrentSaved;
+    return syncActiveShopMirror({
+        ...withCurrentSaved,
+        shopPortfolio: { ...portfolio, activeShopId: shopId },
+    });
+}
+
+export function openBankShopBranch(
+    state: BankFullState,
+    businessTypeId: string,
+    shopName?: string,
+    options: { walletBalance?: number; dateStr?: string; headquartersEnergyCost?: number } = {}
+): { ok: boolean; state: BankFullState; branch?: BankShopBranch; cost: number; energyCost: number; reason?: 'wallet' | 'energy'; actionResult?: BankShopActionResult } {
+    const prepared = state.shopPortfolio?.branches?.length
+        ? syncActiveBranchFromMirror(state)
+        : migrateBankShopPortfolioState(state);
+    const tpl = getBankBusinessTemplate(businessTypeId);
+    const cost = tpl.startupCost;
+    const energyCost = options.headquartersEnergyCost ?? BANK_OPEN_BRANCH_ENERGY_COST;
+    if (typeof options.walletBalance === 'number' && options.walletBalance < cost) {
+        return { ok: false, state: prepared, cost, energyCost, reason: 'wallet' };
+    }
+    const portfolio = normalizePortfolio(prepared.shopPortfolio, prepared.life?.dateStr || options.dateStr || todayStr());
+    if ((portfolio.headquartersEnergy || 0) < energyCost) {
+        return { ok: false, state: prepared, cost, energyCost, reason: 'energy' };
+    }
+    const dateStr = options.dateStr || prepared.life?.dateStr || todayStr();
+    const name = (shopName || '').trim() || getDefaultBankBranchName(tpl.id, portfolio.branches);
+    const branch = createBankShopBranch(tpl.id, name, dateStr, {
+        shopEvents: [{ id: genId('life'), dateStr, title: '分店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good' }],
+    });
+    const actionResult: BankShopActionResult = {
+        ...createBankActionResult({
+            category: 'shop',
+            kind: 'shop-branch-open',
+            title: portfolio.branches.length ? '新分店开张' : '开店确认',
+            summary: `${name} 已经完成开业准备，第一批货架会自动上架。`,
+            tone: 'good',
+            amount: -cost,
+            metrics: [
+                { label: '业态', value: tpl.name },
+                { label: '启动金', value: `¥${cost}`, tone: 'warn' },
+                { label: '总部精力', value: `-${energyCost}`, tone: 'warn' },
+                { label: '初始商品', value: `${tpl.products.length} 种` },
+            ],
+            riskTags: tpl.risk >= 4 ? ['高波动客流'] : [],
+            payload: { businessTypeId: tpl.id, shopName: name, branchId: branch.id, cost, energyCost },
+        }),
+        category: 'shop',
+        productName: tpl.name,
+    };
+    const life = appendBankActionRecord({
+        ...(prepared.life || createDefaultBankLifeState(dateStr, true)),
+        events: pushEvent(prepared.life?.events || [], { dateStr, title: portfolio.branches.length ? '新分店开张' : '小店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good', amount: -cost }),
+    }, actionResult);
+    const next = syncActiveShopMirror({
+        ...prepared,
+        life,
+        shopPortfolio: {
+            ...portfolio,
+            headquartersEnergy: portfolio.headquartersEnergy - energyCost,
+            activeShopId: branch.id,
+            branches: [...portfolio.branches, branch],
+        },
+    });
+    return { ok: true, state: next, branch, cost, energyCost, actionResult };
+}
+
+export function claimBankShopDailyReward(
+    state: BankFullState,
+    kind: BankShopDailyRewardKind,
+    options: { shopId?: string; dateStr?: string } = {}
+): { claimed: boolean; state: BankFullState; amount: number; target: 'headquarters' | 'shop'; actionResult?: BankLifeActionResult } {
+    const prepared = state.shopPortfolio?.branches?.length
+        ? syncActiveBranchFromMirror(state)
+        : migrateBankShopPortfolioState(state);
+    const portfolio = normalizePortfolio(prepared.shopPortfolio, prepared.life?.dateStr || todayStr());
+    const dateStr = options.dateStr || prepared.life?.dateStr || todayStr();
+    const rewards = normalizeDailyRewards(portfolio.dailyRewards, dateStr);
+    const active = portfolio.branches.find(b => b.id === (options.shopId || portfolio.activeShopId)) || portfolio.branches[0];
+    const defs: Record<BankShopDailyRewardKind, { amount: number; title: string; summary: string; target: 'headquarters' | 'shop' }> = {
+        headquartersPatrol: { amount: 25, title: '每日巡店完成', summary: '总部精力恢复了，今天可以继续规划开店和装修。', target: 'headquarters' },
+        shelf: { amount: 18, title: '货架整理完成', summary: '当前店的经营精力恢复了，补货和员工安排更顺手。', target: 'shop' },
+        review: { amount: 10, title: '营业复盘完成', summary: '当前店的经营精力恢复了，下一轮营业更稳。', target: 'shop' },
+        idleBonus: { amount: 6, title: '闲置收益首领奖励', summary: '第一次收取今天的闲置收益，当前店精力小幅恢复。', target: 'shop' },
+    };
+    const def = defs[kind];
+    if (!active && def.target === 'shop') return { claimed: false, state: prepared, amount: def.amount, target: def.target };
+
+    const already = kind === 'headquartersPatrol'
+        ? rewards.headquartersPatrol
+        : kind === 'shelf'
+            ? rewards.shelfByShopId?.[active!.id]
+            : kind === 'review'
+                ? rewards.reviewByShopId?.[active!.id]
+                : rewards.idleBonusByShopId?.[active!.id];
+    if (already) return { claimed: false, state: prepared, amount: def.amount, target: def.target };
+
+    const actionResult = createBankActionResult({
+        category: 'shop',
+        kind: `daily-${kind}`,
+        title: def.title,
+        summary: def.summary,
+        tone: 'good',
+        metrics: [
+            { label: def.target === 'headquarters' ? '总部精力' : '单店精力', value: `+${def.amount}`, tone: 'good' },
+            ...(active ? [{ label: '店铺', value: active.shop.shopName }] : []),
+        ],
+        payload: { kind, shopId: active?.id, amount: def.amount, dateStr },
+    });
+
+    let nextRewards = rewards;
+    if (kind === 'headquartersPatrol') {
+        nextRewards = { ...nextRewards, headquartersPatrol: true };
+    } else if (kind === 'shelf') {
+        nextRewards = { ...nextRewards, shelfByShopId: { ...(nextRewards.shelfByShopId || {}), [active!.id]: true } };
+    } else if (kind === 'review') {
+        nextRewards = { ...nextRewards, reviewByShopId: { ...(nextRewards.reviewByShopId || {}), [active!.id]: true } };
+    } else {
+        nextRewards = { ...nextRewards, idleBonusByShopId: { ...(nextRewards.idleBonusByShopId || {}), [active!.id]: true } };
+    }
+
+    const branches = def.target === 'shop'
+        ? portfolio.branches.map(branch => branch.id === active!.id ? { ...branch, shop: { ...branch.shop, actionPoints: (branch.shop.actionPoints || 0) + def.amount } } : branch)
+        : portfolio.branches;
+    const life = appendBankActionRecord(prepared.life || createDefaultBankLifeState(dateStr, !!branches.length), actionResult);
+    const nextState = syncActiveShopMirror({
+        ...prepared,
+        life,
+        shopPortfolio: {
+            ...portfolio,
+            headquartersEnergy: def.target === 'headquarters' ? portfolio.headquartersEnergy + def.amount : portfolio.headquartersEnergy,
+            branches,
+            dailyRewards: nextRewards,
+        },
+    });
+    return { claimed: true, state: nextState, amount: def.amount, target: def.target, actionResult };
+}
+
+export function migrateBankLifeState(state: BankFullState): BankFullState {
+    const hasOldShopProgress = hasLegacyShopProgress(state);
     const life = state.life
         ? {
             ...createDefaultBankLifeState(state.life.dateStr || state.lastLoginDate || todayStr(), state.life.shopUnlocked || hasOldShopProgress),
@@ -697,7 +1111,7 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             aiLastGeneratedAt: state.life.aiLastGeneratedAt || {},
         }
         : createDefaultBankLifeState(state.lastLoginDate || todayStr(), hasOldShopProgress);
-    return { ...state, life: { ...life, dailyPlan: buildDailyPlan(life) }, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) };
+    return migrateBankShopPortfolioState({ ...state, life: { ...life, dailyPlan: buildDailyPlan(life) }, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) });
 }
 
 function buildShopProducts(businessTypeId: string) {
@@ -708,6 +1122,7 @@ function buildShopProducts(businessTypeId: string) {
 export function openLifeShop(life: BankLifeState, businessTypeId: string, shopName: string): BankLifeState {
     const tpl = BUSINESS_TEMPLATES.find(b => b.id === businessTypeId) || BUSINESS_TEMPLATES[0];
     const name = shopName.trim() || tpl.name;
+    const startupCost = tpl.startupCost;
     const result: BankShopActionResult = {
         ...createBankActionResult({
             category: 'shop',
@@ -715,10 +1130,10 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
             title: '开店确认',
             summary: `${name} 已经完成开业准备，第一批货架会自动上架。`,
             tone: 'good',
-            amount: -SHOP_UNLOCK_COST,
+            amount: -startupCost,
             metrics: [
                 { label: '业态', value: tpl.name },
-                { label: '启动金', value: `¥${SHOP_UNLOCK_COST}`, tone: 'warn' },
+                { label: '启动金', value: `¥${startupCost}`, tone: 'warn' },
                 { label: '初始商品', value: `${tpl.products.length} 种` },
                 { label: '风险', value: `${tpl.risk}/5`, tone: tpl.risk >= 4 ? 'warn' : 'info' },
             ],
@@ -736,7 +1151,7 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
         shopProducts: buildShopProducts(tpl.id),
         shopCustomers: tpl.customerGroups,
         shopEvents: [{ id: genId('life'), dateStr: life.dateStr, title: '准备开张', detail: `${name} 的第一批货已经上架。`, tone: 'good' }],
-        events: pushEvent(life.events, { dateStr: life.dateStr, title: '小店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good', amount: -SHOP_UNLOCK_COST }),
+        events: pushEvent(life.events, { dateStr: life.dateStr, title: '小店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good', amount: -startupCost }),
     }, result);
 }
 

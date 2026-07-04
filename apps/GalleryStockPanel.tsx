@@ -6,12 +6,20 @@ import { XhsStockImage } from '../types';
 import {
     InsShell, InsHeader, Chip, InsButton, InsEmpty, InsDialog, accent, INK, INK_SOFT,
 } from '../components/ui/insKit';
+import { manualAnchorProps } from '../utils/manualDeepLink';
 import { Plus, X, ImageSquare } from '@phosphor-icons/react';
 
-// 拾光图库的强调色（取自 constants：XhsStock = red）
+// 拾光素材沿用见闻簿素材仓库的红色强调。
 const AC = 'red' as const;
 
-const XhsStockApp: React.FC = () => {
+interface GalleryStockPanelProps {
+    embedded?: boolean;
+    onBack?: () => void;
+    onChanged?: () => void;
+    anchorId?: string;
+}
+
+export const GalleryStockPanel: React.FC<GalleryStockPanelProps> = ({ embedded = false, onBack, onChanged, anchorId }) => {
     const { goBack, addToast } = useOS();
     const [images, setImages] = useState<XhsStockImage[]>([]);
     const [view, setView] = useState<'list' | 'add'>('list');
@@ -60,6 +68,7 @@ const XhsStockApp: React.FC = () => {
         setPreviewOk(null);
         setView('list');
         await loadImages();
+        onChanged?.();
         addToast('图片已入库', 'success');
     };
 
@@ -72,6 +81,7 @@ const XhsStockApp: React.FC = () => {
             onConfirm: async () => {
                 await DB.deleteXhsStockImage(img.id);
                 await loadImages();
+                onChanged?.();
                 addToast('已删除', 'success');
                 setConfirmDialog(null);
             }
@@ -202,8 +212,8 @@ const XhsStockApp: React.FC = () => {
         </div>
     );
 
-    return (
-        <InsShell accent={AC}>
+    const content = (
+        <>
             <InsDialog
                 open={!!confirmDialog}
                 title={confirmDialog?.title}
@@ -220,9 +230,9 @@ const XhsStockApp: React.FC = () => {
 
             <InsHeader
                 accent={AC}
-                title={view === 'add' ? '添加图片' : '拾光图库'}
+                title={view === 'add' ? '添加图片' : '拾光素材'}
                 en={view === 'add' ? 'NEW PHOTO' : `${images.length} IN STASH`}
-                onBack={view === 'add' ? () => setView('list') : goBack}
+                onBack={view === 'add' ? () => setView('list') : (onBack || goBack)}
                 right={view === 'list' ? (
                     <button onClick={() => setView('add')} className="w-9 h-9 rounded-full flex items-center justify-center text-white press-soft" style={{ background: accent(AC).solid, boxShadow: `0 10px 20px -10px ${accent(AC).solid}` }}>
                         <Plus size={19} weight="bold" />
@@ -230,9 +240,11 @@ const XhsStockApp: React.FC = () => {
                 ) : undefined}
             />
 
-            {view === 'add' ? renderAddForm() : renderList()}
-        </InsShell>
+            <div className="contents" {...manualAnchorProps(anchorId)}>
+                {view === 'add' ? renderAddForm() : renderList()}
+            </div>
+        </>
     );
-};
 
-export default XhsStockApp;
+    return embedded ? content : <InsShell accent={AC}>{content}</InsShell>;
+};

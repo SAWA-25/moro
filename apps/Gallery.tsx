@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { GalleryImage } from '../types';
+import { AppID, GalleryImage } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { processImage } from '../utils/file';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { GalleryStockPanel } from './GalleryStockPanel';
+import { manualAnchorProps, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import {
     InsShell, InsHeader, InsScroll, Polaroid, StoryRing, InsCard, InsButton,
     IconCircle, InsEmpty, InsDialog, InsSheet, SectionLabel, Chip, accent,
@@ -13,13 +15,13 @@ import {
 } from '../components/ui/insKit';
 import {
     ArrowsClockwise, CaretLeft, ChatCircleText, DownloadSimple, Funnel,
-    Heart, Images, MagnifyingGlass, NotePencil, PencilSimpleLine, ShareNetwork,
+    Camera, Heart, Images, MagnifyingGlass, NotePencil, PencilSimpleLine, ShareNetwork,
     Sparkle, Spinner, Star, Tag, Trash, UploadSimple, X,
 } from '@phosphor-icons/react';
 
 const AC = 'orange' as const;
 
-type View = 'albums' | 'grid' | 'detail';
+type View = 'albums' | 'stock' | 'grid' | 'detail';
 type GalleryFilter = 'all' | 'favorite' | 'reviewed' | 'unreviewed' | 'tagged' | 'untagged';
 type SortMode = 'newest' | 'oldest' | 'favorite';
 
@@ -37,6 +39,10 @@ interface EditDraft {
     tags: string;
     savedDate: string;
     review: string;
+}
+
+interface GalleryProps {
+    initialView?: 'albums' | 'stock';
 }
 
 const todayYmd = () => new Date().toISOString().split('T')[0];
@@ -110,9 +116,9 @@ const sortImages = (items: GalleryImage[], mode: SortMode) => {
     return next;
 };
 
-const Gallery: React.FC = () => {
+const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
     const { closeApp, characters, apiConfig, addToast } = useOS();
-    const [view, setView] = useState<View>('albums');
+    const [view, setView] = useState<View>(initialView);
     const [activeCharId, setActiveCharId] = useState<string | null>(null);
     const [images, setImages] = useState<GalleryImage[]>([]);
     const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
@@ -128,6 +134,7 @@ const Gallery: React.FC = () => {
     const [editDraft, setEditDraft] = useState<EditDraft>({ title: '', note: '', tags: '', savedDate: '', review: '' });
     const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; confirmText: string; onConfirm: () => void; } | null>(null);
     const [albumStats, setAlbumStats] = useState<Record<string, AlbumStats>>({});
+    const [stockCount, setStockCount] = useState(0);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -148,6 +155,11 @@ const Gallery: React.FC = () => {
         setAlbumStats(Object.fromEntries(entries));
     }, [characters]);
 
+    const loadStockCount = useCallback(async () => {
+        const imgs = await DB.getXhsStockImages();
+        setStockCount(imgs.length);
+    }, []);
+
     const loadActiveImages = useCallback(async () => {
         if (!activeCharId) {
             setImages([]);
@@ -162,8 +174,38 @@ const Gallery: React.FC = () => {
     }, [loadAlbumStats, view]);
 
     useEffect(() => {
+        if (view === 'albums') void loadStockCount();
+    }, [loadStockCount, view]);
+
+    useEffect(() => {
         void loadActiveImages();
     }, [loadActiveImages]);
+
+    useEffect(() => {
+        if (initialView === 'stock') {
+            setView('stock');
+            setSelectedImage(null);
+            setShowChatContext(false);
+        }
+    }, [initialView]);
+
+    useManualDeepLink(AppID.Gallery, useCallback((target) => {
+        const route = String(target.route || target.payload?.tab || '');
+        const wantsStock = route === 'stock' || route === 'xhs_stock' || target.anchorId === 'manual-xhs-stock-root';
+        if (wantsStock) {
+            setSelectedImage(null);
+            setEditImage(null);
+            setShowChatContext(false);
+            setView('stock');
+            window.setTimeout(() => scrollToManualAnchor(target.anchorId || 'manual-xhs-stock-root'), 120);
+            return;
+        }
+        setView('albums');
+        setActiveCharId(null);
+        setSelectedImage(null);
+        setShowChatContext(false);
+        window.setTimeout(() => scrollToManualAnchor(target.anchorId || 'manual-gallery-root'), 120);
+    }, []));
 
     const allTags = useMemo(() => {
         const counts = new Map<string, number>();
@@ -243,6 +285,10 @@ const Gallery: React.FC = () => {
     };
 
     const handleBack = () => {
+        if (view === 'stock') {
+            setView('albums');
+            return;
+        }
         if (view === 'detail') {
             setView('grid');
             setShowChatContext(false);
@@ -488,7 +534,16 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
 
     const renderAlbums = () => (
         <InsScroll className="px-5 pt-2 pb-8">
-            <InsCard className="p-4 mb-5" accent={AC} edge>
+            <div className="flex gap-1 rounded-full p-1 mb-4 bg-white" style={{ border: `1px solid ${HAIRLINE}`, boxShadow: '0 8px 24px -20px rgba(38,38,38,0.34)' }} {...manualAnchorProps('manual-gallery-root')}>
+                <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-black" style={{ background: accent(AC).solid, color: '#fff' }}>
+                    <Images size={15} weight="bold" />角色相册
+                </button>
+                <button onClick={() => setView('stock')} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-black press-soft" style={{ color: accent('red').ink, background: accent('red').soft }}>
+                    <Camera size={15} weight="bold" />拾光素材
+                </button>
+            </div>
+
+            <InsCard className="p-4 mb-4" accent={AC} edge>
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: accent(AC).soft, color: accent(AC).solid }}>
                         <Images size={26} weight="duotone" />
@@ -497,6 +552,20 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                         <div className="text-[18px] font-extrabold" style={{ color: INK }}>时间和照片都在这里</div>
                         <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>
                             {totalStats.albums} 本相册 · {totalStats.total} 张照片 · {totalStats.favorites} 张喜欢
+                        </div>
+                    </div>
+                </div>
+            </InsCard>
+
+            <InsCard className="p-4 mb-6" accent="red" edge onClick={() => setView('stock')}>
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: accent('red').soft, color: accent('red').solid }}>
+                        <Camera size={25} weight="duotone" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[16px] font-extrabold" style={{ color: INK }}>拾光素材</div>
+                        <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>
+                            {stockCount} 张素材 · 给见闻簿和自由活动备图
                         </div>
                     </div>
                 </div>
@@ -792,7 +861,7 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                 </div>
             </InsSheet>
 
-            {view !== 'detail' && (
+            {view !== 'detail' && view !== 'stock' && (
                 <InsHeader
                     accent={AC}
                     title={view === 'albums' ? '相册' : activeChar?.name || '相册'}
@@ -810,6 +879,7 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
             )}
 
             {view === 'albums' && renderAlbums()}
+            {view === 'stock' && <GalleryStockPanel embedded onBack={handleBack} onChanged={loadStockCount} anchorId="manual-xhs-stock-root" />}
             {view === 'grid' && renderGrid()}
             {view === 'detail' && renderDetail()}
         </InsShell>

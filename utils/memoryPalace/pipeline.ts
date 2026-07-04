@@ -1,5 +1,5 @@
 /**
- * Memory Palace — 集成管线 (Pipeline)
+ * 回忆标本馆 — 集成管线 (Pipeline)
  *
  * 对外暴露两个主要函数：
  * 1. retrieveMemories() — 检索管线，AI 回复前调用
@@ -41,7 +41,7 @@ import {
     isMemoryFeatureEnabled,
     mergeCognitiveFlowSurfaceResults,
 } from './cognitiveFlow';
-// 认知消化由用户在记忆宫殿 App 手动触发，不在聊天管线中自动运行
+// 认知消化由用户在回忆标本馆 App 手动触发，不在聊天管线中自动运行
 import { MemoryNodeDB, AnticipationDB } from './db';
 import { DB } from '../db';
 import { isMessageSemanticallyRelevant, formatMessageForPrompt } from '../messageFormat';
@@ -773,7 +773,7 @@ export async function retrieveMemories(
 
         // 10.5 认知网络注入：长期认知（置顶，不占常规名额）+ 本轮工作记忆快照
         //   - 认知块放最顶：让角色「越聊越懂 TA」的稳定理解持续生效；
-        //   - 工作记忆「此刻的思绪」放认知之后、记忆宫殿正文之前，串住联想线。
+        //   - 工作记忆「此刻的思绪」放认知之后、回忆标本馆正文之前，串住联想线。
         // 认知参与召回：用本轮混合检索里认知节点拿到的分数排序置顶，最相关的认知优先注入
         const cogRelevance = new Map<string, number>();
         for (const r of results) if (r.node.origin === 'cognition') cogRelevance.set(r.node.id, r.finalScore);
@@ -841,7 +841,7 @@ export async function injectMemoryPalace(
 // ─── 外部摘要 / 日记一次性吞吐 ────────────────────────
 
 /**
- * 把"交换日记"一次性塞进记忆宫殿。
+ * 把"交换日记"一次性塞进回忆标本馆。
  * 跟 processNewMessages 用的同一套抽取逻辑（lightLLM 副 API、extractMemoriesFromBuffer），
  * 但不走缓冲区/高水位机制 —— 因为日记不是普通聊天消息，
  * 是一篇独立的、用户主动触发的归档。
@@ -856,10 +856,10 @@ export async function injectMemoryPalace(
  * @param dateStr 日记日期 YYYY-MM-DD，决定 MemoryNode.createdAt
  * @param userDiaryText 用户那页的正文
  * @param charDiaryText 角色那页的正文（可空）
- * @param lightLLMConfig 记忆宫殿副 API
+ * @param lightLLMConfig 回忆标本馆副 API
  * @param userName 用户昵称
  */
-/** 一次日记归档对宫殿的具体影响, 用 status 区分各种"为什么没入宫"的情况, 供 UI 弹窗直接展示 */
+/** 一次日记归档对标本馆的具体影响, 用 status 区分各种"为什么没入馆"的情况, 供 UI 弹窗直接展示 */
 export type DiaryIngestResult =
     | { status: 'palace_disabled' }
     | { status: 'lightllm_missing' }

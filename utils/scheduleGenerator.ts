@@ -382,7 +382,7 @@ export async function generateDailyScheduleForChar(
         if (prev) coverImage = prev;
     } catch {}
 
-    // ── 上下文对齐 chat：复用同一份 buildCoreContext(true) + 记忆宫殿注入 + 同样的历史过滤 ──
+    // ── 上下文对齐 chat：复用同一份 buildCoreContext(true) + 回忆标本馆注入 + 同样的历史过滤 ──
     // 用户痛点：日程之前完全看不到聊天上下文，结果"早晨说char要去上班"被忽略，安排成在家刷手机。
     // 这里走的链路要和 useChatAI.ts 主链路（构造 systemPrompt 前那段）保持一致，
     // 否则日程/聊天/情绪三处会出现信息差。
@@ -394,12 +394,12 @@ export async function generateDailyScheduleForChar(
     // hideBeforeMessageId 与 chat 端 ChatPrompts.buildMessageHistory 同款过滤
     const filteredMessages = recentMessages.filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId);
 
-    // 记忆宫殿：与 useChatAI.ts:573 相同的调用形态，结果会挂到 char.memoryPalaceInjection 上，
+    // 回忆标本馆：与 useChatAI.ts:573 相同的调用形态，结果会挂到 char.memoryPalaceInjection 上，
     // 由下面的 buildCoreContext 自动读取注入。
     try {
         await injectMemoryPalace(char as any, filteredMessages, undefined, userProfile?.name);
     } catch (e) {
-        console.warn('[Schedule] memory palace inject failed (non-fatal):', e);
+        console.warn('[Schedule] memory gallery inject failed (non-fatal):', e);
     }
 
     // chat 主链路传 true（含详细记忆）；日程之前传的是 false，统一改成 true。
