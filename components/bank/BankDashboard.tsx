@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { BankFullState, CharacterProfile } from '../../types';
 import BankAssetIcon from './BankAssetIcon';
+import { bankPixelRef } from './bankPixelArt';
 import { processImage } from '../../utils/file';
 
 interface Props {
@@ -20,13 +21,18 @@ const BankDashboard: React.FC<Props> = ({
     onOpenAddGoal, onDeleteGoal, characters 
 }) => {
     const petImageInputRef = useRef<HTMLInputElement>(null);
+    const defaultPetImg = bankPixelRef('staff/cat', 64);
+    const moodIcon = bankPixelRef('effect/sparkles', 64);
+    const energyIcon = bankPixelRef('ui/energy', 64);
+    const feedIcon = bankPixelRef('ui/feed', 64);
+    const inviteIcon = bankPixelRef('ui/invite', 64);
     
     // Visitor: Resolve Character
     const visitorChar = characters.find(c => c.id === state.shop.activeVisitor?.charId);
     
     // Logic for "Pet": Use the Manager (first staff)
     const manager = state.shop.staff[0];
-    const petImg = manager?.avatar || 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f425.png'; 
+    const petImg = manager?.avatar || defaultPetImg;
 
     const isOverBudget = state.todaySpent > state.config.dailyBudget;
     const progressPercent = Math.min(100, (state.todaySpent / state.config.dailyBudget) * 100);
@@ -101,11 +107,11 @@ const BankDashboard: React.FC<Props> = ({
                 {/* Status HUD in Room */}
                 <div className="absolute top-3 left-3 flex flex-col gap-1">
                     <div className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-white/50 shadow-sm">
-                        <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2728.png" alt="" className="w-3 h-3" />
+                        <BankAssetIcon value={moodIcon} imgClassName="w-3 h-3" textClassName="text-[10px] leading-none" />
                         <div className="w-10 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-rose-400" style={{ width: `${moodLevel}%` }}></div></div>
                     </div>
                     <div className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-white/50 shadow-sm">
-                        <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f50b.png" alt="" className="w-3 h-3" />
+                        <BankAssetIcon value={energyIcon} imgClassName="w-3 h-3" textClassName="text-[10px] leading-none" />
                         <div className="w-10 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-orange-400" style={{ width: `${energyLevel}%` }}></div></div>
                     </div>
                 </div>
@@ -115,7 +121,7 @@ const BankDashboard: React.FC<Props> = ({
                     <div className="absolute bottom-[20%] left-[15%] w-16 h-24 flex flex-col items-center animate-fade-in z-10">
                         <div className="relative group/visitor cursor-pointer active:scale-95 transition-transform">
                             {/* Visitor Sprite */}
-                            <img src={visitorChar.sprites?.chibi || visitorChar.avatar} className="w-16 h-16 object-contain drop-shadow-md" />
+                            <BankAssetIcon value={visitorChar.sprites?.chibi || visitorChar.avatar} alt={visitorChar.name} imgClassName="w-16 h-16 object-contain drop-shadow-md" textClassName="w-16 h-16 flex items-center justify-center text-4xl leading-none" />
                             {/* Dialogue Bubble */}
                             <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white px-3 py-2 rounded-xl rounded-bl-none shadow-lg text-[10px] text-slate-700 w-28 whitespace-normal leading-tight z-20 border border-slate-100 opacity-0 group-hover/visitor:opacity-100 transition-opacity pointer-events-none">
                                 {state.shop.activeVisitor?.message}
@@ -166,7 +172,7 @@ const BankDashboard: React.FC<Props> = ({
                     onClick={onFeedPet}
                     className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-slate-100 shadow-sm active:scale-95 transition-transform hover:border-orange-200 group"
                 >
-                    <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f357.png" alt="feed" className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" />
+                    <BankAssetIcon value={feedIcon} alt="feed" imgClassName="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" textClassName="text-2xl leading-none mb-1 group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-bold text-slate-700">投喂</span>
                     <span className="text-[9px] text-orange-400 font-mono font-bold">-10 AP</span>
                 </button>
@@ -175,7 +181,7 @@ const BankDashboard: React.FC<Props> = ({
                     onClick={onRefreshVisitor}
                     className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-slate-100 shadow-sm active:scale-95 transition-transform hover:border-indigo-200 group"
                 >
-                    <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6aa.png" alt="invite" className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" />
+                    <BankAssetIcon value={inviteIcon} alt="invite" imgClassName="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" textClassName="text-2xl leading-none mb-1 group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-bold text-slate-700">邀请访客</span>
                     <span className="text-[9px] text-indigo-400 font-mono font-bold">-20 AP</span>
                 </button>

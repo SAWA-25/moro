@@ -5,6 +5,8 @@ import { extractContent } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import { callChatCompletion } from '../../utils/llmClient';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';
+import BankAssetIcon from './BankAssetIcon';
+import { bankPixelRef } from './bankPixelArt';
 
 interface Props {
     transactions: BankTransaction[];
@@ -17,15 +19,30 @@ interface Props {
 
 // Category definitions with icons and colors
 const CATEGORIES: Record<string, { icon: string; label: string; color: string; gradient: string }> = {
-    food: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f354.png', label: '餐饮', color: '#FF7043', gradient: 'from-orange-400 to-red-500' },
-    transport: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f697.png', label: '交通', color: '#42A5F5', gradient: 'from-blue-400 to-indigo-500' },
-    shopping: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f6cd.png', label: '购物', color: '#AB47BC', gradient: 'from-purple-400 to-pink-500' },
-    entertainment: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f3ae.png', label: '娱乐', color: '#66BB6A', gradient: 'from-green-400 to-teal-500' },
-    bills: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4f1.png', label: '账单', color: '#FFA726', gradient: 'from-yellow-400 to-orange-500' },
-    health: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f48a.png', label: '医疗', color: '#EF5350', gradient: 'from-red-400 to-rose-500' },
-    education: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4da.png', label: '学习', color: '#5C6BC0', gradient: 'from-indigo-400 to-purple-500' },
-    other: { icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4e6.png', label: '其他', color: '#78909C', gradient: 'from-gray-400 to-slate-500' }
+    food: { icon: bankPixelRef('ui/food', 64), label: '餐饮', color: '#FF7043', gradient: 'from-orange-400 to-red-500' },
+    transport: { icon: bankPixelRef('ui/transport', 64), label: '交通', color: '#42A5F5', gradient: 'from-blue-400 to-indigo-500' },
+    shopping: { icon: bankPixelRef('ui/shopping', 64), label: '购物', color: '#AB47BC', gradient: 'from-purple-400 to-pink-500' },
+    entertainment: { icon: bankPixelRef('ui/entertainment', 64), label: '娱乐', color: '#66BB6A', gradient: 'from-green-400 to-teal-500' },
+    bills: { icon: bankPixelRef('ui/bills', 64), label: '账单', color: '#FFA726', gradient: 'from-yellow-400 to-orange-500' },
+    health: { icon: bankPixelRef('ui/health', 64), label: '医疗', color: '#EF5350', gradient: 'from-red-400 to-rose-500' },
+    education: { icon: bankPixelRef('ui/education', 64), label: '学习', color: '#5C6BC0', gradient: 'from-indigo-400 to-purple-500' },
+    other: { icon: bankPixelRef('ui/other', 64), label: '其他', color: '#78909C', gradient: 'from-gray-400 to-slate-500' }
 };
+
+const PERIODS = [
+    { key: 'today', label: '今日', icon: bankPixelRef('ui/sun', 64) },
+    { key: 'week', label: '本周', icon: bankPixelRef('ui/calendar-week', 64) },
+    { key: 'month', label: '本月', icon: bankPixelRef('ui/calendar-month', 64) },
+] as const;
+
+const BUDGET_GOOD_ICON = bankPixelRef('ui/budget-good', 64);
+const BUDGET_OVER_ICON = bankPixelRef('ui/budget-over', 64);
+const AI_ICON = bankPixelRef('ui/ai', 64);
+const IDEA_ICON = bankPixelRef('ui/idea', 64);
+const CHART_ICON = bankPixelRef('ui/chart', 64);
+const MEMO_ICON = bankPixelRef('ui/memo', 64);
+const EMPTY_ICON = bankPixelRef('ui/empty', 64);
+const TARGET_ICON = bankPixelRef('ui/target', 64);
 
 const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDeleteTx, apiConfig, dailyBudget = 100 }) => {
     const [viewMode, setViewMode] = useState<'today' | 'week' | 'month'>('today');
@@ -193,11 +210,7 @@ ${txList}
                 <div className="relative z-10 p-5 pt-3">
                     {/* Period Selector */}
                     <div className="flex bg-white/10 backdrop-blur-sm p-1 rounded-2xl mb-5">
-                        {[
-                            { key: 'today', label: '今日', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2600.png' },
-                            { key: 'week', label: '本周', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c6.png' },
-                            { key: 'month', label: '本月', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' }
-                        ].map(p => (
+                        {PERIODS.map(p => (
                             <button
                                 key={p.key}
                                 onClick={() => setViewMode(p.key as any)}
@@ -207,7 +220,7 @@ ${txList}
                                         : 'text-white/70 hover:text-white'
                                 }`}
                             >
-                                <img src={p.icon} className="w-4 h-4" alt="" />
+                                <BankAssetIcon value={p.icon} imgClassName="w-4 h-4" textClassName="text-sm leading-none" />
                                 <span>{p.label}</span>
                             </button>
                         ))}
@@ -250,7 +263,7 @@ ${txList}
                         }`}>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <img src={budgetStatus === 'good' ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4aa.png' : 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f631.png'} className="w-6 h-6" alt="" />
+                                    <BankAssetIcon value={budgetStatus === 'good' ? BUDGET_GOOD_ICON : BUDGET_OVER_ICON} imgClassName="w-6 h-6" textClassName="text-xl leading-none" />
                                     <span className="text-sm text-white font-medium">
                                         {budgetStatus === 'good' ? '预算还剩' : '已超支'}
                                     </span>
@@ -285,7 +298,7 @@ ${txList}
 
                         <div className="flex items-center justify-between mb-3 relative z-10">
                             <div className="flex items-center gap-2">
-                                <span className="w-8 h-8 bg-gradient-to-br from-[#FFD54F] to-[#FFB300] rounded-xl flex items-center justify-center text-lg shadow-md"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f916.png" className="w-5 h-5" alt="" /></span>
+                                <span className="w-8 h-8 bg-gradient-to-br from-[#FFD54F] to-[#FFB300] rounded-xl flex items-center justify-center text-lg shadow-md"><BankAssetIcon value={AI_ICON} imgClassName="w-5 h-5" textClassName="text-base leading-none" /></span>
                                 <span className="text-sm font-bold text-[#5D4037]">AI 智能分析</span>
                             </div>
                             <button
@@ -308,7 +321,7 @@ ${txList}
 
                         {aiSummary ? (
                             <div className="bg-gradient-to-r from-[#FFF8E1] to-[#FFF3E0] p-4 rounded-2xl text-sm text-[#5D4037] leading-relaxed relative z-10">
-                                <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4a1.png" className="w-5 h-5 inline mr-2" alt="" />
+                                <BankAssetIcon value={IDEA_ICON} imgClassName="w-5 h-5 inline mr-2" textClassName="text-base inline mr-2 leading-none" />
                                 {aiSummary}
                             </div>
                         ) : (
@@ -323,7 +336,7 @@ ${txList}
                 {categoryData.length > 0 && (
                     <div className="bg-white rounded-3xl p-5 shadow-md border border-[#E8DCC8]">
                         <div className="flex items-center gap-2 mb-4">
-                            <span className="w-8 h-8 bg-gradient-to-br from-[#AB47BC] to-[#7B1FA2] rounded-xl flex items-center justify-center text-lg shadow-md"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4ca.png" className="w-5 h-5" alt="" /></span>
+                            <span className="w-8 h-8 bg-gradient-to-br from-[#AB47BC] to-[#7B1FA2] rounded-xl flex items-center justify-center text-lg shadow-md"><BankAssetIcon value={CHART_ICON} imgClassName="w-5 h-5" textClassName="text-base leading-none" /></span>
                             <span className="text-sm font-bold text-[#5D4037]">消费分类</span>
                         </div>
 
@@ -334,7 +347,7 @@ ${txList}
                                     <div key={category} className="group">
                                         <div className="flex items-center justify-between mb-1.5">
                                             <div className="flex items-center gap-2">
-                                                <img src={cat.icon} className="w-5 h-5" alt="" />
+                                                <BankAssetIcon value={cat.icon} imgClassName="w-5 h-5" textClassName="text-base leading-none" />
                                                 <span className="text-sm font-bold text-[#5D4037]">{cat.label}</span>
                                                 <span className="text-[10px] text-[#A1887F] bg-[#FDF6E3] px-2 py-0.5 rounded-full">{count}笔</span>
                                             </div>
@@ -360,7 +373,7 @@ ${txList}
                 <div className="bg-white rounded-3xl p-5 shadow-md border border-[#E8DCC8]">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
-                            <span className="w-8 h-8 bg-gradient-to-br from-[#66BB6A] to-[#43A047] rounded-xl flex items-center justify-center text-lg shadow-md"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4dd.png" className="w-5 h-5" alt="" /></span>
+                            <span className="w-8 h-8 bg-gradient-to-br from-[#66BB6A] to-[#43A047] rounded-xl flex items-center justify-center text-lg shadow-md"><BankAssetIcon value={MEMO_ICON} imgClassName="w-5 h-5" textClassName="text-base leading-none" /></span>
                             <span className="text-sm font-bold text-[#5D4037]">消费明细</span>
                         </div>
                         {transactions.length > 0 && (
@@ -373,7 +386,7 @@ ${txList}
 
                     {filteredTx.length === 0 ? (
                         <div className="text-center py-12">
-                            <div className="mb-3 opacity-40"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4ed.png" className="w-16 h-16 mx-auto" alt="" /></div>
+                            <div className="mb-3 opacity-40"><BankAssetIcon value={EMPTY_ICON} imgClassName="w-16 h-16 mx-auto" textClassName="text-5xl leading-none" /></div>
                             <div className="text-sm text-[#A1887F]">
                                 {viewMode === 'today' ? '今天还没有消费记录' : viewMode === 'week' ? '本周暂无记录' : '本月暂无记录'}
                             </div>
@@ -388,7 +401,7 @@ ${txList}
                                     <div key={tx.id} className="flex items-center justify-between p-3 rounded-2xl bg-[#FDF6E3] hover:bg-[#FFF8E1] transition-colors group relative">
                                         <div className="flex items-center gap-3">
                                             <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center shadow-inner">
-                                                <img src={cat.icon} className="w-6 h-6" alt="" />
+                                                <BankAssetIcon value={cat.icon} imgClassName="w-6 h-6" textClassName="text-xl leading-none" />
                                             </div>
                                             <div>
                                                 <div className="font-bold text-[#5D4037] text-sm">{tx.note}</div>
@@ -421,7 +434,7 @@ ${txList}
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
 
                         <div className="flex items-center gap-2 mb-3 relative z-10">
-                            <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f3af.png" className="w-5 h-5" alt="" />
+                            <BankAssetIcon value={TARGET_ICON} imgClassName="w-5 h-5" textClassName="text-base leading-none" />
                             <span className="text-sm font-bold">储蓄进度</span>
                         </div>
 

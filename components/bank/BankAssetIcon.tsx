@@ -15,6 +15,7 @@ interface BankAssetIconProps {
     alt?: string;
     imgClassName: string;
     textClassName: string;
+    onError?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 const BankAssetIcon: React.FC<BankAssetIconProps> = ({
@@ -22,14 +23,15 @@ const BankAssetIcon: React.FC<BankAssetIconProps> = ({
     alt = '',
     imgClassName,
     textClassName,
+    onError,
 }) => {
     if (!value) return null;
 
     const pixelSrc = resolveBankPixelSrc(value);
-    if (pixelSrc) return <img src={pixelSrc} alt={alt} className={imgClassName} draggable={false} style={{ imageRendering: 'pixelated' }} />;
+    if (pixelSrc) return <img src={pixelSrc} alt={alt} className={imgClassName} draggable={false} style={{ imageRendering: 'pixelated' }} onError={onError} />;
 
     if (isBankAssetUrl(value)) {
-        return <img src={value} alt={alt} className={imgClassName} draggable={false} />;
+        return <img src={value} alt={alt} className={imgClassName} draggable={false} onError={onError} />;
     }
 
     return <span className={textClassName}>{value}</span>;

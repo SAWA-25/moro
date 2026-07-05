@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { BankFullState, ShopStaff, CharacterProfile } from '../../types';
 import { AVAILABLE_STAFF } from './BankGameConstants';
 import BankAssetIcon from './BankAssetIcon';
+import { bankPixelRef } from './bankPixelArt';
 import { processImage } from '../../utils/file';
 import { UsersThree, Target, Sparkle, PawPrint, Link as LinkIcon, Camera, Check, Lightbulb, Confetti } from '@phosphor-icons/react';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';
@@ -30,11 +31,12 @@ const BankGameMenu: React.FC<Props> = ({
 }) => {
     const [tab, setTab] = useState<'staff' | 'goals'>('staff');
     const [showCustomHire, setShowCustomHire] = useState(false);
+    const defaultCustomAvatar = bankPixelRef('ui/paw', 64);
 
     // Custom Hire Form
     const [customName, setCustomName] = useState('');
     const [customRole, setCustomRole] = useState<'waiter'|'chef'|'manager'>('waiter');
-    const [customAvatar, setCustomAvatar] = useState('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f43e.png');
+    const [customAvatar, setCustomAvatar] = useState(defaultCustomAvatar);
     const [selectedOwner, setSelectedOwner] = useState<string>(''); // Character ID for pet owner
     const [isPetMode, setIsPetMode] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +87,7 @@ const BankGameMenu: React.FC<Props> = ({
         onHireStaff(newStaff, isPetMode ? 150 : 200);
         setShowCustomHire(false);
         setCustomName('');
-        setCustomAvatar('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f43e.png');
+        setCustomAvatar(defaultCustomAvatar);
         setSelectedOwner('');
         setIsPetMode(false);
         setAvatarUrl('');
@@ -234,7 +236,7 @@ const BankGameMenu: React.FC<Props> = ({
                                                             : 'bg-white border border-[#E8DCC8] hover:border-[#FF7043]'
                                                     }`}
                                                 >
-                                                    <img src={char.avatar} className="w-10 h-10 rounded-lg object-cover" />
+                                                    <BankAssetIcon value={char.avatar} alt={char.name} imgClassName="w-10 h-10 rounded-lg object-cover" textClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl leading-none" />
                                                     <span className={`text-[9px] font-bold mt-1 truncate max-w-[50px] ${selectedOwner === char.id ? 'text-white' : 'text-[#5D4037]'}`}>
                                                         {char.name}
                                                     </span>
@@ -285,11 +287,12 @@ const BankGameMenu: React.FC<Props> = ({
                                     <div className="flex gap-3">
                                         {/* Avatar Preview */}
                                         <div className="w-14 h-14 flex-shrink-0 bg-white rounded-xl border border-[#E8DCC8] flex items-center justify-center overflow-hidden">
-                                            {customAvatar.startsWith('data:') || customAvatar.startsWith('http') ? (
-                                                <img src={customAvatar} className="w-full h-full object-cover" onError={() => setCustomAvatar('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f43e.png')} />
-                                            ) : (
-                                                <span className="text-2xl">{customAvatar}</span>
-                                            )}
+                                            <BankAssetIcon
+                                                value={customAvatar}
+                                                imgClassName="w-full h-full object-cover"
+                                                textClassName="text-2xl leading-none"
+                                                onError={() => setCustomAvatar(defaultCustomAvatar)}
+                                            />
                                         </div>
 
                                         {/* URL or Upload Input */}
@@ -482,7 +485,16 @@ const BankGameMenu: React.FC<Props> = ({
                                     <div className="relative z-10">
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex items-center gap-2">
-                                                {g.icon ? (g.icon.startsWith('http') ? <img src={g.icon} className="w-6 h-6" /> : <span className="text-2xl">{g.icon}</span>) : <Target size={24} weight="duotone" className="text-[#FF7043]" />}
+                                                {g.icon ? (
+                                                    <BankAssetIcon
+                                                        value={g.icon}
+                                                        alt={g.name}
+                                                        imgClassName="w-6 h-6 object-contain"
+                                                        textClassName="text-2xl leading-none"
+                                                    />
+                                                ) : (
+                                                    <Target size={24} weight="duotone" className="text-[#FF7043]" />
+                                                )}
                                                 <span className="font-bold text-[#5D4037]">{g.name}</span>
                                             </div>
                                             <span className="font-mono font-bold text-[#FF7043] text-lg">{state.config.currencySymbol}{g.targetAmount}</span>

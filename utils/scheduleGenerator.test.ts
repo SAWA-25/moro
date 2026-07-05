@@ -3,6 +3,7 @@ import type { CharacterProfile, DailySchedule, Message, UserProfile } from '../t
 import { DB } from './db';
 import { callChatCompletion } from './llmClient';
 import { generateDailyScheduleForChar, reconcileScheduleWithChat } from './scheduleGenerator';
+import { getLocalDateKey } from './dateKey';
 
 vi.mock('./llmClient', () => ({
   callChatCompletion: vi.fn(),
@@ -87,12 +88,12 @@ describe('schedule generator character identity', () => {
     const result = await generateDailyScheduleForChar(char, user, API, true);
 
     expect(result).toBeNull();
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
     await expect(DB.getDailySchedule('char-isaac', today)).resolves.toBeNull();
   });
 
   it('does not reconcile a schedule with another character id', async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
     const existing = {
       id: `char-isaac_${today}`,
       charId: 'char-isaac',

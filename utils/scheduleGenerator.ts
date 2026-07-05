@@ -6,6 +6,7 @@ import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
+import { getLocalDateKey } from './dateKey';
 
 /**
  * Attempt to repair truncated JSON from LLM output.
@@ -364,7 +365,7 @@ export async function generateDailyScheduleForChar(
     // 总开关关闭时直接短路，避免 API / 兜底调用
     if (!isScheduleFeatureOn(char)) return null;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
 
     // Check if already exists
     if (!forceRegenerate) {

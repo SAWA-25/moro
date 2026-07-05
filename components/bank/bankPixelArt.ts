@@ -1,4 +1,4 @@
-type BankPixelKind = 'furniture' | 'recipe' | 'staff' | 'effect';
+type BankPixelKind = 'furniture' | 'recipe' | 'staff' | 'effect' | 'ui';
 
 export interface BankPixelAssetMeta {
     id: string;
@@ -124,6 +124,11 @@ for (const item of FURNITURE) addMeta(item.assetId, item.assetId.startsWith('eff
 ].forEach(id => addMeta(id, 'staff', 64));
 
 ['effect/heart', 'effect/sparkles', 'effect/zzz', 'effect/guestbook'].forEach(id => addMeta(id, 'effect', 64));
+[
+    'ui/food', 'ui/transport', 'ui/shopping', 'ui/entertainment', 'ui/bills', 'ui/health', 'ui/education', 'ui/other',
+    'ui/sun', 'ui/calendar-week', 'ui/calendar-month', 'ui/budget-good', 'ui/budget-over', 'ui/ai', 'ui/idea',
+    'ui/chart', 'ui/memo', 'ui/empty', 'ui/target', 'ui/energy', 'ui/feed', 'ui/invite', 'ui/paw',
+].forEach(id => addMeta(id, 'ui', 64));
 
 export const BANK_PIXEL_STICKER_LIBRARY: BankPixelStickerItem[] = FURNITURE.map(item => ({
     id: item.id,
@@ -182,11 +187,14 @@ function parseRef(value?: string | null): { id: string; size: 64 | 96 | 128 } | 
 }
 
 function normalizeLegacyValue(value?: string | null): string {
-    return (value || '').trim();
+    const raw = (value || '').trim();
+    const match = raw.match(/(?:twemoji\/(?:14\.0\.2\/)?72x72|vendor\/twemoji\/72x72)\/([a-f0-9-]+)\.png/i);
+    if (match) return legacyTwemoji(match[1].toLowerCase());
+    return raw;
 }
 
 function legacyTwemoji(code: string): string {
-    return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`;
+    return `twemoji:${code.toLowerCase()}`;
 }
 
 const LEGACY_PIXEL_MAP: Record<string, string> = {
@@ -223,6 +231,36 @@ const LEGACY_PIXEL_MAP: Record<string, string> = {
     [legacyTwemoji('1f496')]: bankPixelRef('effect/heart', 64),
     [legacyTwemoji('1f49d')]: bankPixelRef('effect/heart', 64),
     [legacyTwemoji('1fa77')]: bankPixelRef('effect/heart', 64),
+    [legacyTwemoji('2764-fe0f')]: bankPixelRef('effect/heart', 64),
+    [legacyTwemoji('2728')]: bankPixelRef('effect/sparkles', 64),
+    [legacyTwemoji('1f354')]: bankPixelRef('ui/food', 64),
+    [legacyTwemoji('1f697')]: bankPixelRef('ui/transport', 64),
+    [legacyTwemoji('1f6cd')]: bankPixelRef('ui/shopping', 64),
+    [legacyTwemoji('1f6cd-fe0f')]: bankPixelRef('ui/shopping', 64),
+    [legacyTwemoji('1f3ae')]: bankPixelRef('ui/entertainment', 64),
+    [legacyTwemoji('1f4f1')]: bankPixelRef('ui/bills', 64),
+    [legacyTwemoji('1f48a')]: bankPixelRef('ui/health', 64),
+    [legacyTwemoji('1f4e6')]: bankPixelRef('ui/other', 64),
+    [legacyTwemoji('2600')]: bankPixelRef('ui/sun', 64),
+    [legacyTwemoji('2600-fe0f')]: bankPixelRef('ui/sun', 64),
+    [legacyTwemoji('1f4c6')]: bankPixelRef('ui/calendar-week', 64),
+    [legacyTwemoji('1f4c5')]: bankPixelRef('ui/calendar-month', 64),
+    [legacyTwemoji('1f4aa')]: bankPixelRef('ui/budget-good', 64),
+    [legacyTwemoji('1f631')]: bankPixelRef('ui/budget-over', 64),
+    [legacyTwemoji('1f916')]: bankPixelRef('ui/ai', 64),
+    [legacyTwemoji('1f4a1')]: bankPixelRef('ui/idea', 64),
+    [legacyTwemoji('1f4ca')]: bankPixelRef('ui/chart', 64),
+    [legacyTwemoji('1f4dd')]: bankPixelRef('ui/memo', 64),
+    [legacyTwemoji('1f4ed')]: bankPixelRef('ui/empty', 64),
+    [legacyTwemoji('1f3af')]: bankPixelRef('ui/target', 64),
+    [legacyTwemoji('1f50b')]: bankPixelRef('ui/energy', 64),
+    [legacyTwemoji('1f357')]: bankPixelRef('ui/feed', 64),
+    [legacyTwemoji('1f6aa')]: bankPixelRef('ui/invite', 64),
+    [legacyTwemoji('1f6ce')]: bankPixelRef('ui/invite', 64),
+    [legacyTwemoji('1f6ce-fe0f')]: bankPixelRef('ui/invite', 64),
+    [legacyTwemoji('1f43e')]: bankPixelRef('ui/paw', 64),
+    [legacyTwemoji('1f425')]: bankPixelRef('staff/cat', 64),
+    [legacyTwemoji('1f4d6')]: bankPixelRef('effect/guestbook', 64),
     '☕': bankPixelRef('recipe/coffee', 64),
     '🍰': bankPixelRef('recipe/cake', 64),
     '🍵': bankPixelRef('recipe/tea', 64),
@@ -236,6 +274,35 @@ const LEGACY_PIXEL_MAP: Record<string, string> = {
     '⭐': bankPixelRef('effect/sparkles', 64),
     '❤️': bankPixelRef('effect/heart', 64),
     '❤': bankPixelRef('effect/heart', 64),
+    '🍔': bankPixelRef('ui/food', 64),
+    '🚗': bankPixelRef('ui/transport', 64),
+    '🛍️': bankPixelRef('ui/shopping', 64),
+    '🛍': bankPixelRef('ui/shopping', 64),
+    '🎮': bankPixelRef('ui/entertainment', 64),
+    '📱': bankPixelRef('ui/bills', 64),
+    '💊': bankPixelRef('ui/health', 64),
+    '📚': bankPixelRef('furniture/book-shelf', 96),
+    '📦': bankPixelRef('ui/other', 64),
+    '☀️': bankPixelRef('ui/sun', 64),
+    '☀': bankPixelRef('ui/sun', 64),
+    '📆': bankPixelRef('ui/calendar-week', 64),
+    '📅': bankPixelRef('ui/calendar-month', 64),
+    '💪': bankPixelRef('ui/budget-good', 64),
+    '😱': bankPixelRef('ui/budget-over', 64),
+    '🤖': bankPixelRef('ui/ai', 64),
+    '💡': bankPixelRef('ui/idea', 64),
+    '📊': bankPixelRef('ui/chart', 64),
+    '📝': bankPixelRef('ui/memo', 64),
+    '📭': bankPixelRef('ui/empty', 64),
+    '🎯': bankPixelRef('ui/target', 64),
+    '🔋': bankPixelRef('ui/energy', 64),
+    '🍗': bankPixelRef('ui/feed', 64),
+    '🚪': bankPixelRef('ui/invite', 64),
+    '🛎️': bankPixelRef('ui/invite', 64),
+    '🛎': bankPixelRef('ui/invite', 64),
+    '🐾': bankPixelRef('ui/paw', 64),
+    '🐥': bankPixelRef('staff/cat', 64),
+    '📖': bankPixelRef('effect/guestbook', 64),
 };
 
 function createPixelAsset(id: string, size: 64 | 96 | 128): string {
@@ -311,7 +378,175 @@ function drawAsset(ctx: CanvasRenderingContext2D, id: string) {
     if (id.startsWith('recipe/')) return drawRecipe(ctx, id.slice(7));
     if (id.startsWith('staff/')) return drawStaff(ctx, id.slice(6));
     if (id.startsWith('effect/')) return drawEffect(ctx, id.slice(7));
+    if (id.startsWith('ui/')) return drawUi(ctx, id.slice(3));
     return drawFurniture(ctx, id.replace(/^furniture\//, ''));
+}
+
+function drawUi(ctx: CanvasRenderingContext2D, id: string) {
+    shadow(ctx, 8, 28, 16);
+    switch (id) {
+        case 'food':
+            r(ctx, 8, 13, 16, 4, P.amber2);
+            r(ctx, 7, 17, 18, 3, P.green2);
+            r(ctx, 7, 20, 18, 3, P.wood1);
+            r(ctx, 8, 23, 16, 3, P.amber1);
+            p(ctx, 12, 14, P.cream0);
+            p(ctx, 17, 14, P.cream0);
+            break;
+        case 'transport':
+            box(ctx, 6, 15, 20, 8, P.blue1);
+            r(ctx, 10, 10, 10, 6, P.blue2);
+            r(ctx, 12, 11, 3, 4, P.blue3);
+            r(ctx, 17, 11, 3, 4, P.blue3);
+            r(ctx, 9, 23, 4, 4, P.ink);
+            r(ctx, 20, 23, 4, 4, P.ink);
+            r(ctx, 10, 24, 2, 2, P.gray3);
+            r(ctx, 21, 24, 2, 2, P.gray3);
+            break;
+        case 'shopping':
+            box(ctx, 9, 12, 14, 14, P.rose1);
+            line(ctx, 12, 12, 12, 8, P.ink2);
+            line(ctx, 20, 12, 20, 8, P.ink2);
+            r(ctx, 13, 8, 7, 2, P.ink2);
+            r(ctx, 12, 18, 8, 2, P.rose3);
+            break;
+        case 'entertainment':
+            box(ctx, 6, 13, 20, 10, P.teal1);
+            r(ctx, 10, 16, 2, 5, P.cream0);
+            r(ctx, 8, 18, 6, 1, P.cream0);
+            p(ctx, 20, 16, P.amber2);
+            p(ctx, 22, 18, P.rose2);
+            p(ctx, 18, 19, P.green3);
+            break;
+        case 'bills':
+            box(ctx, 10, 5, 12, 22, P.gray1);
+            r(ctx, 12, 8, 8, 15, P.blue2);
+            p(ctx, 16, 25, P.gray3);
+            r(ctx, 14, 10, 4, 2, P.blue3);
+            break;
+        case 'health':
+            r(ctx, 8, 17, 7, 8, P.rose2);
+            r(ctx, 15, 17, 9, 8, P.cream0);
+            r(ctx, 9, 14, 14, 3, P.ink);
+            r(ctx, 10, 13, 12, 3, P.rose3);
+            r(ctx, 13, 11, 6, 2, P.cream0);
+            break;
+        case 'education':
+            box(ctx, 7, 8, 8, 18, P.blue1);
+            box(ctx, 16, 8, 9, 18, P.rose1);
+            r(ctx, 10, 11, 3, 1, P.cream0);
+            r(ctx, 18, 12, 5, 1, P.cream0);
+            r(ctx, 15, 9, 2, 16, P.ink2);
+            break;
+        case 'other':
+            box(ctx, 8, 12, 16, 13, P.wood2);
+            line(ctx, 8, 12, 16, 7, P.wood3);
+            line(ctx, 24, 12, 16, 7, P.wood1);
+            r(ctx, 13, 15, 6, 2, P.cream0);
+            break;
+        case 'sun':
+            r(ctx, 13, 8, 6, 16, P.amber2);
+            r(ctx, 8, 13, 16, 6, P.amber2);
+            r(ctx, 11, 11, 10, 10, P.amber1);
+            r(ctx, 13, 13, 6, 6, P.cream0);
+            break;
+        case 'calendar-week':
+        case 'calendar-month':
+            box(ctx, 7, 8, 18, 18, P.cream0);
+            r(ctx, 7, 8, 18, 5, id === 'calendar-week' ? P.teal1 : P.rose1);
+            r(ctx, 10, 5, 2, 5, P.gray1);
+            r(ctx, 20, 5, 2, 5, P.gray1);
+            for (let i = 0; i < (id === 'calendar-week' ? 5 : 9); i++) {
+                const x = 10 + (i % 3) * 5;
+                const y = 15 + Math.floor(i / 3) * 4;
+                r(ctx, x, y, 2, 2, i % 2 ? P.teal2 : P.amber2);
+            }
+            break;
+        case 'budget-good':
+            r(ctx, 9, 23, 4, 3, P.green1);
+            r(ctx, 14, 18, 4, 8, P.green2);
+            r(ctx, 19, 12, 4, 14, P.green3);
+            line(ctx, 10, 14, 17, 7, P.amber2);
+            line(ctx, 17, 7, 23, 13, P.amber2);
+            break;
+        case 'budget-over':
+            r(ctx, 15, 6, 2, 13, P.rose2);
+            r(ctx, 13, 19, 6, 2, P.rose2);
+            r(ctx, 11, 22, 10, 4, P.rose0);
+            p(ctx, 13, 12, P.ink);
+            p(ctx, 20, 12, P.ink);
+            break;
+        case 'ai':
+            box(ctx, 8, 9, 16, 14, P.gray2);
+            r(ctx, 13, 5, 6, 3, P.gray1);
+            r(ctx, 15, 3, 2, 3, P.gray1);
+            p(ctx, 12, 15, P.teal3);
+            p(ctx, 20, 15, P.teal3);
+            r(ctx, 13, 19, 7, 1, P.ink2);
+            break;
+        case 'idea':
+            r(ctx, 12, 8, 8, 9, P.amber2);
+            r(ctx, 10, 11, 12, 4, P.amber2);
+            r(ctx, 13, 18, 6, 3, P.gray2);
+            r(ctx, 14, 22, 4, 3, P.gray1);
+            p(ctx, 15, 10, P.white);
+            break;
+        case 'chart':
+            r(ctx, 8, 22, 4, 4, P.teal2);
+            r(ctx, 14, 17, 4, 9, P.amber2);
+            r(ctx, 20, 11, 4, 15, P.rose2);
+            r(ctx, 7, 26, 18, 2, P.ink2);
+            break;
+        case 'memo':
+            box(ctx, 9, 6, 14, 21, P.cream0);
+            r(ctx, 12, 10, 8, 1, P.ink2);
+            r(ctx, 12, 14, 7, 1, P.ink2);
+            r(ctx, 12, 18, 9, 1, P.ink2);
+            r(ctx, 12, 22, 5, 1, P.rose2);
+            break;
+        case 'empty':
+            box(ctx, 7, 12, 18, 12, P.cream0);
+            line(ctx, 7, 12, 16, 18, P.wood2);
+            line(ctx, 25, 12, 16, 18, P.wood2);
+            r(ctx, 11, 8, 10, 5, P.blue2);
+            r(ctx, 13, 9, 6, 1, P.blue3);
+            break;
+        case 'target':
+            r(ctx, 8, 8, 16, 16, P.rose0);
+            r(ctx, 10, 10, 12, 12, P.cream0);
+            r(ctx, 12, 12, 8, 8, P.rose2);
+            r(ctx, 14, 14, 4, 4, P.cream0);
+            p(ctx, 16, 16, P.ink);
+            break;
+        case 'energy':
+            box(ctx, 6, 12, 19, 10, P.green2);
+            r(ctx, 25, 15, 2, 4, P.ink);
+            r(ctx, 9, 15, 12, 4, P.green3);
+            break;
+        case 'feed':
+            r(ctx, 9, 21, 15, 4, P.wood2);
+            r(ctx, 11, 17, 11, 5, P.amber2);
+            r(ctx, 14, 13, 7, 4, P.cream0);
+            p(ctx, 12, 18, P.rose2);
+            p(ctx, 20, 18, P.rose2);
+            break;
+        case 'invite':
+            box(ctx, 10, 7, 12, 20, P.wood2);
+            r(ctx, 18, 16, 2, 2, P.amber2);
+            line(ctx, 5, 17, 12, 17, P.teal2);
+            line(ctx, 9, 13, 12, 17, P.teal2);
+            line(ctx, 9, 21, 12, 17, P.teal2);
+            break;
+        case 'paw':
+            r(ctx, 12, 17, 8, 7, P.wood2);
+            r(ctx, 9, 11, 4, 4, P.wood3);
+            r(ctx, 14, 8, 4, 5, P.wood3);
+            r(ctx, 20, 11, 4, 4, P.wood3);
+            r(ctx, 13, 18, 6, 4, P.rose3);
+            break;
+        default:
+            drawEffect(ctx, 'sparkles');
+    }
 }
 
 function drawFurniture(ctx: CanvasRenderingContext2D, id: string) {

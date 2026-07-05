@@ -71,6 +71,30 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-05-bank-pixel-assets-finish',
+    date: '2026-07-05',
+    title: '人生拟像素店铺图标收口完成',
+    kind: 'improvement',
+    summary: '人生拟的账目分析、店铺仪表盘和员工目标页改为使用内置像素图标，减少外部图片加载失败带来的空白。',
+    items: [
+      '分类、预算状态、日历、投喂、邀请访客和自定义宠物默认头像现在都走本地像素资产，不再依赖 Twemoji CDN。',
+      '旧存档里保存过的 emoji 或旧 Twemoji 图标会自动映射到新的像素图标，家具、员工、菜品和目标图标可继续显示。',
+      '已清理不再使用的旧店铺场景残留，不影响现有店铺数据、账目记录或储蓄目标。',
+    ],
+  },
+  {
+    id: '2026-07-05-chat-schedule-midnight-refresh',
+    date: '2026-07-05',
+    title: '絮语今日作息会在每天零点刷新',
+    kind: 'improvement',
+    summary: '絮语单聊开启今日作息后，会按本地自然日切换自动生成当天日程，不再按上次生成后的 24 小时滚动计算。',
+    items: [
+      '聊天页保持打开时，系统会在本地零点后自动为当前角色重排当天作息。',
+      '如果零点时没有打开聊天，下次进入对应单聊时也会按当天日期补生成。',
+      '日期判断改为浏览器本地日期，减少深夜或清晨出现日程日期偏一天的问题。',
+    ],
+  },
+  {
     id: '2026-07-05-shop-image-url-paste-fix',
     date: '2026-07-05',
     title: '心意铺自定义商品图片更容易贴上了',
