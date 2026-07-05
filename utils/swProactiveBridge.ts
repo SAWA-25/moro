@@ -27,6 +27,18 @@ export interface SwApiConfig {
   model: string;
 }
 
+export interface SwGenerationConfig {
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  top_k?: number;
+  min_p?: number;
+  top_a?: number;
+  repetition_penalty?: number;
+  max_tokens?: number;
+}
+
 export interface SwLifeEventSnapshot {
   timestamp: number;
   activity: string;
@@ -75,6 +87,10 @@ export interface SwProactiveSnapshot {
   api: SwApiConfig;
   /** 紧凑系统提示：人设 + 当下日常 + 「主动发一条消息」的指令 */
   systemPrompt: string;
+  /** 主线程写快照时已经套好的 chat.proactive 活字盘消息骨架。 */
+  presetMessages?: { role: string; content: string }[];
+  /** 主线程写快照时解析出的 chat.proactive 采样参数。 */
+  generation?: SwGenerationConfig;
   /** 最后一句用户侧 nudge（很多 OpenAI 兼容端要求最后一轮是 user） */
   instruction: string;
   /** 最近若干条对话（role + content，已截断） */
@@ -266,10 +282,22 @@ export function swBuildMessages(snap: SwProactiveSnapshot): { role: string; cont
     v2?.materialSources?.length ? `允许取材：${v2.materialSources.join('、')}。` : '',
     '不要写成“我今天做了A/B/C”的流水账；只输出一条会真的发进聊天框的消息正文。',
   ].filter(Boolean).join('\n');
-  const msgs: { role: string; content: string }[] = [{ role: 'system', content: `${snap.systemPrompt}${v2Prompt ? `\n${v2Prompt}` : ''}` }];
-  for (const m of snap.recentMessages || []) {
-    if (!m || !m.content) continue;
-    msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content).slice(0, 500) });
+  const presetMessages = (snap.presetMessages || [])
+    .map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
+      content: String(m.content || '').trim(),
+    }))
+    .filter(m => m.content);
+  const msgs: { role: string; content: string }[] = presetMessages.length
+    ? presetMessages
+    : [{ role: 'system', content: `${snap.systemPrompt}${v2Prompt ? `\n${v2Prompt}` : ''}` }];
+  if (presetMessages.length) {
+    if (v2Prompt) msgs.push({ role: 'system', content: v2Prompt });
+  } else {
+    for (const m of snap.recentMessages || []) {
+      if (!m || !m.content) continue;
+      msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content).slice(0, 500) });
+    }
   }
   const instruction = snap.pendingUserMessages?.length
     ? `${snap.instruction || '（轮到你主动发消息了，直接写消息正文）'}\n这次先自然回应上面的未回复消息；可以顺带带出你的近况，但不要假装没看到。`
@@ -293,14 +321,28 @@ export function swBuildQueuedReplyMetadata(
 }
 
 /** 调用 OpenAI 兼容聊天补全端点（镜像 autonomousLife.callLLM，可在 SW 内跑）。 */
-export async function swCallLLM(api: SwApiConfig, messages: { role: string; content: string }[], maxTokens = 400, signal?: AbortSignal): Promise<string> {
+export async function swCallLLM(
+  api: SwApiConfig,
+  messages: { role: string; content: string }[],
+  maxTokens = 400,
+  signal?: AbortSignal,
+  generation?: SwGenerationConfig,
+): Promise<string> {
   const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
   try {
+    const { max_tokens: generationMaxTokens, ...restGeneration } = generation || {};
     const res = await fetch(buildOpenAiEndpoint(baseUrl, 'chat.completions'), {
       method: 'POST',
       headers: buildOpenAiHeaders(api.apiKey),
-      body: JSON.stringify({ model: api.model, messages, temperature: 0.92, max_tokens: maxTokens, stream: false }),
+      body: JSON.stringify({
+        model: api.model,
+        messages,
+        temperature: generation?.temperature ?? 0.92,
+        max_tokens: generationMaxTokens ?? maxTokens,
+        stream: false,
+        ...restGeneration,
+      }),
       signal,
     });
     const data: any = await res.json().catch(async () => ({ message: await res.text().catch(() => '') }));

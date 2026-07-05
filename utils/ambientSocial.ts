@@ -11,6 +11,7 @@ import type {
 import type { ResolvedApi } from './auxApi';
 import { llmComplete } from './llmComplete';
 import { createCharacterId } from './characterIdentity';
+import { buildFullActiveUserSetting } from './characterPromptProfile';
 
 export const AMBIENT_SOCIAL_VERSION = 1;
 const MIN_INITIAL_ENTRIES = 2;
@@ -239,17 +240,8 @@ function buildAmbientSocialPrompt(
     characters: CharacterProfile[],
     existing: AmbientSocialEntry[],
     mode: 'initial' | 'growth',
+    fullUserSetting: string,
 ): string {
-    const profileSetting = {
-        name: profile.name || 'User',
-        bio: profile.bio || '',
-        patSuffix: profile.patSuffix || '',
-        vrState: profile.vrState ? {
-            enabled: profile.vrState.enabled,
-            currentRoom: profile.vrState.currentRoom,
-            activity: profile.vrState.activity,
-        } : undefined,
-    };
     const officialNames = characters.map(c => c.name).filter(Boolean).slice(0, 24).join('、') || '无';
     const existingBrief = existing.length
         ? existing.map(e => `- ${e.name}（${e.kind === 'group' ? '群聊' : e.relationLabel}）：${e.note}`).join('\n')
@@ -261,7 +253,7 @@ function buildAmbientSocialPrompt(
     return `你是「絮语」App 的用户社交圈生成器。你的任务是根据用户自己写下的设定，生成这个用户生活里可能存在的影子联系人/群聊。
 
 ## 用户设定（唯一依据）
-${JSON.stringify(profileSetting, null, 2)}
+${fullUserSetting}
 
 ## 已有正式角色名（不要复制成社交圈联系人）
 ${officialNames}
@@ -294,9 +286,10 @@ async function generateAmbientSocialEntries(
 ): Promise<AmbientSocialEntry[]> {
     const baseUrl = (api.baseUrl || '').trim();
     if (!baseUrl || !api.model) return [];
+    const fullUserSetting = await buildFullActiveUserSetting(profile, { fallback: `用户名：${profile.name || '用户'}` });
     const raw = await llmComplete(
         api,
-        [{ role: 'user', content: buildAmbientSocialPrompt(profile, characters, existing, mode) }],
+        [{ role: 'user', content: buildAmbientSocialPrompt(profile, characters, existing, mode, fullUserSetting) }],
         { temperature: 0.92, maxTokens: mode === 'initial' ? 4200 : 2200 },
     );
     return parseGeneratedEntries(raw, now, existing);

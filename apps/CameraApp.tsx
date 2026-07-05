@@ -8,6 +8,7 @@ import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { ArrowLeft, ArrowsClockwise, Camera as CameraIcon, Images } from '@phosphor-icons/react';
 import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 
 /**
  * 相机 App —— 用「TA 的手机」拍下此刻，让 TA 看见并一起聊。
@@ -113,7 +114,11 @@ const CameraApp: React.FC<CameraAppProps> = ({ charId, onExit, onSendToChat }) =
         if (!apiConfig.baseUrl || !apiConfig.model) { addToast('请先配置 API', 'error'); return; }
         setBusy(true);
         try {
-            const systemContent = `你是「${char.name}」。${char.systemPrompt || ''}
+            const systemContent = `你是「${char.name}」。
+${buildFullCharacterSetting(char, { includeMemos: true })}
+
+${await buildFullActiveUserSetting(userProfile)}
+
 此刻 ${userProfile.name} 用你的手机拍了一张照片给你看。请你看着这张照片，按你的人设即时点评 1~2 句（像在聊天里收到一张照片那样自然、口语、有你的语气和情绪），不要 AI 助手腔，不要描述"这是一张图片"这类废话。
 如果要分成两句，用换行分开。`;
             const payload = {

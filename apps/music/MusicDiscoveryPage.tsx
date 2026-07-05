@@ -4,6 +4,7 @@ import { useOS } from '../../context/OSContext';
 import { musicApi, Song, toHttps, useMusic } from '../../context/MusicContext';
 import type { CharPlaylistSong } from '../../types';
 import { computeCurrentListening } from '../../utils/charMusicSchedule';
+import { getLocalDateKey } from '../../utils/dateKey';
 import { DB } from '../../utils/db';
 import { listMusicSearchHistory, listRecentMusicSongs, upsertMusicTrack } from '../../utils/musicLibrary';
 import { BokehBg, C, MiniPlayer, MizuHeader, SongRow, Sparkle, isMusicAvatarImage } from './MusicUI';
@@ -96,7 +97,7 @@ const MusicDiscoveryPage: React.FC<Props> = ({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getLocalDateKey();
       const rows: Array<{ charId: string; name: string; avatar?: string; song: Song; vibe?: string }> = [];
       for (const char of characters.slice(0, 12)) {
         if (!char.musicProfile?.initializedAt) continue;

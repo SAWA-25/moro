@@ -19,6 +19,7 @@ import { BankActionHistoryDrawer, BankActionResultModal, BankActionResultView, B
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, buildMishapText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
+import { buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import { HAND_FONT } from './almanac/handbookKit';
 import {
     PAGE_BG,
@@ -1390,7 +1391,7 @@ const BankApp: React.FC = () => {
             if (auxApi.baseUrl && auxApi.model && randomChar) {
                 try {
                     await injectMemoryPalace(randomChar);
-                    const charContext = ContextBuilder.buildCoreContext(randomChar, userProfile, true);
+                    const charContext = await ContextBuilder.buildFullCoreContext(randomChar, userProfile, true);
                     const recentMsgs = await DB.getMessagesByCharId(randomChar.id);
                     const chatSnippet = recentMsgs.slice(-10).map(m => m.content.substring(0, 50)).join(' | ');
                     const previousGuestbook = (current.shop.guestbook || []).slice(0, 10).map(g => `${g.authorName}: ${g.content}`).join('\n');
@@ -2007,11 +2008,17 @@ ${previousGuestbook}
             const shopName = cur.shop.shopName || '我的小店';
             const rv = cur.shop.reviews || [];
             const avg = rv.length ? (rv.reduce((s, r) => s + r.rating, 0) / rv.length).toFixed(1) : '—';
-            const charNote = (name: string) => {
-                const c = characters.find(ch => ch.name === name);
-                return c ? `（熟人，人设：${(c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 60)}）` : '（普通顾客）';
-            };
-            const list = batch.map(r => ({ id: r.id, 顾客: r.authorName + (r.isNpc ? '' : charNote(r.authorName)), 点的: r.productName || '商品', 初评分: r.rating }));
+            const list = batch.map(r => {
+                const knownChar = r.isNpc ? undefined : characters.find(ch => ch.name === r.authorName);
+                return {
+                    id: r.id,
+                    顾客: r.authorName,
+                    类型: knownChar ? '熟人角色' : '普通顾客',
+                    完整角色设定: knownChar ? buildFullCharacterSetting(knownChar, { includeMemos: true }) : undefined,
+                    点的: r.productName || '商品',
+                    初评分: r.rating,
+                };
+            });
             const prompt = `你在为一家叫「${shopName}」的小店生成顾客点评。店铺等级 Lv.${shopLevel}，当前口碑均分 ${avg}。本轮卖出：${soldProductNames.join('、') || '商品'}。
 请为下面每位顾客写一条**真实、多样、口语化**的点评（中文，约 20~40 字，可用网络梗 / 吐槽 / 夸赞 / 中肯等不同口吻，切忌雷同套话）。熟人顾客要贴合其人设口吻。
 同时给出 1~5 的星级：以「初评分」为基准，按你写的点评情绪适度上下浮动（最多差 1 星），不要全给五星。

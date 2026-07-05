@@ -7,6 +7,7 @@ import { extractContent } from '../../utils/safeApi';
 import { callChatCompletion } from '../../utils/llmClient';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import { DB } from '../../utils/db';
+import { getLocalDateKey } from '../../utils/dateKey';
 import type { PixelAsset, PixelHomeState, PlacedFurniture } from './types';
 import { ROOM_META, ROOM_SLOTS } from './roomTemplates';
 
@@ -42,7 +43,7 @@ export interface PixelInspection {
 const todayKey = () => {
   const now = new Date();
   if (now.getHours() < 6) now.setDate(now.getDate() - 1);
-  return now.toISOString().split('T')[0];
+  return getLocalDateKey(now);
 };
 
 const cleanJson = (raw: string) => {
@@ -145,7 +146,7 @@ export function usePixelHomeLife({
       await injectMemoryPalace(char, recentMsgs);
 
       const effectiveUserProfile: UserProfile = userProfile || { name: '用户', avatar: '', bio: '' };
-      const baseContext = ContextBuilder.buildCoreContext(char, effectiveUserProfile, true);
+      const baseContext = await ContextBuilder.buildFullCoreContext(char, effectiveUserProfile, true);
       const chatContext = recentMsgs.slice(-50).map(m => {
         const role = m.role === 'user' ? effectiveUserProfile.name : char.name;
         return `${role}: ${String(m.content || '').slice(0, 80)}`;

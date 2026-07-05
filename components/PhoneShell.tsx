@@ -169,10 +169,13 @@ import { setAppPayloadWarmer } from './os/appPreload';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
 import { queueManualDeepLink } from '../utils/manualDeepLink';
 import {
-  getPendingManualUpdateNotice,
+  getPendingLatestManualUpdateDateNotices,
   markManualUpdateNoticeSeen,
 } from '../utils/manualUpdateNotice';
-import type { ManualUpdateNotice } from '../apps/manual/manualData';
+import {
+  groupManualUpdateNoticesByDate,
+  type ManualUpdateNotice,
+} from '../apps/manual/manualData';
 
 /*
 // Internal Error Boundary Component
@@ -282,6 +285,42 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode, onCloseApp
 */
 
 const DISCLAIMER_KEY = 'moro_disclaimer_accepted';
+const OFFLINE_FLOAT_MARGIN = 12;
+const OFFLINE_FLOAT_DRAG_THRESHOLD = 5;
+
+type FloatingPosition = {
+  x: number;
+  y: number;
+};
+
+type OfflineFloatDragState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startX: number;
+  startY: number;
+  width: number;
+  height: number;
+  containerWidth: number;
+  containerHeight: number;
+  moved: boolean;
+};
+
+const clampOfflineFloatPosition = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  containerWidth: number,
+  containerHeight: number,
+): FloatingPosition => {
+  const maxX = Math.max(OFFLINE_FLOAT_MARGIN, containerWidth - width - OFFLINE_FLOAT_MARGIN);
+  const maxY = Math.max(OFFLINE_FLOAT_MARGIN, containerHeight - height - OFFLINE_FLOAT_MARGIN);
+  return {
+    x: Math.min(Math.max(OFFLINE_FLOAT_MARGIN, x), maxX),
+    y: Math.min(Math.max(OFFLINE_FLOAT_MARGIN, y), maxY),
+  };
+};
 
 type ImportRecoveryMarker = {
   startedAt?: number;
@@ -408,15 +447,16 @@ const formatManualNoticeDate = (date: string) => {
 };
 
 const ManualUpdateNoticePopup: React.FC<{
-  notice: ManualUpdateNotice | null;
+  notices: ManualUpdateNotice[];
   onClose: () => void;
   onOpenManual: () => void;
-}> = ({ notice, onClose, onOpenManual }) => {
-  if (!notice) return null;
+}> = ({ notices, onClose, onOpenManual }) => {
+  const noticeGroups = useMemo(() => groupManualUpdateNoticesByDate(notices), [notices]);
+  if (notices.length === 0) return null;
   return (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">
       <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />
-      <div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] bg-[#fffdf8] border border-white/70 shadow-2xl animate-slide-up">
+      <div className="relative flex max-h-[82vh] w-full max-w-sm flex-col overflow-hidden rounded-[2rem] bg-[#fffdf8] border border-white/70 shadow-2xl animate-slide-up">
         <div
           aria-hidden
           className="absolute inset-0 opacity-[0.14] pointer-events-none"
@@ -434,36 +474,80 @@ const ManualUpdateNoticePopup: React.FC<{
           <X size={15} weight="bold" />
         </button>
 
-        <div className="relative px-6 pt-7 pb-4">
+        <div className="relative shrink-0 px-6 pt-7 pb-3">
           <div className="h-11 w-11 rounded-full bg-[#23211d] text-[#fffdf8] flex items-center justify-center shadow-[0_14px_28px_-18px_rgba(35,33,29,0.8)]">
             <Megaphone size={21} weight="fill" />
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="px-2.5 py-1 rounded-full bg-[#23211d] text-[#fffdf8] text-[10px] font-black">
-              {MANUAL_NOTICE_KIND_LABEL[notice.kind]}
+              新公告
             </span>
             <span className="label-mono text-[9px] tracking-[0.18em] text-[#9a8c75]">
-              {formatManualNoticeDate(notice.date)}
+              {notices.length} 条未读
             </span>
           </div>
           <h2 className="mt-3 text-[20px] font-black leading-snug tracking-wide text-[#2f2a24]">
-            {notice.title}
+            更新公告
           </h2>
           <p className="mt-2 text-[12.5px] leading-relaxed text-[#5c5143]">
-            {notice.summary}
+            这次有 {notices.length} 条新公告。
           </p>
+        </div>
 
-          <div className="mt-4 max-h-[34vh] overflow-y-auto no-scrollbar space-y-2">
-            {notice.items.map((item, index) => (
-              <div key={`${notice.id}-${item}`} className="flex items-start gap-2.5 rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
-                <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
-                  {index + 1}
-                </span>
-                <span className="text-[11.5px] leading-relaxed text-[#4d4439]">{item}</span>
+        <div className="relative flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 pb-4 space-y-4">
+          {noticeGroups.map((group) => (
+            <section key={group.date} className="space-y-3">
+              <div className="sticky top-0 z-10 -mx-1 px-1 py-2 bg-[#fffdf8]/92 backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <span className="h-px flex-1 bg-black/10" />
+                  <span className="shrink-0 rounded-full bg-[#23211d] px-3 py-1 text-[10px] font-black text-[#fffdf8]">
+                    {formatManualNoticeDate(group.date)}
+                  </span>
+                  <span className="label-mono shrink-0 text-[9px] tracking-[0.16em] text-[#9a8c75]">
+                    {group.notices.length} 条
+                  </span>
+                  <span className="h-px flex-1 bg-black/10" />
+                </div>
               </div>
-            ))}
-          </div>
 
+              {group.pinnedHeadline && (
+                <div className="rounded-[18px] bg-[#23211d] px-4 py-4 text-center shadow-[0_18px_36px_-26px_rgba(35,33,29,0.82)]">
+                  <div className="label-mono text-[8.5px] font-black tracking-[0.22em] text-white/52">置顶提醒</div>
+                  <div className="mt-2 text-[22px] font-black leading-tight text-[#fffdf8] break-words">
+                    {group.pinnedHeadline}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {group.notices.map((notice) => (
+                  <article key={notice.id} className="rounded-[18px] bg-white/82 border border-black/[0.08] px-4 py-4 shadow-[0_12px_28px_-24px_rgba(35,33,29,0.45)]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full bg-[#f1eadf] text-[#5c5143] text-[10px] font-black">
+                        {MANUAL_NOTICE_KIND_LABEL[notice.kind]}
+                      </span>
+                    </div>
+                    <h3 className="mt-3 text-[16px] font-black leading-snug text-[#2f2a24]">
+                      {notice.title}
+                    </h3>
+                    <p className="mt-2 text-[12px] leading-relaxed text-[#5c5143]">
+                      {notice.summary}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {notice.items.map((item, index) => (
+                        <div key={`${notice.id}-${item}`} className="flex items-start gap-2.5 rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
+                            {index + 1}
+                          </span>
+                          <span className="text-[11.5px] leading-relaxed text-[#4d4439]">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
           <div className="mt-3 flex items-center gap-2 rounded-[14px] bg-white/72 border border-black/[0.08] px-3 py-2.5 text-[#5c5143]">
             <BookOpenText size={15} weight="fill" className="shrink-0 text-[#23211d]" />
             <span className="text-[11.5px] leading-relaxed font-bold">Moro 有任何不明白的，请详细看说明书 App。</span>
@@ -599,12 +683,17 @@ const PhoneShell: React.FC = () => {
   const nativeRuntime = isNativeAppRuntime();
   const previousLockedRef = useRef(isLocked);
   const manualNoticeSeenThisSessionRef = useRef<Set<string>>(new Set());
+  const phoneFrameRef = useRef<HTMLDivElement | null>(null);
+  const offlineFloatButtonRef = useRef<HTMLButtonElement | null>(null);
+  const offlineFloatDragRef = useRef<OfflineFloatDragState | null>(null);
+  const suppressOfflineFloatClickRef = useRef(false);
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
   // 已打开 App 保活栈：回桌面时只隐藏、不卸载，让正在生成的回复/番外/评论继续跑完。
   const [mountedApps, setMountedApps] = useState<AppID[]>(() => [AppID.Launcher]);
-  const [manualUpdateNotice, setManualUpdateNotice] = useState<ManualUpdateNotice | null>(null);
+  const [manualUpdateNotices, setManualUpdateNotices] = useState<ManualUpdateNotice[]>([]);
   const [manualUpdateNoticeArmed, setManualUpdateNoticeArmed] = useState(false);
+  const [offlineFloatPos, setOfflineFloatPos] = useState<FloatingPosition | null>(null);
 
   useEffect(() => {
     setMountedApps(prev => prev.includes(activeApp) ? prev : [...prev, activeApp]);
@@ -658,6 +747,78 @@ const PhoneShell: React.FC = () => {
   const [importRecoveryDismissed, setImportRecoveryDismissed] = useState(false);
   const showImportRecoveryPrompt = !!importRecoveryMarker;
 
+  const handleOfflineFloatPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    const frame = phoneFrameRef.current;
+    const button = offlineFloatButtonRef.current || event.currentTarget;
+    if (!frame || !button) return;
+
+    const frameRect = frame.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const start = clampOfflineFloatPosition(
+      buttonRect.left - frameRect.left,
+      buttonRect.top - frameRect.top,
+      buttonRect.width,
+      buttonRect.height,
+      frameRect.width,
+      frameRect.height,
+    );
+    offlineFloatDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: start.x,
+      startY: start.y,
+      width: buttonRect.width,
+      height: buttonRect.height,
+      containerWidth: frameRect.width,
+      containerHeight: frameRect.height,
+      moved: false,
+    };
+    setOfflineFloatPos(start);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  };
+
+  const handleOfflineFloatPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = offlineFloatDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > OFFLINE_FLOAT_DRAG_THRESHOLD) {
+      drag.moved = true;
+    }
+
+    const frameRect = phoneFrameRef.current?.getBoundingClientRect();
+    const buttonRect = offlineFloatButtonRef.current?.getBoundingClientRect();
+    const next = clampOfflineFloatPosition(
+      drag.startX + dx,
+      drag.startY + dy,
+      buttonRect?.width ?? drag.width,
+      buttonRect?.height ?? drag.height,
+      frameRect?.width ?? drag.containerWidth,
+      frameRect?.height ?? drag.containerHeight,
+    );
+    setOfflineFloatPos(next);
+    event.preventDefault();
+  };
+
+  const finishOfflineFloatDrag = (event: React.PointerEvent<HTMLButtonElement>, suppressClick = true) => {
+    const drag = offlineFloatDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (suppressClick && drag.moved) suppressOfflineFloatClickRef.current = true;
+    offlineFloatDragRef.current = null;
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+  };
+
+  const handleOfflineFloatClick = () => {
+    if (suppressOfflineFloatClickRef.current) {
+      suppressOfflineFloatClickRef.current = false;
+      return;
+    }
+    resumeOfflineSession();
+  };
+
   useEffect(() => {
     if (showDisclaimer || importRecoveryDismissed || importRecoveryMarker) return;
     const marker = getPendingImportMarker();
@@ -697,7 +858,7 @@ const PhoneShell: React.FC = () => {
   }, [isLocked]);
 
   useEffect(() => {
-    if (!manualUpdateNoticeArmed || manualUpdateNotice) return;
+    if (!manualUpdateNoticeArmed || manualUpdateNotices.length > 0) return;
     if (
       !isDataLoaded ||
       isLocked ||
@@ -709,15 +870,16 @@ const PhoneShell: React.FC = () => {
       return;
     }
 
-    const pending = getPendingManualUpdateNotice();
-    if (pending && !manualNoticeSeenThisSessionRef.current.has(pending.id)) {
-      setManualUpdateNotice(pending);
+    const pending = getPendingLatestManualUpdateDateNotices()
+      .filter(notice => !manualNoticeSeenThisSessionRef.current.has(notice.id));
+    if (pending.length > 0) {
+      setManualUpdateNotices(pending);
     }
     setManualUpdateNoticeArmed(false);
   }, [
     isDataLoaded,
     isLocked,
-    manualUpdateNotice,
+    manualUpdateNotices.length,
     manualUpdateNoticeArmed,
     showDisclaimer,
     showImportRecoveryPrompt,
@@ -725,21 +887,22 @@ const PhoneShell: React.FC = () => {
     showWorkerUpdateReminder,
   ]);
 
+  const markVisibleManualUpdateNoticesSeen = () => {
+    manualUpdateNotices.forEach((notice) => {
+      manualNoticeSeenThisSessionRef.current.add(notice.id);
+      markManualUpdateNoticeSeen(notice.id);
+    });
+  };
+
   const acknowledgeManualUpdateNotice = () => {
-    if (manualUpdateNotice) {
-      manualNoticeSeenThisSessionRef.current.add(manualUpdateNotice.id);
-      markManualUpdateNoticeSeen(manualUpdateNotice.id);
-    }
-    setManualUpdateNotice(null);
+    markVisibleManualUpdateNoticesSeen();
+    setManualUpdateNotices([]);
     setManualUpdateNoticeArmed(true);
   };
 
   const openManualUpdateNotice = () => {
-    if (manualUpdateNotice) {
-      manualNoticeSeenThisSessionRef.current.add(manualUpdateNotice.id);
-      markManualUpdateNoticeSeen(manualUpdateNotice.id);
-    }
-    setManualUpdateNotice(null);
+    markVisibleManualUpdateNoticesSeen();
+    setManualUpdateNotices([]);
     queueManualDeepLink({
       appId: AppID.Manual,
       route: 'updates',
@@ -945,6 +1108,7 @@ const PhoneShell: React.FC = () => {
           - 已迁移 App（页外/聊天/群聊/桌面）：自理安全区。外壳直接把底边收回到可见 viewport
             （bottom = --standalone-safe-area-bottom），不让那多出来的 34px 把 App 底部控件压到 home 条上。 */}
       <div
+        ref={phoneFrameRef}
         className="absolute top-0 left-0 right-0 z-10 overflow-hidden bg-transparent overscroll-none flex flex-col"
         style={
           shellHandlesSafeArea
@@ -1033,21 +1197,29 @@ const PhoneShell: React.FC = () => {
 
           {suspendedOfflineSession && (
             <button
-              onClick={resumeOfflineSession}
-              className="absolute right-4 z-[56] w-40 rounded-2xl bg-[#2b2933]/92 text-white border border-white/20 shadow-2xl px-3 py-2 flex items-center gap-2 active:scale-95 transition-transform"
-              style={{ top: `calc(var(--chrome-top) + ${suspendedVideoCall ? '6.65rem' : '3.25rem'})` }}
+              ref={offlineFloatButtonRef}
+              onClick={handleOfflineFloatClick}
+              onPointerDown={handleOfflineFloatPointerDown}
+              onPointerMove={handleOfflineFloatPointerMove}
+              onPointerUp={finishOfflineFloatDrag}
+              onPointerCancel={(event) => finishOfflineFloatDrag(event, false)}
+              className="absolute z-[56] w-40 rounded-2xl bg-[#2b2933] text-white border border-[#4f4a59] shadow-[0_18px_42px_rgba(0,0,0,0.34)] px-3 py-2 flex items-center gap-2 cursor-grab active:cursor-grabbing active:scale-95 transition-transform touch-none"
+              style={offlineFloatPos
+                ? { left: offlineFloatPos.x, top: offlineFloatPos.y }
+                : { right: '1rem', top: `calc(var(--chrome-top) + ${suspendedVideoCall ? '6.65rem' : '3.25rem'})` }}
+              title="拖动可移动，点击返回线下现场"
             >
               {suspendedOfflineSession.avatar ? (
-                <img src={suspendedOfflineSession.avatar} className="w-9 h-9 rounded-xl object-cover border border-white/20 shrink-0" alt="" />
+                <img src={suspendedOfflineSession.avatar} className="w-9 h-9 rounded-xl object-cover border border-[#4f4a59] shrink-0" alt="" draggable={false} />
               ) : (
-                <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-sm font-bold shrink-0">
+                <span className="w-9 h-9 rounded-xl bg-[#403b4b] border border-[#4f4a59] flex items-center justify-center text-sm font-bold shrink-0">
                   {suspendedOfflineSession.title.slice(0, 1)}
                 </span>
               )}
               <span className="min-w-0 text-left">
-                <span className="block text-[10px] text-white/55">线下现场中</span>
+                <span className="block text-[10px] text-[#d7d0de]">线下现场中</span>
                 <span className="block text-xs font-bold truncate">{suspendedOfflineSession.title}</span>
-                <span className="block text-[9px] text-white/45 truncate">{suspendedOfflineSession.entryCount} 条 · 点击返回</span>
+                <span className="block text-[9px] text-[#b5acbf] truncate">{suspendedOfflineSession.entryCount} 条 · 点击返回</span>
               </span>
             </button>
           )}
@@ -1099,9 +1271,9 @@ const PhoneShell: React.FC = () => {
          />
        )}
 
-       {!showDisclaimer && !showImportRecoveryPrompt && !showLike520Popup && !showWorkerUpdateReminder && manualUpdateNotice && (
+       {!showDisclaimer && !showImportRecoveryPrompt && !showLike520Popup && !showWorkerUpdateReminder && manualUpdateNotices.length > 0 && (
          <ManualUpdateNoticePopup
-           notice={manualUpdateNotice}
+           notices={manualUpdateNotices}
            onClose={acknowledgeManualUpdateNotice}
            onOpenManual={openManualUpdateNotice}
          />

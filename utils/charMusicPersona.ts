@@ -2,7 +2,7 @@
  * 角色音乐人格初始化
  *
  * 目标：第一次在音乐 App 里"拜访"某个 char 时（或用户手动点"初始化"），调一次 LLM，
- * 基于 char 的 systemPrompt + worldview 生成一份 CharMusicProfile。
+ * 基于完整角色设定和当前用户设定生成一份 CharMusicProfile。
  *
  * 设计原则：
  * 1. 生成的 signatureArtists 名字都是真实存在的网易云可搜的艺人（LLM 要知道真艺人）。
@@ -13,9 +13,9 @@
  */
 
 import { APIConfig, CharacterProfile, CharMusicProfile, CharPlaylist, UserProfile } from '../types';
-import { ContextBuilder } from './context';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 const callLlm = async (api: APIConfig, sys: string, user: string, char: CharacterProfile): Promise<string> => {
     const j = await callChatCompletion(api, {
@@ -155,8 +155,9 @@ interface PersonaDraft {
     playlists: { title: string; description: string; mood?: string; coverStyle?: string }[];
 }
 
-const buildPersonaPrompt = (char: CharacterProfile, user: UserProfile): { sys: string; usr: string } => {
-    const core = ContextBuilder.buildRoleSettingsContext(char, { skipMemories: true });
+const buildPersonaPrompt = async (char: CharacterProfile, user: UserProfile): Promise<{ sys: string; usr: string }> => {
+    const core = buildFullCharacterSetting(char, { includeMemos: true });
+    const userSetting = await buildFullActiveUserSetting(user, { fallback: `用户名：${user.name || '用户'}` });
     const sys = `你是一个"音乐人格生成器"。根据给定的角色设定，为这个角色设计一份网易云音乐个人主页的品味档案。
 
 要求:
@@ -185,8 +186,7 @@ const buildPersonaPrompt = (char: CharacterProfile, user: UserProfile): { sys: s
 
     const usr = `${core}
 
-(可选) 用户姓名: ${user.name || '用户'}
-(可选) 用户 bio: ${user.bio || ''}
+${userSetting}
 
 请为"${char.name}"生成音乐人格档案。`;
     return { sys, usr };
@@ -222,7 +222,7 @@ export const CharMusicPersona = {
             throw new Error('未配置 API（baseUrl 或 model 为空）');
         }
 
-        const { sys, usr } = buildPersonaPrompt(char, userProfile);
+        const { sys, usr } = await buildPersonaPrompt(char, userProfile);
         const rawText = await callLlm(apiConfig, sys, usr, char);
         if (!rawText || !rawText.trim()) {
             throw new Error('LLM 返回为空');

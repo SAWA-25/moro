@@ -7,6 +7,7 @@ import Modal from '../components/os/Modal';
 import { formatMessageForPrompt } from '../utils/messageFormat';
 import { getDiaryDateStr as getLocalDateStr, parseJsonLoose, callDiaryLLM } from './diaryShared';
 import { resolveAuxApi } from '../utils/auxApi';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 
 // ============ 常量 ============
 // 拼贴手账重制：文案 / 布局 / 按键全部原创。心情、印章、信纸的 key/id 持久化不可改，
@@ -254,7 +255,8 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
         setAiBusy('opening');
         try {
             const prompt = `你是一位温柔的日记写作助手。用户「${userProfile.name}」想写今天的日记，但不知道怎么开头。
-${userProfile.bio ? `关于用户: ${userProfile.bio}\n` : ''}今天的写作提示是: "${currentPrompt}"
+${await buildFullActiveUserSetting(userProfile)}
+今天的写作提示是: "${currentPrompt}"
 ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(0, 200)}"\n请顺着已有内容续起开头。` : ''}
 请以用户的第一人称口吻，写 2-3 句自然、有画面感的日记开头（中文，总共不超过 80 字）。
 不要任何前缀、引号、标题或解释，直接输出正文。`;
@@ -284,7 +286,7 @@ ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(
             const chatExcerpt = await getTodayChatExcerpt(char);
             const moodOptions = MOODS.map(m => `${m.key}(${m.emoji}${m.label})`).join(' / ');
 
-            let systemPrompt = ContextBuilder.buildCoreContext(char, userProfile);
+            let systemPrompt = await ContextBuilder.buildFullCoreContext(char, userProfile);
             systemPrompt += `### [日记社 · 交换日记模式]
 你和 ${userProfile.name} 等人共用一本交换日记《${book.title}》，现在轮到你写一篇。
 
@@ -359,7 +361,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
             }
             const moodOptions = MOODS.map(m => `${m.key}(${m.emoji}${m.label})`).join(' / ');
 
-            let systemPrompt = ContextBuilder.buildCoreContext(char, userProfile);
+            let systemPrompt = await ContextBuilder.buildFullCoreContext(char, userProfile);
             systemPrompt += `### [日记社 · 今日对话总结]
 下面是你和 ${userProfile.name} 今天 (${getLocalDateStr()}) 的聊天记录节选：
 [对话记录开始]

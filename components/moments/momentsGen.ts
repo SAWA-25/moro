@@ -1,10 +1,10 @@
 import { AmbientSocialEntry, APIConfig, CharacterProfile, SocialComment, SocialPost, UserProfile } from '../../types';
-import { ContextBuilder } from '../../utils/context';
 import { DB } from '../../utils/db';
 import { extractContent } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import { callChatCompletion } from '../../utils/llmClient';
 import { formatCharacterWithId, getCharacterModelId } from '../../utils/characterIdentity';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../../utils/characterPromptProfile';
 import {
     momentsAutoPostPrompt,
     momentsCommentReplyPrompt,
@@ -154,10 +154,9 @@ const feedDigest = (
     }).join('\n');
 };
 
-const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): string => {
+const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[], userSetting: string): string => {
     const lines: string[] = [
-        `名字: ${userProfile.name || '用户'}`,
-        `简介: ${userProfile.bio || '（没写简介）'}`,
+        userSetting,
     ];
     if (userProfile.patSuffix) lines.push(`拍一拍后缀: ${userProfile.patSuffix}`);
     if (userProfile.vrState?.enabled) {
@@ -187,7 +186,7 @@ const userSocialCircleDigest = (userProfile: UserProfile, feed: SocialPost[]): s
             }
         });
     } else {
-        lines.push('已建立的用户社交圈：暂无。只能从用户简介中能明确推出的关系生成 NPC；简介没有支撑时，少生成或不生成 NPC 动态。');
+        lines.push('已建立的用户社交圈：暂无。只能从完整用户设定中能明确推出的关系生成 NPC；设定没有支撑时，少生成或不生成 NPC 动态。');
     }
 
     const knownNpcNames = Array.from(new Set(
@@ -221,8 +220,11 @@ const userSocialNpcNames = (userProfile: UserProfile, feed: SocialPost[]): Set<s
     return names;
 };
 
-const buildCharBlock = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
-    const core = ContextBuilder.buildCoreContext(char, userProfile, false);
+const buildCharBlock = async (char: CharacterProfile, userProfile: UserProfile, userSetting?: string): Promise<string> => {
+    const core = [
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        userSetting || await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` }),
+    ].join('\n\n');
     const modelId = getCharacterModelId(char);
     let status = '(最近无私聊，生活平淡)';
     try {
@@ -313,9 +315,10 @@ export const generateCharacterMoments = async (params: {
     const allowNpc = userProfile.ambientSocialEnabled !== false;
 
     const selected = pickRandom(momentCharacters, Math.min(4, momentCharacters.length));
-    const blocks = await Promise.all(selected.map(c => buildCharBlock(c, userProfile)));
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+    const blocks = await Promise.all(selected.map(c => buildCharBlock(c, userProfile, fullUserSetting)));
     const roster = momentCharacters.map(c => `- ${formatCharacterWithId(c)} charId="${getCharacterModelId(c)}" 名字:"${c.name}"`).join('\n');
-    const socialCircle = userSocialCircleDigest(userProfile, feed);
+    const socialCircle = userSocialCircleDigest(userProfile, feed, fullUserSetting);
     const allowedNpcNames = userSocialNpcNames(userProfile, feed);
     const blockedNpcNames = hiddenAmbientNpcNames(userProfile);
 
@@ -428,7 +431,8 @@ export const generateAutoCharacterMoment = async (params: {
 }): Promise<SocialPost | null> => {
     const { apiConfig, char, userProfile, feed, trigger, recentLife } = params;
     const blockedNpcNames = hiddenAmbientNpcNames(userProfile);
-    const charBlock = await buildCharBlock(char, userProfile);
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+    const charBlock = await buildCharBlock(char, userProfile, fullUserSetting);
     const prompt = momentsAutoPostPrompt({
         userName: userProfile.name,
         charName: char.name,
@@ -510,7 +514,8 @@ export const generateReactions = async (params: {
     const reactors = [...mentioned, ...others];
     if (reactors.length === 0) return [];
 
-    const blocks = await Promise.all(reactors.map(c => buildCharBlock(c, userProfile)));
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+    const blocks = await Promise.all(reactors.map(c => buildCharBlock(c, userProfile, fullUserSetting)));
 
     // 主目标 + 少量近期帖作为顺手互动对象
     const sideTargets = feed
@@ -647,7 +652,8 @@ export const generateCommentReplies = async (params: {
     candidates = candidates.slice(0, 3);
     if (candidates.length === 0) return [];
 
-    const blocks = await Promise.all(candidates.map(c => buildCharBlock(c, userProfile)));
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+    const blocks = await Promise.all(candidates.map(c => buildCharBlock(c, userProfile, fullUserSetting)));
     const cmts = (post.comments || []).map(c =>
         `- commentId="${c.id}" ${c.authorName}${c.replyTo ? ` 回复 ${c.replyTo.name}` : ''}: ${c.content.slice(0, 50)}`
     ).join('\n');

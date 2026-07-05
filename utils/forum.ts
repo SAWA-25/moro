@@ -292,6 +292,19 @@ const REPLY_STOP_WORDS = new Set([
 const replyKey = (text: string): string =>
     String(text || '').toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]/g, '');
 
+const threadKey = (text: string): string => replyKey(text).slice(0, 220);
+
+const forumPostDuplicateKey = (p: Pick<ForumPost, 'boardId' | 'authorType' | 'authorId' | 'authorName' | 'title' | 'body'>): string | null => {
+    if (p.authorType === 'user') return null;
+    const title = threadKey(p.title);
+    if (!title) return null;
+    const body = threadKey(p.body);
+    const author = p.authorType === 'char'
+        ? `char:${p.authorId || p.authorName}`
+        : `npc:${p.authorName}`;
+    return `${p.boardId}|${author}|${title}|${body}`;
+};
+
 const postBrief = (ctx?: ForumReplyContext): string =>
     `${ctx?.title || ''} ${ctx?.body || ''}`.replace(/\s+/g, ' ').trim();
 
@@ -502,6 +515,22 @@ export function removeForumSubReply(post: ForumPost, replyId: string, subReplyId
     return changed ? rebuildForumPostParticipants({ ...post, replies }) : post;
 }
 
+export function dedupeForumPosts(posts: ForumPost[]): ForumPost[] {
+    const winner = new Map<string, ForumPost>();
+    for (const p of posts) {
+        const key = forumPostDuplicateKey(p);
+        if (!key) continue;
+        const prev = winner.get(key);
+        const prevAt = prev ? (prev.lastActiveAt || prev.createdAt || 0) : -1;
+        const curAt = p.lastActiveAt || p.createdAt || 0;
+        if (!prev || curAt >= prevAt) winner.set(key, p);
+    }
+    return posts.filter(p => {
+        const key = forumPostDuplicateKey(p);
+        return !key || winner.get(key) === p;
+    });
+}
+
 export function normalizeForumState(input: unknown): ForumState {
     const rawPosts = safeArr<any>((input as any)?.posts);
     const posts: ForumPost[] = rawPosts
@@ -549,7 +578,7 @@ export function normalizeForumState(input: unknown): ForumState {
                 ...replyParticipants(replies),
             ]);
         });
-    return { posts };
+    return { posts: dedupeForumPosts(posts) };
 }
 
 // ── 副 API 生成跟帖 ──────────────────────────────────────────────────────
@@ -808,7 +837,7 @@ export function buildForumPrompt(
     const roster = chars.slice(0, 6).map(c => {
         const id = getCharacterModelId(c);
         const idPart = id ? ` charId="${id}"` : '';
-        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').slice(0, 120) || '（无设定）'}`;
+        return `- ${formatCharacterWithId(c)}${idPart}：\n${c.persona || '（无设定）'}`;
     }).join('\n');
     const system = '你在为一个网络论坛（百度贴吧风格）生成「跟帖区」楼层。每条跟帖都必须读过主楼，回应标题/正文里的具体细节；要像真实网友，有共鸣、追问、分歧、补经验、玩梗，但不能水楼、复读或写万能套话。';
     const endFloor = startFloor + count - 1;
@@ -843,7 +872,7 @@ export function buildCharReplyPrompt(
     const board = boardOf(post.boardId);
     const recent = (post.replies || []).slice(-8).map(r => `${r.floor}楼 ${r.authorName}：${r.body}`).join('\n');
     const keywords = extractReplyKeywords(post, 6);
-    const system = `你是「${char.name}」，正在茶话亭（百度贴吧风格论坛）里刷帖。请完全代入你的人设，用你自己的语气回一层楼。${char.persona ? `\n【人设】${char.persona.slice(0, 500)}` : ''}`;
+    const system = `你是「${char.name}」，正在茶话亭（百度贴吧风格论坛）里刷帖。请完全代入你的人设，用你自己的语气回一层楼。${char.persona ? `\n【完整角色设定】\n${char.persona}` : ''}`;
     const user = `板块：${board?.emoji || ''}${board?.name || ''}
 楼主：${post.authorName}
 帖子标题：「${post.title}」
@@ -908,9 +937,9 @@ export function parseForumReplies(raw: string): RawReply[] {
 /** 让某个角色「开一个帖」：选板块 + 写标题正文（按人设）。 */
 export function buildCharThreadPrompt(char: CharBrief): { system: string; user: string } {
     const boards = FORUM_BOARDS.map(b => `${b.id}（${b.emoji}${b.name}：${b.desc}）`).join('、');
-    const system = `你是「${char.name}」，正打算上论坛发个帖子。请完全代入人设。${char.persona ? `\n【人设】${char.persona.slice(0, 400)}` : ''}`;
+    const system = `你是「${char.name}」，正打算上论坛发个帖子。请完全代入人设。${char.persona ? `\n【完整角色设定】\n${char.persona}` : ''}`;
     const user = `从这些板块里挑一个最贴合你此刻心情的：${boards}。
-然后以你的口吻发一个帖子（标题简短有钩子、正文自然展开、长短随意不限字数，像真人随手发的，不要太正式）。
+然后以你的口吻发一个帖子（标题简短有钩子、正文自然展开、长短随意不限字数，像真人随手发的，不要太正式）。必须从你的完整角色设定、世界观/背景、说话习惯和当下性格出发，不要写成通用网友，不要套“今天也想找人说说话/有人在吗”这种万能孤独帖。
 只输出一个 JSON，不要多余文字或代码块标记：
 {"boardId":"板块 id","title":"标题","body":"正文"}`;
     return { system, user };
@@ -928,6 +957,73 @@ export function parseCharThread(raw: string): { boardId: string; title: string; 
         const boardId = boardOf(String(o?.boardId || '').trim()) ? String(o.boardId).trim() : 'chat';
         return { boardId, title, body: String(o?.body || '').trim() };
     } catch { return null; }
+}
+
+export function isGenericCharThreadDraft(thread: Pick<RawThread, 'title' | 'body'> | null | undefined): boolean {
+    if (!thread) return true;
+    const key = replyKey(`${thread.title || ''}${thread.body || ''}`);
+    if (!key) return true;
+    return [
+        '今天也想找人说说话',
+        '没什么大事就是突然想冒个泡有人在吗',
+        '有人在吗',
+        '想找人说说话',
+    ].some(x => key.includes(replyKey(x)));
+}
+
+const personaHintForForum = (char: CharBrief): string => {
+    const raw = String(char.persona || '').replace(/\{\{char\}\}/g, char.name).replace(/\{\{user\}\}/g, '你');
+    const lines = raw
+        .split(/[\n。！？；;]/)
+        .map(x => x.replace(/\s+/g, ' ').trim())
+        .filter(x => x.length >= 8 && !/(系统|指令|不要|必须|回复|输出|JSON|AI|用户|扮演|你是)/i.test(x));
+    return (lines[0] || `${char.name}总有些不太好直接说出口的小心思`).slice(0, 58);
+};
+
+export function fallbackCharThread(char: CharBrief, existingPosts: ForumPost[] = []): { boardId: string; title: string; body: string } {
+    const hint = personaHintForForum(char);
+    const variants = [
+        {
+            boardId: 'chat',
+            title: '来存一个刚才的小片段',
+            body: `刚才忽然被一件很小的事绊了一下，第一反应居然是「${hint}」。本来想装作没事，但越想越觉得，这种细碎念头如果不找个地方放一下，会在脑子里绕很久。\n\n你们会不会也这样：明明不是什么大事，却会因为某个动作、某句话，突然想把自己藏起来一会儿？`,
+        },
+        {
+            boardId: 'emo',
+            title: '有些话还是想丢进树洞',
+            body: `今天有个瞬间让我又想起「${hint}」。不是那种需要立刻解决的大问题，更像一根很细的刺，平时看不见，碰到了才知道还在。\n\n不想把这话直接说给熟人听，怕他们担心，也怕被一句“别想太多”打发掉。所以先丢到这里，看看有没有人能懂这种不轻不重、但就是放不下的感觉。`,
+        },
+        {
+            boardId: 'hobby',
+            title: '求一点能让人缓过来的东西',
+            body: `最近有点被「${hint}」这种感觉牵着走，想找点能把注意力拽回来的东西。歌、书、游戏、手作、散步路线都行，不要太热闹，最好是能一个人慢慢消化的。\n\n楼里有没有私藏的缓冲办法？不是要立刻满血复活，就是想先把今天这口气顺过去。`,
+        },
+        {
+            boardId: 'help',
+            title: '这种时候怎么把话说得不难看',
+            body: `情况有点微妙：我心里在意的是「${hint}」，但真要开口又怕说重了。直接问显得像逼人表态，不问又会一直在原地打转。\n\n有没有比较体面的问法？最好既能把事情说清楚，又不把对方逼到只能防御的位置。`,
+        },
+    ];
+    const used = new Set(existingPosts
+        .filter(p => p.authorType === 'char' && (p.authorId === char.id || p.authorName === char.name))
+        .map(p => threadKey(p.title)));
+    const picked = variants.find(v => !used.has(threadKey(v.title))) || variants[existingPosts.length % variants.length];
+    return picked;
+}
+
+export function isDuplicateForumThreadDraft(
+    posts: ForumPost[],
+    draft: Pick<RawThread, 'title' | 'body'> & { boardId: string },
+    author: { id?: string; name: string; type?: AuthorType },
+): boolean {
+    const draftKey = `${draft.boardId}|${threadKey(draft.title)}|${threadKey(draft.body)}`;
+    return posts.some(p => {
+        if (p.boardId !== draft.boardId) return false;
+        if (author.type && p.authorType !== author.type) return false;
+        if (author.id && p.authorId !== author.id) return false;
+        if (!author.id && p.authorName !== author.name) return false;
+        return `${p.boardId}|${threadKey(p.title)}|${threadKey(p.body)}` === draftKey;
+    });
 }
 
 export function parseCharReply(raw: string): string | null {
@@ -1048,10 +1144,10 @@ export function buildThreadsPrompt(
     topic?: Pick<ForumTopicEvent, 'title' | 'intro' | 'tags'>,
     trends?: ForumTrendPack | ForumTrendItem[] | null,
 ): { system: string; user: string } {
-    const roster = chars.slice(0, 6).map(c => {
+    const roster = chars.slice(0, 2).map(c => {
         const id = getCharacterModelId(c);
         const idPart = id ? ` charId="${id}"` : '';
-        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').slice(0, 100) || '（无设定）'}`;
+        return `- ${formatCharacterWithId(c)}${idPart}：${c.persona || '（无设定）'}`;
     }).join('\n');
     const longMin = Math.max(3, Math.round(count * 0.4)); // 至少四成是有内容的长贴
     const trendsText = trendBrief(trends);
@@ -1061,19 +1157,18 @@ export function buildThreadsPrompt(
 ${topic ? `\n本轮「亭中风向」：${topic.title}\n引子：${topic.intro}\n关联标签：${topic.tags.join('、')}\n请围绕这个风向生成帖子，但每个帖子必须从不同人物、场景或立场切入，不能像同一篇命题作文。` : ''}
 ${trendsText ? `\n当前联网热梗/热点素材（只借语感、话题张力和流行表达，必须改写成茶话亭里的虚构经历；不要复刻真实事件细节，不要写真实素人挂人或隐私爆料）：\n${trendsText}` : ''}
 
-可「实名出镜」的网友（**每人最多发 1 个帖**，少数帖子由他们发，用其本名、贴合人设；其余都用你现编的、各不相同的网名）：
+可「实名出镜」的网友（最多从这里挑 0~1 位发帖；如果当前板块/话题不贴合 TA 的人设，就一个也不要用。其余全部用你现编的、各不相同的网名）：
 ${roster || '（暂无实名角色）'}
 
 Identity rule: when a thread is authored by a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
-
-Identity rule: when a reply is from a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
 
 一次性生成 ${count} 个帖子，硬性要求：
 1. **混合帖型**：其中至少 ${longMin} 个是**有实质内容的好贴长文**（正文 150~400 字、可分 2~4 段，把一件事讲清楚、有细节有情绪有钩子）；另有 2~3 个热梗短帖/玩梗帖、1~2 个「蹲后续/后续来了/求鉴定」帖、若干普通水帖。热梗要像真人顺手套梗，不要像营销号盘点。
 2. **八卦/吃瓜/求助/树洞类正文必须把事讲完整**，绝不允许正文只有一句话或只是复述标题。
 3. **话题各不相同、有新意**：覆盖不同人物关系、场景、情绪，避免雷同套路（别一堆「今天好累」「求安慰」「有人在吗」）。具体到细节（人物、地点、数字、对话）才像真事。
-4. **不重复**：标题不重样、内容不撞车；同一个实名角色不要发多个帖；网名各不相同。
-5. 每帖给 "floors"（这帖大概盖了多少楼，30~588 的整数；越有料/越有争议的帖楼越多，多数 30~150、少数爆楼几百），和 "likes"（点赞数，0~9999，自然分布）。
+4. **实名角色克制使用**：本批最多 1 个实名角色帖子，且必须明显像 TA 本人会发；禁止把角色写成通用网友，禁止套「今天也想找人说说话 / 没什么大事 / 有人在吗」这类万能孤独帖。
+5. **不重复**：标题不重样、内容不撞车；网名各不相同。
+6. 每帖给 "floors"（这帖大概盖了多少楼，30~588 的整数；越有料/越有争议的帖楼越多，多数 30~150、少数爆楼几百），和 "likes"（点赞数，0~9999，自然分布）。
 
 只输出一个 JSON 数组，不要任何多余文字或代码块标记；务必把 ${count} 条全部写完、最后用 ] 收尾：
 [{"author":"网名或角色本名","charId":"实名角色必须填上方 charId；匿名网友省略","title":"标题","body":"正文（按上面要求，该长则长）","floors":整数,"likes":整数}]`;
@@ -1081,6 +1176,11 @@ Identity rule: when a reply is from a real character above, output charId exactl
 }
 
 export interface RawThread { author: string; charId?: string; title: string; body: string; floors: number; likes: number; }
+
+export interface MaterializeThreadsOptions {
+    maxCharAuthors?: number;
+    existingPosts?: ForumPost[];
+}
 
 export function parseThreads(raw: string): RawThread[] {
     if (!raw) return [];
@@ -1246,17 +1346,35 @@ export function materializeThreads(
     chars: { id: string; modelId?: string; name: string; avatar?: string }[],
     sourceEventId?: string,
     tags: string[] = [],
+    options: MaterializeThreadsOptions = {},
 ): ForumPost[] {
     const now = Date.now();
-    const usedChar = new Set<string>(); // 同一实名角色一批里只当一次楼主，避免「重复角色的帖子」
+    const maxCharAuthors = Math.max(0, Math.floor(options.maxCharAuthors ?? 1));
+    const usedChar = new Set<string>(
+        safeArr<ForumPost>(options.existingPosts)
+            .filter(p => p.boardId === boardId && p.authorType === 'char' && p.authorId)
+            .map(p => p.authorId as string),
+    ); // 同一实名角色一批/同一板块里只当一次楼主，避免「重复角色的帖子」
+    let charAuthors = 0;
+    const anonymousName = (name: string, blockedName?: string): string => {
+        const rawName = String(name || '').trim();
+        if (rawName && rawName !== blockedName) return rawName;
+        let next = pick(NICKS); let guard = 0;
+        while (next === blockedName && guard++ < 8) next = pick(NICKS);
+        return next;
+    };
     return raw.map((t, i) => {
         let ch = resolveCharacterByModelId(chars, t.charId);
         if (!ch) {
             const sameName = chars.filter(c => c.name === t.author);
             if (sameName.length === 1) ch = sameName[0];
         }
-        if (ch && usedChar.has(ch.id)) ch = undefined; // 角色已发过帖→这条当匿名网友处理
-        if (ch) usedChar.add(ch.id);
+        const blockedCharName = ch?.name;
+        if (ch && (usedChar.has(ch.id) || charAuthors >= maxCharAuthors)) ch = undefined; // 角色已发过帖/超出上限→这条当匿名网友处理
+        if (ch) {
+            usedChar.add(ch.id);
+            charAuthors++;
+        }
         const ago = Math.floor(Math.random() * 3600_000 * 24 * 3); // 近 3 天内
         const created = now - ago;
         const hot = t.floors >= 200 || t.likes >= 300;
@@ -1265,7 +1383,7 @@ export function materializeThreads(
             boardId,
             authorType: ch ? 'char' : 'npc',
             authorId: ch?.id,
-            authorName: ch ? ch.name : (t.author || pick(NICKS)),
+            authorName: ch ? ch.name : anonymousName(t.author, blockedCharName),
             avatar: ch?.avatar,
             title: t.title,
             body: t.body,

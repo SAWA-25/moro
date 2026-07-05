@@ -10,6 +10,7 @@
 import { CharacterProfile } from '../types';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 export interface AppearanceApiConfig {
     baseUrl: string;
@@ -18,28 +19,11 @@ export interface AppearanceApiConfig {
 }
 
 /**
- * 把角色核心设定 + 绑定世界书拼成一段「外貌素材」喂给 prompt（纯函数，便于单测）。
- * 只取已启用（enabled !== false）的挂载世界书，单条与总量都做截断防止 prompt 过长。
+ * 把剪影集完整角色设定 + 绑定世界书拼成一段「外貌素材」喂给 prompt（纯函数，便于单测）。
+ * 不在这里裁剪角色卡或挂载世界书，避免外貌线索被摘要丢失。
  */
-export function buildAppearanceSourceText(char: CharacterProfile, perBookLimit = 600, totalLimit = 4000): string {
-    const personaParts = [
-        char.systemPrompt ? `核心设定：\n${char.systemPrompt}` : '',
-        char.worldview ? `世界观/背景：\n${char.worldview}` : '',
-    ].filter(Boolean);
-
-    const books = (char.mountedWorldbooks || []).filter(b => b && b.enabled !== false && (b.content || '').trim());
-    const bookLines = books.map(b => {
-        const body = (b.content || '').trim().slice(0, perBookLimit);
-        return `【${b.title || '世界书条目'}】${body}`;
-    });
-
-    let text = [
-        personaParts.join('\n\n'),
-        bookLines.length ? `绑定世界书（外貌相关线索请从中提取）：\n${bookLines.join('\n')}` : '',
-    ].filter(Boolean).join('\n\n');
-
-    if (text.length > totalLimit) text = text.slice(0, totalLimit);
-    return text;
+export function buildAppearanceSourceText(char: CharacterProfile, _perBookLimit?: number, _totalLimit?: number): string {
+    return buildFullCharacterSetting(char, { includeMemos: true });
 }
 
 /** 把模型回复清洗成一行逗号分隔的 tag（去重、去引号/代码块/编号、压空白）。 */

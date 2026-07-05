@@ -112,7 +112,7 @@ const ScreenPeekCardView: React.FC<{
     const isSearch = screen.layout === 'search' || !first?.body;
     return (
       <div className="min-h-full bg-white text-slate-950">
-        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-slate-100 px-3 py-2">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-3 py-2">
           <div className="h-9 rounded-full bg-slate-100 px-3 flex items-center gap-2 text-[10px] text-slate-500">
             <span className="shrink-0">lock</span>
             <span className="truncate">{screen.url || first?.subtitle || screen.appName || 'search.local'}</span>
@@ -154,7 +154,7 @@ const ScreenPeekCardView: React.FC<{
     const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
     return (
       <div className="min-h-full bg-white text-slate-950">
-        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-slate-100 px-5 py-3">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3">
           <div className="flex items-center justify-between text-[12px] font-bold text-red-500">
             <span>日历</span>
             <span>今天</span>
@@ -205,7 +205,7 @@ const ScreenPeekCardView: React.FC<{
     const accent = mode === 'recipe' ? '#16a34a' : mode === 'review' ? '#ff7a00' : '#ff5d4a';
     return (
       <div className="min-h-full bg-[#f7f7f7] text-slate-950">
-        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-100">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-100">
           <div className="px-4 pt-2 pb-2 flex items-center gap-3">
             <div className="h-8 flex-1 rounded-full bg-slate-100 px-3 flex items-center text-[11px] text-slate-400">{screen.action || (mode === 'delivery' ? '搜索店铺或商品' : mode === 'recipe' ? '搜索菜谱、食材' : '搜索地点、店铺')}</div>
             <div className="text-[11px] font-bold">管理</div>
@@ -352,13 +352,13 @@ const ScreenPeekCardView: React.FC<{
     <div className={`${large ? 'w-[min(390px,calc(100vw-34px))] h-[min(780px,calc(100vh-116px))]' : 'w-[258px] h-[500px]'} shrink-0 rounded-[42px] bg-slate-950 p-[7px] shadow-[0_28px_70px_-28px_rgba(0,0,0,0.9)] relative text-slate-900`}>
       <div className="absolute left-1/2 top-[9px] z-30 h-[22px] w-[82px] -translate-x-1/2 rounded-full bg-black" />
       <div className={`relative h-full overflow-hidden rounded-[35px] ${pageBg}`}>
-        <div className="relative z-20 h-9 px-5 flex items-center justify-between text-[11px] font-semibold text-slate-900 bg-white/80 backdrop-blur-xl">
+        <div className="relative z-20 h-9 px-5 flex items-center justify-between text-[11px] font-semibold text-slate-900 bg-white">
           <span className="min-w-[42px]">{screen.timeText || fmtTime(card.generatedAt)}</span>
           <span className="w-[74px]" />
           <span className="min-w-[64px] flex items-center justify-end gap-1 text-[10px]"><span>|||</span><span className="inline-flex h-2.5 w-5 rounded-[3px] border border-slate-900/60 p-[1px]"><span className="block rounded-[2px]" style={{ width: `${battery}%`, background: battery < 18 ? '#ef4444' : '#111827' }} /></span></span>
         </div>
         {hasAppHeader && (
-          <div className="relative z-10 h-[66px] px-4 bg-white/92 backdrop-blur-xl border-b border-slate-200/70 flex items-center gap-3">
+          <div className="relative z-10 h-[66px] px-4 bg-white border-b border-slate-200 flex items-center gap-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-[22px] text-slate-800 shrink-0">&lt;</div>
             <div className="min-w-0 flex-1 text-center">
               <div className="text-[16px] leading-5 font-black text-slate-950 truncate">{screen.title || screen.appName}</div>
@@ -369,15 +369,15 @@ const ScreenPeekCardView: React.FC<{
         )}
         <div className={`absolute left-0 right-0 ${screen.appKind === 'chat' ? 'bottom-[64px]' : 'bottom-7'} ${contentTop} overflow-y-auto overscroll-contain no-scrollbar ${pageBg}`}>{renderSurface()}</div>
         {screen.appKind === 'chat' && <div className="absolute left-0 right-0 bottom-7 h-[58px] bg-white border-t border-slate-200 px-3 flex items-center gap-2"><div className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 text-lg">+</div><div className="h-10 flex-1 rounded-[14px] bg-slate-50 border border-slate-200" /><div className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 text-lg">#</div></div>}
-        <div className="absolute left-0 right-0 bottom-0 h-7 bg-white/80 backdrop-blur-xl flex items-center justify-center"><div className="w-24 h-1 rounded-full bg-black/80" /></div>
+        <div className="absolute left-0 right-0 bottom-0 h-7 bg-white flex items-center justify-center"><div className="w-24 h-1 rounded-full bg-black" /></div>
       </div>
     </div>
   );
 
   const overlay = expanded && typeof document !== 'undefined'
     ? createPortal(
-      <div className="fixed inset-0 z-[9998] bg-black/92 text-white flex flex-col animate-fade-in" style={{ paddingTop: 'calc(var(--safe-top, 0px) + 14px)', paddingBottom: 'calc(var(--safe-bottom, 0px) + 14px)' }} onClick={() => setExpanded(false)}>
-        <button type="button" onClick={(event) => { event.stopPropagation(); setExpanded(false); }} className="fixed right-4 z-[10000] h-10 px-3 rounded-full bg-white/14 active:scale-95 border border-white/18 backdrop-blur-xl text-white text-[12px] font-bold flex items-center gap-1.5" style={{ top: 'calc(var(--safe-top, 0px) + 14px)' }} aria-label="关闭窥屏"><span className="text-lg leading-none">x</span><span>关闭</span></button>
+      <div className="fixed inset-0 z-[9998] bg-black text-white flex flex-col animate-fade-in" style={{ paddingTop: 'calc(var(--safe-top, 0px) + 14px)', paddingBottom: 'calc(var(--safe-bottom, 0px) + 14px)' }} onClick={() => setExpanded(false)}>
+        <button type="button" onClick={(event) => { event.stopPropagation(); setExpanded(false); }} className="fixed right-4 z-[10000] h-10 px-3 rounded-full bg-white active:scale-95 border border-slate-200 text-slate-950 text-[12px] font-bold flex items-center gap-1.5" style={{ top: 'calc(var(--safe-top, 0px) + 14px)' }} aria-label="关闭窥屏"><span className="text-lg leading-none">x</span><span>关闭</span></button>
         <div className="shrink-0 px-5 pr-24 min-h-10 flex flex-col justify-center pointer-events-none">
           <div className="text-[13px] font-bold truncate">{card.title || `${card.charName} 的手机屏幕`}</div>
           <div className="text-[10px] text-white/45 truncate">{card.charName} · {new Date(card.generatedAt).toLocaleString()}</div>

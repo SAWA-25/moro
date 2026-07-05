@@ -17,6 +17,7 @@ import { DB } from './db';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractContent } from './safeApi';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
 
 // ==================== Types ====================
 
@@ -125,14 +126,19 @@ const parseJson = <T>(text: string): T | null => {
 
 // ==================== Prompt Builders ====================
 
-const buildFreeRoamSystemPrompt = (
+const buildFreeRoamSystemPrompt = async (
     char: CharacterProfile,
     user: UserProfile,
     recentChatSummary: string,
     pastActivities: XhsActivityRecord[],
-): string => {
+): Promise<string> => {
     // 加载完整上下文（含详细记忆和心情标签），让角色在自由活动时保持情感连贯
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const fullUserSetting = await buildFullActiveUserSetting(user, { fallback: `用户名：${user.name || '用户'}` });
+    const coreContext = [
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        fullUserSetting,
+        ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting }),
+    ].join('\n\n');
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
     const hour = now.getHours();
@@ -473,7 +479,7 @@ export const XhsFreeRoamEngine = {
             callbacks.onStatus(`${char.name}正在思考...`);
             const pastActivities = await DB.getXhsActivities(char.id, 10);
             const chatSummary = await getRecentChatContext(char.id, char.contextLimit || 500);
-            const systemPrompt = buildFreeRoamSystemPrompt(char, user, chatSummary, pastActivities);
+            const systemPrompt = await buildFreeRoamSystemPrompt(char, user, chatSummary, pastActivities);
 
             // 4. Character decides
             callbacks.onStatus(`${char.name}在决定做什么...`);

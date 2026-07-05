@@ -19,6 +19,7 @@ import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { formatCharacterWithId } from './characterIdentity';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 // ── Endpoint config ──
 // Same Cloudflare Worker domain that hosts /netease, /xhs, /webdav etc.
@@ -277,14 +278,11 @@ export async function generatePromptViaLLM(
   // 切片只会把最有特色的那部分人设丢掉。
   let charBlock: string;
   if (collaborator) {
-    const systemPrompt = collaborator.systemPrompt || '';
-    const writer = collaborator.writerPersona || '';
-    const worldview = collaborator.worldview || '';
+    const fullCharacterSetting = buildFullCharacterSetting(collaborator, { includeMemos: true });
     charBlock = `【创作角色 — 这首歌是 TA 的歌】
-名字：${formatCharacterWithId(collaborator)}
+身份锚：${formatCharacterWithId(collaborator)}
 
-人设：
-${systemPrompt}${writer ? `\n\n写手 persona 速写：\n${writer}` : ''}${worldview ? `\n\n世界观：\n${worldview}` : ''}`;
+${fullCharacterSetting}`;
   } else {
     charBlock = '【创作角色】未指定（按通用气质处理）';
   }

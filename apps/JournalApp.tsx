@@ -422,7 +422,7 @@ const JournalApp: React.FC<JournalAppProps> = ({ tabSwitcher }) => {
 
         try {
             await injectMemoryPalace(selectedChar, undefined, currentEntry.userPage.text);
-            let systemPrompt = ContextBuilder.buildCoreContext(selectedChar, userProfile);
+            let systemPrompt = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile);
 
             const styleOptions = PAPER_STYLES.map(p => p.id).join(', ');
             const defaultStickers = DEFAULT_STICKERS.join(' ');
@@ -540,7 +540,7 @@ Structure:
 
         // 主 API 散文式总结 — 当标本馆没开 / 副 API 缺失 / 提取为空时的 fallback
         const generateProseSummary = async (): Promise<string> => {
-            const baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile);
+            const baseContext = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile);
             const charPart = diary.charPage?.text?.trim() || '(对方没有回复)';
             const prompt = `${baseContext}
 

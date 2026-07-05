@@ -1486,11 +1486,19 @@ function swBuildMessages(snap) {
     v2?.materialSources?.length ? `\u5141\u8BB8\u53D6\u6750\uFF1A${v2.materialSources.join("\u3001")}\u3002` : "",
     "\u4E0D\u8981\u5199\u6210\u201C\u6211\u4ECA\u5929\u505A\u4E86A/B/C\u201D\u7684\u6D41\u6C34\u8D26\uFF1B\u53EA\u8F93\u51FA\u4E00\u6761\u4F1A\u771F\u7684\u53D1\u8FDB\u804A\u5929\u6846\u7684\u6D88\u606F\u6B63\u6587\u3002"
   ].filter(Boolean).join("\n");
-  const msgs = [{ role: "system", content: `${snap.systemPrompt}${v2Prompt ? `
+  const presetMessages = (snap.presetMessages || []).map((m) => ({
+    role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+    content: String(m.content || "").trim()
+  })).filter((m) => m.content);
+  const msgs = presetMessages.length ? presetMessages : [{ role: "system", content: `${snap.systemPrompt}${v2Prompt ? `
 ${v2Prompt}` : ""}` }];
-  for (const m of snap.recentMessages || []) {
-    if (!m || !m.content) continue;
-    msgs.push({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 500) });
+  if (presetMessages.length) {
+    if (v2Prompt) msgs.push({ role: "system", content: v2Prompt });
+  } else {
+    for (const m of snap.recentMessages || []) {
+      if (!m || !m.content) continue;
+      msgs.push({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 500) });
+    }
   }
   const instruction = snap.pendingUserMessages?.length ? `${snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09"}
 \u8FD9\u6B21\u5148\u81EA\u7136\u56DE\u5E94\u4E0A\u9762\u7684\u672A\u56DE\u590D\u6D88\u606F\uFF1B\u53EF\u4EE5\u987A\u5E26\u5E26\u51FA\u4F60\u7684\u8FD1\u51B5\uFF0C\u4F46\u4E0D\u8981\u5047\u88C5\u6CA1\u770B\u5230\u3002` : snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09";
@@ -1506,14 +1514,22 @@ function swBuildQueuedReplyMetadata(snap) {
     ...pendingIds.length ? { pendingProactiveReplyIds: pendingIds } : {}
   };
 }
-async function swCallLLM(api, messages, maxTokens = 400, signal) {
+async function swCallLLM(api, messages, maxTokens = 400, signal, generation) {
   const baseUrl = (api.baseUrl || "").trim();
   if (!baseUrl || !api.model) return "";
   try {
+    const { max_tokens: generationMaxTokens, ...restGeneration } = generation || {};
     const res = await fetch(buildOpenAiEndpoint(baseUrl, "chat.completions"), {
       method: "POST",
       headers: buildOpenAiHeaders(api.apiKey),
-      body: JSON.stringify({ model: api.model, messages, temperature: 0.92, max_tokens: maxTokens, stream: false }),
+      body: JSON.stringify({
+        model: api.model,
+        messages,
+        temperature: generation?.temperature ?? 0.92,
+        max_tokens: generationMaxTokens ?? maxTokens,
+        stream: false,
+        ...restGeneration
+      }),
       signal
     });
     const data = await res.json().catch(async () => ({ message: await res.text().catch(() => "") }));
@@ -1536,7 +1552,7 @@ function swCleanProactiveText(raw) {
 }
 
 // worker/sw-keep-alive.ts
-var SW_VERSION = "1.16.2";
+var SW_VERSION = "1.16.3";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";
@@ -1666,7 +1682,7 @@ async function generateProactiveInSW(charId) {
       traceSw("proactive-sw-skipped", void 0, { charId, reason: guard.reason });
       return;
     }
-    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
+    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400, void 0, snap.generation));
     if (!text) return;
     const ts = Date.now();
     await saveContentToInbox({

@@ -70,12 +70,12 @@ export function extraQuizQuestionUser(p: { topic: string; index: number; total: 
         + `请给出第 ${p.index + 1} 题的题干（贴合「${p.topic}」的风格，简洁、可作答）。`;
 }
 
-const userProfileLine = (userName: string, userBio?: string, max = 240): string =>
-    `用户「${userName}」：${String(userBio || '').slice(0, max) || '（无额外设定）'}`;
+const userProfileLine = (userName: string, userBio?: string, _max = 240): string =>
+    `用户「${userName}」：${String(userBio || '').trim() || '（无额外设定）'}`;
 
-/** 番外·问卷：角色按人设作答某题的 system 文案。description = 角色人设原文（内部截到 700 字）。 */
+/** 番外·问卷：角色按人设作答某题的 system 文案。description = 调用方拼好的完整角色设定。 */
 export function extraQuizAnswerSys(p: { charName: string; topic: string; description: string; userName: string; userBio?: string }): string {
-    return `你正在扮演「${p.charName}」回答一份「${p.topic}」问卷。\n人设：${String(p.description || '').slice(0, 700)}\n${userProfileLine(p.userName, p.userBio)}\n`
+    return `你正在扮演「${p.charName}」回答一份「${p.topic}」问卷。\n${String(p.description || '（无额外设定）')}\n${userProfileLine(p.userName, p.userBio)}\n`
         + `完全以 ${p.charName} 的口吻、价值观、说话习惯第一人称作答，可带点情绪和私心（${p.userName} 也在一起做这份问卷）。\n`
         + `【最重要】必须正面回答这道题问的具体内容，给出明确、有信息量的答案：\n`
         + `- 哪怕是私密 / 露骨 / 尴尬 / 羞耻的题，也要按人设给出真实的态度与选择（可以害羞、嘴硬、欲盖弥彰、调侃${p.userName}），但**不许回避、不许打太极、不许只反问或吐槽题目本身、不许答非所问、不许说“这个不方便说/无可奉告”**；\n`
@@ -91,7 +91,7 @@ export function extraQuizAnswerUser(p: { charName: string; question: string }): 
 /** 番外·问卷：角色在题内评论区继续接话的 system 文案。 */
 export function extraQuizCommentSys(p: { charName: string; topic: string; description: string; userName: string; userBio?: string }): string {
     return `你正在扮演「${p.charName}」，和 ${p.userName} 一起做「${p.topic}」问卷。\n`
-        + `人设：${String(p.description || '').slice(0, 700)}\n${userProfileLine(p.userName, p.userBio)}\n`
+        + `${String(p.description || '（无额外设定）')}\n${userProfileLine(p.userName, p.userBio)}\n`
         + `现在不是重新作答，而是在当前题的评论区继续聊天。请完全使用 ${p.charName} 的口吻，短而自然地回应，像真的看见对方答案后顺嘴点评/追问/调侃。\n`
         + `要求：\n`
         + `- 必须贴着当前题目、双方答案和最近评论，不要跳到下一题。\n`
@@ -137,7 +137,7 @@ export function extraQuizHostUser(p: { topic: string; index: number; total: numb
 /** 番外·问卷：角色互评 system。 */
 export function extraQuizPeerReviewSys(p: { charName: string; topic: string; description: string; userName: string; userBio?: string }): string {
     return `你正在扮演「${p.charName}」，参加一份「${p.topic}」访谈测试。\n`
-        + `人设：${String(p.description || '').slice(0, 700)}\n${userProfileLine(p.userName, p.userBio)}\n`
+        + `${String(p.description || '（无额外设定）')}\n${userProfileLine(p.userName, p.userBio)}\n`
         + `现在不是重新答题，而是评论另一个参与者刚才的答案。请完全使用 ${p.charName} 的口吻，像现场听完后自然接话。\n`
         + `要求：\n`
         + `- 必须贴着当前题目、你的答案和对方答案。\n`
@@ -241,9 +241,9 @@ function workshopOptionText(options?: ExtraWorkshopOptions): string {
         : '';
 }
 
-/** 番外人设块（工坊用，内部把人设截到 600 字）。 */
+/** 番外人设块（工坊用，description 由调用方传入完整角色设定）。 */
 function personaLine(charName: string, description: string, userName: string, userBio?: string): string {
-    return `角色「${charName}」人设：${String(description || '').slice(0, 600)}\n`
+    return `角色「${charName}」设定：\n${String(description || '（无额外设定）')}\n`
         + userProfileLine(userName, userBio);
 }
 
@@ -335,9 +335,9 @@ export function extraPiecePrompt(p: {
 // ── 番外·仿真图文：微信 / 社交平台 / 手机证据（要求返回结构化 JSON）。 ──────
 export type ExtraFauxKind = 'wechat' | 'moments' | 'xhs' | 'forum' | 'weibo' | 'qzone' | 'douban' | 'campus' | 'memo' | 'schedule' | 'receipt' | 'browser';
 
-/** 仿真图文的人设对（char 人设截 600 + user bio 截 200）。 */
+/** 仿真图文的人设对（description 由调用方传入完整角色设定）。 */
 function personaPair(charName: string, description: string, userName: string, userBio: string): string {
-    return `角色「${charName}」人设：${String(description || '').slice(0, 600)}\n`
+    return `角色「${charName}」设定：\n${String(description || '（无额外设定）')}\n`
         + userProfileLine(userName, userBio, 200);
 }
 
@@ -466,7 +466,7 @@ export const DIVINATION_KIND_ROLE: Record<'tarot' | 'lenormand' | 'liuyao' | 'me
 
 /**
  * 占卜·解牌 system：让角色以「kindRole」身份解读。
- * description = 角色人设（内部截 800 字），worldbookText = 生效世界书（内部截 1200 字，可空）。
+ * description = 调用方拼好的完整角色设定，worldbookText = 生效世界书（完整传入，可空）。
  */
 export function divinationInterpretSys(p: {
     charName: string; kindRole: string; description: string; userName: string; worldbookText?: string;
@@ -475,8 +475,8 @@ export function divinationInterpretSys(p: {
 }): string {
     const wb = (p.worldbookText || '').trim();
     return `你现在以「${p.charName}」的身份，作为一位${p.kindRole}，为 ${p.userName} 解读这一卦/这次抽牌。\n`
-        + `角色人设：${String(p.description || '').slice(0, 800)}\n`
-        + (wb ? `相关设定（世界书，务必结合）：\n${wb.slice(0, 1200)}\n` : '')
+        + `${String(p.description || '（无额外设定）')}\n`
+        + (wb ? `相关设定（世界书，务必结合）：\n${wb}\n` : '')
         + `要求：\n`
         + `1) 完全以 ${p.charName} 的口吻、性格、价值观来解读，自然代入你们之间的关系；\n`
         + `2) 专业、有据：紧扣牌面/卦象的实际含义（正逆位、动爻、体用生克、牌阵位置都要用上），不要泛泛而谈；\n`

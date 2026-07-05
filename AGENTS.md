@@ -8,6 +8,10 @@
 
 > 更新公告同步约定：任何代码、文案、配置、数据、测试、构建脚本或文档改动，都必须在 `apps/manual/manualData.ts` 的 `MANUAL_UPDATE_NOTICES` 追加/更新一条面向普通用户的更新公告；同一次改动可合并成一条公告，但不能漏记。公告只写用户能理解的变化、影响和注意事项，不写开发步骤、commit 号或内部实现细节。新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，还必须同步更新同文件里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`，讲清楚入口、用途、常用设置和注意事项。
 
+> 完整角色 / 用户设定调用约定：凡是新增或改动会让模型扮演、判断、代入、建议、生成正式角色行为/口吻/关系/记忆的功能，都必须给 LLM 完整角色设定和完整用户设定，不能只传 `description`、`systemPrompt`、`worldview`、`user.bio`、短简介、摘要或截断版。优先走已有统一入口：聊天/主动消息/页外等完整消息流用 `buildChatRequestPayload`；单 prompt 角色任务用 `ContextBuilder.buildFullCoreContext`；确实不需要聊天历史的结构化任务至少拼入 `buildFullCharacterSetting(..., { includeMemos: true })` 和 `buildFullActiveUserSetting` / `buildFullUserSetting`。预设总开关、作用范围或当前预设没打开时，可以回到功能默认 prompt，但默认 prompt 仍必须调用完整角色设定和完整用户设定；活字盘 marker 关闭只能影响预设骨架落点，不能让角色卡/用户设定退化成摘要。正式角色相关世界书必须按 `WorldbookRuntime` 的整书/条目开关、挂载、全局、关键词和 @Depth 规则生效。若某个 LLM 入口刻意不接正式角色设定（例如翻译、模型连接测试、独立桌宠、随机路人 NPC、店铺/骑手/客服等非正式角色），代码注释或文档里要说明它不属于正式角色卡范围；否则一律按完整设定处理，并补对应测试或静态断言。
+
+> 活字盘预设调用约定：凡是新增或改动需要正式角色出声、行动、判断、共创、社交发帖/回帖、场景推进、主动消息、电话、群聊、约会、页外或其它角色代入的 LLM 入口，都必须按任务语义接入活字盘预设作用范围（`PresetScopeKey`），让当前预设在对应范围开启时能参与提示词组装和采样参数下发。聊天类完整消息流优先用 `buildChatRequestPayload`；非聊天但角色代入的单 prompt 调用要么走 `callChatCompletion`/`completeText` 的 `presetScope`，要么显式 `PresetRuntime.getActivePresetForScope` + `applyPresetToMessages`，并保留功能自己的必要指令、输出格式和完整角色/用户设定。只有纯功能性 App prompt 可以不套角色预设或走结构化保护范围，例如翻译、摘要、分类、标签、抽取、模型连接测试、固定 JSON 解析、店铺/骑手/客服/随机路人等不扮演正式角色的任务；这类例外要在代码注释或文档中说明。不允许因为“这是某个 App 的专用 prompt”就绕过预设：只要模型需要代入正式角色，就必须结合活字盘预设；预设未启用时再回到该功能默认 prompt。
+
 > 角色内置 ID / 身份锚约定：`CharacterProfile.modelId` 是给模型看的稳定身份锚，`id` 仍是 IndexedDB、消息、群成员等本地外键。凡是创建角色、导入角色、生成角色、把影子联系人转成正式角色、批量恢复/迁移角色列表，写入 state 或 `DB.saveCharacter` 前都必须走 `ensureCharacterModelId` / `normalizeCharacterDefaults`；内置角色要显式写 `modelId`。单张角色卡导出不要带 `id` / `modelId`，单卡导入要生成新的本地锚；完整备份恢复可保留原锚但要补缺。任何给 LLM 的角色列表、群成员花名册、社交 feed 作者列表必须用 `formatCharacterWithId` / `getCharacterModelId` 展示身份锚；模型返回的 `charId` 若来自这个锚，落库前必须映射回本地 `id`。相关入口先看 `utils/characterIdentity.ts`、`utils/impression.ts`、`utils/db.ts` 和 `context/OSContext.tsx`。
 
 ## 文档地图

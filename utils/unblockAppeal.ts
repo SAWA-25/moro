@@ -14,6 +14,7 @@ import type { ResolvedApi } from './auxApi';
 import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 const MIN = 60 * 1000;
 
@@ -78,7 +79,7 @@ export async function generateUnblockAppeal(args: {
     const moodHint = rejectedCount === 0
         ? '这是你第一次申诉，可以委屈、解释、道歉或撒娇。'
         : `你已经被拒绝 ${rejectedCount} 次了，但你不死心。可以更卑微、更执拗、或带点赌气，但仍想被原谅。`;
-    const prompt = `你正在扮演「${char.name}」。\n人设：${String(char.systemPrompt || '').slice(0, 700)}\n\n`
+    const prompt = `你正在扮演「${char.name}」。\n${buildFullCharacterSetting(char, { includeMemos: true })}\n\n${await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` })}\n\n`
         + `情境：${userName} 把你拉黑了，你发的消息都显示「发送失败」。但你不甘心，想发一条「解除拉黑验证」请求，求对方把你放回来。\n`
         + `${args.recentContext?.trim() ? `拉黑前后能想起的最近聊天片段（只作语气与矛盾参考，不要逐字复述）：\n${args.recentContext.trim().slice(0, 900)}\n` : ''}`
         + `${moodHint}\n\n`

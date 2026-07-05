@@ -325,6 +325,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                     apiRole: 'custom',
                     apiBinding: '页外独立 API',
                 }),
+                presetScope: false,
             });
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: true, ms: Date.now() - callStart });
         } catch (e: any) {

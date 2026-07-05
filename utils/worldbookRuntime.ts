@@ -600,6 +600,109 @@ export const WorldbookRuntime = {
         const active = resolveActivatedCandidates(entries);
         return renderScopedBlocks([], active, '', '### 全局扩展设定 (Global Worldbooks)');
     },
+
+    /**
+     * 完整用户人设用：列出指定世界书分组里的全部启用条目。
+     *
+     * Persona lorebook 本质是“把一个分组视同已挂载”。这里不跑关键词、概率或
+     * token budget，确保扮相手账绑定的世界书不会因为当前聊天窗口缺关键词而漏注入。
+     */
+    buildFullCategoryWorldbookBlock(
+        categories: string[] | string | undefined,
+        opts: { charForRegex?: CharacterProfile } = {},
+    ): string {
+        const cats = (Array.isArray(categories) ? categories : categories ? [categories] : [])
+            .map(categoryOf)
+            .filter(Boolean);
+        if (cats.length === 0) return '';
+        const wanted = new Set(cats);
+        const entries = liveBooks
+            .filter(wb => wanted.has(categoryOf(wb.category))
+                && WorldbookRuntime.isEntryActive(wb)
+                && !!wb.content?.trim())
+            .map(wb => normalizeEntry(wb, WorldbookRuntime.isBookGlobal(categoryOf(wb.category)) ? 'global' : 'local'))
+            .sort((a, b) => a.order - b.order);
+        const finalEntries = opts.charForRegex ? applyWorldInfoRegex(entries, opts.charForRegex) : entries;
+        return renderScopedBlocks(
+            finalEntries.filter(e => e.scope === 'local'),
+            finalEntries.filter(e => e.scope === 'global'),
+            '### 用户人设绑定世界书（完整，不按关键词裁剪）',
+            '### 用户人设绑定全局世界书（完整，不按关键词裁剪）',
+        );
+    },
+
+    /**
+     * 完整角色设定用：列出角色挂载整书里的全部启用条目。
+     *
+     * 和 buildPromptSections 不同，这里不跑关键词、概率或 token budget，
+     * 也不按 @Depth 拆消息。用途是给各 App 的单次生成 prompt 提供完整角色卡材料，
+     * 避免“角色设定摘要/压缩版”漏掉角色挂载的世界书。
+     */
+    buildFullMountedWorldbookBlock(
+        char: CharacterProfile,
+        opts: { includeGlobal?: boolean } = {},
+    ): string {
+        const liveById = new Map(liveBooks.map(b => [b.id, b]));
+        const liveByKey = new Map<string, Worldbook>();
+        for (const b of liveBooks) {
+            const key = makeBookKey(b.category, b.title);
+            if (!liveByKey.has(key)) liveByKey.set(key, b);
+        }
+
+        const mountedCategories = new Set<string>();
+        const local: ResolvedWbEntry[] = [];
+        const seen = new Set<string>();
+
+        const push = (wb: Worldbook, scope: WorldbookGroupScope = 'local') => {
+            if (seen.has(wb.id)) return;
+            if (!WorldbookRuntime.isEntryActive(wb)) return;
+            if (!wb.content?.trim()) return;
+            local.push(normalizeEntry(wb, scope));
+            seen.add(wb.id);
+        };
+
+        for (const mounted of (char.mountedWorldbooks || [])) {
+            if (!mounted.id) continue;
+            const live = liveById.get(mounted.id)
+                ?? liveByKey.get(makeBookKey(mounted.category, mounted.title));
+            const category = categoryOf(live?.category ?? mounted.category);
+            if (WorldbookRuntime.isBookGlobal(category)) continue;
+            mountedCategories.add(category);
+            if (live) {
+                push(live, 'local');
+            } else if (mounted.enabled !== false && WorldbookRuntime.isBookEnabled(category) && mounted.content?.trim()) {
+                push({
+                    ...mounted,
+                    category,
+                    createdAt: 0,
+                    updatedAt: 0,
+                    activation: 'always',
+                } as Worldbook, 'local');
+            }
+        }
+
+        for (const wb of liveBooks) {
+            const category = categoryOf(wb.category);
+            if (!mountedCategories.has(category)) continue;
+            if (WorldbookRuntime.isBookGlobal(category)) continue;
+            push(wb, 'local');
+        }
+
+        const global = opts.includeGlobal
+            ? liveBooks
+                .filter(wb => WorldbookRuntime.isBookGlobal(categoryOf(wb.category))
+                    && WorldbookRuntime.isEntryActive(wb)
+                    && !!wb.content?.trim())
+                .map(wb => normalizeEntry(wb, 'global'))
+            : [];
+
+        return renderScopedBlocks(
+            applyWorldInfoRegex(local.sort((a, b) => a.order - b.order), char),
+            applyWorldInfoRegex(global.sort((a, b) => a.order - b.order), char),
+            '### 角色挂载世界书（完整，不按关键词裁剪）',
+            '### 全局世界书（完整，不按关键词裁剪）',
+        );
+    },
 };
 
 // ---------------------------------------------------------------------------

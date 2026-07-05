@@ -1072,7 +1072,7 @@ export async function runLike520CallA(
     await injectMemoryPalace(char as any, [], LIKE520_QUERY_HINT);
     console.log('[520][CallA] memory gallery injection:\n', (char as any).memoryPalaceInjection || '(none)');
 
-    const baseContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     const contextLimit = char.contextLimit || 500;
     const recentMsgs = recentMessages
         .slice(-contextLimit)
@@ -1100,7 +1100,7 @@ export async function runLike520CallB(
     recentMessages: Message[],
 ): Promise<Like520CallBResult> {
     // Call B 已经在 char 上有 memoryPalaceInjection（Call A 已注入），不再重新召回
-    const baseContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     const contextLimit = char.contextLimit || 500;
     const recentMsgs = recentMessages
         .slice(-contextLimit)

@@ -9,6 +9,7 @@ import { extractContent, extractJson } from '../utils/safeApi';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { DB } from '../utils/db';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import {
     synthesizeSong,
     buildAceStepTags,
@@ -334,7 +335,8 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             }));
 
             await injectMemoryPalace(collaborator, undefined, `${updatedSong.title || ''} ${userMessage}`.trim() || undefined);
-            const systemPrompt = SongPrompts.buildMentorSystemPrompt(collaborator, userProfile, updatedSong, msgContext);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+            const systemPrompt = SongPrompts.buildMentorSystemPrompt(collaborator, userProfile, updatedSong, msgContext, fullUserSetting);
             let userPrompt = SongPrompts.buildUserMessage(updatedSong, userMessage, currentSection);
             if (requestedType) {
                 const typeHints: Record<string, string> = {

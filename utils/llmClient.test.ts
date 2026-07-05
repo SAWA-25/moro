@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callChatCompletion, completeText, fetchModelList, testChatConnection } from './llmClient';
+import { callChatCompletion, completeText, fetchModelList, resolvePresetScopeForApiCall, testChatConnection } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { DB } from './db';
+import { createDefaultPreset, PresetRuntime } from './presets';
 
 const API = { baseUrl: 'https://api.example.test/v1/chat/completions', apiKey: '', model: 'm' };
 
@@ -14,12 +15,144 @@ function res(body: any, ok = true, status = 200) {
     } as unknown as Response;
 }
 
+function presetWithMain(content = 'PRESET {{user}}') {
+    const preset = createDefaultPreset();
+    const main = preset.prompts.find(p => p.identifier === 'main')!;
+    main.content = content;
+    preset.prompt_order = [{
+        character_id: 100000,
+        order: [
+            { identifier: 'main', enabled: true },
+            { identifier: 'chatHistory', enabled: true },
+        ],
+    }];
+    return preset;
+}
+
 afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
 });
 
 describe('llmClient', () => {
+    it('infers preset scope from API usage features', () => {
+        expect(resolvePresetScopeForApiCall({ meta: makeApiUsageMeta('chat.phoneTextReply') })).toBe('chat.phoneText');
+        expect(resolvePresetScopeForApiCall({ meta: makeApiUsageMeta('forum.generate') })).toBe('creative.text');
+        expect(resolvePresetScopeForApiCall({ meta: makeApiUsageMeta('memoryPalace.extraction') })).toBe('structured.tool');
+        expect(resolvePresetScopeForApiCall({ meta: makeApiUsageMeta('vrWorld.session') })).toBe('role.scene');
+        expect(resolvePresetScopeForApiCall({ meta: makeApiUsageMeta('settings.mainApi.fetchModels') })).toBeNull();
+    });
+
+    it('applies inferred creative preset scope in callChatCompletion', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue({ temperature: 0.42, max_tokens: 123 });
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(presetWithMain('PRESET {{user}}'));
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await callChatCompletion(API, {
+            messages: [{ role: 'system', content: 'CORE' }, { role: 'user', content: 'hi' }],
+            temperature: 0.99,
+            max_tokens: 999,
+        }, { meta: makeApiUsageMeta('forum.generate') });
+
+        expect(PresetRuntime.getActiveGenParams).toHaveBeenCalledWith('creative.text');
+        expect(PresetRuntime.getActivePresetForScope).toHaveBeenCalledWith('creative.text');
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.temperature).toBe(0.42);
+        expect(body.max_tokens).toBe(123);
+        expect(body.messages.map((m: any) => m.content)).toEqual(['CORE', 'PRESET 用户', 'hi']);
+    });
+
+    it('can preserve caller max_tokens over preset sampling in completeText', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue({ temperature: 0.42, max_tokens: 123 });
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await completeText(API, [{ role: 'user', content: 'hi' }], {
+            presetScope: 'creative.text',
+            maxTokens: 777,
+            preserveMaxTokens: true,
+        });
+
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.temperature).toBe(0.42);
+        expect(body.max_tokens).toBe(777);
+    });
+
+    it('maps structured tasks to structured.tool without changing messages when the scope is inactive', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(null);
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await callChatCompletion(API, {
+            messages: [{ role: 'system', content: 'CORE' }, { role: 'user', content: 'Return JSON only' }],
+        }, { meta: makeApiUsageMeta('memoryPalace.extraction') });
+
+        expect(PresetRuntime.getActiveGenParams).toHaveBeenCalledWith('structured.tool');
+        expect(PresetRuntime.getActivePresetForScope).toHaveBeenCalledWith('structured.tool');
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        expect(JSON.parse(String(init.body)).messages).toEqual([
+            { role: 'system', content: 'CORE' },
+            { role: 'user', content: 'Return JSON only' },
+        ]);
+    });
+
+    it('can apply inferred presets to legacy user-only creative requests without leaving a blank system message', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(presetWithMain('PRESET {{user}}'));
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await callChatCompletion(API, {
+            messages: [{ role: 'user', content: 'legacy prompt' }],
+        }, { meta: makeApiUsageMeta('forum.generate') });
+
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.messages.map((m: any) => m.content)).toEqual(['PRESET 用户', 'legacy prompt']);
+        expect(body.messages.some((m: any) => m.role === 'system' && !String(m.content).trim())).toBe(false);
+    });
+
+    it('respects explicit presetScope=false for calls that already applied a preset skeleton', async () => {
+        const genSpy = vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue({ temperature: 0.1 });
+        const presetSpy = vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(presetWithMain());
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await callChatCompletion(API, {
+            messages: [{ role: 'system', content: 'ALREADY PRESET' }, { role: 'user', content: 'hi' }],
+            temperature: 0.8,
+        }, { meta: makeApiUsageMeta('forum.generate'), presetScope: false });
+
+        expect(genSpy).not.toHaveBeenCalled();
+        expect(presetSpy).not.toHaveBeenCalled();
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.temperature).toBe(0.8);
+        expect(body.messages.map((m: any) => m.content)).toEqual(['ALREADY PRESET', 'hi']);
+    });
+
+    it('completeText infers meta scope and applies the preset only once', async () => {
+        vi.spyOn(PresetRuntime, 'getActiveGenParams').mockResolvedValue(null);
+        vi.spyOn(PresetRuntime, 'getActivePresetForScope').mockResolvedValue(presetWithMain('PRESET {{user}}'));
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok。' }, finish_reason: 'stop' }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await expect(completeText(API, [
+            { role: 'system', content: 'CORE' },
+            { role: 'user', content: 'hi' },
+        ], { meta: makeApiUsageMeta('forum.generate') })).resolves.toBe('ok。');
+
+        expect(PresetRuntime.getActivePresetForScope).toHaveBeenCalledTimes(1);
+        const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+        const body = JSON.parse(String(init.body));
+        expect(body.messages.map((m: any) => m.content).filter((text: string) => text.includes('PRESET'))).toEqual(['PRESET 用户']);
+    });
+
     it('calls chat completions through normalized endpoint and sk-none auth', async () => {
         const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
         global.fetch = fetchFn as unknown as typeof fetch;

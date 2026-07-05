@@ -3,6 +3,7 @@ import { CharacterProfile, NovelBook, NovelSegment, UserProfile } from '../types
 import { ContextBuilder } from './context';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 // --- Visual Themes ---
 export const NOVEL_THEMES = [
@@ -230,6 +231,9 @@ export const generateWriterPersonaDeep = async (
         }
     }
     
+    const fullCharacterSetting = buildFullCharacterSetting(char, { includeMemos: true });
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+
     const analysisPrompt = `你是一位人物心理分析专家和写作教练。我会给你一个虚拟角色的完整档案，以及与他/她互动的用户档案。请你深入理解这个角色，然后告诉我：
 
 **如果这个角色本人来写小说，他/她会有什么样的创作风格？**
@@ -238,13 +242,7 @@ export const generateWriterPersonaDeep = async (
 
 ### 角色档案
 
-**姓名**: ${char.name}
-
-**核心设定**: 
-${char.systemPrompt || '无'}
-
-**背景故事**: 
-${char.worldview || '无详细背景'}
+${fullCharacterSetting}
 
 **近期记忆片段**（了解当前心境）:
 ${char.memories?.slice(-3).map(m => `- ${m.summary}`).join('\n') || '- 无记忆'}
@@ -253,8 +251,7 @@ ${char.memories?.slice(-3).map(m => `- ${m.summary}`).join('\n') || '- 无记忆
 
 ### 互动对象（用户背景）
 (角色的记忆和性格形成深受用户影响)
-**用户昵称**: ${userProfile.name}
-**用户描述**: ${userProfile.bio || '无'}
+${fullUserSetting}
 
 ---
 
@@ -424,9 +421,11 @@ export const buildPrompt = (
     storyContext: string,
     options: GenerationOptions,
     contextSegments: NovelSegment[],
-    characters: CharacterProfile[]
+    characters: CharacterProfile[],
+    fullUserSetting?: string,
 ) => {
-    const coreContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, userProfile, true, undefined, { fullUserSetting });
+    const fullCharacterSetting = buildFullCharacterSetting(char, { includeMemos: true });
     const writerPersona = char.writerPersona || analyzeWriterPersonaSimple(char);
     const fewShot = getFewShotExamples(char);
     const extractedTaboos = extractWritingTaboos(char); 
@@ -549,7 +548,7 @@ ${userText || '[用户未输入，请根据上文自然续写]'}
    
    如果你（${char.name}）对他们的写法有意见，可以在吐槽里说出来！
    - 如果你觉得他们理解错了角色，可以反驳
-   - 如果你有专业知识（${char.systemPrompt}），可以用术语纠正
+    - 如果你的完整角色设定中包含专业知识，可以用术语纠正：${fullCharacterSetting}
    - 如果你就是看不惯，直说！
    ` : ''}
    

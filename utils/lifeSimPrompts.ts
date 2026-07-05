@@ -499,10 +499,11 @@ export function buildCharTurnSystemPrompt(
     user: UserProfile,
     recentChatHistory: string,
     state: LifeSimState,
-    actionLog: SimAction[]
+    actionLog: SimAction[],
+    fullUserSetting?: string,
 ): string {
     // 1. 角色核心上下文
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
 
     // 2. 季节/天气信息
     const season = state.season ?? 'spring';

@@ -19,6 +19,7 @@ import type { Anticipation, MigrationProgress, EventBox, MemoryPalaceInspection 
 import MindMap, { type MindMapEdge } from '../components/memoryPalace/MindMap';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
 import { getCognitiveMemoryLayer, type CognitiveMemoryLayer } from '../utils/memoryPalace/cognitiveFlow';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
 type LinkedMemoryUI = {
@@ -681,8 +682,14 @@ export default function MemoryPalaceApp() {
         const detectingCharId = char.id;
 
         setDetectingPersonality(true);
-        const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-        detectPersonalityStyle(detectingCharId, char.name, persona, palaceLLM)
+        buildFullActiveUserSetting(userProfile)
+            .then(userSetting => {
+                const persona = [
+                    buildFullCharacterSetting(char, { includeMemos: true }),
+                    userSetting,
+                ].join('\n\n');
+                return detectPersonalityStyle(detectingCharId, char.name, persona, palaceLLM);
+            })
             .then(result => {
                 if (cancelled) return;
                 setPendingPersonality(result);
@@ -1342,7 +1349,7 @@ export default function MemoryPalaceApp() {
 
         try {
             const { ContextBuilder } = await import('../utils/context');
-            const charContext = ContextBuilder.buildCoreContext(char, userProfile, false);
+            const charContext = await ContextBuilder.buildFullCoreContext(char, userProfile, false);
             // selectedMonths 现在存的是分块 key（如 "2026-03 上旬"）
             const monthsToProcess = selectedMonths.size > 0 ? Array.from(selectedMonths) : undefined;
             const result = await migrateOldMemories(
@@ -1378,7 +1385,10 @@ export default function MemoryPalaceApp() {
         setDigestResult(null);
 
         try {
-            const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
+            const persona = [
+                buildFullCharacterSetting(char, { includeMemos: true }),
+                await buildFullActiveUserSetting(userProfile),
+            ].join('\n\n');
             const result = await runCognitiveDigestion(char.id, char.name, persona, lightApi, true, userProfile?.name);
             if (!result) {
                 setDigestResult('没有需要消化的内容');
@@ -1421,7 +1431,10 @@ export default function MemoryPalaceApp() {
         setDreaming(true);
         setDreamResult(null);
         try {
-            const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
+            const persona = [
+                buildFullCharacterSetting(char, { includeMemos: true }),
+                await buildFullActiveUserSetting(userProfile),
+            ].join('\n\n');
             const result = await runLocalDreamDigestion(
                 char.id,
                 char.name,

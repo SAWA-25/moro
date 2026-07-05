@@ -14,6 +14,7 @@ import {
     trpgRecapPrompt, trpgArchiveSummaryPrompt,
 } from '../utils/theaterPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import {
     actionCheckHint,
     applyTrpgStateUpdates,
@@ -349,7 +350,8 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         // [优化] 多人同场时，把"用户档案 / 共有世界观 / 被多名角色挂载的世界书"提取到顶部
         // 只铺一次，避免每个角色块里重复贴同一份世界书（去重，省 token 也防串台）。
-        const sharedScene = ContextBuilder.buildGroupSharedScene(players, userProfile);
+        const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+        const sharedScene = ContextBuilder.buildGroupSharedScene(players, userProfile, { fullUserSetting });
         if (sharedScene.text) {
             fullContext += `${sharedScene.text}\n`;
         }
@@ -361,10 +363,11 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             //   + 下方按需注入的回忆标本馆召回（只取与当前情境相关的片段）。
             //   同时跳过共享场景里已铺过的用户档案 / 世界书 / 世界观，彻底去重。
             await injectMemoryPalace(p);
-            const core = ContextBuilder.buildCoreContext(p, userProfile, false, undefined, {
+            const core = await ContextBuilder.buildFullCoreContext(p, userProfile, false, undefined, {
                 skipUserProfile: true,
                 skipWorldview: sharedScene.worldviewIsShared,
                 skipWorldbookIds: sharedScene.sharedWorldbookIds,
+                fullUserSetting,
             });
             fullContext += `\n<<< 角色档案: ${p.name} (ID: ${p.id}) >>>\n${core}\n`;
 

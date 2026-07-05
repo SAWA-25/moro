@@ -300,7 +300,7 @@ async function synthesizeCognition(
         .slice(0, 8)
         .map((n, i) => `${i + 1}. ${n.content}`)
         .join('\n');
-    const systemPrompt = `你是 ${charName}。${charPersona.slice(0, 600)}
+    const systemPrompt = `你是 ${charName}。${charPersona}
 
 下面这几段记忆，在你脑海里总是一起被想起、已经长在了一起：
 ${lines}

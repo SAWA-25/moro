@@ -12,6 +12,7 @@
 import { CharacterProfile, UserProfile, MemoryFragment } from '../types';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
 
 export interface LifeProfileApiConfig {
     baseUrl: string;
@@ -43,13 +44,8 @@ export async function generateLifeProfile(
     user: UserProfile,
     api: LifeProfileApiConfig,
 ): Promise<string | null> {
-    const persona = [
-        char.systemPrompt ? `核心性格/设定：\n${char.systemPrompt}` : '',
-        char.worldview ? `世界观/背景：\n${char.worldview}` : '',
-        (char.selfInsights && char.selfInsights.length > 0)
-            ? `TA 已有的内在认知：\n${char.selfInsights.map(s => `- ${s}`).join('\n')}`
-            : '',
-    ].filter(Boolean).join('\n\n');
+    const persona = buildFullCharacterSetting(char, { includeMemos: true, fallback: '（设定不多，凭你对 TA 的理解来。）' });
+    const userSetting = await buildFullActiveUserSetting(user, { fallback: `用户名：${user.name || '用户'}` });
 
     const recent = formatRecentMemories(char.memories);
     const refined = formatRefined(char.refinedMemories);
@@ -65,7 +61,10 @@ export async function generateLifeProfile(
 
     const prompt = `你在为角色「${char.name}」写一份**生活侧写**——一份帮 TA 更了解自己的速写。读者就是 TA 本人。
 
-${persona || '（设定不多，凭你对 TA 的理解来。）'}
+${persona}
+
+以下是互动对象/用户的完整设定，写「和 ${user.name} 相处」相关段落时必须参考，不要只看用户名：
+${userSetting}
 
 ${memoryBlock ? `\n以下是 TA 记忆里沉淀的一些东西，作为侧写的素材（贴着写，别照抄）：\n${memoryBlock}\n` : ''}
 

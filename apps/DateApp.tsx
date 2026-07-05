@@ -15,6 +15,7 @@ import { isMemoryFeatureEnabled } from '../utils/memoryPalace/cognitiveFlow';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { isMainApiStreamEnabled } from '../utils/apiConfigDefaults';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import Modal from '../components/os/Modal';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
@@ -198,7 +199,7 @@ const DateApp: React.FC = () => {
             }).join('\n');
 
             const timeStr = `${virtualTime.day} ${formatTime()}`;
-            const baseContext = ContextBuilder.buildCoreContext(c, userProfile, false);
+            const baseContext = await ContextBuilder.buildFullCoreContext(c, userProfile, false);
 
             // 根据时间间隔选择合适的分隔符
             const contextSeparator = gapHint
@@ -304,7 +305,10 @@ const DateApp: React.FC = () => {
             const shouldAutoDigest = incrementDigestRound(charForHook.id);
             if (shouldAutoDigest) {
                 setMemoryPalaceStatus(`${charForHook.name}闭上眼睛，开始整理内心…`);
-                const persona = [liveAfter.systemPrompt || '', liveAfter.worldview || ''].filter(Boolean).join('\n');
+                const persona = [
+                    buildFullCharacterSetting(liveAfter, { includeMemos: true }),
+                    await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile?.name || '用户'}` }),
+                ].join('\n\n');
                 await runCognitiveDigestion(charForHook.id, charForHook.name, persona, mpLLM, false, userProfile?.name);
             }
         } catch (e: any) {
@@ -317,7 +321,7 @@ const DateApp: React.FC = () => {
             }
             setMemoryPalaceStatus('');
         }
-    }, [auxApiConfig, memoryPalaceConfig, userProfile?.name, updateCharacter, addToast]);
+    }, [auxApiConfig, memoryPalaceConfig, userProfile, updateCharacter, addToast]);
 
     // --- Session API Logic ---
     const handleSendMessage = async (text: string): Promise<string> => {
@@ -360,7 +364,7 @@ const DateApp: React.FC = () => {
         const { apiMessages: historyMsgs } = ChatPrompts.buildMessageHistory(historyForBuild, limit, char, userProfile || ({} as any), emojis);
 
         await injectMemoryPalace(char, allMsgs);
-        let systemPrompt = ContextBuilder.buildCoreContext(char, userProfile);
+        let systemPrompt = await ContextBuilder.buildFullCoreContext(char, userProfile);
         const REQUIRED_EMOTIONS = ['normal', 'happy', 'angry', 'sad', 'shy'];
         const dateEmotions = [...REQUIRED_EMOTIONS, ...(char.customDateSprites || [])];
 
@@ -456,7 +460,7 @@ const DateApp: React.FC = () => {
         const { apiMessages: historyMsgs } = ChatPrompts.buildMessageHistory(historyForBuild, limit, char, userProfile || ({} as any), emojis);
 
         await injectMemoryPalace(char, allMsgs);
-        let systemPrompt = ContextBuilder.buildCoreContext(char, userProfile);
+        let systemPrompt = await ContextBuilder.buildFullCoreContext(char, userProfile);
         const REQUIRED_EMOTIONS_R = ['normal', 'happy', 'angry', 'sad', 'shy'];
         const dateEmotionsR = [...REQUIRED_EMOTIONS_R, ...(char.customDateSprites || [])];
         systemPrompt += `### [Visual Novel Mode: 视觉小说脚本模式]

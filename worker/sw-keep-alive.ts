@@ -72,8 +72,9 @@ import { swReadSnapshot, swBuildMessages, swBuildQueuedReplyMetadata, swCallLLM,
  *            本地 proactive 定时器同理（fireProactiveTrigger 无 client 时走 SW 生成）。
  *  - 1.16.1: notificationclick 支持健康·经期提醒，点击打开健康 App，不再误走聊天入口。
  *  - 1.16.2: 线下模式现场未结束时，SW 端离线主动消息跳过该角色，避免面对面现场和线上私聊并发。
+ *  - 1.16.3: SW 离线主动消息消费主线程快照里已套好的 chat.proactive 活字盘预设与采样参数。
  */
-const SW_VERSION = '1.16.2';
+const SW_VERSION = '1.16.3';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -229,7 +230,7 @@ async function generateProactiveInSW(charId: string): Promise<void> {
       traceSw('proactive-sw-skipped', undefined, { charId, reason: guard.reason });
       return;
     }
-    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
+    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400, undefined, snap.generation));
     if (!text) return;
     const ts = Date.now();
     await saveContentToInbox({

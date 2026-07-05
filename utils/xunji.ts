@@ -19,6 +19,7 @@ import { xunjiChatContextBlock } from './laiwangPrompts';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { extractContent } from './safeApi';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 export const XUNJI_REPORT_EVENT = 'moro-xunji-report';
 
@@ -248,16 +249,11 @@ function buildXunjiPersonaBlock(char: CharacterProfile): string {
   const city = char.cityConfig?.mode === 'real'
     ? char.cityConfig.realCity
     : [char.cityConfig?.virtualName, char.cityConfig?.prototypeCity ? `原型 ${char.cityConfig.prototypeCity}` : '', char.cityConfig?.fictionLevel != null ? `虚拟程度 ${char.cityConfig.fictionLevel}%` : ''].filter(Boolean).join('，');
-  const memos = (char.memos || []).filter(m => !m.done).slice(0, 8).map(m => `- ${m.text}`).join('\n');
   return [
-    `角色名：${char.name}`,
     char.socialProfile?.region ? `主页地区：${char.socialProfile.region}` : '',
     city ? `所在城市：${city}` : '',
-    char.description ? `展示简介：${char.description.slice(0, 600)}` : '',
-    char.systemPrompt ? `核心人设：${char.systemPrompt.slice(0, 1400)}` : '',
-    char.worldview ? `世界观/补充：${char.worldview.slice(0, 800)}` : '',
-    char.lifeProfile?.content ? `生活侧写：${char.lifeProfile.content.slice(0, 1200)}` : '',
-    memos ? `近期备忘/待办：\n${memos}` : '',
+    char.description ? `展示简介：${char.description}` : '',
+    buildFullCharacterSetting(char, { includeMemos: true }),
   ].filter(Boolean).join('\n');
 }
 
@@ -1001,8 +997,7 @@ export async function generateXunjiScreenlifeRun(args: {
 
   try {
     const prompt = [
-      `角色名：${args.char.name}`,
-      `角色设定：${(args.char.systemPrompt || args.char.description || '').slice(0, 1200)}`,
+      buildXunjiPersonaBlock(args.char),
       `时间范围：${new Date(args.rangeStart).toLocaleString()} - ${new Date(args.rangeEnd).toLocaleString()}`,
       `密度：${args.density}`,
       '返回 JSON 字段：title,narrative,chats[{target,summary,messages[]}],browsed[{appName,title,summary}],notes[{text}],moments[{time,title,body,tone,relatedApp}],socialInference{mood,relationshipPulse,screenlifeScore,intimacySignals[],frictionSignals[],likelyNeeds[],nextConversationSeeds[],whisperHooks[]}。',

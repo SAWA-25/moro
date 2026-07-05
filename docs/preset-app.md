@@ -38,10 +38,15 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 3. **群聊 / 电话 / 页外** —— 群聊文字走 `chat.groupText` + `ORDER_CHAR_ID_GROUP`；
    群语音走 `chat.groupVoice`（默认关，保护 JSON）；电话文字走 `chat.phoneText`；
    页外/VR 走 `role.scene`（默认关），并在预设骨架之后追加本轮场景任务。
+4. **其它 App LLM 调用** —— 统一 `callChatCompletion` / `llmComplete` 入口会按
+   `apiUsageCatalog` 的功能 ID 自动归类到 `creative.text`、`structured.tool` 或
+   `role.scene`；老调用点如果没有功能 ID，会根据首条 system prompt 保守兜底：
+   JSON/抽取/翻译/工具类归 `structured.tool`，其余归 `creative.text`。已经手工套过
+   预设骨架的主聊、群聊、电话、主动消息和页外会传 `presetScope:false`，避免重复套用。
 
 ## 作用范围（两层叠加）
 
-活字盘现在不是“开了就影响所有 LLM 请求”，而是按任务 scope 判断：
+活字盘现在不是“开了就无条件改写所有 LLM 请求”，而是所有接入统一 LLM 客户端的请求先归到任务 scope，再按开关判断：
 
 `最终生效 = 预设总开关开 + 全局允许该 scope + 当前预设启用该 scope`
 
@@ -54,12 +59,14 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 | `chat.groupText` | 开 | 絮语群聊文字回复（使用 100001 群聊 order） |
 | `chat.phoneText` | 开 | 回声亭文字通话回复 |
 | `chat.groupVoice` | 关 | 群语音文字回复，JSON 输出，默认保护 |
-| `role.scene` | 关 | 页外 / VR 等角色自主场景 |
-| `creative.text` | 关 | 番外、论坛等自由文本任务的预留入口 |
-| `structured.tool` | 关 | JSON、总结、记忆抽取等严格格式任务，默认保护 |
+| `role.scene` | 关 | 页外、街角、VR、记忆潜行等角色自主场景 |
+| `creative.text` | 关 | 番外、论坛、社交、商店、浏览器、手账、音乐、创作等自由文本任务 |
+| `structured.tool` | 关 | JSON、总结、记忆抽取、翻译、标签、分类等严格格式任务，默认保护 |
 
 结构化任务即使启用 scope，也会在预设骨架之后追加最高优先级 JSON / 格式守卫；
-旧 Service Worker fallback 只能使用快照里的单块 system prompt，不会读 IndexedDB 重新套预设。
+Service Worker 离线主动消息不会在后台读 IndexedDB 重新套预设，但主线程写快照时会把当时的
+`chat.proactive` 预设骨架和采样参数一并烘进快照。
+模型列表拉取、连接测试这类配置检查不套聊天预设；它们只验证 API 连通性。
 
 ## 与 ST 的语义对齐
 
@@ -84,21 +91,22 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 | ST marker | Moro 落点 |
 |-----------|----------|
 | `chatHistory` | 聊天历史消息（@Depth 世界书已先注入其中） |
-| `worldInfoBefore` / `worldInfoAfter` | 世界书 before/after 块（含关键词激活过滤后的条目），在各自 order 位置注入，受 marker 开关控制 |
+| `worldInfoBefore` / `worldInfoAfter` | 剪报夹世界书 before/after 块（含关键词激活过滤后的条目），在各自 order 位置注入，受 marker 开关控制 |
 | `personaDescription` | 用户人设块（名字 + 设定/备注）。「人设」App 有激活人设时用人设的名字/描述（位置=嵌入提示词时），否则回落「档案」App 的内容，详见 `docs/persona-app.md` |
 | `dialogueExamples` | 角色的对话示例块（`CharacterProfile.mesExample`，即角色卡 mes_example / 登场人物「台词样张」栏），在自己的 order 位置注入，受 marker 开关控制 |
-| `charDescription` `charPersonality` `scenario` | 共同映射到 Moro 的角色核心上下文（人设/内在认知/世界观/印象/记忆），注入在其中**第一个启用**的 marker 处，其余仅作排序占位 |
+| `charDescription` `charPersonality` `scenario` | 共同映射到剪影集「登场人物」的角色核心上下文（核心设定、身份锚、内在认知、世界观、印象、记忆和会话状态），注入在其中**第一个启用**的 marker 处，其余仅作排序占位。Moro 不新增独立 personality 字段；酒馆 personality 已合入剪影集核心设定 |
 
 世界书块在进入 marker 前已经由 `WorldbookRuntime` 完成关键词、二级词逻辑、概率、
 预算和递归扫描过滤；预设只决定这些块落在 prompt_order 的哪里，不会额外把世界书
 再塞回核心上下文。
 
 实现：预设激活时 `ChatPrompts.buildSystemPrompt(presetMarkerSplit=true)` →
-`buildCoreContext({ omitWorldbooks, skipUserProfile })` 把世界书与用户档案从核心块
-里拆出，`applyPresetToMessages` 的 `markerContents` 选项把它们放回 marker 位置。
+`buildCoreContext({ omitWorldbooks, skipUserProfile, omitMesExample })` 把世界书、用户档案与对话示例从核心块
+里拆出，`applyPresetToMessages` 的 `markerContents` 选项把它们放回各自 marker 位置；剪影集角色核心只由
+`charDescription` / `charPersonality` / `scenario` 承接。
 
 兜底规则（偏安全而不偏 ST 字面语义）：
-- 核心 marker 全被关掉时核心上下文仍注入到最前（否则人设/记忆静默丢失极难排查）
+- `charDescription` / `charPersonality` / `scenario` 全被关掉时核心上下文仍注入到最前（否则人设/记忆静默丢失极难排查）
 - marker **不在 order 里**（残缺/旧版预设）时，其内容回折进核心块不丢失
   （worldInfoBefore 折前、其余折后）；marker 在 order 里但**被关掉**则按 ST
   语义丢弃（开关真的管用）

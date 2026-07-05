@@ -8,6 +8,7 @@ import { CharacterProfile, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
 import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
+import { getLocalDateKey } from '../utils/dateKey';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
 import { isImageWallpaper, toWallpaperBackground } from '../utils/defaultWallpapers';
@@ -952,7 +953,7 @@ const Launcher: React.FC = () => {
           return;
       }
       let cancelled = false;
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateKey();
       const load = async () => {
           const s = await DB.getDailySchedule(scheduleChar.id, today).catch(() => null);
           if (cancelled) return;

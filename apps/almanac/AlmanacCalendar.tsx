@@ -157,7 +157,7 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         if (!quiet) addToast(`${char.name} 正在翻日历……`, 'info');
         try {
             await injectMemoryPalace(char, undefined, '日历');
-            const baseContext = ContextBuilder.buildCoreContext(char, userProfile);
+            const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile);
             const today = todayKey();
             const userPrompt = `
 ### 场景：在共享日历上做标记

@@ -8,6 +8,7 @@ import { extractContent } from '../../utils/safeApi';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { callChatCompletion } from '../../utils/llmClient';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 好友验证（被角色拉黑后重新申请加好友）。
@@ -109,7 +110,10 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
                 : '不久前';
 
             const prompt = `你正在扮演「${char.name}」。
-人设：${String(char.systemPrompt || '').slice(0, 800)}
+${buildFullCharacterSetting(char, { includeMemos: true })}
+
+重新申请加你为好友的用户完整设定：
+${await buildFullActiveUserSetting(userProfile)}
 
 情境：你在 ${blockedAgo} 因为不愉快把 ${userName} 拉黑了。拉黑前你们最近的聊天片段：
 ${historyText || '（没有可用的聊天记录）'}

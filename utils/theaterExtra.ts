@@ -21,6 +21,7 @@ import { extractJson } from './safeApi';
 import { llmComplete } from './llmComplete';
 import type { PresetMacroCtx } from './presets';
 import { substituteMacros } from './macros';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 import {
     EXTRA_QUIZ_QUESTION_SYS, extraQuizQuestionUser, extraQuizAnswerSys, extraQuizAnswerUser,
     extraQuizCommentSys, extraQuizCommentUser,
@@ -81,14 +82,38 @@ async function chat(api: ResolvedApi, messages: { role: string; content: string 
 const userNameOf = (userProfile: UserProfile | undefined, fallback: string): string =>
     (userProfile?.name || '').trim() || fallback;
 
-const macroContextFor = (char: CharacterProfile, userName: string, userProfile?: UserProfile): PresetMacroCtx => ({
+const macroContextFor = (char: CharacterProfile, userName: string, personaDescription = ''): PresetMacroCtx => ({
     charName: char.name || '角色',
     userName,
-    personaDescription: (userProfile?.bio || '').trim(),
+    personaDescription,
 });
 
 const macroText = (text: string | undefined, ctx: PresetMacroCtx): string =>
     substituteMacros(text || '', ctx).trim();
+
+const macroContextForExtra = async (char: CharacterProfile, userName: string, userProfile?: UserProfile): Promise<PresetMacroCtx> => {
+    const baseCtx = macroContextFor(char, userName);
+    const personaDescription = userProfile
+        ? macroText(await buildFullActiveUserSetting(userProfile), baseCtx)
+        : '';
+    return macroContextFor(char, userName, personaDescription);
+};
+
+const fullSettingForExtra = (char: CharacterProfile, ctx: PresetMacroCtx): string =>
+    buildFullCharacterSetting({
+        ...char,
+        systemPrompt: macroText(char.systemPrompt, ctx),
+        worldview: macroText(char.worldview, ctx),
+        appearanceTags: macroText(char.appearanceTags, ctx),
+        writerPersona: macroText(char.writerPersona, ctx),
+        lifeProfile: char.lifeProfile ? { ...char.lifeProfile, content: macroText(char.lifeProfile.content, ctx) } : undefined,
+        selfInsights: char.selfInsights?.map(x => macroText(x, ctx)),
+        memos: char.memos?.map(m => ({ ...m, text: macroText(m.text, ctx) })),
+        mountedWorldbooks: char.mountedWorldbooks?.map(wb => ({ ...wb, content: macroText(wb.content, ctx) })),
+    }, { includeMemos: true });
+
+const fullUserSettingForExtra = async (userProfile: UserProfile, ctx: PresetMacroCtx): Promise<string> =>
+    macroText(await buildFullActiveUserSetting(userProfile), ctx);
 
 /** 从问卷名里尽量解析题量（如「恋爱相性100问」「性癖测试50题」），解析不到给 50（且不少于 50）。 */
 export function inferQuestionCount(topic: string, fallback = 50): number {
@@ -138,7 +163,8 @@ export async function genCharAnswer(args: {
 }): Promise<string> {
     const { api, char, userProfile, topic, question, signal } = args;
     const userName = userNameOf(userProfile, '对方');
-    const macroCtx = macroContextFor(char, userName, userProfile);
+    const macroCtx = await macroContextForExtra(char, userName, userProfile);
+    const fullSetting = fullSettingForExtra(char, macroCtx);
     // ⚠️ 角色作答被截断显示半句（见 docs/divination-and-faux 同款坑）：推理模型先在 <think> 里耗预算，
     // 800 token 常只够吐半句正文。给足预算并在被长度截断时自动续写写完，避免「回答显示不全」。
     return (await chat(api, [
@@ -147,9 +173,9 @@ export async function genCharAnswer(args: {
             content: extraQuizAnswerSys({
                 charName: char.name,
                 topic: macroText(topic, macroCtx),
-                description: macroText(char.systemPrompt, macroCtx),
+                description: fullSetting,
                 userName,
-                userBio: macroText(userProfile?.bio, macroCtx),
+                userBio: await fullUserSettingForExtra(userProfile, macroCtx),
             }),
         },
         { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question: macroText(question, macroCtx) }) },
@@ -171,7 +197,8 @@ export async function genCharComment(args: {
 }): Promise<string> {
     const { api, char, userProfile, topic, question, userAnswer, charAnswer, recentComments, userComment, signal } = args;
     const userName = userNameOf(userProfile, '对方');
-    const macroCtx = macroContextFor(char, userName, userProfile);
+    const macroCtx = await macroContextForExtra(char, userName, userProfile);
+    const fullSetting = fullSettingForExtra(char, macroCtx);
     const recent = (recentComments || []).slice(-8).map(c => `${c.speakerName}：${c.text}`).join('\n');
     const raw = await chat(api, [
         {
@@ -179,9 +206,9 @@ export async function genCharComment(args: {
             content: extraQuizCommentSys({
                 charName: char.name,
                 topic: macroText(topic, macroCtx),
-                description: macroText(char.systemPrompt, macroCtx),
+                description: fullSetting,
                 userName,
-                userBio: macroText(userProfile?.bio, macroCtx),
+                userBio: await fullUserSettingForExtra(userProfile, macroCtx),
             }),
         },
         {
@@ -234,7 +261,8 @@ export async function genCharPeerReview(args: {
 }): Promise<string> {
     const { api, char, userProfile, topic, question, speakerAnswer, targetName, targetAnswer, recentComments, signal } = args;
     const userName = userNameOf(userProfile, '对方');
-    const macroCtx = macroContextFor(char, userName, userProfile);
+    const macroCtx = await macroContextForExtra(char, userName, userProfile);
+    const fullSetting = fullSettingForExtra(char, macroCtx);
     const recent = (recentComments || []).slice(-8).map(c => `${c.speakerName}：${c.text}`).join('\n');
     const raw = await chat(api, [
         {
@@ -242,9 +270,9 @@ export async function genCharPeerReview(args: {
             content: extraQuizPeerReviewSys({
                 charName: char.name,
                 topic: macroText(topic, macroCtx),
-                description: macroText(char.systemPrompt, macroCtx),
+                description: fullSetting,
                 userName,
-                userBio: macroText(userProfile?.bio, macroCtx),
+                userBio: await fullUserSettingForExtra(userProfile, macroCtx),
             }),
         },
         {
@@ -362,14 +390,15 @@ export async function genExtraPiece(args: {
 }): Promise<string> {
     const { api, kind, char, userProfile, prompt, options, signal } = args;
     const userName = userNameOf(userProfile, '我');
-    const macroCtx = macroContextFor(char, userName, userProfile);
+    const macroCtx = await macroContextForExtra(char, userName, userProfile);
+    const fullSetting = fullSettingForExtra(char, macroCtx);
     const { sys, user } = extraPiecePrompt({
         kind,
         charName: char.name,
-        description: macroText(char.systemPrompt, macroCtx),
+        description: fullSetting,
         prompt: prompt ? macroText(prompt, macroCtx) : prompt,
         userName,
-        userBio: macroText(userProfile?.bio, macroCtx),
+        userBio: await fullUserSettingForExtra(userProfile, macroCtx),
         options,
     });
     // 番外指令常要求「不少于 5000/10000 字」的长篇——大幅放宽 max_tokens，并在被长度截断时自动续写写完。
@@ -608,13 +637,14 @@ export async function genFauxPiece(args: {
 }): Promise<FauxResult> {
     const { api, kind, char, userProfile, keyword, signal } = args;
     const userName = userNameOf(userProfile, '我');
-    const macroCtx = macroContextFor(char, userName, userProfile);
+    const macroCtx = await macroContextForExtra(char, userName, userProfile);
+    const fullSetting = fullSettingForExtra(char, macroCtx);
     const { sys, user } = extraFauxPrompt({
         kind,
         charName: char.name,
-        description: macroText(char.systemPrompt, macroCtx),
+        description: fullSetting,
         userName,
-        userBio: macroText(userProfile?.bio, macroCtx),
+        userBio: await fullUserSettingForExtra(userProfile, macroCtx),
         keyword: keyword ? macroText(keyword, macroCtx) : keyword,
     });
     const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 2600, presetScope: 'structured.tool', presetMacros: macroCtx, signal });

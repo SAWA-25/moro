@@ -43,34 +43,35 @@ import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import { makeReplyTimerMetadata, type ReplyTimerMetadata } from '../utils/replyTimer';
 import { generateImage, IMAGE_GEN_MODEL_KEY } from '../utils/imageGen';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 
 const CHAT_REPLY_TIMEOUT_MS = 180_000;
 const CHAT_STREAM_TIMEOUT_MS = 90_000;
 
-const buildPerTurnImagePrompt = (
+const buildPerTurnImagePrompt = async (
     char: CharacterProfile,
     userProfile: UserProfile,
     assistantText: string,
     contextMsgs: Message[],
-): string => {
+): Promise<string> => {
     const recentLines = contextMsgs
         .filter(m => m.type === 'text' && typeof m.content === 'string' && m.content.trim())
         .slice(-8)
         .map(m => `${m.role === 'user' ? (userProfile.name || '用户') : char.name}: ${m.content.replace(/\s+/g, ' ').trim().slice(0, 180)}`)
         .join('\n');
     const appearance = (char.appearanceTags || '').trim();
-    const persona = [char.description, char.systemPrompt]
-        .filter(Boolean)
-        .join('\n')
-        .replace(/\s+/g, ' ')
-        .slice(0, 700);
+    const fullCharacterSetting = buildFullCharacterSetting(char, { includeMemos: true });
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, {
+        fallback: `用户名：${userProfile.name || '用户'}`,
+    });
     const refHint = char.convoSettings?.spriteRefImage ? 'The user configured a character image reference in the app; keep the character visually consistent with that established portrait concept.' : '';
 
     return [
         'Create one polished illustration for the latest moment in a private character chat.',
         `Character: ${char.name}.`,
         appearance ? `Appearance tags: ${appearance}.` : '',
-        persona ? `Character profile excerpt: ${persona}` : '',
+        fullCharacterSetting ? `Full character setting:\n${fullCharacterSetting}` : '',
+        fullUserSetting ? `Full user setting:\n${fullUserSetting}` : '',
         refHint,
         recentLines ? `Recent chat context:\n${recentLines}` : '',
         `Latest reply to illustrate:\n${assistantText.replace(/\s+/g, ' ').trim().slice(0, 900)}`,
@@ -480,7 +481,7 @@ export const useChatAI = ({
         try {
             let model = '';
             try { model = localStorage.getItem(IMAGE_GEN_MODEL_KEY) || ''; } catch { /* ignore */ }
-            const prompt = buildPerTurnImagePrompt(charSnapshot, userProfile, assistantText, contextMsgs);
+            const prompt = await buildPerTurnImagePrompt(charSnapshot, userProfile, assistantText, contextMsgs);
             const imageUrl = await generateImage(prompt, effectiveApi, model);
             await DB.saveMessage({
                 charId: charSnapshot.id,
@@ -1126,6 +1127,7 @@ export const useChatAI = ({
                     meta: chatReplyMeta,
                     timeoutMs: CHAT_REPLY_TIMEOUT_MS,
                     maxRetries: 0,
+                    presetScope: false,
                 });
             }
             apiResponded = true;
@@ -1228,7 +1230,7 @@ export const useChatAI = ({
                     data = await callChatCompletion(effectiveApi, followBody, { meta: makeApiUsageMeta(chatReplyUsageFeatureId, {
                         ...chatReplyUsageContext,
                         apiBinding: '麦当劳点餐工具续写',
-                    }), timeoutMs: CHAT_REPLY_TIMEOUT_MS, maxRetries: 0 });
+                    }), timeoutMs: CHAT_REPLY_TIMEOUT_MS, maxRetries: 0, presetScope: false });
                     updateTokenUsage(data, historyMsgCount, `mcd-propose-${it + 1}`);
                     // 第二轮跳过 (我们已经禁用了 tools)
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
@@ -1442,14 +1444,20 @@ export const useChatAI = ({
                         if (shouldAutoDigest) {
                             console.log(`🧠 [AutoDigest] 已达 50 轮，自动触发认知消化...`);
                             setMemoryPalaceStatus(`${charName}闭上眼睛，开始整理内心…`);
-                            const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
+                            const persona = [
+                                buildFullCharacterSetting(liveAfter || char, { includeMemos: true }),
+                                await buildFullActiveUserSetting(userProfile, {
+                                    fallback: `用户名：${userProfile?.name || '用户'}`,
+                                }),
+                            ].join('\n\n');
                             const result = await runCognitiveDigestion(char.id, charName, persona, mpLLM, false, userProfile?.name);
                             if (result) {
                                 // 持久化自我领悟词条到角色档案
                                 if (result.selfInsights.length > 0) {
-                                    const existing = char.selfInsights || [];
+                                    const baseChar = liveAfter || char;
+                                    const existing = baseChar.selfInsights || [];
                                     const updatedInsights = [...existing, ...result.selfInsights];
-                                    await DB.saveCharacter({ ...char, selfInsights: updatedInsights });
+                                    await DB.saveCharacter({ ...baseChar, selfInsights: updatedInsights });
                                 }
                                 const total = result.resolved.length + result.deepened.length + result.faded.length +
                                     result.fulfilled.length + result.disappointed.length + result.internalized.length +

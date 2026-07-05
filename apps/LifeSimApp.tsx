@@ -30,6 +30,7 @@ import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { callChatCompletion } from '../utils/llmClient';
 import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import {
     Storefront, ArrowLeft, ArrowCounterClockwise, GearSix, Star,
     MaskHappy, UserPlus, Eye, UsersThree, ChatsCircle, HeartHalf, MapTrifold,
@@ -536,7 +537,8 @@ const LifeSimApp: React.FC = () => {
                         rawMessages as any, char.name, userProfile.name || '你', 20
                     );
                     await injectMemoryPalace(char, undefined, chatHistory || undefined);
-                    const systemPrompt = buildCharTurnSystemPrompt(char, userProfile, chatHistory, s, s.actionLog);
+                    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+                    const systemPrompt = buildCharTurnSystemPrompt(char, userProfile, chatHistory, s, s.actionLog, fullUserSetting);
                     const raw = await callCharAI(
                         resolvedApiConfig,
                         systemPrompt,

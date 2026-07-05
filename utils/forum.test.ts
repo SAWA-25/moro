@@ -10,8 +10,9 @@ import {
     loadForumTrendPack, normalizeForumTrendItems, defaultForumTrendPack, FORUM_TRENDS_KEY, FORUM_TRENDS_COOLDOWN_MS,
     buildForumPostShareSnapshot, buildForumSharePendingPayload, normalizeForumSharePendingPayload,
     removeForumPost, removeForumReply, removeForumSubReply,
+    buildCharThreadPrompt, dedupeForumPosts, fallbackCharThread, isDuplicateForumThreadDraft, isGenericCharThreadDraft,
     type ForumTrendPack,
-    type RawReply, type ForumReply, type ForumPost, type ForumPoll,
+    type RawReply, type ForumReply, type ForumPost, type ForumPoll, type CharBrief,
 } from './forum';
 
 const mkPost = (over: Partial<ForumPost> = {}): ForumPost => ({
@@ -115,6 +116,34 @@ describe('materializeThreads identity anchors', () => {
         const ambiguous = materializeThreads(parseThreads('[{"author":"Same","title":"ambiguous","body":"x","floors":50,"likes":1}]'), 'chat', chars);
         expect(ambiguous[0].authorType).toBe('npc');
         expect(ambiguous[0].authorId).toBeUndefined();
+    });
+});
+
+describe('forum character thread safeguards', () => {
+    it('keeps full character persona in single-character thread prompt', () => {
+        const longPersona = `完整人设 ${'甲'.repeat(1200)} FORUM_PERSONA_SENTINEL`;
+        const { system, user } = buildCharThreadPrompt({ id: 'c1', name: '林夏', persona: longPersona });
+        expect(system).toContain('FORUM_PERSONA_SENTINEL');
+        expect(user).toContain('不要写成通用网友');
+    });
+
+    it('fallback character thread uses persona hint and avoids generic lonely posts', () => {
+        const char: CharBrief = { id: 'c1', name: '林夏', persona: '林夏是海边车站的画家，遇事先把伞往别人那边倾。' };
+        const thread = fallbackCharThread(char);
+        expect(thread.body).toContain('海边车站的画家');
+        expect(isGenericCharThreadDraft(thread)).toBe(false);
+    });
+
+    it('detects duplicate character drafts but never dedupes user posts', () => {
+        const posts = [
+            mkPost({ id: 'u1', authorType: 'user', authorName: '我', title: '同标题', body: '同正文', createdAt: 1, lastActiveAt: 1 }),
+            mkPost({ id: 'u2', authorType: 'user', authorName: '我', title: '同标题', body: '同正文', createdAt: 2, lastActiveAt: 2 }),
+            mkPost({ id: 'c-old', authorType: 'char', authorId: 'c1', authorName: '林夏', title: '重复', body: '重复正文', createdAt: 1, lastActiveAt: 1 }),
+            mkPost({ id: 'c-new', authorType: 'char', authorId: 'c1', authorName: '林夏', title: '重复', body: '重复正文', createdAt: 3, lastActiveAt: 3 }),
+        ];
+        const deduped = dedupeForumPosts(posts);
+        expect(deduped.map(p => p.id)).toEqual(['u1', 'u2', 'c-new']);
+        expect(isDuplicateForumThreadDraft(posts, { boardId: 'chat', title: '重复', body: '重复正文' }, { type: 'char', id: 'c1', name: '林夏' })).toBe(true);
     });
 });
 

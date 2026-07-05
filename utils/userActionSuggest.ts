@@ -13,6 +13,7 @@ import { extractContent, extractJson } from './safeApi';
 import { USER_ACTION_SUGGEST_SYSTEM, userActionSuggestUserPrompt } from './laiwangPrompts';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { ContextBuilder } from './context';
 
 // 文案见 utils/laiwangPrompts.ts → [6] 行动建议
 const SYSTEM = USER_ACTION_SUGGEST_SYSTEM;
@@ -114,19 +115,20 @@ async function requestActionsOnce(args: {
     api: ResolvedApi;
     char: CharacterProfile;
     userName: string;
+    coreContext: string;
     transcript: string;
     count: number;
     avoid: string[];
     signal?: AbortSignal;
 }): Promise<string[]> {
-    const { api, char, userName, transcript, count, avoid, signal } = args;
+    const { api, char, userName, coreContext, transcript, count, avoid, signal } = args;
     const userMsg = userActionSuggestUserPrompt({ charName: char.name, userName, transcript, count, avoid });
 
     const data = await callChatCompletion(api, {
         model: api.model,
         // 给足额度：思考型模型（gemini-3.1-pro 等）会先用掉一大截 token 推理，
         // 1000 常被推理吃光、正文 JSON 数组被截断 → 解析为空 → 前台「没想出来」。
-        messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
+        messages: [{ role: 'system', content: `${coreContext}\n\n${SYSTEM}` }, { role: 'user', content: userMsg }],
         temperature: 1.0,
         max_tokens: 4000,
         stream: false,
@@ -159,6 +161,7 @@ export async function suggestUserActions(args: {
     if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
     const userName = (userProfile.name || '').trim() || '我';
     const transcript = recentTranscript(recent, char.name, userName);
+    const coreContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
 
     const seen = new Set<string>();
     const out: string[] = [];
@@ -173,7 +176,7 @@ export async function suggestUserActions(args: {
         const need = Math.max(target - out.length, MIN_REQUIRED);
         try {
             const actions = await requestActionsOnce({
-                api, char, userName, transcript, count: need, avoid: out, signal,
+                api, char, userName, coreContext, transcript, count: need, avoid: out, signal,
             });
             const before = out.length;
             for (const a of actions) {

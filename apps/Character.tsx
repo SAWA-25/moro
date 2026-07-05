@@ -14,7 +14,6 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { DB } from '../utils/db';
-import { ContextBuilder } from '../utils/context';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import MemoryArchivist from '../components/character/MemoryArchivist';
@@ -33,6 +32,7 @@ import { scrollToManualAnchor } from '../utils/manualDeepLink';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 
 // ── 剪影集专属胶片资料册色板：冷雾白 + 鼠尾草绿 + 胶片灰 ──
 const INK = '#2f3432';
@@ -468,13 +468,10 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
 
       const targetId = formData.id; // LOCK ID
 
-      // Build lightweight character identity context (no memories - we're generating those)
-      let identityContext = `[角色身份]\n名字: ${formData.name}\n`;
-      if (formData.systemPrompt) identityContext += `核心性格/指令:\n${formData.systemPrompt}\n`;
-      if (formData.worldview?.trim()) identityContext += `世界观设定: ${formData.worldview}\n`;
-      identityContext += `互动对象: ${userProfile.name}`;
-      if (userProfile.bio) identityContext += ` (${userProfile.bio})`;
-      identityContext += '\n\n';
+      const identityContext = [
+          buildFullCharacterSetting(formData, { includeMemos: true }),
+          await buildFullActiveUserSetting(userProfile),
+      ].join('\n\n') + '\n\n';
 
       // Gemini 3.1 preview 对"人设堆 3000+ token → 迟到任务句"的 all-in-one user 消息
       // 会静默拒答（completion_tokens=0，代理回 "Token count: N" stub 污染记忆库）。
@@ -572,7 +569,10 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
           // 模板优先级：override（弹窗现场选）→ 当前 state → 默认 preset
           const effectivePromptId = overridePromptId || selectedPromptId;
           const templateObj = archivePrompts.find(p => p.id === effectivePromptId) || DEFAULT_ARCHIVE_PROMPTS[0];
-          const baseContext = ContextBuilder.buildCoreContext(formData, userProfile);
+          const baseContext = [
+              buildFullCharacterSetting(formData, { includeMemos: true }),
+              await buildFullActiveUserSetting(userProfile),
+          ].join('\n\n');
           let prompt = baseContext + '\n\n' + templateObj.content;
           prompt = prompt.replace(/\$\{dateStr\}/g, dateStr);
           prompt = prompt.replace(/\$\{char\.name\}/g, formData.name);
@@ -721,7 +721,10 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
             const newMemories: MemoryFragment[] = [];
 
             await injectMemoryPalace(formData);
-            const baseContext = ContextBuilder.buildCoreContext(formData, userProfile);
+            const baseContext = [
+                buildFullCharacterSetting(formData, { includeMemos: true }),
+                await buildFullActiveUserSetting(userProfile),
+            ].join('\n\n');
 
             for (let i = 0; i < dates.length; i++) {
                 const date = dates[i];

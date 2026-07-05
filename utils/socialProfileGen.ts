@@ -2,6 +2,7 @@ import { APIConfig, CharacterProfile } from '../types';
 import { extractContent } from './safeApi';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 /**
  * 角色主页「微信号 / 地区 / 个性签名」AI 生成。
@@ -37,9 +38,7 @@ export const generateSocialProfile = async (
     char: CharacterProfile,
 ): Promise<GeneratedSocialProfile> => {
     const persona = [
-        `名字: ${char.name}`,
-        char.systemPrompt ? `核心设定: ${String(char.systemPrompt).slice(0, 800)}` : '',
-        char.worldview ? `世界观: ${String(char.worldview).slice(0, 300)}` : '',
+        buildFullCharacterSetting(char, { includeMemos: true }),
         char.socialProfile?.bio ? `已有签名(供参考语气): ${char.socialProfile.bio}` : '',
     ].filter(Boolean).join('\n');
 

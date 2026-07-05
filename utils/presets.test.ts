@@ -577,6 +577,56 @@ describe('applyPresetToMessages · markerContents 联动（世界书 / 用户档
         expect(out.map(m => m.content)).toEqual(['CORE', 'u1', 'a1', 'u2', 'a2']);
     });
 
+    it('world/persona/example 不抢角色核心落点，缺少角色 marker 时核心兜底到最前', () => {
+        const p = importTavernPreset({
+            prompts: [
+                { identifier: 'worldInfoBefore', name: 'WIB', system_prompt: true, marker: true },
+                { identifier: 'personaDescription', name: 'PD', system_prompt: true, marker: true },
+                { identifier: 'dialogueExamples', name: 'EX', system_prompt: true, marker: true },
+                { identifier: 'chatHistory', name: 'CH', system_prompt: true, marker: true },
+            ],
+            prompt_order: [{ character_id: 100000, order: [
+                { identifier: 'worldInfoBefore', enabled: true },
+                { identifier: 'personaDescription', enabled: true },
+                { identifier: 'dialogueExamples', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ] }],
+        }, 'n');
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            markerContents: {
+                worldInfoBefore: 'WB前',
+                personaDescription: '用户档案',
+                dialogueExamples: '台词样张',
+            },
+        });
+        expect(out.map(m => m.content)).toEqual(['CORE', 'WB前', '用户档案', '台词样张', 'u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('charDescription 关闭时 charPersonality 或 scenario 仍可承接剪影集角色核心上下文', () => {
+        const p = importTavernPreset({
+            prompts: [
+                { identifier: 'worldInfoBefore', name: 'WIB', system_prompt: true, marker: true },
+                { identifier: 'charDescription', name: 'CD', system_prompt: true, marker: true },
+                { identifier: 'charPersonality', name: 'CP', system_prompt: true, marker: true },
+                { identifier: 'scenario', name: 'SC', system_prompt: true, marker: true },
+                { identifier: 'chatHistory', name: 'CH', system_prompt: true, marker: true },
+            ],
+            prompt_order: [{ character_id: 100000, order: [
+                { identifier: 'worldInfoBefore', enabled: true },
+                { identifier: 'charDescription', enabled: false },
+                { identifier: 'charPersonality', enabled: true },
+                { identifier: 'scenario', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ] }],
+        }, 'n');
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            markerContents: { worldInfoBefore: 'WB前' },
+        });
+        expect(out.map(m => m.content)).toEqual(['WB前', 'CORE', 'u1', 'a1', 'u2', 'a2']);
+    });
+
     it('marker 不在 order 里时内容回折进核心块（不丢设定）', () => {
         const p = importTavernPreset({
             prompts: [
@@ -590,9 +640,9 @@ describe('applyPresetToMessages · markerContents 联动（世界书 / 用户档
         }, 'n');
         const out = applyPresetToMessages(baseMessages, p, {
             macros: MACROS,
-            markerContents: { worldInfoBefore: 'WB前', personaDescription: '用户档案' },
+            markerContents: { worldInfoBefore: 'WB前', personaDescription: '用户档案', dialogueExamples: '台词样张' },
         });
-        expect(out[0].content).toBe('WB前\n\nCORE\n\n用户档案');
+        expect(out[0].content).toBe('WB前\n\nCORE\n\n用户档案\n\n台词样张');
         expect(out.map(m => m.content).slice(1)).toEqual(['u1', 'a1', 'u2', 'a2']);
     });
 
@@ -636,6 +686,27 @@ describe('预设高级编辑工具', () => {
         expect(fixed.preset.prompts.some(prompt => prompt.identifier === 'ghost')).toBe(true);
         expect(getPresetOrderForScope(fixed.preset, 'chat.private').filter(e => e.identifier === 'empty')).toHaveLength(1);
         expect(getPresetOrderForScope(fixed.preset, 'chat.private').find(e => e.identifier === 'empty')?.enabled).toBe(false);
+    });
+
+    it('诊断不再把 world/persona/example marker 当作剪影集角色核心落点', () => {
+        const p = createDefaultPreset();
+        p.prompt_order = [{
+            character_id: ORDER_CHAR_ID_SINGLE,
+            order: [
+                { identifier: 'worldInfoBefore', enabled: true },
+                { identifier: 'personaDescription', enabled: true },
+                { identifier: 'dialogueExamples', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ],
+        }];
+
+        const issues = diagnosePreset(p, 'chat.private');
+        expect(issues.some(i => i.code === 'missing-core-marker')).toBe(true);
+
+        const fixed = applySafePresetFixes(p, 'chat.private');
+        const fixedOrder = getPresetOrderForScope(fixed.preset, 'chat.private');
+        expect(fixedOrder.some(e => e.identifier === 'charDescription' && e.enabled)).toBe(true);
+        expect(diagnosePreset(fixed.preset, 'chat.private').some(i => i.code === 'missing-core-marker')).toBe(false);
     });
 
     it('快照 diff 能描述变化，恢复时创建新预设副本而不复用 id', () => {

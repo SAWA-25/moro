@@ -22,6 +22,7 @@ import {
 } from '../../utils/charMusicDiscovery';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { computeCurrentListening } from '../../utils/charMusicSchedule';
+import { getLocalDateKey } from '../../utils/dateKey';
 import { DB } from '../../utils/db';
 import { C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage } from './MusicUI';
 import { ArrowLeft, MusicNote, Heart, Plus, MagnifyingGlass, PaperPlaneRight } from '@phosphor-icons/react';
@@ -93,7 +94,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer, onShareS
     let cancelled = false;
     (async () => {
       try {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getLocalDateKey();
         const schedule = await DB.getDailySchedule(char.id, today);
         if (cancelled) return;
         const cur = computeCurrentListening(char, schedule);
@@ -160,7 +161,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer, onShareS
     if (!char || !profile || fillingPl) return;
     setFillingPl(pl.id);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getLocalDateKey();
       const schedule = await DB.getDailySchedule(char.id, today).catch(() => null);
       const requests = buildPlaylistSearchRequests(char, profile, pl, {
         currentListening: profile.currentListening || null,

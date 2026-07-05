@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   getManualUpdateNotices,
+  groupManualUpdateNoticesByDate,
   MANUAL_DESTINATIONS,
   MANUAL_ENTRIES,
+  MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES,
   MANUAL_UPDATE_NOTICES,
   flattenManualSettings,
 } from '../apps/manual/manualData';
 import {
   getLatestManualUpdateNotice,
+  getPendingLatestManualUpdateDateNotices,
   getPendingManualUpdateNotice,
   getPendingManualUpdateNotices,
   MANUAL_UPDATE_NOTICE_SEEN_KEY,
@@ -47,6 +50,37 @@ describe('manual update notices', () => {
     }
   });
 
+  it('keeps same-day notices in data order', () => {
+    const sorted = getManualUpdateNotices();
+    const dateWithMultiple = MANUAL_UPDATE_NOTICES.find((notice, index, all) =>
+      all.findIndex(item => item.date === notice.date) !== index,
+    )?.date;
+
+    expect(dateWithMultiple).toBeTruthy();
+    expect(sorted.filter(notice => notice.date === dateWithMultiple).map(notice => notice.id)).toEqual(
+      MANUAL_UPDATE_NOTICES.filter(notice => notice.date === dateWithMultiple).map(notice => notice.id),
+    );
+  });
+
+  it('groups notices by update date without changing order', () => {
+    const sorted = getManualUpdateNotices();
+    const groups = groupManualUpdateNoticesByDate(sorted);
+
+    expect(groups.flatMap(group => group.notices.map(notice => notice.id))).toEqual(
+      sorted.map(notice => notice.id),
+    );
+    expect(new Set(groups.map(group => group.date)).size).toBe(groups.length);
+  });
+
+  it('adds pinned headlines to matching update dates', () => {
+    const sorted = getManualUpdateNotices();
+    const groups = groupManualUpdateNoticesByDate(sorted);
+
+    Object.entries(MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES).forEach(([date, headline]) => {
+      expect(groups.find(group => group.date === date)?.pinnedHeadline).toBe(headline);
+    });
+  });
+
   it('queues every unseen notice once', () => {
     const storage = fakeStorage();
     const latest = getLatestManualUpdateNotice();
@@ -61,6 +95,24 @@ describe('manual update notices', () => {
     expect(JSON.parse(storage.getItem(MANUAL_UPDATE_NOTICE_SEEN_KEY) || '[]')).toContain(latest!.id);
     expect(getPendingManualUpdateNotices(storage).some(notice => notice.id === latest!.id)).toBe(false);
     expect(getPendingManualUpdateNotices(storage).length).toBe(Math.max(0, MANUAL_UPDATE_NOTICES.length - 1));
+  });
+
+  it('only pops unread notices from the latest update date', () => {
+    const storage = fakeStorage();
+    const sorted = getManualUpdateNotices();
+    const latestDate = sorted[0]?.date;
+    expect(latestDate).toBeTruthy();
+
+    expect(getPendingLatestManualUpdateDateNotices(storage).map(notice => notice.id)).toEqual(
+      sorted.filter(notice => notice.date === latestDate).map(notice => notice.id),
+    );
+
+    sorted
+      .filter(notice => notice.date === latestDate)
+      .forEach(notice => markManualUpdateNoticeSeen(notice.id, storage));
+
+    expect(getPendingManualUpdateNotices(storage).some(notice => notice.date !== latestDate)).toBe(true);
+    expect(getPendingLatestManualUpdateDateNotices(storage)).toEqual([]);
   });
 
   it('does not queue already-read notices again on later checks', () => {

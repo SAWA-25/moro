@@ -309,7 +309,7 @@ export async function discussCoView(input: CoViewDiscussInput): Promise<{ reply:
   const fallback = { reply: input.mode === 'cinema' ? '我先跟着你看，等会儿再说我的感觉。' : '这一页我读到了，先慢慢往下看。', action: { kind: 'none' } as CoViewAction };
   if (!input.api.baseUrl || !input.api.model) return fallback;
 
-  const context = ContextBuilder.buildCoreContext(input.char, input.user, true);
+  const context = await ContextBuilder.buildFullCoreContext(input.char, input.user, true);
   const history = input.history.slice(-10).map(m => `${m.role === 'user' ? input.user.name || '用户' : input.char.name}: ${m.text}`).join('\n');
   const controls = input.mode === 'cinema'
     ? '可选动作仅限 pause / resume / none。'

@@ -106,7 +106,7 @@ const VideoCallApp: React.FC = () => {
                 .slice(-8)
                 .map(line => `${line.role === 'user' ? userProfile.name || '用户' : char.name}: ${line.text}`)
                 .join('\n');
-            const prompt = `${ContextBuilder.buildCoreContext(char, userProfile, true)}
+            const prompt = `${await ContextBuilder.buildFullCoreContext(char, userProfile, true)}
 
 ${videoCallPromptBody({
                 userName: userProfile.name || '用户',

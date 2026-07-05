@@ -23,6 +23,7 @@ import {
     normalizePhoneCheckStep,
 } from '../../utils/checkPhone';
 import { charPhoneCheckScriptGuard } from '../../utils/laiwangPrompts';
+import { buildFullCharacterSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -581,8 +582,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     };
 
     const personaBlock = useMemo(() => [
-        `名字: ${char.name}`,
-        char.systemPrompt ? `人设: ${String(char.systemPrompt).slice(0, 1500)}` : '',
+        buildFullCharacterSetting(char, { includeMemos: true }),
     ].filter(Boolean).join('\n'), [char]);
 
     // ── 启动：取联系人快照 + 生成浏览脚本 ──

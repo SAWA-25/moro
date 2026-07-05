@@ -22,6 +22,7 @@ import { CharacterProfile, UserProfile, Message } from '../types';
 import { recenterSystem } from './laiwangPrompts';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 export interface RecenterApiConfig {
     baseUrl: string;
@@ -71,10 +72,9 @@ export async function runRecenter(
 
     // 核心人设：用最原始的设定做「锚」——回神就是拿现在的自己跟这个锚对齐
     const persona = [
-        char.systemPrompt ? `核心性格/设定：\n${char.systemPrompt}` : '',
-        char.worldview ? `世界观/背景：\n${char.worldview}` : '',
-        (char.selfInsights && char.selfInsights.length > 0) ? `你的内在认知：\n${char.selfInsights.map(s => `- ${s}`).join('\n')}` : '',
-    ].filter(Boolean).join('\n\n');
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        await buildFullActiveUserSetting(user, { fallback: `用户名：${user.name || '用户'}` }),
+    ].join('\n\n');
 
     const systemPrompt = recenterSystem({ charName: char.name, userName: user.name, persona, dialogue });
 

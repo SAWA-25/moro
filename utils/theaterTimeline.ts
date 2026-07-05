@@ -20,12 +20,14 @@ import {
     TheaterReflectionScene,
     TheaterReflectionSession,
     TheaterReflectionTone,
+    UserProfile,
 } from '../types';
 import { DB } from './db';
 import { sanitizeLifeText } from './autonomousLife';
 import { extractContent, extractJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
 import {
     trajectoryBeforePrompt,
     trajectoryBranchPrompt,
@@ -190,13 +192,20 @@ async function callLLM(
 }
 
 function buildPersona(char: CharacterProfile): string {
-    return [
-        char.systemPrompt ? `人设与性格：\n${char.systemPrompt}` : '',
-        char.worldview ? `世界观 / 背景：\n${char.worldview}` : '',
-        Array.isArray(char.selfInsights) && char.selfInsights.length
-            ? `TA 沉淀下来的一些自我认知：\n${char.selfInsights.map(s => `- ${s}`).join('\n')}`
-            : '',
-    ].filter(Boolean).join('\n\n');
+    return buildFullCharacterSetting(char, { includeMemos: true });
+}
+
+type TimelineUserSetting = string | Pick<UserProfile, 'name' | 'bio' | 'vrState' | 'ambientSocial'>;
+
+function userNameOf(user: TimelineUserSetting): string {
+    return typeof user === 'string' ? user : (user?.name || '你');
+}
+
+async function buildPersonaWithUser(char: CharacterProfile, user: TimelineUserSetting): Promise<string> {
+    const userSetting = typeof user === 'string'
+        ? `【完整用户设定】\n用户名：${user || '你'}`
+        : await buildFullActiveUserSetting(user, { fallback: `用户名：${user?.name || '你'}` });
+    return `${buildPersona(char)}\n\n${userSetting}`;
 }
 
 function fallbackDossier(charName: string, nodes: TrajectoryNode[]): TrajectoryDossier {
@@ -475,7 +484,7 @@ async function assembleNodes(
  */
 export async function loadOrGenerateTrajectory(
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     api: TimelineApi,
     opts: { force?: boolean } = {},
 ): Promise<CharTrajectory> {
@@ -485,7 +494,8 @@ export async function loadOrGenerateTrajectory(
     }
 
     const firstMetTs = await resolveFirstMet(char.id, Date.now());
-    const persona = buildPersona(char);
+    const userName = userNameOf(user);
+    const persona = await buildPersonaWithUser(char, user);
     const prompt = trajectoryBeforePrompt({ charName: char.name, userName, persona });
 
     let beforeNodes: TrajectoryNode[] = [];
@@ -596,7 +606,7 @@ function describeNodeForPrompt(node: TrajectoryNode, firstMetTs: number): string
 export async function ensureTrajectoryNodeDetail(
     trajectory: CharTrajectory,
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     nodeId: string,
     api: TimelineApi,
     opts: { force?: boolean } = {},
@@ -608,8 +618,8 @@ export async function ensureTrajectoryNodeDetail(
 
     const prompt = trajectoryDetailPrompt({
         charName: char.name,
-        userName,
-        persona: buildPersona(char),
+        userName: userNameOf(user),
+        persona: await buildPersonaWithUser(char, user),
         nodeText: describeNodeForPrompt(node, trajectory.firstMetTs),
     });
     const raw = await callLLM(api, prompt, 0.88, 1800);
@@ -626,7 +636,7 @@ export async function ensureTrajectoryNodeDetail(
 export async function generateTrajectoryBranch(
     trajectory: CharTrajectory,
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     nodeId: string,
     premise: string,
     api: TimelineApi,
@@ -637,8 +647,8 @@ export async function generateTrajectoryBranch(
     if (!cleanPremise) throw new Error('先写一句“如果那天……”的假设。');
     const prompt = trajectoryBranchPrompt({
         charName: char.name,
-        userName,
-        persona: buildPersona(char),
+        userName: userNameOf(user),
+        persona: await buildPersonaWithUser(char, user),
         nodeText: describeNodeForPrompt(node, trajectory.firstMetTs),
         premise: cleanPremise,
     });
@@ -659,7 +669,7 @@ export async function generateTrajectoryBranch(
 export async function rewriteTrajectoryNode(
     trajectory: CharTrajectory,
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     nodeId: string,
     api: TimelineApi,
 ): Promise<{ trajectory: CharTrajectory; node: TrajectoryNode }> {
@@ -670,8 +680,8 @@ export async function rewriteTrajectoryNode(
     }
     const prompt = trajectoryRewriteNodePrompt({
         charName: char.name,
-        userName,
-        persona: buildPersona(char),
+        userName: userNameOf(user),
+        persona: await buildPersonaWithUser(char, user),
         nodeText: describeNodeForPrompt(node, trajectory.firstMetTs),
     });
     const raw = await callLLM(api, prompt, 0.96, 1800);
@@ -720,7 +730,7 @@ export function sanitizeReflectionLines(rawLines: any[], allowUser = false): Ref
 
 export async function generateReflection(
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     nodeA: TrajectoryNode,
     nodeB: TrajectoryNode,
     firstMetTs: number,
@@ -729,7 +739,8 @@ export async function generateReflection(
     details?: Record<string, TrajectoryNodeDetail>,
 ): Promise<ReflectionScene> {
     const [past, now] = nodeA.ts <= nodeB.ts ? [nodeA, nodeB] : [nodeB, nodeA];
-    const persona = buildPersona(char);
+    const userName = userNameOf(user);
+    const persona = await buildPersonaWithUser(char, user);
     const reflectionOptions = normalizeReflectionOptions(options);
     const detailText = (n: TrajectoryNode) => {
         const d = details?.[n.id];
@@ -802,18 +813,19 @@ function formatReflectionHistory(session: TheaterReflectionSession, userName: st
 
 export async function continueReflection(
     char: CharacterProfile,
-    userName: string,
+    user: TimelineUserSetting,
     session: TheaterReflectionSession,
     userMessage: string,
     api: TimelineApi,
 ): Promise<TheaterReflectionSession> {
     const text = cleanMultiline(userMessage, 420);
     if (!text) throw new Error('先写一句想对他们说的话。');
+    const userName = userNameOf(user);
     const userLine: ReflectionLine = { who: 'user', text, at: Date.now() };
     const prompt = reflectionContinuePrompt({
         charName: char.name,
         userName,
-        persona: buildPersona(char),
+        persona: await buildPersonaWithUser(char, user),
         title: session.title || session.initialScene.title || '对影',
         subtitle: session.subtitle || session.initialScene.subtitle,
         pastLabel: `${session.nodes.past.when} · ${session.nodes.past.title}`,

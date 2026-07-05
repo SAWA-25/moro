@@ -10,6 +10,7 @@ import type { CharacterProfile, UserProfile } from '../../types';
 import type { ResolvedApi } from '../auxApi';
 import { llmComplete } from '../llmComplete';
 import { DIVINATION_KIND_ROLE, divinationInterpretSys, divinationInterpretUser } from '../theaterPrompts';
+import { buildFullCharacterSetting } from '../characterPromptProfile';
 import type { DrawnTarot, DrawnLenormand, LiuyaoResult, MeihuaResult } from './engines';
 
 export type DivinationKind = 'tarot' | 'lenormand' | 'liuyao' | 'meihua';
@@ -72,7 +73,14 @@ export async function interpretReading(args: InterpretArgs): Promise<string> {
     const { api, kind, readingText, question, char, userProfile, worldbookText, history, signal } = args;
     const userName = (userProfile?.name || '').trim() || '问卜者';
     const conversational = !!(history && history.length);
-    const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.systemPrompt || '', userName, worldbookText, conversational });
+    const sys = divinationInterpretSys({
+        charName: char.name,
+        kindRole: DIVINATION_KIND_ROLE[kind],
+        description: buildFullCharacterSetting(char, { includeMemos: true }),
+        userName,
+        worldbookText,
+        conversational,
+    });
     const user = divinationInterpretUser({ question, readingText, charName: char.name });
     // 首解：[sys, 牌面/问题]；继续对话：再接上「角色解读 + 追问 + 回应…」的历史，角色顺着聊。
     const messages = [

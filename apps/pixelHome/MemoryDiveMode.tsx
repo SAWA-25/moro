@@ -68,10 +68,21 @@ const MemoryDiveMode: React.FC<Props> = ({
   charId, charName, charProfile, userProfile, charSprite, playerSprite,
   userName, homeState, assets, apiConfig, onExit,
 }) => {
-  const fullCharContext = useMemo(() =>
+  const [fullCharContext, setFullCharContext] = useState(() =>
     ContextBuilder.buildCoreContext(charProfile, userProfile, true),
-    [charProfile, userProfile],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    ContextBuilder.buildFullCoreContext(charProfile, userProfile, true)
+      .then(context => {
+        if (!cancelled) setFullCharContext(context);
+      })
+      .catch(() => {
+        if (!cancelled) setFullCharContext(ContextBuilder.buildCoreContext(charProfile, userProfile, true));
+      });
+    return () => { cancelled = true; };
+  }, [charProfile, userProfile]);
 
   // ─── Session ─────────────────────────────────────────
   const [session, setSession] = useState<DiveSession | null>(null);

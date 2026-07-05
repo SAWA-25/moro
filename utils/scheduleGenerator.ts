@@ -107,7 +107,11 @@ Every JSON response for this task must include "targetCharId": "${targetCharId}"
 function parsedScheduleTargetMatches(parsed: any, char: CharacterProfile, phase: string): boolean {
     const expected = getScheduleTargetId(char);
     const actual = String(parsed?.targetCharId || parsed?.charId || parsed?.characterId || '').trim();
-    if (actual !== expected) {
+    if (!actual) {
+        console.warn(`[Schedule/${phase}] targetCharId missing for ${char.name}; accepting because no conflicting target was returned.`);
+        return true;
+    }
+    if (actual !== expected && actual !== char.id) {
         console.warn(`[Schedule/${phase}] targetCharId mismatch for ${char.name}: expected=${expected} actual=${actual || '(missing)'}`);
         return false;
     }
@@ -254,6 +258,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 
 请以JSON格式输出：
 {
+  "targetCharId": "${getScheduleTargetId(char)}",
   "slots": [
     { "startTime": "08:00", "endTime": "09:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃", "location": "河边", "mood": "松弛", "energy": 4, "innerThought": "风有点凉，正好醒神" },
     ...
@@ -333,6 +338,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 
 请以JSON格式输出：
 {
+  "targetCharId": "${getScheduleTargetId(char)}",
   "slots": [
     { "startTime": "08:00", "endTime": "09:30", "activity": "状态名", "description": "简短描述", "emoji": "💭", "mood": "平静", "energy": 3, "innerThought": "又想起你昨天那句话" },
     ...
@@ -404,7 +410,7 @@ export async function generateDailyScheduleForChar(
     }
 
     // chat 主链路传 true（含详细记忆）；日程之前传的是 false，统一改成 true。
-    const baseContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
 
     const chatHistoryBlock = formatChatHistoryForSchedule(filteredMessages, char, userProfile);
 
@@ -599,13 +605,14 @@ ${chatBlock}
 ## 输出（仅 JSON）
 若有变化，返回**协调后完整的日程**（10-14 个时段，从早到晚，包含未改动的原时段；只动该动的，其余原样保留）：
 {
+  "targetCharId": "${getScheduleTargetId(char)}",
   "changed": true,
   "reason": "一句话说明这次为什么调整（如：聊天里约好今晚八点一起看电影）",
   "slots": [
     { "startTime": "HH:MM", "endTime": "HH:MM", "activity": "活动名(2-6字)", "description": "一句话", "emoji": "🎬", "location": "可选", "mood": "期待", "energy": 4, "anchored": true }
   ]
 }
-若无需变化：{"changed": false}
+若无需变化：{"targetCharId": "${getScheduleTargetId(char)}", "changed": false}
 仅输出 JSON，不要其他内容。`;
 
     try {

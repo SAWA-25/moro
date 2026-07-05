@@ -9,10 +9,9 @@ import type {
 } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { llmComplete } from './llmComplete';
-import { ContextBuilder } from './context';
-import { WorldbookRuntime } from './worldbookRuntime';
 import { DB } from './db';
 import { formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
 
 export const RELATIONSHIP_NETWORK_UPDATED_EVENT = 'moro-relationship-network-updated';
 
@@ -342,30 +341,13 @@ export function buildRelationshipNetworkFallbackEdges(characters: CharacterProfi
   return out;
 }
 
-function worldbookSnapshot(char: CharacterProfile): string {
-  const live = WorldbookRuntime.resolveForChar(char);
-  const entries = [...live.local, ...live.global]
-    .slice(0, 8)
-    .map(wb => `- ${wb.title} (${wb.scope}): ${clean(wb.content, '', 220)}`);
-  if (entries.length) return entries.join('\n');
-  return (char.mountedWorldbooks || [])
-    .filter(wb => wb.enabled !== false && wb.content?.trim())
-    .slice(0, 8)
-    .map(wb => `- ${wb.title}: ${clean(wb.content, '', 220)}`)
-    .join('\n');
-}
-
-function charRelationshipBlock(char: CharacterProfile, userProfile: UserProfile): string {
+function charRelationshipBlock(char: CharacterProfile): string {
   const modelId = getCharacterModelId(char);
   return [
     `ID: ${modelId || char.id}`,
     modelId && modelId !== char.id ? `LocalRowId: ${char.id}` : '',
     `Name: ${formatCharacterWithId(char)}`,
-    char.systemPrompt ? `systemPrompt:\n${clean(char.systemPrompt, '', 1200)}` : '',
-    char.worldview ? `worldview:\n${clean(char.worldview, '', 800)}` : '',
-    char.lifeProfile?.content ? `lifeProfile:\n${clean(char.lifeProfile.content, '', 900)}` : '',
-    worldbookSnapshot(char) ? `mounted/live worldbooks:\n${worldbookSnapshot(char)}` : '',
-    `core context excerpt:\n${clean(ContextBuilder.buildCoreContext(char, userProfile, false), '', 1600)}`,
+    buildFullCharacterSetting(char, { includeMemos: true, includeName: false }),
   ].filter(Boolean).join('\n');
 }
 
@@ -472,6 +454,7 @@ export async function organizeRelationshipNetwork(args: {
   const now = Date.now();
   const fallback = buildRelationshipNetworkFallbackEdges(characters, now);
   if (!api?.baseUrl || !api.model) return fallback;
+  const userSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
 
   const prompt = `你是 Moro 的关系网整理器。请读取每个角色的人设、世界观、生活侧写、已绑定世界书的 live 解析摘要，整理两类关系：
 1) 已存在角色之间的关系；
@@ -485,10 +468,11 @@ export async function organizeRelationshipNetwork(args: {
 - intimacy 表示亲密/互相在意，tension 表示张力/冲突/误解，confidence 表示你对推断的把握。
 - 不要把用户 ${userProfile.name || '用户'} 当作 NPC 关系生成。
 
-用户名：${userProfile.name || '用户'}
+用户完整设定：
+${userSetting}
 
 角色资料：
-${characters.map(c => `\n--- CHARACTER ---\n${charRelationshipBlock(c, userProfile)}`).join('\n')}`;
+${characters.map(c => `\n--- CHARACTER ---\n${charRelationshipBlock(c)}`).join('\n')}`;
 
   try {
     const raw = await llmComplete(api, [{ role: 'user', content: prompt }], { temperature: 0.45, maxTokens: 2200 });
@@ -566,6 +550,7 @@ export async function generateCharPairInteraction(args: {
   const now = Date.now();
   const modelAId = getCharacterModelId(a) || a.id;
   const modelBId = getCharacterModelId(b) || b.id;
+  const userSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
   const recent = recentMessages.slice(-12).map(m => `${m.speakerName}: ${m.content}`).join('\n') || '(暂无角色间私聊记录)';
   const prompt = `你正在为 Moro 的关系网生成一小段角色与角色的后台私聊。用户不会默认看到完整记录，角色可以选择是否裁剪片段转发给用户。
 
@@ -579,6 +564,9 @@ export async function generateCharPairInteraction(args: {
 - 如果 shouldForward=true，代表转发角色自主决定给 user 看一小段，不一定完整。excerptIndexes 是 messages 的下标。
 - 这次来源：${source === 'auto' ? '后台自动生成' : '用户手动生成'}
 
+用户完整设定（只用于理解关系边界与称呼，不要把用户当作本次私聊参与者）：
+${userSetting}
+
 关系摘要：
 ${edge ? `${edge.label}: ${edge.summary}\n亲密 ${edge.intimacy}/100，张力 ${edge.tension}/100` : '暂无'}
 
@@ -589,10 +577,10 @@ ${edge?.privateChatSummary?.text || '暂无'}
 ${recent}
 
 角色 A：
-${charRelationshipBlock(a, userProfile)}
+${charRelationshipBlock(a)}
 
 角色 B：
-${charRelationshipBlock(b, userProfile)}`;
+${charRelationshipBlock(b)}`;
 
   try {
     const raw = await llmComplete(api, [{ role: 'user', content: prompt }], { temperature: 0.82, maxTokens: 1400 });

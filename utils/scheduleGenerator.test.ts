@@ -67,10 +67,31 @@ describe('schedule generator character identity', () => {
     expect(result?.modelId).toBe('model-isaac');
     const request = vi.mocked(callChatCompletion).mock.calls[0][1] as any;
     expect(request.messages[0].content).toContain('targetCharId: "model-isaac"');
+    expect(request.messages[0].content).toContain('"targetCharId": "model-isaac"');
     expect(request.messages[0].content).toContain('Isaac (ID: model-isaac)');
 
     const saved = await DB.getDailySchedule('char-isaac', result!.date);
     expect(saved?.modelId).toBe('model-isaac');
+  });
+
+  it('saves generated schedules when the model omits targetCharId', async () => {
+    vi.mocked(callChatCompletion).mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            slots: [slot],
+            flowNarrative: { morning: 'I am still Isaac this morning.' },
+          }),
+        },
+      }],
+    } as any);
+
+    const result = await generateDailyScheduleForChar(char, user, API, true);
+
+    expect(result?.charId).toBe('char-isaac');
+    expect(result?.modelId).toBe('model-isaac');
+    const saved = await DB.getDailySchedule('char-isaac', getLocalDateKey());
+    expect(saved?.slots[0]?.activity).toBe('Morning');
   });
 
   it('does not save a generated schedule returned for another character id', async () => {

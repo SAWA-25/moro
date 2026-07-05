@@ -10,6 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { evaluatePhoneLockSubmission, isPhoneLocked, sanitizePhoneLockPasscode } from '../utils/phoneLock';
+import { buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
 import {
@@ -630,7 +631,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         let result = awarenessFallback(action);
         if (auxApi.baseUrl && auxApi.model) {
             try {
-                const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true);
+                const context = await ContextBuilder.buildFullCoreContext(targetChar, userProfile, true);
                 const prompt = `${context}
 
 ### [Task: 角色是否察觉手机被动过]
@@ -822,7 +823,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
         try {
             // Include full memory details for accuracy
             await injectMemoryPalace(targetChar);
-            const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true);
+            const context = await ContextBuilder.buildFullCoreContext(targetChar, userProfile, true);
             const msgs = await DB.getMessagesByCharId(targetChar.id);
             
             const lastMsg = msgs[msgs.length - 1];
@@ -929,10 +930,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
         if (!targetChar || !auxApi.baseUrl || !auxApi.model) { addToast('配置错误', 'error'); return; }
         setIsDecorating(true);
         try {
-            const persona = [
-                `名字: ${targetChar.name}`,
-                targetChar.systemPrompt ? `人设: ${String(targetChar.systemPrompt).slice(0, 800)}` : '',
-            ].filter(Boolean).join('\n');
+            const persona = buildFullCharacterSetting(targetChar, { includeMemos: true });
             const prompt = `根据下面这个角色的人设，为 TA 的手机设计一套贴人设的"桌面皮肤"。
 ${persona}
 
@@ -985,7 +983,7 @@ ${persona}
 
         try {
             await injectMemoryPalace(targetChar);
-            const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true); // Enable detailed context
+            const context = await ContextBuilder.buildFullCoreContext(targetChar, userProfile, true); // Enable detailed context
             const prompt = `${context}
 
 ### [Task: Continue Conversation]

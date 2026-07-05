@@ -55,7 +55,7 @@ const mockFetchContent = (content: string) => {
   const fetchMock = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
-    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
+    text: async () => JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }),
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -98,6 +98,9 @@ describe('group offline mode', () => {
 
     expect(loadGroupOfflineWordLimit('group-1')).toEqual({ maxChars: 180 });
     expect(loadGroupOfflineWordLimit('group-2')).toEqual({});
+
+    saveGroupOfflineWordLimit('group-1', { maxChars: 5000 });
+    expect(loadGroupOfflineWordLimit('group-1')).toEqual({ maxChars: 5000 });
 
     saveGroupOfflineWordLimit('group-1', {});
     expect(loadGroupOfflineWordLimit('group-1')).toEqual({});
@@ -195,6 +198,35 @@ describe('group offline mode', () => {
     expect(prompt).toContain('See you at 7.');
     expect(prompt).toContain('I will bring snacks.');
     expect(prompt).toContain('Meet at the tea house.');
+    expect(body.max_tokens).toBe(2400);
+  });
+
+  it('continues group offline openings when the model response is cut by length', async () => {
+    const queue = [
+      { content: '窗边的桌子刚拼好，几个人的影子落在杯沿上，Mia 正要抬手', finish_reason: 'length' },
+      { content: '招呼 Me 过去，Noah 已经把空椅子往外拉了一点。', finish_reason: 'stop' },
+    ];
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const next = queue.shift();
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: next?.content || '' }, finish_reason: next?.finish_reason || 'stop' }] }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateGroupOfflineOpening(
+      group,
+      members,
+      userProfile,
+      api,
+      DEFAULT_GROUP_OFFLINE_POV,
+      'Meet at the tea house.',
+    );
+
+    expect(result).toBe('窗边的桌子刚拼好，几个人的影子落在杯沿上，Mia 正要抬手招呼 Me 过去，Noah 已经把空椅子往外拉了一点。');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps same-name group members separate with hidden ids in prompts', async () => {
@@ -245,5 +277,6 @@ describe('group offline mode', () => {
     expect(prompt).toContain('I wave at the table.');
     expect(prompt).toContain('续写接下来的一小段群体现场互动（不超过120字）');
     expect(prompt).toContain('字数上限是 120 字');
+    expect(body.max_tokens).toBe(1320);
   });
 });

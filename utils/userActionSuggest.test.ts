@@ -90,6 +90,42 @@ describe('suggestUserActions —— 保底至少 4 条（不足自动补轮）',
         expect(new Set(out).size).toBe(out.length);
     });
 
+    it('发给模型的行动建议请求带完整角色设定、用户设定和世界书', async () => {
+        mockReplies(['a', 'b', 'c', 'd']);
+        const fullChar: any = {
+            ...char,
+            description: '剪影集列表备注不能丢',
+            systemPrompt: '完整核心人设不能丢',
+            worldview: '世界观长文不能丢',
+            lifeProfile: { content: '生活侧写正文不能丢' },
+            mountedWorldbooks: [{
+                id: 'wb-1',
+                title: '剪报夹条目',
+                category: '世界书分组',
+                content: '剪报夹完整正文不能丢',
+                enabled: true,
+            }],
+        };
+        const fullUserProfile: any = {
+            ...userProfile,
+            bio: '用户完整自述不能丢',
+            patSuffix: '拍一拍后缀不能丢',
+        };
+
+        await suggestUserActions({ api, char: fullChar, userProfile: fullUserProfile, recent });
+
+        const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
+        const system = body.messages.find((m: any) => m.role === 'system')?.content || '';
+        expect(system).toContain('full-character-user-settings');
+        expect(system).toContain('完整核心人设不能丢');
+        expect(system).toContain('剪影集列表备注不能丢');
+        expect(system).toContain('世界观长文不能丢');
+        expect(system).toContain('生活侧写正文不能丢');
+        expect(system).toContain('剪报夹完整正文不能丢');
+        expect(system).toContain('用户完整自述不能丢');
+        expect(system).toContain('拍一拍后缀不能丢');
+    });
+
     it('第一轮就给满 6 条 → 不再补轮（只调用一次 fetch）', async () => {
         mockReplies(['a', 'b', 'c', 'd', 'e', 'f']);
         const out = await suggestUserActions({ api, char, userProfile, recent });

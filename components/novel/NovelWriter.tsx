@@ -10,6 +10,7 @@ import { useOS } from '../../context/OSContext';
 import { extractContent } from '../../utils/safeApi';
 import { callChatCompletion } from '../../utils/llmClient';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { buildFullActiveUserSetting } from '../../utils/characterPromptProfile';
 import {
     PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, GRID_BG, LINES_BG,
     Tape, Stitch, Cut, Kicker, BackSticker, IconStamp, InkButton, Chip, TypingDots,
@@ -205,7 +206,8 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
                 storyContext += `\n[${authorName}]: ${s.content}\n`;
             });
 
-            const prompt = buildPrompt(char, userProfile, activeBook, userPrompt, storyContext, genOptions, contextSegments, characters);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+            const prompt = buildPrompt(char, userProfile, activeBook, userPrompt, storyContext, genOptions, contextSegments, characters, fullUserSetting);
             const temperature = 0.85;
 
             const data = await callChatCompletion(apiConfig, {

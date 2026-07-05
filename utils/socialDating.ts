@@ -3,6 +3,7 @@ import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { formatCharacterWithId, getCharacterModelId, resolveCharacterByModelId } from './characterIdentity';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 /**
  * 见闻簿·交友（发现身边的人）—— 本地 AI 实时生成一批「附近的人」交友卡片，
@@ -76,7 +77,7 @@ export function buildDatingPrompt(chars: CharBrief[], userProfile: UserProfile, 
     const roster = chars.slice(0, 5).map(c => {
         const id = getCharacterModelId(c);
         const idPart = id ? ` charId="${id}"` : '';
-        return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').replace(/\s+/g, ' ').slice(0, 120) || '（无设定）'}`;
+        return `- ${formatCharacterWithId(c)}${idPart}：${c.persona || '（无设定）'}`;
     }).join('\n');
     const intents = DATING_INTENTS.map(i => `${i.key}(${i.label})`).join('、');
     return `你是一个交友/约会 App（参考探探、Soul、陌陌）的「发现·附近的人」推荐引擎，为用户「${userProfile.name}」生成一批**逼真、各式各样、像真人**的附近用户交友卡片。
@@ -284,7 +285,7 @@ export async function generateDatingBatch(
         id: c.id,
         modelId: getCharacterModelId(c),
         name: c.name,
-        persona: c.systemPrompt || '',
+        persona: buildFullCharacterSetting(c, { includeMemos: true, fallback: '' }),
         avatar: c.convoSettings?.charAvatarOverride || c.avatar,
     }));
     const prompt = buildDatingPrompt(briefs, userProfile, count);

@@ -4,6 +4,7 @@ import { extractContent } from './safeApi';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { sanitizeLifeText } from './autonomousLife';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 /**
  * 回顾摘要（日回顾 / 周回顾 / 月回顾）。
@@ -179,7 +180,8 @@ export const generateTabloid = async (
 
     const persona = [
         `整理者：${char.name}`,
-        char.systemPrompt ? `角色设定（决定回顾的语气）：${String(char.systemPrompt).slice(0, 800)}` : '',
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        await buildFullActiveUserSetting(user, { fallback: `用户名：${user.name || '用户'}` }),
     ].filter(Boolean).join('\n');
 
     const prompt = `### 任务

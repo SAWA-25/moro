@@ -1307,7 +1307,7 @@ const Chat: React.FC = () => {
                     .slice(-24)
                     .map(m => formatMessageWithTime(m, target.name, userProfile.name || '我', formatTime))
                     .join('\n');
-                const prompt = `${ContextBuilder.buildCoreContext(target, userProfile, true)}
+                const prompt = `${await ContextBuilder.buildFullCoreContext(target, userProfile, true)}
 
 ${parallelReplyPromptBody({
                     userName: userProfile.name || '用户',
@@ -3106,7 +3106,7 @@ ${parallelReplyPromptBody({
         const fallback = { accept: true, reply: `我愿意……${userProfile.name || '你'}，我愿意和你在一起。` };
         if (!char || !apiConfig.baseUrl || !apiConfig.model) return fallback;
         try {
-            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-24).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
             const prompt = `${context}
@@ -3774,7 +3774,7 @@ ${recent || '（你们相处了很久）'}
         setPrivateCallMode(mode);
         setPrivateCallPhase('dialing');
         try {
-            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
             const prompt = `${context}
@@ -4078,7 +4078,7 @@ ${privateCallDecisionPromptBody({
         try {
             const lockApi = resolveAuxApi(auxApiConfig, apiConfig);
             if (lockApi.baseUrl && lockApi.model) {
-                const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+                const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
                 const recent = messages.slice(-30).map(m => formatMessageWithTime(m, char.name, userName, formatTime)).join('\n');
                 const prompt = `${context}\n\n${phoneLockAttemptPromptBody({
                     userName,
@@ -4206,7 +4206,7 @@ ${privateCallDecisionPromptBody({
         try {
             const chatApi = resolveAuxApi(auxApiConfig, apiConfig);
             if (chatApi.baseUrl && chatApi.model) {
-                const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+                const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
                 const attemptText = phoneLockAttempt
                     ? `你刚才提交的口令：${phoneLockAttempt.passcodeInput || '（没输）'}\n你刚才写的答案：${phoneLockAttempt.answers.map((a, i) => `${i + 1}. ${a || '（空）'}`).join(' / ')}\n现在状态：${phoneLockAttempt.unlocked ? `已自动解锁（${phoneLockResultLabel(phoneLockAttempt.unlockReason)}）` : '仍被黑屏锁住。'}`
                     : '你还没提交口令和答案。';
@@ -4662,7 +4662,7 @@ ${privateCallDecisionPromptBody({
                 const { injectMemoryPalace } = await import('../utils/memoryPalace/pipeline');
                 await injectMemoryPalace(char);
             } catch { /* 回忆标本馆未启用时跳过 */ }
-            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
             const currentAffection = typeof char.affection === 'number' ? Math.round(char.affection) : null;
@@ -7425,7 +7425,7 @@ ${privateCallDecisionPromptBody({
                      ? '共享进行中'
                      : '已结束';
                  return (
-                     <div className="absolute inset-0 z-[430] flex items-center justify-center bg-black/45 p-5 animate-fade-in" onClick={() => setShowUserScreenWatchPanel(false)}>
+                     <div className="absolute inset-0 z-[430] flex items-center justify-center bg-[#111217] p-5 animate-fade-in" onClick={() => setShowUserScreenWatchPanel(false)}>
                          <div className="w-[min(92vw,360px)] overflow-hidden rounded-3xl bg-white text-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
                              <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
                                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">

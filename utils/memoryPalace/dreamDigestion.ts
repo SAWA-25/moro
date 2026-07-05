@@ -112,7 +112,7 @@ export async function runLocalDreamDigestion(
     const systemPrompt = `你是 ${charName}。你正在做一次本地的梦境消化，不是对话回复。
 
 角色设定参考：
-${charPersona.slice(0, 1200)}
+${charPersona}
 
 你会看到一些已经发生过的记忆。请像睡前做梦、醒来后写下梦的残片一样，把它们沉淀成：
 - feel：第一人称的感受层，不是事实复述，不参与普通事实召回。

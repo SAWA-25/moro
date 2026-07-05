@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useOS } from '../../context/OSContext';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { llmComplete } from '../../utils/llmComplete';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../../utils/characterPromptProfile';
 import {
     StoryState, StoryScene, StoryChar, StorySeed, StoryEnding, EndingDef,
     initStory, buildScenePrompt, parseScene, fallbackScene, applyChoice, applyCustomAction, visitCharacter,
@@ -179,16 +180,17 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const seedOf = (c: any): StorySeed => ({
         charId: c.id, name: c.convoSettings?.remarkName?.trim() || c.name,
         avatar: c.convoSettings?.charAvatarOverride || c.avatar, affection: c.affection,
-        persona: c.systemPrompt as string | undefined,
+        persona: buildFullCharacterSetting(c, { includeMemos: true }),
         gender: charGenders[c.id] || 'unknown',
     });
 
-    const start = () => {
+    const start = async () => {
         const chosen = characters.filter(c => picked.has(c.id)).slice(0, MAX_CAST);
         if (chosen.length === 0) { addToast('总得先择一位入宫，故事才好开篇', 'error'); return; }
+        const playerPersona = await buildFullActiveUserSetting(userProfile, { fallback: userProfile?.bio || '' });
         const st = initStory(
             chosen.map(seedOf),
-            { name: pName.trim() || '君', title: pTitle.trim() || '君上', gender: pGender, persona: userProfile?.bio },
+            { name: pName.trim() || '君', title: pTitle.trim() || '君上', gender: pGender, persona: playerPersona },
             carryRef.current,
             { style: pStyle, heat: pHeat, pace: pPace, premise: premise.trim() || undefined },
         );

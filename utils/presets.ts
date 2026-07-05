@@ -13,9 +13,9 @@
  *
  * marker 映射（ST 的占位符在 Moro 里如何落地）：
  *  - chatHistory                       → 聊天历史消息
- *  - charDescription 等核心 marker      → Moro 的角色核心上下文（ContextBuilder.buildCoreContext
- *    把人设/世界书/记忆/印象全部拼在一个 system 块里），注入在 prompt_order 中
- *    第一个启用的核心 marker 的位置；其余核心 marker 只作排序占位，不重复注入。
+ *  - worldInfoBefore / worldInfoAfter  → 剪报夹世界书运行时分段
+ *  - personaDescription / dialogueExamples → 剪影集用户身份 / 角色台词样张
+ *  - charDescription / charPersonality / scenario → 剪影集角色核心上下文
  */
 
 import type {
@@ -50,18 +50,25 @@ export const INJECTION_POSITION = { RELATIVE: 0, ABSOLUTE: 1 } as const;
 export const ORDER_CHAR_ID_SINGLE = 100000;
 export const ORDER_CHAR_ID_GROUP = 100001;
 
-/**
- * 这些 marker 在 ST 里各自填充角色卡的一部分；Moro 的核心上下文（人设 + 世界书 +
- * 用户档案 + 记忆）是一个整体 system 块，所以它们共同映射到同一个注入点。
- */
-export const CORE_CONTEXT_MARKERS = new Set([
-    'worldInfoBefore',
+/** 真正承接剪影集角色核心上下文的 ST 角色 marker。 */
+export const CHAR_CORE_MARKERS = new Set([
     'charDescription',
     'charPersonality',
     'scenario',
+]);
+
+/** 由调用方传入真实内容、按各自 marker 位置注入的联动 marker。 */
+export const LINKED_CONTENT_MARKERS = new Set([
+    'worldInfoBefore',
     'personaDescription',
     'worldInfoAfter',
     'dialogueExamples',
+]);
+
+/** Moro 认识的系统 marker 总集；UI 仍可用它标出不可当普通提示词编辑的条目。 */
+export const CORE_CONTEXT_MARKERS = new Set([
+    ...CHAR_CORE_MARKERS,
+    ...LINKED_CONTENT_MARKERS,
 ]);
 
 export const CHAT_HISTORY_MARKER = 'chatHistory';
@@ -102,12 +109,12 @@ export const PRESET_SCOPE_META: Record<PresetScopeKey, { title: string; note: st
 /** 已知 marker 的展示名 + 在 Moro 里的落点说明（UI 用） */
 export const MARKER_HINTS: Record<string, { name: string; hint: string }> = {
     chatHistory: { name: 'Chat History', hint: '聊天历史消息在此插入' },
-    charDescription: { name: 'Char Description', hint: 'Moro 角色核心上下文（人设+世界书+记忆+印象）的注入点' },
-    charPersonality: { name: 'Char Personality', hint: '已并入角色核心上下文，此处仅作排序占位' },
-    scenario: { name: 'Scenario', hint: '已并入角色核心上下文，此处仅作排序占位' },
+    charDescription: { name: 'Char Description', hint: '剪影集「登场人物」的角色核心上下文：核心设定、身份锚、内在认知、记忆与会话状态在此承接' },
+    charPersonality: { name: 'Char Personality', hint: '剪影集角色人格落点；Moro 没有独立 personality 字段，酒馆 personality 已合入核心设定，并由此承接' },
+    scenario: { name: 'Scenario', hint: '剪影集「世界观补充」随角色核心上下文在此承接；也可作为角色核心 marker 的备用落点' },
     personaDescription: { name: 'Persona Description', hint: '用户人设块（扮相手账里戴着那页的署名+自述；没建扮相时为档案 App 的内容）在此注入' },
-    worldInfoBefore: { name: 'World Info (before)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
-    worldInfoAfter: { name: 'World Info (after)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
+    worldInfoBefore: { name: 'World Info (before)', hint: '剪报夹世界书 before_char 条目在此注入，受整书/条目开关、挂载、关键词、概率与预算影响' },
+    worldInfoAfter: { name: 'World Info (after)', hint: '剪报夹世界书 after_char 条目在此注入，受整书/条目开关、挂载、关键词、概率与预算影响' },
     dialogueExamples: { name: 'Chat Examples', hint: '角色的对话示例（登场人物编辑页「台词样张」栏 / 角色卡 mes_example）在此注入' },
 };
 
@@ -602,11 +609,13 @@ export interface ApplyPresetOptions {
     /** 套完预设骨架后追加的高优先级本轮任务 / JSON 守卫。 */
     tailMessages?: Array<{ role: string; content: any }>;
     /**
-     * marker 的真实内容（与世界书 / 神经链接人设 / 用户档案联动时由调用方提供）：
+     * 系统 marker 的真实内容（与剪报夹 / 剪影集联动时由调用方提供）：
      * 例如 { worldInfoBefore: '...', worldInfoAfter: '...', personaDescription: '...' }。
      * 提供了内容的 marker 会在自己的 order 位置作为独立 system 消息注入（可被开关
      * 关掉，ST 语义）；marker 压根不在 order 里时内容回折进核心上下文块，保证不丢。
-     * 不提供时（旧调用方 / 测试）这些 marker 维持「并入核心上下文」的占位行为。
+     * 不提供 markerContents 时（旧调用方 / 测试）这些 marker 维持「并入核心上下文」
+     * 的占位行为；提供后 world/persona/example 只注入自己的真实内容，不再抢
+     * charDescription/charPersonality/scenario 的角色核心落点。
      */
     markerContents?: Partial<Record<string, string>>;
 }
@@ -623,8 +632,9 @@ export function appendPresetTailMessages(
  * 把预设套到 [system(核心上下文), ...history] 形态的消息数组上，返回新数组。
  *
  * - 相对提示词按 prompt_order 顺序展开成独立消息（带各自 role）
- * - markerContents 提供了内容的 marker（worldInfo* / personaDescription）在各自
- *   位置注入；其余核心 marker 中第一个启用的位置注入 Moro 核心上下文（原 messages[0]）
+ * - markerContents 提供了内容的 marker（worldInfo* / personaDescription /
+ *   dialogueExamples）在各自位置注入；charDescription / charPersonality / scenario
+ *   中第一个启用的位置注入 Moro 角色核心上下文（原 messages[0]）
  * - chatHistory marker 处插入历史消息；order 里没有该 marker 时兜底追加到末尾
  *   （被显式关掉则尊重 ST 语义不发历史）
  * - 绝对提示词注入聊天历史段（见 injectAbsolutePrompts）
@@ -644,6 +654,7 @@ export function applyPresetToMessages(
 
     // marker 不在 order 里（残缺/旧版预设）时，其真实内容回折进核心块，保证设定不丢：
     // worldInfoBefore 折到核心块前面，其余折到后面 —— 接近非预设路径的原始排布。
+    const hasMarkerContents = options.markerContents !== undefined;
     const markerContents = options.markerContents ?? {};
     const orderIds = new Set(order.map(e => e.identifier));
     let corePrefix = '';
@@ -679,7 +690,7 @@ export function applyPresetToMessages(
                 }
                 continue;
             }
-            // 有真实内容的 marker（世界书块 / 用户档案块）：在自己的位置注入，受开关控制
+            // 有真实内容的 marker（剪报夹 / 用户身份 / 台词样张等）：在自己的位置注入，受开关控制
             const explicit = markerContents[prompt.identifier];
             if (explicit !== undefined) {
                 if (enabledForRun && explicit.trim()) {
@@ -687,7 +698,13 @@ export function applyPresetToMessages(
                 }
                 continue;
             }
-            if (CORE_CONTEXT_MARKERS.has(prompt.identifier)) {
+            if (hasMarkerContents && LINKED_CONTENT_MARKERS.has(prompt.identifier)) {
+                continue;
+            }
+            const carriesCoreContext = hasMarkerContents
+                ? CHAR_CORE_MARKERS.has(prompt.identifier)
+                : CORE_CONTEXT_MARKERS.has(prompt.identifier);
+            if (carriesCoreContext) {
                 if (enabledForRun && !coreInjected) {
                     coreInjected = true;
                     result.push(coreSystem);
@@ -801,7 +818,7 @@ export interface PresetDiagnosticIssue {
     scope?: PresetScopeKey;
 }
 
-const BASIC_CORE_MARKERS = ['worldInfoBefore', 'charDescription', 'personaDescription', 'dialogueExamples', CHAT_HISTORY_MARKER];
+const BASIC_CORE_MARKERS = ['charDescription', 'charPersonality', 'scenario'];
 
 function ensurePromptDefinition(preset: TavernPreset, identifier: string): void {
     if (preset.prompts.some(p => p.identifier === identifier)) return;
@@ -886,13 +903,13 @@ export function diagnosePreset(preset: TavernPreset, scope?: PresetScopeKey): Pr
         });
     }
 
-    const enabledCore = order.some(e => e.enabled && CORE_CONTEXT_MARKERS.has(e.identifier));
+    const enabledCore = order.some(e => e.enabled && CHAR_CORE_MARKERS.has(e.identifier));
     if (!enabledCore) {
         issues.push({
             code: 'missing-core-marker',
             severity: 'error',
             title: '核心上下文没有启用落点',
-            detail: '角色核心、人设、世界书和记忆需要至少一个核心 marker 承接。',
+            detail: '剪影集角色核心上下文需要 charDescription、charPersonality 或 scenario 至少一个启用；worldInfo/persona/dialogue 只承接各自真实内容。',
             fixable: true,
             identifier: 'charDescription',
             scope,
@@ -972,9 +989,9 @@ export function applySafePresetFixes(preset: TavernPreset, scope?: PresetScopeKe
         }
     }
 
-    if (!order.some(e => e.enabled && CORE_CONTEXT_MARKERS.has(e.identifier))) {
+    if (!order.some(e => e.enabled && CHAR_CORE_MARKERS.has(e.identifier))) {
         for (const id of BASIC_CORE_MARKERS) ensurePromptDefinition(next, id);
-        const existing = order.find(e => CORE_CONTEXT_MARKERS.has(e.identifier));
+        const existing = order.find(e => CHAR_CORE_MARKERS.has(e.identifier));
         if (existing) {
             existing.enabled = true;
             fixed.push(`重新启用核心 marker：${existing.identifier}`);

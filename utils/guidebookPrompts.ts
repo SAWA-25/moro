@@ -72,9 +72,10 @@ export function buildOpeningPrompt(
     mode: 'manual' | 'auto',
     recentMessages?: string,
     pastInsights?: string[],
-    rules?: GuidebookRules
+    rules?: GuidebookRules,
+    fullUserSetting?: string,
 ): string {
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
     const rulesBlock = buildRulesBlock(rules);
 
@@ -151,9 +152,10 @@ export function buildRoundPrompt(
     worldContext?: string,
     directionHint?: string,
     roundScenario?: string,
-    rules?: GuidebookRules
+    rules?: GuidebookRules,
+    fullUserSetting?: string,
 ): string {
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
     const rulesBlock = buildRulesBlock(rules);
 
@@ -260,9 +262,10 @@ export function buildAutoRoundPrompt(
     recentMessages?: string,
     worldContext?: string,
     directionHint?: string,
-    rules?: GuidebookRules
+    rules?: GuidebookRules,
+    fullUserSetting?: string,
 ): string {
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
     const rulesBlock = buildRulesBlock(rules);
 
@@ -342,9 +345,10 @@ export function buildOptionAssistPrompt(
     recentMessages?: string,
     worldContext?: string,
     directionHint?: string,
-    rules?: GuidebookRules
+    rules?: GuidebookRules,
+    fullUserSetting?: string,
 ): string {
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
     const rulesBlock = buildRulesBlock(rules);
 
@@ -411,9 +415,10 @@ export function buildEndCardPrompt(
     finalAffinity: number,
     rounds: GuidebookRound[],
     recentMessages?: string,
-    rules?: GuidebookRules
+    rules?: GuidebookRules,
+    fullUserSetting?: string,
 ): string {
-    const coreContext = ContextBuilder.buildCoreContext(char, user, true);
+    const coreContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
     const chatBlock = buildRecentChatBlock(recentMessages)?.replace('{user}', user.name);
     const rulesBlock = buildRulesBlock(rules);
 

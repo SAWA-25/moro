@@ -156,7 +156,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         setLoadingTraj(true);
         setError('');
         try {
-            let t = await loadOrGenerateTrajectory(char, userName, auxApi);
+            let t = await loadOrGenerateTrajectory(char, userProfile, auxApi);
             t = await refreshAfterNodes(t, userName, char.name);
             setTrajectory(t);
             const before = t.nodes.find(n => n.era === 'before');
@@ -250,7 +250,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
             const finalOptions = normalizeReflectionOptions({ ...options, userSeed: seed });
             const scene = await generateReflection(
                 char,
-                userName,
+                userProfile,
                 nodes[0],
                 nodes[1],
                 trajectory?.firstMetTs || Math.min(nodes[0].ts, nodes[1].ts),
@@ -283,7 +283,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         if (!currentSession || !selectedChar) return;
         setReplying(true);
         try {
-            const next = await continueReflection(selectedChar, userName, currentSession, replyInput, auxApi);
+            const next = await continueReflection(selectedChar, userProfile, currentSession, replyInput, auxApi);
             await DB.saveTheaterReflectionSession(next);
             setCurrentSession(next);
             setReplyInput('');

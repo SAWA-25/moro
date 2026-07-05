@@ -10,6 +10,7 @@ import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import type { MusicLyricSource } from './musicLyricContext';
+import { buildFullActiveUserSetting } from './characterPromptProfile';
 
 export type ListenAction =
     | { kind: 'none' }
@@ -45,6 +46,7 @@ export interface DiscussInput {
     history: ListenMsg[];
     userMsg?: string;
     trigger: 'enter' | 'song_changed' | 'take_over' | 'user';
+    fullUserSetting?: string;
 }
 
 const TRIGGER_TASK: Record<DiscussInput['trigger'], string> = {
@@ -115,7 +117,7 @@ const formatNowPlaying = (song: ListenSongContext | null, playing: boolean, lega
 
 export function buildListenTogetherPrompt(input: DiscussInput): string {
     const { char, user, song, playing, lyricSnippet, history, userMsg, trigger } = input;
-    const context = ContextBuilder.buildCoreContext(char, user, true);
+    const context = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting: input.fullUserSetting });
     const musicTaste = char.musicProfile
         ? `\n你的音乐口味：${(char.musicProfile.genreTags || []).join(' / ')}；常听 ${(char.musicProfile.signatureArtists || []).map(a => a.name).join('、')}。`
         : '';
@@ -147,7 +149,10 @@ export async function discussMusic(input: DiscussInput): Promise<{ reply: string
     const fallback = { reply: song ? `这首《${song.name}》还挺合现在的氛围的。` : '想听点什么？我来放。', action: { kind: 'none' } as ListenAction };
     if (!api.baseUrl || !api.apiKey || !api.model) return fallback;
     try {
-        const prompt = buildListenTogetherPrompt(input);
+        const prompt = buildListenTogetherPrompt({
+            ...input,
+            fullUserSetting: input.fullUserSetting || await buildFullActiveUserSetting(input.user, { fallback: `用户名：${input.user.name || '用户'}` }),
+        });
         const data = await callChatCompletion(api, {
             model: api.model,
             messages: [{ role: 'user', content: prompt }],

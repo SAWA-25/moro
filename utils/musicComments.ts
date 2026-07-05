@@ -151,7 +151,7 @@ export async function generateCharComment(input: CharCommentInput): Promise<stri
   const fallback = `《${song.name}》——单曲循环到现在，还是舍不得切。`;
   if (!api.baseUrl || !api.apiKey || !api.model) return fallback;
   try {
-    const context = ContextBuilder.buildCoreContext(char, user, true);
+    const context = await ContextBuilder.buildFullCoreContext(char, user, true);
     const prevLine = (previous && previous.length)
       ? `\n（你之前在这首歌下写过：${previous.slice(-2).map(s => `「${s}」`).join('、')}，这次换个角度，别重复。）`
       : '';
@@ -194,7 +194,7 @@ export async function generateCharReply(input: CharReplyInput): Promise<string> 
   const fallback = '嗯，我也是这么觉得的。';
   if (!api.baseUrl || !api.apiKey || !api.model) return fallback;
   try {
-    const context = ContextBuilder.buildCoreContext(char, user, true);
+    const context = await ContextBuilder.buildFullCoreContext(char, user, true);
     const prompt = `${context}${musicTasteLine(char)}
 
 ### [评论区回复]

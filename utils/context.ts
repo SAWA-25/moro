@@ -10,6 +10,37 @@ import { readTwitterContextSummary } from './twitterFeed';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { PROMPT_PRIVACY_RULE, wrapHiddenPromptBlock } from './promptPrivacy';
 import { isMemoryFeatureEnabled } from './memoryPalace/cognitiveFlow';
+import { buildFullActiveUserSetting, buildFullCharacterSetting, buildFullUserSetting as buildPromptUserSetting } from './characterPromptProfile';
+
+type CoreContextOptions = {
+    skipUserProfile?: boolean;
+    skipWorldview?: boolean;
+    skipWorldbookIds?: Set<string>;
+    headerOverride?: string;
+    /**
+     * 主聊天链路置 true：@Depth 世界书条目不内联进 system prompt，
+     * 改由 buildChatRequestPayload 按深度插成独立消息。
+     * 其他单 prompt 调用方保持默认（内联降级到扩展设定集块）。
+     */
+    omitDepthWorldbooks?: boolean;
+    /**
+     * 预设（SillyTavern 式）启用时置 true：before/after 世界书块不内联，
+     * 由 buildChatRequestPayload 作为 worldInfoBefore / worldInfoAfter
+     * marker 内容单独注入到预设定义的位置。@Depth 条目不受影响。
+     */
+    omitWorldbooks?: boolean;
+    /**
+     * 预设启用时置 true：对话示例（char.mesExample）不内联，
+     * 由 buildChatRequestPayload 作为 dialogueExamples marker 内容
+     * 注入到预设定义的位置（受 marker 开关控制）。
+     */
+    omitMesExample?: boolean;
+    /**
+     * 调用方已经异步读取到的完整用户设定（当前扮相 + 绑定世界书 + 页外状态 +
+     * 社交关系）。buildCoreContext 本身保持同步，不能在这里读 IndexedDB。
+     */
+    fullUserSetting?: string;
+};
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -149,32 +180,19 @@ export const ContextBuilder = {
         user: UserProfile,
         includeDetailedMemories: boolean = true,
         memoryPalaceContext?: string,
-        groupOptions?: {
-            skipUserProfile?: boolean;
-            skipWorldview?: boolean;
-            skipWorldbookIds?: Set<string>;
-            headerOverride?: string;
-            /**
-             * 主聊天链路置 true：@Depth 世界书条目不内联进 system prompt，
-             * 改由 buildChatRequestPayload 按深度插成独立消息。
-             * 其他单 prompt 调用方保持默认（内联降级到扩展设定集块）。
-             */
-            omitDepthWorldbooks?: boolean;
-            /**
-             * 预设（SillyTavern 式）启用时置 true：before/after 世界书块不内联，
-             * 由 buildChatRequestPayload 作为 worldInfoBefore / worldInfoAfter
-             * marker 内容单独注入到预设定义的位置。@Depth 条目不受影响。
-             */
-            omitWorldbooks?: boolean;
-            /**
-             * 预设启用时置 true：对话示例（char.mesExample）不内联，
-             * 由 buildChatRequestPayload 作为 dialogueExamples marker 内容
-             * 注入到预设定义的位置（受 marker 开关控制）。
-             */
-            omitMesExample?: boolean;
-        },
+        groupOptions?: CoreContextOptions,
     ): string => {
         let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n${PROMPT_PRIVACY_RULE}\n\n`;
+        const userSetting = groupOptions?.fullUserSetting?.trim()
+            || buildPromptUserSetting(user, { fallback: `用户名：${user?.name || '用户'}` });
+
+        context += wrapHiddenPromptBlock(
+            'full-character-user-settings',
+            [
+                buildFullCharacterSetting(char, { includeMemos: true }),
+                groupOptions?.skipUserProfile ? '' : userSetting,
+            ].filter(Boolean).join('\n\n'),
+        );
 
         // 世界书分段（局部 = 挂载生效 / 全局 = 注册表内全局条目，开关与位置见 worldbookRuntime）
         // 群聊场景（传了 skipWorldbookIds）下全局条目由 buildGroupSharedScene 统一渲染一次，
@@ -259,7 +277,7 @@ export const ContextBuilder = {
         if (!groupOptions?.skipUserProfile) {
             context += wrapHiddenPromptBlock(
                 'user-profile',
-                `### 互动对象 (User)\n- 名字: ${user.name}\n- 设定/备注: ${user.bio || '无'}`,
+                `### 互动对象 (User)\n${userSetting}`,
             );
         }
 
@@ -451,6 +469,21 @@ export const ContextBuilder = {
         return context;
     },
 
+    buildFullCoreContext: async (
+        char: CharacterProfile,
+        user: UserProfile,
+        includeDetailedMemories: boolean = true,
+        memoryPalaceContext?: string,
+        groupOptions?: CoreContextOptions,
+    ): Promise<string> => {
+        const fullUserSetting = groupOptions?.fullUserSetting?.trim()
+            || await buildFullActiveUserSetting(user, { fallback: `用户名：${user?.name || '用户'}` });
+        return ContextBuilder.buildCoreContext(char, user, includeDetailedMemories, memoryPalaceContext, {
+            ...groupOptions,
+            fullUserSetting,
+        });
+    },
+
     /**
      * 群聊场景共享块。
      *
@@ -471,6 +504,10 @@ export const ContextBuilder = {
     buildGroupSharedScene: (
         members: CharacterProfile[],
         user: UserProfile,
+        options?: {
+            /** 已异步解析出的完整用户设定；用于群共享块避免退回 userProfile.bio。 */
+            fullUserSetting?: string;
+        },
     ): {
         text: string;
         sharedWorldbookIds: Set<string>;
@@ -516,8 +553,7 @@ export const ContextBuilder = {
         text += `（以下是群里所有角色都共同感知到的"舞台"——用户是谁、共有的世界设定。每位角色的个人卡、印象、记忆等仍在各自的"角色档案"块中保持完整。）\n\n`;
 
         text += `### 互动对象 (User)\n`;
-        text += `- 名字: ${user.name}\n`;
-        text += `- 设定/备注: ${user.bio || '无'}\n\n`;
+        text += `${options?.fullUserSetting?.trim() || buildPromptUserSetting(user, { heading: '互动对象完整用户设定', fallback: `用户名：${user.name || '用户'}` })}\n\n`;
 
         if (worldviewIsShared) {
             text += `### 共有世界观 (Shared World Settings)\n${members[0].worldview!.trim()}\n\n`;

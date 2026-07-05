@@ -18,6 +18,8 @@ import { buildOpenAiEndpoint } from './openAiCompat';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 import { getCharacterModelId } from './characterIdentity';
+import { buildFullActiveUserSetting } from './characterPromptProfile';
+import { buildActiveMsg2ScheduledLlmPayload } from './proactivePresetPayload';
 
 const ACTIVE_MSG_VAPID_PUBLIC_KEY = import.meta.env.VITE_AMSG_VAPID_PUBLIC_KEY || '';
 const ACTIVE_MSG_API_BASE_OVERRIDE = (import.meta.env.VITE_AMSG_API_BASE_URL || '').trim();
@@ -250,6 +252,7 @@ const buildCompletePrompt = async (
     .filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
     .slice(-20)
     .map(message => String(message.content));
+  const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
   const systemPrompt = await WorldbookRuntime.withContext({ scanMessages }, () => ChatPrompts.buildSystemPrompt(
       char,
       userProfile,
@@ -258,6 +261,13 @@ const buildCompletePrompt = async (
       categories,
       recentMessages,
       realtimeConfig,
+      undefined,
+      null,
+      false,
+      undefined,
+      false,
+      false,
+      fullUserSetting,
   ));
   const { apiMessages } = ChatPrompts.buildMessageHistory(
     recentMessages,
@@ -532,13 +542,15 @@ export const ActiveMsgClient = {
     } else {
       const activeApi = resolveApiConfig(char, config, apiConfig);
       const completePrompt = await buildCompletePrompt(char, config, userProfile, groups, realtimeConfig);
-      payload.completePrompt = completePrompt;
+      Object.assign(payload, await buildActiveMsg2ScheduledLlmPayload({
+        completePrompt,
+        charName: char.name,
+        userName: userProfile.name || '用户',
+        configMaxTokens: config.maxTokens,
+      }));
       payload.apiUrl = normalizeChatApiUrl(activeApi.baseUrl);
       payload.apiKey = activeApi.apiKey;
       payload.primaryModel = activeApi.model;
-      if (config.maxTokens && config.maxTokens > 0) {
-        payload.maxTokens = config.maxTokens;
-      }
     }
 
     const encrypted = await encryptPayload(client, payload);

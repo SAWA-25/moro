@@ -121,7 +121,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             await injectMemoryPalace(supervisor, undefined, task.title);
-            const baseContext = ContextBuilder.buildCoreContext(supervisor, userProfile);
+            const baseContext = await ContextBuilder.buildFullCoreContext(supervisor, userProfile);
 
             const userPrompt = `
 ### 场景：任务完成 (Task Completed)
@@ -201,7 +201,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const dayText = daysDiff > 0 ? `还有 ${daysDiff} 天` : (daysDiff === 0 ? '就是今天!' : `已经过去 ${Math.abs(daysDiff)} 天了`);
 
         await injectMemoryPalace(char, undefined, anni.title);
-        const baseContext = ContextBuilder.buildCoreContext(char, userProfile);
+        const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile);
 
         const userPrompt = `
 ### 场景：纪念日提醒

@@ -928,7 +928,7 @@ ${taskBlock}
             // Attempt 1: Full Character Context (The "Soul")
             // [MODIFIED]: Use centralized ContextBuilder with memory enabled
             await injectMemoryPalace(selectedChar, undefined, chapter.title);
-            let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+            let baseContext = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile, true);
 
             // Append Study Mode specific instructions to the core context
             baseContext += `
@@ -1007,7 +1007,7 @@ ${isLanguageCourse(course) && languageConfig ? professionalLanguageGuidance(lang
 
             // [MODIFIED]: Use Full Context for Q&A
             await injectMemoryPalace(selectedChar, undefined, question);
-            let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+            let baseContext = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile, true);
             baseContext += `
 ### [System: Study Mode Q&A]
 User is asking a question about the study material.
@@ -1339,7 +1339,7 @@ ${chunkText.substring(0, 10000)}
         }).join('\n\n');
 
         await injectMemoryPalace(selectedChar, undefined, quizSession.chapterTitle);
-        let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+        let baseContext = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile, true);
         const quizCourse = findCourseForQuiz(quizSession);
         const languageConfig = quizCourse?.languageConfig;
 
@@ -1450,7 +1450,7 @@ ${resultsText}
         setFollowUpInput('');
 
         await injectMemoryPalace(selectedChar, undefined, userQ);
-        let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+        let baseContext = await ContextBuilder.buildFullCoreContext(selectedChar, userProfile, true);
         const quizCourse = findCourseForQuiz(quizSession);
         const languageConfig = quizCourse?.languageConfig;
 

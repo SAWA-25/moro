@@ -47,6 +47,7 @@ import { buildUserScreenWatchContextLines } from './userScreenWatch';
 import { userScreenWatchContextBlock } from './laiwangPrompts';
 import { PROMPT_PRIVACY_RULE, wrapHiddenPromptBlock } from './promptPrivacy';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
+import { buildFullUserSetting } from './characterPromptProfile';
 
 export interface UserListeningContext {
     songName: string;
@@ -279,6 +280,13 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         userName: (effectiveUser?.name && effectiveUser.name.trim()) || '用户',
         personaDescription: personaDesc,
     };
+    const fullUserSetting = substituteMacros(
+        buildFullUserSetting(userProfile, {
+            persona: activePersona,
+            fallback: `用户名：${macroCtx.userName}`,
+        }),
+        macroCtx,
+    );
 
     // 关键词扫描上下文（ST 世界书绿灯条目移植）：喂入最近消息文本，
     // activation='keyword' 的条目在本次构建中按命中结果决定是否注入。
@@ -305,6 +313,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             musicCfg,
             /* omitDepthWorldbooks */ true,  // @Depth 世界书在第 10 步插成独立消息
             /* presetMarkerSplit */ !!activePreset,
+            fullUserSetting,
         );
     });
 
@@ -513,10 +522,10 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
     // 绝对提示词 @Depth 注入历史段。未启用时数组原样不动。注意要在双语
     // reminder 之前做，保证 reminder 始终钉在最末尾。
     // personaDescription marker 内容：嵌入提示词时带描述；@Depth / 不注入时只保留名字
-    // （描述分别已插进历史 / 按 ST 语义彻底不发）。
+    // 这里改为完整用户设定：当前扮相描述、绑定世界书、页外状态和社交关系必须完整进入预设。
     const personaBlock = wrapHiddenPromptBlock(
         'persona-description',
-        `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${(personaDescInPrompt && personaDesc) ? personaDesc : '无'}`,
+        fullUserSetting,
     );
     // 对话示例块（mes_example）：预设启用时核心上下文已拆出（omitMesExample），
     // 在 dialogueExamples marker 的位置注入，受 marker 开关控制（ST 语义）。

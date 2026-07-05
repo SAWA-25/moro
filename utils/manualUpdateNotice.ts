@@ -49,6 +49,16 @@ export const getPendingManualUpdateNotices = (
   return getManualUpdateNotices().filter(notice => !seen.has(notice.id));
 };
 
+export const getPendingLatestManualUpdateDateNotices = (
+  storage: StorageLike | null = browserStorage(),
+): ManualUpdateNotice[] => {
+  const notices = getManualUpdateNotices();
+  const latestDate = notices[0]?.date;
+  if (!latestDate) return [];
+  const seen = readSeenIds(storage);
+  return notices.filter(notice => notice.date === latestDate && !seen.has(notice.id));
+};
+
 export const getPendingManualUpdateNotice = (
   storage: StorageLike | null = browserStorage(),
 ): ManualUpdateNotice | null => getPendingManualUpdateNotices(storage)[0] || null;

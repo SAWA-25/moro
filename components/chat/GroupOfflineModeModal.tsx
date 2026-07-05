@@ -4,6 +4,7 @@ import type { CharacterProfile, GroupProfile, UserProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { CUTE_STACK, MONO_STACK, SERIF_STACK } from '../handbook/paper';
 import {
+    DEFAULT_OFFLINE_WORD_LIMIT,
     normalizeOfflineWordLimitValue,
     type OfflineCommitInfo,
     type OfflinePovPerson,
@@ -114,7 +115,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     const [customOpen, setCustomOpen] = useState(false);
     const [wordLimitText, setWordLimitText] = useState(() => {
         const saved = loadGroupOfflineWordLimit(group.id).maxChars;
-        return saved ? String(saved) : '';
+        return String(saved ?? DEFAULT_OFFLINE_WORD_LIMIT);
     });
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
@@ -127,7 +128,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
     };
 
     const updateWordLimitText = (value: string) => {
-        const nextText = value.replace(/[^\d]/g, '').slice(0, 4);
+        const nextText = value.replace(/[^\d]/g, '');
         setWordLimitText(nextText);
         const maxChars = normalizeOfflineWordLimitValue(nextText);
         saveGroupOfflineWordLimit(group.id, maxChars ? { maxChars } : {});
@@ -135,7 +136,9 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
 
     const normalizeWordLimitText = () => {
         const maxChars = normalizeOfflineWordLimitValue(wordLimitText);
-        setWordLimitText(maxChars ? String(maxChars) : '');
+        const normalized = maxChars ?? DEFAULT_OFFLINE_WORD_LIMIT;
+        setWordLimitText(String(normalized));
+        saveGroupOfflineWordLimit(group.id, { maxChars: normalized });
     };
 
     const persistEntries = (next: GroupOfflineEntry[]) => {
@@ -494,7 +497,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                 </div>
 
                 <div className="shrink-0 px-4 py-2 flex items-center gap-2 border-b" style={{ borderColor: 'rgba(210,204,199,0.72)' }}>
-                    <span className="text-[10px] font-bold tracking-wider shrink-0" style={{ ...MONO_STACK, color: '#918a8e' }}>字数</span>
+                    <span className="text-[10px] font-bold tracking-wider shrink-0" style={{ ...MONO_STACK, color: '#918a8e' }}>正文</span>
                     <input
                         value={wordLimitText}
                         onChange={e => updateWordLimitText(e.target.value)}
@@ -502,15 +505,15 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                         inputMode="numeric"
                         pattern="[0-9]*"
                         placeholder="默认"
-                        aria-label="群聊线下生成字数上限"
+                        aria-label="群聊线下生成可见正文字数上限"
                         className="w-[76px] px-2 py-1 rounded-[8px] text-[11px] font-bold outline-none"
                         style={{ background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(210,204,199,0.72)', color: modalInk, caretColor: modalAccent, ...MONO_STACK }}
                     />
                     <span className="text-[10.5px] shrink-0" style={{ color: '#918a8e' }}>字以内</span>
-                    {displayedWordLimit && (
+                    {displayedWordLimit && displayedWordLimit !== DEFAULT_OFFLINE_WORD_LIMIT && (
                         <button
                             type="button"
-                            onClick={() => updateWordLimitText('')}
+                            onClick={() => updateWordLimitText(String(DEFAULT_OFFLINE_WORD_LIMIT))}
                             className="w-6 h-6 rounded-full flex items-center justify-center active:scale-95 transition"
                             style={{ background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(210,204,199,0.72)', color: '#918a8e' }}
                             title="恢复默认字数"
@@ -520,7 +523,7 @@ const GroupOfflineModeModal: React.FC<GroupOfflineModeModalProps> = ({
                         </button>
                     )}
                     <span className="text-[10px] min-w-0 truncate" style={{ color: '#918a8e' }}>
-                        {displayedWordLimit ? `${displayedWordLimit} 字上限` : '开场和续写沿用默认长度'}
+                        {displayedWordLimit ? `正文 ${displayedWordLimit} 字上限` : `正文 ${DEFAULT_OFFLINE_WORD_LIMIT} 字默认`}
                     </span>
                 </div>
 

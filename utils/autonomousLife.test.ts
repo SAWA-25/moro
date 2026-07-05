@@ -90,6 +90,56 @@ describe('autonomous life v2', () => {
     expect(await DB.getLifeEvents('char-life-v2')).toHaveLength(0);
   });
 
+  it('builds life generation from the character full setting and life profile', async () => {
+    await DB.deleteDB();
+    const now = 1_788_000_000_000;
+    const char = mkChar({
+      description: '列表备注不应注入',
+      systemPrompt: '旅行画家，常在海边车站写生，慢热但观察细。',
+      worldview: '近未来海港城市，旧电车仍沿海运行。',
+      lifeProfile: { content: '日常会背着画夹出门，下午在旧书店或码头咖啡摊停留。', generatedAt: 1 },
+      selfInsights: ['越是心乱，越会去画光线落在玻璃上的形状。'],
+      socialProfile: { handle: '@sea_sketch', bio: '记录海风、电车和旧招牌。', region: '海港旧城区' },
+      memos: [
+        { id: 'm1', text: '傍晚前去取新买的群青颜料', createdAt: 1 },
+        { id: 'm2', text: '已经完成的旧待办', createdAt: 1, done: true },
+      ],
+    } as Partial<CharacterProfile>);
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        activity: '在码头咖啡摊边把群青颜料管拧开，指尖沾了一点冷色',
+        mood: '安静',
+        summary: '群青沾到手了',
+        eventKind: 'routine',
+      }) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({
+        activity: '在码头咖啡摊边把群青颜料管拧开，指尖沾了一点冷色',
+        mood: '安静',
+        summary: '群青沾到手了',
+        eventKind: 'routine',
+      }) } }] }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const event = await advanceLife(char, API, { now });
+
+    expect(event?.activity).toContain('群青颜料');
+    const requestInit = (fetchMock as any).mock.calls[0]?.[1] as RequestInit | undefined;
+    const req = JSON.parse(String(requestInit?.body || '{}'));
+    const userPrompt = req.messages?.find((m: any) => m.role === 'user')?.content || '';
+    expect(userPrompt).toContain('角色完整设定与生活线索');
+    expect(userPrompt).toContain('旅行画家');
+    expect(userPrompt).toContain('近未来海港城市');
+    expect(userPrompt).toContain('日常会背着画夹出门');
+    expect(userPrompt).toContain('越是心乱');
+    expect(userPrompt).toContain('@sea_sketch');
+    expect(userPrompt).toContain('海港旧城区');
+    expect(userPrompt).toContain('傍晚前去取新买的群青颜料');
+    expect(userPrompt).not.toContain('列表备注不应注入');
+    expect(userPrompt).not.toContain('已经完成的旧待办');
+  });
+
   it('scores low-share silence events below lively share events', () => {
     const quiet = mkEvent({ intensity: 30, shareWillingness: 10, proactiveAngle: 'silence', energy: 'low' });
     const lively = mkEvent({ intensity: 70, shareWillingness: 80, proactiveAngle: 'ask', energy: 'high' });

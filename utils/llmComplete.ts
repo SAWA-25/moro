@@ -27,10 +27,12 @@ export interface CompleteOptions extends PresetGenParams {
     signal?: AbortSignal;
     /** 回复因长度被截断（finish_reason='length'）时自动「接着写」的最大续写轮数。默认 0（不续写）。 */
     continueRounds?: number;
+    /** true = 调用方传入的 max_tokens / maxTokens 不被预设采样参数覆盖。 */
+    preserveMaxTokens?: boolean;
     /** API 后台流水标注。 */
     meta?: ApiCallMeta;
     /** 可选：按活字盘作用范围套预设；默认不套，保护 JSON/工具任务。 */
-    presetScope?: PresetScopeKey;
+    presetScope?: PresetScopeKey | false;
     /** 可选：给活字盘里的 {{char}} / {{user}} 等宏提供真实上下文。 */
     presetMacros?: PresetMacroCtx;
 }

@@ -3,6 +3,7 @@ import { extractContent } from './safeApi';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullUserSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 /**
  * 小红书 App 本地生成信息流。
@@ -262,14 +263,16 @@ export const buildFeedSystemPrompt = (
     chars: CharacterProfile[],
     userProfile: UserProfile,
     targetCharacterPosts = chars.length,
+    userSettingOverride?: string,
 ): string => {
     const charLines = chars.map((c, i) => {
-        const persona = (c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300);
+        const persona = buildFullCharacterSetting(c, { includeMemos: true, fallback: '（无设定）' });
         const handle = c.socialProfile?.handle ? `（账号名也可用 ${c.socialProfile.handle}）` : '';
         const id = getCharacterModelId(c);
         const idPart = id ? ` charId="${id}"` : '';
-        return `${i + 1}. ${formatCharacterWithId(c)}${idPart}${handle}：${persona || '（无人设描述）'}`;
+        return `${i + 1}. ${formatCharacterWithId(c)}${idPart}${handle}：\n${persona}`;
     }).join('\n');
+    const userSetting = userSettingOverride || buildFullUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
     const topics = pickTopics(22);
     const charPostCount = chars.length
         ? Math.min(chars.length, FEED_BATCH_SIZE, Math.max(0, Math.floor(Number(targetCharacterPosts) || 0)))
@@ -281,7 +284,8 @@ export const buildFeedSystemPrompt = (
 ${charLines || '（本批没有角色，全部生成 NPC 帖）'}
 
 ## 用户
-浏览这些帖子的用户叫「${userProfile.name}」。角色的帖子可以隐约透出 TA 们最近的生活状态，但不要直接 @ 用户。
+${userSetting}
+角色的帖子可以隐约透出 TA 们最近的生活状态，但不要直接 @ 用户。
 
 ## 本批可围绕的热门话题（自然融入 tags 与正文，让帖子有话题感、能聚成圈；也可自行发挥别的话题）
 ${topics.join('、')}
@@ -308,9 +312,10 @@ export const generateFeedBatch = async (
 ): Promise<XhsFeedPost[]> => {
     const characterPostQuota = getXhsCharacterPostQuota(characters.length);
     const posters = pickPosterChars(characters, characterPostQuota);
+    const userSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
     const raw = await callLlm(
         apiConfig,
-        buildFeedSystemPrompt(posters, userProfile, characterPostQuota),
+        buildFeedSystemPrompt(posters, userProfile, characterPostQuota, userSetting),
         `现在是 ${new Date().toLocaleString('zh-CN')}，生成 ${FEED_BATCH_SIZE} 条新帖子。`,
         'social.generate',
     );
@@ -367,23 +372,23 @@ export const generateFeedBatch = async (
     });
 };
 
-export const buildCharacterLifePostPrompt = (char: CharacterProfile, userProfile: UserProfile): string => {
-    const persona = [
-        `名字：${char.name}`,
-        char.systemPrompt ? `人设：${String(char.systemPrompt).replace(/\s+/g, ' ').slice(0, 800)}` : '',
-        char.worldview ? `世界观：${String(char.worldview).replace(/\s+/g, ' ').slice(0, 300)}` : '',
-        char.socialProfile?.bio ? `主页签名：${char.socialProfile.bio}` : '',
-        char.socialProfile?.region ? `常在地区：${char.socialProfile.region}` : '',
-    ].filter(Boolean).join('\n');
+export const buildCharacterLifePostPrompt = (
+    char: CharacterProfile,
+    userProfile: UserProfile,
+    userSettingOverride?: string,
+): string => {
+    const persona = buildFullCharacterSetting(char, { includeMemos: true, fallback: `角色名：${char.name}` });
+    const userSetting = userSettingOverride || buildFullUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
     const id = getCharacterModelId(char);
     return `你在为 Moro 的本地「见闻簿」生成一条熟人的公开生活动态。它只保存在本地，不会发布到真实平台。
 
 ## 发帖人
-${persona || `名字：${char.name}`}
+${persona}
 身份锚 charId="${id}"
 
 ## 浏览者
-${userProfile.name || '用户'} 会在见闻簿里看到这条动态，但帖子不要直接 @ TA，也不要写成私聊消息。
+${userSetting}
+TA 会在见闻簿里看到这条动态，但帖子不要直接 @ TA，也不要写成私聊消息。
 
 ## 要求
 1. 只写 ${char.name} 会公开发出来的一条生活动态：像真实小红书/生活笔记，不要像 AI 作文。
@@ -406,7 +411,11 @@ export const generateCharacterLifePost = async (
     const raw = await callLlm(
         apiConfig,
         '你是擅长写真实生活动态的社交平台内容生成器。只输出合法 JSON。',
-        buildCharacterLifePostPrompt(char, userProfile),
+        buildCharacterLifePostPrompt(
+            char,
+            userProfile,
+            await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` }),
+        ),
         'social.generate',
     );
     const parsed = parseJsonLoose(raw);
@@ -461,7 +470,7 @@ export const generateAuthorReply = async (
     authorChar?: CharacterProfile,
 ): Promise<XhsFeedComment> => {
     const personaLine = authorChar
-        ? `你是「${authorChar.name}」，人设：${(authorChar.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300)}。评论者「${userProfile.name}」是你认识的人，按你们的关系和你的口吻回复。`
+        ? `你是「${authorChar.name}」，请按完整角色设定回复。\n${buildFullCharacterSetting(authorChar, { includeMemos: true })}\n\n评论者完整用户设定：\n${await buildFullActiveUserSetting(userProfile)}\n评论者「${userProfile.name}」是你认识的人，按你们的关系和你的口吻回复。`
         : `你是小红书博主「${post.author}」，按这篇帖子的口吻回复评论。评论者是陌生网友。`;
     const raw = await callLlm(
         apiConfig,

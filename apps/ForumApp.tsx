@@ -4,6 +4,7 @@ import { AppID } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import {
     ForumState, ForumPost, ForumReply, ForumPoll, ForumDraft, ForumTopicEvent, ForumListFilter, ForumTrendPack, FORUM_BOARDS, boardOf, seedForum, fid,
     npcEmoji, fallbackReplies, buildForumPrompt, parseForumReplies, materializeReplies,
@@ -15,6 +16,7 @@ import {
     normalizeForumState, normalizeForumMeta, ensureForumTopic, upsertForumDraft, removeForumDraft,
     touchRecentPost, filterForumPosts, withPostParticipants, loadForumTrendPack, defaultForumTrendPack,
     removeForumPost, removeForumReply, removeForumSubReply,
+    fallbackCharThread, isDuplicateForumThreadDraft, isGenericCharThreadDraft,
     buildForumSharePendingPayload, FORUM_PENDING_CHAT_SHARE_KEY, type ForumShareMode,
 } from '../utils/forum';
 import { InsButton, InsDialog, IconCircle, accent } from '../components/ui/insKit';
@@ -207,7 +209,10 @@ const ForumApp: React.FC = () => {
         };
     }, [loaded]);
 
-    const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt || undefined })), [characters]);
+    const charBriefs = useMemo(() => characters.map(c => {
+        const persona = buildFullCharacterSetting(c, { includeMemos: true, fallback: '' }) || undefined;
+        return { id: c.id, modelId: c.modelId || c.id, name: c.name, persona };
+    }), [characters]);
     const charLite = useMemo(() => characters.map(c => ({ id: c.id, modelId: c.modelId || c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar })), [characters]);
 
     const api = () => resolveAuxApi(auxApiConfig, apiConfig);
@@ -252,17 +257,23 @@ const ForumApp: React.FC = () => {
         setGenBoard(boardId);
         let raw = [] as ReturnType<typeof parseThreads>;
         try {
-            const { system, user } = buildThreadsPrompt(bd, charBriefs, THREAD_BATCH, topic || undefined, trendPack);
+            const charRoster = Math.random() < 0.35
+                ? [...charBriefs].sort(() => Math.random() - 0.5).slice(0, 2)
+                : [];
+            const { system, user } = buildThreadsPrompt(bd, charRoster, THREAD_BATCH, topic || undefined, trendPack);
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
             ], { temperature: 1.05, maxTokens: 8000 });
             raw = parseThreads(out);
         } catch { /* fall through */ }
         if (raw.length < THREAD_BATCH) raw = [...raw, ...fallbackThreads(boardId, THREAD_BATCH - raw.length, topic || undefined, trendPack)];
-        const fresh = materializeThreads(raw, boardId, charLite, topic?.id, topic?.tags || []);
+        const fresh = materializeThreads(raw, boardId, charLite, topic?.id, topic?.tags || [], {
+            maxCharAuthors: 1,
+            existingPosts: state.posts,
+        });
         setState(s => ({
             posts: replace
-                ? [...fresh, ...s.posts.filter(p => p.boardId !== boardId || !p.generated)]
+                ? [...fresh, ...s.posts.filter(p => p.boardId !== boardId || p.authorType === 'user')]
                 : [...fresh, ...s.posts],
         }));
         setGenBoard(null);
@@ -363,16 +374,28 @@ const ForumApp: React.FC = () => {
     const charPost = async () => {
         if (characters.length === 0) { addToast('亭子里还没请来熟客', 'error'); return; }
         setCharBusy(true);
-        const c = characters[Math.floor(Math.random() * characters.length)];
+        const recentCutoff = Date.now() - 86_400_000;
+        const recentCharIds = new Set(state.posts
+            .filter(p => p.authorType === 'char' && p.authorId && p.createdAt >= recentCutoff)
+            .map(p => p.authorId as string));
+        const candidates = characters.filter(c => !recentCharIds.has(c.id));
+        const pool = candidates.length ? candidates : characters;
+        const c = pool[Math.floor(Math.random() * pool.length)];
+        const cBrief = charBriefs.find(x => x.id === c.id) || {
+            id: c.id,
+            modelId: c.modelId || c.id,
+            name: c.name,
+            persona: buildFullCharacterSetting(c, { includeMemos: true, fallback: '' }) || undefined,
+        };
         let decided: { boardId: string; title: string; body: string } | null = null;
         try {
             const forumApi = api();
-            const { system, user } = buildCharThreadPrompt({ id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt });
+            const { system, user } = buildCharThreadPrompt(cBrief);
             const out = await llmComplete(forumApi, [
                 { role: 'system', content: system }, { role: 'user', content: user },
             ], {
                 temperature: 0.95,
-                maxTokens: 300,
+                maxTokens: 1400,
                 meta: makeApiUsageMeta('forum.generate', {
                     apiRole: forumApi.apiRole || 'aux',
                     apiBinding: forumApi.apiBinding || '角色发帖',
@@ -382,13 +405,19 @@ const ForumApp: React.FC = () => {
             });
             decided = parseCharThread(out);
         } catch { /* fall through */ }
-        if (!decided) decided = { boardId: 'chat', title: '今天也想找人说说话', body: '没什么大事，就是突然想冒个泡。有人在吗？' };
+        if (
+            !decided ||
+            isGenericCharThreadDraft(decided) ||
+            isDuplicateForumThreadDraft(state.posts, decided, { id: c.id, name: c.name, type: 'char' })
+        ) {
+            decided = fallbackCharThread(cBrief, state.posts);
+        }
         const now = Date.now();
         const post = withPostParticipants({
             id: fid(), boardId: decided.boardId, authorType: 'char', authorId: c.id,
             authorName: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar,
             title: decided.title, body: decided.body, createdAt: now, lastActiveAt: now, likes: 0, replies: [],
-            replyCount: targetFloorCount(),
+            replyCount: targetFloorCount(), generated: true, mood: boardOf(decided.boardId)?.name,
         }, [{ authorType: 'char', authorId: c.id, authorName: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar, createdAt: now }]);
         setState(s => ({ posts: [post, ...s.posts] }));
         setTab('home'); setBoard(decided.boardId);
@@ -409,7 +438,13 @@ const ForumApp: React.FC = () => {
         let body: string | null = null;
         try {
             const forumApi = api();
-            const { system, user } = buildCharReplyPrompt(open, { id: c.id, modelId: c.modelId || c.id, name: c.name, persona: c.systemPrompt });
+            const cBrief = charBriefs.find(x => x.id === c.id) || {
+                id: c.id,
+                modelId: c.modelId || c.id,
+                name: c.name,
+                persona: buildFullCharacterSetting(c, { includeMemos: true, fallback: '' }) || undefined,
+            };
+            const { system, user } = buildCharReplyPrompt(open, cBrief);
             const out = await llmComplete(forumApi, [
                 { role: 'system', content: system }, { role: 'user', content: user },
             ], {

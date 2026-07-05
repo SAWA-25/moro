@@ -23,6 +23,7 @@ import {
     buildOptionAssistPrompt,
     buildEndCardPrompt,
 } from '../utils/guidebookPrompts';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import { DB } from '../utils/db';
 import {
     ArrowLeft,
@@ -915,7 +916,8 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             await injectMemoryPalace(char, undefined, scenarioHint || undefined);
-            const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights, rules);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+            const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights, rules, fullUserSetting);
             const raw = await callAPI(auxApi, prompt);
             let data = extractJson(raw);
 
@@ -985,10 +987,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const wc = extractWorldContext(session.openingSequence);
         try {
             await injectMemoryPalace(selectedChar, undefined, session.scenarioHint || undefined);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
             const prompt = buildOptionAssistPrompt(
                 selectedChar, userProfile, session.currentAffinity,
                 session.currentRound + 1, session.rounds, session.scenarioHint || '',
-                cachedRecentMsgs, wc, nextDirectionHint || undefined, normalizeRules(session.rules)
+                cachedRecentMsgs, wc, nextDirectionHint || undefined, normalizeRules(session.rules), fullUserSetting
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
@@ -1086,10 +1089,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             await injectMemoryPalace(selectedChar, undefined, roundScenario || session.scenarioHint || undefined);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
             const prompt = buildRoundPrompt(
                 selectedChar, userProfile, session.currentAffinity,
                 roundNum, session.maxRounds, options, session.rounds, session.scenarioHint || '',
-                cachedRecentMsgs, wc, nextDirectionHint || undefined, roundScenario || undefined, normalizeRules(session.rules)
+                cachedRecentMsgs, wc, nextDirectionHint || undefined, roundScenario || undefined, normalizeRules(session.rules), fullUserSetting
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
@@ -1162,10 +1166,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             await injectMemoryPalace(selectedChar, undefined, session.scenarioHint || undefined);
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
             const prompt = buildEndCardPrompt(
                 selectedChar, userProfile,
                 session.initialAffinity, session.currentAffinity, session.rounds,
-                cachedRecentMsgs, normalizeRules(session.rules)
+                cachedRecentMsgs, normalizeRules(session.rules), fullUserSetting
             );
             const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);

@@ -67,9 +67,152 @@ export interface ManualUpdateNotice {
   items: string[];
 }
 
+export interface ManualUpdateNoticeDateGroup {
+  date: string;
+  pinnedHeadline?: string;
+  notices: ManualUpdateNotice[];
+}
+
 export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 'social', 'creation', 'roleplay', 'system'];
 
+export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> = {
+  '2026-07-06': '预设不要开文风，不要开字数',
+};
+
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
+  {
+    id: '2026-07-06-update-notice-date-scroll-page',
+    date: '2026-07-06',
+    title: '新公告只弹最新日期这一页',
+    kind: 'improvement',
+    summary: '解锁后出现的更新公告不再一条条弹出；弹窗只展示最新更新日期里的新公告，并合成一页滚动查看。',
+    items: [
+      '今天公告顶部会置顶提醒：“预设不要开文风，不要开字数”。',
+      '同一天的公告会保留新增顺序，最新写入的更新在当天分组最上面。',
+      '旧日期的未读公告不会再接着弹出来；想回看往日更新，可以进说明书的更新公告页。',
+      '点“知道了”、右上角关闭、点遮罩或进入说明书查看公告，都会把最新日期这一页里的新公告一起标记为已读。',
+      '说明书里的更新公告页也按日期分组展示，回看时和弹窗顺序一致。',
+    ],
+  },
+  {
+    id: '2026-07-06-offline-mode-generation-truncation-fix',
+    date: '2026-07-06',
+    title: '线下面对面不再容易半句断掉',
+    kind: 'fix',
+    summary: '修复絮语单聊见面和群聊赴约生成现场文字时，内容可能停在半句话的问题。',
+    items: [
+      '线下开场、续写和重写的字数框默认填 1200；这里控制的是最终可见正文，不包含思维链。',
+      '字数框不再把输入限制在 2000 以内，需要更长现场时可以自己填更大的数。',
+      '请求模型时会给思维链另留余量，减少推理过程把正文额度吃光的问题。',
+      '如果服务端明确返回“长度不够”，小窗会自动接着补完，让现场文字尽量以完整句子收尾。',
+      '这只影响线下面对面和群聊赴约，不会改动普通聊天、已保存的线下记录或聊天上下文条数。',
+    ],
+  },
+  {
+    id: '2026-07-06-preset-all-app-scope-linkage',
+    date: '2026-07-06',
+    title: '活字盘会按作用范围联动更多 App 了',
+    kind: 'improvement',
+    summary: '统一补上活字盘对主聊天以外 LLM 生成的作用范围识别，让更多 App 能按预设调整提示词和采样参数。',
+    items: [
+      '茶话亭、折子戏、见闻簿、商店、浏览器、手账、音乐、创作、剪影集辅助生成等自由文本，会归到“创作文本”范围。',
+      '回忆整理、翻译、总结、标签、分类和 JSON 输出会归到“结构化任务”范围；这个范围默认仍保护关闭，避免格式被聊天预设带乱。',
+      '街角、页外、记忆潜行等角色场景会归到“角色场景”范围；需要统一场景口吻时再手动开启。',
+      '主动消息 2.0 和网页关闭后的离线主动消息也会吃“主动消息”范围；主线程会先把预设骨架和可用采样参数写进任务或快照。',
+      '后续新增的角色代入生成也会按任务接入活字盘作用范围；只有翻译、摘要、分类、连接测试等纯功能性提示词会继续保持 App 自己的规则。',
+      '没有打开活字盘总开关、对应作用范围或当前预设时，会回到默认 prompt；默认 prompt 仍会读取完整角色设定和完整用户设定。',
+      '私聊、群聊、电话和普通主动消息原本已经套过预设的请求不会重复插入提示词；模型列表和连接测试也不会被聊天预设干扰。',
+    ],
+  },
+  {
+    id: '2026-07-06-all-app-full-character-user-settings',
+    date: '2026-07-06',
+    title: '角色和用户设定会在更多 App 里完整生效',
+    kind: 'fix',
+    summary: '修复茶话亭、见闻簿、折子戏、电话、观屏、账本、回忆标本馆等入口只参考短设定或重复生成角色帖的问题。',
+    items: [
+      '角色发帖、回帖、动态、轨迹、对影、观屏评论、电话文字回复、账本互动和来往行动建议会读取完整角色卡、生活侧写、自我领悟、未完成备忘和角色挂载世界书。',
+      '用户侧会完整带上当前扮相手账、绑定世界书、页外状态和社交关系，不再只看用户简介。',
+      '后续新增的角色相关生成入口也会按同一约定处理：需要代入正式角色或用户关系时，默认读取完整设定，而不是短简介或摘要。',
+      '茶话亭会减少同一角色反复发重复帖，也会保留用户自己发过的帖子；刷新后不应再出现一批通用角色水帖。',
+      '设定写得越完整，相关 App 的生成会越贴近角色和用户；长设定也会让单次生成上下文变长。',
+    ],
+  },
+  {
+    id: '2026-07-06-full-silhouette-prompt-context',
+    date: '2026-07-06',
+    title: '各处生成会更完整读取剪影集设定了',
+    kind: 'improvement',
+    summary: '统一加强主聊天以外的生成上下文，让角色和用户不再只按短简介或截断片段参与生成。',
+    items: [
+      '外貌标签、音乐人格、朋友圈、狼人杀、折子戏轨迹、记忆整理等辅助生成会读取完整角色卡、世界观、生活侧写、自我领悟、角色挂载世界书和全局剪报夹世界书。',
+      '聊天自动配图、自动认知消化和歌曲风格联想也会读取完整角色设定与当前用户扮相，不再只看短摘录。',
+      '用户侧会优先使用当前启用的扮相手账身份，并带上绑定世界书、页外状态和社交关系等可用资料。',
+      '这会让生成更贴近剪影集里的完整设定；如果角色或扮相资料很长，单次生成上下文也会相应变长。',
+    ],
+  },
+  {
+    id: '2026-07-06-preset-marker-linkage-fix',
+    date: '2026-07-06',
+    title: '活字盘占位符会正确认剪影集和剪报夹了',
+    kind: 'fix',
+    summary: '修复活字盘里的世界书、角色核心设定、用户身份和对话示例占位没有完整接上对应资料的问题。',
+    items: [
+      'World Info 会读取剪报夹里实际命中的世界书，不再被误当成普通角色核心占位。',
+      'Char Description、Char Personality 和 Scenario 会共同承接剪影集角色核心上下文，至少保留一个开启即可让角色设定继续生效。',
+      '电话文字回复套用活字盘时，也会带上剪报夹世界书、用户身份和角色台词样张。',
+      '活字盘诊断和说明同步更新，能更准确提示哪些 marker 该保留。',
+    ],
+  },
+  {
+    id: '2026-07-06-autonomous-life-mood-balance',
+    date: '2026-07-06',
+    title: 'TA 的离线日常更贴人设了',
+    kind: 'fix',
+    summary: '优化絮语自主生活生成规则，让离线记录更贴合角色设定和生活侧写，并减少连续负能量和无端受伤。',
+    items: [
+      'TA 的日常会结合核心人设、世界观、生活侧写、自我领悟、社交侧写和未完成备忘来取材，不再把所有角色都写成同一种现代都市日常。',
+      '离线记录会更多出现这个角色可能自然遇到的普通小事、习惯动作和生活半径，不再默认把真实生活写成一直出事。',
+      '受伤、生病、事故等只会在角色设定或上下文合理时少量出现，离线回顾不会为了戏剧性连续制造伤害。',
+      '线下生活带回聊天时会作为状态底色自然影响语气，不会把普通疲惫强行升级成创伤或争吵。',
+    ],
+  },
+  {
+    id: '2026-07-06-chat-schedule-local-date-save-fix',
+    date: '2026-07-06',
+    title: '絮语今日作息显示更稳了',
+    kind: 'fix',
+    summary: '修复今日作息生成后没有出现在絮语里，或桌面小组件还显示昨天作息的问题。',
+    items: [
+      '日程生成成功后，即使模型少带了内部目标字段，也会保存到当前角色的今日作息里。',
+      '桌面日程小组件、聊天上下文和相关生活入口统一按本地日期读取，不再在清晨误读成昨天。',
+      '已有昨天作息不会被清空；重新生成或进入对应单聊后会按今天的日期显示。',
+    ],
+  },
+  {
+    id: '2026-07-05-chat-screen-watch-opaque-windows',
+    date: '2026-07-05',
+    title: '窥屏和观屏窗口改成实色了',
+    kind: 'improvement',
+    summary: '絮语里的窥屏查看窗、观屏评论面板和悬浮短评窗都改为不透明底色，底下的 App 或壁纸不会再透出来。',
+    items: [
+      '点开窥屏卡片查看大图时，背景和关闭按钮都使用实色显示。',
+      '观屏评论的设置面板和悬浮短评窗不再使用玻璃透明底。',
+      '这只改变窗口观感，不影响屏幕共享授权、抽帧、短评生成或已有观屏记录。',
+    ],
+  },
+  {
+    id: '2026-07-05-chat-offline-suspend-float-drag',
+    date: '2026-07-05',
+    title: '线下挂起恢复条可以挪位置了',
+    kind: 'improvement',
+    summary: '絮语单聊见面和群聊赴约挂起后，留在手机界面的恢复条现在可以拖到顺手的位置，颜色也改成不透明底色。',
+    items: [
+      '挂起线下现场后，按住恢复条拖动即可移动，不必固定停在右上角。',
+      '拖动会限制在手机界面内，避免恢复条被拖到完全点不到的位置。',
+      '恢复条背景改为实色显示，放在不同壁纸或 App 上也更容易看清。',
+    ],
+  },
   {
     id: '2026-07-05-shop-gift-chat-reply',
     date: '2026-07-05',
@@ -363,7 +506,7 @@ export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
     kind: 'feature',
     summary: '絮语单聊见面和群聊赴约的小窗新增字数上限，想让现场回复短一点或更展开时可以自己填。',
     items: [
-      '单聊「见面」和群聊「赴个约」的小窗顶部都能填写字数上限；留空时继续使用原来的默认长度。',
+      '单聊「见面」和群聊「赴个约」的小窗顶部都能填写可见正文字数上限；现在默认填 1200，也可以按需要改成更大或更小的数字。',
       '设置会影响开场、后续推进和“重写一遍”，同一场线下现场会按你当前填的上限继续生成。',
       '字数上限只约束线下现场生成，不会改动普通聊天、已保存的线下记录或聊天上下文条数。',
     ],
@@ -455,8 +598,8 @@ export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
     summary: '修复幕间集番外生成时，Moro 原生角色卡里的 {{user}} 可能没有替换、模型也不够明确当前用户名字的问题。',
     items: [
       '在「剪影集 → 登场人物」编辑角色时，核心设定、世界观、对话示例和开场白里的 {{user}} / {{char}} 等占位会自动替换成当前名字。',
-      '番外工坊、问卷番外和仿真图文现在会在发给模型前，把角色卡、用户简介和本次主题里的 {{user}} / {{char}} 等占位替换成当前名字。',
-      '番外提示词会同时带上角色设定和你的档案简介，模型不再只看到角色卡而忘记这段关系里的“你”是谁。',
+      '番外工坊、问卷番外和仿真图文现在会在发给模型前，把角色卡、完整用户设定和本次主题里的 {{user}} / {{char}} 等占位替换成当前名字。',
+      '番外提示词会同时带上完整角色设定和完整用户设定，模型不再只看到角色卡而忘记这段关系里的“你”是谁。',
       '已导入的酒馆卡和在 Moro 里直接写的角色卡会按同一套规则处理；已保存的旧角色不会被后台静默批量改写，编辑到对应字段时会自动替换。',
     ],
   },
@@ -2529,10 +2672,36 @@ export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
 ];
 
 export const getManualUpdateNotices = () =>
-  [...MANUAL_UPDATE_NOTICES].sort((a, b) => {
-    const byDate = Date.parse(b.date) - Date.parse(a.date);
-    return byDate || b.id.localeCompare(a.id);
+  MANUAL_UPDATE_NOTICES
+    .map((notice, index) => ({ notice, index }))
+    .sort((a, b) => {
+      const byDate = Date.parse(b.notice.date) - Date.parse(a.notice.date);
+      return byDate || a.index - b.index;
+    })
+    .map(({ notice }) => notice);
+
+export const groupManualUpdateNoticesByDate = (
+  notices: ManualUpdateNotice[],
+): ManualUpdateNoticeDateGroup[] => {
+  const groups: ManualUpdateNoticeDateGroup[] = [];
+  const groupByDate = new Map<string, ManualUpdateNoticeDateGroup>();
+
+  notices.forEach((notice) => {
+    let group = groupByDate.get(notice.date);
+    if (!group) {
+      group = {
+        date: notice.date,
+        pinnedHeadline: MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES[notice.date],
+        notices: [],
+      };
+      groupByDate.set(notice.date, group);
+      groups.push(group);
+    }
+    group.notices.push(notice);
   });
+
+  return groups;
+};
 
 const link = (appId: AppID, anchorId: string, route?: string, payload?: Record<string, unknown>): ManualDeepLinkTarget => ({
   appId,
@@ -3399,10 +3568,10 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '偶遇', description: '适合没有约好、突然碰上的剧情。' },
               { label: '赴约', description: '适合前面聊天已经约好了时间地点。系统会尽量参考最近约定。' },
               { label: '自定义开场', description: '你可以直接写“在哪里、什么时间、发生了什么”，让场景从你指定的地方开始。' },
-              { label: '字数上限', description: '在小窗顶部填写数字后，开场、续写和重写都会按这个上限收束；留空就回到默认长度。' },
+              { label: '字数上限', description: '小窗顶部默认填 1200；改成多少，开场、续写和重写的可见正文都会按这个数字收束，不再限制最高只能填 2000。' },
               { label: '说话 / 动作', description: '线下小窗里可以分开输入台词和动作；结束前可修改旁白、TA 的回应和自己的动作，退出后修改后的版本会回到聊天上下文。' },
               { label: '重写一遍', description: '撤掉上一段 TA 生成的现场内容重新写；会保留你刚输入的话或动作，只换 TA 接下来的反应。开场旁白也能重写。' },
-              { label: '挂起', description: '暂时收起线下小窗，现场记录会留着，之后点全局恢复条继续；挂起期间仍可在线聊天。' },
+              { label: '挂起', description: '暂时收起线下小窗，现场记录会留着，之后点全局恢复条继续；恢复条可拖到顺手位置，挂起期间仍可在线聊天。' },
             ],
             path: ['单聊', '底部回形针', '见面'],
             deepLink: chatSettingsLink('manual-chat-auto-meet'),
@@ -3433,7 +3602,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
             options: [
               { label: '窥屏', description: '生成一张 TA 此刻虚拟手机屏幕截图卡，适合看 TA 在剧情里正在做什么。' },
               { label: '锁机', description: '你设置锁屏留言、口令或问题，看 TA 按人设尝试解锁。结果会保存成锁机记录。' },
-              { label: '观屏评论', description: '你主动选择共享浏览器屏幕、窗口或标签页后，TA 才能看抽帧并在 Moro 内悬浮窗短评；每次共享都要重新确认。' },
+              { label: '观屏评论', description: '你主动选择共享浏览器屏幕、窗口或标签页后，TA 才能看抽帧并在 Moro 内实色悬浮窗短评；每次共享都要重新确认。' },
               { label: 'Moro 内部时长', description: '观屏期间可统计你在 Moro 内部 App 的停留；不会读取真实系统后台 App 列表、真实手机使用统计或跨 App 悬浮窗。' },
               { label: '拍张照', description: '用 TA 的视角拍一张此刻，适合让角色把眼前场景寄给你看。' },
               { label: '安全边界', description: '这些都是剧情模拟，不会远程锁定、拍摄或读取现实设备。' },
@@ -4041,7 +4210,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '什么时候进入', description: '当聊天发展到“我来找你”“一起出门”“现在见一面”时，系统可能弹出线下小窗。' },
               { label: '进入后做什么', description: '你可以分别输入说话和动作，像现场互动一样推进。' },
               { label: '退出后', description: '线下经历会整理回聊天；如果几分钟内没有新的聊天或事件，TA 才可能自然收个尾。' },
-              { label: '挂起后', description: '挂起只收起窗口，不会把线下经历提前写进上下文；点恢复条回来后可继续现场。' },
+              { label: '挂起后', description: '挂起只收起窗口，不会把线下经历提前写进上下文；恢复条可以拖动，点它回来后可继续现场。' },
               { label: '不想自动弹窗', description: '关闭这个开关，或开启“异地模式”，之后只会在你手动点回形针“见面 / 赴个约”时进入。' },
               { label: '适合角色', description: '现代恋爱、同城朋友、日常陪伴很适合；纯网聊或远距离设定建议改用异地模式。' },
             ],
@@ -4403,7 +4572,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '群签到', description: '每日一张签到卡，成员按状态留下简短心情；同一天通常不重复签。' },
               { label: '落脚点 / AI 画图 / 碰一碰', description: '分别用于分享地点、生成图片、戳某位群友，适合轻互动。' },
               { label: '群电话', description: '发起群聊电话，让多人一起进入通话感场景。' },
-              { label: '赴个约', description: '打开群体线下面对面窗口，适合群聚会、旅行、饭局或跑剧情现场；可填写字数上限，结束前可修改现场内容，也能重写上一段，中途可挂起后回来。' },
+              { label: '赴个约', description: '打开群体线下面对面窗口，适合群聚会、旅行、饭局或跑剧情现场；字数上限默认 1200 且可自改，结束前可修改现场内容，也能重写上一段，中途可挂起后回来。' },
               { label: '成员查岗 / 成员主动消息 / 成员日常', description: '先选一位群友，再查看手机、设置主动消息或看离线生活回顾。' },
               { label: '归档群聊 / 重写一遍 / 成员回神 / 成员作息', description: '群聊工具区用于整理记忆、重生成上一轮、帮某成员校准人设或查看日程。' },
               { label: '幕后指令', description: '给成员们一条 OOC 导演提示，用来临时调整走向；长期设定不要写这里。' },
@@ -5250,9 +5419,9 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
             options: [
               { label: 'chatHistory', description: '聊天历史。关掉会让模型看不到过去说了什么，除非你明确知道自己在做无历史模式。' },
               { label: 'personaDescription', description: '用户身份。来自剪影集用户身份的名字和身份描述。' },
-              { label: 'worldInfoBefore / After', description: '世界书内容。来自剪报夹，受世界书开关、挂载和关键词影响。' },
-              { label: 'dialogueExamples', description: '角色对话示例。来自角色卡的台词样张。' },
-              { label: 'charDescription / charPersonality / scenario', description: '在 Moro 里共同承载角色核心上下文，包括角色卡、记忆、印象等；保留至少一个启用。' },
+              { label: 'worldInfoBefore / After', description: '剪报夹世界书内容，受整书开关、条目开关、挂载、关键词、概率和预算影响。' },
+              { label: 'dialogueExamples', description: '角色对话示例。来自剪影集登场人物里的台词样张。' },
+              { label: 'charDescription / charPersonality / scenario', description: '剪影集角色核心上下文，包括核心设定、世界观、记忆、印象和会话状态；保留至少一个启用。' },
             ],
             path: ['活字盘', '提示词顺序', 'marker 条目'],
             deepLink: link(AppID.Presets, 'manual-presets-prompts'),
@@ -5354,20 +5523,21 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
     app: '活字盘·作用范围',
     en: 'Preset Scopes',
     category: 'system',
-    summary: '控制聊天预设会影响哪些任务。它把“这类任务能不能吃预设”和“当前预设要不要影响它”分成两层，避免聊天规则误伤结构化输出。',
-    keywords: ['预设范围', '作用范围', 'scope', '全局允许', '本预设启用', '主动消息预设', '群聊预设', '电话预设', '页外预设', 'JSON 保护'],
+    summary: '控制当前预设会影响哪些任务。它把“这类任务能不能吃预设”和“当前预设要不要影响它”分成两层，让聊天、创作、角色场景和结构化工具各走各的范围。',
+    keywords: ['预设范围', '作用范围', 'scope', '全局允许', '本预设启用', '主动消息预设', '群聊预设', '电话预设', '页外预设', '创作文本', 'JSON 保护'],
     features: [
-      '按任务拆分预设生效范围：私聊、主动消息、群聊文字、电话文字、群语音、页外、创作和严格 JSON 类任务可以分别控制。',
+      '按任务拆分预设生效范围：私聊、主动消息、群聊文字、电话文字、群语音、角色场景、创作文本和严格 JSON 类任务可以分别控制。',
       '每个范围都有全局允许和本预设启用两层开关，两边都打开时才会套用当前预设。',
-      '私聊、主动消息、群聊文字和电话文字适合跟随聊天预设；群语音、页外和严格 JSON 任务默认保护。',
+      '私聊、主动消息、群聊文字和电话文字适合跟随聊天预设；群语音、角色场景、创作文本和严格 JSON 任务默认保护。',
+      '更多 App 的生成会自动归到对应范围：论坛、折子戏、社交、商店、浏览器等走创作文本；记忆、翻译、总结、抽取等走结构化任务。',
       '适合重度玩家给不同场景准备不同预设，例如日常聊天、电话口吻、群聊控场和创作文本分开调。',
       '开关只改变提示词是否参与组装，不会修改角色卡、世界书、正则脚本或文具盒 API 配置。',
     ],
     beginnerSteps: [
       '先在活字盘选中要调整的预设，再进入“作用范围”。',
-      '新手优先保持默认：日常文字聊天跟随预设，语音、页外和结构化任务先保护。',
+      '新手优先保持默认：日常文字聊天跟随预设，语音、角色场景、创作文本和结构化任务先保护。',
       '想让某个任务吃预设时，先打开“全局允许”，再打开“本预设启用”。少一个都不会生效。',
-      '改完后回对应场景试一次：私聊看口吻，群聊看控场，电话看是否像通话，结构化任务看格式有没有乱。',
+      '改完后回对应场景试一次：私聊看口吻，群聊看控场，电话看是否像通话，创作看风格，结构化任务看格式有没有乱。',
     ],
     commonQuestions: [
       {
@@ -5376,7 +5546,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
       },
       {
         title: '为什么群语音、页外或 JSON 任务默认不跟随？',
-        answer: '这些任务更容易被聊天风格规则带偏。默认保护是为了避免语音脚本、页外行动或 JSON 输出被写成普通聊天。',
+        answer: '这些任务更容易被聊天风格规则带偏。默认保护是为了避免语音脚本、角色行动、创作页面或 JSON 输出被写成普通聊天。',
       },
       {
         title: '作用范围会改我的提示词内容吗？',
@@ -5387,7 +5557,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
         answer: '不建议一口气全开。先开最需要的场景，试稳定后再扩展；如果某个功能突然格式异常，优先回这里关掉对应范围。',
       },
     ],
-    tips: ['把作用范围当成“预设保险丝”：想要统一口吻时打开，发现格式或特殊玩法被聊天规则带偏时先回这里关闭。'],
+    tips: ['把作用范围当成“预设保险丝”：想要统一口吻时打开，发现创作风格、格式或特殊玩法被聊天规则带偏时先回这里关闭。'],
     settingSections: [
       {
         id: 'preset-scope-controls',
@@ -5437,13 +5607,14 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
           },
           {
             id: 'preset-scope-protected-family',
-            title: '群语音、页外和严格 JSON 任务',
-            description: '这些任务对格式或行为约束更敏感，默认保护，避免被聊天预设改成普通对话。',
-            keywords: ['群语音', '页外', 'JSON', '格式保护', '结构化输出'],
+            title: '群语音、角色场景、创作文本和严格 JSON 任务',
+            description: '这些任务对格式、叙事或行为约束更敏感，默认保护，避免被聊天预设改成普通对话。',
+            keywords: ['群语音', '页外', '街角', '创作文本', 'JSON', '格式保护', '结构化输出'],
             defaultBehavior: '默认关闭跟随；确认预设不会破坏格式时再打开。',
             options: [
               { label: '群语音', description: '语音台本容易受聊天规则影响，开启前先小范围测试。' },
-              { label: '页外', description: '页外有自己的行动和房间规则，聊天预设过强可能让角色跑偏。' },
+              { label: '角色场景', description: '页外、街角和记忆潜行有自己的行动规则，聊天预设过强可能让角色跑偏。' },
+              { label: '创作文本', description: '论坛、折子戏、社交、商店、手账等自由生成会归到这里，适合统一文风。' },
               { label: '严格 JSON', description: '需要机器读取的输出，最怕被加口语、旁白或解释。' },
             ],
             path: ['活字盘', '作用范围', '保护类任务'],
@@ -11145,8 +11316,8 @@ const MANUAL_ENTRY_EXTENSIONS: Record<string, ManualEntryExtension> = {
     tips: ['改预设前先复制一份；角色突然像说明书、格式爆炸或失忆时，先关掉新加提示词和对应作用范围。'],
   },
   '活字盘·作用范围': {
-    keywords: ['预设范围', 'scope', '全局允许', '本预设启用', 'JSON 保护', '任务联动'],
-    tips: ['它是预设的分路器：想统一口吻就打开对应任务，想保护格式就关掉对应任务。'],
+    keywords: ['预设范围', 'scope', '全局允许', '本预设启用', 'JSON 保护', '创作文本', '角色场景', '任务联动'],
+    tips: ['它是预设的分路器：想统一口吻或文风就打开对应任务，想保护格式和特殊玩法就关掉对应任务。'],
   },
   '补丁铺': {
     keywords: ['正则', 'regex', '替换', '显示处理', '提示词处理', '酒馆正则', '脚本导入', '导入预览', '批量管理', '风险筛选', '调试日志', '试运行'],
@@ -11363,7 +11534,7 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '絮语·单聊工具': {
     appId: AppID.Chat,
     path: ['絮语', '点角色单聊', '底部回形针'],
-    details: ['打开当前角色的单聊工具；「见面」会进入线下小窗，可填写字数上限，现场可修改、重写上一段或挂起后继续；「观屏评论」在「两个人的事」分组里，只在你主动共享网页端屏幕期间抽帧，并可显示 Moro 内悬浮短评。'],
+    details: ['打开当前角色的单聊工具；「见面」会进入线下小窗，可填写字数上限，现场可修改、重写上一段或挂起后继续，挂起后的恢复条可拖动；「观屏评论」在「两个人的事」分组里，只在你主动共享网页端屏幕期间抽帧，并可显示 Moro 内实色悬浮短评。'],
     jumpText: '打开闹钟',
     deepLink: chatAlarmLink('manual-chat-alarm-root'),
   },
@@ -11434,7 +11605,7 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '活字盘·作用范围': {
     appId: AppID.Presets,
     path: ['桌面', '活字盘', '作用范围'],
-    details: ['分别控制私聊、主动消息、群聊、电话、页外和结构化任务是否使用当前预设。'],
+    details: ['分别控制私聊、主动消息、群聊、电话、角色场景、创作文本和结构化任务是否使用当前预设。'],
     deepLink: link(AppID.Presets, 'manual-presets-scopes'),
   },
   '补丁铺': {

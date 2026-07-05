@@ -503,12 +503,13 @@ export const DEFAULT_OFFLINE_POV: OfflinePov = { char: 'third', user: 'third' };
 const povKey = (charId: string) => `moro_offline_pov_${charId}`;
 const isPerson = (v: any): v is OfflinePovPerson => v === 'first' || v === 'second' || v === 'third';
 
-// ── 线下字数上限：留空沿用默认范围；填数字则让开场/续写统一按上限收束 ──
+// ── 线下字数上限：默认 1200；用户填多少就按多少传给模型，不设额外上限 ──
 
 export interface OfflineWordLimit { maxChars?: number }
 
+export const DEFAULT_OFFLINE_WORD_LIMIT = 1200;
 export const OFFLINE_WORD_LIMIT_MIN = 20;
-export const OFFLINE_WORD_LIMIT_MAX = 2000;
+const OFFLINE_REASONING_TOKEN_HEADROOM_MIN = 1200;
 
 const wordLimitKey = (charId: string) => `moro_offline_word_limit_${charId}`;
 
@@ -516,7 +517,7 @@ export const normalizeOfflineWordLimitValue = (value: unknown): number | undefin
     if (value === '' || value === null || value === undefined) return undefined;
     const n = typeof value === 'number' ? value : parseInt(String(value), 10);
     if (!Number.isFinite(n) || n <= 0) return undefined;
-    return Math.max(OFFLINE_WORD_LIMIT_MIN, Math.min(OFFLINE_WORD_LIMIT_MAX, Math.round(n)));
+    return Math.max(OFFLINE_WORD_LIMIT_MIN, Math.round(n));
 };
 
 export const normalizeOfflineWordLimit = (limit?: OfflineWordLimit | null): OfflineWordLimit => {
@@ -549,6 +550,15 @@ export const formatOfflineLengthRange = (limit: OfflineWordLimit | undefined, de
 export const offlineWordLimitRule = (limit?: OfflineWordLimit): string => {
     const maxChars = normalizeOfflineWordLimit(limit).maxChars;
     return maxChars ? `- 字数上限是 ${maxChars} 字，宁可短一点，也不要超过这个上限；\n` : '';
+};
+
+export const resolveOfflineVisibleCharLimit = (limit?: OfflineWordLimit): number =>
+    normalizeOfflineWordLimit(limit).maxChars ?? DEFAULT_OFFLINE_WORD_LIMIT;
+
+export const resolveOfflineRequestTokenBudget = (limit?: OfflineWordLimit): number => {
+    const visibleChars = resolveOfflineVisibleCharLimit(limit);
+    const reasoningHeadroom = Math.max(OFFLINE_REASONING_TOKEN_HEADROOM_MIN, Math.ceil(visibleChars * 0.75));
+    return visibleChars + reasoningHeadroom;
 };
 
 export const loadOfflinePov = (charId: string): OfflinePov => {
@@ -593,6 +603,7 @@ interface OfflineApi {
 }
 
 const OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。';
+const OFFLINE_LLM_CONTINUE_ROUNDS = 2;
 
 const callLLM = async (
     api: OfflineApi,
@@ -600,12 +611,16 @@ const callLLM = async (
     temperature = 0.9,
     presetMacros?: PresetMacroCtx,
     char?: Pick<CharacterProfile, 'id' | 'name'>,
+    maxTokens = resolveOfflineRequestTokenBudget(),
 ): Promise<string> => {
     return (await completeText(api, [
         { role: 'system', content: prompt },
         { role: 'user', content: OFFLINE_DIRECT_OUTPUT_USER },
     ], {
         temperature,
+        maxTokens,
+        preserveMaxTokens: true,
+        continueRounds: OFFLINE_LLM_CONTINUE_ROUNDS,
         presetScope: 'creative.text',
         presetMacros,
         meta: makeApiUsageMeta('chat.offlineMode', {
@@ -618,7 +633,7 @@ const callLLM = async (
 };
 
 const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
-    const core = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const core = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     const recent = await DB.getRecentMessagesByCharId(char.id, 30).catch(() => [] as Message[]);
     const recentLines = recent
         .filter(m => m.role !== 'system' && typeof m.content === 'string')
@@ -699,6 +714,7 @@ export const generateOfflineOpening = async (
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
     const lengthRange = formatOfflineLengthRange(wordLimit, '120-250字');
     const lengthRule = offlineWordLimitRule(wordLimit);
+    const outputBudget = resolveOfflineRequestTokenBudget(wordLimit);
     const sceneFrame = scenario && scenario.trim()
         ? `\n### [这场见面是怎么开始的]\n${scenario.trim()}\n请严格按这个方式来安排开场。\n`
         : '';
@@ -717,7 +733,7 @@ ${lengthRule}
 - 承接最近线上聊天里的约定、情绪或未说完的话，让这场见面像顺着上一句聊天自然发生；
 - 写「${char.name}」见到 ${userProfile.name} 的第一反应：一个具体动作/神态 + 一句贴合人设的开口，可以短、可以别扭、可以有停顿；
 - 不要替 ${userProfile.name} 说话或行动，不要把双方关系突然推进到人设不支持的亲密程度。
-按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char);
+按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
 };
 
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
@@ -729,6 +745,7 @@ export const generateOfflineTurn = async (
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
     const lengthRange = formatOfflineLengthRange(wordLimit, '80-200字');
     const lengthRule = offlineWordLimitRule(wordLimit);
+    const outputBudget = resolveOfflineRequestTokenBudget(wordLimit);
     const transcript = formatEntries(entries, char.name, userProfile.name);
     const tail = userInput
         ? `刚刚 ${userProfile.name} 的行动/发言：${userInput}`
@@ -753,7 +770,7 @@ ${lengthRule}
 - 台词像真人面对面说话，可以短句、停顿、没说完、临时改口，不要每次都工整抒情；
 - 可以让「${char.name}」主动做点符合人设的事（递东西、让路、靠近/退开、转移话题、带着走），但不要替 ${userProfile.name} 说话或行动；
 - 保持当前关系的边界和熟悉度，不要硬转暧昧、硬制造冲突，也不要把现场写成剧情总结。
-按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char);
+按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
 };
 
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */

@@ -370,7 +370,7 @@ async function fillCharTurn(
 
     const userName = userProfile.name || 'user';
     const dow = dayOfWeekZh(date);
-    const coreContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const coreContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
 
     // 抽 ta 平时怎么说话的样本
     let speechSamples: string[] = [];

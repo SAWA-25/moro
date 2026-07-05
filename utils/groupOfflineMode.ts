@@ -1,9 +1,11 @@
 import type { CharacterProfile, GroupProfile, Message, UserProfile } from '../types';
 import { DB } from './db';
 import {
+  DEFAULT_OFFLINE_WORD_LIMIT,
   formatOfflineLengthRange,
   normalizeOfflineWordLimit,
   offlineWordLimitRule,
+  resolveOfflineRequestTokenBudget,
   type OfflineCommitInfo,
   type OfflinePovPerson,
   type OfflineWordLimit,
@@ -12,6 +14,7 @@ import { formatCharacterWithId } from './characterIdentity';
 import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import type { PresetMacroCtx } from './presets';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 export interface GroupOfflineSceneEntry {
   role: 'scene';
@@ -136,13 +139,23 @@ interface GroupOfflineApi {
 
 // 群聊线下赴约默认走文具盒主 API / 主模型，让群体现场和主聊天保持同一套角色声音。
 const GROUP_OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮群体线下现场正文，不要前缀或解释。';
+const GROUP_OFFLINE_LLM_CONTINUE_ROUNDS = 2;
 
-const callGroupOfflineLLM = async (api: GroupOfflineApi, prompt: string, temperature = 0.9, presetMacros?: PresetMacroCtx): Promise<string> => {
+const callGroupOfflineLLM = async (
+  api: GroupOfflineApi,
+  prompt: string,
+  temperature = 0.9,
+  presetMacros?: PresetMacroCtx,
+  maxTokens = resolveOfflineRequestTokenBudget(),
+): Promise<string> => {
   return (await completeText(api, [
     { role: 'system', content: prompt },
     { role: 'user', content: GROUP_OFFLINE_DIRECT_OUTPUT_USER },
   ], {
     temperature,
+    maxTokens,
+    preserveMaxTokens: true,
+    continueRounds: GROUP_OFFLINE_LLM_CONTINUE_ROUNDS,
     presetScope: 'creative.text',
     presetMacros,
     meta: makeApiUsageMeta('chat.groupOfflineMode', {
@@ -171,7 +184,7 @@ const formatRoster = (group: GroupProfile, members: CharacterProfile[]): string 
   return members.map(member => {
     const name = memberDisplayName(group, member);
     const title = group.memberTitles?.[member.id];
-    return `- ${formatCharacterWithId(member, name)}${title ? `, title: ${title}` : ''}`;
+    return `- ${formatCharacterWithId(member, name)}${title ? `, title: ${title}` : ''}\n${buildFullCharacterSetting(member, { includeMemos: true, includeName: false })}`;
   }).join('\n');
 };
 
@@ -207,10 +220,10 @@ const buildGroupOfflineBase = async (
 ): Promise<string> => {
   const recent = await DB.getGroupMessages(group.id).catch(() => [] as Message[]);
   const userName = userProfile.name || '你';
+  const userSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` });
   return `### [群聊线下面对面模式]
 群聊：${group.name}
-用户：${userName}
-用户档案：${userProfile.bio || '（暂无）'}
+${userSetting}
 
 ### [群成员]
 ${formatRoster(group, members)}
@@ -239,6 +252,7 @@ export const generateGroupOfflineOpening = async (
   const base = await buildGroupOfflineBase(group, members, userProfile);
   const lengthRange = formatOfflineLengthRange(wordLimit, '120-280字');
   const lengthRule = offlineWordLimitRule(wordLimit);
+  const outputBudget = resolveOfflineRequestTokenBudget(wordLimit);
   const scenarioBlock = scenario?.trim()
     ? `\n### [选定开场]\n${scenario.trim()}\n请按这个设定安排大家在哪里见面、谁先出现、第一刻怎么开始。`
     : '\n### [选定开场]\n请根据最近群聊推断一个合理的见面地点和开场方式。';
@@ -258,7 +272,7 @@ ${lengthRule}
 - 至少让一位最适合接这个场的人有反应，可以是台词、小动作、插科打诨或沉默；
 - 承接最近群聊里的话题或约定，让这场见面像自然落地；
 - 不要替 ${userProfile.name || '你'} 说话或行动，不要让所有成员机械轮流亮相。
-只输出现场正文，不要前缀或解释。`, 0.9, { charName: group.name, userName: userProfile.name || '你' });
+只输出现场正文，不要前缀或解释。`, 0.9, { charName: group.name, userName: userProfile.name || '你' }, outputBudget);
 };
 
 export const generateGroupOfflineTurn = async (
@@ -275,6 +289,7 @@ export const generateGroupOfflineTurn = async (
   const base = await buildGroupOfflineBase(group, members, userProfile);
   const lengthRange = formatOfflineLengthRange(wordLimit, '80-220字');
   const lengthRule = offlineWordLimitRule(wordLimit);
+  const outputBudget = resolveOfflineRequestTokenBudget(wordLimit);
   const userName = userProfile.name || '你';
   const transcript = formatGroupOfflineTranscript(entries, userName);
   const action = userInput?.trim()
@@ -301,7 +316,7 @@ ${lengthRule}
 - 让一位或几位最适合的人接话，不要强行全员轮流，不要写成主持人总结；
 - 可以穿插小动作、视线、停顿、身边环境和成员之间的打岔，但要短、具体、像真人聚在一起；
 - 不要替 ${userName} 说话或行动，不要突然推进不符合关系的亲密或冲突。
-只输出续写正文，不要前缀或解释。`, 0.9, { charName: group.name, userName });
+只输出续写正文，不要前缀或解释。`, 0.9, { charName: group.name, userName }, outputBudget);
 };
 
 export const commitGroupOfflineSessionToContext = async (

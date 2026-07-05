@@ -30,6 +30,7 @@ import type { ShopOrder } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import {
     PaperBackdrop, ScrapButton, WashiTape, Stamp, Polaroid,
     PaperDialog, PaperSheet, SectionTag, DashedRule,
@@ -535,7 +536,7 @@ const ShopApp: React.FC = () => {
             if (api.apiKey) {
                 try {
                     const { system, user } = buildShopCompanionPrompt(
-                        { name: char.name, personaText: char.systemPrompt, affection: char.affection },
+                        { name: char.name, personaText: buildFullCharacterSetting(char, { includeMemos: true }), affection: char.affection },
                         userProfile.name || '你',
                         {
                             surface,
@@ -546,6 +547,7 @@ const ShopApp: React.FC = () => {
                             budget: Math.round(80 + (char.affection ?? 50) * 4),
                             userBalance: balance,
                         },
+                        await buildFullActiveUserSetting(userProfile),
                     );
                     const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], {
                         temperature: 0.88,
@@ -806,8 +808,8 @@ const ShopApp: React.FC = () => {
         let agree = false; let reply = '';
         try {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
-            const sys = `你是「${char.name}」。${char.systemPrompt ? `【人设】\n${String(char.systemPrompt).slice(0, 800)}` : ''}`;
-            const usr = `${userProfile.name || '对方'} 让你帮 TA 代付购物车（共 ¥${formatPrice(total)}：${cartBrief}）。请完全按你的人设、你们的关系亲密度和这个金额决定愿不愿意付。\n只输出 JSON：{"pay": true 或 false, "reply": "你对 TA 说的一句话，第一人称，30字内，贴人设"}`;
+            const sys = `你是「${char.name}」。请按完整角色设定和完整用户设定做决定。\n${buildFullCharacterSetting(char, { includeMemos: true })}\n\n${await buildFullActiveUserSetting(userProfile)}`;
+            const usr = `${userProfile.name || '对方'} 让你帮 TA 代付购物车（共 ¥${formatPrice(total)}：${cartBrief}）。请完全按你的完整设定、对方的完整设定、你们的关系亲密度和这个金额决定愿不愿意付。\n只输出 JSON：{"pay": true 或 false, "reply": "你对 TA 说的一句话，第一人称，30字内，贴人设"}`;
             const raw = await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: usr }], {
                 temperature: 0.8,
                 maxTokens: 200,
@@ -932,7 +934,13 @@ const ShopApp: React.FC = () => {
     const onCharShop = async (char: CharacterProfile) => {
         const budget = Math.round(100 + (char.affection ?? 50) * 4);
         const shelf = catalog.length ? catalog : SHOP_ITEMS;
-        const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.systemPrompt }, userProfile.name || '你', budget, shelf);
+        const { system, user } = buildCharShopPrompt(
+            { name: char.name, personaText: buildFullCharacterSetting(char, { includeMemos: true }) },
+            userProfile.name || '你',
+            budget,
+            shelf,
+            await buildFullActiveUserSetting(userProfile),
+        );
         let decision = null as ReturnType<typeof parseCharShopDecision>;
         try {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
@@ -2240,12 +2248,12 @@ const GiftAdvisorView: React.FC<{
         return recommendGiftsForCharacter(catalog, {
             charName: char.convoSettings?.remarkName?.trim() || char.name,
             affection: char.affection,
-            personaText: char.systemPrompt,
+            personaText: buildFullCharacterSetting(char, { includeMemos: true }),
             occasion,
             budget,
             favorites,
         }, 8);
-    }, [catalog, char?.id, char?.affection, char?.systemPrompt, occasion, budget, favorites]);
+    }, [catalog, char, occasion, budget, favorites]);
 
     if (!characters.length) return <EmptyState Icon={Gift} title="还没有可参谋的对象" hint="有角色后，心意铺会按 TA 的人设和关系阶段挑礼物" />;
     if (!char) return null;

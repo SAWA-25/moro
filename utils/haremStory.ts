@@ -1417,7 +1417,7 @@ function rosterBlock(s: StoryState): string {
         const recall = c.memories.slice(0, 3).map(m => m.text).join('；');
         const g = c.gender === 'unknown' ? '性别依人设' : `${GENDER_WORD[c.gender]}`;
         return `- ${here}${c.name}(id=${c.charId}，${g})：好感${c.affection}/信任${c.trust}/嫉妒${c.jealousy}/心情${c.mood}｜阶段「${stageOf(c.affection).label}」｜态度「${c.attitude}」${c.estranged ? '｜已离心(淡出后宫)' : ''}`
-            + (c.persona ? `\n    人设：${c.persona.slice(0, 160)}` : '')
+            + (c.persona ? `\n    完整人设：\n${c.persona}` : '')
             + (recall ? `\n    ta记得：${recall}` : '');
     }).join('\n');
 }
@@ -1498,7 +1498,8 @@ export function buildScenePrompt(s: StoryState, opts: { opening?: boolean } = {}
         + `约束：choices 必须恰好 3 个；每个选项 effects 至少含一位在场角色、数值为整数（好感/信任建议 -12~12、嫉妒/心情 -15~15）；`
         + `资源变化要小幅且与场景有关；speaker 用上面出现过的角色名；id 用上面的 id。`;
 
-    const user = `【玩家】${playerIdentity(s)}${s.player.persona ? `｜${s.player.persona.slice(0, 120)}` : ''}\n`
+    const user = `【玩家】${playerIdentity(s)}\n`
+        + (s.player.persona ? `【完整用户设定】\n${s.player.persona}\n` : '')
         + `【时空】第 ${s.day} 日 · ${s.time} · ${s.location}\n`
         + `【主线章节】第 ${s.chapter.index} 章「${s.chapter.title}」：${s.chapter.subtitle}｜进度 ${s.chapter.progress}/${s.chapter.goal}${s.chapter.finaleReady ? '｜终局已可收束' : ''}\n`
         + `【当前探索意图】${mapIntentBlock(s)}\n`

@@ -503,7 +503,7 @@ export async function generateLifestreamPage(
     //   它已经处理了:身份/systemPrompt/selfInsights/worldview/mountedWorldbooks
     //   /user profile/refinedMemories/activeMemoryMonths 详细日志/memoryPalace/buff
     //   是聊天系统在用的 source of truth,改它会自动跟进
-    const coreContext = ContextBuilder.buildCoreContext(char, userProfile, true);
+    const coreContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
 
     // ─── 1b. ta 实际怎么说话 — buildCoreContext 没的,得自己补 ──
     // 这是"像不像 ta"最关键的输入: prompt 描述规则,样本展示语气

@@ -15,6 +15,7 @@ import type { ResolvedApi } from './auxApi';
 import { extractContent, extractJson } from './safeApi';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 import {
     werewolfRosterText, werewolfNightSys, werewolfNightUser,
     werewolfSpeechSys, werewolfSpeechUser, werewolfVoteSys, werewolfVoteUser,
@@ -136,12 +137,15 @@ export function publicLogText(g: WerewolfGame, limit = 40): string {
     return lines.join('\n');
 }
 
-const personaOf = (p: WerewolfPlayer, chars: CharacterProfile[]) =>
-    p.isUser ? '' : (chars.find(c => c.id === p.charId)?.description || '').replace(/\s+/g, ' ').slice(0, 80);
+const personaOf = (p: WerewolfPlayer, chars: CharacterProfile[], userSetting?: string) => {
+    if (p.isUser) return userSetting || '';
+    const char = chars.find(c => c.id === p.charId);
+    return char ? buildFullCharacterSetting(char, { includeMemos: true }) : '';
+};
 
-const rosterText = (g: WerewolfGame, chars: CharacterProfile[]) =>
+const rosterText = (g: WerewolfGame, chars: CharacterProfile[], userSetting?: string) =>
     werewolfRosterText(g.players.map(p => ({
-        seat: p.seat, name: p.name, role: p.role, alive: p.alive, isUser: p.isUser, persona: personaOf(p, chars), idiotRevealed: !!p.idiotRevealed,
+        seat: p.seat, name: p.name, role: p.role, alive: p.alive, isUser: p.isUser, persona: personaOf(p, chars, userSetting), idiotRevealed: !!p.idiotRevealed,
     })));
 
 // ── LLM 调用 ────────────────────────────────────────────────────────────────
@@ -237,13 +241,13 @@ export function applyVoteExile(g: WerewolfGame, target: number): 'dead' | 'idiot
 }
 
 /** 夜晚结算：让 AI 法官给出需要的字段，解析失败用启发式补齐。 */
-export async function resolveNightAI(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, opts: NightAIOpts): Promise<NightAIResult> {
+export async function resolveNightAI(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, opts: NightAIOpts, userSetting?: string): Promise<NightAIResult> {
     const defaultNarration = '夜风掠过屋檐，村庄陷入沉睡，有人却在黑暗里悄悄睁开了眼……';
     // 没有任何 AI 夜间动作要决定时（仅缺氛围旁白），不必发起请求。
     if (!opts.needWolfKill && !opts.needWitch && !opts.needSeer && !opts.needGuard) {
         return { wolfKill: opts.knownKill ?? null, seerCheck: null, witchHeal: false, witchPoison: null, guardProtect: opts.knownGuardProtect ?? null, narration: defaultNarration };
     }
-    const sys = werewolfNightSys({ roster: rosterText(g, chars), round: g.round });
+    const sys = werewolfNightSys({ roster: rosterText(g, chars, userSetting), round: g.round });
     const user = werewolfNightUser({
         round: g.round, needWolfKill: opts.needWolfKill, needWitch: opts.needWitch, needSeer: opts.needSeer, needGuard: opts.needGuard,
         knownKill: opts.knownKill, knownGuardProtect: opts.knownGuardProtect, lastGuardedSeat: g.lastGuardedSeat ?? null,
@@ -275,10 +279,10 @@ export async function resolveNightAI(g: WerewolfGame, chars: CharacterProfile[],
 }
 
 // ── 白天·AI 逐位发言 ────────────────────────────────────────────────────────
-export async function generateDaySpeeches(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, deathNote: string): Promise<{ seat: number; speech: string }[]> {
+export async function generateDaySpeeches(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, deathNote: string, userSetting?: string): Promise<{ seat: number; speech: string }[]> {
     const speakers = g.players.filter(p => p.alive && !p.isUser);
     if (!speakers.length) return [];
-    const sys = werewolfSpeechSys({ roster: rosterText(g, chars) });
+    const sys = werewolfSpeechSys({ roster: rosterText(g, chars, userSetting) });
     const user = werewolfSpeechUser({
         round: g.round, speakers: speakers.map(s => ({ seat: s.seat, name: s.name })),
         log: publicLogText(g), deathNote,
@@ -299,11 +303,11 @@ export async function generateDaySpeeches(g: WerewolfGame, chars: CharacterProfi
 }
 
 // ── 投票·AI 唱票 ────────────────────────────────────────────────────────────
-export async function collectVotes(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi): Promise<{ seat: number; target: number; reason?: string }[]> {
+export async function collectVotes(g: WerewolfGame, chars: CharacterProfile[], api: ResolvedApi, userSetting?: string): Promise<{ seat: number; target: number; reason?: string }[]> {
     const voters = votingPlayers(g).filter(p => !p.isUser);
     const targetSeats = voteTargetPlayers(g).map(p => p.seat);
     if (!voters.length) return [];
-    const sys = werewolfVoteSys({ roster: rosterText(g, chars) });
+    const sys = werewolfVoteSys({ roster: rosterText(g, chars, userSetting) });
     const user = werewolfVoteUser({ round: g.round, voters: voters.map(v => ({ seat: v.seat, name: v.name })), aliveSeats: targetSeats, log: publicLogText(g) });
     let arr: any = null;
     try { arr = await callJSON(api, sys, user, 700); } catch { arr = null; }

@@ -15,6 +15,7 @@ import { CharacterProfile, UserProfile, DateScene, DateWorldline, DateMessage } 
 import { extractJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 export interface DateApiConfig { baseUrl: string; apiKey: string; model: string }
 
@@ -55,11 +56,7 @@ function fmtMessages(messages: DateMessage[], char: CharacterProfile, user: User
 
 // ── 回合 prompt ───────────────────────────────────────────
 function personaBlock(char: CharacterProfile): string {
-    return [
-        char.systemPrompt ? `角色性格/设定：\n${char.systemPrompt}` : '',
-        char.worldview ? `世界观：\n${char.worldview}` : '',
-        char.lifeProfile?.content ? `角色生活侧写：\n${char.lifeProfile.content}` : '',
-    ].filter(Boolean).join('\n\n');
+    return buildFullCharacterSetting(char, { includeMemos: true });
 }
 
 export function buildDateTurnPrompt(

@@ -14,6 +14,7 @@ import { normalizeLiveChatSettings, resolveLiveChatEnabled } from '../../utils/l
 import { callChatCompletion } from '../../utils/llmClient';
 import { extractContent } from '../../utils/safeApi';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
+import { buildFullCharacterSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 聊天设置（会话设置）全屏面板。
@@ -375,8 +376,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         if (!memoApi.baseUrl || !memoApi.model) { addToast('先去「文具盒」配置好 API', 'error'); return; }
         setMemoGenerating(true);
         try {
-            const persona = (char.systemPrompt || '').slice(0, 800);
-            const prompt = `你是「${char.name}」。请根据你的人设，写 3~4 条你自己手机备忘录里会有的内容（待办、随手记、藏起来的小心事、清单等，要贴合你的性格与生活，简短自然）。\n\n你的人设：${persona}\n\n只输出 JSON 字符串数组，例如：["明天记得交房租","想给 TA 买生日礼物，纠结选什么","健身：周一三五"]`;
+            const persona = buildFullCharacterSetting(char, { includeMemos: true });
+            const prompt = `你是「${char.name}」。请根据你的完整角色设定，写 3~4 条你自己手机备忘录里会有的内容（待办、随手记、藏起来的小心事、清单等，要贴合你的性格与生活，简短自然）。\n\n${persona}\n\n只输出 JSON 字符串数组，例如：["明天记得交房租","想给 TA 买生日礼物，纠结选什么","健身：周一三五"]`;
             const data = await callChatCompletion(memoApi, {
                 model: memoApi.model,
                 messages: [{ role: 'user', content: prompt }],

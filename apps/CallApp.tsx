@@ -6,7 +6,7 @@ import { startDialTone } from '../utils/ringtone';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { hashTtsParams, getCachedTts, saveCachedTts } from '../utils/ttsCache';
-import { ContextBuilder } from '../utils/context';
+import { ContextBuilder, renderMesExampleBlock } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { RealtimeContextManager } from '../utils/realtimeContext';
 import { DB } from '../utils/db';
@@ -15,9 +15,11 @@ import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { callChatCompletion } from '../utils/llmClient';
 import { PresetRuntime, applyPresetToMessages } from '../utils/presets';
 import { WorldbookRuntime } from '../utils/worldbookRuntime';
+import { substituteMacros } from '../utils/macros';
 import { Message, ChatTheme } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
-import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
+import { sanitizeAssistantVisibleText, wrapHiddenPromptBlock } from '../utils/promptPrivacy';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
 type ViewMode = 'role-select' | 'in-call' | 'history' | 'record-detail';
 type CallBubble = { id: string; dbId?: number; role: 'user' | 'assistant'; text: string; time: string; audioUrl?: string; timestamp: number };
@@ -717,26 +719,57 @@ const CallApp: React.FC = () => {
       await injectMemoryPalace(selectedChar, callMsgs);
     }
     const messages = await buildHistoryMessages(input, skipDbId);
+    const activePreset = await PresetRuntime.getActivePresetForScope('chat.phoneText');
     const scanMessages = messages
       .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .slice(-20)
       .map(m => String(m.content));
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` });
+    const fullCharacterSetting = selectedChar ? buildFullCharacterSetting(selectedChar, { includeMemos: true }) : '';
+    const macroCtx = {
+      charName: selectedChar?.name || '角色',
+      userName,
+      personaDescription: fullUserSetting,
+    };
+    let phoneWorldbookSections: ReturnType<typeof WorldbookRuntime.buildPromptSections> | null = null;
     const systemPrompt = selectedChar
       ? await WorldbookRuntime.withContext(
         { scanMessages },
-        () => buildCallPrompt(userName, selectedChar.name, ContextBuilder.buildCoreContext(selectedChar, userProfile, true), voiceLang || undefined),
+        () => {
+          phoneWorldbookSections = WorldbookRuntime.buildPromptSections(selectedChar, { inlineDepth: true });
+          const coreContext = [
+            fullCharacterSetting,
+            fullUserSetting,
+            ContextBuilder.buildCoreContext(selectedChar, userProfile, true, undefined, {
+              ...(activePreset ? {
+                omitWorldbooks: true,
+                skipUserProfile: true,
+                omitMesExample: true,
+              } : {}),
+              fullUserSetting,
+            }),
+          ].filter(Boolean).join('\n\n');
+          return buildCallPrompt(userName, selectedChar.name, coreContext, voiceLang || undefined);
+        },
       )
       : buildCallPrompt(userName, undefined, undefined, voiceLang || undefined);
-    const activePreset = await PresetRuntime.getActivePresetForScope('chat.phoneText');
+    const personaBlock = wrapHiddenPromptBlock(
+      'persona-description',
+      fullUserSetting,
+    );
+    const presetWorldbookSections = phoneWorldbookSections as ReturnType<typeof WorldbookRuntime.buildPromptSections> | null;
     const fullMessages = activePreset
-      ? applyPresetToMessages([{ role: 'system', content: systemPrompt }, ...messages], activePreset, {
+      ? applyPresetToMessages([{ role: 'system', content: substituteMacros(systemPrompt, macroCtx) }, ...messages], activePreset, {
         presetScope: 'chat.phoneText',
-        macros: {
-          charName: selectedChar?.name || '角色',
-          userName,
-        },
+        macros: macroCtx,
+        markerContents: selectedChar ? {
+          worldInfoBefore: substituteMacros(presetWorldbookSections?.beforeChar || '', macroCtx),
+          worldInfoAfter: substituteMacros(presetWorldbookSections?.afterChar || '', macroCtx),
+          personaDescription: substituteMacros(personaBlock, macroCtx),
+          dialogueExamples: substituteMacros(renderMesExampleBlock(selectedChar.mesExample), macroCtx),
+        } : undefined,
       })
-      : [{ role: 'system', content: systemPrompt }, ...messages];
+      : [{ role: 'system', content: substituteMacros(systemPrompt, macroCtx) }, ...messages];
     const presetGenParams = await PresetRuntime.getActiveGenParams('chat.phoneText');
     const requestBody: any = {
       model: apiConfig.model,
@@ -757,6 +790,7 @@ const CallApp: React.FC = () => {
         apiRole: 'main',
         apiBinding: '语音通话文字回复',
       }),
+      presetScope: false,
     });
     const assistantText = (extractContent(chatData) || '').trim();
     if (!assistantText) throw new Error('文本接口返回为空');

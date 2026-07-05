@@ -247,7 +247,9 @@ describe('theater extra API usage meta', () => {
         const body = JSON.parse(String(init.body || '{}'));
         const promptText = body.messages.map((m: any) => String(m.content || '')).join('\n');
         expect(promptText).toContain('常提醒阿月别逞强');
-        expect(promptText).toContain('用户「阿月」：阿澈认识的夜跑者。');
+        expect(promptText).toContain('用户「阿月」：【完整用户设定】');
+        expect(promptText).toContain('【扮相手账自述】');
+        expect(promptText).toContain('阿澈认识的夜跑者。');
         expect(promptText).toContain('写一段阿月和阿澈晚饭后的番外');
         expect(promptText).not.toContain('{{user}}');
     });
@@ -274,7 +276,9 @@ describe('theater extra API usage meta', () => {
         const body = JSON.parse(String(init.body || '{}'));
         const promptText = body.messages.map((m: any) => String(m.content || '')).join('\n');
         expect(promptText).toContain('会给阿月留便利贴');
-        expect(promptText).toContain('用户「阿月」：喜欢收集阿澈写的纸条。');
+        expect(promptText).toContain('用户「阿月」：【完整用户设定】');
+        expect(promptText).toContain('【扮相手账自述】');
+        expect(promptText).toContain('喜欢收集阿澈写的纸条。');
         expect(promptText).toContain('阿月的便利贴');
         expect(promptText).not.toContain('{{user}}');
     });

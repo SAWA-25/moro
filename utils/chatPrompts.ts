@@ -20,6 +20,7 @@ import { buildChatHubV2ContextBlock } from './chatHubDigest';
 import { buildMomentsChatContextBlock } from './momentsContext';
 import { formatCharPhoneCheckRecordForContext } from './checkPhone';
 import { isAmbientSocialCharacterForUser, isAmbientSocialGroupForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
+import { getLocalDateKey } from './dateKey';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -140,6 +141,8 @@ export const ChatPrompts = {
         // 不并入核心上下文，由 buildChatRequestPayload 作为 worldInfoBefore /
         // worldInfoAfter / personaDescription marker 内容注入到预设定义的位置。
         presetMarkerSplit?: boolean,
+        // 已异步解析出的完整用户设定：当前扮相、扮相绑定世界书、页外状态和社交关系。
+        fullUserSetting?: string,
     ) => {
         // ── 分段计时（定位瓶颈用）──
         const perfT0 = performance.now();
@@ -153,12 +156,13 @@ export const ChatPrompts = {
         // 回忆标本馆检索结果现在从 char.memoryPalaceInjection 读取，由 buildCoreContext 统一注入
         const coreT0 = performance.now();
         let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true, undefined,
-            (omitDepthWorldbooks || presetMarkerSplit)
+            (omitDepthWorldbooks || presetMarkerSplit || fullUserSetting)
                 ? {
                     omitDepthWorldbooks: omitDepthWorldbooks || undefined,
                     omitWorldbooks: presetMarkerSplit || undefined,
                     skipUserProfile: presetMarkerSplit || undefined,
                     omitMesExample: presetMarkerSplit || undefined,
+                    fullUserSetting,
                 }
                 : undefined);
         timings.buildCoreContext = Math.round(performance.now() - coreT0);
@@ -168,7 +172,7 @@ export const ChatPrompts = {
         // ── 并发发起所有独立的异步取数（网络 + IndexedDB），下面按原顺序拼接 ──
         // 原来是 7 段串行 await，总耗时 = 各段之和；现在取 max。
         const config = realtimeConfig || defaultRealtimeConfig;
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateKey();
         const hideAmbientSocialRecords = shouldHideAmbientSocialRecordForUser(userProfile);
 
         // 1. 实时世界信息（天气/新闻/时间）

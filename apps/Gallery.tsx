@@ -6,6 +6,7 @@ import { extractContent } from '../utils/safeApi';
 import { processImage } from '../utils/file';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import { GalleryStockPanel } from './GalleryStockPanel';
 import { manualAnchorProps, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import {
@@ -117,7 +118,7 @@ const sortImages = (items: GalleryImage[], mode: SortMode) => {
 };
 
 const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
-    const { closeApp, characters, apiConfig, addToast } = useOS();
+    const { closeApp, characters, apiConfig, addToast, userProfile } = useOS();
     const [view, setView] = useState<View>(initialView);
     const [activeCharId, setActiveCharId] = useState<string | null>(null);
     const [images, setImages] = useState<GalleryImage[]>([]);
@@ -479,7 +480,11 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
             const chatContextStr = selectedImage.chatContext?.length
                 ? `\n\nConversation context when this photo was saved:\n${selectedImage.chatContext.join('\n')}\n`
                 : '';
-            const systemContent = `You are ${char.name}. ${char.systemPrompt || 'You are a helpful assistant.'}
+            const systemContent = `You are ${char.name}.
+${buildFullCharacterSetting(char, { includeMemos: true })}
+
+${await buildFullActiveUserSetting(userProfile)}
+
 Task: The user is looking at one saved photo in your shared gallery. Write a short note on the back of the photo in your own voice, 1-3 natural Chinese sentences.
 ${metaLines ? `Photo metadata:\n${metaLines}\n` : ''}${chatContextStr}
 Style: intimate, casual, in character. Do not say you are an AI. Do not merely describe "this is an image"; react like you remember or are seeing this photo with the user.`;

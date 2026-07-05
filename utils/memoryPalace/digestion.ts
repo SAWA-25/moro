@@ -173,8 +173,8 @@ async function callDigestLLM(
 
     const userLabel = userName || '用户';
 
-    const systemPrompt = `你是 ${charName}。以下是你的核心人设：
-${charPersona.slice(0, 800)}
+    const systemPrompt = `你是 ${charName}。以下是你的完整角色设定：
+${charPersona}
 
 你现在正在独处，安静地回想最近的事情。你需要对内心里那些"还没消化完"的东西做一次整理，同时梳理你对${userLabel}的了解，以及审视你自己。
 
@@ -608,7 +608,7 @@ async function executeActions(
  *
  * @param charId 角色 ID
  * @param charName 角色名
- * @param charPersona 角色核心人设（systemPrompt + worldview 片段）
+ * @param charPersona 完整角色/用户设定上下文（调用方应传 buildFullCharacterSetting + buildFullActiveUserSetting）
  * @param llmConfig 轻量 LLM 配置
  * @param force 保留参数兼容，已无冷却限制
  */
@@ -693,7 +693,7 @@ export async function detectPersonalityStyle(
     const systemPrompt = `你是一个性格分析专家。根据角色的人设和记忆，判断这个角色的认知风格和反刍倾向。
 
 ## 角色：${charName}
-${charPersona.slice(0, 1200)}
+${charPersona}
 ${memoryContext}
 
 ## 一、四种认知风格（style）

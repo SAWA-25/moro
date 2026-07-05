@@ -6,6 +6,7 @@ import { buildOpenAiEndpoint, buildOpenAiHeaders, normalizeModelList, requireOpe
 import { extractContent, safeFetchJson } from './safeApi';
 import { PresetRuntime, applyPresetToMessages, type PresetGenParams, type PresetMacroCtx } from './presets';
 import { buildCharacterIdentityAnchorPrompt, resolveCharacterByModelId } from './characterIdentity';
+import { getApiUsageFeature } from './apiUsageCatalog';
 
 export interface ChatMsg { role: string; content: any; [key: string]: any }
 
@@ -24,13 +25,17 @@ export interface LlmRequestOptions {
     meta?: ApiCallMeta;
     maxRetries?: number;
     timeoutMs?: number;
+    /** false = 调用方已经手工套过活字盘骨架，或该请求必须完全跳过活字盘。 */
+    presetScope?: PresetScopeKey | false;
+    /** 给活字盘里的 {{char}} / {{user}} 等宏提供真实上下文。 */
+    presetMacros?: PresetMacroCtx;
 }
 
 export interface CompleteTextOptions extends LlmRequestOptions, PresetGenParams {
     maxTokens?: number;
     continueRounds?: number;
-    presetScope?: PresetScopeKey;
-    presetMacros?: PresetMacroCtx;
+    /** true = 调用方传入的 max_tokens / maxTokens 不被预设采样参数覆盖。 */
+    preserveMaxTokens?: boolean;
 }
 
 export function stripThink(s: string): string {
@@ -51,6 +56,174 @@ function modelOf(api: OpenAiApiLike, body: ChatCompletionRequest): string {
 }
 
 const AUTO_IDENTITY_MARKER = 'Moro Character Identity Anchor';
+
+const CHAT_FEATURE_PRESET_SCOPES: Record<string, PresetScopeKey> = {
+    'chat.privateReply': 'chat.private',
+    'chat.parallelReply': 'chat.private',
+    'chat.liveDraftReply': 'chat.private',
+    'chat.unblockAppeal': 'chat.private',
+    'chat.offlineMode': 'chat.private',
+    'chat.lockScreen': 'chat.private',
+    'chat.userScreenWatch.comment': 'chat.private',
+    'chat.proactiveReply': 'chat.proactive',
+    'chat.autonomousLife': 'chat.proactive',
+    'chat.groupReply': 'chat.groupText',
+    'chat.groupLiveDraft': 'chat.groupText',
+    'chat.groupOfflineMode': 'chat.groupText',
+    'chat.phoneTextReply': 'chat.phoneText',
+};
+
+const ROLE_SCENE_APP_IDS = new Set(['lifesim', 'vrworld']);
+
+const CREATIVE_APP_IDS = new Set([
+    'bank',
+    'browser',
+    'check_phone',
+    'co_view',
+    'creative',
+    'forum',
+    'gallery',
+    'game',
+    'guidebook',
+    'handbook',
+    'journal',
+    'music',
+    'novel',
+    'room',
+    'shop',
+    'social',
+    'songwriting',
+    'special_moments',
+    'study',
+    'takeout',
+    'theater',
+    'twitter',
+    'xhs_free_roam',
+    'xunji',
+]);
+
+const STRUCTURED_APP_IDS = new Set([
+    'memory_palace',
+    'settings',
+]);
+
+const CREATIVE_FEATURE_IDS = new Set([
+    'almanac.flowNarrative',
+    'almanac.calendarMarks',
+    'character.create',
+    'character.refine',
+    'character.lifeProfile',
+]);
+
+const STRUCTURED_FEATURE_IDS = new Set([
+    'character.importParse',
+    'character.appearanceTags',
+    'character.memoryArchive',
+    'chat.translation',
+    'chat.recenter',
+    'chat.friendVerify',
+    'chat.inputAnimation',
+    'chat.userActionSuggest',
+    'chat.memoGenerate',
+    'chat.conversationSettings',
+]);
+
+const STRUCTURED_FEATURE_PATTERN =
+    /(?:\.fetchModels$|\.testConnection$|postProcess|summary|digest|emotion|Eval|translation|topicSplit|extraction|Compression|links|cognition|personality|migration|scheduleGenerate|scheduleReconcile|importParse|appearanceTags|memoryArchive|resumeReview|jobStage|loanReview|stockOrder|companyAction|investAdvice|ledgerInsight|dashboardInsight|compat|recap|buff)$/i;
+
+function messageText(content: any): string {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map(part => {
+            if (typeof part === 'string') return part;
+            if (typeof part?.text === 'string') return part.text;
+            if (typeof part?.content === 'string') return part.content;
+            return '';
+        }).join('\n');
+    }
+    return '';
+}
+
+function requestLooksStructured(request?: ChatCompletionRequest): boolean {
+    if (!request) return false;
+    if (request.response_format || request.tools || request.tool_choice || request.functions || request.function_call) return true;
+    const joined = (request.messages || [])
+        .slice(0, 3)
+        .concat((request.messages || []).slice(-2))
+        .map(m => messageText(m.content))
+        .join('\n')
+        .slice(0, 8000);
+    return /JSON|schema|数组|对象|字段|只输出|不要\s*Markdown|不要解释|extract|classify|summari[sz]e|translate|返回(?:一个)?(?:JSON|数组|对象)|输出必须是\s*JSON/i.test(joined);
+}
+
+function prepareMessagesForPreset(messages: ChatMsg[]): { messages: ChatMsg[]; syntheticCore: boolean } {
+    if (messages[0]?.role === 'system') return { messages, syntheticCore: false };
+    return { messages: [{ role: 'system', content: '' }, ...messages], syntheticCore: true };
+}
+
+function dropSyntheticBlankCore(messages: ChatMsg[], syntheticCore: boolean): ChatMsg[] {
+    if (!syntheticCore) return messages;
+    return messages.filter(message => !(message.role === 'system' && !messageText(message.content).trim()));
+}
+
+function inferPresetScopeFromFeature(featureId?: string): PresetScopeKey | null {
+    const id = String(featureId || '').trim();
+    if (!id) return null;
+    if (CHAT_FEATURE_PRESET_SCOPES[id]) return CHAT_FEATURE_PRESET_SCOPES[id];
+    if (/\.fetchModels$|\.testConnection$/i.test(id)) return null;
+    if (id.startsWith('date.') || id.startsWith('vrWorld.') || id.startsWith('pixelHome.memoryDive.')) {
+        return 'role.scene';
+    }
+    if (CREATIVE_FEATURE_IDS.has(id)) return 'creative.text';
+    if (STRUCTURED_FEATURE_IDS.has(id) || STRUCTURED_FEATURE_PATTERN.test(id)) return 'structured.tool';
+    if (id.startsWith('chat.')) return 'creative.text';
+
+    const feature = getApiUsageFeature(id);
+    const appId = String(feature?.appId || '').trim();
+    if (ROLE_SCENE_APP_IDS.has(appId)) return 'role.scene';
+    if (STRUCTURED_APP_IDS.has(appId)) return 'structured.tool';
+    if (CREATIVE_APP_IDS.has(appId)) return 'creative.text';
+    return null;
+}
+
+export function resolvePresetScopeForApiCall(input: {
+    explicit?: PresetScopeKey | false;
+    meta?: ApiCallMeta;
+    request?: ChatCompletionRequest;
+}): PresetScopeKey | null {
+    if (input.explicit === false) return null;
+    if (input.explicit) return input.explicit;
+    const byFeature = inferPresetScopeFromFeature(input.meta?.featureId);
+    if (byFeature) return byFeature;
+    const first = input.request?.messages?.[0];
+    if (first?.role !== 'system') return null;
+    return requestLooksStructured(input.request) ? 'structured.tool' : 'creative.text';
+}
+
+async function applyResolvedPresetScope(
+    request: ChatCompletionRequest,
+    scope: PresetScopeKey | null,
+    opts: LlmRequestOptions,
+): Promise<ChatCompletionRequest> {
+    if (!scope) return request;
+    let body = request;
+    const presetGenParams = await PresetRuntime.getActiveGenParams(scope);
+    if (presetGenParams) {
+        body = { ...body, ...presetGenParams };
+    }
+    const preset = await PresetRuntime.getActivePresetForScope(scope);
+    if (preset) {
+        const prepared = prepareMessagesForPreset(body.messages || []);
+        body = {
+            ...body,
+            messages: dropSyntheticBlankCore(applyPresetToMessages(prepared.messages, preset, {
+                macros: opts.presetMacros ?? { charName: String(opts.meta?.charName || '角色'), userName: '用户' },
+                presetScope: scope,
+            }) as ChatMsg[], prepared.syntheticCore),
+        };
+    }
+    return body;
+}
 
 function messageTextForIdentityCheck(content: any): string {
     if (typeof content === 'string') return content;
@@ -143,6 +316,12 @@ export async function callChatCompletion(
     };
     delete body.maxTokens;
     if (body.max_tokens === undefined) delete body.max_tokens;
+    const presetScope = resolvePresetScopeForApiCall({
+        explicit: opts.presetScope,
+        meta: opts.meta,
+        request: body,
+    });
+    body = await applyResolvedPresetScope(body, presetScope, opts);
     body = await injectMetaCharacterIdentity(body, opts.meta);
 
     return safeFetchJson(
@@ -185,7 +364,7 @@ async function callOnce(
         const value = opts[key];
         if (value !== undefined) request[key] = value;
     }
-    const data = await callChatCompletion(api, request, opts);
+    const data = await callChatCompletion(api, request, { ...opts, presetScope: false });
     return {
         content: extractContent(data) || '',
         finishReason: data?.choices?.[0]?.finish_reason ?? null,
@@ -198,21 +377,30 @@ export async function completeText(
     opts: CompleteTextOptions = {},
 ): Promise<string> {
     const rounds = Math.max(0, opts.continueRounds ?? 0);
-    const presetGenParams = opts.presetScope ? await PresetRuntime.getActiveGenParams(opts.presetScope) : null;
+    const presetScope = resolvePresetScopeForApiCall({
+        explicit: opts.presetScope,
+        meta: opts.meta,
+        request: { model: api.model, messages },
+    });
+    const presetGenParams = presetScope ? await PresetRuntime.getActiveGenParams(presetScope) : null;
+    const requestedMaxTokens = opts.max_tokens ?? opts.maxTokens;
     const effectiveOpts: CompleteTextOptions = {
         ...opts,
         // 预设开启且允许下发采样参数时，预设应像 ST 一样接管本轮请求火候；
         // 调用点的 temperature / maxTokens 只作为没有预设参数时的默认值。
         ...(presetGenParams ?? {}),
+        ...(opts.preserveMaxTokens && requestedMaxTokens !== undefined ? { max_tokens: requestedMaxTokens, maxTokens: undefined } : {}),
+        presetScope: false,
     };
     let convo = messages.slice();
-    if (opts.presetScope && messages[0]?.role === 'system') {
-        const preset = await PresetRuntime.getActivePresetForScope(opts.presetScope);
+    if (presetScope) {
+        const preset = await PresetRuntime.getActivePresetForScope(presetScope);
         if (preset) {
-            convo = applyPresetToMessages(messages, preset, {
+            const prepared = prepareMessagesForPreset(messages);
+            convo = dropSyntheticBlankCore(applyPresetToMessages(prepared.messages, preset, {
                 macros: opts.presetMacros ?? { charName: '角色', userName: '用户' },
-                presetScope: opts.presetScope,
-            }) as ChatMsg[];
+                presetScope,
+            }) as ChatMsg[], prepared.syntheticCore);
         }
     }
 

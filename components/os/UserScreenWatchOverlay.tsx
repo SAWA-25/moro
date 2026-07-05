@@ -82,7 +82,7 @@ const UserScreenWatchOverlay: React.FC = () => {
       className="absolute z-[68] select-none text-slate-950"
       style={{ width: WIDTH, transform: `translate3d(${pos.x}px, ${pos.y}px, 0)` }}
     >
-      <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/90 shadow-[0_18px_60px_rgba(15,23,42,0.24)] backdrop-blur-xl">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
         <div
           className="flex cursor-grab items-center gap-2 px-3 py-2 active:cursor-grabbing"
           onPointerDown={onPointerDown}

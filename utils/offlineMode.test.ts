@@ -77,6 +77,9 @@ describe('offline mode draft sessions', () => {
     expect(loadOfflineWordLimit('char-1')).toEqual({ maxChars: 160 });
     expect(loadOfflineWordLimit('char-2')).toEqual({});
 
+    saveOfflineWordLimit('char-1', { maxChars: 5000 });
+    expect(loadOfflineWordLimit('char-1')).toEqual({ maxChars: 5000 });
+
     saveOfflineWordLimit('char-1', {});
     expect(loadOfflineWordLimit('char-1')).toEqual({});
   });
@@ -148,6 +151,42 @@ describe('offline mode draft sessions', () => {
       role: 'user',
       content: '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。',
     });
+    expect(body.max_tokens).toBe(2400);
+  });
+
+  it('continues offline openings when the model response is cut by length', async () => {
+    const queue = [
+      { content: '深夜三点半，房间里只有手机屏幕的冷光，一个像素风的猫娘形象', finish_reason: 'length' },
+      { content: '从屏幕边缘轻轻跳出来，尾巴扫过对话框。“我到了。”', finish_reason: 'stop' },
+    ];
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const next = queue.shift();
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: next?.content || '' }, finish_reason: next?.finish_reason || 'stop' }] }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const char = {
+      id: 'char-1',
+      name: 'Mia',
+      avatar: 'mia.png',
+      systemPrompt: '像素风猫娘。',
+    } as CharacterProfile;
+    const userProfile = { name: 'Me', avatar: 'me.png' } as UserProfile;
+
+    const result = await generateOfflineOpening(
+      char,
+      userProfile,
+      { baseUrl: 'https://api.example.test/v1', apiKey: 'test-key', model: 'test-model' },
+      DEFAULT_OFFLINE_POV,
+      'Me 点开了和 Mia 的线下面对面窗口。',
+    );
+
+    expect(result).toBe('深夜三点半，房间里只有手机屏幕的冷光，一个像素风的猫娘形象从屏幕边缘轻轻跳出来，尾巴扫过对话框。“我到了。”');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('adds custom word limits to offline generation prompts', async () => {
@@ -180,5 +219,6 @@ describe('offline mode draft sessions', () => {
     const prompt = body.messages[0].content;
     expect(prompt).toContain('写出见面那一刻的开场（不超过90字）');
     expect(prompt).toContain('字数上限是 90 字');
+    expect(body.max_tokens).toBe(1290);
   });
 });

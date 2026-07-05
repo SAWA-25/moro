@@ -21,6 +21,7 @@ import { isNativeAppRuntime } from '../utils/nativeRuntime';
 import {
   CATEGORY_ORDER,
   getManualUpdateNotices,
+  groupManualUpdateNoticesByDate,
   MANUAL_DESTINATIONS,
   MANUAL_ENTRIES,
   type ManualCategory,
@@ -634,8 +635,7 @@ const ManualApp: React.FC = () => {
     : null;
   const ActiveAppIcon = activeAppConfig ? Icons[activeAppConfig.icon] : null;
   const updateNotices = useMemo(() => getManualUpdateNotices(), []);
-  const latestNotice = updateNotices[0] || null;
-  const olderNotices = updateNotices.slice(1);
+  const updateNoticeGroups = useMemo(() => groupManualUpdateNoticesByDate(updateNotices), [updateNotices]);
 
   const countByCategory = useMemo(() => {
     const counts: Record<ManualCategory, number> = {
@@ -738,22 +738,34 @@ const ManualApp: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {latestNotice && <UpdateNoticeCard notice={latestNotice} latest />}
-
-              <div className="flex items-center gap-2 pt-1">
-                <span className="h-px flex-1 bg-black/10" />
-                <span className="label-mono text-[9px] tracking-[0.24em] text-[#9a8c75]">过往公告</span>
-                <span className="h-px flex-1 bg-black/10" />
-              </div>
-
-              {olderNotices.length > 0 ? (
-                olderNotices.map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)
-              ) : (
-                <div className="rounded-[18px] bg-white/72 border border-black/10 px-4 py-5 text-center text-[11.5px] leading-relaxed text-[#7b705f]">
-                  暂时只有这一条公告。之后的每次改动都会继续往这里补。
-                </div>
-              )}
+            <div className="space-y-5">
+              {updateNoticeGroups.map((group) => (
+                <section key={group.date} className="space-y-3">
+                  <div className="sticky top-0 z-10 -mx-1 px-1 py-2 bg-[#f4eddf]/92 backdrop-blur">
+                    <div className="flex items-center gap-2">
+                      <span className="h-px flex-1 bg-black/10" />
+                      <span className="shrink-0 rounded-full bg-[#23211d] px-3 py-1 text-[10px] font-black text-[#fffdf8]">
+                        {formatNoticeDate(group.date)}
+                      </span>
+                      <span className="label-mono shrink-0 text-[9px] tracking-[0.16em] text-[#9a8c75]">
+                        {group.notices.length} 条
+                      </span>
+                      <span className="h-px flex-1 bg-black/10" />
+                    </div>
+                  </div>
+                  {group.pinnedHeadline && (
+                    <div className="rounded-[20px] bg-[#23211d] px-4 py-5 text-center shadow-[0_18px_36px_-26px_rgba(35,33,29,0.82)]">
+                      <div className="label-mono text-[9px] font-black tracking-[0.24em] text-white/52">置顶提醒</div>
+                      <div className="mt-2 text-[24px] font-black leading-tight text-[#fffdf8] break-words">
+                        {group.pinnedHeadline}
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    {group.notices.map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>

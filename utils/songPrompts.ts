@@ -152,10 +152,11 @@ export const SongPrompts = {
         char: CharacterProfile,
         user: UserProfile,
         song: SongSheet,
-        _recentMessages: { role: string; content: string }[]
+        _recentMessages: { role: string; content: string }[],
+        fullUserSetting?: string,
     ): string => {
         // Use ContextBuilder with includeDetailedMemories = true
-        const charContext = ContextBuilder.buildCoreContext(char, user, true);
+        const charContext = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting });
 
         const genreInfo = SONG_GENRES.find(g => g.id === song.genre);
         const moodInfo = SONG_MOODS.find(m => m.id === song.mood);

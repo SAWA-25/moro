@@ -12,6 +12,7 @@ import {
     type NightAIResult,
 } from '../../utils/theaterWerewolf';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
+import { buildFullActiveUserSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 折子戏·狼人杀（捌）：拉一桌熟人开一局。
@@ -67,6 +68,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
     useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [game?.log.length, step]);
 
     const userName = (userProfile?.name || '').trim() || '你';
+    const getUserSetting = () => buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` });
     const clone = (g: WerewolfGame): WerewolfGame => {
         const n = normalizeWerewolfGame(g);
         return { ...n, lastActiveAt: Date.now(), players: n.players.map(p => ({ ...p })), log: [...n.log] };
@@ -194,7 +196,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: false, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI, knownKill: target });
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: false, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI, knownKill: target }, await getUserSetting());
             applyNight(game, target, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
@@ -213,7 +215,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: false, needGuard: guardIsAI });
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: false, needGuard: guardIsAI }, await getUserSetting());
             applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('seerResult'); } finally { setBusy(false); }
     };
@@ -222,7 +224,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: false, needSeer: seerIsAI, needGuard: guardIsAI });
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: false, needSeer: seerIsAI, needGuard: guardIsAI }, await getUserSetting());
             aiNightRef.current = ai;
             setNightKill(ai.wolfKill);
             setGuardProtect(ai.guardProtect);
@@ -241,7 +243,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         try {
             const ai = await resolveNightAI(game, characters, api, {
                 needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: false, knownGuardProtect: target,
-            });
+            }, await getUserSetting());
             applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, target, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
@@ -250,7 +252,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setStep('resolving'); setBusy(true); setError('');
         try {
-            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI });
+            const ai = await resolveNightAI(game, characters, api, { needWolfKill: true, needWitch: witchIsAI, needSeer: seerIsAI, needGuard: guardIsAI }, await getUserSetting());
             applyNight(game, ai.wolfKill, ai.witchHeal, ai.witchPoison, ai.guardProtect, ai.narration);
         } catch (e: any) { setError(e?.message || String(e)); setStep('night'); } finally { setBusy(false); }
     };
@@ -265,7 +267,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setBusy(true); setError('');
         try {
-            const speeches = await generateDaySpeeches(game, characters, api, composeDeathNote(game));
+            const speeches = await generateDaySpeeches(game, characters, api, composeDeathNote(game), await getUserSetting());
             const g = clone(game);
             for (const s of speeches) {
                 const p = playerBySeat(g, s.seat);
@@ -290,7 +292,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
         if (!game) return;
         setBusy(true); setError('');
         try {
-            const aiVotes = await collectVotes(game, characters, api);
+            const aiVotes = await collectVotes(game, characters, api, await getUserSetting());
             const g = clone(game);
             const meNow = userPlayer(g);
             const allVotes = [...aiVotes];

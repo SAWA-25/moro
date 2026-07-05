@@ -16,8 +16,8 @@ import { talkSystemPrompt, talkOpeningUser, talkReplyUser, talkInsightUser } fro
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 
-const talkSystem = (char: CharacterProfile, userProfile: UserProfile, mood?: string, mode?: TalkMode, intention?: string): string => {
-    const core = ContextBuilder.buildCoreContext(char, userProfile, true);
+const talkSystem = async (char: CharacterProfile, userProfile: UserProfile, mood?: string, mode?: TalkMode, intention?: string): Promise<string> => {
+    const core = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     const userName = (userProfile.name || '').trim() || '对方';
     return talkSystemPrompt({ core, charName: char.name, userName, mood, mode, intention });
 };
@@ -48,7 +48,7 @@ export const generateTalkOpening = async (
 ): Promise<string> => {
     const userName = (userProfile.name || '').trim() || '对方';
     const user = talkOpeningUser({ userName, charName: char.name, mood, mode, intention });
-    return callLLM(api, talkSystem(char, userProfile, mood, mode, intention), user);
+    return callLLM(api, await talkSystem(char, userProfile, mood, mode, intention), user);
 };
 
 /** 谈心推进：根据已有对话与 user 这次说的话，生成角色温柔的回应。 */
@@ -59,7 +59,7 @@ export const generateTalkReply = async (
     const userName = (userProfile.name || '').trim() || '对方';
     const hist = transcript(turns, char.name, userName);
     const user = talkReplyUser({ hist, userName, charName: char.name, userInput });
-    return callLLM(api, talkSystem(char, userProfile, mood, mode, intention), user);
+    return callLLM(api, await talkSystem(char, userProfile, mood, mode, intention), user);
 };
 
 /** 谈心安放卡：把当前记录收束成一张可收藏的小结。 */
@@ -71,7 +71,7 @@ export const generateTalkInsight = async (
     const hist = transcript(turns, char.name, userName);
     const raw = await callLLM(
         api,
-        talkSystem(char, userProfile, mood, mode, intention),
+        await talkSystem(char, userProfile, mood, mode, intention),
         talkInsightUser({ hist, userName, charName: char.name, mood, mode }),
     );
     const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);

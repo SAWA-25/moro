@@ -53,6 +53,54 @@ describe('ContextBuilder character identity anchor', () => {
     expect(context).toContain('Same Name: 你来啦。');
   });
 
+  it('uses the supplied full user setting in core context', () => {
+    const context = ContextBuilder.buildCoreContext(char, user, false, undefined, {
+      fullUserSetting: 'FULL_USER_SETTING_SENTINEL\nUSER_WORLDBOOK_SENTINEL',
+    });
+
+    expect(context).toContain('FULL_USER_SETTING_SENTINEL');
+    expect(context).toContain('USER_WORLDBOOK_SENTINEL');
+  });
+
+  it('keeps full character and user settings in the default core prompt path', () => {
+    const context = ContextBuilder.buildCoreContext(
+      {
+        ...char,
+        description: 'DESCRIPTION_SENTINEL',
+        worldview: 'WORLDVIEW_SENTINEL',
+        lifeProfile: { content: 'LIFE_PROFILE_SENTINEL', generatedAt: 1 },
+        appearanceTags: 'APPEARANCE_SENTINEL',
+        writerPersona: 'WRITER_PERSONA_SENTINEL',
+        selfInsights: ['SELF_INSIGHT_SENTINEL'],
+      },
+      { ...user, bio: 'SHORT_BIO_SHOULD_NOT_WIN' },
+      false,
+      undefined,
+      {
+        fullUserSetting: 'FULL_USER_SETTING_SENTINEL\nUSER_WORLDBOOK_SENTINEL',
+      },
+    );
+
+    expect(context).toContain('完整角色设定');
+    expect(context).toContain('DESCRIPTION_SENTINEL');
+    expect(context).toContain('WORLDVIEW_SENTINEL');
+    expect(context).toContain('LIFE_PROFILE_SENTINEL');
+    expect(context).toContain('APPEARANCE_SENTINEL');
+    expect(context).toContain('WRITER_PERSONA_SENTINEL');
+    expect(context).toContain('SELF_INSIGHT_SENTINEL');
+    expect(context).toContain('FULL_USER_SETTING_SENTINEL');
+    expect(context).toContain('USER_WORLDBOOK_SENTINEL');
+  });
+
+  it('uses the supplied full user setting in group shared scene', () => {
+    const scene = ContextBuilder.buildGroupSharedScene([char], user, {
+      fullUserSetting: 'GROUP_FULL_USER_SENTINEL\nGROUP_USER_WB_SENTINEL',
+    });
+
+    expect(scene.text).toContain('GROUP_FULL_USER_SENTINEL');
+    expect(scene.text).toContain('GROUP_USER_WB_SENTINEL');
+  });
+
   it('injects the automatic offline directive only when auto meet is enabled', () => {
     const context = ContextBuilder.buildCoreContext(
       { ...char, convoSettings: { autoOffline: true } },

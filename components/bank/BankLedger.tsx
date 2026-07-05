@@ -7,6 +7,7 @@ import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
 import { makeApiUsageMeta } from '../../utils/apiUsageCatalog';
 import { callChatCompletion } from '../../utils/llmClient';
 import { HAND_FONT, tinyRotate } from '../../apps/almanac/handbookKit';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 人生拟 · 互评账本
@@ -96,6 +97,14 @@ const BankLedger: React.FC<Props> = ({ transactions, onTxUpdated, characters, ap
         [charEntries, activeCharId],
     );
     const charById = (id: string) => characters.find(c => c.id === id);
+    const buildLedgerPromptBase = useCallback(async (char: CharacterProfile) => {
+        const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
+        return [
+            buildFullCharacterSetting(char, { includeMemos: true }),
+            fullUserSetting,
+            ContextBuilder.buildCoreContext(char, userProfile, true, undefined, { fullUserSetting }),
+        ].join('\n\n');
+    }, [userProfile]);
 
     // 角色点评用户的某笔现实账目
     const commentOnTx = useCallback(async (tx: BankTransaction) => {
@@ -105,7 +114,7 @@ const BankLedger: React.FC<Props> = ({ transactions, onTxUpdated, characters, ap
         setBusyTxId(tx.id);
         try {
             await injectMemoryPalace(char, undefined, tx.note);
-            const base = ContextBuilder.buildCoreContext(char, userProfile);
+            const base = await buildLedgerPromptBase(char);
             const kind = tx.type === 'income' ? '进账(收入)' : '支出(花钱)';
             const prompt = `### 场景：翻看 ${userProfile.name} 的现实记账
 ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currency}${tx.amount}。
@@ -124,7 +133,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
         } finally {
             setBusyTxId(null);
         }
-    }, [commenterId, characters, apiConfig, userProfile, currency, addToast, onTxUpdated]);
+    }, [commenterId, characters, apiConfig, userProfile, currency, addToast, onTxUpdated, buildLedgerPromptBase]);
 
     // 角色给自己记一笔账
     const genCharEntry = useCallback(async (char: CharacterProfile) => {
@@ -132,7 +141,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
         setGenBusy(true);
         try {
             await injectMemoryPalace(char, undefined, '记账');
-            const base = ContextBuilder.buildCoreContext(char, userProfile);
+            const base = await buildLedgerPromptBase(char);
             const prompt = `### 场景：你在自己的账本上记一笔账
 请按你的人设、你的生活，给**你自己**记一笔今天的账（进账或支出都行，要符合你的身份与处境）。
 
@@ -156,7 +165,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
         } finally {
             setGenBusy(false);
         }
-    }, [apiConfig, userProfile, currency, addToast]);
+    }, [apiConfig, userProfile, currency, addToast, buildLedgerPromptBase]);
 
     // 用户对角色账目留言 → 角色 AI 回复
     const sendComment = useCallback(async (entry: CharLedgerEntry) => {
@@ -173,7 +182,7 @@ ${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currenc
         setReplyBusyId(entry.id);
         try {
             await injectMemoryPalace(char, undefined, entry.note);
-            const base = ContextBuilder.buildCoreContext(char, userProfile);
+            const base = await buildLedgerPromptBase(char);
             const kind = entry.type === 'income' ? '进账' : '支出';
             const thread = (updated.comments || []).map(c => `${c.author === 'user' ? userProfile.name : char.name}：${c.text}`).join('\n');
             const prompt = `### 场景：你账本上的一笔账下面，${userProfile.name} 给你留言了
@@ -197,7 +206,7 @@ ${thread}
         } finally {
             setReplyBusyId(null);
         }
-    }, [commentDrafts, characters, apiConfig, userProfile, currency]);
+    }, [commentDrafts, characters, apiConfig, userProfile, currency, buildLedgerPromptBase]);
 
     const removeCharEntry = async (id: string) => {
         await DB.deleteCharLedgerEntry(id);

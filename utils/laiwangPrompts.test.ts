@@ -82,6 +82,24 @@ describe('laiwang prompt copy', () => {
     expect(AUTONOMOUS_BATCH_SYSTEM).toContain('不要为了热闹而制造大事件');
   });
 
+  it('keeps autonomous life balanced instead of injury-driven', () => {
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('持续糟糕');
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('持续受伤');
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('疼痛、病症、受伤不是默认细节');
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('摔倒、流血、骨折、扭伤、车祸');
+    expect(AUTONOMOUS_BATCH_SYSTEM).toContain('负面事件最多占三分之一');
+    expect(AUTONOMOUS_BATCH_SYSTEM).toContain('意外不等于事故，更不等于受伤');
+    expect(AUTONOMOUS_BATCH_SYSTEM).toContain('eventKind=accident/health 至多 1 条');
+  });
+
+  it('anchors autonomous life in the specific character setting', () => {
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('先看角色完整设定');
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('TA 可能会发生的小事');
+    expect(AUTONOMOUS_SINGLE_SYSTEM).toContain('不要套用现代上班族');
+    expect(AUTONOMOUS_BATCH_SYSTEM).toContain('这个角色完整设定里可能自然发生的事');
+    expect(AUTONOMOUS_BATCH_SYSTEM).toContain('不要把所有角色都写成同一种现代都市日常');
+  });
+
   it('keeps live chat behavior restrained', () => {
     const draft = livePrivateDraftPromptBody({
       userName: '小夏',
@@ -188,6 +206,19 @@ describe('laiwang prompt copy', () => {
 
     expect(text).toContain('没被你接住的消息');
     expect(text).not.toContain('不是回复，是你自己想起');
+  });
+
+  it('keeps full user setting inside SW offline proactive prompts', () => {
+    const text = swOfflineProactiveSystemPrompt({
+      charName: '阿迟',
+      nowText: '7月4日 周六 09:30',
+      userName: '小夏',
+      fullUserSetting: 'FULL_USER_SETTING_SENTINEL\nUSER_WORLDBOOK_SENTINEL',
+    });
+
+    expect(text).toContain('互动对象完整用户设定');
+    expect(text).toContain('FULL_USER_SETTING_SENTINEL');
+    expect(text).toContain('USER_WORLDBOOK_SENTINEL');
   });
 
   it('keeps couple space context grounded in natural relationship cues', () => {

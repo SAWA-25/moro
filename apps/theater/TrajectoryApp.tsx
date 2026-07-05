@@ -89,7 +89,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         setLoading(true);
         setError('');
         try {
-            let t = await loadOrGenerateTrajectory(selectedChar, userName, auxApi, { force });
+            let t = await loadOrGenerateTrajectory(selectedChar, userProfile, auxApi, { force });
             if (!force) t = await refreshAfterNodes(t, userName, selectedChar.name);
             setTrajectory(t);
             setSelectedNodeId(null);
@@ -99,7 +99,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         } finally {
             setLoading(false);
         }
-    }, [selectedChar, apiReady, userName, auxApi]);
+    }, [selectedChar, apiReady, userName, userProfile, auxApi]);
 
     useEffect(() => {
         if (selectedCharId) { setTrajectory(null); setSelectedNodeId(null); setView('timeline'); void load(false); }
@@ -110,7 +110,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         if (!trajectory || !selectedChar || !selectedNode) return;
         setDetailBusy(true);
         try {
-            const result = await ensureTrajectoryNodeDetail(trajectory, selectedChar, userName, selectedNode.id, auxApi, { force });
+            const result = await ensureTrajectoryNodeDetail(trajectory, selectedChar, userProfile, selectedNode.id, auxApi, { force });
             setTrajectory(result.trajectory);
         } catch (e) {
             addToast(e instanceof Error ? e.message : '这一帧没有显影出来', 'error');
@@ -123,7 +123,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         if (!trajectory || !selectedChar || !selectedNode) return;
         setBranchBusy(true);
         try {
-            const result = await generateTrajectoryBranch(trajectory, selectedChar, userName, selectedNode.id, premise, auxApi);
+            const result = await generateTrajectoryBranch(trajectory, selectedChar, userProfile, selectedNode.id, premise, auxApi);
             setTrajectory(result.trajectory);
             addToast('已经另开一条非正史岔路', 'success');
         } catch (e) {
@@ -138,7 +138,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         if (!window.confirm('重写这一帧会覆盖当前片段，并清掉它的细看和分支缓存。继续吗？')) return;
         setRewriteBusy(true);
         try {
-            const result = await rewriteTrajectoryNode(trajectory, selectedChar, userName, selectedNode.id, auxApi);
+            const result = await rewriteTrajectoryNode(trajectory, selectedChar, userProfile, selectedNode.id, auxApi);
             setTrajectory(result.trajectory);
             addToast('这一帧已经重写', 'success');
         } catch (e) {

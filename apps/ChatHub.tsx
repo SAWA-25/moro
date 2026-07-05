@@ -48,6 +48,7 @@ import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 import { ambientSocialToCharacter, ensureAmbientSocialState, isAmbientSocialCharacterForUser as isAmbientSocialCharacterForProfile, isAmbientSocialGroupForUser as isAmbientSocialGroupForProfile, isRejectedAmbientGeneratedName, patchAmbientSocialEntry, removeAmbientSocialEntry, shouldHideAmbientSocialRecordForUser } from '../utils/ambientSocial';
 import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import { parseGroupMemberLensMap, resolveGroupMemberStorageId } from '../utils/groupCharacterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
 import { llmComplete } from '../utils/llmComplete';
@@ -3372,7 +3373,7 @@ const ChatHub: React.FC = () => {
         setGroupInnerVoiceLoading(true);
         try {
             try { await injectMemoryPalace(target); } catch { /* optional */ }
-            const context = ContextBuilder.buildCoreContext(target, userProfile, true);
+            const context = await ContextBuilder.buildFullCoreContext(target, userProfile, true);
             const roster = activeGroup.members
                 .map(id => {
                     const member = characters.find(c => c.id === id);
@@ -3463,9 +3464,7 @@ ${innerVoicePromptBody({
             `- id: ${getCharacterModelId(char)}`,
             `  群内称呼: ${displayNameOf(group, char.id)}`,
             `  身份锚: ${formatCharacterWithId(char, displayNameOf(group, char.id))}`,
-            char.description ? `  简介: ${clip(char.description, 260)}` : '',
-            char.systemPrompt ? `  人设: ${clip(char.systemPrompt, 900)}` : '',
-            char.worldview ? `  世界观: ${clip(char.worldview, 500)}` : '',
+            `  ${buildFullCharacterSetting(char, { includeMemos: true, includeName: false })}`,
             char.relationship?.label ? `  和用户关系: ${char.relationship.label}` : '',
         ].filter(Boolean).join('\n');
         const recentLines = messages
@@ -4832,10 +4831,11 @@ ${logText.substring(0, 10000)}
             ...transcript.map(item => `${item.name}: ${item.text}`),
             spokenText ? `${userProfile.name || '用户'}: ${spokenText}` : '',
         ].filter(Boolean).slice(-40);
+        const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
         let sharedScene!: ReturnType<typeof ContextBuilder.buildGroupSharedScene>;
         const memberContexts: string[] = [];
         await WorldbookRuntime.withContext({ scanMessages: groupCallScanMessages }, async () => {
-            sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile);
+            sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile, { fullUserSetting });
         });
         const rosterLines = groupMembers.map(m => {
             const muted = isMuted(group, m.id) ? ' | 禁言中，本轮不能说话' : '';
@@ -4849,11 +4849,12 @@ ${logText.substring(0, 10000)}
             for (const member of groupMembers) {
                 const privateMsgs = await DB.getMessagesByCharId(member.id);
                 await injectMemoryPalace(member, privateMsgs);
-                const coreContext = ContextBuilder.buildCoreContext(member, userProfile, true, undefined, {
+                const coreContext = await ContextBuilder.buildFullCoreContext(member, userProfile, true, undefined, {
                     skipUserProfile: true,
                     skipWorldview: sharedScene.worldviewIsShared,
                     skipWorldbookIds: sharedScene.sharedWorldbookIds,
                     headerOverride: `[Group Voice Call Member: ${formatCharacterWithId(member)}]`,
+                    fullUserSetting,
                 });
                 const lensBlock = buildGroupMemberLensBlock(
                     group,
@@ -4960,6 +4961,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
 
         const data = await callChatCompletion(apiConfig, requestBody, {
             meta: makeApiUsageMeta('chat.groupReply', { apiRole: 'main', apiBinding: 'Group voice call' }),
+            presetScope: false,
         });
         if (data.usage?.total_tokens) {
             setLastTokenUsage(data.usage.total_tokens);
@@ -5408,8 +5410,9 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                     return `${speaker ? displayNameOf(activeGroup, speaker.id) : displayNameOf(activeGroup, m.charId)}: ${m.content}`;
                 });
             let sharedScene!: ReturnType<typeof ContextBuilder.buildGroupSharedScene>;
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userProfile.name || '用户'}` });
             await WorldbookRuntime.withContext({ scanMessages: groupScanMessages }, async () => {
-                sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile);
+                sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile, { fullUserSetting });
             });
 
             // 群成员花名册：群名片（昵称）/ 头衔 / 禁言状态。改群名、改名片、禁言等事件
@@ -5460,11 +5463,12 @@ ${sharedScene.text}`;
                 // Inject memory gallery before building context
                 await injectMemoryPalace(member, privateMsgs);
                 // 角色块：跳过共享场景已包含的部分（用户档案 / 共有 worldview / 共有世界书）
-                const coreContext = ContextBuilder.buildCoreContext(member, userProfile, true, undefined, {
+                const coreContext = await ContextBuilder.buildFullCoreContext(member, userProfile, true, undefined, {
                     skipUserProfile: true,
                     skipWorldview: sharedScene.worldviewIsShared,
                     skipWorldbookIds: sharedScene.sharedWorldbookIds,
                     headerOverride: `[Group Member Profile: ${formatCharacterWithId(member)}]`,
+                    fullUserSetting,
                 });
                 const lensBlock = buildGroupMemberLensBlock(
                     activeGroup,
@@ -5798,6 +5802,7 @@ ${groupOfflineDirectiveBlock}
                 }
                 return callChatCompletion(api, requestBody, {
                     meta: makeApiUsageMeta(usageFeatureId, { apiRole: api === mainChatApi ? 'main' : 'custom', apiBinding: usageBinding }),
+                    presetScope: false,
                 });
             };
 

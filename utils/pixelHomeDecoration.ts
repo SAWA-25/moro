@@ -61,7 +61,7 @@ export async function generateDecoration(
     }
 
     const systemPrompt = `你是${charName}，正在整理自己的像素小屋。
-${persona ? `你的人设：${persona.slice(0, 500)}` : ''}
+${persona ? `你的完整角色设定：\n${persona}` : ''}
 
 你有7个房间，每个房间有5个固定家具槽位。你可以：
 1. 移动家具位置 (move)：调整 x,y 坐标（0-100 的百分比）

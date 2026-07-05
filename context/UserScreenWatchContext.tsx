@@ -25,6 +25,7 @@ import {
   userScreenWatchCommentUserPrompt,
   userScreenWatchTextFallbackPrompt,
 } from '../utils/laiwangPrompts';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 
 interface UserScreenWatchContextValue {
   session: UserScreenWatchSession | null;
@@ -168,7 +169,9 @@ export const UserScreenWatchProvider: React.FC<{ children: React.ReactNode }> = 
       const promptParams = {
         charName: current.charName,
         userName,
-        personaBrief: char?.systemPrompt || char?.description || '',
+        personaBrief: char
+          ? `${buildFullCharacterSetting(char, { includeMemos: true })}\n\n${await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` })}`
+          : await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` }),
         frameText,
         hasImage: !!frame?.imageDataUrl,
       };
@@ -229,7 +232,7 @@ export const UserScreenWatchProvider: React.FC<{ children: React.ReactNode }> = 
     } finally {
       setIsCommenting(false);
     }
-  }, [apiConfig, appendComment, characters, isCommenting, usageSnapshot, userProfile?.name]);
+  }, [apiConfig, appendComment, characters, isCommenting, usageSnapshot, userProfile]);
 
   const sampleOnce = useCallback(async (forceComment = false) => {
     const current = sessionRef.current;

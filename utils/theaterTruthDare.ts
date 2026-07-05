@@ -73,8 +73,8 @@ export function recentText(s: TruthDareSession, n = 4): string {
 }
 
 // ── LLM ────────────────────────────────────────────────────────────────────
-function systemFor(char: CharacterProfile, userProfile: UserProfile, spice: TruthDareSpice): string {
-    const core = ContextBuilder.buildCoreContext(char, userProfile, true);
+async function systemFor(char: CharacterProfile, userProfile: UserProfile, spice: TruthDareSpice): Promise<string> {
+    const core = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     const userName = (userProfile?.name || '').trim() || '对方';
     return truthDareSystem({ core, charName: char.name, userName, spice });
 }
@@ -106,7 +106,7 @@ export async function genUserChallenge(
     const poserChar = findChar(chars, poser.charId);
     const userName = (userProfile?.name || '').trim() || '你';
     if (!poserChar) return kind === 'truth' ? '说说看，你现在最不敢告诉别人的一个小秘密是什么？' : '学一段刚才在场某个人说话的样子，要像！';
-    const sys = systemFor(poserChar, userProfile, s.spice);
+    const sys = await systemFor(poserChar, userProfile, s.spice);
     const user = truthDarePoseUser({ poserName: poser.name, targetName: userName, kind, spice: s.spice, recent: recentText(s) });
     try { return (await callRaw(api, sys, user, 300)) || '（题面卡住了，再转一次吧）'; }
     catch { return kind === 'truth' ? '老实交代，这一圈里你最想跟谁多待一会儿？' : '现场比一个你觉得最像自己的表情，保持十秒。'; }
@@ -120,7 +120,7 @@ export async function genCharRound(
     const targetChar = findChar(chars, target.charId);
     const fallback = { kind: (forcedKind || (Math.random() < 0.5 ? 'truth' : 'dare')) as TruthDareKind, challenge: '（大家起哄让 TA 来一个）', answer: `${target.name} 笑着应付了过去。` };
     if (!targetChar) return fallback;
-    const sys = systemFor(targetChar, userProfile, s.spice);
+    const sys = await systemFor(targetChar, userProfile, s.spice);
     const user = truthDareCharRoundUser({ targetName: target.name, poserName: poser.name, spice: s.spice, recent: recentText(s), forcedKind });
     try {
         const j = extractJson(await callRaw(api, sys, user, 600));
@@ -139,7 +139,7 @@ export async function genCharAnswer(
     const targetChar = findChar(chars, target.charId);
     const userName = (userProfile?.name || '').trim() || '你';
     if (!targetChar) return `${target.name} 认真地完成了。`;
-    const sys = systemFor(targetChar, userProfile, s.spice);
+    const sys = await systemFor(targetChar, userProfile, s.spice);
     const user = truthDareAnswerUser({ targetName: target.name, userName, kind, challenge, spice: s.spice, recent: recentText(s) });
     try { return (await callRaw(api, sys, user, 400)) || `${target.name} 红着脸照做了。`; }
     catch { return kind === 'truth' ? `${target.name} 想了想，还是诚实地点了点头。` : `${target.name} 鼓起勇气完成了挑战。`; }

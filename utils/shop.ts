@@ -906,6 +906,7 @@ export function buildCharShopPrompt(
     userName: string,
     budget: number,
     items: ShopItem[] = SHOP_ITEMS,
+    userSetting?: string,
 ): { system: string; user: string } {
     const shelf = items.length ? items : SHOP_ITEMS;
     const affordable = shelf.filter(i => i.price <= budget);
@@ -913,8 +914,8 @@ export function buildCharShopPrompt(
         .slice(0, 36)
         .map(i => `- ${i.id} | ${i.emoji}${i.name} | ¥${formatPrice(i.price)} | ${i.blurb}`)
         .join('\n');
-    const persona = (char.personaText || '').toString().slice(0, 800);
-    const system = `你是「${char.name}」。下面是你的人设，请完全代入，用你自己的喜好和性格做决定。\n${persona ? `【人设】\n${persona}\n` : ''}`;
+    const persona = (char.personaText || '').toString();
+    const system = `你是「${char.name}」。下面是你的完整角色设定，请完全代入，用你自己的喜好和性格做决定。\n${persona ? `${persona}\n` : ''}${userSetting ? `\n【完整用户设定】\n${userSetting}\n` : ''}`;
     const user = `你正在逛一个礼物商城，预算大约 ¥${formatPrice(budget)}。请凭你的性格和喜好，从下面挑【一件】，决定怎么办：
 - "buy"：自己买下来
 - "gift"：买下送给${userName}
@@ -1008,14 +1009,15 @@ export function buildShopCompanionPrompt(
     char: { name: string; personaText?: string; affection?: number },
     userName: string,
     ctx: ShopCompanionContext,
+    userSetting?: string,
 ): { system: string; user: string } {
-    const persona = (char.personaText || '').toString().slice(0, 900);
+    const persona = (char.personaText || '').toString();
     const visible = (ctx.visibleItems && ctx.visibleItems.length ? ctx.visibleItems : ctx.item ? [ctx.item] : SHOP_ITEMS).filter(Boolean);
     const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
     const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
     const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
     const balanceLine = ctx.userBalance != null ? `可用余额：¥${formatPrice(ctx.userBalance)}\n` : '';
-    const system = `你是「${char.name}」，正在陪 ${userName} 逛礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或推进结账。请完全按你的人设、关系亲疏、预算感和当下心情行动。你的 speech 只说沉浸话，不提系统、Moro、本地、虚拟、模拟、现实支付、幕后规则等词。\n${persona ? `【人设】\n${persona}\n` : ''}`;
+    const system = `你是「${char.name}」，正在陪 ${userName} 逛礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或推进结账。请完全按你的完整角色设定、${userName} 的完整用户设定、关系亲疏、预算感和当下心情行动。你的 speech 只说沉浸话，不提系统、Moro、本地、虚拟、模拟、现实支付、幕后规则等词。\n${persona ? `${persona}\n` : ''}${userSetting ? `\n【完整用户设定】\n${userSetting}\n` : ''}`;
     const user = `当前界面：${ctx.surface}
 用户刚做的事：${ctx.userAction || '正在浏览'}
 你的大致预算感：¥${formatPrice(budget)}

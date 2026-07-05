@@ -18,6 +18,7 @@ import { extractContent } from './safeApi';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { buildFullCharacterSetting, buildFullUserSetting, buildFullActiveUserSetting } from './characterPromptProfile';
 
 export const TWITTER_BATCH_SIZE = 12;
 export const TWITTER_MIN_BATCH_SIZE = 10;
@@ -30,6 +31,7 @@ type TwitterTimelineMode = 'public' | 'focused';
 
 interface TwitterTimelineOptions {
     mode?: TwitterTimelineMode;
+    userSetting?: string;
 }
 
 export const twitterPublicCharacterQuota = (count: number): number =>
@@ -542,12 +544,12 @@ export const inferCharPostingWeight = (char: CharacterProfile): number => {
 };
 
 const charBrief = (chars: CharacterProfile[]): string => chars.map(c => {
-    const persona = `${c.systemPrompt || ''} ${c.lifeProfile?.content || ''}`.replace(/\s+/g, ' ').slice(0, 420);
+    const persona = buildFullCharacterSetting(c, { includeMemos: true, fallback: 'no detailed persona' });
     const handle = c.socialProfile?.handle || normalizeHandle(c.name);
     const weight = inferCharPostingWeight(c);
     const region = charRegion(c);
     const id = getCharacterModelId(c);
-    return `- ${formatCharacterWithId(c)} charId="${id}" name="${c.name}" handle="${handle}" postingWeight=${weight} region="${region}" persona="${persona || 'no detailed persona'}"`;
+    return `- ${formatCharacterWithId(c)} charId="${id}" name="${c.name}" handle="${handle}" postingWeight=${weight} region="${region}"\n${persona}`;
 }).join('\n');
 
 const pickPublicPromptChars = (chars: CharacterProfile[], seed: string, count: number): CharacterProfile[] => {
@@ -787,12 +789,16 @@ const buildTimelinePrompt = (
         ? pickPublicPromptChars(chars, `${existing.length}:${existing[0]?.id || existing[0]?.createdAt || 'empty'}`, twitterPublicCharacterQuota(TWITTER_BATCH_SIZE))
         : chars;
     const recent = existing.slice(0, 12).map(t => `- ${t.authorName} ${t.authorHandle} [${t.language || 'unknown'}]: ${t.content.slice(0, 120)}`).join('\n');
-    const acct = accounts.slice(0, 20).map(a => `- ${a.displayName} ${a.handle} type=${a.authorType} lang=${a.language || ''} country=${a.country || ''} weight=${a.postingWeight || 1} bio="${(a.bio || '').slice(0, 120)}"`).join('\n');
+    const acct = accounts.slice(0, 20).map(a => `- ${a.displayName} ${a.handle} type=${a.authorType} lang=${a.language || ''} country=${a.country || ''} weight=${a.postingWeight || 1} bio="${a.bio || ''}"`).join('\n');
+    const userSetting = options.userSetting || buildFullUserSetting(user, { fallback: `User name: ${user.name || 'User'}` });
     return `You generate a local, fictional X/Twitter timeline for a virtual phone app. Do not claim to fetch real X data.
 
 ${publicMode
     ? 'The app owner is only a passive reader of this public timeline. Do not infer, mention, or react to their current mood, wake time, health, body, phone status, location, relationship state, or private activity. Do not address them as "you", "master", "owner", or by handle/name.'
     : 'The app owner is only a reader of these top-level tweets. Do not infer, mention, or react to their current mood, wake time, health, body, phone status, location, relationship state, or private activity. Character tweets must show the character account\'s own public life and state, not messages to/about the app owner.'}
+
+App owner full user setting:
+${userSetting}
 
 ${publicMode
     ? `Characters are rare familiar-account cameos. At least 90% of top-level posts must be from fictional NPC strangers. Use at most ${twitterPublicCharacterQuota(TWITTER_BATCH_SIZE)} character top-level post in this batch. Character posts must be about the character's own public life, opinion, work, hobbies, city, media, or small observations, never a message to or about the app owner.`
@@ -1081,9 +1087,10 @@ export const generateTwitterTimeline = async (
     options: TwitterTimelineOptions = {},
 ): Promise<TwitterTweet[]> => {
     const mode = options.mode || 'public';
+    const userSetting = await buildFullActiveUserSetting(user, { fallback: `User name: ${user.name || 'User'}` });
     const raw = await callLlm(
         apiConfig,
-        buildTimelinePrompt(chars, user, existing, accounts, { mode }),
+        buildTimelinePrompt(chars, user, existing, accounts, { mode, userSetting }),
         `Current time: ${new Date().toLocaleString('zh-CN')}. Generate a fresh high-quality fictional X/Twitter batch with at least ${TWITTER_BATCH_SIZE} posts.`,
     );
     const arr = parseTwitterJsonLoose(raw);
@@ -1102,9 +1109,10 @@ export const generateTwitterSearchTweets = async (
     existing: TwitterTweet[] = [],
     accounts: TwitterAccount[] = [],
 ): Promise<TwitterTweet[]> => {
+    const userSetting = await buildFullActiveUserSetting(user, { fallback: `User name: ${user.name || 'User'}` });
     const raw = await callLlm(
         apiConfig,
-        `${buildTimelinePrompt(chars, user, existing, accounts, { mode: 'public' })}\nSearch expansion mode: all generated posts must be relevant to the search query while still feeling like a natural public timeline dominated by NPC strangers.`,
+        `${buildTimelinePrompt(chars, user, existing, accounts, { mode: 'public', userSetting })}\nSearch expansion mode: all generated posts must be relevant to the search query while still feeling like a natural public timeline dominated by NPC strangers.`,
         `Search query: "${query}". Generate 10-12 relevant fictional X/Twitter posts, include some accounts/users results and at least two languages.`,
         9000,
     );
@@ -1288,7 +1296,7 @@ export const generateTwitterAuthorReply = async (
     account?: TwitterAccount,
 ): Promise<TwitterReply> => {
     const sys = authorChar
-        ? `You are ${authorChar.name}. Reply on X/Twitter in character. Persona: ${(authorChar.systemPrompt || '').slice(0, 700)} Life profile: ${(authorChar.lifeProfile?.content || '').slice(0, 500)}`
+        ? `You are ${authorChar.name}. Reply on X/Twitter in character.\n${buildFullCharacterSetting(authorChar, { includeMemos: true })}\n\nFull user setting for the person who replied:\n${await buildFullActiveUserSetting(user)}`
         : `You are X/Twitter user ${account?.displayName || tweet.authorName} (${account?.handle || tweet.authorHandle}). Reply in the original author's style.`;
     const text = await callLlm(
         apiConfig,
@@ -1318,7 +1326,7 @@ export const generateTwitterReactions = async (
     chars: CharacterProfile[],
     user: UserProfile,
 ): Promise<{ replies: TwitterReply[]; notifications: TwitterNotification[]; patch: Partial<TwitterTweet> }> => {
-    const sys = `You generate fictional X/Twitter reactions. User ${user.name} just posted. Let characters and NPCs interact freely; same character may appear multiple times. Output JSON array only.`;
+    const sys = `You generate fictional X/Twitter reactions. User ${user.name} just posted. Use the full user setting below when characters react.\n${await buildFullActiveUserSetting(user)}\nLet characters and NPCs interact freely; same character may appear multiple times. Output JSON array only.`;
     const raw = await callLlm(
         apiConfig,
         sys,
@@ -1462,7 +1470,7 @@ export const generateTwitterDMReply = async (
     const char = account.charId ? chars.find(c => c.id === account.charId) : undefined;
     const history = (thread.messages || []).slice(-10).map(m => `${m.senderType === 'user' ? user.name : account.displayName}: ${m.tweetSnapshot ? `[tweet] ${m.tweetSnapshot.content}` : m.content}`).join('\n');
     const sys = char
-        ? `You are ${char.name} using X/Twitter DMs. Reply strictly in character. Persona: ${(char.systemPrompt || '').slice(0, 900)} Life profile: ${(char.lifeProfile?.content || '').slice(0, 500)} Account bio: ${account.bio || ''}`
+        ? `You are ${char.name} using X/Twitter DMs. Reply strictly in character.\n${buildFullCharacterSetting(char, { includeMemos: true })}\n\nFull user setting:\n${await buildFullActiveUserSetting(user)}\n\nAccount bio: ${account.bio || ''}`
         : `You are fictional X/Twitter account ${account.displayName} (${account.handle}). Bio: ${account.bio || ''}. Reply naturally in DMs.`;
     const text = await callLlm(
         apiConfig,

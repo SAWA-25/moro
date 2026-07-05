@@ -39,6 +39,7 @@ import { llmComplete, type ChatMsg } from './llmComplete';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { DB } from './db';
 import { formatMessageWithTime } from './messageFormat';
+import { buildFullCharacterSetting } from './characterPromptProfile';
 
 export interface CoupleApi {
   baseUrl: string;
@@ -384,11 +385,9 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
 
 // ── 角色侧「主动互动」的一次性 LLM 调用（失败全吞，组件用模板兜底） ──────────
 
-/** 极简人设摘要：避免 import 重型 ContextBuilder（防循环依赖），够角色入戏即可。 */
+/** 剪影集完整角色设定：不使用摘要版，避免情侣空间主动互动丢世界观/世界书。 */
 function compactPersona(char: CharacterProfile, userName: string): string {
-  const parts: string[] = [`你的名字：${char.name}。`];
-  const sys = (char.systemPrompt || '').trim();
-  if (sys) parts.push(`你的人设：${sys.slice(0, 600)}`);
+  const parts: string[] = [buildFullCharacterSetting(char, { includeMemos: true })];
   const relLabel = char.relationship?.label;
   if (relLabel) parts.push(`你和${userName}现在的关系：${relLabel}。`);
   return parts.join('\n');

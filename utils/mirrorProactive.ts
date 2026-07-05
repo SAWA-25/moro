@@ -17,6 +17,9 @@ import { swPutSnapshot, swKeepOnly, swReadAll, type SwProactiveSnapshot } from '
 import { swOfflineProactiveSystemPrompt } from './laiwangPrompts';
 import { isAmbientSocialCharacterForUser, shouldHideAmbientSocialRecordForUser } from './ambientSocial';
 import { isOfflineSessionActive } from './offlineMode';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
+import { buildChatProactivePresetResult, normalizePresetGenParamsForOpenAi } from './proactivePresetPayload';
+import { substituteMacros } from './macros';
 
 interface MainApiLike { baseUrl?: string; apiKey?: string; model?: string }
 
@@ -29,12 +32,7 @@ function describeNow(d: Date): string {
 }
 
 function personaBrief(char: CharacterProfile): string {
-  const parts: string[] = [];
-  const desc = (char.systemPrompt || '').trim();
-  if (desc) parts.push(`人设：${desc.slice(0, 1000)}`);
-  const wv = (char.worldview || '').trim();
-  if (wv) parts.push(`世界观：${wv.slice(0, 300)}`);
-  return parts.join('\n');
+  return buildFullCharacterSetting(char, { includeMemos: true, fallback: '' });
 }
 
 /** 取角色今天日程里「此刻大概在做的事」（关联 ta 的日常），取不到就空。 */
@@ -122,10 +120,19 @@ async function buildSnapshot(
   const activity = await currentActivity(char.id);
   const lifeEvents = await recentLifeEvents(char);
   const materialSources = getMaterialSources(char);
+  const fullUserSetting = substituteMacros(
+    await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` }),
+    {
+      charName: char.name || '角色',
+      userName,
+      personaDescription: userProfile?.bio || '',
+    },
+  );
   const systemPrompt = [
     swOfflineProactiveSystemPrompt({
       charName: char.name,
       personaText: personaBrief(char),
+      fullUserSetting,
       activity,
       nowText: describeNow(new Date()),
       userName,
@@ -135,6 +142,14 @@ async function buildSnapshot(
     lifeEvents.length ? `你最近的生活不是空白的，下面快照会给你若干切片。主动消息要从这些切片里长出来，不要像总结。` : '',
     `主动消息 v2：主动强度 ${getProactiveIntensity(char)}，来信口味 ${getMessageFlavor(char)}，允许取材 ${formatMaterialSources(char)}。`,
   ].filter(Boolean).join('\n');
+  const presetResult = await buildChatProactivePresetResult([
+    { role: 'system', content: systemPrompt },
+    ...recentMessages,
+  ], {
+    charName: char.name || '角色',
+    userName,
+  });
+  const generation = normalizePresetGenParamsForOpenAi(presetResult.genParams);
 
   return {
     charId: char.id,
@@ -143,6 +158,8 @@ async function buildSnapshot(
     enabled: true,
     api: { baseUrl: api.baseUrl, apiKey: api.apiKey || '', model: api.model },
     systemPrompt,
+    presetMessages: presetResult.messages || undefined,
+    generation,
     instruction: '（轮到你主动发消息了，直接写消息正文）',
     recentMessages,
     pendingUserMessages,

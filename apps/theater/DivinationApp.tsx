@@ -35,7 +35,7 @@ const buildWorldbookText = (char: any): string => {
     try {
         const { local, global } = WorldbookRuntime.resolveForChar(char);
         const all = [...local, ...global].map(e => `【${e.title}】${e.content}`).filter(Boolean);
-        return all.join('\n').slice(0, 2000);
+        return all.join('\n');
     } catch { return ''; }
 };
 

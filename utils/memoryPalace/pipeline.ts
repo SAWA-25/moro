@@ -45,7 +45,8 @@ import {
 import { MemoryNodeDB, AnticipationDB } from './db';
 import { DB } from '../db';
 import { isMessageSemanticallyRelevant, formatMessageForPrompt } from '../messageFormat';
-import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
+import { isAuxContextBudgetEnabled } from '../contextBudget';
+import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../characterPromptProfile';
 
 // ─── 轻量 LLM 配置类型 ───────────────────────────────
 
@@ -61,38 +62,17 @@ export interface LightLLMConfig {
     model: string;
 }
 
-const EXTRACTION_CONTEXT_FIELD_LIMITS = {
-    systemPrompt: 8_000,
-    worldview: 5_000,
-    userBio: 4_000,
-};
-
-function trimExtractionContextField(text: string | undefined, limit: number): string {
-    const raw = (text || '').trim();
-    if (!raw) return '无';
-    if (!isAuxContextBudgetEnabled()) return raw;
-    return trimTextMiddle(raw, limit);
-}
-
 function buildExtractionProfileContext(
     charName: string,
-    systemPrompt?: string,
-    worldview?: string,
-    userName?: string,
-    userBio?: string,
+    characterSetting?: string,
+    userSetting?: string,
     sourceNote?: string,
 ): string {
     let context = `[角色档案]\n`;
     context += `名字: ${charName}\n`;
-    context += `核心设定:\n${trimExtractionContextField(systemPrompt, EXTRACTION_CONTEXT_FIELD_LIMITS.systemPrompt)}\n`;
-    if (worldview?.trim()) {
-        context += `世界观: ${trimExtractionContextField(worldview, EXTRACTION_CONTEXT_FIELD_LIMITS.worldview)}\n`;
-    }
+    context += `${characterSetting?.trim() || '无'}\n`;
     context += `\n[用户档案]\n`;
-    context += `名字: ${userName || '用户'}\n`;
-    if (userBio !== undefined) {
-        context += `设定: ${trimExtractionContextField(userBio, EXTRACTION_CONTEXT_FIELD_LIMITS.userBio)}\n`;
-    }
+    context += `${userSetting?.trim() || '无'}\n`;
     if (sourceNote) context += `\n[来源说明]\n${sourceNote}\n`;
     context += `\n`;
     return context;
@@ -918,13 +898,12 @@ export async function ingestDiaryToPalace(
     }
     if (fakeMessages.length === 0) return { status: 'empty_input' };
 
-    // 角色 / 用户档案给 LLM 当上下文；只保留提取所需的摘要级信息，避免超长人设撞模型窗口。
+    // 角色 / 用户档案给 LLM 当上下文；使用剪影集完整角色设定与当前扮相设定，不在这里裁剪。
+    const storedUserProfile = await DB.getUserProfile().catch(() => null);
     const charContext = buildExtractionProfileContext(
         char.name,
-        char.systemPrompt,
-        char.worldview,
-        userName || '用户',
-        undefined,
+        buildFullCharacterSetting(char as any, { includeMemos: true }),
+        await buildFullActiveUserSetting(storedUserProfile, { fallback: `用户名：${userName || '用户'}` }),
         '这是来自【交换日记】app 的一次归档，不是普通聊天，是一篇双方各写一页的正式日记。',
     );
 
@@ -1180,30 +1159,28 @@ export async function processNewMessages(
         console.log(`🏰 [Pipeline]   总消息: ${totalCount}, 热区: ${HOT_ZONE_SIZE}, 缓冲区: ${buffer.length}, hwm: ${lastProcessedId}`);
         onProgress?.(`正在整理 ${toProcess.length} 条对话...`);
 
-        // 5. 构建精简上下文：角色档案 + 用户档案 + 相关已有记忆
+        // 5. 构建完整设定上下文：角色档案 + 当前用户扮相 + 相关已有记忆
         let charContext = '';
         let relatedMemoryRefs: RelatedMemoryRef[] = [];
         try {
             const chars = await DB.getAllCharacters();
             const charProfile = chars.find(c => c.id === charId);
             const userProfile = await DB.getUserProfile();
+            const userSetting = await buildFullActiveUserSetting(userProfile, {
+                fallback: `用户名：${userProfile?.name || userName || '用户'}`,
+            });
 
-            // 5a. 精简角色档案（姓名、设定、世界观）
             if (charProfile) {
                 charContext = buildExtractionProfileContext(
                     charProfile.name,
-                    charProfile.systemPrompt,
-                    charProfile.worldview,
-                    userProfile?.name || userName || '用户',
-                    userProfile?.bio,
+                    buildFullCharacterSetting(charProfile, { includeMemos: true }),
+                    userSetting,
                 );
             } else if (userProfile) {
                 charContext = buildExtractionProfileContext(
                     charName,
-                    undefined,
-                    undefined,
-                    userProfile.name,
-                    userProfile.bio,
+                    '',
+                    userSetting,
                 );
             }
 
