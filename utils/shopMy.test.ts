@@ -5,6 +5,7 @@ import {
     isItemReviewed, pendingReviewItems, makeUserReview, userReviewsForItem, goodRate,
     coinsToYuan, yuanToCoins, checkinAvailable, dailyCheckinReward, COIN_PER_YUAN,
     pushFootprint, resolveFootprints, itemSpecs,
+    normalizeShopImageUrl, sanitizeShopItemDraft,
 } from './shop';
 import type { ShopOrder, ShopUserReview } from '../types';
 
@@ -14,6 +15,22 @@ const cake = getShopItem('cake')!;
 const mkOrder = (over: Partial<ShopOrder> = {}): ShopOrder => ({
     ...makeOrder([{ item: rose, qty: 1 }, { item: cake, qty: 2 }], 'self'),
     ...over,
+});
+
+describe('custom item image URLs', () => {
+    it('normalizes common copied image link formats', () => {
+        expect(normalizeShopImageUrl('![](//cdn.example.com/a.png?x=1&amp;y=2)')).toBe('https://cdn.example.com/a.png?x=1&y=2');
+        expect(normalizeShopImageUrl('<img src="https://example.com/a b.png?x=1&amp;y=2">')).toBe('https://example.com/a%20b.png?x=1&y=2');
+        expect(normalizeShopImageUrl('background-image: url("https://example.com/gift.webp")')).toBe('https://example.com/gift.webp');
+    });
+
+    it('stores normalized image URLs on custom shop items', () => {
+        const item = sanitizeShopItemDraft({
+            name: 'Copy Link Gift',
+            image: '<img src="//cdn.example.com/gift.jpg?from=shop&amp;size=large">',
+        });
+        expect(item?.image).toBe('https://cdn.example.com/gift.jpg?from=shop&size=large');
+    });
 });
 
 describe('orderTrace 物流轨迹', () => {

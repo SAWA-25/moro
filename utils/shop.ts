@@ -81,7 +81,7 @@ const loadDynamicItems = (): Map<string, ShopItem> => {
         const raw = localStorage.getItem(DYNAMIC_ITEMS_KEY);
         if (raw) {
             const arr = JSON.parse(raw);
-            if (Array.isArray(arr)) for (const it of arr) { if (it && it.id) _dynamicItems.set(it.id, it); }
+            if (Array.isArray(arr)) for (const it of arr) { if (it && it.id) _dynamicItems.set(it.id, normalizeShopItemImage(it)); }
         }
     } catch { /* ignore */ }
     return _dynamicItems;
@@ -99,7 +99,7 @@ const persistDynamicItems = (): void => {
 /** 登记一批生成商品（供后续 getShopItem 解析 id）。 */
 export const registerShopItems = (items: ShopItem[]): void => {
     const reg = loadDynamicItems();
-    for (const it of items) if (it && it.id) reg.set(it.id, it);
+    for (const it of items) if (it && it.id) reg.set(it.id, normalizeShopItemImage(it));
     persistDynamicItems();
 };
 
@@ -124,6 +124,62 @@ const validShopCategory = (category: unknown): string =>
 const customItemId = (name: string, category: string): string =>
     `custom_${Date.now().toString(36)}_${hashStr(`${name}|${category}|${Math.random()}`).toString(36)}`;
 
+const decodeCopiedUrlText = (value: string): string =>
+    value
+        .replace(/\\u0026/gi, '&')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>');
+
+const unwrapCopiedUrl = (value: string): string => {
+    let out = value.trim();
+    for (let i = 0; i < 3; i++) {
+        const next = out.replace(/^["'`<\s]+|["'`>\s]+$/g, '').trim();
+        if (next === out) break;
+        out = next;
+    }
+    return out;
+};
+
+export const normalizeShopImageUrl = (input: unknown): string | undefined => {
+    let raw = decodeCopiedUrlText(String(input ?? '')).trim();
+    if (!raw) return undefined;
+
+    const srcAttr = raw.match(/\bsrc\s*=\s*(["'])(.*?)\1/i) || raw.match(/\bsrc\s*=\s*([^\s>]+)/i);
+    if (srcAttr) raw = String(srcAttr[2] ?? srcAttr[1] ?? '');
+
+    const cssUrl = raw.match(/\burl\(\s*(["']?)(.*?)\1\s*\)/i);
+    if (cssUrl?.[2]) raw = cssUrl[2];
+
+    const mdUrl = raw.match(/!?\[[^\]]*]\(\s*([^\s)]+)(?:\s+["'][^)]*["'])?\s*\)/);
+    if (mdUrl?.[1]) raw = mdUrl[1];
+
+    raw = unwrapCopiedUrl(decodeCopiedUrlText(raw));
+    if (!/^(?:https?:)?\/\//i.test(raw)) {
+        const found = raw.match(/(?:https?:)?\/\/[^\s"'<>]+/i);
+        raw = found?.[0] || '';
+    }
+    if (raw.startsWith('//')) raw = `https:${raw}`;
+    if (!/^https?:\/\//i.test(raw)) return undefined;
+
+    try {
+        const url = new URL(raw);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+        return url.href.slice(0, 1000);
+    } catch {
+        return raw.slice(0, 1000);
+    }
+};
+
+const normalizeShopItemImage = (item: ShopItem): ShopItem => {
+    const image = normalizeShopImageUrl(item.image);
+    if (image) return { ...item, image };
+    const { image: _image, ...rest } = item;
+    return rest;
+};
+
 /** 校验并清洗手动新增/编辑商品草稿；空名称会返回 null。 */
 export const sanitizeShopItemDraft = (draft: ShopItemDraft, base?: ShopItem): ShopItem | null => {
     const name = String(draft.name ?? base?.name ?? '').trim().slice(0, 28);
@@ -134,8 +190,7 @@ export const sanitizeShopItemDraft = (draft: ShopItemDraft, base?: ShopItem): Sh
     price = Math.min(999999, Math.round(price * 10) / 10);
     const emoji = String(draft.emoji ?? base?.emoji ?? '🎁').trim().slice(0, 4) || '🎁';
     const blurb = String(draft.blurb ?? base?.blurb ?? '').trim().slice(0, 60) || '一份自己写进心意铺的小礼物。';
-    const rawImage = String(draft.image ?? base?.image ?? '').trim();
-    const image = /^https?:\/\//i.test(rawImage) ? rawImage.slice(0, 500) : undefined;
+    const image = normalizeShopImageUrl(draft.image ?? base?.image ?? '');
     const rawRating = draft.rating ?? base?.rating;
     let rating = rawRating == null || rawRating === '' ? undefined : Number(rawRating);
     const safeRating = Number.isFinite(rating) ? Math.max(1, Math.min(5, Math.round((rating as number) * 10) / 10)) : undefined;
@@ -447,7 +502,7 @@ export function parseGeneratedItems(raw: string): ShopItem[] {
         price = Math.min(9999, Math.round(price * 10) / 10);
         const emoji = (typeof o.emoji === 'string' && o.emoji.trim()) ? o.emoji.trim().slice(0, 4) : '🎁';
         const blurb = (typeof o.blurb === 'string' ? o.blurb.trim() : '').slice(0, 40) || '一份用心挑的小礼物。';
-        const image = (typeof o.image === 'string' && /^https?:\/\//.test(o.image)) ? o.image : undefined;
+        const image = normalizeShopImageUrl(o.image);
         let rating = Number(o.rating);
         rating = isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating * 10) / 10)) : undefined as any;
         out.push({ id, name, emoji, price, category, blurb, image, generated: true, ...(rating ? { rating } : {}) });

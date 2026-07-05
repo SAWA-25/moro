@@ -71,6 +71,18 @@ export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 's
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-05-shop-image-url-paste-fix',
+    date: '2026-07-05',
+    title: '心意铺自定义商品图片更容易贴上了',
+    kind: 'fix',
+    summary: '修复在心意铺新增或编辑商品时，复制图片链接填入后可能预览和货架都不显示的问题。',
+    items: [
+      '现在会自动识别纯链接、Markdown 图片、网页 <img src="">、CSS url(...) 和 // 开头的图片地址。',
+      '保存后的商品图会统一使用可浏览器打开的 http/https 地址，并在图片站防盗链时减少因来源页信息导致的加载失败。',
+      '如果原站图片已过期、需要登录或本机网络无法访问，商品仍会回退显示 emoji，不影响购物车、订单和送礼记录。',
+    ],
+  },
+  {
     id: '2026-07-05-forum-reply-quality',
     date: '2026-07-05',
     title: '茶话亭回帖会更贴题了',

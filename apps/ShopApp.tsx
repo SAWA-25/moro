@@ -20,6 +20,7 @@ import {
     pushFootprint, resolveFootprints, itemSpecs,
     SHOP_GIFT_OCCASIONS, recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
     buildShopCompanionPrompt, parseShopCompanionReaction, parseShopCompanionScript,
+    normalizeShopImageUrl,
     type ShopItemDraft,
     type GiftOccasionKey, type GiftAdvice,
     type ShopCompanionReaction, type ShopCompanionSurface, type ShopCompanionScript, type ShopCompanionScriptStep, type ShopCompanionStepAction,
@@ -82,6 +83,42 @@ const InkStars: React.FC<{ stars: number; size?: number }> = ({ stars, size = 9 
         ))}
     </span>
 );
+
+const ShopItemImage: React.FC<{
+    item: Pick<ShopItem, 'image' | 'emoji'>;
+    className: string;
+    loading?: 'eager' | 'lazy';
+    imgStyle?: React.CSSProperties;
+    fallbackClassName?: string;
+    fallbackStyle?: React.CSSProperties;
+}> = ({ item, className, loading, imgStyle, fallbackClassName, fallbackStyle }) => {
+    const src = useMemo(() => normalizeShopImageUrl(item.image), [item.image]);
+    const [failedSrc, setFailedSrc] = useState<string | undefined>();
+
+    useEffect(() => {
+        setFailedSrc(undefined);
+    }, [src]);
+
+    if (src && failedSrc !== src) {
+        return (
+            <img
+                src={src}
+                className={className}
+                alt=""
+                loading={loading}
+                referrerPolicy="no-referrer"
+                style={imgStyle}
+                onError={() => setFailedSrc(src)}
+            />
+        );
+    }
+
+    return (
+        <div className={fallbackClassName || 'w-full h-full flex items-center justify-center leading-none select-none'} style={fallbackStyle}>
+            {item.emoji}
+        </div>
+    );
+};
 
 const mergeCustomCatalog = (base: ShopItem[]): ShopItem[] => {
     const custom = getCustomShopItems();
@@ -1386,9 +1423,14 @@ const ItemCard: React.FC<{
                 </div>
             )}
             <div className="relative cursor-pointer" onClick={() => onOpen(item)}>
-                {item.image
-                    ? <img src={item.image} className="w-full h-[94px] object-cover" alt="" loading="lazy" style={{ filter: 'contrast(1.02)' }} />
-                    : <div className="text-[44px] text-center leading-none pt-3.5 pb-2 select-none" style={{ background: THUMB_BG }}>{item.emoji}</div>}
+                <ShopItemImage
+                    item={item}
+                    className="w-full h-[94px] object-cover"
+                    loading="lazy"
+                    imgStyle={{ filter: 'contrast(1.02)' }}
+                    fallbackClassName="text-[44px] text-center leading-none pt-3.5 pb-2 select-none"
+                    fallbackStyle={{ background: THUMB_BG }}
+                />
                 {onToggleFav && (
                     <button onClick={(e) => { e.stopPropagation(); onToggleFav(item.id); }}
                         className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform"
@@ -1654,9 +1696,13 @@ const FlashSaleStrip: React.FC<{ catalog: ShopItem[]; balance: number; onBuy: (i
                 {deals.map(({ item, dealPrice, offPct }) => (
                     <div key={item.id} className="shrink-0 w-[88px]">
                         <div className="rounded-xl overflow-hidden cursor-pointer" style={{ border: '1px solid rgba(176,170,158,0.6)' }} onClick={() => onOpen(item)}>
-                            {item.image
-                                ? <img src={item.image} className="w-full h-14 object-cover" alt="" loading="lazy" />
-                                : <div className="text-[30px] text-center leading-none py-2" style={{ background: THUMB_BG }}>{item.emoji}</div>}
+                            <ShopItemImage
+                                item={item}
+                                className="w-full h-14 object-cover"
+                                loading="lazy"
+                                fallbackClassName="text-[30px] text-center leading-none py-2"
+                                fallbackStyle={{ background: THUMB_BG }}
+                            />
                         </div>
                         <div className="text-[10px] truncate mt-1" style={{ color: INK }}>{item.name}</div>
                         <div className="flex items-baseline gap-1">
@@ -1739,9 +1785,12 @@ const ProductDetail: React.FC<{
             </div>
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-4 pb-4">
                 <div className="relative rounded-3xl overflow-hidden" style={PANEL}>
-                    {item.image
-                        ? <img src={item.image} className="w-full h-60 object-cover" alt="" />
-                        : <div className="flex items-center justify-center text-[110px] leading-none py-8 select-none" style={{ background: THUMB_BG }}>{item.emoji}</div>}
+                    <ShopItemImage
+                        item={item}
+                        className="w-full h-60 object-cover"
+                        fallbackClassName="flex items-center justify-center text-[110px] leading-none py-8 select-none"
+                        fallbackStyle={{ background: THUMB_BG }}
+                    />
                     <WashiTape color="ink" rotate={-5} className="absolute top-3 -left-2 w-20 h-6 rounded-[2px]" />
                     {companionCue && (
                         <div className="absolute left-4 right-4 bottom-4 rounded-2xl px-3 py-2 flex items-center gap-2"
@@ -1854,7 +1903,7 @@ const ProductEditorSheet: React.FC<{
             <div className="space-y-3">
                 <div className="flex gap-3 items-start">
                     <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-[38px] shrink-0 overflow-hidden" style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.6)' }}>
-                        {image.trim() ? <img src={image.trim()} className="w-full h-full object-cover" alt="" /> : (emoji.trim() || '🎁')}
+                        <ShopItemImage item={{ image, emoji: emoji.trim() || '🎁' }} className="w-full h-full object-cover" />
                     </div>
                     <div className="flex-1 min-w-0 space-y-2">
                         <input value={name} onChange={e => setName(e.target.value)} placeholder="商品名称"
@@ -1918,7 +1967,7 @@ const SkuSheet: React.FC<{
         <PaperSheet open onClose={onClose} tape="amber">
             <div className="flex gap-3 items-start">
                 <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-[40px] shrink-0 overflow-hidden" style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.6)' }}>
-                    {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : item.emoji}
+                    <ShopItemImage item={item} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0 pt-1">
                     <div className="text-[20px] font-black leading-none" style={{ color: INK }}>¥{formatPrice(item.price)}</div>
@@ -2270,7 +2319,7 @@ const GiftAdviceCard: React.FC<{
             <button onClick={() => onOpen(item)}
                 className="w-20 h-20 rounded-2xl flex items-center justify-center text-[38px] shrink-0 overflow-hidden active:scale-95 transition-transform"
                 style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.55)' }}>
-                {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : item.emoji}
+                <ShopItemImage item={item} className="w-full h-full object-cover" />
             </button>
             <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
@@ -2342,7 +2391,7 @@ const CartView: React.FC<{
                             {isSel(item.id) ? <CheckSquare size={22} weight="fill" style={{ color: INK }} /> : <Square size={22} weight="bold" style={{ color: INK_SOFT }} />}
                         </button>
                         <span className="w-12 h-12 rounded-2xl flex items-center justify-center text-[26px] shrink-0 overflow-hidden" style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.5)' }}>
-                            {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : item.emoji}
+                            <ShopItemImage item={item} className="w-full h-full object-cover" />
                         </span>
                         <div className="flex-1 min-w-0">
                             <div className="text-[14px] font-black truncate" style={{ color: INK }}>{item.name}</div>
@@ -2480,7 +2529,7 @@ const FootprintsView: React.FC<{
                 {list.map(({ item, at }) => (
                     <button key={item.id} onClick={() => onOpen(item)} className="w-full rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left" style={PANEL}>
                         <span className="w-12 h-12 rounded-2xl flex items-center justify-center text-[26px] shrink-0 overflow-hidden" style={{ background: THUMB_BG, border: '1px solid rgba(176,170,158,0.5)' }}>
-                            {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : item.emoji}
+                            <ShopItemImage item={item} className="w-full h-full object-cover" />
                         </span>
                         <div className="flex-1 min-w-0">
                             <div className="text-[14px] font-black truncate" style={{ color: INK }}>{item.name}</div>
