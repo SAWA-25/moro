@@ -3,7 +3,9 @@ import type { CharacterProfile, CharLifeEvent, DailySchedule } from '../types';
 import { canCharContactUser } from './blockSystem';
 import { DB } from './db';
 import {
+  alignLifeEventToScheduleSlot,
   advanceLife,
+  buildAutonomousProactiveHint,
   catchUpOfflineLife,
   isAutonomousLifeEnabled,
   planAutonomousProactiveTurn,
@@ -187,6 +189,72 @@ describe('autonomous life v2', () => {
     expect(userPrompt).toContain('14:00-15:00 项目会');
     expect(userPrompt).toContain('20:00-22:00 看电影');
     expect(userPrompt).toContain('不要让 TA 在同一时间出现在两个地点');
+  });
+
+  it('uses the current schedule location when life generation invents another room', async () => {
+    await DB.deleteDB();
+    const now = new Date(2026, 6, 3, 14, 30).getTime();
+    const date = new Date(now).toISOString().slice(0, 10);
+    const char = mkChar({ scheduleFeatureEnabled: true, scheduleStyle: 'lifestyle' });
+    await DB.saveDailySchedule({
+      id: `${char.id}_${date}`,
+      charId: char.id,
+      date,
+      generatedAt: Date.now(),
+      slots: [
+        {
+          startTime: '14:00',
+          endTime: '15:00',
+          activity: '闭目养神',
+          description: '躺在皮质沙发上放空',
+          location: '客厅',
+        },
+      ],
+    });
+    const raw = {
+      activity: '把东西拿进书房来找人',
+      location: '书房',
+      summary: '去书房找人',
+      mood: '松弛',
+      eventKind: 'rest',
+      energy: 'low',
+      intensity: 45,
+      shareWillingness: 55,
+      proactiveAngle: 'share',
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+    })));
+
+    const event = await advanceLife(char, API, { now });
+
+    expect(event?.location).toBe('客厅');
+    expect(event?.activity).toContain('客厅');
+    expect(event?.activity).toContain('皮质沙发');
+    expect(event?.activity).not.toContain('书房');
+
+    const hint = buildAutonomousProactiveHint({
+      char,
+      userName: 'User',
+      timeStr: '2026-07-03 14:30',
+      timeSinceUser: '',
+      event: event!,
+    });
+    expect(hint).toContain('地点硬约束');
+    expect(hint).toContain('不要把消息改写成其它房间');
+  });
+
+  it('can align an already-built life event to a schedule slot', () => {
+    const aligned = alignLifeEventToScheduleSlot(
+      mkEvent({ activity: '钻进书房翻书', summary: '在书房耗着', location: '书房' }),
+      { startTime: '17:30', activity: '闭目养神', description: '躺在皮质沙发上', location: '客厅' },
+    );
+
+    expect(aligned.location).toBe('客厅');
+    expect(aligned.activity).toBe('在客厅，躺在皮质沙发上');
+    expect(aligned.summary).toBe('在客厅，躺在皮质沙发上');
   });
 
   it('syncs catch-up life events with planned daily schedule slots', async () => {

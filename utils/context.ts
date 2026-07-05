@@ -601,6 +601,9 @@ export const ContextBuilder = {
             slotHeader = `当前时段：${currentSlot.startTime} 你正在${currentSlot.activity}`;
             if (currentSlot.location) slotHeader += `（${currentSlot.location}）`;
             if (anchoredNow) slotHeader += `（这是之前和对方约好的）`;
+            if (currentSlot.location) {
+                slotHeader += `\n当前地点硬约束：你此刻就在「${currentSlot.location}」，本轮聊天不得说成自己在其它地点、去了其它房间，或让对方去另一个地点找你。`;
+            }
             if (nextSlot) slotHeader += `\n之后安排：${nextSlot.startTime} ${nextSlot.activity}`;
             slotHeader += '\n';
         } else if (nextSlot) {

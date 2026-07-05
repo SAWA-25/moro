@@ -435,9 +435,14 @@ export function autonomousProactiveHint(p: AutonomousProactiveHintParams): strin
             ? `主动冲动分：${score}/100，偏高；可以更直接，但仍然别像汇报任务。`
             : `主动冲动分：${score}/100，中等；自然找一个不打扰的开口。`
         : '';
+    const normalizedWhere = where.replace(/[（）()]/g, '').trim();
+    const locationRule = normalizedWhere
+        ? `地点硬约束：${normalizedWhere}是你此刻唯一可信的位置；不要把消息改写成其它房间、其它地点或“去某处找人”。`
+        : '';
     return (
         `[系统提示（非${userName}发言）：现在是 ${timeStr}。` +
         `你此刻正在过自己的生活：${activity}${where}${mood}。` +
+        locationRule +
         `${eventKind ? `事件类型：${eventKind}。` : ''}${energy ? `能量：${energy}。` : ''}${scoreLine}` +
         `${thread ? `这件事的连续线索：${thread}。` : ''}` +
         `${materialSources ? `本轮允许取材：${materialSources}。` : ''}` +

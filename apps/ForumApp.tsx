@@ -14,6 +14,7 @@ import {
     boardStat, hotRank, userLikesReceived, votePoll, pollTotal,
     normalizeForumState, normalizeForumMeta, ensureForumTopic, upsertForumDraft, removeForumDraft,
     touchRecentPost, filterForumPosts, withPostParticipants, loadForumTrendPack, defaultForumTrendPack,
+    removeForumPost, removeForumReply, removeForumSubReply,
     buildForumSharePendingPayload, FORUM_PENDING_CHAT_SHARE_KEY, type ForumShareMode,
 } from '../utils/forum';
 import { InsButton, InsDialog, IconCircle, accent } from '../components/ui/insKit';
@@ -57,6 +58,7 @@ import {
     ArrowsClockwise, MagnifyingGlass, Fire, CrownSimple, Spinner, House, BellSimple, User,
     Star, BookmarkSimple, ShareNetwork, ArrowsDownUp, Coffee,
     Plus, Check, CaretRight, Confetti, ChatCircleDots, Smiley, ChartBar, Heart, Medal,
+    Trash,
 } from '@phosphor-icons/react';
 
 const KEY = 'moro_forum_v1';
@@ -288,9 +290,12 @@ const ForumApp: React.FC = () => {
             ], { temperature: 0.98, maxTokens: 4000 });
             raw = parseForumReplies(out);
         } catch { /* fall through */ }
-        if (raw.length === 0) raw = fallbackReplies(count);
+        if (raw.length === 0) raw = fallbackReplies(count, post);
         // 先一次性落成楼层（materializeReplies 会把楼中楼挂进 post.replies 的宿主对象），再用它更新 state + 派生通知
-        const added = materializeReplies(raw, charLite, post.replies.length + 2, post.authorName, post.replies);
+        let added = materializeReplies(raw, charLite, post.replies.length + 2, post.authorName, post.replies, post);
+        if (added.length === 0) {
+            added = materializeReplies(fallbackReplies(count, post), charLite, post.replies.length + 2, post.authorName, post.replies, post);
+        }
         const bonus = post.authorType === 'user' ? Math.ceil(added.length / 3) : 0; // 用户帖被盖楼→涨点赞
         patchPost(post.id, p => withPostParticipants({ ...p, replies: [...p.replies, ...added], likes: p.likes + bonus, lastActiveAt: Date.now() }, added));
         // 用户自己的帖子被盖楼/点赞 → 进消息中心
@@ -438,6 +443,40 @@ const ForumApp: React.FC = () => {
     const likeReply = (postId: string, rid: string) => patchPost(postId, p => ({ ...p, replies: p.replies.map(r => r.id === rid ? { ...r, likes: r.likes + 1 } : r) }));
     const dislikeReply = (postId: string, rid: string) => patchPost(postId, p => ({ ...p, replies: p.replies.map(r => r.id === rid ? { ...r, dislikes: (r.dislikes || 0) + 1 } : r) }));
     const onVote = (postId: string, idx: number) => patchPost(postId, p => p.poll ? { ...p, poll: votePoll(p.poll, idx) } : p);
+
+    const deletePost = (postId: string) => {
+        const target = state.posts.find(p => p.id === postId);
+        if (!target) return;
+        if (!window.confirm(`删除帖子「${target.title}」？帖子和楼层会一起从茶话亭移除。`)) return;
+        setState(s => removeForumPost(s, postId));
+        setMeta(m => ({
+            ...m,
+            collectedPostIds: m.collectedPostIds.filter(id => id !== postId),
+            recentPostIds: (m.recentPostIds || []).filter(id => id !== postId),
+        }));
+        setNotifs(s => s.filter(n => n.postId !== postId));
+        triedFloors.current.delete(postId);
+        if (shareTarget?.id === postId) setShareTarget(null);
+        if (openId === postId) {
+            setOpenId(null);
+            setOnlyOp(false);
+            setReply('');
+            setKaoOpen(false);
+        }
+        addToast('帖子已删除', 'success');
+    };
+
+    const deleteReply = (postId: string, replyId: string) => {
+        if (!window.confirm('删除这条评论？')) return;
+        patchPost(postId, p => removeForumReply(p, replyId));
+        addToast('评论已删除', 'success');
+    };
+
+    const deleteSubReply = (postId: string, replyId: string, subReplyId: string) => {
+        if (!window.confirm('删除这条楼中楼评论？')) return;
+        patchPost(postId, p => removeForumSubReply(p, replyId, subReplyId));
+        addToast('评论已删除', 'success');
+    };
 
     const doCheckIn = (boardId: string) => {
         const res = checkIn(metaRef.current, boardId);
@@ -666,7 +705,8 @@ const ForumApp: React.FC = () => {
                             <button onClick={() => likePost(open.id)} className="flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatUp size={15} weight="bold" />{kFmt(open.likes)}</button>
                             <button onClick={() => dislikePost(open.id)} className="flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatDown size={15} weight="bold" />{open.dislikes || ''}</button>
                             <span className="flex items-center gap-1 text-[11px]" style={{ color: INK_SOFT }}><ChatCircleText size={15} weight="bold" />{kFmt(target)}</span>
-                            <span className="ml-auto text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>1 楼 · 楼主</span>
+                            <button onClick={() => deletePost(open.id)} className="ml-auto flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除帖子"><Trash size={14} weight="bold" />删帖</button>
+                            <span className="text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>1 楼 · 楼主</span>
                         </div>
                     </div>
                     {/* 楼层区：标题 + 倒序 */}
@@ -699,11 +739,16 @@ const ForumApp: React.FC = () => {
                                     {r.subReplies && r.subReplies.length > 0 && (
                                         <div className="mt-1.5 rounded-lg px-2.5 py-1.5 space-y-1" style={{ background: 'rgba(232,228,217,0.55)', border: '1px solid rgba(0,0,0,0.05)' }}>
                                             {r.subReplies.map(s => (
-                                                <p key={s.id} className="text-[12px] leading-relaxed">
-                                                    <span className="font-bold" style={{ color: INK }}>{s.authorName}</span>
-                                                    <span style={{ color: INK_SOFT }}> 回复 {r.authorName}：</span>
-                                                    <span style={{ color: '#48443c' }}>{s.body}</span>
-                                                </p>
+                                                <div key={s.id} className="flex items-start gap-1.5 text-[12px] leading-relaxed">
+                                                    <p className="flex-1 min-w-0">
+                                                        <span className="font-bold" style={{ color: INK }}>{s.authorName}</span>
+                                                        <span style={{ color: INK_SOFT }}> 回复 {r.authorName}：</span>
+                                                        <span style={{ color: '#48443c' }}>{s.body}</span>
+                                                    </p>
+                                                    <button onClick={() => deleteSubReply(open.id, r.id, s.id)} className="mt-0.5 shrink-0 active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除评论">
+                                                        <Trash size={11} weight="bold" />
+                                                    </button>
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -711,6 +756,7 @@ const ForumApp: React.FC = () => {
                                         <button onClick={() => likeReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatUp size={12} weight="bold" />{r.likes || ''}</button>
                                         <button onClick={() => dislikeReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatDown size={12} weight="bold" />{r.dislikes || ''}</button>
                                         <button onClick={() => { setReply(`回复 ${r.authorName}：`); }} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ChatCircleDots size={12} weight="bold" />接话</button>
+                                        <button onClick={() => deleteReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除评论"><Trash size={12} weight="bold" />删除</button>
                                     </div>
                                 </div>
                             </div>

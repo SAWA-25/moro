@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ShopReview, ShopRegular } from '../../types';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';
 import { REGULAR_VISITS, VIP_VISITS, regularTier } from './BankGameConstants';
+import BankAssetIcon from './BankAssetIcon';
 
 /**
  * 人生拟 · 营业结算 & 口碑评价
@@ -57,7 +58,7 @@ export const BusinessResultModal: React.FC<{
         <div className="relative w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up" style={{ background: '#FFFDF7', boxShadow: '0 20px 50px rgba(96,66,40,0.4)' }}>
             {/* 头 */}
             <div className="px-5 pt-5 pb-4 text-white" style={{ background: 'linear-gradient(135deg,#66BB6A,#43A047)' }}>
-                <div className="text-[11px] font-bold tracking-[0.2em] opacity-80 uppercase">Business Closed</div>
+                <div className="text-[11px] font-bold tracking-[0.2em] opacity-80 uppercase">Business Result</div>
                 <div className="flex items-end justify-between mt-1">
                     <span className="text-[20px] font-black" style={{ fontFamily: HAND_FONT }}>今日营业结算</span>
                     <div className="text-right">
@@ -105,7 +106,12 @@ export const BusinessResultModal: React.FC<{
                     {result.items.length === 0 && <div className="text-[12px] text-[#A1887F]">今天没人点单……要不先去「经营」解锁点新品？</div>}
                     {result.items.map((it, i) => (
                         <div key={i} className="flex items-center gap-2.5">
-                            {isUrl(it.icon) ? <img src={it.icon} className="w-6 h-6" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <span className="text-lg">{it.icon}</span>}
+                            <BankAssetIcon
+                                value={it.icon}
+                                alt={it.name}
+                                imgClassName="w-16 h-16 object-contain shrink-0"
+                                textClassName="text-[64px] leading-none shrink-0"
+                            />
                             <span className="flex-1 text-[13px] font-bold">{it.name}</span>
                             <span className="text-[12px] text-[#A1887F]">×{it.qty}</span>
                             <span className="text-[13px] font-black" style={{ color: '#43A047' }}>{currency}{it.subtotal}</span>
@@ -136,7 +142,7 @@ export const BusinessResultModal: React.FC<{
             {/* 底 */}
             <div className="px-5 pb-5 pt-1 flex gap-2.5">
                 <button onClick={onViewReviews} className="flex-1 py-3 rounded-2xl text-[13px] font-bold active:scale-95 transition-all" style={{ background: '#F3E9D6', color: '#8D6E63' }}>看看口碑墙</button>
-                <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg,#FF8A65,#FF7043)' }}>收钱打烊</button>
+                <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg,#FF8A65,#FF7043)' }}>知道了</button>
             </div>
         </div>
     </div>

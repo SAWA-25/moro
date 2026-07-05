@@ -2582,6 +2582,33 @@ ${parallelReplyPromptBody({
     }, [lastMsgTimestamp, activeCharacterId, activeApp, reloadMessages, clearUnread]);
 
     useEffect(() => {
+        if (activeApp !== AppID.Chat || !activeCharacterId) return;
+        void reloadMessages(visibleCountRef.current);
+        clearUnread(activeCharacterId);
+    }, [activeApp, activeCharacterId, reloadMessages, clearUnread]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !activeCharacterId) return;
+        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+        const handleMessagesUpdated = (event: Event) => {
+            const detail = (event as CustomEvent<{ charId?: string; groupId?: string }>).detail;
+            if (detail?.groupId) return;
+            if (detail?.charId && detail.charId !== activeCharacterId) return;
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                refreshTimer = null;
+                void reloadMessages(visibleCountRef.current);
+                if (activeApp === AppID.Chat) clearUnread(activeCharacterId);
+            }, 80);
+        };
+        window.addEventListener('messages-updated', handleMessagesUpdated);
+        return () => {
+            window.removeEventListener('messages-updated', handleMessagesUpdated);
+            if (refreshTimer) clearTimeout(refreshTimer);
+        };
+    }, [activeCharacterId, activeApp, reloadMessages, clearUnread]);
+
+    useEffect(() => {
         visibleCountRef.current = visibleCount;
     }, [visibleCount]);
 

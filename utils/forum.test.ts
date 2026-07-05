@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    targetFloorCount, parseThreads, materializeThreads, fallbackThreads,
+    targetFloorCount, parseThreads, materializeThreads, fallbackThreads, fallbackReplies,
     parseForumReplies, materializeReplies, buildForumPrompt, buildThreadsPrompt, FORUM_BOARDS,
     levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, isCheckedIn,
     checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp, boardStat,
@@ -9,6 +9,7 @@ import {
     materializeCharReply, filterForumPosts, upsertForumDraft, removeForumDraft, touchRecentPost,
     loadForumTrendPack, normalizeForumTrendItems, defaultForumTrendPack, FORUM_TRENDS_KEY, FORUM_TRENDS_COOLDOWN_MS,
     buildForumPostShareSnapshot, buildForumSharePendingPayload, normalizeForumSharePendingPayload,
+    removeForumPost, removeForumReply, removeForumSubReply,
     type ForumTrendPack,
     type RawReply, type ForumReply, type ForumPost, type ForumPoll,
 } from './forum';
@@ -253,6 +254,10 @@ describe('parseForumReplies', () => {
         expect(rs[0].name).toBe('夜航船');
         expect(rs[1].name).toBe('今天也emo');
     });
+    it('同批完全重复的跟帖只保留一条', () => {
+        const rs = parseForumReplies('[{"name":"甲","body":"理性建议：早点睡。"},{"name":"乙","body":"理性建议：早点睡。"}]');
+        expect(rs).toHaveLength(1);
+    });
 });
 
 describe('materializeReplies', () => {
@@ -280,6 +285,35 @@ describe('materializeReplies', () => {
         // 落成楼中楼挂到 existing，不产生新主楼
         expect(out.length).toBe(0);
         expect(existing[0].subReplies?.length).toBe(1);
+    });
+    it('带帖子上下文时过滤重复、低质和无关跟帖', () => {
+        const post = mkPost({
+            title: '朋友三天没回消息是不是该问问',
+            body: '她以前每天都会回我，最近突然只读不回，我有点拿不准。',
+        });
+        const raw: RawReply[] = [
+            { name: '甲', body: '理性建议：早点睡。' },
+            { name: '乙', body: '她三天没回消息这个细节才是重点，可以先轻轻问一句。' },
+            { name: '丙', body: '她三天没回消息这个细节才是重点，可以先轻轻问一句。' },
+        ];
+        const out = materializeReplies(raw, [], 2, undefined, [], post);
+        expect(out).toHaveLength(1);
+        expect(out[0].authorName).toBe('乙');
+        expect(out[0].body).toContain('三天没回消息');
+    });
+});
+
+describe('fallbackReplies', () => {
+    it('带帖子上下文时生成贴题且不复读的兜底回复', () => {
+        const replies = fallbackReplies(6, {
+            boardId: 'emo',
+            title: '朋友三天没回消息是不是该问问',
+            body: '她以前每天都会回我，最近突然只读不回，我有点拿不准。',
+        });
+        expect(replies).toHaveLength(6);
+        expect(new Set(replies.map(r => r.body))).toHaveLength(6);
+        expect(replies.some(r => r.body.includes('三天没回消息') || r.body.includes('只读不回') || r.body.includes('态度'))).toBe(true);
+        expect(replies.every(r => !['理性建议：早点睡。', '前排', '蹲后续'].includes(r.body))).toBe(true);
     });
 });
 
@@ -316,6 +350,58 @@ describe('normalizeForumState / participants', () => {
         expect(reply.authorType).toBe('char');
         expect(post.replies).toHaveLength(1);
         expect(post.participants?.some(p => p.type === 'char' && p.id === 'c1')).toBe(true);
+    });
+});
+
+describe('forum remove helpers', () => {
+    it('removeForumPost 从状态里移除指定帖子', () => {
+        const state = { posts: [mkPost({ id: 'p1' }), mkPost({ id: 'p2' })] };
+        expect(removeForumPost(state, 'p1').posts.map(p => p.id)).toEqual(['p2']);
+    });
+
+    it('removeForumReply 删除主楼评论后重排楼层、收紧总楼数并重建参与者', () => {
+        const post = mkPost({
+            id: 'p1',
+            authorType: 'npc',
+            authorName: '楼主',
+            replyCount: 4,
+            replies: [
+                { id: 'r1', floor: 2, authorType: 'user', authorName: '我', body: '删掉我', createdAt: 1, likes: 0 },
+                { id: 'r2', floor: 3, authorType: 'char', authorId: 'c1', authorName: '林夏', body: '留下', createdAt: 2, likes: 0 },
+            ],
+        });
+        const next = removeForumReply(post, 'r1');
+        expect(next.replies.map(r => [r.id, r.floor])).toEqual([['r2', 2]]);
+        expect(next.replyCount).toBe(3);
+        expect(next.participants?.some(p => p.name === '我')).toBe(false);
+        expect(next.participants?.some(p => p.type === 'char' && p.id === 'c1')).toBe(true);
+    });
+
+    it('removeForumSubReply 删除楼中楼评论且不改变主楼层数', () => {
+        const post = mkPost({
+            id: 'p1',
+            replyCount: 3,
+            replies: [
+                {
+                    id: 'r1',
+                    floor: 2,
+                    authorType: 'npc',
+                    authorName: '甲',
+                    body: '主楼',
+                    createdAt: 1,
+                    likes: 0,
+                    subReplies: [
+                        { id: 's1', authorType: 'user', authorName: '我', body: '删掉', createdAt: 2 },
+                        { id: 's2', authorType: 'npc', authorName: '乙', body: '留下', createdAt: 3 },
+                    ],
+                },
+            ],
+        });
+        const next = removeForumSubReply(post, 'r1', 's1');
+        expect(next.replyCount).toBe(3);
+        expect(next.replies[0].subReplies?.map(s => s.id)).toEqual(['s2']);
+        expect(next.participants?.some(p => p.name === '我')).toBe(false);
+        expect(next.participants?.some(p => p.name === '乙')).toBe(true);
     });
 });
 

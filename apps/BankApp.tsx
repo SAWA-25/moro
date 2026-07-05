@@ -8,8 +8,8 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
-import BankShopScene from '../components/bank/BankShopScene';
 import BankDollhouse from '../components/bank/BankDollhouse';
+import BankAssetIcon from '../components/bank/BankAssetIcon';
 import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
@@ -118,6 +118,7 @@ const INITIAL_STATE: BankFullState = {
         ],
         unlockedRecipes: ['recipe-coffee-001'],
         stock: { 'recipe-coffee-001': STARTING_STOCK },
+        isBusinessOpen: false,
         activeVisitor: undefined,
         guestbook: [] // New
     },
@@ -145,9 +146,10 @@ const cloneDollhouseState = (state: DollhouseState): DollhouseState => ({
     })),
 });
 
-// 当前每小时挂机产出：基础(人气×等级) × 天气倍率 × 雇员/精力加成（有店员才产出）。
-type IdleShopShape = { staff: { id: string; fatigue?: number }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number; weather?: { id: string; until: number } };
+// 当前每小时挂机产出：营业中才产出，基础(人气×等级) × 天气倍率 × 雇员/精力加成。
+type IdleShopShape = { staff: { id: string; fatigue?: number }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number; weather?: { id: string; until: number }; isBusinessOpen?: boolean };
 const computeIdleRatePerHour = (shop: IdleShopShape): number => {
+    if (shop.isBusinessOpen !== true) return 0;
     const n = shop.staff?.length || 0;
     if (n === 0) return 0;
     const level = shop.shopLevel || 1;
@@ -165,6 +167,9 @@ const idleCapNow = (shop: IdleShopShape): number => computeIdleRatePerHour(shop)
 // 锚点 lastAccrualAt 只在真正入账时前移，所以不足 1 元的零头会保留到下次，不丢。
 const accrueShopIdle = (shop: IdleShopShape, now: number): { pendingRevenue: number; lastAccrualAt: number } => {
     const rate = computeIdleRatePerHour(shop);
+    if (rate <= 0) {
+        return { pendingRevenue: Math.max(0, shop.pendingRevenue || 0), lastAccrualAt: shop.lastAccrualAt || now };
+    }
     const cap = rate * IDLE_CAP_HOURS;
     const last = shop.lastAccrualAt || now;
     const gained = Math.max(0, Math.floor(rate * ((now - last) / 3600000)));
@@ -1202,6 +1207,45 @@ const BankApp: React.FC = () => {
         showActionResult(actionResult);
     };
 
+    const handleCloseShop = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        if (cur.shop.isBusinessOpen !== true) {
+            addToast('店铺已经打烊了', 'info');
+            return;
+        }
+        const now = Date.now();
+        const idle = accrueShopIdle(cur.shop, now);
+        const pending = Math.floor(idle.pendingRevenue);
+        const shopName = cur.life?.shopBusinessName || cur.shop.shopName || '小店';
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-close',
+            title: '店铺已打烊',
+            summary: pending > 0
+                ? `${shopName} 已打烊，待收营业额 ${cur.config.currencySymbol}${pending} 会留在收款按钮里。`
+                : `${shopName} 已打烊，停止继续累计挂机营业额。`,
+            tone: 'info',
+            metrics: [
+                { label: '状态', value: '已打烊' },
+                { label: '待收营业额', value: `${cur.config.currencySymbol}${pending}` },
+            ],
+            nextActions: pending > 0 ? ['点收款领取营业额'] : ['下次再开门营业'],
+            payload: { pendingRevenue: pending },
+        });
+        await commitBankState({
+            ...cur,
+            shop: {
+                ...cur.shop,
+                isBusinessOpen: false,
+                pendingRevenue: idle.pendingRevenue,
+                lastAccrualAt: now,
+            },
+            life: appendBankActionRecord(cur.life!, actionResult),
+        });
+        addToast(pending > 0 ? `已打烊，待收 ${cur.config.currencySymbol}${pending}` : '店铺已打烊', 'success');
+        showActionResult(actionResult);
+    };
+
     const handleClaimShopDailyReward = async (kind: 'headquartersPatrol' | 'shelf' | 'review') => {
         const result = claimBankShopDailyReward(stateRef.current, kind);
         if (!result.claimed) {
@@ -2016,6 +2060,10 @@ ${JSON.stringify(list, null, 2)}
     const handleOperate = async () => {
         const cur = migrateBankLifeState(stateRef.current);
         const lifeState = cur.life!;
+        if (cur.shop.isBusinessOpen === true) {
+            addToast('店铺正在营业中，先打烊再开下一轮', 'info');
+            return;
+        }
         const last = cur.shop.lastBusinessAt || 0;
         const elapsed = Date.now() - last;
         if (elapsed < BUSINESS_COOLDOWN_MS) {
@@ -2193,13 +2241,16 @@ ${JSON.stringify(list, null, 2)}
             nextActions: lostSales > 0 ? ['先补货再营业'] : ['查看顾客评价'],
             payload: { total, base, tips, customerCount, soldItems, lostSales, mishaps },
         });
+        const now = Date.now();
         const newState: BankFullState = {
             ...cur,
             shop: {
                 ...cur.shop,
                 staff: updatedStaff,
                 actionPoints: Math.max(0, (cur.shop.actionPoints || 0) - BUSINESS_ENERGY_COST),
-                lastBusinessAt: Date.now(),
+                lastBusinessAt: now,
+                lastAccrualAt: now,
+                isBusinessOpen: true,
                 totalRevenue: (cur.shop.totalRevenue || 0) + total,
                 reviews: mergedReviews,
                 stock: stockLeft,
@@ -2693,6 +2744,7 @@ ${JSON.stringify(list, null, 2)}
         }
 
         const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
+        const shopIsOpen = state.shop.isBusinessOpen === true;
         return (
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="px-3.5 pt-3 shrink-0">
@@ -2702,10 +2754,10 @@ ${JSON.stringify(list, null, 2)}
                                 <span className="w-12 h-12 rounded-[18px] flex items-center justify-center text-[24px]" style={{ background: '#faf8f5' }}>{tpl.icon}</span>
                                 <div className="min-w-0">
                                     <div className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.shopBusinessName || state.shop.shopName || tpl.name}</div>
-                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
+                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopIsOpen ? '营业中' : '已打烊'} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
                                 </div>
                             </div>
-                            <button onClick={handleOperate} className="px-4 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>营业</button>
+                            <button onClick={shopIsOpen ? handleCloseShop : handleOperate} className="px-4 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn(shopIsOpen ? '#f43f5e' : '#16a34a')}>{shopIsOpen ? '打烊' : '营业'}</button>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
                             <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>总部</b><br />{shopPortfolio?.headquartersEnergy ?? 0} 精力</div>
@@ -2719,7 +2771,7 @@ ${JSON.stringify(list, null, 2)}
                                 return (
                                     <button key={branch.id} onClick={() => { void handleSwitchBankShop(branch.id); }} className="shrink-0 px-3 py-2 text-left active:scale-95 transition-transform" style={chipStyle(active)}>
                                         <span className="text-[12px] font-black">{branchTpl.icon} {branch.shop.shopName}</span>
-                                        <span className="block text-[10px] opacity-75">Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
+                                        <span className="block text-[10px] opacity-75">{branch.shop.isBusinessOpen ? '营业中' : '已打烊'} · Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
                                     </button>
                                 );
                             })}
@@ -2779,10 +2831,11 @@ ${JSON.stringify(list, null, 2)}
                         {(() => {
                             const pending = Math.floor(state.shop.pendingRevenue || 0);
                             if (pending < 1) return null;
-                            const full = pending >= idleCapNow(state.shop);
+                            const cap = idleCapNow(state.shop);
+                            const full = cap > 0 && pending >= cap;
                             return (
                                 <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ bottom: 'max(60px, calc(var(--safe-bottom, 0px) + 26px))', background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
-                                    <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
+                                    <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收款 {state.config.currencySymbol}{pending}</span>
                                     {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
                                 </button>
                             );
@@ -3451,9 +3504,12 @@ ${JSON.stringify(list, null, 2)}
                     <div className="space-y-4">
                         <div className="flex items-center gap-4">
                             <div className="w-24 h-24 flex items-center justify-center text-5xl relative overflow-hidden group cursor-pointer" style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 12px rgba(96,66,40,0.18)', transform: 'rotate(-2deg)' }} onClick={() => staffImageInputRef.current?.click()}>
-                                {editingStaff.avatar.startsWith('http') || editingStaff.avatar.startsWith('data')
-                                    ? <img src={editingStaff.avatar} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                                    : editingStaff.avatar}
+                                <BankAssetIcon
+                                    value={editingStaff.avatar}
+                                    alt={editingStaff.name}
+                                    imgClassName="w-full h-full object-contain"
+                                    textClassName="text-5xl leading-none"
+                                />
                                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <span className="text-white text-[11px] font-bold bg-black/40 px-2 py-1 rounded-lg">换张</span>
                                 </div>

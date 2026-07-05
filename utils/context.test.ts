@@ -88,4 +88,30 @@ describe('ContextBuilder character identity anchor', () => {
     expect(context).not.toContain('自动线下：开启');
     expect(context).not.toContain('[[OFFLINE_START]]');
   });
+
+  it('treats the current schedule location as a hard chat constraint', () => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const schedule = {
+      id: 'char-a_today',
+      charId: 'char-a',
+      date: now.toISOString().slice(0, 10),
+      generatedAt: now.getTime(),
+      slots: [
+        {
+          startTime: `${hh}:00`,
+          activity: '闭目养神',
+          description: '躺在皮质沙发上放空',
+          location: '客厅',
+        },
+      ],
+    };
+
+    const context = ContextBuilder.buildScheduleInjection(schedule);
+
+    expect(context).toContain('当前地点硬约束');
+    expect(context).toContain('你此刻就在「客厅」');
+    expect(context).toContain('不得说成自己在其它地点');
+    expect(context).toContain('让对方去另一个地点找你');
+  });
 });

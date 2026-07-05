@@ -59,6 +59,7 @@ import { ORDER_CHAR_ID_GROUP, PresetRuntime, applyPresetToMessages } from '../ut
 import { normalizeLiveChatSettings, resolveLiveChatEnabled, shouldTriggerLiveDraft } from '../utils/liveChat';
 import { groupVoiceStylePromptBlock, innerVoicePromptBody, liveGroupDraftPromptBody, liveGroupModePromptBlock } from '../utils/laiwangPrompts';
 import { createMessageFollowup } from '../utils/chatFollowups';
+import { isPrivateChatVisibleMessage } from '../utils/privateChatVisibility';
 import type { ParsedEmojiImport } from '../utils/emojiImport';
 import { buildChatLocationMap } from '../utils/chatLocationMap';
 import { mergeGroupProfileUpdate } from '../utils/profileUpdateMerge';
@@ -2895,8 +2896,7 @@ const ChatHub: React.FC = () => {
             const nowTs = Date.now();
             for (const c of characters) {
                 if (hideAmbientSocialRecords && isAmbientSocialCharacterForUser(c)) continue;
-                const { messages: recentMsgs } = await DB.getRecentMessagesWithCount(c.id, 50);
-                const visibleMsgs = recentMsgs.filter(isConvoPreviewMessage);
+                const { messages: visibleMsgs } = await DB.getRecentMessagesWithCount(c.id, 50, isPrivateChatVisibleMessage);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
                 // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
                 if (visibleMsgs.length === 0 && !(c as any).addedToChat) continue;

@@ -255,10 +255,85 @@ export const npcEmoji = (name: string): string => {
 };
 
 const NETIZEN_LINES = [
-    '前排，蹲后续。', '我嘞个豆，这也太真实了。', '握手，原来不止我一个。', '楼主清醒一点（拍肩）。',
-    'laugh死，这评论区比帖子好看。', '默默点了个赞。', '说出了我的心声呜呜。', '理性建议：早点睡。',
-    '又是被共鸣到的一天。', '蹲一个，顺便许愿。', '这届网友很会啊。', '路过，给楼主递茶。🍵',
+    '前排先占个座，但这事要看楼主后续补充。',
+    '我嘞个豆，标题已经有画面了，正文再多说两句更好判断。',
+    '如果我是楼主，我会先把时间线捋清楚，别急着下结论。',
+    '这个点挺微妙的，不像单纯误会，建议先观察对方下一步。',
+    '楼主这句太真实了，我身边也见过类似情况，但结果完全反过来。',
+    '别只听一边说法，关键要看当事人有没有持续回避。',
+    '我先蹲个后续，尤其想知道中间那段是谁先开口的。',
+    '这事最怕拖着不问，最后全靠脑补把自己绕进去。',
+    '感觉不是大问题，但已经足够让人心里硌一下。',
+    '楼主先别上头，把聊天记录和时间点对一下再行动。',
+    '有一说一，这种局面直接问反而比猜来猜去舒服。',
+    '如果只是想吐槽，那我懂；如果要解决，得先分清谁在逃避。',
 ];
+
+type ForumReplyContext = Pick<ForumPost, 'title' | 'body' | 'boardId'> & { replies?: ForumReply[] };
+
+const LOW_VALUE_REPLY_KEYS = new Set([
+    '前排',
+    '蹲后续',
+    '插眼',
+    '马克',
+    '默默点了个赞',
+    '理性建议早点睡',
+    '楼主清醒一点拍肩',
+    '又是被共鸣到的一天',
+    '这届网友很会啊',
+    '路过给楼主递茶',
+]);
+
+const REPLY_STOP_WORDS = new Set([
+    '一个', '这个', '那个', '什么', '怎么', '为什么', '有没有', '是不是', '就是', '感觉', '真的', '好像', '突然', '今天', '现在', '大家', '你们',
+    '楼主', '帖子', '正文', '标题', '后续', '有人', '一下', '一点', '这种', '情况', '事情', '问题', '建议', '回复',
+]);
+
+const replyKey = (text: string): string =>
+    String(text || '').toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]/g, '');
+
+const postBrief = (ctx?: ForumReplyContext): string =>
+    `${ctx?.title || ''} ${ctx?.body || ''}`.replace(/\s+/g, ' ').trim();
+
+const extractReplyKeywords = (ctx?: ForumReplyContext, limit = 8): string[] => {
+    const text = postBrief(ctx);
+    const words = text.match(/[\u4e00-\u9fa5a-zA-Z0-9]{2,}/g) || [];
+    const out: string[] = [];
+    for (const raw of words) {
+        const word = raw.trim();
+        if (word.length < 2 || REPLY_STOP_WORDS.has(word)) continue;
+        if (!out.includes(word)) out.push(word);
+        if (out.length >= limit) break;
+    }
+    return out;
+};
+
+const isLowValueReply = (body: string, ctx?: ForumReplyContext): boolean => {
+    const key = replyKey(body);
+    if (!key) return true;
+    if (LOW_VALUE_REPLY_KEYS.has(key)) return true;
+    if (key.length <= 6 && !extractReplyKeywords(ctx).some(k => key.includes(replyKey(k)))) return true;
+    const genericHit = [...LOW_VALUE_REPLY_KEYS].some(k => key.includes(k) && key.length <= k.length + 6);
+    return genericHit && !extractReplyKeywords(ctx).some(k => key.includes(replyKey(k)));
+};
+
+function curateForumReplies(raw: RawReply[], ctx?: ForumReplyContext): RawReply[] {
+    const seen = new Set<string>();
+    safeArr<ForumReply>(ctx?.replies).forEach(r => {
+        seen.add(replyKey(r.body));
+        safeArr<ForumSubReply>(r.subReplies).forEach(s => seen.add(replyKey(s.body)));
+    });
+    const out: RawReply[] = [];
+    for (const r of raw) {
+        const body = String(r.body || '').replace(/\s+/g, ' ').trim();
+        const key = replyKey(body);
+        if (!body || !key || seen.has(key)) continue;
+        if (ctx && isLowValueReply(body, ctx)) continue;
+        seen.add(key);
+        out.push({ ...r, body });
+    }
+    return out;
+}
 
 /**
  * 帖子「声称」的总楼层数：贴吧帖子有的几十楼、有的几百楼。
@@ -273,16 +348,32 @@ export function targetFloorCount(seed?: number): number {
 }
 
 /** 模板兜底：没配 API / 生成失败时也能盖几层楼。 */
-export function fallbackReplies(count: number): { name: string; body: string }[] {
+export function fallbackReplies(count: number, ctx?: ForumReplyContext): { name: string; body: string }[] {
     const used = new Set<string>();
-    const out: { name: string; body: string }[] = [];
-    for (let i = 0; i < count; i++) {
+    const keywords = extractReplyKeywords(ctx);
+    const topic = keywords[0] || (ctx?.title || '这事').slice(0, 12) || '这事';
+    const board = boardOf(ctx?.boardId || '')?.name || '水区';
+    const templates = [
+        `我觉得重点不是「${topic}」本身，而是楼主现在已经开始反复琢磨了，这就说明这事确实卡人。`,
+        `看完主楼，最想问的是：对方后面有没有解释过「${topic}」这段？没有的话就很难不多想。`,
+        `${board}老茶客路过，建议楼主先别急着定性，把时间线和对方原话补全，大家才好判断。`,
+        `如果主楼说的细节都是真的，那这不像单纯巧合，更像有人在回避一个必须说清的问题。`,
+        `我站一个谨慎派：先问清楚，再决定要不要继续投入情绪，不然很容易自己内耗。`,
+        `这帖不是那种一句“早点睡”能解决的，楼主真正在意的是对方态度有没有变。`,
+        `有点共鸣。我以前也遇到过类似「${topic}」的局面，拖越久越容易把小事憋成大事。`,
+        `楼上如果只看热闹可能会觉得好笑，但主楼这个语气明显已经有点受影响了。`,
+        `蹲后续，但不是无脑蹲，主要想看楼主补一下中间那段对话，那里才是关键信息。`,
+        `换我会先发一个很轻的试探，不逼问，只看对方愿不愿意认真接住这个话题。`,
+    ];
+    const source = ctx ? templates : NETIZEN_LINES;
+    const out: RawReply[] = [];
+    for (let i = 0; i < count * 2 && out.length < count; i++) {
         let nick = pick(NICKS); let guard = 0;
         while (used.has(nick) && guard++ < 8) nick = pick(NICKS);
         used.add(nick);
-        out.push({ name: nick, body: pick(NETIZEN_LINES) });
+        out.push({ name: nick, body: source[i % source.length] });
     }
-    return out;
+    return curateForumReplies(out, ctx).slice(0, count);
 }
 
 /** 开局种子：两条无角色依赖的氛围帖，避免空荡荡。 */
@@ -370,6 +461,45 @@ export function withPostParticipants(
     entries: Array<Partial<ForumParticipant> & { authorType?: AuthorType; authorId?: string; authorName?: string; createdAt?: number }>,
 ): ForumPost {
     return { ...post, participants: upsertForumParticipants(post.participants, entries) };
+}
+
+export function rebuildForumPostParticipants(post: ForumPost): ForumPost {
+    return {
+        ...post,
+        participants: upsertForumParticipants(undefined, [
+            { authorType: post.authorType, authorId: post.authorId, authorName: post.authorName, avatar: post.avatar, createdAt: post.createdAt },
+            ...replyParticipants(post.replies),
+        ]),
+    };
+}
+
+export function removeForumPost(state: ForumState, postId: string): ForumState {
+    return { posts: safeArr<ForumPost>(state.posts).filter(p => p.id !== postId) };
+}
+
+export function removeForumReply(post: ForumPost, replyId: string): ForumPost {
+    const replies = safeArr<ForumReply>(post.replies);
+    const nextReplies = replies.filter(r => r.id !== replyId);
+    if (nextReplies.length === replies.length) return post;
+    const totalFloors = Math.max(1, Math.floor(Number(post.replyCount) || replies.length + 1));
+    return rebuildForumPostParticipants({
+        ...post,
+        replies: nextReplies.map((r, i) => ({ ...r, floor: i + 2, isOp: r.isOp || r.authorName === post.authorName })),
+        replyCount: Math.max(nextReplies.length + 1, totalFloors - 1),
+    });
+}
+
+export function removeForumSubReply(post: ForumPost, replyId: string, subReplyId: string): ForumPost {
+    let changed = false;
+    const replies = safeArr<ForumReply>(post.replies).map(r => {
+        if (r.id !== replyId) return r;
+        const subReplies = safeArr<ForumSubReply>(r.subReplies);
+        const nextSubReplies = subReplies.filter(s => s.id !== subReplyId);
+        if (nextSubReplies.length === subReplies.length) return r;
+        changed = true;
+        return { ...r, subReplies: nextSubReplies };
+    });
+    return changed ? rebuildForumPostParticipants({ ...post, replies }) : post;
 }
 
 export function normalizeForumState(input: unknown): ForumState {
@@ -667,22 +797,28 @@ export interface CharBrief { id: string; modelId?: string; name: string; persona
 export interface RawReply { name: string; body: string; reply_to?: string; charId?: string; }
 
 export function buildForumPrompt(
-    post: Pick<ForumPost, 'title' | 'body' | 'boardId'>,
+    post: Pick<ForumPost, 'title' | 'body' | 'boardId'> & { replies?: ForumReply[] },
     chars: CharBrief[],
     count: number,
     startFloor = 2,
 ): { system: string; user: string } {
     const board = boardOf(post.boardId);
+    const keywords = extractReplyKeywords(post, 6);
+    const recent = safeArr<ForumReply>(post.replies).slice(-8).map(r => `${r.floor}楼 ${r.authorName}：${r.body}`).join('\n');
     const roster = chars.slice(0, 6).map(c => {
         const id = getCharacterModelId(c);
         const idPart = id ? ` charId="${id}"` : '';
         return `- ${formatCharacterWithId(c)}${idPart}：${(c.persona || '').slice(0, 120) || '（无设定）'}`;
     }).join('\n');
-    const system = '你在为一个网络论坛（百度贴吧风格）生成「跟帖区」楼层。跟帖要口语、简短、风格各异（有人共鸣、有人吐槽、有人抬杠玩梗、有人认真建议、有人单纯顶帖/接楼），像真实网友盖楼。';
+    const system = '你在为一个网络论坛（百度贴吧风格）生成「跟帖区」楼层。每条跟帖都必须读过主楼，回应标题/正文里的具体细节；要像真实网友，有共鸣、追问、分歧、补经验、玩梗，但不能水楼、复读或写万能套话。';
     const endFloor = startFloor + count - 1;
     const user = `板块：${board?.emoji || ''}${board?.name || ''}
 帖子标题：「${post.title}」
 正文：${post.body || '（无）'}
+关键词：${keywords.length ? keywords.join('、') : '无'}
+
+已有楼层（避免复读，后续跟帖要接住上下文）：
+${recent || '（暂无）'}
 
 下面这些是「实名出镜」的网友（你认识的角色），他们也可能来盖楼，请严格用其本名、并贴合各自人设说话：
 ${roster || '（暂无实名角色）'}
@@ -690,7 +826,10 @@ ${roster || '（暂无实名角色）'}
 Identity rule: when a reply is from a real character above, output charId exactly as listed. Names are display text only; do not merge or substitute same-name/similar characters.
 
 请生成 ${count} 条跟帖（这是第 ${startFloor}~${endFloor} 楼）：其中若干条来自上面的实名角色（用其本名、合乎人设地回应），其余来自匿名网友（你为每位现编一个有网感的网名，可重复出现像在对话）。
-- 口语、自然、有梗、不复读、有来有回，长短随意、不限字数；
+- 每条都要和主楼具体相关：至少点到标题/正文/关键词/已有楼层中的一个具体信息，再发表看法；
+- 禁止输出无意义水话或万能句：如“前排”“蹲后续”“默默点了个赞”“理性建议：早点睡”“楼主清醒一点”“这评论区比帖子好看”；
+- 禁止同一批里复用同一句式、同一结论或同一身体内容；不要连续多条都是“共鸣/早点睡/蹲”；
+- 风格要分散：有人认真分析、有人补相似经历、有人追问关键信息、有人轻微反驳、有人接梗，但都要贴题；
 - 让其中 2~4 条带 "reply_to" 字段（楼中楼，回复前面某位网友的名字），形成对话感；
 只输出一个 JSON 数组，不要任何多余文字或代码块标记：
 [{"name":"网友名","charId":"实名角色必须填上方 charId；匿名网友省略","body":"跟帖内容","reply_to":"（可选）被回复者网名"}]`;
@@ -703,16 +842,18 @@ export function buildCharReplyPrompt(
 ): { system: string; user: string } {
     const board = boardOf(post.boardId);
     const recent = (post.replies || []).slice(-8).map(r => `${r.floor}楼 ${r.authorName}：${r.body}`).join('\n');
+    const keywords = extractReplyKeywords(post, 6);
     const system = `你是「${char.name}」，正在茶话亭（百度贴吧风格论坛）里刷帖。请完全代入你的人设，用你自己的语气回一层楼。${char.persona ? `\n【人设】${char.persona.slice(0, 500)}` : ''}`;
     const user = `板块：${board?.emoji || ''}${board?.name || ''}
 楼主：${post.authorName}
 帖子标题：「${post.title}」
 主楼：${post.body || '（无正文）'}
+关键词：${keywords.length ? keywords.join('、') : '无'}
 
 最近几层：
 ${recent || '（还没人接话）'}
 
-请你只写一条自然的跟帖。要像真人在论坛里随手接话：可以共鸣、吐槽、认真建议、追问、开玩笑，但必须贴合你的人设和帖子上下文。不要自称 AI，不要替别人总结。
+请你只写一条自然的跟帖。必须回应主楼或最近楼层里的具体信息，不要写“前排/蹲后续/早点睡/楼主清醒一点”这种万能水话；可以共鸣、吐槽、认真建议、追问、开玩笑，但必须贴合你的人设和帖子上下文。不要自称 AI，不要替别人总结。
 只输出 JSON，不要代码块：
 {"body":"你的跟帖内容"}`;
     return { system, user };
@@ -743,19 +884,25 @@ function salvageFlat(raw: string): any[] {
 export function parseForumReplies(raw: string): RawReply[] {
     if (!raw) return [];
     const arr = salvageFlat(raw);
-    return arr
-        .map((x: any) => {
-            const o: RawReply = {
-                name: String(x?.name || '').trim().slice(0, 24),
-                body: String(x?.body || '').trim(),
-                charId: String(x?.charId || x?.authorCharId || x?.characterId || '').trim().slice(0, 80) || undefined,
-            };
-            const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
-            if (rt) o.reply_to = rt;
-            return o;
-        })
-        .filter(x => x.name && x.body)
-        .slice(0, 20);
+    const seen = new Set<string>();
+    const out: RawReply[] = [];
+    for (const x of arr) {
+        const body = String(x?.body || '').replace(/\s+/g, ' ').trim();
+        const key = replyKey(body);
+        if (!body || !key || seen.has(key)) continue;
+        const o: RawReply = {
+            name: String(x?.name || '').trim().slice(0, 24),
+            body,
+            charId: String(x?.charId || x?.authorCharId || x?.characterId || '').trim().slice(0, 80) || undefined,
+        };
+        if (!o.name) continue;
+        const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
+        if (rt) o.reply_to = rt;
+        seen.add(key);
+        out.push(o);
+        if (out.length >= 20) break;
+    }
+    return out;
 }
 
 /** 让某个角色「开一个帖」：选板块 + 写标题正文（按人设）。 */
@@ -809,9 +956,11 @@ export function materializeReplies(
     startFloor: number,
     opName?: string,
     existing: ForumReply[] = [],
+    ctx?: ForumReplyContext,
 ): ForumReply[] {
     const now = Date.now();
     const out: ForumReply[] = [];
+    const source = ctx ? curateForumReplies(raw, { ...ctx, replies: [...safeArr<ForumReply>(ctx.replies), ...existing] }) : raw;
     const findChar = (r: RawReply) => {
         const byId = resolveCharacterByModelId(chars, r.charId);
         if (byId) return byId;
@@ -819,8 +968,8 @@ export function materializeReplies(
         return sameName.length === 1 ? sameName[0] : undefined;
     };
     let floor = startFloor;
-    for (let i = 0; i < raw.length; i++) {
-        const r = raw[i];
+    for (let i = 0; i < source.length; i++) {
+        const r = source[i];
         const ch = findChar(r);
         // 楼中楼：挂到本批 / 已有楼层里同名作者的最近一层
         if (r.reply_to) {

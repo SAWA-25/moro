@@ -306,6 +306,7 @@ function buildScheduleLifeContext(schedule: DailySchedule | null, timestamp: num
     previous ? `- 上一时段：${formatScheduleSlot(previous)}` : '',
     next ? `- 下一时段：${formatScheduleSlot(next)}` : '',
     anchors ? `- 今天已定下的聊天锚点：\n${anchors}` : '',
+    current?.location ? `- 当前地点硬约束：JSON 的 location 必须写「${current.location}」；activity/summary 不得写成其它房间或地点。` : '',
     '生成生活小事时要和当前/最接近时段相容；不要让 TA 在同一时间出现在两个地点，或一边做日程里互斥的事一边做另一件事。若写临时小插曲，请写成发生在该时段的路上、间隙或被日程影响后的自然变化。',
   ].filter(Boolean);
   return { block: lines.join('\n'), slot: current };
@@ -335,6 +336,104 @@ function scheduleEventPatch(schedule: DailySchedule | null, timestamp: number): 
     scheduleDate: schedule.date,
     scheduleSlotStartTime: current.startTime,
     scheduleSlotActivity: current.activity,
+  };
+}
+
+const LOCATION_COMPAT_GROUPS = [
+  ['客厅', '起居室', '沙发', '茶几'],
+  ['书房', '书桌', '书架', '工作间'],
+  ['卧室', '床', '被窝'],
+  ['厨房', '灶台'],
+  ['餐厅', '饭桌', '餐桌'],
+  ['浴室', '卫生间', '洗手间'],
+  ['阳台', '露台'],
+  ['玄关', '门口'],
+  ['办公室', '工位', '公司'],
+  ['会议室'],
+  ['教室', '图书馆', '校园'],
+  ['咖啡店', '咖啡馆'],
+  ['地铁', '公交', '出租车', '车上', '路上'],
+  ['超市', '便利店', '商场'],
+  ['医院', '诊所'],
+  ['车站', '机场'],
+  ['酒店', '旅馆'],
+  ['餐馆', '饭店'],
+  ['livehouse', '酒吧'],
+  ['画室', '工作室', '练习室'],
+  ['宿舍'],
+  ['公园', '街上', '楼下'],
+] as const;
+
+const LOCATION_TERMS = Array.from(new Set(LOCATION_COMPAT_GROUPS.flat()));
+const BROAD_LOCATION_TERMS = ['家里', '家中', '屋里', '室内', '房间', '住处'];
+
+function compactLocation(value: string | undefined): string {
+  return (value || '').replace(/\s+/g, '').trim();
+}
+
+function locationTermMatches(term: string, scheduleLocation: string): boolean {
+  const loc = compactLocation(scheduleLocation);
+  if (!loc) return true;
+  if (loc.includes(term) || term.includes(loc)) return true;
+  const group = LOCATION_COMPAT_GROUPS.find(g => (g as readonly string[]).includes(term));
+  if (!group) return false;
+  return group.some(alias => loc.includes(alias));
+}
+
+function locationIsBroadOnly(scheduleLocation: string): boolean {
+  const loc = compactLocation(scheduleLocation);
+  return BROAD_LOCATION_TERMS.some(term => loc.includes(term))
+    && !LOCATION_TERMS.some(term => loc.includes(term));
+}
+
+function hasConflictingLocationText(text: string | undefined, scheduleLocation: string): boolean {
+  const t = sanitizeLifeText(text || '');
+  const loc = compactLocation(scheduleLocation);
+  if (!t || !loc || locationIsBroadOnly(loc)) return false;
+  if (t.includes(scheduleLocation)) return false;
+  return LOCATION_TERMS.some(term => t.includes(term) && !locationTermMatches(term, loc));
+}
+
+function locationsCompatible(candidate: string | undefined, scheduleLocation: string): boolean {
+  const c = compactLocation(candidate);
+  const loc = compactLocation(scheduleLocation);
+  if (!c || !loc || locationIsBroadOnly(loc)) return true;
+  if (c.includes(loc) || loc.includes(c)) return true;
+  return LOCATION_TERMS
+    .filter(term => c.includes(term))
+    .every(term => locationTermMatches(term, loc));
+}
+
+function scheduleSlotLifeText(slot: ScheduleSlot): string {
+  const location = cleanField(slot.location);
+  const description = cleanField(slot.description);
+  const activity = cleanField(slot.activity) || '按今日作息过着这一段时间';
+  const base = description || activity;
+  if (!location) return base;
+  if (base.includes(location)) return base;
+  return `在${location}，${base}`;
+}
+
+export function alignLifeEventToScheduleSlot(event: CharLifeEvent, slot: ScheduleSlot | null | undefined): CharLifeEvent {
+  const location = cleanField(slot?.location);
+  if (!slot || !location) return event;
+
+  const conflicts = !locationsCompatible(event.location, location)
+    || hasConflictingLocationText(event.activity, location)
+    || hasConflictingLocationText(event.summary, location)
+    || hasConflictingLocationText(event.thread, location);
+
+  if (!conflicts) {
+    return { ...event, location };
+  }
+
+  const alignedText = scheduleSlotLifeText(slot);
+  return {
+    ...event,
+    location,
+    activity: alignedText,
+    summary: alignedText,
+    thread: event.thread && !hasConflictingLocationText(event.thread, location) ? event.thread : undefined,
   };
 }
 
@@ -650,6 +749,7 @@ export async function advanceLife(
       draft = cleaned ? { activity: cleaned.slice(0, 120) } : null;
     }
     if (!draft) return null;
+    const scheduleSlot = scheduleContext.slot;
     const event = draftToEvent(
       draft,
       char.id,
@@ -659,10 +759,11 @@ export async function advanceLife(
       scheduleEventPatch(schedule, now),
     );
     if (!event) return null;
+    const alignedEvent = alignLifeEventToScheduleSlot(event, scheduleSlot);
 
-    await DB.saveLifeEvent(event);
+    await DB.saveLifeEvent(alignedEvent);
     void DB.pruneLifeEvents(char.id, MAX_KEPT_EVENTS);
-    return event;
+    return alignedEvent;
   } catch (e) {
     console.warn('[AutonomousLife] advanceLife failed:', e);
     return null;
@@ -738,8 +839,10 @@ export async function catchUpOfflineLife(
     const events: CharLifeEvent[] = [];
     for (let i = 0; i < picked.length; i++) {
       const ts = plannedTimestamps[i] ?? Math.round(gapStart + (gapMs / (picked.length + 1)) * (i + 1));
-      const ev = draftToEvent(picked[i], char.id, ts, 'catchup', 'catchup', scheduleEventPatch(schedules[i] || null, ts));
-      if (ev) events.push(ev);
+      const schedule = schedules[i] || null;
+      const { current } = findScheduleSlotAt(schedule, ts);
+      const ev = draftToEvent(picked[i], char.id, ts, 'catchup', 'catchup', scheduleEventPatch(schedule, ts));
+      if (ev) events.push(alignLifeEventToScheduleSlot(ev, current));
     }
     for (const ev of events) await DB.saveLifeEvent(ev);
     void DB.pruneLifeEvents(char.id, MAX_KEPT_EVENTS);

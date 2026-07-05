@@ -133,11 +133,13 @@ const BankGameMenu: React.FC<Props> = ({
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3 cursor-pointer group" onClick={() => onEditStaff(s)}>
                                             <div className="relative">
-                                                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#FFF8E1] to-[#FFE0B2] flex items-center justify-center text-3xl shadow-inner group-hover:scale-105 transition-transform">
-                                                    {s.avatar.startsWith('http') || s.avatar.startsWith('data')
-                                                        ? <img src={s.avatar} className="w-full h-full object-cover rounded-xl" />
-                                                        : s.avatar
-                                                    }
+                                                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#FFF8E1] to-[#FFE0B2] flex items-center justify-center text-3xl shadow-inner group-hover:scale-105 transition-transform overflow-hidden">
+                                                    <BankAssetIcon
+                                                        value={s.avatar}
+                                                        alt={s.name}
+                                                        imgClassName="w-full h-full object-contain rounded-xl"
+                                                        textClassName="text-3xl leading-none"
+                                                    />
                                                 </div>
                                                 {/* Status indicator */}
                                                 <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${s.fatigue > 80 ? 'bg-red-400' : s.fatigue > 50 ? 'bg-yellow-400' : 'bg-green-400'}`}></div>
@@ -368,12 +370,12 @@ const BankGameMenu: React.FC<Props> = ({
                             {AVAILABLE_STAFF.filter(s => !state.shop.staff.find(exist => exist.name === s.name)).map(s => (
                                 <div key={s.id} className="bg-[#FDF6E3] p-4 rounded-2xl border border-[#E8DCC8] flex items-center justify-between hover:bg-[#FFF8E1] transition-colors">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center overflow-hidden">
+                                        <div className="w-16 h-16 rounded-xl bg-white/60 flex items-center justify-center overflow-hidden">
                                             <BankAssetIcon
                                                 value={s.avatar}
                                                 alt={s.name}
-                                                imgClassName="w-full h-full object-cover rounded-xl grayscale-[50%] opacity-80"
-                                                textClassName="text-2xl leading-none grayscale-[50%] opacity-80"
+                                                imgClassName="w-full h-full object-contain rounded-xl grayscale-[50%] opacity-80"
+                                                textClassName="text-3xl leading-none grayscale-[50%] opacity-80"
                                             />
                                         </div>
                                         <div>
@@ -412,11 +414,13 @@ const BankGameMenu: React.FC<Props> = ({
                                 {(state.firedStaff || []).map(s => (
                                     <div key={s.id} className="bg-[#FBE9E7] p-4 rounded-2xl border border-[#FFCCBC] flex items-center justify-between hover:bg-[#FFCCBC]/40 transition-colors">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 rounded-xl bg-white/60 flex items-center justify-center text-2xl grayscale opacity-60 overflow-hidden">
-                                                {s.avatar.startsWith('http') || s.avatar.startsWith('data')
-                                                    ? <img src={s.avatar} className="w-full h-full object-cover rounded-xl" />
-                                                    : s.avatar
-                                                }
+                                            <div className="w-16 h-16 rounded-xl bg-white/60 flex items-center justify-center text-2xl grayscale opacity-60 overflow-hidden">
+                                                <BankAssetIcon
+                                                    value={s.avatar}
+                                                    alt={s.name}
+                                                    imgClassName="w-full h-full object-contain rounded-xl"
+                                                    textClassName="text-3xl leading-none"
+                                                />
                                             </div>
                                             <div>
                                                 <div className="font-bold text-sm text-[#5D4037]">{s.name}</div>

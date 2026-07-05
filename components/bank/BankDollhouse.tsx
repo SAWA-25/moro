@@ -16,6 +16,12 @@ const WEATHER_TINT: Record<string, string> = {
     festival: 'linear-gradient(180deg, rgba(255,160,120,0.10), rgba(255,200,150,0.04))',
 };
 import BankAssetIcon, { isBankAssetUrl } from './BankAssetIcon';
+import {
+    bankPixelRef,
+    bankPixelStyle,
+    getBankPixelAssetMeta,
+    resolveBankPixelSrc,
+} from './bankPixelArt';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { processImage } from '../../utils/file';
@@ -204,6 +210,68 @@ const CafeBackdrop = React.memo(() => (
         {['7%', '91%'].map((x, i) => (
             <div key={i} className="absolute" style={{ left: x, top: '78%', transform: 'translateX(-50%)', fontSize: 26, lineHeight: 1, filter: 'drop-shadow(0 4px 4px rgba(80,55,30,0.2))' }}>🪴</div>
         ))}
+    </div>
+));
+
+const PIXEL_WALL_BG = '#9bcac0';
+const PIXEL_FLOOR_BG = '#5c7a62';
+const PIXEL_PANEL = '#ffedc2';
+const PIXEL_INK = '#221b1b';
+const pixelated = bankPixelStyle();
+const LEGACY_DEFAULT_WALLS = ['#FEF9F0', '#F5EBD8', '#FFF5E9', '#FDE5D8'];
+const LEGACY_DEFAULT_FLOORS = ['#C4A77D', '#B8956E', '#D6B48C', '#C69767'];
+const isLegacyDefaultSurface = (value: string | undefined, tokens: string[]) =>
+    !!value && tokens.every(token => value.includes(token));
+
+const PixelSceneAsset: React.FC<{
+    id: string;
+    size?: 64 | 96 | 128;
+    className?: string;
+    style?: React.CSSProperties;
+}> = ({ id, size = 96, className = '', style }) => {
+    const src = resolveBankPixelSrc(bankPixelRef(id, size), size);
+    if (!src) return null;
+    return <img src={src} alt="" draggable={false} className={`select-none ${className}`} style={{ ...pixelated, ...style }} />;
+};
+
+// 店铺默认像素布景：纯展示层，不写存档，用户可继续在上面摆家具。
+const PixelCafeBackdrop = React.memo(({ isOpen }: { isOpen: boolean }) => (
+    <div className="absolute inset-0 z-[2] pointer-events-none select-none overflow-hidden" aria-hidden>
+        <div className="absolute left-0 right-0 top-0 h-[76%]" style={{
+            backgroundColor: PIXEL_WALL_BG,
+            backgroundImage: 'linear-gradient(90deg, rgba(20,40,38,0.16) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.16) 1px, transparent 1px)',
+            backgroundSize: '16px 16px',
+        }} />
+        <div className="absolute left-0 right-0 bottom-0 h-[24%]" style={{
+            backgroundColor: PIXEL_FLOOR_BG,
+            backgroundImage: 'linear-gradient(90deg, rgba(10,22,18,0.35) 2px, transparent 2px), linear-gradient(0deg, rgba(255,255,255,0.12) 2px, transparent 2px)',
+            backgroundSize: '24px 16px',
+            borderTop: `4px solid ${PIXEL_INK}`,
+        }} />
+        <div className="absolute left-0 right-0 top-[74%] h-[4px]" style={{ background: '#2d3d37' }} />
+
+        <PixelSceneAsset id="furniture/window-awning" size={128} className="absolute w-[128px] h-[128px]" style={{ left: '50%', top: '8%', transform: 'translateX(-50%)' }} />
+        <PixelSceneAsset id="furniture/menu-board" size={96} className="absolute w-[88px] h-[88px]" style={{ left: '9%', top: '19%' }} />
+        <PixelSceneAsset id="furniture/wall-sign" size={96} className="absolute w-[88px] h-[88px]" style={{ right: '9%', top: '12%' }} />
+        <div className="absolute px-2 py-1 rounded-[6px] text-[8px] font-black text-white" style={{ right: '11.5%', top: '22%', background: isOpen ? '#5a8a52' : '#6b7280', boxShadow: '0 3px 0 rgba(32,27,24,0.22)', letterSpacing: 1 }}>
+            {isOpen ? '营业中' : '已打烊'}
+        </div>
+        <PixelSceneAsset id="furniture/clock" size={64} className="absolute w-[64px] h-[64px]" style={{ right: '25%', top: '29%' }} />
+        <PixelSceneAsset id="furniture/star-lights" size={96} className="absolute w-[116px] h-[116px]" style={{ left: '18%', top: '1%' }} />
+        <PixelSceneAsset id="furniture/pendant-lamp" size={64} className="absolute w-[64px] h-[64px]" style={{ left: '37%', top: '-2%' }} />
+        <PixelSceneAsset id="furniture/pendant-lamp" size={64} className="absolute w-[64px] h-[64px]" style={{ left: '59%', top: '-2%' }} />
+        <PixelSceneAsset id="furniture/high-shelf" size={96} className="absolute w-[88px] h-[88px]" style={{ left: '31%', top: '20%' }} />
+        <PixelSceneAsset id="furniture/counter" size={128} className="absolute w-[220px] h-[128px]" style={{ left: '50%', top: '48%', transform: 'translateX(-50%)' }} />
+        <PixelSceneAsset id="furniture/coffee-machine" size={96} className="absolute w-[78px] h-[78px]" style={{ left: '31%', top: '45%' }} />
+        <PixelSceneAsset id="furniture/display-case" size={128} className="absolute w-[118px] h-[118px]" style={{ left: '46%', top: '43%' }} />
+        <PixelSceneAsset id="furniture/cashier" size={64} className="absolute w-[58px] h-[58px]" style={{ right: '25%', top: '49%' }} />
+        <PixelSceneAsset id="furniture/rug-runner" size={128} className="absolute w-[170px] h-[128px]" style={{ left: '50%', bottom: '-7%', transform: 'translateX(-50%)' }} />
+        <PixelSceneAsset id="furniture/round-table" size={96} className="absolute w-[86px] h-[86px]" style={{ left: '21%', bottom: '0%' }} />
+        <PixelSceneAsset id="furniture/chair" size={64} className="absolute w-[58px] h-[58px]" style={{ left: '16%', bottom: '2%' }} />
+        <PixelSceneAsset id="furniture/chair" size={64} className="absolute w-[58px] h-[58px]" style={{ left: '28%', bottom: '2%' }} />
+        <PixelSceneAsset id="furniture/booth" size={128} className="absolute w-[128px] h-[128px]" style={{ right: '7%', bottom: '-2%' }} />
+        <PixelSceneAsset id="furniture/plant" size={64} className="absolute w-[64px] h-[64px]" style={{ left: '3%', bottom: '4%' }} />
+        <PixelSceneAsset id="furniture/cactus" size={64} className="absolute w-[64px] h-[64px]" style={{ right: '3%', bottom: '13%' }} />
     </div>
 ));
 
@@ -495,9 +563,9 @@ const BankDollhouse: React.FC<Props> = ({
                 r.id === roomId ? {
                     ...r,
                     isUnlocked: true,
-                    wallpaperLeft: 'linear-gradient(180deg, #FEF9F0, #F5EBD8)',
-                    wallpaperRight: 'linear-gradient(180deg, #FEF9F0, #F5EBD8)',
-                    floorStyle: 'linear-gradient(135deg, #C4A77D, #B8956E)',
+                    wallpaperLeft: PIXEL_WALL_BG,
+                    wallpaperRight: PIXEL_WALL_BG,
+                    floorStyle: PIXEL_FLOOR_BG,
                 } : r
             )
         }));
@@ -750,7 +818,7 @@ const BankDollhouse: React.FC<Props> = ({
     const handleVisitorScaleChange = async (delta: number) => {
         await updateState(prev => {
             if (!prev.activeVisitor) return prev;
-            const nextScale = Math.max(0.4, Math.min(4, (prev.activeVisitor.scale ?? 4) + delta));
+            const nextScale = Math.max(0.4, Math.min(4, (prev.activeVisitor.scale ?? 2.5) + delta));
             return {
                 ...prev,
                 activeVisitor: { ...prev.activeVisitor, scale: nextScale },
@@ -899,7 +967,7 @@ const BankDollhouse: React.FC<Props> = ({
 
     // Enter furniture placement mode - surface auto-detected from click position
     const startPlacingFurniture = (url: string, surface: 'floor' | 'leftWall', name: string) => {
-        const isEmoji = !isBankAssetUrl(url);
+        const isEmoji = !resolveBankPixelSrc(url) && !isBankAssetUrl(url);
         setPlacingFurniture({ url, surface, name, isEmoji });
         setFurniturePreviewPos({ x: 50, y: 50 });
         setShowDecorPanel(false);
@@ -936,14 +1004,32 @@ const BankDollhouse: React.FC<Props> = ({
 
     // Resolve texture URL via stable blob reference (prevents flickering)
     const resolveTextureUrl = getStableSrc;
+    const resolveDecorSrc = (value?: string, pixelSize?: 64 | 96 | 128): string | undefined =>
+        resolveBankPixelSrc(value, pixelSize) || getStableSrc(value) || value;
+    const decorPixelMeta = (value?: string) => getBankPixelAssetMeta(value);
+    const renderDecorAsset = (
+        value: string,
+        alt: string,
+        imgClassName: string,
+        textClassName: string,
+        pixelSize?: 64 | 96 | 128,
+    ) => {
+        const pixelSrc = resolveBankPixelSrc(value, pixelSize);
+        const src = pixelSrc || getStableSrc(value);
+        if (src && (pixelSrc || isBankAssetUrl(value))) {
+            return <img src={src} alt={alt} className={imgClassName} draggable={false} style={pixelSrc ? pixelated : undefined} onError={(e) => { e.currentTarget.style.display = 'none'; }} />;
+        }
+        return <span className={textClassName}>{value}</span>;
+    };
 
     const renderArrowButton = (direction: 'left' | 'right', onClick: () => void) => (
         <button
             onClick={onClick}
-            className="w-10 h-10 rounded-full bg-white/80 border border-[#E8D5C4] shadow-sm flex items-center justify-center active:scale-90 transition-all"
+            className="w-10 h-10 border-4 shadow-[3px_3px_0_rgba(34,27,27,0.22)] flex items-center justify-center active:scale-90 transition-all"
+            style={{ background: PIXEL_PANEL, borderColor: PIXEL_INK }}
             aria-label={direction === 'left' ? '上一房间' : '下一房间'}
         >
-            <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#8B5E43]" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" style={{ color: PIXEL_INK }} fill="none" stroke="currentColor" strokeWidth="3">
                 {direction === 'left'
                     ? <path strokeLinecap="round" strokeLinejoin="round" d="M15 4 7 12l8 8" />
                     : <path strokeLinecap="round" strokeLinejoin="round" d="m9 4 8 8-8 8" />}
@@ -953,8 +1039,10 @@ const BankDollhouse: React.FC<Props> = ({
 
     const renderRoom = (room: DollhouseRoom) => {
         const locked = !room.isUnlocked;
-        const wallBg = toCssBackground(room.wallpaperLeft || room.wallpaperRight, 'linear-gradient(180deg, #FFF5E9, #FDE5D8)');
-        const floorBg = toCssBackground(room.floorStyle, 'linear-gradient(135deg, #D6B48C, #C69767)');
+        const rawWall = room.wallpaperLeft || room.wallpaperRight;
+        const rawFloor = room.floorStyle;
+        const wallBg = toCssBackground(isLegacyDefaultSurface(rawWall, LEGACY_DEFAULT_WALLS) ? undefined : rawWall, PIXEL_WALL_BG);
+        const floorBg = toCssBackground(isLegacyDefaultSurface(rawFloor, LEGACY_DEFAULT_FLOORS) ? undefined : rawFloor, PIXEL_FLOOR_BG);
         const roomTexture = resolveTextureUrl(room.roomTextureUrl);
         const roomTextureScale = Math.max(0.5, Math.min(2.5, getEffectiveScale(room)));
 
@@ -974,7 +1062,7 @@ const BankDollhouse: React.FC<Props> = ({
         const isPlacing = placingFurniture && room.id === activeRoom.id;
 
         return (
-            <div className="w-full h-full rounded-2xl overflow-hidden border border-[#E2D4C4] shadow-[0_4px_20px_rgba(131,96,66,0.12)] bg-[#F9F3E6]">
+            <div className="w-full h-full overflow-hidden border-4 shadow-[6px_6px_0_rgba(34,27,27,0.28)] bg-[#f7e7b7]" style={{ borderColor: PIXEL_INK }}>
                 <div
                     className="relative w-full h-full min-h-[420px] touch-none"
                     onPointerMove={(e) => {
@@ -996,10 +1084,14 @@ const BankDollhouse: React.FC<Props> = ({
                         onPointerUp={(e) => { void handleStickerPointerUp(e.nativeEvent); }}
                         onPointerCancel={() => { void handleStickerPointerUp(); }}
                     >
-                        <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #fff 1px, transparent 1.5px)', backgroundSize: '18px 18px' }} />
+                        <div className="absolute inset-0 opacity-[0.18]" style={{ backgroundImage: 'linear-gradient(90deg, rgba(34,27,27,0.22) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.20) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
                         {!locked && wallStickers.map(sticker => {
                             const isDraggingThis = draggingStickerInfo?.stickerId === sticker.id;
-                            const isUrl = sticker.url.startsWith('http') || sticker.url.startsWith('data');
+                            const pixelMeta = decorPixelMeta(sticker.url);
+                            const pixelSize = pixelMeta?.defaultSize;
+                            const pixelSrc = resolveBankPixelSrc(sticker.url, pixelSize);
+                            const stickerSrc = pixelSrc || resolveDecorSrc(sticker.url);
+                            const isImage = !!stickerSrc && (Boolean(pixelSrc) || isBankAssetUrl(sticker.url));
                             const stkPos = localStickerPos[sticker.id] || { x: sticker.x, y: sticker.y };
                             return (
                                 <div
@@ -1009,7 +1101,20 @@ const BankDollhouse: React.FC<Props> = ({
                                     onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
                                     onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
                                 >
-                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : sticker.url}
+                                    {isImage
+                                        ? <img
+                                            src={stickerSrc}
+                                            alt=""
+                                            className="object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]"
+                                            style={{
+                                                width: pixelSize || 64,
+                                                height: pixelSize || 64,
+                                                ...(pixelSrc ? pixelated : {}),
+                                            }}
+                                            draggable={false}
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        />
+                                        : <span className="block text-[64px] leading-none drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]">{sticker.url}</span>}
                                     {editMode && (
                                         <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
                                             <button
@@ -1038,15 +1143,19 @@ const BankDollhouse: React.FC<Props> = ({
                     {/* Floor */}
                     <div
                         className="absolute left-0 right-0 bottom-0"
-                        style={{ height: `${FLOOR_H_RATIO * 100}%`, background: floorBg, borderTop: '2px solid rgba(156,104,64,0.15)' }}
+                        style={{ height: `${FLOOR_H_RATIO * 100}%`, background: floorBg, borderTop: `4px solid ${PIXEL_INK}` }}
                         onPointerMove={(e) => draggingStickerInfo && handleStickerPointerMove(room.id, 'floor', e)}
                         onPointerUp={(e) => { void handleStickerPointerUp(e.nativeEvent); }}
                         onPointerCancel={() => { void handleStickerPointerUp(); }}
                     >
-                        <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.15) 1px, transparent 1px),linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+                        <div className="absolute inset-0 opacity-[0.18]" style={{ backgroundImage: 'linear-gradient(0deg, rgba(34,27,27,0.32) 2px, transparent 2px),linear-gradient(90deg, rgba(255,255,255,0.15) 2px, transparent 2px)', backgroundSize: '24px 16px' }} />
                         {!locked && floorStickers.map(sticker => {
                             const isDraggingThis = draggingStickerInfo?.stickerId === sticker.id;
-                            const isUrl = sticker.url.startsWith('http') || sticker.url.startsWith('data');
+                            const pixelMeta = decorPixelMeta(sticker.url);
+                            const pixelSize = pixelMeta?.defaultSize;
+                            const pixelSrc = resolveBankPixelSrc(sticker.url, pixelSize);
+                            const stickerSrc = pixelSrc || resolveDecorSrc(sticker.url);
+                            const isImage = !!stickerSrc && (Boolean(pixelSrc) || isBankAssetUrl(sticker.url));
                             const stkPos = localStickerPos[sticker.id] || { x: sticker.x, y: sticker.y };
                             return (
                                 <div
@@ -1056,7 +1165,20 @@ const BankDollhouse: React.FC<Props> = ({
                                     onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
                                     onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
                                 >
-                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : sticker.url}
+                                    {isImage
+                                        ? <img
+                                            src={stickerSrc}
+                                            alt=""
+                                            className="object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]"
+                                            style={{
+                                                width: pixelSize || 64,
+                                                height: pixelSize || 64,
+                                                ...(pixelSrc ? pixelated : {}),
+                                            }}
+                                            draggable={false}
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        />
+                                        : <span className="block text-[64px] leading-none drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]">{sticker.url}</span>}
                                     {editMode && (
                                         <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
                                             <button
@@ -1083,7 +1205,7 @@ const BankDollhouse: React.FC<Props> = ({
                     </div>
 
                     {/* 默认咖啡店布景：仅主店铺、且无自定义全屋贴图时显示（纯展示、不写存档） */}
-                    {!locked && room.id === MAIN_ROOM_ID && !roomTexture && <CafeBackdrop />}
+                    {!locked && room.id === MAIN_ROOM_ID && !roomTexture && <PixelCafeBackdrop isOpen={shopState.isBusinessOpen === true} />}
 
                     {/* 天气色调（仅主店铺，很淡） */}
                     {!locked && room.id === MAIN_ROOM_ID && WEATHER_TINT[getWeatherDef(shopState.weather?.id).id] && (
@@ -1129,9 +1251,11 @@ const BankDollhouse: React.FC<Props> = ({
                         >
                             <div className="relative animate-pulse">
                                 {placingFurniture.isEmoji ? (
-                                    <span className="text-3xl opacity-70 drop-shadow-lg">{placingFurniture.url}</span>
+                                    <span className="block text-[64px] leading-none opacity-70 drop-shadow-lg">{placingFurniture.url}</span>
                                 ) : (
-                                    <img src={placingFurniture.url} alt="" className="w-12 h-12 object-contain opacity-70 drop-shadow-lg" draggable={false} />
+                                    <div className="opacity-70">
+                                        {renderDecorAsset(placingFurniture.url, placingFurniture.name, 'w-16 h-16 object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]', 'text-[64px] leading-none drop-shadow-lg')}
+                                    </div>
                                 )}
                                 <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
                                     <span className="text-[9px] bg-[#FF8E6B] text-white px-2 py-0.5 rounded-full font-bold shadow-sm">
@@ -1146,7 +1270,11 @@ const BankDollhouse: React.FC<Props> = ({
                     {!locked && roomStaff.map(staff => {
                         const pos = actorPositions[staff.id] || clampActorPos(staff.x || 50, staff.y || 72);
                         const staffScale = staff.scale ?? 1;
-                        const isStaffUrl = staff.avatar.startsWith('http') || staff.avatar.startsWith('data');
+                        const rolePixel = staff.isPet
+                            ? bankPixelRef('staff/cat', 64)
+                            : bankPixelRef(staff.role === 'chef' ? 'staff/chef' : staff.role === 'manager' ? 'staff/manager' : 'staff/waiter', 64);
+                        const staffPixelSrc = resolveBankPixelSrc(staff.avatar, 64) || (!isBankAssetUrl(staff.avatar) ? resolveBankPixelSrc(rolePixel, 64) : undefined);
+                        const customStaffSrc = staffPixelSrc ? undefined : getStableSrc(staff.avatar);
                         return (
                             <div
                                 key={staff.id}
@@ -1169,13 +1297,24 @@ const BankDollhouse: React.FC<Props> = ({
                                         <span className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45" style={{ background: '#fffef9', borderRight: '1px solid #efdcc4', borderBottom: '1px solid #efdcc4' }} />
                                     </div>
                                 )}
-                                <div className="drop-shadow-md origin-bottom" style={{ transform: `scale(${staffScale})` }}>
-                                    {isStaffUrl
-                                        ? <img src={staff.avatar} className="w-10 h-10 object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                                        : <span className="text-3xl">{staff.avatar}</span>
+                                {staff.fatigue > 80 && (
+                                    <img
+                                        src={resolveBankPixelSrc(bankPixelRef('effect/zzz', 64))}
+                                        alt=""
+                                        className="absolute -top-8 -right-4 w-10 h-10 animate-bounce"
+                                        draggable={false}
+                                        style={pixelated}
+                                    />
+                                )}
+                                <div className="drop-shadow-[3px_3px_0_rgba(34,27,27,0.28)] origin-bottom" style={{ transform: `scale(${staffScale})` }}>
+                                    {staffPixelSrc
+                                        ? <img src={staffPixelSrc} className="w-16 h-16 object-contain" draggable={false} style={pixelated} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                        : customStaffSrc && isBankAssetUrl(staff.avatar)
+                                            ? <img src={customStaffSrc} className="w-16 h-16 object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                            : <img src={resolveBankPixelSrc(bankPixelRef('staff/generic', 64))} className="w-16 h-16 object-contain" draggable={false} style={pixelated} />
                                     }
                                 </div>
-                                <div className="mt-0.5 px-2 py-0.5 rounded-full bg-white/90 border border-[#F2D5BE] text-[10px] font-bold text-[#8A5A3D] text-center shadow-sm">{staff.name}</div>
+                                <div className="mt-0.5 px-2 py-0.5 border-2 text-[10px] font-black text-center shadow-[2px_2px_0_rgba(34,27,27,0.2)]" style={{ background: PIXEL_PANEL, borderColor: PIXEL_INK, color: PIXEL_INK }}>{staff.name}</div>
                                 {/* Resize controls */}
                                 <div className="absolute -right-8 top-0 flex flex-col gap-0.5 opacity-0 group-hover/staff:opacity-100 transition-opacity z-40">
                                     <button
@@ -1209,10 +1348,10 @@ const BankDollhouse: React.FC<Props> = ({
                                         <span className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45" style={{ background: '#fffef9', borderRight: '1px solid #efdcc4', borderBottom: '1px solid #efdcc4' }} />
                                     </div>
                                 )}
-                                <div className="drop-shadow-md origin-bottom" style={{ transform: `scale(${shopState.activeVisitor?.scale ?? 4})` }}>
-                                    <img src={visitor.sprites?.chibi || visitor.avatar} className="w-10 h-10 object-contain" draggable={false} />
+                                <div className="drop-shadow-[3px_3px_0_rgba(34,27,27,0.28)] origin-bottom" style={{ transform: `scale(${shopState.activeVisitor?.scale ?? 2.5})` }}>
+                                    <img src={visitor.sprites?.chibi || visitor.avatar} className="w-16 h-16 object-contain" draggable={false} style={{ imageRendering: 'pixelated' }} />
                                 </div>
-                                <div className="mt-0.5 px-2 py-0.5 rounded-full bg-white/95 border border-[#D9C1AE] text-[10px] font-bold text-[#8A5A3D] text-center">{visitor.name}</div>
+                                <div className="mt-0.5 px-2 py-0.5 border-2 text-[10px] font-black text-center shadow-[2px_2px_0_rgba(34,27,27,0.2)]" style={{ background: '#d8f0ff', borderColor: PIXEL_INK, color: PIXEL_INK }}>{visitor.name}</div>
                                 <div className="absolute -right-8 top-0 flex flex-col gap-0.5 opacity-0 group-hover/staff:opacity-100 transition-opacity z-40">
                                     <button
                                         onClick={(e) => { e.stopPropagation(); void handleVisitorScaleChange(0.15); }}
@@ -1252,6 +1391,7 @@ const BankDollhouse: React.FC<Props> = ({
         { id: 'furniture', label: '家具' },
         { id: 'decor', label: '装饰' },
         { id: 'wall', label: '挂饰' },
+        { id: 'floor', label: '地面' },
         { id: 'food', label: '美食' },
         { id: 'pet', label: '宠物' },
     ];
@@ -1264,16 +1404,20 @@ const BankDollhouse: React.FC<Props> = ({
     const displayScaleValue = localRoomScale ?? (activeRoom.roomTextureScale ?? 1);
 
     return (
-        <div className="relative w-full h-full pt-2 pb-3 rounded-2xl flex flex-col" style={{ background: 'linear-gradient(180deg, #FBF5EB 0%, #F5EDE0 100%)' }}>
+        <div className="relative w-full h-full pt-2 pb-3 flex flex-col" style={{
+            background: '#d7e7d0',
+            backgroundImage: 'linear-gradient(90deg, rgba(34,27,27,0.10) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.18) 1px, transparent 1px)',
+            backgroundSize: '12px 12px',
+        }}>
             {/* Room Navigation Header */}
             <div className="flex items-center justify-between px-2 mb-2">
                 {renderArrowButton('left', goPrevRoom)}
                 <div className="text-center flex-1 mx-2">
-                    <div className="text-[10px] text-[#C4956A] font-medium tracking-wider uppercase">ROOM</div>
-                    <div className="text-base font-black text-[#6B4528] tracking-wide">{activeRoom.name}</div>
+                    <div className="text-[10px] font-black tracking-wider uppercase" style={{ color: '#37564d' }}>ROOM</div>
+                    <div className="text-base font-black tracking-wide" style={{ color: PIXEL_INK }}>{activeRoom.name}</div>
                     <div className="flex justify-center gap-1 mt-1">
                         {orderedRooms.map((r, i) => (
-                            <div key={r.id} className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeRoomIndex ? 'bg-[#FF8E6B] w-4' : 'bg-[#DCC8B4]'}`} />
+                            <div key={r.id} className={`h-2 transition-all ${i === activeRoomIndex ? 'w-5' : 'w-2'}`} style={{ background: i === activeRoomIndex ? '#e45d6f' : '#fff3c7', border: `1px solid ${PIXEL_INK}` }} />
                         ))}
                     </div>
                 </div>
@@ -1357,9 +1501,9 @@ const BankDollhouse: React.FC<Props> = ({
             {placingFurniture && (
                 <div className="absolute bottom-0 left-0 right-0 z-[50] bg-gradient-to-t from-[#FFF5EB] via-[#FFF5EB] to-transparent pt-6 pb-4 px-4">
                     <div className="bg-white rounded-2xl shadow-lg border border-[#F2D5BE] p-3 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#FFF4E8] border border-[#F2D2B6] flex items-center justify-center text-xl flex-shrink-0">
+                        <div className="w-16 h-16 bg-[#fff3c7] border-4 flex items-center justify-center flex-shrink-0" style={{ borderColor: PIXEL_INK }}>
                             {placingFurniture.isEmoji ? placingFurniture.url : (
-                                <img src={placingFurniture.url} alt="" className="w-8 h-8 object-contain" />
+                                renderDecorAsset(placingFurniture.url, placingFurniture.name, 'w-16 h-16 object-contain', 'text-[64px] leading-none')
                             )}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1556,8 +1700,8 @@ const BankDollhouse: React.FC<Props> = ({
 
                                             {/* Preview */}
                                             <div className="rounded-xl overflow-hidden border border-[#E8DAC6] shadow-inner" style={{ aspectRatio: '16/10' }}>
-                                                <div className="relative w-full h-full" style={{ background: toCssBackground(activeRoom.wallpaperLeft, 'linear-gradient(180deg, #FFF5E9, #FDE5D8)') }}>
-                                                    <div className="absolute left-0 right-0 bottom-0" style={{ height: `${FLOOR_H_RATIO * 100}%`, background: toCssBackground(activeRoom.floorStyle, 'linear-gradient(135deg, #D6B48C, #C69767)') }} />
+                                                <div className="relative w-full h-full" style={{ background: toCssBackground(activeRoom.wallpaperLeft, PIXEL_WALL_BG) }}>
+                                                    <div className="absolute left-0 right-0 bottom-0" style={{ height: `${FLOOR_H_RATIO * 100}%`, background: toCssBackground(activeRoom.floorStyle, PIXEL_FLOOR_BG) }} />
                                                     <img
                                                         src={resolveTextureUrl(activeRoom.roomTextureUrl) || ''}
                                                         alt="texture"
@@ -1638,7 +1782,7 @@ const BankDollhouse: React.FC<Props> = ({
                                     </div>
 
                                     {/* Furniture Grid - Improved: larger items with names */}
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
                                         {filteredFurniture.map(sticker => (
                                             <button
                                                 key={sticker.id}
@@ -1647,17 +1791,19 @@ const BankDollhouse: React.FC<Props> = ({
                                                     sticker.category === 'wall' ? 'leftWall' : 'floor',
                                                     sticker.name
                                                 )}
-                                                className="flex flex-col items-center gap-1 p-2 rounded-xl bg-white border border-[#F0E3D6] hover:border-[#FF8E6B] hover:shadow-sm transition-all active:scale-95 group"
+                                                className="flex flex-col items-center gap-1 p-2 bg-white border-2 hover:shadow-[3px_3px_0_rgba(34,27,27,0.22)] transition-all active:scale-95 group"
+                                                style={{ borderColor: PIXEL_INK }}
                                             >
-                                                <div className="w-8 h-8 flex items-center justify-center">
-                                                    <BankAssetIcon
-                                                        value={sticker.url}
-                                                        alt={sticker.name}
-                                                        imgClassName="w-8 h-8 object-contain group-hover:scale-110 transition-transform"
-                                                        textClassName="text-2xl leading-none group-hover:scale-110 transition-transform"
-                                                    />
+                                                <div className="w-16 h-16 flex items-center justify-center overflow-hidden">
+                                                    {renderDecorAsset(
+                                                        sticker.url,
+                                                        sticker.name,
+                                                        'w-16 h-16 object-contain group-hover:scale-110 transition-transform',
+                                                        'text-[64px] leading-none group-hover:scale-110 transition-transform',
+                                                        decorPixelMeta(sticker.url)?.defaultSize,
+                                                    )}
                                                 </div>
-                                                <span className="text-[9px] text-[#B8956E] font-medium group-hover:text-[#FF8E6B] transition-colors">{sticker.name}</span>
+                                                <span className="text-[10px] font-black leading-tight text-center min-h-[22px] flex items-center" style={{ color: PIXEL_INK }}>{sticker.name}</span>
                                             </button>
                                         ))}
 
@@ -1666,12 +1812,13 @@ const BankDollhouse: React.FC<Props> = ({
                                             <div key={asset.id} className="relative group">
                                                 <button
                                                     onClick={() => startPlacingFurniture(asset.url, 'floor', asset.name)}
-                                                    className="w-full flex flex-col items-center gap-1 p-2 rounded-xl bg-white border border-[#F0E3D6] hover:border-[#FF8E6B] hover:shadow-sm transition-all active:scale-95"
+                                                    className="w-full flex flex-col items-center gap-1 p-2 bg-white border-2 hover:shadow-[3px_3px_0_rgba(34,27,27,0.22)] transition-all active:scale-95"
+                                                    style={{ borderColor: PIXEL_INK }}
                                                 >
-                                                    <div className="w-8 h-8 flex items-center justify-center">
+                                                    <div className="w-16 h-16 flex items-center justify-center">
                                                         <img src={asset.url} className="max-w-full max-h-full object-contain" alt={asset.name} />
                                                     </div>
-                                                    <span className="text-[9px] text-[#B8956E] font-medium truncate w-full text-center">{asset.name}</span>
+                                                    <span className="text-[10px] font-black truncate w-full text-center" style={{ color: PIXEL_INK }}>{asset.name}</span>
                                                 </button>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteCustomAsset(asset.id); }}
@@ -1787,9 +1934,9 @@ const BankDollhouse: React.FC<Props> = ({
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {/* Live Preview */}
                             {textureTarget === 'room' && (
-                                <div className="rounded-2xl overflow-hidden border border-[#E8DAC6] shadow-inner" style={{ aspectRatio: '16/10' }}>
-                                    <div className="relative w-full h-full" style={{ background: toCssBackground(activeRoom.wallpaperLeft, 'linear-gradient(180deg, #FFF5E9, #FDE5D8)') }}>
-                                        <div className="absolute left-0 right-0 bottom-0" style={{ height: `${FLOOR_H_RATIO * 100}%`, background: toCssBackground(activeRoom.floorStyle, 'linear-gradient(135deg, #D6B48C, #C69767)') }} />
+                                <div className="overflow-hidden border-4 shadow-inner" style={{ aspectRatio: '16/10', borderColor: PIXEL_INK }}>
+                                    <div className="relative w-full h-full" style={{ background: toCssBackground(activeRoom.wallpaperLeft, PIXEL_WALL_BG) }}>
+                                        <div className="absolute left-0 right-0 bottom-0" style={{ height: `${FLOOR_H_RATIO * 100}%`, background: toCssBackground(activeRoom.floorStyle, PIXEL_FLOOR_BG) }} />
                                         {textureUrl && (
                                             <img
                                                 src={textureUrl}

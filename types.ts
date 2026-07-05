@@ -1880,6 +1880,8 @@ export interface BankShopState {
     dollhouse?: DollhouseState;
     /** 上次「营业」结算的时间戳（用于营业冷却） */
     lastBusinessAt?: number;
+    /** 店铺是否正在开门营业；打烊后不会继续累计挂机营业额。 */
+    isBusinessOpen?: boolean;
     /** 店铺累计营业额（进过钱包的总收入，仅作展示统计） */
     totalRevenue?: number;
     /** 顾客评价（最近若干条，营业时产生，决定口碑评分） */

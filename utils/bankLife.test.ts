@@ -17,6 +17,7 @@ import {
     createBankActionResult,
     computeCreditProfile,
     buyStock,
+    createDefaultBankShopState,
     createDefaultBankLifeState,
     claimBankShopDailyReward,
     foundCompany,
@@ -313,6 +314,28 @@ describe('bankLife', () => {
         expect(savedB?.shop.stock?.['fl-bouquet']).toBe(1);
         expect(savedB?.shop.reviews?.[0].rating).toBe(5);
         expect(savedB?.firedStaff[0].id).toBe('b-fired');
+    });
+
+    it('keeps shop business-open state explicit across branch sync', () => {
+        const defaultShop = createDefaultBankShopState('A店');
+        expect(defaultShop.isBusinessOpen).toBe(false);
+
+        const base = openBankShopBranch(migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '镜像', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState), 'drinks', 'A店', { walletBalance: 10000, dateStr: '2026-06-01' }).state;
+
+        expect(base.shop.isBusinessOpen).toBe(false);
+
+        const opened = { ...base, shop: { ...base.shop, isBusinessOpen: true } } as BankFullState;
+        const synced = switchActiveBankShop(opened, base.shopPortfolio!.activeShopId);
+
+        expect(synced.shop.isBusinessOpen).toBe(true);
+        expect(synced.shopPortfolio?.branches[0].shop.isBusinessOpen).toBe(true);
     });
 
     it('claims daily shop lessons once per date and per branch', () => {

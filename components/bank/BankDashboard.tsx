@@ -139,11 +139,14 @@ const BankDashboard: React.FC<Props> = ({
                             }
                         }}
                     >
-                        <img 
-                            id="pet-sprite"
-                            src={petImg} 
-                            className="w-20 h-20 object-contain drop-shadow-lg animate-float" 
-                        />
+                        <div id="pet-sprite" className="w-20 h-20 drop-shadow-lg animate-float">
+                            <BankAssetIcon
+                                value={petImg}
+                                alt=""
+                                imgClassName="w-20 h-20 object-contain"
+                                textClassName="w-20 h-20 flex items-center justify-center text-5xl leading-none"
+                            />
+                        </div>
                         <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white px-2 py-1 rounded-lg text-[9px] font-bold text-slate-500 shadow-sm border border-slate-100 opacity-0 group-hover/pet:opacity-100 transition-opacity whitespace-nowrap">
                             Level {state.shop.shopLevel}
                         </div>

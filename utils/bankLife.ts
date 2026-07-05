@@ -715,6 +715,7 @@ export function createDefaultBankShopState(shopName = '我的小店'): BankShopS
         pendingRevenue: 0,
         totalRevenue: 0,
         lastAccrualAt: Date.now(),
+        isBusinessOpen: false,
     };
 }
 
@@ -740,6 +741,7 @@ function normalizeBankShopState(shop: Partial<BankShopState> | undefined, shopNa
         regulars: shop?.regulars || {},
         pendingRevenue: Math.max(0, shop?.pendingRevenue || 0),
         totalRevenue: Math.max(0, shop?.totalRevenue || 0),
+        isBusinessOpen: shop?.isBusinessOpen === true,
     };
 }
 

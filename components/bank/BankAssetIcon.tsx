@@ -1,11 +1,13 @@
 import React from 'react';
+import { isBankPixelRef, resolveBankPixelSrc } from './bankPixelArt';
 
 export const isBankAssetUrl = (value?: string | null): value is string =>
     typeof value === 'string' && (
         value.startsWith('http://') ||
         value.startsWith('https://') ||
         value.startsWith('data:') ||
-        value.startsWith('/')
+        value.startsWith('/') ||
+        isBankPixelRef(value)
     );
 
 interface BankAssetIconProps {
@@ -22,6 +24,9 @@ const BankAssetIcon: React.FC<BankAssetIconProps> = ({
     textClassName,
 }) => {
     if (!value) return null;
+
+    const pixelSrc = resolveBankPixelSrc(value);
+    if (pixelSrc) return <img src={pixelSrc} alt={alt} className={imgClassName} draggable={false} style={{ imageRendering: 'pixelated' }} />;
 
     if (isBankAssetUrl(value)) {
         return <img src={value} alt={alt} className={imgClassName} draggable={false} />;
