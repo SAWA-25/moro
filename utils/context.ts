@@ -602,7 +602,7 @@ export const ContextBuilder = {
             if (currentSlot.location) slotHeader += `（${currentSlot.location}）`;
             if (anchoredNow) slotHeader += `（这是之前和对方约好的）`;
             if (currentSlot.location) {
-                slotHeader += `\n当前地点硬约束：你此刻就在「${currentSlot.location}」，本轮聊天不得说成自己在其它地点、去了其它房间，或让对方去另一个地点找你。`;
+                slotHeader += `\n当前地点基线：按日程你此刻在「${currentSlot.location}」。除非最近聊天或对方最新消息明确让你移动到新地点、或你已经自然说出并执行了地点变化，否则本轮不要说成自己在其它地点、去了其它房间，或让对方去另一个地点找你；一旦聊天里地点已改变，以最新聊天地点为准。`;
             }
             if (nextSlot) slotHeader += `\n之后安排：${nextSlot.startTime} ${nextSlot.activity}`;
             slotHeader += '\n';

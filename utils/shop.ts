@@ -285,6 +285,84 @@ export const buildGiftCardMeta = (
     fromName,
 });
 
+export interface ShopReplyRequest {
+    charId: string;
+    messageId: number;
+    kind?: 'gift' | 'companion_pay' | 'clear_cart';
+    itemName: string;
+    itemEmoji: string;
+    note?: string;
+    itemCount?: number;
+    total?: number;
+    at: number;
+}
+
+export const SHOP_REPLY_REQUEST_EVENT = 'moro-shop-reply-request';
+const SHOP_PENDING_REPLIES_KEY = 'moro_shop_pending_gift_replies_v1';
+
+const readPendingShopReplies = (): ShopReplyRequest[] => {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem(SHOP_PENDING_REPLIES_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((it: any) => ({
+                charId: String(it?.charId || ''),
+                messageId: Number(it?.messageId),
+                kind: it?.kind === 'companion_pay' || it?.kind === 'clear_cart' ? it.kind : 'gift',
+                itemName: String(it?.itemName || '礼物').slice(0, 40),
+                itemEmoji: String(it?.itemEmoji || '🎁').slice(0, 4),
+                note: typeof it?.note === 'string' && it.note.trim() ? it.note.trim().slice(0, 120) : undefined,
+                itemCount: Number.isFinite(Number(it?.itemCount)) ? Math.max(1, Math.min(99, Math.round(Number(it.itemCount)))) : undefined,
+                total: Number.isFinite(Number(it?.total)) ? Math.max(0, Math.round(Number(it.total) * 100) / 100) : undefined,
+                at: Number(it?.at) || Date.now(),
+            }))
+            .filter(it => it.charId && Number.isFinite(it.messageId) && it.messageId > 0);
+    } catch {
+        return [];
+    }
+};
+
+const writePendingShopReplies = (items: ShopReplyRequest[]): void => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(SHOP_PENDING_REPLIES_KEY, JSON.stringify(items.slice(-30)));
+    } catch { /* ignore */ }
+};
+
+/** 心意铺动作已落库后，排队让聊天页触发一次角色回应。 */
+export const queueShopReply = (request: Omit<ShopReplyRequest, 'at'> & { at?: number }): void => {
+    const entry: ShopReplyRequest = {
+        ...request,
+        kind: request.kind || 'gift',
+        itemName: request.itemName || '礼物',
+        itemEmoji: request.itemEmoji || '🎁',
+        note: request.note?.trim() || undefined,
+        at: request.at || Date.now(),
+    };
+    const next = readPendingShopReplies()
+        .filter(it => it.messageId !== entry.messageId);
+    writePendingShopReplies([...next, entry]);
+    try {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent<ShopReplyRequest>(SHOP_REPLY_REQUEST_EVENT, { detail: entry }));
+        }
+    } catch { /* ignore */ }
+};
+
+/** 聊天页消费待回复心意铺动作；传 messageId 时只消费指定消息。 */
+export const consumeShopReply = (charId: string, messageId?: number): ShopReplyRequest | null => {
+    const pending = readPendingShopReplies();
+    const index = pending.findIndex(it =>
+        it.charId === charId && (messageId == null || it.messageId === messageId)
+    );
+    if (index < 0) return null;
+    const [hit] = pending.splice(index, 1);
+    writePendingShopReplies(pending);
+    return hit || null;
+};
+
 const ACTION_LABEL: Record<ShopReceipt['action'], string> = {
     buy: '给自己买了',
     gift: '送出',

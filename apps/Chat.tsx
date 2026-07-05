@@ -84,6 +84,7 @@ import { generateXunjiScreenlifeRun } from '../utils/xunji';
 import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage, sanitizeUserScreenWatchComment } from '../utils/userScreenWatch';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
 import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
+import { SHOP_REPLY_REQUEST_EVENT, consumeShopReply, type ShopReplyRequest } from '../utils/shop';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { getNotifyPermission, requestNotifyPermission } from '../utils/browserNotify';
 import { formatReplyTimerTitle, formatReplyTimerValue, type ReplyTimerMetadata } from '../utils/replyTimer';
@@ -1724,6 +1725,59 @@ ${parallelReplyPromptBody({
     useEffect(() => {
         if (!isTyping) void drainAutoReplyQueue();
     }, [isTyping, drainAutoReplyQueue]);
+
+    const triggerShopReply = useCallback(async (request?: ShopReplyRequest | null): Promise<boolean> => {
+        if (!char || activeApp !== AppID.Chat || activeCharacterId !== char.id) return false;
+        if (request && request.charId !== char.id) return false;
+        if (isTyping || !canCharContactUser(char)) return false;
+
+        const pending = consumeShopReply(char.id, request?.messageId);
+        if (!pending) return false;
+
+        const recent = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500);
+        const target = recent.find(m =>
+            m.id === pending.messageId &&
+            m.charId === char.id &&
+            !m.groupId
+        );
+        if (!target) return false;
+
+        const totalLine = typeof pending.total === 'number' && pending.total > 0 ? `，金额约 ¥${pending.total}` : '';
+        const countLine = pending.itemCount && pending.itemCount > 1 ? `，共 ${pending.itemCount} 件` : '';
+        const noteLine = pending.note ? `，备注/清单是「${pending.note}」` : '';
+        const ephemeralSystemPrompt = pending.kind === 'clear_cart'
+            ? `用户刚刚在「心意铺」帮你清空了心愿购物车${countLine}${totalLine}${noteLine}。本轮请直接、自然地回应这件事；可以感谢、惊喜、害羞、吐槽被看穿心愿、说会珍惜或顺势聊其中想要的东西，但不要说没收到。`
+            : pending.kind === 'companion_pay'
+                ? `用户刚刚在「心意铺」替你代付了 ${pending.itemEmoji}${pending.itemName}${totalLine}${noteLine}。本轮请直接、自然地回应这次代付；可以感谢、惊喜、害羞、嘴硬、吐槽或表达会记得这份心意，但不要说没收到。`
+                : `用户刚刚从「心意铺」送给你 ${pending.itemEmoji}${pending.itemName}${noteLine}。本轮请直接、自然地回应这份礼物；可以感谢、惊喜、害羞、吐槽、珍惜或追问，但不要说没收到。`;
+        if (isInstantConfigReady()) setInstantSendingActive(true);
+        const ok = await triggerAI(recent, undefined, () => setInstantSendingActive(false), {
+            targetUserMessage: target,
+            ephemeralSystemPrompt,
+            apiUsageContext: { shopGiftReply: true, giftMessageId: pending.messageId },
+        });
+        setInstantSendingActive(false);
+        return ok;
+    }, [activeApp, activeCharacterId, char, isTyping, triggerAI]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent<ShopReplyRequest>).detail;
+            if (!detail || detail.charId !== activeCharacterId) return;
+            void triggerShopReply(detail);
+        };
+        window.addEventListener(SHOP_REPLY_REQUEST_EVENT, handler);
+        return () => window.removeEventListener(SHOP_REPLY_REQUEST_EVENT, handler);
+    }, [activeCharacterId, triggerShopReply]);
+
+    useEffect(() => {
+        if (activeApp !== AppID.Chat || !activeCharacterId) return;
+        const timer = window.setTimeout(() => {
+            void triggerShopReply();
+        }, 160);
+        return () => window.clearTimeout(timer);
+    }, [activeApp, activeCharacterId, triggerShopReply]);
 
     // --- Voice TTS for chat messages ---
     interface VoiceData { url: string; originalText: string; spokenText?: string; lang?: string; }

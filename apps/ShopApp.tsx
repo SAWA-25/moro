@@ -21,6 +21,7 @@ import {
     SHOP_GIFT_OCCASIONS, recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
     buildShopCompanionPrompt, parseShopCompanionReaction, parseShopCompanionScript,
     normalizeShopImageUrl,
+    queueShopReply,
     type ShopItemDraft,
     type GiftOccasionKey, type GiftAdvice,
     type ShopCompanionReaction, type ShopCompanionSurface, type ShopCompanionScript, type ShopCompanionScriptStep, type ShopCompanionStepAction,
@@ -396,11 +397,21 @@ const ShopApp: React.FC = () => {
             shopCart: removeFromCart(userProfile.shopCart, item.id),
         });
         try {
-            await DB.saveMessage({
+            const messageId = await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
                 content: `${char.name} 带着 ${userProfile.name || '你'} 买下了 ${item.emoji}${item.name}（¥${formatPrice(item.price)}，已从心意铺账户结清）`,
                 metadata: { shopCompanion: true, shopOrderId: order.id, shopAction: 'auto_user_pay' },
             } as any);
+            queueShopReply({
+                charId: char.id,
+                messageId,
+                kind: 'companion_pay',
+                itemName: item.name,
+                itemEmoji: item.emoji,
+                note: '陪逛时你替 TA 买下',
+                itemCount: 1,
+                total: item.price,
+            });
         } catch { /* ignore */ }
         addToast(`${char.name} 带你买下了 ${item.emoji}${item.name}`, 'success');
         emitShopUpdated();
@@ -620,10 +631,20 @@ const ShopApp: React.FC = () => {
         });
         updateUserProfile({ shopReceipts: [userReceipt, ...(userProfile.shopReceipts || [])] });
         try {
-            await DB.saveMessage({
+            const messageId = await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
                 content: `${userProfile.name || '你'} 替 ${char.name} 付了 ${req.item.emoji}${req.item.name}（¥${formatPrice(req.item.price)}）`,
             } as any);
+            queueShopReply({
+                charId: char.id,
+                messageId,
+                kind: 'companion_pay',
+                itemName: req.item.name,
+                itemEmoji: req.item.emoji,
+                note: '你答应了 TA 的陪逛代付请求',
+                itemCount: 1,
+                total: req.item.price,
+            });
         } catch { /* ignore */ }
         pushCompanionLine(`收下啦，我会记得这是你陪我逛时买的。`, 'want', req.item.id);
         addToast(`替 ${char.name} 付了 ${req.item.emoji}${req.item.name}`, 'success');
@@ -842,11 +863,22 @@ const ShopApp: React.FC = () => {
         const userReceipts = items.map(it => makeReceipt(it, 'user', 'gift', char.id, char.name, '代付'));
         updateCharacter(char.id, { shopCart: [], shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });
         updateUserProfile({ shopReceipts: [...userReceipts, ...(userProfile.shopReceipts || [])] });
+        const cartBrief = resolveCart(char.shopCart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、');
         try {
-            await DB.saveMessage({
+            const messageId = await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
                 content: `${userProfile.name || '你'} 帮 ${char.name} 清空了心愿购物车（${items.length}件，¥${formatPrice(total)}）`,
             } as any);
+            queueShopReply({
+                charId: char.id,
+                messageId,
+                kind: 'clear_cart',
+                itemName: '心愿购物车',
+                itemEmoji: '🛒',
+                note: cartBrief,
+                itemCount: items.length,
+                total,
+            });
         } catch { /* ignore */ }
         addToast(`替 ${char.name} 付了 ¥${formatPrice(total)}`, 'success');
         emitShopUpdated();
@@ -867,11 +899,12 @@ const ShopApp: React.FC = () => {
         if (!owned) return;
         const base = getShopItem(owned.itemId) || { id: owned.itemId, name: owned.name, emoji: owned.emoji, price: owned.price };
         const note = giftNote.trim();
+        let giftMessageId: number | null = null;
         try {
-            await DB.saveMessage({
+            giftMessageId = await DB.saveMessage({
                 charId: char.id, role: 'user', type: 'gift_card',
                 content: `🎁 我送了你 ${owned.emoji}${owned.name}${note ? ` —— ${note}` : ''}`,
-                metadata: { gift: buildGiftCardMeta(base, userProfile.name || '我', note) },
+                metadata: { gift: buildGiftCardMeta(base, userProfile.name || '我', note), msgStatus: 'sent' },
             } as any);
         } catch { /* 落卡失败不阻塞送礼 */ }
         const userReceipt = makeReceipt(base, 'user', 'gift', char.id, char.name, note);
@@ -881,6 +914,16 @@ const ShopApp: React.FC = () => {
             shopInventory: (userProfile.shopInventory || []).filter(o => o.uid !== owned.uid),
             shopReceipts: [userReceipt, ...(userProfile.shopReceipts || [])],
         });
+        if (giftMessageId != null) {
+            queueShopReply({
+                charId: char.id,
+                messageId: giftMessageId,
+                kind: 'gift',
+                itemName: owned.name,
+                itemEmoji: owned.emoji,
+                note,
+            });
+        }
         addToast(`把 ${owned.emoji}${owned.name} 寄给了 ${char.name}`, 'success');
         emitShopUpdated();
         setGiftTarget(null); setGiftNote('');

@@ -257,6 +257,43 @@ describe('autonomous life v2', () => {
     expect(aligned.summary).toBe('在客厅，躺在皮质沙发上');
   });
 
+  it('allows a recent chat location change to override the old schedule slot', async () => {
+    await DB.deleteDB();
+    const now = new Date(2026, 6, 3, 14, 30).getTime();
+    const date = new Date(now).toISOString().slice(0, 10);
+    const char = mkChar({ scheduleFeatureEnabled: true, scheduleStyle: 'lifestyle' });
+    await DB.saveDailySchedule({
+      id: `${char.id}_${date}`,
+      charId: char.id,
+      date,
+      generatedAt: Date.now(),
+      slots: [
+        { startTime: '14:00', endTime: '15:00', activity: '看书', description: '窝在沙发上翻书', location: '客厅' },
+      ],
+    });
+    const raw = {
+      activity: '回卧室把书放到床头，顺手揉了揉发酸的肩',
+      location: '卧室',
+      summary: '回卧室放书',
+      eventKind: 'routine',
+      energy: 'low',
+      intensity: 45,
+      shareWillingness: 45,
+      proactiveAngle: 'share',
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(raw) } }] }),
+    })));
+
+    const event = await advanceLife(char, API, { now, recentChat: 'User：回卧室找我，把东西拿过来。' });
+
+    expect(event?.location).toBe('卧室');
+    expect(event?.activity).toContain('卧室');
+    expect(event?.activity).not.toContain('客厅');
+  });
+
   it('syncs catch-up life events with planned daily schedule slots', async () => {
     await DB.deleteDB();
     const now = new Date(2026, 6, 3, 18, 0).getTime();

@@ -89,7 +89,7 @@ describe('ContextBuilder character identity anchor', () => {
     expect(context).not.toContain('[[OFFLINE_START]]');
   });
 
-  it('treats the current schedule location as a hard chat constraint', () => {
+  it('treats the current schedule location as a chat baseline that recent chat may override', () => {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const schedule = {
@@ -109,9 +109,9 @@ describe('ContextBuilder character identity anchor', () => {
 
     const context = ContextBuilder.buildScheduleInjection(schedule);
 
-    expect(context).toContain('当前地点硬约束');
-    expect(context).toContain('你此刻就在「客厅」');
-    expect(context).toContain('不得说成自己在其它地点');
-    expect(context).toContain('让对方去另一个地点找你');
+    expect(context).toContain('当前地点基线');
+    expect(context).toContain('按日程你此刻在「客厅」');
+    expect(context).toContain('除非最近聊天或对方最新消息明确让你移动到新地点');
+    expect(context).toContain('以最新聊天地点为准');
   });
 });

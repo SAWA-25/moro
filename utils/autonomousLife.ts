@@ -414,7 +414,11 @@ function scheduleSlotLifeText(slot: ScheduleSlot): string {
   return `在${location}，${base}`;
 }
 
-export function alignLifeEventToScheduleSlot(event: CharLifeEvent, slot: ScheduleSlot | null | undefined): CharLifeEvent {
+export function alignLifeEventToScheduleSlot(
+  event: CharLifeEvent,
+  slot: ScheduleSlot | null | undefined,
+  opts?: { allowLocationChange?: boolean },
+): CharLifeEvent {
   const location = cleanField(slot?.location);
   if (!slot || !location) return event;
 
@@ -426,6 +430,9 @@ export function alignLifeEventToScheduleSlot(event: CharLifeEvent, slot: Schedul
   if (!conflicts) {
     return { ...event, location };
   }
+  if (opts?.allowLocationChange && cleanField(event.location)) {
+    return event;
+  }
 
   const alignedText = scheduleSlotLifeText(slot);
   return {
@@ -435,6 +442,15 @@ export function alignLifeEventToScheduleSlot(event: CharLifeEvent, slot: Schedul
     summary: alignedText,
     thread: event.thread && !hasConflictingLocationText(event.thread, location) ? event.thread : undefined,
   };
+}
+
+function recentChatSupportsLocationChange(eventLocation: string | undefined, recentChat: string | undefined): boolean {
+  const location = compactLocation(cleanField(eventLocation));
+  const chat = compactLocation(recentChat);
+  if (!location || !chat) return false;
+  if (!/(来|过来|回来|回到|回去|去|到|进来|出去|上楼|下楼|找我|找你|拿.*来|带.*来)/.test(chat)) return false;
+  if (chat.includes(location)) return true;
+  return LOCATION_TERMS.some(term => chat.includes(term) && locationTermMatches(term, location));
 }
 
 /** 把角色核心设定压成一小段喂给 agent —— 只取 name + systemPrompt + worldview，截断防超长。 */
@@ -759,7 +775,9 @@ export async function advanceLife(
       scheduleEventPatch(schedule, now),
     );
     if (!event) return null;
-    const alignedEvent = alignLifeEventToScheduleSlot(event, scheduleSlot);
+    const alignedEvent = alignLifeEventToScheduleSlot(event, scheduleSlot, {
+      allowLocationChange: recentChatSupportsLocationChange(event.location, opts?.recentChat),
+    });
 
     await DB.saveLifeEvent(alignedEvent);
     void DB.pruneLifeEvents(char.id, MAX_KEPT_EVENTS);
