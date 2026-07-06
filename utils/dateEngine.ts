@@ -15,7 +15,9 @@ import { CharacterProfile, UserProfile, DateScene, DateWorldline, DateMessage } 
 import { extractJson } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
-import { buildFullCharacterSetting } from './characterPromptProfile';
+import { buildFullCharacterSetting, buildFullUserSetting } from './characterPromptProfile';
+import { ContextBuilder } from './context';
+import { WorldbookRuntime } from './worldbookRuntime';
 
 export interface DateApiConfig { baseUrl: string; apiKey: string; model: string }
 
@@ -46,7 +48,7 @@ export function makeCustomScene(name: string, vibe: string, emoji = '✨'): Date
 function fmtMessages(messages: DateMessage[], char: CharacterProfile, user: UserProfile): string {
     return messages.map(m => {
         if (m.role === 'world') return `〔场景〕${m.action || ''}`.trim();
-        const who = m.role === 'user' ? user.name : char.name;
+        const who = m.role === 'user' ? (user.name || '用户') : char.name;
         const parts: string[] = [];
         if (m.speech) parts.push(`说："${m.speech}"`);
         if (m.action) parts.push(`（${m.action}）`);
@@ -55,8 +57,31 @@ function fmtMessages(messages: DateMessage[], char: CharacterProfile, user: User
 }
 
 // ── 回合 prompt ───────────────────────────────────────────
-function personaBlock(char: CharacterProfile): string {
-    return buildFullCharacterSetting(char, { includeMemos: true });
+function buildDateRoleContextFallback(char: CharacterProfile, user: UserProfile): string {
+    const userName = user.name || '用户';
+    return [
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        buildFullUserSetting(user, { fallback: `用户名：${userName}` }),
+    ].filter(Boolean).join('\n\n');
+}
+
+function buildDateScanMessages(
+    char: CharacterProfile,
+    user: UserProfile,
+    worldline: DateWorldline,
+    userSpeech: string,
+    userAction: string,
+): string[] {
+    const recent = fmtMessages(worldline.messages.slice(-(DATE_KEEP_TAIL * 4)), char, user)
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+    const userName = user.name || '用户';
+    const current = [
+        userSpeech ? `${userName}: ${userSpeech}` : '',
+        userAction ? `${userName}（动作）: ${userAction}` : '',
+    ].filter(Boolean).join('\n');
+    return current ? [...recent, current] : recent;
 }
 
 export function buildDateTurnPrompt(
@@ -67,27 +92,30 @@ export function buildDateTurnPrompt(
     userSpeech: string,
     userAction: string,
     isFirstTurn: boolean,
+    roleContext?: string,
 ): string {
     const recent = fmtMessages(worldline.messages.slice(-(DATE_KEEP_TAIL * 4)), char, user);
     const recapBlock = worldline.recap ? `\n## 之前发生了什么（已浓缩）\n${worldline.recap}\n` : '';
+    const userName = user.name || '用户';
+    const roleContextBlock = (roleContext || '').trim() || buildDateRoleContextFallback(char, user);
     const userTurn = [
-        userSpeech ? `${user.name} 说："${userSpeech}"` : '',
-        userAction ? `${user.name} 的动作：（${userAction}）` : '',
-    ].filter(Boolean).join('\n') || `${user.name} 只是安静地看着你。`;
+        userSpeech ? `${userName} 说："${userSpeech}"` : '',
+        userAction ? `${userName} 的动作：（${userAction}）` : '',
+    ].filter(Boolean).join('\n') || `${userName} 只是安静地看着你。`;
 
-    return `你是这场约会的**世界引擎**，同时扮演角色「${char.name}」。这是 ${char.name} 带着「${user.name}」的一次日常陪伴向约会——不是要演大戏，是松弛、有生活质感地待在一起。
+    return `你是这场约会的**世界引擎**，同时扮演角色「${char.name}」。这是 ${char.name} 带着「${userName}」的一次日常陪伴向约会——不是要演大戏，是松弛、有生活质感地待在一起。
 
-${personaBlock(char)}
+${roleContextBlock}
 
 ## 当前场景：${scene.emoji} ${scene.name}
 基调：${scene.vibe}
 ${recapBlock}${recent ? `\n## 最近的来往\n${recent}\n` : (isFirstTurn ? `\n（约会刚开始：${scene.opening}）\n` : '')}
 
-## ${user.name} 这一回合
+## ${userName} 这一回合
 ${userTurn}
 
 ## 你要做两件事
-1. **以 ${char.name} 的口吻回应**——${user.name} 的「话」和「动作」都要照顾到（先接住话，再回应动作，或自然交织），贴着人设的语气、分寸、棱角。日常、具体、有温度，别套话别浮夸。
+1. **以 ${char.name} 的口吻回应**——${userName} 的「话」和「动作」都要照顾到（先接住话，再回应动作，或自然交织），贴着人设的语气、分寸、棱角。日常、具体、有温度，别套话别浮夸。
 2. **作为世界引擎，轻轻调度场景**（可选）——让街角活着：光线/天气的变化、路过的人或小动物、走到了新的地方、一个可以延续的小契机。**克制**，不喧宾夺主，没必要就留空。
 
 另外给出此刻的**氛围关键词**（用于生成专属 BGM），如"微醺暖黄""雨后清冷""暧昧涌动""安静依偎"。${isFirstTurn ? '并取一个 6-12 字的世界线标题。' : ''}
@@ -119,7 +147,15 @@ export async function runDateTurn(
     userAction: string,
 ): Promise<DateTurnResult | null> {
     const isFirstTurn = worldline.messages.length === 0;
-    const prompt = buildDateTurnPrompt(char, user, scene, worldline, userSpeech, userAction, isFirstTurn);
+    const userName = user.name || '用户';
+    const scanMessages = buildDateScanMessages(char, user, worldline, userSpeech, userAction);
+    const roleContext = await WorldbookRuntime.withContext(
+        { scanMessages },
+        () => ContextBuilder.buildFullCoreContext(char, user, true, undefined, {
+            headerOverride: '[System: Date World Engine Role Context]',
+        }),
+    );
+    const prompt = buildDateTurnPrompt(char, user, scene, worldline, userSpeech, userAction, isFirstTurn, roleContext);
     try {
         const data = await callChatCompletion(api, {
             model: api.model,
@@ -133,6 +169,7 @@ export async function runDateTurn(
                 charName: char.name,
                 apiRole: 'aux',
             }),
+            presetMacros: { charName: char.name, userName },
         });
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = extractJson(raw);
@@ -160,8 +197,9 @@ export async function runDateRecap(
 ): Promise<string | null> {
     const prior = fmtMessages(worldline.messages.slice(0, -DATE_KEEP_TAIL), char, user);
     if (!prior.trim()) return null;
+    const userName = user.name || '用户';
     const prevRecap = worldline.recap ? `已有的浓缩：\n${worldline.recap}\n\n` : '';
-    const prompt = `把「${char.name}」和「${user.name}」这场约会到目前为止的经过，浓缩成一段简明的剧情记录，供世界引擎接着往下写时参考。
+    const prompt = `把「${char.name}」和「${userName}」这场约会到目前为止的经过，浓缩成一段简明的剧情记录，供世界引擎接着往下写时参考。
 
 场景：${scene.emoji} ${scene.name}（${scene.vibe}）
 
@@ -182,6 +220,7 @@ ${prior}
                 charName: char.name,
                 apiRole: 'aux',
             }),
+            presetMacros: { charName: char.name, userName },
         });
         const txt = (data.choices?.[0]?.message?.content || '').trim();
         return txt.length >= 10 ? txt : null;

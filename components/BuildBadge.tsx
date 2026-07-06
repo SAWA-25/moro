@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { querySwVersion } from '../utils/swVersion';
 import { BUILD_LABEL } from '../utils/buildInfo';
+import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
 
 /**
  * 构建版本指示器：右下角阶梯式堆三行
@@ -10,8 +11,8 @@ import { BUILD_LABEL } from '../utils/buildInfo';
  *
  * - 右侧贴齐成竖直线；左侧每行根据实测宽度动态决定圆角（仅在"伸出邻行"一侧）。
  *   分支名长度可变，所以行宽顺序不固定，需要 useLayoutEffect 在 paint 前测量。
- * - 仅当 vite.config 注入的 __BUILD_BADGE_VISIBLE__ 为 true 时挂载
- *   （VITE_HIDE_BUILD_BADGE=1 时构建会把它编译成 false → 树摇掉）
+ * - 仅当 vite.config 注入的 __BUILD_BADGE_VISIBLE__ 为 true 且 DevDebug 已通过密码打开时挂载；
+ *   退出开发者模式后会立即隐藏。
  * - SW 版本通过 utils/swVersion 的 GET_SW_VERSION 协议查询；SW 未注册 /
  *   不响应时显示 sw@?
  * - pointer-events-none + select-none：不可点、不可选、不影响下层交互
@@ -25,9 +26,12 @@ const BuildBadge: React.FC = () => {
     if (!__BUILD_BADGE_VISIBLE__) return null;
 
     const buildLabel = BUILD_LABEL;
+    const [devDebugAvailable, setDevDebugAvailable] = useState(() => isDevDebugAvailable());
     const [swVersion, setSwVersion] = useState<string>('…');
     const lineRefs = useRef<Array<HTMLSpanElement | null>>([]);
     const [widths, setWidths] = useState<number[] | null>(null);
+
+    useEffect(() => subscribeDevDebugAvailability(setDevDebugAvailable), []);
 
     useEffect(() => {
         let cancelled = false;
@@ -48,6 +52,8 @@ const BuildBadge: React.FC = () => {
     useLayoutEffect(() => {
         setWidths(lineRefs.current.map((r) => r?.offsetWidth ?? 0));
     }, [swVersion, buildLabel]);
+
+    if (!devDebugAvailable) return null;
 
     const cornerClass = (i: number): string => {
         const w = widths?.[i];

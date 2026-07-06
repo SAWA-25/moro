@@ -94,7 +94,7 @@ describe('autonomous life v2', () => {
     await DB.deleteDB();
     const now = 1_788_000_000_000;
     const char = mkChar({
-      description: '列表备注不应注入',
+      description: '列表备注也会注入',
       systemPrompt: '旅行画家，常在海边车站写生，慢热但观察细。',
       worldview: '近未来海港城市，旧电车仍沿海运行。',
       lifeProfile: { content: '日常会背着画夹出门，下午在旧书店或码头咖啡摊停留。', generatedAt: 1 },
@@ -136,7 +136,7 @@ describe('autonomous life v2', () => {
     expect(userPrompt).toContain('@sea_sketch');
     expect(userPrompt).toContain('海港旧城区');
     expect(userPrompt).toContain('傍晚前去取新买的群青颜料');
-    expect(userPrompt).not.toContain('列表备注不应注入');
+    expect(userPrompt).toContain('列表备注也会注入');
     expect(userPrompt).not.toContain('已经完成的旧待办');
   });
 

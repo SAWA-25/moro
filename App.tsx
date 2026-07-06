@@ -37,11 +37,11 @@ const App: React.FC = () => {
                 </UserScreenWatchProvider>
               </MusicProvider>
             </DesktopPetProvider>
+            <DevDebugPanel />
           </OSProvider>
         </div>
       </div>
       <BuildBadge />
-      <DevDebugPanel />
       <VRBroadcast />
     </>
   );

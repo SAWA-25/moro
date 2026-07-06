@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterProfile, Message, UserProfile } from '../types';
 import { applyAssistantPostProcessing, type PostProcessCtx } from './applyAssistantPostProcessing';
 import { DB } from './db';
-import { OFFLINE_START_EVENT, consumeDueOfflineAutoStarts } from './offlineMode';
+import { OFFLINE_START_EVENT, consumeDueOfflineAutoStarts, consumeOfflinePending } from './offlineMode';
 
 const baseChar = {
   id: 'char-a',
@@ -143,6 +143,30 @@ describe('applyAssistantPostProcessing offline auto-start', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('开门，我就在门口。');
       expect(seen).toHaveLength(0);
+    } finally {
+      window.removeEventListener(OFFLINE_START_EVENT, handler);
+    }
+  });
+
+  it('suppresses offline auto-start for one-shot online followups', async () => {
+    const seen: unknown[] = [];
+    const handler = (event: Event) => seen.push((event as CustomEvent).detail);
+    window.addEventListener(OFFLINE_START_EVENT, handler);
+
+    try {
+      const ctx = makeCtx({ ...baseChar, convoSettings: { autoOffline: true } }) as PostProcessCtx & { suppressAutoOffline?: boolean };
+      ctx.suppressAutoOffline = true;
+
+      await applyAssistantPostProcessing(
+        '刚才线下结束了，我先回到线上和你说一声。\n[[OFFLINE_START]]',
+        ctx,
+      );
+
+      const messages = await DB.getMessagesByCharId(baseChar.id, true);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('刚才线下结束了，我先回到线上和你说一声。');
+      expect(seen).toHaveLength(0);
+      expect(consumeOfflinePending(baseChar.id)).toBe(false);
     } finally {
       window.removeEventListener(OFFLINE_START_EVENT, handler);
     }

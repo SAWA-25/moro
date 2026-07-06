@@ -71,6 +71,7 @@ export const DEV_DEBUG_LOG_STORAGE_KEY = 'moro.devDebug.log.v1';
 export const DEV_DEBUG_LOG_EVENT = 'moro-dev-debug-log-change';
 // 内部事件名，只通过 subscribeDevDebugAvailability 暴露——不 export 出去，免得固化成公共契约。
 const DEV_DEBUG_AVAILABILITY_EVENT = 'moro-dev-debug-availability';
+const DEV_DEBUG_ENTRY_AVAILABILITY_EVENT = 'moro-dev-debug-entry-availability';
 
 export const DEFAULT_DEV_DEBUG_FLAGS: DevDebugFlags = {
     skipPromptBuild: false,
@@ -133,25 +134,34 @@ function normalizeFlags(value: unknown): DevDebugFlags {
     };
 }
 
+const DEV_DEBUG_PASSWORD = '2524';
+
 // 会话级开关（都不落 localStorage → 刷新即重置）：
-//   manualUnlock：prod 上连点构建版本 5 下临时解锁，刷新即关。
+//   manualUnlock：prod 上连点构建版本 5 下临时显示入口，刷新即关。
+//   passwordUnlocked：输入密码后真正打开开发者模式。
 //   forceClosed：面板「关闭」按钮，任意分支强制关掉；刷新后失效 → 非 prod 自动回来。
 let devDebugManualUnlock = false;
+let devDebugPasswordUnlocked = false;
 let devDebugForceClosed = false;
 
-export function isDevDebugAvailable(): boolean {
+export function isDevDebugEntryAvailable(): boolean {
     if (devDebugForceClosed) return false;
     const badgeVisible = typeof __BUILD_BADGE_VISIBLE__ !== 'undefined' && __BUILD_BADGE_VISIBLE__;
-    // 非 prod（badge 可见）默认一直开；prod 默认关，靠 manualUnlock 临时调出。
+    // 非 prod（badge 可见）默认露出入口；prod 默认关，靠 manualUnlock 临时调出入口。
     return badgeVisible || devDebugManualUnlock;
+}
+
+export function isDevDebugAvailable(): boolean {
+    return isDevDebugEntryAvailable() && devDebugPasswordUnlocked;
 }
 
 function emitDevDebugAvailability(): void {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(new CustomEvent<boolean>(DEV_DEBUG_AVAILABILITY_EVENT, { detail: isDevDebugAvailable() }));
+    window.dispatchEvent(new CustomEvent<boolean>(DEV_DEBUG_ENTRY_AVAILABILITY_EVENT, { detail: isDevDebugEntryAvailable() }));
 }
 
-/** 连点构建版本 5 下：会话级解锁面板（刷新即关），并解除强制关闭。 */
+/** 连点构建版本 5 下：会话级显示 DevDebug 入口（刷新即关），并解除强制关闭。 */
 export function unlockDevDebug(): void {
     devDebugManualUnlock = true;
     devDebugForceClosed = false;
@@ -161,14 +171,37 @@ export function unlockDevDebug(): void {
     emitDevDebugAvailability();
 }
 
+/** 输入密码后真正打开开发者模式；只做会话级解锁，不落盘。 */
+export function unlockDevDebugWithPassword(password: string): boolean {
+    if (password.trim() !== DEV_DEBUG_PASSWORD) return false;
+    devDebugPasswordUnlocked = true;
+    devDebugForceClosed = false;
+    // 解锁后再允许读写 flags/log，清掉解锁前的空内存缓存。
+    memoryLog = null;
+    emitDevDebugAvailability();
+    return true;
+}
+
 /** 面板「关闭」按钮：任意分支强制关掉（会话级；刷新后非 prod 会自动恢复）。 */
 export function closeDevDebug(): void {
     devDebugForceClosed = true;
     devDebugManualUnlock = false;
+    devDebugPasswordUnlocked = false;
     emitDevDebugAvailability();
 }
 
-/** 订阅「面板是否可用」变化（解锁 / 关闭）。会话级，无跨标签页同步。 */
+/** 订阅「DevDebug 入口是否可见」变化（构建徽标 / 手动显示 / 关闭）。会话级，无跨标签页同步。 */
+export function subscribeDevDebugEntryAvailability(listener: (available: boolean) => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const onChange = (event: Event) => {
+        const detail = (event as CustomEvent<boolean>).detail;
+        listener(typeof detail === 'boolean' ? detail : isDevDebugEntryAvailable());
+    };
+    window.addEventListener(DEV_DEBUG_ENTRY_AVAILABILITY_EVENT, onChange);
+    return () => window.removeEventListener(DEV_DEBUG_ENTRY_AVAILABILITY_EVENT, onChange);
+}
+
+/** 订阅「开发者模式是否已通过密码打开」变化。会话级，无跨标签页同步。 */
 export function subscribeDevDebugAvailability(listener: (available: boolean) => void): () => void {
     if (typeof window === 'undefined') return () => {};
     const onChange = (event: Event) => {

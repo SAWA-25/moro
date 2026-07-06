@@ -1,6 +1,6 @@
 # Dev Debug 调试子系统
 
-开发分支专用的"工具箱"：一个悬浮按钮 + 面板，放一堆**只在开发分支显示**的调试开关，外加一套可选的「分类捕获」日志——打开**总开关**「记录日志」后会露出并排的类型 checkbox（目前 `api` 普通聊天 / `instant-push` 即 IP 通道事件），勾哪类抓哪类。面板走极简：类型并排、无逐条说明（看不懂就别用）。正式分支（main / master）默认整个隐藏，用户看不到也不会误触。
+开发分支专用的"工具箱"：一个悬浮按钮 + 面板，放一堆**只在开发分支显示**的调试开关、开发小工具，外加一套可选的「分类捕获」日志——打开**总开关**「记录日志」后会露出并排的类型 checkbox（目前 `api` 普通聊天 / `instant-push` 即 IP 通道事件），勾哪类抓哪类。面板走极简：类型并排、无逐条说明（看不懂就别用）。正式分支（main / master）默认整个隐藏，用户看不到也不会误触。
 
 这份文档讲清楚它怎么运作，以及**怎么往里加新开关 / 加一类捕获日志**——照着步骤抄就行。
 
@@ -8,36 +8,39 @@
 
 ## 一、它什么时候出现？（可用性门禁）
 
-整套能力（面板、开关存储、日志捕获）都挂在一个总开关后面：
+整套能力分两层门禁：先让 DevDebug 入口可见，再输入密码真正打开开发者模式：
 
 ```ts
-isDevDebugAvailable()  // utils/devDebug.ts
-  → !forceClosed && (__BUILD_BADGE_VISIBLE__（vite 构建注入）|| manualUnlock（连点解锁·会话级）)
+isDevDebugEntryAvailable()  // utils/devDebug.ts
+  → !forceClosed && (__BUILD_BADGE_VISIBLE__（vite 构建注入）|| manualUnlock（连点显示入口·会话级）)
+
+isDevDebugAvailable()
+  → isDevDebugEntryAvailable() && passwordUnlocked（密码：2524，会话级）
 ```
 
-`__BUILD_BADGE_VISIBLE__` 在 `vite.config.ts` 里算出来，规则如下：
+`__BUILD_BADGE_VISIBLE__` 在 `vite.config.ts` 里算出来，用来决定 DevDebug 入口是否默认可见；右下角 `BuildBadge` 还会额外要求密码已通过，退出开发者模式后立即隐藏。规则如下：
 
-| 情况 | 是否显示 |
+| 情况 | 入口是否默认显示 |
 |------|---------|
 | 在 `main` / `master` 构建 | ❌ 隐藏（视为正式发布） |
 | 在其他分支构建 | ✅ 显示 |
 | 设了 `VITE_HIDE_BUILD_BADGE=1` | ❌ 强制隐藏（覆盖默认） |
-| 设了 `VITE_SHOW_BUILD_BADGE=1` | ✅ 强制显示（在 master 本地调试用） |
-| 设置页底部连点「构建版本」5 下 | ✅ 显示（**手动解锁**，会话级、刷新即关，正式版临时排障用） |
+| 设了 `VITE_SHOW_BUILD_BADGE=1` | ✅ 强制显示入口（在 master 本地调试用） |
+| 设置页底部连点「构建版本」5 下 | ✅ 显示入口（**手动显示**，会话级、刷新即关，正式版临时排障用；仍需密码） |
 
 > 分支名的来源：CI 优先读 `GITHUB_REF_NAME` / `VERCEL_GIT_COMMIT_REF` / `CF_PAGES_BRANCH` / `BRANCH`，本地退化成 `git rev-parse --abbrev-ref HEAD`，非 git 环境是 `'unknown'`（`'unknown'` 不在发布分支集合里，所以会显示）。
 
-**关键含义**：在 master 上本地想调试，跑 `VITE_SHOW_BUILD_BADGE=1 pnpm dev` 即可，不用改代码。
+**关键含义**：在 master 上本地想调试，跑 `VITE_SHOW_BUILD_BADGE=1 pnpm dev` 即可露出入口；打开面板仍要输入密码 `2524`。
 
-**正式版排障（手动解锁）**：设置页底部连点 `VersionInfo`（构建版本那栏）5 下 → `unlockDevDebug()` **会话级**解锁（**不落 localStorage**），`isDevDebugAvailable()` 放行、`<DevDebugPanel />` 经 `subscribeDevDebugAvailability` 即时弹出。
+**正式版排障（手动显示入口）**：设置页底部连点 `VersionInfo`（构建版本那栏）5 下 → `unlockDevDebug()` **会话级**显示入口（**不落 localStorage**）；点开入口后输入密码 `2524` → `unlockDevDebugWithPassword()` 放行、`isDevDebugAvailable()` 变 true，开关存储、日志捕获和 dev-only App 才可用。
 
 **怎么关掉**：
-- **刷新页面**：`manualUnlock` 清零 → prod 回到隐藏；非 prod 因 `__BUILD_BADGE_VISIBLE__` 默认可见，刷新后照常显示（即「非 prod 一直开」）。
-- **面板底部「关闭」按钮**：`closeDevDebug()` 置 `forceClosed`，**任意分支**强制关掉；会话级，**刷新后非 prod 自动恢复**。顺手把浮球位置收回默认、面板收起；**`isCaptureEnabled` 跟 `isDevDebugAvailable` 绑定**——只要面板看不见（关闭 / prod 未解锁 / prod 解锁后刷新 / 非 prod 强制关闭）都返 false，避免业务代码继续往 localStorage 写日志的隐私债。**里面的捕获 / 行为开关存档不动**——刷新恢复后可见性回来，里面勾的还是原样，但只有面板可见时才真正录。
+- **刷新页面**：`manualUnlock` / `passwordUnlocked` 清零 → prod 回到隐藏；非 prod 因 `__BUILD_BADGE_VISIBLE__` 默认露出入口，但仍需重新输入密码。
+- **面板底部「关闭」按钮**：`closeDevDebug()` 置 `forceClosed` 并清掉 `passwordUnlocked`，**任意分支**强制关掉；会话级，**刷新后非 prod 自动恢复入口**。顺手把浮球位置收回默认、面板收起；**`isCaptureEnabled` 跟 `isDevDebugAvailable` 绑定**——只要开发者模式没通过密码打开（关闭 / prod 未显示入口 / prod 显示入口但未输密码 / 刷新 / 非 prod 强制关闭）都返 false，避免业务代码继续往 localStorage 写日志的隐私债。**里面的捕获 / 行为开关存档不动**——刷新恢复并重新输入密码后，里面勾的还是原样，但只有开发者模式可用时才真正录。
 
-> 可用性 = `!forceClosed && (__BUILD_BADGE_VISIBLE__ || manualUnlock)`，三个量里只有 `__BUILD_BADGE_VISIBLE__` 是构建期常量，另两个是会话级内存标志（刷新归零）。
+> 入口可见性 = `!forceClosed && (__BUILD_BADGE_VISIBLE__ || manualUnlock)`；真正可用性 = `入口可见性 && passwordUnlocked`。这些量里只有 `__BUILD_BADGE_VISIBLE__` 是构建期常量，其余都是会话级内存标志（刷新归零）。
 
-> **面板自身状态全是纯内存、不落盘**：浮球位置、展开与否每次出现都回默认（位置默认角、收起）；prod 刷新 = 解锁失效 ≈ 手动关闭，所以位置没必要持久化。里面的捕获 / 行为开关是另一套 localStorage，跟这些无关。
+> **面板自身状态全是纯内存、不落盘**：浮球位置、展开与否每次出现都回默认（位置默认角、收起）；prod 刷新 = 入口/密码失效 ≈ 手动关闭，所以位置没必要持久化。里面的捕获 / 行为开关是另一套 localStorage，跟这些无关。
 
 ---
 
@@ -46,10 +49,10 @@ isDevDebugAvailable()  // utils/devDebug.ts
 | 文件 | 职责 |
 |------|------|
 | `utils/devDebug.ts` | 核心：类型、存储读写、事件、分类捕获、便捷 getter。**所有逻辑都在这** |
-| `components/DevDebugPanel.tsx` | 悬浮按钮 + 面板 UI（拖拽、开关行、复制 / 下载日志、重置） |
-| `components/settings/VersionInfo.tsx` | 设置页底部版本脚注（APP_VERSION + build hash + sw 版本）；连点 5 下手动解锁面板 |
+| `components/DevDebugPanel.tsx` | 悬浮按钮 + 面板 UI（拖拽、开关行、自定义钱包、复制 / 下载日志、重置） |
+| `components/settings/VersionInfo.tsx` | 设置页底部版本脚注（APP_VERSION + build hash + sw 版本）；连点 5 下手动显示入口 |
 | `utils/swVersion.ts` | `querySwVersion()`：向 SW 查版本号（BuildBadge / VersionInfo 共用） |
-| `App.tsx` | 挂载 `<DevDebugPanel />`（无脑挂，组件内部自己判断要不要渲染） |
+| `App.tsx` | 在 `OSProvider` 内挂载 `<DevDebugPanel />`（组件内部自己判断要不要渲染；钱包工具要访问 `useOS`） |
 | `vite.config.ts` | 注入 `__BUILD_BRANCH__` / `__BUILD_COMMIT__` / `__BUILD_BADGE_VISIBLE__` |
 | `vite-env.d.ts` | 上面三个常量的 TS 声明 |
 
@@ -117,7 +120,7 @@ moro.devDebug.flags.v1.<branch>      ← 开关状态（含 captureLogs 数组�
 moro.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每条带 category 字段）
 ```
 
-> 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；可用性（解锁 / 强制关闭）也是会话级内存标志。只有上面这两个 key 真正持久化。
+> 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；入口可见性、密码打开状态、强制关闭也是会话级内存标志。只有上面这两个 key 真正持久化。
 
 `<branch>` 由 `__BUILD_BRANCH__` 归一化而来（非字母数字 `._-` 的字符替换成 `_`）。
 
@@ -133,6 +136,8 @@ moro.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每
 | 捕获类 `api` | 捕获 | 抓普通聊天直发模型的 chat completions 请求 + 响应（`safeApi`） | 取消勾选只停此后抓取，**不清**已有日志 |
 | 捕获类 `instant-push` | 捕获 | 抓 instant push 通道：经 worker 的 LLM 交换 + SSE 投递结果（超时/收到/失败） | 同上，取消勾选不清日志 |
 | `exposeLogDetail`<br>（记录完整内容） | 抓取 | 关（默认）：`messages` 聊天历史数组整组换成一句 `…共 N 项（已折叠）`；开：整段存 | 影响**抓取 / 存储**；要完整须复现前打开，已抓的折叠版不可还原 |
+
+非开关工具：`自定义钱包` 直接改 `userProfile.balance`，支持输入目标余额、快速 `+1k` / `+1w`、清零和填当前；它只改余额，不写生活拟流水（`ledger: false`），用于本地调试商店、红包、银行等金钱路径。
 
 捕获日志：各类**混存在一个数组**里、每条带 `category`，全局最多留 **100 条 / 1 MB**（先到先淘汰）。因为长文本在写入时就折叠了（见第九节），实际存的是瘦身版、很省空间，1 MB 基本撑不爆、轻松存满 100 条；导出（复制 / 下载）默认导全部、自动带上当前分支 + commit，并对密钥字段脱敏。
 
@@ -318,7 +323,7 @@ LLM 日志里的聊天历史动辄几十条，整段塞进 localStorage 很快�
 SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appendDevDebugLog`。要接 devDebug 得走一条新通道：
 
 1. SW 端攒一份 trace ring buffer（已有 `[InstantTrace:SW]` 在 `worker/sw-keep-alive.ts`）
-2. page 端解锁面板时，向所有 SW client `postMessage({ type: 'GET_DEBUG_TRACE' })` 拉一份
+2. page 端通过密码打开面板时，向所有 SW client `postMessage({ type: 'GET_DEBUG_TRACE' })` 拉一份
 3. page 端收到 SW 回包 → 写进 devDebug 的 `instant-push` 类目
 
 涉及范围（grep 出来的 SW 端日志，先列着）：

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { querySwVersion } from '../../utils/swVersion';
 import { APP_VERSION, BUILD_LABEL } from '../../utils/buildInfo';
-import { isDevDebugAvailable, subscribeDevDebugAvailability, unlockDevDebug } from '../../utils/devDebug';
+import { isDevDebugEntryAvailable, subscribeDevDebugEntryAvailability, unlockDevDebug } from '../../utils/devDebug';
 
 /**
  * Settings 底部的版本信息脚注。
@@ -15,9 +15,9 @@ import { isDevDebugAvailable, subscribeDevDebugAvailability, unlockDevDebug } fr
  * 构建全局（__BUILD_BRANCH__ 等）由 vite define 始终注入，prod 也有值，
  * 所以无需任何 dev 条件判断。SW 未注册 / 未响应时 sw 显示 '?'。
  *
- * 彩蛋（dev 附加）：连点 APP_VERSION 5 下手动解锁 DevDebug 面板——正式版默认隐藏，
+ * 彩蛋（dev 附加）：连点 APP_VERSION 5 下手动显示 DevDebug 入口——正式版默认隐藏，
  * 这是在正式版上临时调出调试工具排障的入口（会话级，刷新即关；面板内有「关闭」按钮可随时强制关掉）。
- * 面板已可用时（非 prod / 已解锁）再点不计数。
+ * 入口显示后仍需输入开发者密码；入口已可见时（非 prod / 已手动显示）再点不计数。
  */
 
 const UNLOCK_TAP_COUNT = 5;
@@ -25,8 +25,8 @@ const TAP_RESET_MS = 2000;
 
 const VersionInfo: React.FC = () => {
     const [swVersion, setSwVersion] = useState<string>('…');
-    // available = 面板当前是否可用（非 prod 默认 true；prod 解锁后 true；强制关闭后 false）。
-    const [available, setAvailable] = useState<boolean>(() => isDevDebugAvailable());
+    // entryAvailable = DevDebug 入口当前是否可见（非 prod 默认 true；prod 手动显示后 true；强制关闭后 false）。
+    const [entryAvailable, setEntryAvailable] = useState<boolean>(() => isDevDebugEntryAvailable());
     const [hint, setHint] = useState<string | null>(null);
     const tapCountRef = useRef(0);
     const tapTimerRef = useRef<number | null>(null);
@@ -38,7 +38,7 @@ const VersionInfo: React.FC = () => {
         return () => { cancelled = true; };
     }, []);
 
-    useEffect(() => subscribeDevDebugAvailability(setAvailable), []);
+    useEffect(() => subscribeDevDebugEntryAvailability(setEntryAvailable), []);
 
     // 卸载时清掉计时器，避免内存泄漏 / 卸载后 setState。
     useEffect(() => () => {
@@ -53,7 +53,7 @@ const VersionInfo: React.FC = () => {
     };
 
     const handleVersionTap = () => {
-        if (available) return; // 面板已经开着（非 prod 或已解锁），不用再数
+        if (entryAvailable) return; // 入口已经可见（非 prod 或已手动显示），不用再数
         if (tapTimerRef.current) window.clearTimeout(tapTimerRef.current);
         tapCountRef.current += 1;
         const remaining = UNLOCK_TAP_COUNT - tapCountRef.current;
@@ -61,7 +61,7 @@ const VersionInfo: React.FC = () => {
         if (remaining <= 0) {
             tapCountRef.current = 0;
             unlockDevDebug();
-            showHint('🔧 调试面板已解锁（刷新即关闭）', 2600);
+            showHint('🔐 调试入口已显示，请输入密码', 2600);
             return;
         }
         if (remaining <= 2) showHint(`还差 ${remaining} 下…`, TAP_RESET_MS);

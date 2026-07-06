@@ -7,20 +7,25 @@ import {
     DEV_DEBUG_CAPTURE_CATEGORIES,
     formatDevDebugLog,
     isDevDebugAvailable,
+    isDevDebugEntryAvailable,
     readDevDebugFlags,
     readDevDebugLog,
     subscribeDevDebugAvailability,
+    subscribeDevDebugEntryAvailability,
     subscribeDevDebugLog,
     subscribeDevDebugFlags,
+    unlockDevDebugWithPassword,
     writeDevDebugFlags,
 } from '../utils/devDebug';
 import { BUILD_LABEL } from '../utils/buildInfo';
 import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition } from '../utils/devDebug';
+import { useOS } from '../context/OSContext';
 
 const FLOATING_BUTTON_SIZE = 44;
 const FLOATING_SAFE_MARGIN = 16;
 const PANEL_WIDTH = 342;
-const PANEL_ESTIMATED_HEIGHT = 392;
+const PANEL_ESTIMATED_HEIGHT = 520;
+const PASSWORD_PANEL_ESTIMATED_HEIGHT = 260;
 const DRAG_THRESHOLD_PX = 4;
 
 function getViewportSize() {
@@ -33,6 +38,15 @@ function getViewportSize() {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+function normalizeMoneyAmount(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.round(value * 100) / 100);
+}
+
+function formatMoneyAmount(value: number): string {
+    return normalizeMoneyAmount(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 }
 
 function clampFloatingPosition(position: DevDebugFloatingPosition): DevDebugFloatingPosition {
@@ -51,10 +65,10 @@ function getDefaultFloatingPosition(): DevDebugFloatingPosition {
     });
 }
 
-function getPanelPosition(position: DevDebugFloatingPosition): DevDebugFloatingPosition {
+function getPanelPosition(position: DevDebugFloatingPosition, estimatedHeight = PANEL_ESTIMATED_HEIGHT): DevDebugFloatingPosition {
     const viewport = getViewportSize();
     const panelWidth = Math.min(PANEL_WIDTH, viewport.width - FLOATING_SAFE_MARGIN * 2);
-    const panelHeight = Math.min(PANEL_ESTIMATED_HEIGHT, viewport.height - FLOATING_SAFE_MARGIN * 2);
+    const panelHeight = Math.min(estimatedHeight, viewport.height - FLOATING_SAFE_MARGIN * 2);
     return {
         x: clamp(position.x, FLOATING_SAFE_MARGIN, viewport.width - panelWidth - FLOATING_SAFE_MARGIN),
         y: clamp(position.y, FLOATING_SAFE_MARGIN, viewport.height - panelHeight - FLOATING_SAFE_MARGIN),
@@ -141,11 +155,16 @@ const LogActionButton: React.FC<{
 );
 
 const DevDebugPanel: React.FC = () => {
+    const { userProfile, adjustUserBalance, addToast } = useOS();
     const [open, setOpen] = useState(false);
+    const [entryAvailable, setEntryAvailable] = useState(() => isDevDebugEntryAvailable());
     const [available, setAvailable] = useState(() => isDevDebugAvailable());
     const [flags, setFlags] = useState<DevDebugFlags>(() => readDevDebugFlags());
     const [logCount, setLogCount] = useState(() => readDevDebugLog().length);
     const [copied, setCopied] = useState(false);
+    const [moneyInput, setMoneyInput] = useState('');
+    const [passwordInput, setPasswordInput] = useState('');
+    const [passwordError, setPasswordError] = useState<string | null>(null);
     // 位置不持久化：每次出现都回默认角，拖动只在本次会话内有效（prod 刷新=失效=类似关闭，没必要存）。
     const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
     const dragStateRef = useRef<{
@@ -158,10 +177,12 @@ const DevDebugPanel: React.FC = () => {
     const suppressClickRef = useRef(false);
 
     useEffect(() => subscribeDevDebugFlags(setFlags), []);
-    // 解锁时（false→true）从 storage 重读 flags：mount 时 isDevDebugAvailable() 为 false 的话
-    // useState 拿到的是 DEFAULT_DEV_DEBUG_FLAGS（canUseDevDebugStorage gate 不放行），
-    // 后续 unlock 不刷新就会用户改一个开关 → writeDevDebugFlags({...DEFAULT, [k]:v}) 覆盖掉
-    // localStorage 里其他配置。这里在变可用时再读一次兜底。
+    useEffect(() => subscribeDevDebugEntryAvailability((next) => {
+        setEntryAvailable(next);
+        if (!next) setOpen(false);
+    }), []);
+    // 密码通过时从 storage 重读 flags：未开锁阶段 readDevDebugFlags() 会被 gate 拦成 DEFAULT，
+    // 开锁后要拉一次真实存档，避免用户点一个开关就把旧配置覆盖掉。
     useEffect(() => subscribeDevDebugAvailability((next) => {
         setAvailable(next);
         if (next) setFlags(readDevDebugFlags());
@@ -173,10 +194,10 @@ const DevDebugPanel: React.FC = () => {
         setLogCount(readDevDebugLog().length); // open 时拉一次最新值
         return subscribeDevDebugLog((entries) => setLogCount(entries.length));
     }, [open]);
-    // 视口 resize / scroll 只在面板可见时跟随——!available 阶段不挂监听器，避免 mobile
+    // 视口 resize / scroll 只在入口可见时跟随——!entryAvailable 阶段不挂监听器，避免 mobile
     // 地址栏伸缩高频触发 setState 把整个 panel re-render（即使它返回 null）。
     useEffect(() => {
-        if (!available) return;
+        if (!entryAvailable) return;
         const clampToViewport = () => {
             setFloatingPosition((current) => {
                 const next = clampFloatingPosition(current);
@@ -192,7 +213,7 @@ const DevDebugPanel: React.FC = () => {
             window.visualViewport?.removeEventListener('resize', clampToViewport);
             window.visualViewport?.removeEventListener('scroll', clampToViewport);
         };
-    }, [available]);
+    }, [entryAvailable]);
 
     const activeCount = useMemo(
         () => (flags.skipPromptBuild ? 1 : 0)
@@ -204,6 +225,7 @@ const DevDebugPanel: React.FC = () => {
             + (flags.captureEnabled && flags.captureLogs.length > 0 && flags.exposeLogDetail ? 1 : 0),
         [flags],
     );
+    const walletBalance = normalizeMoneyAmount(userProfile.balance || 0);
     // 用 read-write-set 三步：从 localStorage 读 source of truth → 写回 → 同步 React state。
     // 不在 setFlags(updater) 里做副作用——updater 必须是纯函数（StrictMode / concurrent
     // 会让 updater 重跑），副作用塞进去会重复 dispatch / 重复写盘。这套写法同时绕开了 React
@@ -222,6 +244,43 @@ const DevDebugPanel: React.FC = () => {
                 : current.captureLogs.filter((item) => item !== category),
         };
         setFlags(writeDevDebugFlags(next));
+    };
+    const setWalletBalance = (target: number) => {
+        const nextBalance = normalizeMoneyAmount(target);
+        const delta = Math.round((nextBalance - walletBalance) * 100) / 100;
+        if (delta === 0) {
+            setMoneyInput(formatMoneyAmount(nextBalance));
+            addToast('钱包余额没有变化', 'info');
+            return;
+        }
+        const actualBalance = adjustUserBalance(delta, {
+            note: '开发调试自定义钱包余额',
+            category: 'dev-debug',
+            kind: 'dev-wallet-balance',
+            sourceApp: 'Dev Debug',
+            ledger: false,
+        });
+        setMoneyInput(formatMoneyAmount(actualBalance));
+        addToast(`钱包已设为 ¥${formatMoneyAmount(actualBalance)}`, 'success');
+    };
+    const applyMoneyInput = () => {
+        const raw = moneyInput.replace(/[¥￥,，\s]/g, '');
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            addToast('请输入不小于 0 的金额', 'error');
+            return;
+        }
+        setWalletBalance(parsed);
+    };
+    const adjustWalletBy = (delta: number) => setWalletBalance(walletBalance + delta);
+    const submitPassword = () => {
+        if (unlockDevDebugWithPassword(passwordInput)) {
+            setPasswordInput('');
+            setPasswordError(null);
+            setFlags(readDevDebugFlags());
+            return;
+        }
+        setPasswordError('密码不对');
     };
     const resetFlags = () => {
         // 重置 = 回默认（总开关关 + 清空勾选）+ 清空所有日志，比「全不勾」更彻底。
@@ -319,9 +378,9 @@ const DevDebugPanel: React.FC = () => {
         setOpen(true);
     };
 
-    if (!available) return null;
+    if (!entryAvailable) return null;
 
-    const panelPosition = getPanelPosition(floatingPosition);
+    const panelPosition = getPanelPosition(floatingPosition, available ? PANEL_ESTIMATED_HEIGHT : PASSWORD_PANEL_ESTIMATED_HEIGHT);
     // 面板最大高度按「实际可视高度」算（visualViewport，避开手机动态工具栏），跟定位口径一致，超出部分中间滚动。
     const panelMaxHeight = getViewportSize().height - FLOATING_SAFE_MARGIN * 2;
 
@@ -382,7 +441,51 @@ const DevDebugPanel: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-4">
+                    {!available ? (
+                        <>
+                            <div className="px-4 py-4">
+                                <div className="text-[13px] font-black text-white">输入密码打开开发者模式</div>
+                                <div className="mt-1 text-[11px] leading-relaxed text-white/55">开发工具会话级解锁，刷新后需要重新输入。</div>
+                                <div className="mt-3 flex gap-2">
+                                    <input
+                                        value={passwordInput}
+                                        onChange={(event) => {
+                                            setPasswordInput(event.target.value);
+                                            setPasswordError(null);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter') submitPassword();
+                                        }}
+                                        type="password"
+                                        inputMode="numeric"
+                                        autoFocus
+                                        placeholder="密码"
+                                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-[13px] font-bold text-white outline-none placeholder:text-white/35"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={submitPassword}
+                                        className="rounded-xl bg-amber-300 px-3 text-[12px] font-black text-black active:scale-95"
+                                    >
+                                        打开
+                                    </button>
+                                </div>
+                                {passwordError && <div className="mt-2 text-[11px] font-bold text-rose-300">{passwordError}</div>}
+                            </div>
+                            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-white/10 px-4 py-3">
+                                <button
+                                    type="button"
+                                    onClick={handleForceClose}
+                                    className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-[11px] font-bold text-white/70 active:scale-95"
+                                >
+                                    <Power size={13} weight="bold" />
+                                    关闭
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex-1 overflow-y-auto px-4">
                         <ToggleRow
                             title="跳过 Prompt Build"
                             detail="只发送聊天历史。"
@@ -396,6 +499,43 @@ const DevDebugPanel: React.FC = () => {
                             checked={flags.skipEmotionEval}
                             onChange={(checked) => updateFlag('skipEmotionEval', checked)}
                         />
+                        <div className="h-px bg-white/10" />
+                        <div className="py-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[13px] font-bold text-white">自定义钱包</div>
+                                    <div className="mt-1 text-[11px] leading-relaxed text-white/55">仅改余额，不写生活拟流水。</div>
+                                </div>
+                                <div className="shrink-0 rounded-full bg-emerald-400/15 px-2.5 py-1 text-[11px] font-black text-emerald-200">
+                                    ¥{formatMoneyAmount(walletBalance)}
+                                </div>
+                            </div>
+                            <div className="mt-3 flex gap-2">
+                                <input
+                                    value={moneyInput}
+                                    onChange={(event) => setMoneyInput(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') applyMoneyInput();
+                                    }}
+                                    inputMode="decimal"
+                                    placeholder={formatMoneyAmount(walletBalance)}
+                                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-[13px] font-bold text-white outline-none placeholder:text-white/35"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={applyMoneyInput}
+                                    className="rounded-xl bg-amber-300 px-3 text-[12px] font-black text-black active:scale-95"
+                                >
+                                    设为
+                                </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-4 gap-2">
+                                <button type="button" onClick={() => adjustWalletBy(1000)} className="rounded-full bg-white/10 px-2 py-1.5 text-[11px] font-bold text-white/75 active:scale-95">+1k</button>
+                                <button type="button" onClick={() => adjustWalletBy(10000)} className="rounded-full bg-white/10 px-2 py-1.5 text-[11px] font-bold text-white/75 active:scale-95">+1w</button>
+                                <button type="button" onClick={() => setWalletBalance(0)} className="rounded-full bg-white/10 px-2 py-1.5 text-[11px] font-bold text-white/75 active:scale-95">清零</button>
+                                <button type="button" onClick={() => setMoneyInput(formatMoneyAmount(walletBalance))} className="rounded-full bg-white/10 px-2 py-1.5 text-[11px] font-bold text-white/75 active:scale-95">填当前</button>
+                            </div>
+                        </div>
                         <div className="h-px bg-white/10" />
 
                         {/* 记录日志：总开关；打开后才露出 类型 / 记录完整 / 复制 / 下载 一整套 —— 关掉时整段收起。
@@ -467,6 +607,8 @@ const DevDebugPanel: React.FC = () => {
                             重置
                         </button>
                     </div>
+                        </>
+                    )}
                 </section>
             )}
         </div>

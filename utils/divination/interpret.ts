@@ -9,8 +9,9 @@
 import type { CharacterProfile, UserProfile } from '../../types';
 import type { ResolvedApi } from '../auxApi';
 import { llmComplete } from '../llmComplete';
+import { makeApiUsageMeta } from '../apiUsageCatalog';
 import { DIVINATION_KIND_ROLE, divinationInterpretSys, divinationInterpretUser } from '../theaterPrompts';
-import { buildFullCharacterSetting } from '../characterPromptProfile';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../characterPromptProfile';
 import type { DrawnTarot, DrawnLenormand, LiuyaoResult, MeihuaResult } from './engines';
 
 export type DivinationKind = 'tarot' | 'lenormand' | 'liuyao' | 'meihua';
@@ -72,11 +73,16 @@ export interface InterpretArgs {
 export async function interpretReading(args: InterpretArgs): Promise<string> {
     const { api, kind, readingText, question, char, userProfile, worldbookText, history, signal } = args;
     const userName = (userProfile?.name || '').trim() || '问卜者';
+    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` });
+    const roleSetting = [
+        buildFullCharacterSetting(char, { includeMemos: true }),
+        fullUserSetting,
+    ].filter(Boolean).join('\n\n');
     const conversational = !!(history && history.length);
     const sys = divinationInterpretSys({
         charName: char.name,
         kindRole: DIVINATION_KIND_ROLE[kind],
-        description: buildFullCharacterSetting(char, { includeMemos: true }),
+        description: roleSetting,
         userName,
         worldbookText,
         conversational,
@@ -91,6 +97,19 @@ export async function interpretReading(args: InterpretArgs): Promise<string> {
     // 调高 max_tokens + 自动续写：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断
     // （反馈：解牌只显示半句）。llmComplete 会在被 finish_reason='length' 截断、
     // 或代理不回 finish_reason 但正文停在半句上时自动接着写完（continueRounds 轮内）。
-    return (await llmComplete(api, messages, { temperature: 0.85, maxTokens: 4096, continueRounds: 3, signal }))
+    return (await llmComplete(api, messages, {
+        temperature: 0.85,
+        maxTokens: 4096,
+        continueRounds: 3,
+        signal,
+        presetScope: 'role.scene',
+        presetMacros: { charName: char.name, userName },
+        meta: makeApiUsageMeta('theater.divination', {
+            charId: char.id,
+            charName: char.name,
+            apiRole: api.apiRole || 'aux',
+            apiBinding: api.apiBinding || '占卜解牌',
+        }),
+    }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
 }

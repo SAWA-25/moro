@@ -470,6 +470,9 @@ export const clearOfflineSession = (charId: string): void => {
     try {
         localStorage.removeItem(sessionKey(charId));
         localStorage.removeItem(activeKey(charId));
+        // 结束线下后也清掉兜底 pending，避免旧自动开场在下次进聊天时把已结束的现场重新弹出来。
+        localStorage.removeItem(pendingKey(charId));
+        localStorage.removeItem(pendingScenarioKey(charId));
     } catch { /* ignore */ }
     emitOfflineSessionState(charId, false);
 };

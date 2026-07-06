@@ -27,6 +27,13 @@ export interface ForceReplyExtractResult {
   reason?: string;
 }
 
+export interface ForceReplyDialogVisibilityOptions {
+  activeApp?: string | null;
+  activeCharacterId?: string | null;
+  chatAppId?: string;
+  isLocked?: boolean;
+}
+
 const FORCE_REPLY_RE = /\[\[\s*FORCE_REPLY\s*[:：]?\s*([\s\S]*?)\]\]/gi;
 
 const cleanReason = (value: string | undefined): string | undefined => {
@@ -49,6 +56,16 @@ export function extractForceReplyDirective(text: string): ForceReplyExtractResul
     .trim();
 
   return { content, forceReply, reason };
+}
+
+export function shouldShowForceReplyDialog(
+  request: ForceReplyRequest | null | undefined,
+  options: ForceReplyDialogVisibilityOptions = {},
+): boolean {
+  if (!request?.charId) return false;
+  if (options.isLocked) return true;
+  const chatAppId = options.chatAppId || 'chat';
+  return !(options.activeApp === chatAppId && options.activeCharacterId === request.charId);
 }
 
 export function dispatchForceReplyRequest(detail: ForceReplyEventDetail): void {

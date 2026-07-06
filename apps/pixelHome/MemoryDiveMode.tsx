@@ -68,21 +68,10 @@ const MemoryDiveMode: React.FC<Props> = ({
   charId, charName, charProfile, userProfile, charSprite, playerSprite,
   userName, homeState, assets, apiConfig, onExit,
 }) => {
-  const [fullCharContext, setFullCharContext] = useState(() =>
-    ContextBuilder.buildCoreContext(charProfile, userProfile, true),
+  const buildMemoryDiveFullContext = useCallback(
+    () => ContextBuilder.buildFullCoreContext(charProfile, userProfile, true),
+    [charProfile, userProfile],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    ContextBuilder.buildFullCoreContext(charProfile, userProfile, true)
-      .then(context => {
-        if (!cancelled) setFullCharContext(context);
-      })
-      .catch(() => {
-        if (!cancelled) setFullCharContext(ContextBuilder.buildCoreContext(charProfile, userProfile, true));
-      });
-    return () => { cancelled = true; };
-  }, [charProfile, userProfile]);
 
   // ─── Session ─────────────────────────────────────────
   const [session, setSession] = useState<DiveSession | null>(null);
@@ -302,7 +291,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     try {
       const res = await planRoomVisit(
         {
-          charId, charName, room: s.currentRoom,
+          charId, charName, userName, room: s.currentRoom,
           beatCount: BEATS_PER_ROOM,
           visitedRooms: s.visitedRooms,
           recentDialogues: s.dialogues.slice(-10),
@@ -312,7 +301,7 @@ const MemoryDiveMode: React.FC<Props> = ({
           previousEndingLine: prevEndingLineRef.current,
           previousEndingSpeaker: prevEndingSpeakerRef.current,
         },
-        apiConfig, fullCharContext,
+        apiConfig, await buildMemoryDiveFullContext(),
       );
       scriptRef.current = res.script;
       beatIdxRef.current = 0;
@@ -336,7 +325,7 @@ const MemoryDiveMode: React.FC<Props> = ({
       setIsLoadingScript(false);
       setLoadError(err?.message || '生成失败');
     }
-  }, [charId, charName, apiConfig, fullCharContext, enqueueDialogues]);
+  }, [charId, charName, userName, apiConfig, buildMemoryDiveFullContext, enqueueDialogues]);
 
   // 后台静默预载"下一个房间"的剧本。播到 beat 1 左右触发——
   // 用户读对话时偷偷 generate，真正切换房间时能秒进。
@@ -360,7 +349,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     try {
       const res = await planRoomVisit(
         {
-          charId, charName, room: next,
+          charId, charName, userName, room: next,
           beatCount: BEATS_PER_ROOM,
           visitedRooms: s.visitedRooms,
           recentDialogues: s.dialogues.slice(-10),
@@ -370,7 +359,7 @@ const MemoryDiveMode: React.FC<Props> = ({
           previousEndingLine: prevEndingGuess,
           previousEndingSpeaker: 'narrator',
         },
-        apiConfig, fullCharContext,
+        apiConfig, await buildMemoryDiveFullContext(),
       );
       // 真正切过去时 currentRoom 才是 next，本地已改过的话要放弃
       if (sessionRef.current?.currentRoom !== s.currentRoom) return;
@@ -381,7 +370,7 @@ const MemoryDiveMode: React.FC<Props> = ({
     } finally {
       preloadingRef.current = false;
     }
-  }, [charId, charName, apiConfig, fullCharContext]);
+  }, [charId, charName, userName, apiConfig, buildMemoryDiveFullContext]);
 
   // 在当前房间播到一会之后触发预载（不要刚 load 完就调，让 beat 0 先展开）
   useEffect(() => {

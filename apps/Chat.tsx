@@ -3644,6 +3644,7 @@ ${recent || '（你们相处了很久）'}
                     ephemeralSystemPrompt:
                         '这是一条线下见面结束数分钟后的自然线上收尾。可以轻轻回味刚才线下现场的细节或情绪，但不要像任务汇报，也不要立刻推进新的现实事件。尤其是外卖、快递、电话、约定等，只有线下记录或聊天里明确写明已经发生，才能说成已经发生；如果只是正在等，就保持“还在等”的时间状态。',
                     apiUsageContext: { offlineFollowup: true },
+                    suppressAutoOffline: true,
                 });
             })();
         }, OFFLINE_FOLLOWUP_DELAY_MS);

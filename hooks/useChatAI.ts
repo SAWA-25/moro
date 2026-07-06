@@ -414,6 +414,8 @@ interface TriggerAIOptions {
     targetUserMessage?: Pick<Message, 'id' | 'content' | 'timestamp'>;
     /** One-shot guard for special flows that must not persist roleplay/meta analysis as chat bubbles. */
     roleplayMetaLeakGuard?: boolean;
+    /** Strip [[OFFLINE_START]] but do not open a new offline modal for this one-shot generation. */
+    suppressAutoOffline?: boolean;
 }
 
 export const useChatAI = ({
@@ -1027,6 +1029,7 @@ export const useChatAI = ({
                     metadata: {
                         source: 'moro-chat',
                         charId: char.id,
+                        ...(options?.suppressAutoOffline ? { suppressAutoOffline: true } : {}),
                         ...(targetReplyTo ? { queuedReplyTarget: targetReplyTo } : {}),
                     },
                     // 情绪评估: worker 跑完主回复后用这套心情 API 跑 eval, 推 emotion_update 回来 (见 worker 包装层).
@@ -1307,6 +1310,7 @@ export const useChatAI = ({
                 emptyReplyFallback: options?.emptyReplyFallback,
                 defaultReplyTo: targetReplyTo,
                 skipTypingDelay: streamedOk,
+                suppressAutoOffline: !!options?.suppressAutoOffline,
             });
 
             // 灵动岛 / 未读数联动：本地 fetch 路径此前不发任何事件——用户在生成期间离开

@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense, useRef } from 'react';
 import { BookOpenText, Megaphone, X } from '@phosphor-icons/react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
-import type { ForceReplyRequest } from '../utils/forceReply';
+import { shouldShowForceReplyDialog, type ForceReplyRequest } from '../utils/forceReply';
 import StatusBar from './os/StatusBar';
 import DynamicIsland from './os/DynamicIsland';
 import FloatingQuickMenu from './os/FloatingQuickMenu';
@@ -987,6 +987,12 @@ const PhoneShell: React.FC = () => {
   }
 
   const bgImageValue = toWallpaperBackground(theme.wallpaper);
+  const forceReplyDialogRequest = shouldShowForceReplyDialog(forceReplyRequest, {
+    activeApp,
+    activeCharacterId,
+    chatAppId: AppID.Chat,
+    isLocked,
+  }) ? forceReplyRequest : null;
 
   if (isLocked) {
     // 锁屏抽成独立组件：角色最新消息通知卡（iOS 风格弹出）+ 密码解锁（默认 0103，
@@ -995,7 +1001,7 @@ const PhoneShell: React.FC = () => {
     return <>
       <LockScreen />
       <IncomingCallOverlay />
-      <ForceReplyDialog request={forceReplyRequest} onReply={openForceReplyRequest} />
+      <ForceReplyDialog request={forceReplyDialogRequest} onReply={openForceReplyRequest} />
     </>;
   }
 
@@ -1279,7 +1285,7 @@ const PhoneShell: React.FC = () => {
          />
        )}
 
-       <ForceReplyDialog request={forceReplyRequest} onReply={openForceReplyRequest} />
+       <ForceReplyDialog request={forceReplyDialogRequest} onReply={openForceReplyRequest} />
     </div>
   );
 };

@@ -105,6 +105,8 @@ export interface DiveSession {
 export interface DiveLLMRequest {
   charId: string;
   charName: string;
+  /** 当前用户名，仅用于活字盘宏替换。 */
+  userName?: string;
   room: MemoryRoom;
   slotId?: string;
   slotName?: string;

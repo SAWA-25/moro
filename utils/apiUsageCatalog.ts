@@ -108,6 +108,7 @@ export const API_USAGE_CATALOG = [
     feature('memoryPalace.links', AppID.MemoryPalace, '回忆标本馆', '后台整理', '关联分析', ['回忆标本馆', '后台整理', '关联分析'], 'aux'),
     feature('memoryPalace.cognition', AppID.MemoryPalace, '回忆标本馆', '后台整理', '认知消化', ['回忆标本馆', '后台整理', '认知消化'], 'aux'),
     feature('memoryPalace.personality', AppID.MemoryPalace, '回忆标本馆', '后台整理', '人格检测', ['回忆标本馆', '后台整理', '人格检测'], 'aux'),
+    feature('memoryPalace.dreamDigestion', AppID.MemoryPalace, '回忆标本馆', '梦境消化', '整理梦境记忆', ['回忆标本馆', '后台整理', '梦境消化'], 'aux'),
     feature('memoryPalace.groupExtraction', AppID.MemoryPalace, '回忆标本馆', '群聊记忆', '群聊记忆处理', ['回忆标本馆', '群聊记忆'], 'aux'),
     feature('memoryPalace.migration', AppID.MemoryPalace, '回忆标本馆', '导入旧记忆', '重处理旧记忆', ['回忆标本馆', '设置', '导入旧记忆'], 'aux'),
 

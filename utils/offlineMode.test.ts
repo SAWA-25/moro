@@ -4,6 +4,8 @@ import { DB } from './db';
 import {
   clearOfflineSession,
   commitOfflineSessionToContext,
+  consumeOfflinePending,
+  consumeOfflinePendingScenario,
   DEFAULT_OFFLINE_POV,
   generateOfflineOpening,
   hasOfflineSession,
@@ -14,6 +16,7 @@ import {
   prepareOfflineGeneratedText,
   saveOfflineSession,
   saveOfflineWordLimit,
+  setOfflinePending,
   type OfflineEntry,
 } from './offlineMode';
 
@@ -45,6 +48,17 @@ describe('offline mode draft sessions', () => {
     expect(hasOfflineSession('char-1')).toBe(false);
     expect(loadOfflineSession('char-1')).toEqual([]);
     expect(loadOfflineSession('char-2')).toEqual([{ role: 'scene', text: '另一处灯光。', at: 4 }]);
+  });
+
+  it('clears pending auto-start markers when ending a draft session', () => {
+    setOfflinePending('char-1', '旧的见面开场');
+    saveOfflineSession('char-1', entries);
+
+    clearOfflineSession('char-1');
+
+    expect(hasOfflineSession('char-1')).toBe(false);
+    expect(consumeOfflinePending('char-1')).toBe(false);
+    expect(consumeOfflinePendingScenario('char-1')).toBeUndefined();
   });
 
   it('treats empty or missing draft data as no active session', () => {

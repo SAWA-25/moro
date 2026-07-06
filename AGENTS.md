@@ -6,7 +6,7 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
-> 更新公告同步约定：任何代码、文案、配置、数据、测试、构建脚本或文档改动，都必须在 `apps/manual/manualData.ts` 的 `MANUAL_UPDATE_NOTICES` 追加/更新一条面向普通用户的更新公告；同一次改动可合并成一条公告，但不能漏记。公告只写用户能理解的变化、影响和注意事项，不写开发步骤、commit 号或内部实现细节。新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，还必须同步更新同文件里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`，讲清楚入口、用途、常用设置和注意事项。
+> 更新公告同步约定：任何代码、文案、配置、数据、测试、构建脚本或文档改动，都必须在 `apps/manual/manualData.ts` 的 `MANUAL_UPDATE_NOTICES` 追加/更新一条面向普通用户的更新公告；同一次改动可合并成一条公告，但不能漏记。公告只写用户能理解的变化、影响和注意事项，不写开发步骤、commit 号或内部实现细节。**例外：开发者模式 / Dev Debug / 仅开发调试可见的内部工具改动，不需要写面向普通用户的更新公告。**新增、改名、合并或明显调整任何用户可见 App / 桌面软件 / 子功能入口时，还必须同步更新同文件里的 `MANUAL_ENTRIES` 和 `MANUAL_DESTINATIONS`，讲清楚入口、用途、常用设置和注意事项。
 
 > 完整角色 / 用户设定调用约定：凡是新增或改动会让模型扮演、判断、代入、建议、生成正式角色行为/口吻/关系/记忆的功能，都必须给 LLM 完整角色设定和完整用户设定，不能只传 `description`、`systemPrompt`、`worldview`、`user.bio`、短简介、摘要或截断版。优先走已有统一入口：聊天/主动消息/页外等完整消息流用 `buildChatRequestPayload`；单 prompt 角色任务用 `ContextBuilder.buildFullCoreContext`；确实不需要聊天历史的结构化任务至少拼入 `buildFullCharacterSetting(..., { includeMemos: true })` 和 `buildFullActiveUserSetting` / `buildFullUserSetting`。预设总开关、作用范围或当前预设没打开时，可以回到功能默认 prompt，但默认 prompt 仍必须调用完整角色设定和完整用户设定；活字盘 marker 关闭只能影响预设骨架落点，不能让角色卡/用户设定退化成摘要。正式角色相关世界书必须按 `WorldbookRuntime` 的整书/条目开关、挂载、全局、关键词和 @Depth 规则生效。若某个 LLM 入口刻意不接正式角色设定（例如翻译、模型连接测试、独立桌宠、随机路人 NPC、店铺/骑手/客服等非正式角色），代码注释或文档里要说明它不属于正式角色卡范围；否则一律按完整设定处理，并补对应测试或静态断言。
 

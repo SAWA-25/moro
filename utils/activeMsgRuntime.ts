@@ -298,6 +298,7 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     // 老 worker (无 messageIndex/totalMessages 字段) ?? 0 fallback, 0===0 也算 last.
     directives: isLastChunk(message) ? extractDirectives(message) : [],
     reasoningContent,
+    suppressAutoOffline: message.metadata?.suppressAutoOffline === true,
   });
 
   if (visibleSavedCount > 0 && pendingProactiveReplyIds.length) {

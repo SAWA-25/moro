@@ -32,6 +32,7 @@ import {
 import {
     BANK_LIFE_VERSION,
     BANK_SHOP_CLOSE_HOUR,
+    BANK_SHOP_DAILY_RESET_HOUR,
     BANK_OPEN_BRANCH_ENERGY_COST,
     BUSINESS_TEMPLATES,
     COMPANY_DIRECTIONS,
@@ -39,6 +40,7 @@ import {
     JOB_CATEGORIES,
     JOB_POSTINGS,
     LOAN_PRODUCTS,
+    bankShopBusinessDateStr,
     createDefaultBankLifeState,
     advanceJobApplicationStageWithAi,
     appendBankActionRecord,
@@ -49,7 +51,9 @@ import {
     applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
-    canCloseBankShopAt,
+    getBankShopCloseBlockReason,
+    canOpenBankShopForDate,
+    canSettleBankShopForDate,
     claimBankShopDailyReward,
     computeCreditProfile,
     createBankActionResult,
@@ -61,10 +65,13 @@ import {
     loanTotal,
     mergeAiJobPostings,
     migrateBankLifeState,
+    markBankShopBusinessOpened,
+    markBankShopBusinessSettled,
     movingAverage,
     getDefaultBankBranchName,
     openBankShopBranch,
     openLifeShop,
+    prepareBankStateForSave,
     repayLoan,
     sellStock,
     SHOP_UNLOCK_COST,
@@ -137,8 +144,7 @@ const DEAD_IMG_HOSTS = ['sharkpan.xyz'];
 const isDeadImg = (u?: string | null): boolean =>
     typeof u === 'string' && DEAD_IMG_HOSTS.some(h => u.includes(h));
 
-// 营业冷却：每 3 小时可「营业」一轮赚一笔进钱包
-const BUSINESS_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+// 开门营业消耗当前店精力；打烊结算同一人生拟日期只允许一次。
 const BUSINESS_ENERGY_COST = 12;
 
 const cloneDollhouseState = (state: DollhouseState): DollhouseState => ({
@@ -379,7 +385,7 @@ const BankApp: React.FC = () => {
     const [isRefreshingGuestbook, setIsRefreshingGuestbook] = useState(false);
 
     const normalizeBankStateForSave = (next: BankFullState): BankFullState =>
-        syncActiveBranchFromMirror(migrateBankLifeState(next));
+        prepareBankStateForSave(next);
 
     const commitBankStateSync = (next: BankFullState): BankFullState => {
         const normalized = normalizeBankStateForSave(next);
@@ -1216,17 +1222,7 @@ const BankApp: React.FC = () => {
         showActionResult(actionResult);
     };
 
-    const handleCloseShop = async () => {
-        const cur = migrateBankLifeState(stateRef.current);
-        if (cur.shop.isBusinessOpen !== true) {
-            addToast('店铺已经打烊了', 'info');
-            return;
-        }
-        const now = Date.now();
-        if (!canCloseBankShopAt(now)) {
-            addToast(`${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊，先继续营业到傍晚吧`, 'info');
-            return;
-        }
+    const closeShopWithoutBusinessSettlement = async (cur: BankFullState, now: number) => {
         const idle = accrueShopIdle(cur.shop, now);
         const pending = Math.floor(idle.pendingRevenue);
         const shopName = cur.life?.shopBusinessName || cur.shop.shopName || '小店';
@@ -1250,6 +1246,7 @@ const BankApp: React.FC = () => {
             shop: {
                 ...cur.shop,
                 isBusinessOpen: false,
+                openedBusinessDateStr: undefined,
                 pendingRevenue: idle.pendingRevenue,
                 lastAccrualAt: now,
             },
@@ -2075,24 +2072,18 @@ ${JSON.stringify(list, null, 2)}
         }
     };
 
-    // --- 营业：模拟一波顾客逐单消费，结算收入进钱包 + 产生评价（与记账无关） ---
-    const handleOperate = async () => {
+    // --- 开门营业：只切换到营业中，不在这里结算收入 ---
+    const handleOpenShop = async () => {
         const cur = migrateBankLifeState(stateRef.current);
         const lifeState = cur.life!;
-        if (cur.shop.isBusinessOpen === true) {
-            addToast('店铺正在营业中，先打烊再开下一轮', 'info');
-            return;
-        }
-        const last = cur.shop.lastBusinessAt || 0;
-        const elapsed = Date.now() - last;
-        if (elapsed < BUSINESS_COOLDOWN_MS) {
-            const mins = Math.ceil((BUSINESS_COOLDOWN_MS - elapsed) / 60000);
-            const txt = mins >= 60 ? `${Math.floor(mins / 60)} 小时 ${mins % 60} 分` : `${mins} 分钟`;
-            addToast(`店员们还在歇着，${txt}后再开门吧`, 'info');
+        const now = Date.now();
+        const businessDateStr = bankShopBusinessDateStr(now);
+        if (!canOpenBankShopForDate(cur.shop, now)) {
+            addToast(cur.shop.isBusinessOpen === true ? '店铺已经在营业中' : `未到每日刷新时间，凌晨 ${BANK_SHOP_DAILY_RESET_HOUR}:00 后再营业`, 'info');
             return;
         }
         if ((cur.shop.actionPoints || 0) < BUSINESS_ENERGY_COST) {
-            addToast(`当前店精力不够（营业需要 ${BUSINESS_ENERGY_COST} 点）`, 'error');
+            addToast(`当前店精力不够（开门营业需要 ${BUSINESS_ENERGY_COST} 点）`, 'error');
             return;
         }
         const staff = cur.shop.staff;
@@ -2109,13 +2100,81 @@ ${JSON.stringify(list, null, 2)}
             addToast('菜单空空，先去「经营」解锁可卖的商品', 'info');
             return;
         }
-
-        // 库存：取一份可变副本，营业卖出逐个扣减。货架全空就别开门（不消耗营业冷却），先去进货。
         const stockLeft: Record<string, number> = { ...(cur.shop.stock || {}) };
         const lifeStockLeft: Record<string, number> = Object.fromEntries((lifeState.shopProducts || []).map(p => [p.id, p.stock]));
         const availableStock = products.reduce((s, p) => s + Math.max(0, usingLifeProducts ? (lifeStockLeft[p.id] || 0) : (stockLeft[p.id] || 0)), 0);
         if (availableStock === 0) {
             addToast('货架都空了，先去「经营」里进货，再开门营业', 'info');
+            return;
+        }
+
+        const openedShop = markBankShopBusinessOpened({
+            ...cur.shop,
+            actionPoints: Math.max(0, (cur.shop.actionPoints || 0) - BUSINESS_ENERGY_COST),
+        }, now, now);
+        const shopName = lifeState.shopBusinessName || cur.shop.shopName || '小店';
+        const actionResult = createBankActionResult({
+            category: 'shop',
+            kind: 'shop-open',
+            title: '店铺开始营业',
+            summary: `${shopName} 已开门营业；18:00 后点“打烊结算”才会生成本轮收入。`,
+            tone: 'info',
+            metrics: [
+                { label: '状态', value: '营业中', tone: 'good' },
+                { label: '可售库存', value: `${availableStock}` },
+                { label: '消耗精力', value: `${BUSINESS_ENERGY_COST}`, tone: 'warn' },
+                { label: '营业日', value: businessDateStr },
+            ],
+            nextActions: [`到 ${String(BANK_SHOP_CLOSE_HOUR)}:00 后打烊结算`, '营业中会继续累计待收营业额'],
+            payload: { dateStr: lifeState.dateStr, businessDateStr, availableStock },
+        });
+        await commitBankState({ ...cur, shop: openedShop, life: appendBankActionRecord(lifeState, actionResult) });
+        addToast('店铺开始营业，18:00 后再打烊结算', 'success');
+        showActionResult(actionResult);
+    };
+
+    // --- 打烊结算：模拟一波顾客逐单消费，结算收入进钱包 + 产生评价（与记账无关） ---
+    const handleCloseShop = async () => {
+        let cur = migrateBankLifeState(stateRef.current);
+        const lifeState = cur.life!;
+        const now = Date.now();
+        const closeBlockReason = getBankShopCloseBlockReason(cur.shop, now);
+        if (closeBlockReason === 'tooEarly') {
+            addToast(`${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊，先继续营业到傍晚吧`, 'info');
+            return;
+        }
+        if (closeBlockReason === 'alreadyClosed') {
+            addToast('店铺已经打烊了', 'info');
+            return;
+        }
+        const businessDateStr = bankShopBusinessDateStr(now);
+        if (!canSettleBankShopForDate(cur.shop, now)) {
+            await closeShopWithoutBusinessSettlement(cur, now);
+            return;
+        }
+        const idle = accrueShopIdle(cur.shop, now);
+        cur = { ...cur, shop: { ...cur.shop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+        const staff = cur.shop.staff;
+        if (staff.length === 0) {
+            await closeShopWithoutBusinessSettlement(cur, now);
+            return;
+        }
+        const lifeProducts = (lifeState.shopProducts || []).filter(p => p.stock > 0 || p.stock === 0);
+        const products = lifeProducts.length
+            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: '🛍️', price: p.price, appeal: p.appeal, stock: p.stock }))
+            : SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id)).map(r => ({ ...r, price: recipePrice(r), stock: cur.shop.stock?.[r.id] || 0 }));
+        const usingLifeProducts = lifeProducts.length > 0;
+        if (products.length === 0) {
+            await closeShopWithoutBusinessSettlement(cur, now);
+            return;
+        }
+
+        // 库存：取一份可变副本，打烊结算卖出逐个扣减。
+        const stockLeft: Record<string, number> = { ...(cur.shop.stock || {}) };
+        const lifeStockLeft: Record<string, number> = Object.fromEntries((lifeState.shopProducts || []).map(p => [p.id, p.stock]));
+        const availableStock = products.reduce((s, p) => s + Math.max(0, usingLifeProducts ? (lifeStockLeft[p.id] || 0) : (stockLeft[p.id] || 0)), 0);
+        if (availableStock === 0) {
+            await closeShopWithoutBusinessSettlement(cur, now);
             return;
         }
 
@@ -2239,8 +2298,8 @@ ${JSON.stringify(list, null, 2)}
         const actionResult = createBankActionResult({
             category: 'shop',
             kind: 'shop-business',
-            title: '本轮营业结算',
-            summary: `${lifeState.shopBusinessName || cur.shop.shopName} 接待了 ${customerCount} 位客人，收入 ¥${total}。`,
+            title: '本轮打烊结算',
+            summary: `${lifeState.shopBusinessName || cur.shop.shopName} 打烊了，本轮接待 ${customerCount} 位客人，收入 ¥${total}。`,
             tone: mishaps > 0 || lostSales > 0 ? 'warn' : 'good',
             amount: total,
             riskTags: [
@@ -2255,38 +2314,34 @@ ${JSON.stringify(list, null, 2)}
                 { label: '差错', value: `${mishaps}`, tone: mishaps > 0 ? 'warn' : 'good' },
                 { label: '流失', value: `${lostSales}`, tone: lostSales > 0 ? 'warn' : 'good' },
                 { label: '天气', value: weather.label },
-                { label: '消耗精力', value: `${BUSINESS_ENERGY_COST}`, tone: 'warn' },
+                { label: '开门已扣精力', value: `${BUSINESS_ENERGY_COST}`, tone: 'warn' },
             ],
             nextActions: lostSales > 0 ? ['先补货再营业'] : ['查看顾客评价'],
-            payload: { total, base, tips, customerCount, soldItems, lostSales, mishaps },
+            payload: { total, base, tips, customerCount, soldItems, lostSales, mishaps, businessDateStr },
         });
-        const now = Date.now();
         const newState: BankFullState = {
             ...cur,
-            shop: {
+            shop: markBankShopBusinessSettled({
                 ...cur.shop,
                 staff: updatedStaff,
-                actionPoints: Math.max(0, (cur.shop.actionPoints || 0) - BUSINESS_ENERGY_COST),
-                lastBusinessAt: now,
-                lastAccrualAt: now,
-                isBusinessOpen: true,
                 totalRevenue: (cur.shop.totalRevenue || 0) + total,
                 reviews: mergedReviews,
                 stock: stockLeft,
                 regulars: prunedRegulars,
-            },
+            }, businessDateStr, now),
             life: appendBankActionRecord({
                 ...lifeState,
                 shopProducts: usingLifeProducts
                     ? (lifeState.shopProducts || []).map(p => ({ ...p, stock: Math.max(0, lifeStockLeft[p.id] ?? p.stock) }))
                     : lifeState.shopProducts,
                 shopEvents: usingLifeProducts
-                    ? [{ id: `shop-event-${Date.now()}`, dateStr: lifeState.dateStr, title: '今日营业', detail: `${lifeState.shopBusinessName || cur.shop.shopName} 接待了 ${customerCount} 位客人，收入 ¥${total}。`, tone: 'good' as const }, ...(lifeState.shopEvents || [])].slice(0, 20)
+                    ? [{ id: `shop-event-${Date.now()}`, dateStr: lifeState.dateStr, title: '打烊结算', detail: `${lifeState.shopBusinessName || cur.shop.shopName} 本轮接待 ${customerCount} 位客人，收入 ¥${total}。`, tone: 'good' as const }, ...(lifeState.shopEvents || [])].slice(0, 20)
                     : lifeState.shopEvents,
             }, actionResult),
         };
         await commitBankState(newState);
-        adjustUserBalance(total, { note: '店铺营业收入', category: 'shop', kind: 'shop-business', sourceApp: '人生拟' });
+        adjustUserBalance(total, { note: '店铺打烊结算收入', category: 'shop', kind: 'shop-business', sourceApp: '人生拟' });
+        addToast(`打烊结算完成 +${cur.config.currencySymbol}${total}`, 'success');
 
         for (const ev of loyaltyEvents.filter(e => e.tier === 'vip')) {
             addToast(`👑 ${ev.name} 成了你店里的 VIP！`, 'success');
@@ -2764,7 +2819,16 @@ ${JSON.stringify(list, null, 2)}
 
         const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
         const shopIsOpen = state.shop.isBusinessOpen === true;
-        const closeShopAllowed = canCloseBankShopAt(shopClockNow);
+        const currentBusinessDateStr = bankShopBusinessDateStr(shopClockNow);
+        const canOpenShopToday = canOpenBankShopForDate(state.shop, shopClockNow);
+        const shopSettledToday = state.shop.lastBusinessDateStr === currentBusinessDateStr;
+        const closeShopBlockReason = getBankShopCloseBlockReason(state.shop, shopClockNow);
+        const closeShopBlocked = closeShopBlockReason !== undefined;
+        const closeShopTitle = closeShopBlockReason === 'tooEarly'
+            ? `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊结算`
+            : closeShopBlockReason === 'alreadyClosed'
+                ? '店铺已经打烊'
+                : '打烊结算';
         const shopActionButtonStyle = (bg: string, muted: boolean): React.CSSProperties => ({
             ...smallBtn(muted ? '#f4f4f5' : bg, muted ? '#8a8790' : '#fff'),
             opacity: muted ? 0.72 : 1,
@@ -2779,29 +2843,29 @@ ${JSON.stringify(list, null, 2)}
                                 <span className="w-12 h-12 rounded-[18px] flex items-center justify-center text-[24px]" style={{ background: '#faf8f5' }}>{tpl.icon}</span>
                                 <div className="min-w-0">
                                     <div className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.shopBusinessName || state.shop.shopName || tpl.name}</div>
-                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopIsOpen ? '营业中' : '已打烊'} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
+                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopIsOpen ? '营业中' : shopSettledToday ? `未到${BANK_SHOP_DAILY_RESET_HOUR}:00不能营业` : '已打烊'} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
                                 </div>
                             </div>
                             <div className="shrink-0 flex items-center gap-1.5">
                                 <button
                                     type="button"
-                                    onClick={handleOperate}
-                                    aria-disabled={shopIsOpen}
-                                    title={shopIsOpen ? '店铺正在营业中' : '开始营业'}
+                                    onClick={handleOpenShop}
+                                    aria-disabled={!canOpenShopToday}
+                                    title={shopIsOpen ? '店铺正在营业中' : shopSettledToday ? `未到每日刷新时间，凌晨 ${BANK_SHOP_DAILY_RESET_HOUR}:00 后再营业` : '开门营业'}
                                     className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
-                                    style={shopActionButtonStyle('#16a34a', shopIsOpen)}
+                                    style={shopActionButtonStyle('#16a34a', !canOpenShopToday)}
                                 >
-                                    营业
+                                    {shopSettledToday && !shopIsOpen ? '不能营业' : '营业'}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={handleCloseShop}
-                                    aria-disabled={!shopIsOpen || !closeShopAllowed}
-                                    title={!shopIsOpen ? '店铺已经打烊' : closeShopAllowed ? '打烊' : `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊`}
+                                    aria-disabled={closeShopBlocked}
+                                    title={closeShopTitle}
                                     className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
-                                    style={shopActionButtonStyle('#f43f5e', !shopIsOpen || !closeShopAllowed)}
+                                    style={shopActionButtonStyle('#f43f5e', closeShopBlocked)}
                                 >
-                                    打烊
+                                    {closeShopBlockReason === 'tooEarly' ? '不能打烊' : '打烊'}
                                 </button>
                             </div>
                         </div>
@@ -2814,10 +2878,12 @@ ${JSON.stringify(list, null, 2)}
                             {shopBranches.map(branch => {
                                 const branchTpl = BUSINESS_TEMPLATES.find(b => b.id === branch.businessTypeId) || BUSINESS_TEMPLATES[0];
                                 const active = branch.id === activeShopId;
+                                const branchSettledToday = branch.shop.lastBusinessDateStr === currentBusinessDateStr;
+                                const branchStatus = branch.shop.isBusinessOpen ? '营业中' : branchSettledToday ? `未到${BANK_SHOP_DAILY_RESET_HOUR}:00不能营业` : '已打烊';
                                 return (
                                     <button key={branch.id} onClick={() => { void handleSwitchBankShop(branch.id); }} className="shrink-0 px-3 py-2 text-left active:scale-95 transition-transform" style={chipStyle(active)}>
                                         <span className="text-[12px] font-black">{branchTpl.icon} {branch.shop.shopName}</span>
-                                        <span className="block text-[10px] opacity-75">{branch.shop.isBusinessOpen ? '营业中' : '已打烊'} · Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
+                                        <span className="block text-[10px] opacity-75">{branchStatus} · Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
                                     </button>
                                 );
                             })}
@@ -3265,6 +3331,17 @@ ${JSON.stringify(list, null, 2)}
         return null;
     };
 
+    const headerBusinessDateStr = bankShopBusinessDateStr(shopClockNow);
+    const headerShopCanOpen = life.shopUnlocked && canOpenBankShopForDate(state.shop, shopClockNow);
+    const headerShopSettledToday = state.shop.lastBusinessDateStr === headerBusinessDateStr;
+    const headerShopTitle = !life.shopUnlocked
+        ? '先解锁店铺'
+        : state.shop.isBusinessOpen === true
+            ? '店铺正在营业中'
+            : headerShopSettledToday
+                ? `未到每日刷新时间，凌晨 ${BANK_SHOP_DAILY_RESET_HOUR}:00 后再营业`
+                : '开门营业';
+
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAGE_BG, color: INK }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-64 z-0" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.10), transparent 70%)' }} />
@@ -3293,12 +3370,19 @@ ${JSON.stringify(list, null, 2)}
                             </div>
                         </div>
                         <button
-                            onClick={handleOperate}
-                            disabled={!life.shopUnlocked}
-                            className="hidden sm:inline-flex px-3 py-2 text-[12px] font-black active:scale-95 transition-transform items-center gap-1 disabled:opacity-50"
-                            style={smallBtn(life.shopUnlocked ? '#16a34a' : '#e5e7eb', life.shopUnlocked ? '#fff' : INK_SOFT)}
+                            onClick={() => {
+                                if (!life.shopUnlocked) {
+                                    addToast('先解锁店铺，再开门营业', 'info');
+                                    return;
+                                }
+                                void handleOpenShop();
+                            }}
+                            aria-disabled={!headerShopCanOpen}
+                            title={headerShopTitle}
+                            className="hidden sm:inline-flex px-3 py-2 text-[12px] font-black active:scale-95 transition-transform items-center gap-1"
+                            style={smallBtn(headerShopCanOpen ? '#16a34a' : '#e5e7eb', headerShopCanOpen ? '#fff' : INK_SOFT)}
                         >
-                            营业
+                            {life.shopUnlocked && headerShopSettledToday && state.shop.isBusinessOpen !== true ? '不能营业' : '营业'}
                         </button>
                         <button
                             onClick={() => setShowAddTxModal(true)}

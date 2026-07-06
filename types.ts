@@ -1878,8 +1878,12 @@ export interface BankShopState {
     };
     guestbook?: BankGuestbookItem[];
     dollhouse?: DollhouseState;
-    /** 上次「营业」结算的时间戳（用于营业冷却） */
+    /** 上次完成营业结算的时间戳（展示 / 迁移兼容用）。 */
     lastBusinessAt?: number;
+    /** 当前开门营业对应的人生拟日期；打烊结算必须来自这轮开门。 */
+    openedBusinessDateStr?: string;
+    /** 上次完成打烊结算的人生拟日期；同一家店同一天只允许结算一次。 */
+    lastBusinessDateStr?: string;
     /** 店铺是否正在开门营业；打烊后不会继续累计挂机营业额。 */
     isBusinessOpen?: boolean;
     /** 店铺累计营业额（进过钱包的总收入，仅作展示统计） */

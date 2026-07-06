@@ -43,10 +43,77 @@ export const BANK_OPEN_BRANCH_ENERGY_COST = 30;
 export const INITIAL_HEADQUARTERS_ENERGY = 80;
 export const COMPANY_FOUND_COST = 100000;
 export const BANK_SHOP_CLOSE_HOUR = 18;
+export const BANK_SHOP_DAILY_RESET_HOUR = 4;
 
 export function canCloseBankShopAt(date: Date | number = new Date()): boolean {
     const d = date instanceof Date ? date : new Date(date);
     return d.getHours() >= BANK_SHOP_CLOSE_HOUR;
+}
+
+export type BankShopCloseBlockReason = 'tooEarly' | 'alreadyClosed';
+
+export function getBankShopCloseBlockReason(shop: Pick<BankShopState, 'isBusinessOpen'>, date: Date | number = new Date()): BankShopCloseBlockReason | undefined {
+    if (!canCloseBankShopAt(date)) return 'tooEarly';
+    if (shop.isBusinessOpen !== true) return 'alreadyClosed';
+    return undefined;
+}
+
+type BankShopBusinessGateState = Pick<BankShopState, 'isBusinessOpen' | 'openedBusinessDateStr' | 'lastBusinessDateStr'>;
+type BankShopBusinessDateInput = Date | number | string;
+
+const pad2 = (n: number): string => n < 10 ? `0${n}` : `${n}`;
+
+const localDateStr = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = pad2(date.getMonth() + 1);
+    const d = pad2(date.getDate());
+    return `${y}-${m}-${d}`;
+};
+
+export function bankShopBusinessDateStr(date: Date | number = new Date()): string {
+    const d = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+    if (!isFinite(d.getTime())) return todayStr();
+    if (d.getHours() < BANK_SHOP_DAILY_RESET_HOUR) d.setDate(d.getDate() - 1);
+    return localDateStr(d);
+}
+
+const normalizeBusinessDateStr = (date: BankShopBusinessDateInput = new Date()): string => {
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) return date.slice(0, 10);
+    return bankShopBusinessDateStr(date instanceof Date || typeof date === 'number' ? date : new Date(date));
+};
+
+export function canOpenBankShopForDate(shop: BankShopBusinessGateState, date: BankShopBusinessDateInput = new Date()): boolean {
+    const day = normalizeBusinessDateStr(date);
+    return shop.isBusinessOpen !== true && shop.lastBusinessDateStr !== day;
+}
+
+export function canSettleBankShopForDate(shop: BankShopBusinessGateState, date: BankShopBusinessDateInput = new Date()): boolean {
+    const day = normalizeBusinessDateStr(date);
+    return shop.isBusinessOpen === true
+        && shop.openedBusinessDateStr === day
+        && shop.lastBusinessDateStr !== day;
+}
+
+export function markBankShopBusinessOpened<T extends BankShopState>(shop: T, date: BankShopBusinessDateInput = new Date(), now = Date.now()): T {
+    const day = normalizeBusinessDateStr(date);
+    return {
+        ...shop,
+        isBusinessOpen: true,
+        openedBusinessDateStr: day,
+        lastAccrualAt: now,
+    };
+}
+
+export function markBankShopBusinessSettled<T extends BankShopState>(shop: T, date: BankShopBusinessDateInput = new Date(), now = Date.now()): T {
+    const day = normalizeBusinessDateStr(date);
+    const { openedBusinessDateStr: _openedBusinessDateStr, ...rest } = shop;
+    return {
+        ...rest,
+        isBusinessOpen: false,
+        lastBusinessDateStr: day,
+        lastBusinessAt: now,
+        lastAccrualAt: now,
+    } as T;
 }
 
 const genId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -747,6 +814,12 @@ function normalizeBankShopState(shop: Partial<BankShopState> | undefined, shopNa
         regulars: shop?.regulars || {},
         pendingRevenue: Math.max(0, shop?.pendingRevenue || 0),
         totalRevenue: Math.max(0, shop?.totalRevenue || 0),
+        openedBusinessDateStr: shop?.isBusinessOpen === true && typeof shop?.openedBusinessDateStr === 'string'
+            ? normalizeBusinessDateStr(shop.openedBusinessDateStr)
+            : undefined,
+        lastBusinessDateStr: typeof shop?.lastBusinessDateStr === 'string'
+            ? normalizeBusinessDateStr(shop.lastBusinessDateStr)
+            : undefined,
         isBusinessOpen: shop?.isBusinessOpen === true,
     };
 }
@@ -898,6 +971,32 @@ export function syncActiveBranchFromMirror(state: BankFullState): BankFullState 
     return syncActiveShopMirror({
         ...state,
         shopPortfolio: { ...portfolio, branches },
+    });
+}
+
+export function prepareBankStateForSave(state: BankFullState): BankFullState {
+    if (!state.shopPortfolio?.branches?.length) {
+        return syncActiveBranchFromMirror(migrateBankLifeState(state));
+    }
+
+    const mirrorShop = state.shop;
+    const mirrorFiredStaff = state.firedStaff;
+    const mirrorShopProducts = state.life?.shopProducts;
+    const mirrorShopCustomers = state.life?.shopCustomers;
+    const mirrorShopEvents = state.life?.shopEvents;
+    const migrated = migrateBankLifeState(state);
+    const life = migrated.life;
+
+    return syncActiveBranchFromMirror({
+        ...migrated,
+        shop: mirrorShop || migrated.shop,
+        firedStaff: mirrorFiredStaff || migrated.firedStaff,
+        life: life ? {
+            ...life,
+            ...(mirrorShopProducts ? { shopProducts: mirrorShopProducts } : {}),
+            ...(mirrorShopCustomers ? { shopCustomers: mirrorShopCustomers } : {}),
+            ...(mirrorShopEvents ? { shopEvents: mirrorShopEvents } : {}),
+        } : life,
     });
 }
 

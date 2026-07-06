@@ -10,7 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { evaluatePhoneLockSubmission, isPhoneLocked, sanitizePhoneLockPasscode } from '../utils/phoneLock';
-import { buildFullCharacterSetting } from '../utils/characterPromptProfile';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
 import {
@@ -654,6 +654,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
                         apiRole: auxApi.apiRole || 'aux',
                         apiBinding: auxApi.apiBinding || '查岗察觉',
                     }),
+                    presetMacros: { charName: targetChar.name, userName: userProfile.name || '用户' },
                 });
                 let raw = (extractContent(data) || '').replace(/```json/gi, '').replace(/```/g, '').trim();
                 const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
@@ -865,6 +866,7 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
                     apiRole: auxApi.apiRole || 'aux',
                     apiBinding: auxApi.apiBinding || promptBundle.appName,
                 }),
+                presetMacros: { charName: targetChar.name, userName: userProfile.name || '用户' },
             });
             const content = extractContent(data) || '';
             const parsedRecords = parsePhoneEvidenceJson(content, {
@@ -930,8 +932,14 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
         if (!targetChar || !auxApi.baseUrl || !auxApi.model) { addToast('配置错误', 'error'); return; }
         setIsDecorating(true);
         try {
-            const persona = buildFullCharacterSetting(targetChar, { includeMemos: true });
-            const prompt = `根据下面这个角色的人设，为 TA 的手机设计一套贴人设的"桌面皮肤"。
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, {
+                fallback: `用户名：${userProfile.name || '用户'}`,
+            });
+            const persona = [
+                buildFullCharacterSetting(targetChar, { includeMemos: true }),
+                fullUserSetting,
+            ].filter(Boolean).join('\n\n');
+            const prompt = `根据下面的完整角色设定和完整用户设定，为 TA 的手机设计一套贴人设的"桌面皮肤"。
 ${persona}
 
 只输出一个 JSON 对象，不要任何其它文字：
@@ -948,6 +956,7 @@ ${persona}
                     apiRole: auxApi.apiRole || 'aux',
                     apiBinding: auxApi.apiBinding || '手机皮肤',
                 }),
+                presetMacros: { charName: targetChar.name, userName: userProfile.name || '用户' },
             });
             let content = extractContent(data) || '';
             content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -1013,6 +1022,7 @@ Format:
                     apiRole: auxApi.apiRole || 'aux',
                     apiBinding: auxApi.apiBinding || '聊天续写',
                 }),
+                presetMacros: { charName: targetChar.name, userName: userProfile.name || '用户' },
             });
             {
                 let newLines = (extractContent(data) || '').trim();

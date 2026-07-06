@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractForceReplyDirective } from './forceReply';
+import { extractForceReplyDirective, shouldShowForceReplyDialog } from './forceReply';
 
 describe('extractForceReplyDirective', () => {
   it('extracts and strips the basic directive', () => {
@@ -42,5 +42,24 @@ describe('extractForceReplyDirective', () => {
     expect(result.content).toBe('hey');
     expect(result.forceReply).toBe(true);
     expect(result.reason).toBe('answer me');
+  });
+});
+
+describe('shouldShowForceReplyDialog', () => {
+  const request = {
+    charId: 'char-1',
+    charName: '阿絮',
+    requestedAt: 123,
+  };
+
+  it('keeps the blocking gate visible until the user reaches the target single chat', () => {
+    expect(shouldShowForceReplyDialog(null, { activeApp: 'group_chat', activeCharacterId: 'char-1' })).toBe(false);
+    expect(shouldShowForceReplyDialog(request, { activeApp: 'group_chat', activeCharacterId: 'char-1' })).toBe(true);
+    expect(shouldShowForceReplyDialog(request, { activeApp: 'chat', activeCharacterId: 'char-2' })).toBe(true);
+    expect(shouldShowForceReplyDialog(request, { activeApp: 'chat', activeCharacterId: 'char-1' })).toBe(false);
+  });
+
+  it('still shows over the lock screen so the user can jump back to chat', () => {
+    expect(shouldShowForceReplyDialog(request, { activeApp: 'chat', activeCharacterId: 'char-1', isLocked: true })).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ const baseChar = (over: Partial<CharacterProfile>): CharacterProfile => ({
 } as CharacterProfile);
 
 describe('buildAppearanceSourceText', () => {
-    it('拼入核心设定与已启用的绑定世界书，不使用列表备注', () => {
+    it('拼入完整角色设定与已启用的绑定世界书', () => {
         const char = baseChar({
             description: '银发红瞳的少女',
             systemPrompt: '设定正文',
@@ -18,21 +18,22 @@ describe('buildAppearanceSourceText', () => {
             ],
         });
         const text = buildAppearanceSourceText(char);
+        expect(text).toContain('银发红瞳');
         expect(text).toContain('设定正文');
         expect(text).toContain('黑色长外套');
-        expect(text).not.toContain('银发红瞳');
         expect(text).not.toContain('不该出现'); // 禁用条目被过滤
     });
 
-    it('单条与总量都做截断', () => {
+    it('完整角色设定不在外貌辅助入口裁剪', () => {
         const big = 'x'.repeat(5000);
         const char = baseChar({ systemPrompt: big });
         const text = buildAppearanceSourceText(char, 600, 1000);
-        expect(text.length).toBeLessThanOrEqual(1000);
+        expect(text).toContain(big);
+        expect(text.length).toBeGreaterThan(1000);
     });
 
-    it('无资料时返回空串', () => {
-        expect(buildAppearanceSourceText(baseChar({}))).toBe('');
+    it('资料很少时仍保留角色名作为最低限度身份锚', () => {
+        expect(buildAppearanceSourceText(baseChar({}))).toContain('角色名：阿狸');
     });
 });
 

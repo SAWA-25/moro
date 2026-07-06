@@ -568,7 +568,7 @@ const Launcher: React.FC = () => {
   const scrollLeftRef = useRef(0);
   const dragMoved = useRef(0);
 
-  // 跟随 DevDebug 可用性：prod 用户在设置页连点 5 下解锁后，CharCreatorDev 立刻出现；
+  // 跟随 DevDebug 可用性：入口可见且输入密码后，CharCreatorDev 立刻出现；
   // 点「关闭」/ 刷新（prod 自动失效）也立刻消失。useMemo deps 没列 devDebugVisible
   // 会让它锁在 mount 时的初值。
   const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
@@ -605,7 +605,7 @@ const Launcher: React.FC = () => {
   const gridApps = useMemo(() => {
     const base = INSTALLED_APPS.filter(app =>
       !DOCK_APPS.includes(app.id)
-      // 「捏脸·开发」仅在开发模式（右下角开发徽标可见或手动解锁时）显示
+      // 「捏脸·开发」仅在开发模式真正打开（入口可见且密码通过）时显示
       && (app.id !== AppID.CharCreatorDev || devDebugVisible)
     );
     if (legacyAppOrder.length === 0) return base;

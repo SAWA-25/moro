@@ -281,7 +281,12 @@ export async function callDiveLLM(
     max_tokens: 8000,
     response_format: { type: 'json_object' },
   }, {
-    meta: makeApiUsageMeta('pixelHome.memoryDive.explore', { apiRole: 'aux' }),
+    meta: makeApiUsageMeta('pixelHome.memoryDive.explore', {
+      apiRole: 'aux',
+      charId: req.charId,
+      charName: req.charName,
+    }),
+    presetMacros: { charName: req.charName, userName: req.userName || '用户' },
   });
 
   const content = extractContent(data);
@@ -521,6 +526,8 @@ interface PlanRoomParams {
   previousEndingLine?: string;
   /** 上一句的说话人——让 LLM 知道是 char 自己说完还是旁白 */
   previousEndingSpeaker?: 'character' | 'narrator';
+  /** 当前用户名，仅用于活字盘宏替换。 */
+  userName?: string;
 }
 
 const ROOM_ATMOSPHERE: Record<string, string> = {
@@ -814,7 +821,12 @@ export async function planRoomVisit(
     max_tokens: 20000,
     response_format: { type: 'json_object' },
   }, {
-    meta: makeApiUsageMeta('pixelHome.memoryDive.script', { apiRole: 'aux' }),
+    meta: makeApiUsageMeta('pixelHome.memoryDive.script', {
+      apiRole: 'aux',
+      charId: params.charId,
+      charName: params.charName,
+    }),
+    presetMacros: { charName: params.charName, userName: params.userName || '用户' },
   });
 
   const content = extractContent(data);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread, PhoneCheckSession, PhoneEvidenceRisk } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
@@ -23,7 +23,7 @@ import {
     normalizePhoneCheckStep,
 } from '../../utils/checkPhone';
 import { charPhoneCheckScriptGuard } from '../../utils/laiwangPrompts';
-import { buildFullCharacterSetting } from '../../utils/characterPromptProfile';
+import { buildFullActiveUserSetting, buildFullCharacterSetting } from '../../utils/characterPromptProfile';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -577,13 +577,20 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 apiRole: apiConfig.apiRole || 'aux',
                 apiBinding: apiConfig.apiBinding || '反向查岗',
             }),
+            presetMacros: { charName: char.name, userName: userProfile.name || '用户' },
         });
         return (extractContent(data) || '').trim();
     };
 
-    const personaBlock = useMemo(() => [
-        buildFullCharacterSetting(char, { includeMemos: true }),
-    ].filter(Boolean).join('\n'), [char]);
+    const buildCharPhoneCheckRoleContext = useCallback(async () => {
+        const fullUserSetting = await buildFullActiveUserSetting(userProfile, {
+            fallback: `用户名：${userProfile.name || '用户'}`,
+        });
+        return [
+            buildFullCharacterSetting(char, { includeMemos: true }),
+            fullUserSetting,
+        ].filter(Boolean).join('\n\n');
+    }, [char, userProfile]);
 
     // ── 启动：取联系人快照 + 生成浏览脚本 ──
     // 锁手机·双向试错：TA 拿你手机时有概率先输错一次密码（你回头会在锁屏看到提醒），再解锁翻看。
@@ -779,11 +786,12 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                     ? nextRegionHints.map(h => `- ${h}`).join('\n')
                     : '（没有明确地区线索，只能从聊天语境判断）';
 
+                const roleContext = await buildCharPhoneCheckRoleContext();
                 const prompt = `### 任务
 你在扮演角色「${char.name}」。此刻 TA 拿到了 ${userProfile.name}（TA 的聊天对象/亲密的人）的手机，正在查岗翻看。请按 TA 的人设生成一份"查岗浏览脚本"。
 
 ### 你的人设
-${personaBlock}
+${roleContext}
 
 ### ${userProfile.name} 手机里的聊天列表（按最近活跃排序）
 ${snaps.map(s => {
@@ -1166,8 +1174,9 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         setExitBusy(true);
         setConsentReply('');
         try {
+            const roleContext = await buildCharPhoneCheckRoleContext();
             const raw = await llm(`你在扮演「${char.name}」（人设如下），正翻看 ${userProfile.name} 的手机看到一半，${userProfile.name} 开口想拿回手机。
-${personaBlock}
+${roleContext}
 你翻到现在的想法：${(script?.steps || []).slice(0, stepIdx + 1).map(s => s.thought).join('；')}
 按人设决定是否把手机还给TA。只输出 JSON：{"allow": true或false, "reply": "你对TA说的一句话（贴人设，30字内）"}`);
             const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -1195,8 +1204,9 @@ ${personaBlock}
         setJudgeComment('');
         try {
             const qs = script?.exitQuestions || [];
+            const roleContext = await buildCharPhoneCheckRoleContext();
             const raw = await llm(`你在扮演「${char.name}」（人设如下），正翻看 ${userProfile.name} 的手机。TA 想拿回手机，你要求TA先回答你出的三个问题。现在TA答完了，按人设判断这些回答是否让你满意、愿意还手机。
-${personaBlock}
+${roleContext}
 ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\n')}
 只输出 JSON：{"pass": true或false, "comment": "你听完回答后对TA说的一句话（贴人设，40字内）"}`);
             const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();

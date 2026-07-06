@@ -350,6 +350,11 @@ export interface PostProcessCtx {
     emptyReplyFallback?: string;
     /** Default reply target for the first visible assistant bubble in this generation. */
     defaultReplyTo?: { id: number; content: string; name: string };
+    /**
+     * Skip [[OFFLINE_START]] side effects for one-shot online followups that are already returning
+     * from a finished offline session. Directives are still stripped from visible text.
+     */
+    suppressAutoOffline?: boolean;
 }
 
 // ─── 主入口 ─────────────────────────────────────────────────────────────────
@@ -382,6 +387,7 @@ export async function applyAssistantPostProcessing(
         skipTypingDelay,
         emptyReplyFallback,
         defaultReplyTo,
+        suppressAutoOffline,
     } = ctx;
     const { effectiveApi } = api;
     const {
@@ -581,7 +587,7 @@ export async function applyAssistantPostProcessing(
         const offlineExtract = extractOfflineStartDirective(aiContent);
         if (offlineExtract.offline) aiContent = offlineExtract.content;
         const canAutoOffline = !!char.convoSettings?.autoOffline && !char.convoSettings?.longDistanceMode;
-        if (canAutoOffline && typeof window !== 'undefined') {
+        if (canAutoOffline && !suppressAutoOffline && typeof window !== 'undefined') {
             const recentTexts = contextMsgs
                 .filter(m => m.role !== 'system' && typeof m.content === 'string')
                 .slice(-6)

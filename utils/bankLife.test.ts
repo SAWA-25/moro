@@ -3,9 +3,14 @@ import {
     COMPANY_FOUND_COST,
     BUSINESS_TEMPLATES,
     BANK_SHOP_CLOSE_HOUR,
+    BANK_SHOP_DAILY_RESET_HOUR,
     JOB_POSTINGS,
+    bankShopBusinessDateStr,
     canFoundCompany,
     canCloseBankShopAt,
+    canOpenBankShopForDate,
+    canSettleBankShopForDate,
+    getBankShopCloseBlockReason,
     canUnlockLifeShop,
     advanceBankLifeDay,
     advanceJobApplicationStage,
@@ -26,11 +31,13 @@ import {
     getDefaultBankBranchName,
     migrateBankShopPortfolioState,
     openBankShopBranch,
+    prepareBankStateForSave,
     applyCompanyIssueWithResult,
     leaveJob,
     loanTotal,
     mergeAiJobPostings,
     migrateBankLifeState,
+    markBankShopBusinessOpened,
     openLifeShop,
     repayLoan,
     sellStock,
@@ -48,6 +55,43 @@ describe('bankLife', () => {
         expect(canCloseBankShopAt(new Date(2026, 0, 1, 18, 0))).toBe(true);
         expect(canCloseBankShopAt(new Date(2026, 0, 1, 23, 59))).toBe(true);
         expect(canCloseBankShopAt(new Date(2026, 0, 2, 0, 0))).toBe(false);
+    });
+
+    it('prioritizes too-early close feedback before already-closed feedback', () => {
+        const closed = createDefaultBankShopState('测试小店');
+        const opened = { ...closed, isBusinessOpen: true, openedBusinessDateStr: '2026-01-01' };
+
+        expect(getBankShopCloseBlockReason(closed, new Date(2026, 0, 1, 17, 59))).toBe('tooEarly');
+        expect(getBankShopCloseBlockReason(opened, new Date(2026, 0, 1, 17, 59))).toBe('tooEarly');
+        expect(getBankShopCloseBlockReason(closed, new Date(2026, 0, 1, 18, 0))).toBe('alreadyClosed');
+        expect(getBankShopCloseBlockReason(opened, new Date(2026, 0, 1, 18, 0))).toBeUndefined();
+    });
+
+    it('separates opening a shop from same-day closing settlement', () => {
+        const dateStr = '2026-06-01';
+        const shop = createDefaultBankShopState('测试小店');
+
+        expect(canOpenBankShopForDate(shop, dateStr)).toBe(true);
+        expect(canSettleBankShopForDate(shop, dateStr)).toBe(false);
+
+        const opened = { ...shop, isBusinessOpen: true, openedBusinessDateStr: dateStr };
+        expect(canOpenBankShopForDate(opened, dateStr)).toBe(false);
+        expect(canSettleBankShopForDate(opened, dateStr)).toBe(true);
+
+        const settled = { ...opened, isBusinessOpen: false, openedBusinessDateStr: undefined, lastBusinessDateStr: dateStr };
+        expect(canOpenBankShopForDate(settled, dateStr)).toBe(false);
+        expect(canSettleBankShopForDate(settled, dateStr)).toBe(false);
+        expect(canOpenBankShopForDate(settled, '2026-06-02')).toBe(true);
+    });
+
+    it('refreshes shop opening eligibility at 04:00 every day', () => {
+        expect(BANK_SHOP_DAILY_RESET_HOUR).toBe(4);
+        const settled = { ...createDefaultBankShopState('测试小店'), lastBusinessDateStr: '2026-06-01' };
+
+        expect(bankShopBusinessDateStr(new Date(2026, 5, 2, 3, 59))).toBe('2026-06-01');
+        expect(canOpenBankShopForDate(settled, new Date(2026, 5, 2, 3, 59))).toBe(false);
+        expect(bankShopBusinessDateStr(new Date(2026, 5, 2, 4, 0))).toBe('2026-06-02');
+        expect(canOpenBankShopForDate(settled, new Date(2026, 5, 2, 4, 0))).toBe(true);
     });
 
     it('initializes a Sims-like life calendar and personal status', () => {
@@ -346,6 +390,38 @@ describe('bankLife', () => {
 
         expect(synced.shop.isBusinessOpen).toBe(true);
         expect(synced.shopPortfolio?.branches[0].shop.isBusinessOpen).toBe(true);
+    });
+
+    it('saves active shop mirror edits into the active branch before commit', () => {
+        const base = openBankShopBranch(migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: '镜像', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState), 'drinks', 'A店', { walletBalance: 10000, dateStr: '2026-06-01' }).state;
+        const now = new Date(2026, 5, 1, 10, 0).getTime();
+        const openedShop = markBankShopBusinessOpened({
+            ...base.shop,
+            actionPoints: 30,
+        }, now, now);
+        const shopProducts = (base.life?.shopProducts || []).map((p, idx) => idx === 0 ? { ...p, stock: 3 } : p);
+
+        const saved = prepareBankStateForSave({
+            ...base,
+            shop: openedShop,
+            life: { ...base.life!, shopProducts },
+        });
+        const active = saved.shopPortfolio?.branches.find(branch => branch.id === saved.shopPortfolio?.activeShopId);
+
+        expect(saved.shop.isBusinessOpen).toBe(true);
+        expect(saved.shop.actionPoints).toBe(30);
+        expect(saved.shop.openedBusinessDateStr).toBe('2026-06-01');
+        expect(active?.shop.isBusinessOpen).toBe(true);
+        expect(active?.shop.actionPoints).toBe(30);
+        expect(active?.shop.openedBusinessDateStr).toBe('2026-06-01');
+        expect(active?.shopProducts[0].stock).toBe(3);
     });
 
     it('claims daily shop lessons once per date and per branch', () => {
