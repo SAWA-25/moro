@@ -81,6 +81,18 @@ export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> 
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-06-bank-shop-open-close-buttons',
+    date: '2026-07-06',
+    title: '人生拟店铺营业和打烊分开了',
+    kind: 'improvement',
+    summary: '人生拟店铺顶部现在固定显示“营业”和“打烊”两个按钮，打烊需要等到每天 18:00 后才能操作。',
+    items: [
+      '营业不再和打烊共用同一个切换按钮，店铺状态会更清楚。',
+      '18:00 前点打烊会提示继续营业，不会提前关店或停止累计待收营业额。',
+      '收款仍然只用于领取已经攒下的挂机营业额，不会自动改变营业或打烊状态。',
+    ],
+  },
+  {
     id: '2026-07-06-update-notice-date-scroll-page',
     date: '2026-07-06',
     title: '新公告只弹最新日期这一页',
@@ -7658,7 +7670,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
       },
       {
         title: '分店能关掉或删除吗？',
-        answer: '可以日常打烊，打烊后店铺不再继续累计挂机营业额；但本版仍不支持永久关店、停业归档或删除店铺。开店前请看清启动金和总部精力。',
+        answer: '可以在 18:00 后日常打烊，打烊后店铺不再继续累计挂机营业额；但本版仍不支持永久关店、停业归档或删除店铺。开店前请看清启动金和总部精力。',
       },
     ],
     settingSections: [
@@ -7764,7 +7776,7 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
               { label: '开店 / 开分店', description: '不同业态启动金不同，开新店还会消耗总部精力；同一种业态可继续开 2 号店、3 号店。' },
               { label: '分店切换', description: '店铺页顶部可切换分店；当前店的库存、员工、口碑、常客、留言和装修不会串到其它分店。' },
               { label: '像素店铺现场', description: '进入店铺现场可看到像素墙面、地板、吧台、展示柜、商品和店员；旧内置表情家具会自动显示成像素家具。' },
-              { label: '营业 / 打烊 / 经营打理', description: '处理库存、员工、顾客和评价；营业会消耗当前店精力并展示逐单收入，营业后可单独打烊，收款按钮只领取待收营业额。' },
+              { label: '营业 / 打烊 / 经营打理', description: '处理库存、员工、顾客和评价；营业会消耗当前店精力并展示逐单收入，打烊需等到 18:00 后，收款按钮只领取待收营业额。' },
               { label: '补货 / 升级', description: '库存低时先看成本和补货后库存，升级前先看费用、等级和收益变化。' },
               { label: '经营日课', description: '每日巡店恢复总部精力，整理货架和营业复盘恢复当前店精力；当天首次收闲置收益还会给当前店少量奖励。' },
               { label: '像素家具库', description: '装修面板提供更多像素家具、挂饰、地面物件、美食摆件和宠物小物；自己上传的家具和背景图会保留原样。' },
@@ -11636,7 +11648,7 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '回忆标本馆·本地梦境消化': { appId: AppID.MemoryPalace, path: ['回忆标本馆', '设置', '认知消化', '本地梦境消化'], details: ['只调用文具盒副 API，把已有记忆沉淀成 Feel 感受和 Saga 主线；结果留在本机。'], deepLink: link(AppID.MemoryPalace, 'manual-memory-root') },
   '回忆标本馆·记忆浏览器': { appId: AppID.MemoryPalace, path: ['回忆标本馆', '记忆浏览器'], details: ['按房间和认知层级筛选记忆，展开可回看原文摘录、碎碎念和本地消息证据链。'], deepLink: link(AppID.MemoryPalace, 'manual-memory-root') },
   '栖居志': { appId: AppID.Room, path: ['桌面', '栖居志'], details: ['进入统一像素家园，查看今日生活、布置像素房间、点击家具看角色反应。'], deepLink: link(AppID.Room, 'manual-room-root') },
-  '人生拟': { appId: AppID.Bank, path: ['桌面', '人生拟'], details: ['查看虚拟资产、流水、攒钱目标、求职投资和多分店经营；店铺页可切换分店、营业后单独打烊、用收款按钮领取待收营业额，并进入像素店铺现场装修。'], deepLink: link(AppID.Bank, 'manual-bank-root') },
+  '人生拟': { appId: AppID.Bank, path: ['桌面', '人生拟'], details: ['查看虚拟资产、流水、攒钱目标、求职投资和多分店经营；店铺页可切换分店，营业和打烊分开操作，18:00 后才能打烊，收款按钮只领取待收营业额，并进入像素店铺现场装修。'], deepLink: link(AppID.Bank, 'manual-bank-root') },
   '日记': { appId: AppID.Journal, path: ['桌面', '日记'], details: ['写私人日记或查看角色视角记录。'], deepLink: link(AppID.Journal, 'manual-diary-root') },
   '见闻簿': { appId: AppID.Social, path: ['Dock / 桌面', '见闻簿'], details: ['四栏入口：见闻瀑布流、熟人近况、收藏剪报和交友发现。', '右上角专用 API 可拉取模型、保存专用线路，并覆盖翻新页、熟人近况、评论回复和交友生成；清除后回到文具盒副 API / 主 API，共览里的自由活动真实平台流程不受影响。', '可本地发帖、剪藏、收藏、评论，或把见闻作为本地笔记递给角色聊天。', '交友路人不会自动进来往，匹配或打招呼后需手动收为联系人。'], deepLink: link(AppID.Social, 'manual-social-root') },
   '自习室': {

@@ -31,6 +31,7 @@ import {
 } from './ui/insScrapKit';
 import {
     BANK_LIFE_VERSION,
+    BANK_SHOP_CLOSE_HOUR,
     BANK_OPEN_BRANCH_ENERGY_COST,
     BUSINESS_TEMPLATES,
     COMPANY_DIRECTIONS,
@@ -48,6 +49,7 @@ import {
     applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
+    canCloseBankShopAt,
     claimBankShopDailyReward,
     computeCreditProfile,
     createBankActionResult,
@@ -367,6 +369,7 @@ const BankApp: React.FC = () => {
     const [selectedStockSymbol, setSelectedStockSymbol] = useState('MORO');
     const [marketView, setMarketView] = useState<'all' | 'watch' | 'gainers' | 'losers'>('all');
     const [selectedLoanId, setSelectedLoanId] = useState('');
+    const [shopClockNow, setShopClockNow] = useState(() => Date.now());
 
     // Staff Edit Form
     const [editingStaff, setEditingStaff] = useState<ShopStaff | null>(null);
@@ -397,6 +400,11 @@ const BankApp: React.FC = () => {
     // Load Data
     useEffect(() => {
         loadData();
+    }, []);
+
+    useEffect(() => {
+        const t = window.setInterval(() => setShopClockNow(Date.now()), 30000);
+        return () => window.clearInterval(t);
     }, []);
 
     useEffect(() => {
@@ -1215,6 +1223,10 @@ const BankApp: React.FC = () => {
             return;
         }
         const now = Date.now();
+        if (!canCloseBankShopAt(now)) {
+            addToast(`${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊，先继续营业到傍晚吧`, 'info');
+            return;
+        }
         const idle = accrueShopIdle(cur.shop, now);
         const pending = Math.floor(idle.pendingRevenue);
         const shopName = cur.life?.shopBusinessName || cur.shop.shopName || '小店';
@@ -2752,6 +2764,12 @@ ${JSON.stringify(list, null, 2)}
 
         const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
         const shopIsOpen = state.shop.isBusinessOpen === true;
+        const closeShopAllowed = canCloseBankShopAt(shopClockNow);
+        const shopActionButtonStyle = (bg: string, muted: boolean): React.CSSProperties => ({
+            ...smallBtn(muted ? '#f4f4f5' : bg, muted ? '#8a8790' : '#fff'),
+            opacity: muted ? 0.72 : 1,
+            cursor: muted ? 'not-allowed' : 'pointer',
+        });
         return (
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="px-3.5 pt-3 shrink-0">
@@ -2764,7 +2782,28 @@ ${JSON.stringify(list, null, 2)}
                                     <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopIsOpen ? '营业中' : '已打烊'} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
                                 </div>
                             </div>
-                            <button onClick={shopIsOpen ? handleCloseShop : handleOperate} className="px-4 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn(shopIsOpen ? '#f43f5e' : '#16a34a')}>{shopIsOpen ? '打烊' : '营业'}</button>
+                            <div className="shrink-0 flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={handleOperate}
+                                    aria-disabled={shopIsOpen}
+                                    title={shopIsOpen ? '店铺正在营业中' : '开始营业'}
+                                    className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
+                                    style={shopActionButtonStyle('#16a34a', shopIsOpen)}
+                                >
+                                    营业
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleCloseShop}
+                                    aria-disabled={!shopIsOpen || !closeShopAllowed}
+                                    title={!shopIsOpen ? '店铺已经打烊' : closeShopAllowed ? '打烊' : `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊`}
+                                    className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
+                                    style={shopActionButtonStyle('#f43f5e', !shopIsOpen || !closeShopAllowed)}
+                                >
+                                    打烊
+                                </button>
+                            </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
                             <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>总部</b><br />{shopPortfolio?.headquartersEnergy ?? 0} 精力</div>

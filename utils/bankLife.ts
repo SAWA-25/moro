@@ -42,6 +42,12 @@ export const SHOP_UNLOCK_COST = 10000;
 export const BANK_OPEN_BRANCH_ENERGY_COST = 30;
 export const INITIAL_HEADQUARTERS_ENERGY = 80;
 export const COMPANY_FOUND_COST = 100000;
+export const BANK_SHOP_CLOSE_HOUR = 18;
+
+export function canCloseBankShopAt(date: Date | number = new Date()): boolean {
+    const d = date instanceof Date ? date : new Date(date);
+    return d.getHours() >= BANK_SHOP_CLOSE_HOUR;
+}
 
 const genId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const DEFAULT_SHOP_RECIPE_ID = 'recipe-coffee-001';

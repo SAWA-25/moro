@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
     COMPANY_FOUND_COST,
     BUSINESS_TEMPLATES,
+    BANK_SHOP_CLOSE_HOUR,
     JOB_POSTINGS,
     canFoundCompany,
+    canCloseBankShopAt,
     canUnlockLifeShop,
     advanceBankLifeDay,
     advanceJobApplicationStage,
@@ -40,6 +42,14 @@ import {
 import { BankFullState } from '../types';
 
 describe('bankLife', () => {
+    it('only allows shop closing from 18:00 through the end of the day', () => {
+        expect(BANK_SHOP_CLOSE_HOUR).toBe(18);
+        expect(canCloseBankShopAt(new Date(2026, 0, 1, 17, 59))).toBe(false);
+        expect(canCloseBankShopAt(new Date(2026, 0, 1, 18, 0))).toBe(true);
+        expect(canCloseBankShopAt(new Date(2026, 0, 1, 23, 59))).toBe(true);
+        expect(canCloseBankShopAt(new Date(2026, 0, 2, 0, 0))).toBe(false);
+    });
+
     it('initializes a Sims-like life calendar and personal status', () => {
         const life = createDefaultBankLifeState('2026-06-01');
 
