@@ -120,7 +120,7 @@ const AlmanacApp: React.FC = () => {
             key: 'schedule',
             title: '时光契约',
             en: 'promise',
-            date: 'TODO',
+            date: 'PLAN',
             icon: <CalendarCheck size={30} weight="bold" />,
             tone: '#7fa8b3',
             anchor: 'manual-almanac-schedule-card',

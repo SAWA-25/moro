@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
     buildShopCompanionPrompt,
@@ -5,6 +6,8 @@ import {
     buildShopCoPresencePaymentNotice,
     buildShopCompanionSpeechPrompt,
     getShopCoPresenceCue,
+    pickShopCompanionFallbackItem,
+    resolveShopCompanionVisibleItems,
     parseShopCompanionReaction,
     parseShopCompanionScript,
     parseShopCompanionSpeech,
@@ -29,6 +32,32 @@ describe('shop companion helpers', () => {
         expect(p.user).toContain('char_pay');
         expect(p.user).toContain('auto_user_pay');
         expect(p.user).toContain('steps');
+    });
+
+    it('keeps an explicitly empty companion shelf empty in prompts', () => {
+        const p = buildShopCompanionPrompt(
+            { name: '阿白', personaText: '喜欢甜食', affection: 70 },
+            '我',
+            { surface: 'cart', visibleItems: [], cart: [], userAction: '打开空篮子' },
+        );
+
+        expect(p.user).toContain('（当前界面没有可见商品）');
+        expect(p.user).toContain('只能输出 "say" 动作');
+        expect(p.user).not.toContain('- rose |');
+        expect(p.user).not.toContain('- camera |');
+    });
+
+    it('resolves companion visible items from the target surface state', () => {
+        const rose = getShopItem('rose')!;
+        const cake = getShopItem('cake')!;
+        const camera = getShopItem('camera')!;
+        const catalog = [rose, cake, camera];
+
+        expect(resolveShopCompanionVisibleItems({ catalog, surface: 'cart', cart: [] })).toEqual([]);
+        expect(resolveShopCompanionVisibleItems({ catalog, surface: 'my' })).toEqual([]);
+        expect(resolveShopCompanionVisibleItems({ catalog, surface: 'home', homeCategory: 'food' }).map(item => item.id)).toEqual(['cake']);
+        expect(resolveShopCompanionVisibleItems({ catalog, surface: 'home', search: '拍立得' }).map(item => item.id)).toEqual(['camera']);
+        expect(resolveShopCompanionVisibleItems({ catalog, surface: 'category', categoryCategory: 'tech' }).map(item => item.id)).toEqual(['camera']);
     });
 
     it('parseShopCompanionReaction parses fenced JSON and validates item actions', () => {
@@ -75,6 +104,37 @@ describe('shop companion helpers', () => {
             steps: Array.from({ length: 8 }).map(() => ({ action: 'point', itemId: 'rose', speech: '看这个。' })),
         }));
         expect(got?.steps).toHaveLength(5);
+    });
+
+    it('keeps companion item actions on the currently visible shelf', () => {
+        const got = parseShopCompanionScript(
+            JSON.stringify({ steps: [{ action: 'open_item', itemId: 'camera', speech: '看这个。' }] }),
+            'rose',
+            ['rose'],
+        );
+        expect(got).toEqual({ steps: [{ action: 'open_item', itemId: 'rose', speech: '看这个。' }] });
+        expect(parseShopCompanionReaction('{"action":"want","itemId":"camera","speech":"这个。"}', undefined, ['rose'])).toBeNull();
+    });
+
+    it('rejects item actions when the current visible shelf is explicitly empty', () => {
+        expect(parseShopCompanionScript(
+            JSON.stringify({ steps: [{ action: 'open_item', itemId: 'rose', speech: '看这个。' }] }),
+            undefined,
+            [],
+        )).toBeNull();
+        expect(parseShopCompanionScript(
+            JSON.stringify({ steps: [{ action: 'open_item', itemId: 'camera', speech: '看这个。' }] }),
+            'rose',
+            [],
+        )).toBeNull();
+        expect(parseShopCompanionReaction('{"action":"want","itemId":"rose","speech":"这个。"}', undefined, [])).toBeNull();
+    });
+
+    it('picks a deterministic companion fallback from visible items only', () => {
+        const rose = getShopItem('rose')!;
+        const cake = getShopItem('cake')!;
+        const picked = pickShopCompanionFallbackItem([rose, cake], { name: '阿白', personaText: '喜欢甜食', affection: 70 });
+        expect([rose.id, cake.id]).toContain(picked?.id);
     });
 
     it('builds a dedicated model prompt for one-off companion speech instead of hardcoded character lines', () => {
@@ -129,5 +189,24 @@ describe('shop companion helpers', () => {
         expect(log.eyebrow).toBe('PAYMENT NOTIFICATION');
         expect(log.title).toBe(item.name);
         expect(log.detail).toBe('放这儿，别躲。');
+    });
+
+    it('ShopApp gates co-presence product marks behind the active companion session', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        expect(source).toContain('const companionSessionRef = useRef(0)');
+        expect(source).toContain('const requestSession = companionSessionRef.current');
+        expect(source).toContain('if (!isCurrentSession()) return;');
+        expect(source).toContain('const activeCompanionCue = companion ? companionCue : null');
+        expect(source).toContain('companionCue={activeCompanionCue} companionAvatar={activeCompanionAvatar}');
+        expect(source).toContain('companionSessionRef.current === stopSession && line');
+    });
+
+    it('ShopApp computes companion shelves from target navigation state', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        expect(source).toContain('resolveShopCompanionVisibleItems({');
+        expect(source).toContain('visibleItemsForCompanion(undefined, { tab: t })');
+        expect(source).toContain("visibleItemsForCompanion(undefined, { tab: 'home', cat: next })");
+        expect(source).toContain("visibleItemsForCompanion(undefined, { tab: 'category', categoryTabCat: next })");
+        expect(source).toContain('activeCategory={categoryTabCat} onCategoryChange={setCategoryPageCategory}');
     });
 });

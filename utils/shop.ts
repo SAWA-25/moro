@@ -1040,6 +1040,85 @@ const COMPANION_ITEM_ACTIONS = new Set<ShopCompanionStepAction>([
 const compactShelf = (items: ShopItem[]): string =>
     items.slice(0, 18).map(i => `- ${i.id} | ${i.emoji}${i.name} | ¥${formatPrice(i.price)} | ${i.blurb}`).join('\n');
 
+export interface ShopCompanionVisibleItemsContext {
+    catalog?: ShopItem[];
+    cart?: ShopCartLine[];
+    favorites?: string[];
+    surface?: Extract<ShopCompanionSurface, 'home' | 'category' | 'cart' | 'my'>;
+    homeCategory?: string;
+    categoryCategory?: string;
+    search?: string;
+    focus?: ShopItem;
+    limit?: number;
+}
+
+/** Resolve exactly the products visible on the current shop surface for co-presence prompts/actions. */
+export function resolveShopCompanionVisibleItems(ctx: ShopCompanionVisibleItemsContext = {}): ShopItem[] {
+    const limit = Math.max(0, Math.floor(ctx.limit ?? 18));
+    const shelf = ((ctx.catalog && ctx.catalog.length ? ctx.catalog : SHOP_ITEMS) || []).filter(Boolean);
+    if (limit === 0) return [];
+    if (ctx.focus) return [ctx.focus, ...shelf.filter(i => i.id !== ctx.focus!.id)].slice(0, limit);
+
+    const surface = ctx.surface || 'home';
+    if (surface === 'cart') return resolveCart(ctx.cart).map(x => x.item).slice(0, limit);
+    if (surface === 'my') return [];
+    if (surface === 'category') {
+        const activeCategory = String(ctx.categoryCategory || SHOP_CATEGORIES[0]?.key || '').trim();
+        const list = activeCategory ? shelf.filter(i => i.category === activeCategory) : shelf;
+        return list.slice(0, limit);
+    }
+
+    const homeCategory = String(ctx.homeCategory || 'all').trim() || 'all';
+    if (homeCategory === 'fav') {
+        return (ctx.favorites || []).map(id => getShopItem(id)).filter((x): x is ShopItem => !!x).slice(0, limit);
+    }
+    const q = String(ctx.search || '').trim().toLowerCase();
+    let list = shelf;
+    if (q) list = list.filter(i =>
+        i.name.toLowerCase().includes(q) || i.blurb.toLowerCase().includes(q) ||
+        (SHOP_CATEGORIES.find(c => c.key === i.category)?.label || '').includes(q) || i.emoji.includes(q));
+    if (homeCategory !== 'all') list = list.filter(i => i.category === homeCategory);
+    return list.slice(0, limit);
+}
+
+const visibleItemIdSet = (ids?: readonly string[]): Set<string> | null => {
+    if (ids === undefined) return null;
+    const cleanIds = ids.map(id => String(id || '').trim()).filter(Boolean);
+    return new Set(cleanIds);
+};
+
+const resolveCompanionItem = (
+    rawItemId?: string,
+    fallbackItemId?: string,
+    visibleItemIds?: readonly string[],
+): ShopItem | undefined => {
+    const visible = visibleItemIdSet(visibleItemIds);
+    const candidates = [rawItemId, fallbackItemId].map(id => String(id || '').trim()).filter(Boolean);
+    for (const id of candidates) {
+        const item = getShopItem(id);
+        if (item && (!visible || visible.has(item.id))) return item;
+    }
+    return undefined;
+};
+
+/** Pick a deterministic fallback item from the visible shelf using the same persona-aware scoring as the gift advisor. */
+export function pickShopCompanionFallbackItem(
+    items: ShopItem[] | undefined,
+    profile: Pick<GiftAdvisorProfile, 'charName' | 'personaText' | 'affection'> & { name?: string } = {},
+    budget?: number,
+): ShopItem | undefined {
+    const visible = (items || []).filter(Boolean);
+    if (!visible.length) return undefined;
+    const [best] = recommendGiftsForCharacter(visible, {
+        charName: profile.charName || profile.name,
+        personaText: profile.personaText,
+        affection: profile.affection,
+        occasion: 'daily',
+        budget: budget ?? Math.round(80 + (profile.affection ?? 50) * 4),
+    }, 1);
+    return best?.item || visible[0];
+}
+
 export function getShopCoPresenceCue(action: ShopCompanionAction | ShopCompanionStepAction, companionName: string = 'TA'): ShopCoPresenceCue {
     const name = companionName.trim() || 'TA';
     if (action === 'ask_user_pay' || action === 'auto_user_pay') {
@@ -1109,7 +1188,11 @@ export function buildShopCompanionPrompt(
     userSetting?: string,
 ): { system: string; user: string } {
     const persona = (char.personaText || '').toString();
-    const visible = (ctx.visibleItems && ctx.visibleItems.length ? ctx.visibleItems : ctx.item ? [ctx.item] : SHOP_ITEMS).filter(Boolean);
+    const visible = (Array.isArray(ctx.visibleItems) ? ctx.visibleItems : ctx.item ? [ctx.item] : SHOP_ITEMS).filter(Boolean);
+    const visibleLine = visible.length ? compactShelf(visible) : '（当前界面没有可见商品）';
+    const itemActionGuidance = visible.length
+        ? '开场或滑到新一屏时，除非角色确实只想旁观，否则至少给出一个涉及商品的动作（point / scroll_to_item / open_item / want / ask_user_pay / auto_user_pay / char_pay），体现你自己的选择。'
+        : '当前界面没有可见商品时，只能输出 "say" 动作陪用户说一句，不要输出 itemId，也不要编造或引用屏幕外商品。';
     const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
     const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
     const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
@@ -1119,12 +1202,12 @@ export function buildShopCompanionPrompt(
 用户刚做的事：${ctx.userAction || '正在浏览'}
 你的大致预算感：¥${formatPrice(budget)}
 ${balanceLine}选品原则：先读你的完整角色设定、审美、习惯、关系和当下心情，再从可见商品里自己挑真正想看/想要/想送的一件；不要为了讨好 ${userName} 随机选，itemId 必须来自屏幕上可见商品。
-开场或滑到新一屏时，除非角色确实只想旁观，否则至少给出一个涉及商品的动作（point / scroll_to_item / open_item / want / ask_user_pay / auto_user_pay / char_pay），体现你自己的选择。
+${itemActionGuidance}
 结账边界：允许你在非常想推进、金额合理、符合关系和人设时使用 "auto_user_pay" 帮 ${userName} 直接结账；若余额不够，会改成请求确认。
 正在看的商品：${itemLine}
 购物车：${cartLines}
 屏幕上可见商品：
-${compactShelf(visible)}
+${visibleLine}
 
 请输出一个 1~5 步的短脚本，像你真的在旁边一起逛。可用动作：
 - "say"：只说一句话，不触发界面动作。
@@ -1197,8 +1280,8 @@ export function parseShopCompanionSpeech(raw: string, fallback = ''): string {
     return (speech || fallbackText).slice(0, 80);
 }
 
-/** 解析陪逛反应；非法 action 降级为 comment，涉及商品的动作会校验 itemId。 */
-export function parseShopCompanionReaction(raw: string, fallbackItemId?: string): ShopCompanionReaction | null {
+/** 解析陪逛反应；非法 action 降级为 comment，涉及商品的动作会校验 itemId 和当前可见货架。 */
+export function parseShopCompanionReaction(raw: string, fallbackItemId?: string, visibleItemIds?: readonly string[]): ShopCompanionReaction | null {
     if (!raw) return null;
     let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
     const start = txt.indexOf('{');
@@ -1207,8 +1290,8 @@ export function parseShopCompanionReaction(raw: string, fallbackItemId?: string)
     try {
         const obj = JSON.parse(txt.slice(start, end + 1));
         const action: ShopCompanionAction = COMPANION_ACTIONS.has(obj.action) ? obj.action : 'comment';
-        const rawItemId = String(obj.itemId || fallbackItemId || '').trim();
-        const item = rawItemId ? getShopItem(rawItemId) : undefined;
+        const rawItemId = String(obj.itemId || '').trim();
+        const item = resolveCompanionItem(rawItemId, fallbackItemId, visibleItemIds);
         const needsItem = action !== 'comment' && action !== 'say';
         if (needsItem && !item) return null;
         const speech = String(obj.speech || obj.note || '').trim().slice(0, 80) || '这个挺有意思。';
@@ -1218,7 +1301,7 @@ export function parseShopCompanionReaction(raw: string, fallbackItemId?: string)
     }
 }
 
-const normalizeCompanionStep = (input: any, fallbackItemId?: string): ShopCompanionScriptStep | null => {
+const normalizeCompanionStep = (input: any, fallbackItemId?: string, visibleItemIds?: readonly string[]): ShopCompanionScriptStep | null => {
     if (!input || typeof input !== 'object') return null;
     const rawAction = String(input.action || '').trim();
     const action: ShopCompanionStepAction =
@@ -1227,8 +1310,8 @@ const normalizeCompanionStep = (input: any, fallbackItemId?: string): ShopCompan
             : COMPANION_STEP_ACTIONS.has(rawAction as ShopCompanionStepAction)
                 ? rawAction as ShopCompanionStepAction
                 : 'say';
-    const rawItemId = String(input.itemId || fallbackItemId || '').trim();
-    const item = rawItemId ? getShopItem(rawItemId) : undefined;
+    const rawItemId = String(input.itemId || '').trim();
+    const item = resolveCompanionItem(rawItemId, fallbackItemId, visibleItemIds);
     if (COMPANION_ITEM_ACTIONS.has(action) && !item) return null;
     const speech = String(input.speech || input.note || '').trim().slice(0, 80);
     const qtyRaw = Math.round(Number(input.qty || 1));
@@ -1244,8 +1327,8 @@ const normalizeCompanionStep = (input: any, fallbackItemId?: string): ShopCompan
     };
 };
 
-/** 解析沉浸陪逛脚本；兼容旧的单动作 JSON，并过滤非法商品/过长步骤。 */
-export function parseShopCompanionScript(raw: string, fallbackItemId?: string): ShopCompanionScript | null {
+/** 解析沉浸陪逛脚本；兼容旧的单动作 JSON，并过滤不可见/非法商品和过长步骤。 */
+export function parseShopCompanionScript(raw: string, fallbackItemId?: string, visibleItemIds?: readonly string[]): ShopCompanionScript | null {
     if (!raw) return null;
     let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
     const start = txt.indexOf('{');
@@ -1255,7 +1338,7 @@ export function parseShopCompanionScript(raw: string, fallbackItemId?: string): 
         const obj = JSON.parse(txt.slice(start, end + 1));
         const source = Array.isArray(obj.steps) ? obj.steps : [obj];
         const steps = source
-            .map((step: any) => normalizeCompanionStep(step, fallbackItemId))
+            .map((step: any) => normalizeCompanionStep(step, fallbackItemId, visibleItemIds))
             .filter((step: ShopCompanionScriptStep | null): step is ShopCompanionScriptStep => !!step)
             .slice(0, 5);
         return steps.length ? { steps } : null;

@@ -19,7 +19,7 @@ import {
     coinsToYuan, yuanToCoins, checkinAvailable, dailyCheckinReward,
     pushFootprint, resolveFootprints, itemSpecs,
     SHOP_GIFT_OCCASIONS, recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
-    buildShopCompanionPrompt, buildShopCompanionSpeechPrompt, parseShopCompanionReaction, parseShopCompanionScript, parseShopCompanionSpeech,
+    buildShopCompanionPrompt, buildShopCompanionSpeechPrompt, parseShopCompanionReaction, parseShopCompanionScript, parseShopCompanionSpeech, pickShopCompanionFallbackItem, resolveShopCompanionVisibleItems,
     buildShopCoPresenceLogEntry, buildShopCoPresencePaymentNotice, getShopCoPresenceCue,
     normalizeShopImageUrl,
     queueShopReply,
@@ -144,6 +144,7 @@ const ShopApp: React.FC = () => {
     const [tab, setTab] = useState<MainTab>('home');
     const [sub, setSub] = useState<SubView>(null);
     const [cat, setCat] = useState<string>('all');
+    const [categoryTabCat, setCategoryTabCat] = useState<string>(SHOP_CATEGORIES[0]?.key || 'flower');
     const [search, setSearch] = useState('');
     const [detailItem, setDetailItem] = useState<ShopItem | null>(null);
     const [editorTarget, setEditorTarget] = useState<{ item?: ShopItem } | null>(null);
@@ -186,12 +187,25 @@ const ShopApp: React.FC = () => {
     const companion = useMemo(() => characters.find(c => c.id === companionId) || null, [characters, companionId]);
     const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const companionRunRef = useRef(0);
+    const companionSessionRef = useRef(0);
     const lastCompanionAtRef = useRef(0);
     const companionScrollTimerRef = useRef<number | null>(null);
     const companionHijackResolverRef = useRef<((accepted: boolean) => void) | null>(null);
 
+    const cancelCompanionAsyncWork = () => {
+        companionSessionRef.current += 1;
+        companionRunRef.current += 1;
+        if (companionScrollTimerRef.current != null) {
+            window.clearTimeout(companionScrollTimerRef.current);
+            companionScrollTimerRef.current = null;
+        }
+        companionHijackResolverRef.current?.(false);
+        companionHijackResolverRef.current = null;
+    };
+
     useEffect(() => {
         if (companionId && !characters.some(c => c.id === companionId)) {
+            cancelCompanionAsyncWork();
             setCompanionId('');
             setCompanionLog([]);
             setCompanionLogSheet(false);
@@ -199,17 +213,13 @@ const ShopApp: React.FC = () => {
             setCompanionHijack(null);
             setCompanionNotice(null);
             setCompanionCue(null);
+            setCompanionBusy(false);
             setCompanionPreparing(false);
-            companionHijackResolverRef.current?.(false);
-            companionHijackResolverRef.current = null;
         }
     }, [characters, companionId]);
 
     useEffect(() => () => {
-        companionRunRef.current += 1;
-        if (companionScrollTimerRef.current != null) window.clearTimeout(companionScrollTimerRef.current);
-        companionHijackResolverRef.current?.(false);
-        companionHijackResolverRef.current = null;
+        cancelCompanionAsyncWork();
     }, []);
 
     useEffect(() => {
@@ -268,7 +278,10 @@ const ShopApp: React.FC = () => {
         if (!resolveAuxApi(auxApiConfig, apiConfig).apiKey) { addToast('配好副 API 才能现挑哦', 'info'); return; }
         addToast(`正按「${term}」翻找相关好物…`, 'info');
         void generateCatalog(`请紧扣关键词「${term}」生成尽量相关的礼物（围绕该主题/场景/送礼对象/节日）`);
-        void runCompanionReaction('home', { visibleItems: visibleItemsForCompanion(), userAction: `搜索了「${term}」` });
+        void runCompanionReaction('home', {
+            visibleItems: visibleItemsForCompanion(undefined, { tab: 'home', cat: 'all', search: term }),
+            userAction: `搜索了「${term}」`,
+        });
         setSearch(''); setCat('all');
     };
 
@@ -327,19 +340,19 @@ const ShopApp: React.FC = () => {
         return order;
     };
 
-    const visibleItemsForCompanion = (focus?: ShopItem): ShopItem[] => {
-        const shelf = catalog.length ? catalog : SHOP_ITEMS;
-        if (focus) return [focus, ...shelf.filter(i => i.id !== focus.id)].slice(0, 18);
-        if (tab === 'cart') return resolveCart(cart).map(x => x.item).slice(0, 18);
-        if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x).slice(0, 18);
-        const q = search.trim().toLowerCase();
-        let list = shelf;
-        if (q) list = list.filter(i =>
-            i.name.toLowerCase().includes(q) || i.blurb.toLowerCase().includes(q) ||
-            (SHOP_CATEGORIES.find(c => c.key === i.category)?.label || '').includes(q) || i.emoji.includes(q));
-        if (cat !== 'all') list = list.filter(i => i.category === cat);
-        return list.slice(0, 18);
-    };
+    const visibleItemsForCompanion = (
+        focus?: ShopItem,
+        overrides: { tab?: MainTab; cat?: string; search?: string; categoryTabCat?: string } = {},
+    ): ShopItem[] => resolveShopCompanionVisibleItems({
+        catalog,
+        cart,
+        favorites,
+        surface: overrides.tab ?? tab,
+        homeCategory: overrides.cat ?? cat,
+        categoryCategory: overrides.categoryTabCat ?? categoryTabCat,
+        search: overrides.search ?? search,
+        focus,
+    });
 
     const companionDisplayName = (char?: CharacterProfile | null) =>
         char ? (char.convoSettings?.remarkName?.trim() || char.name) : 'TA';
@@ -372,13 +385,7 @@ const ShopApp: React.FC = () => {
     };
 
     const finishCompanion = () => {
-        companionRunRef.current += 1;
-        if (companionScrollTimerRef.current != null) {
-            window.clearTimeout(companionScrollTimerRef.current);
-            companionScrollTimerRef.current = null;
-        }
-        companionHijackResolverRef.current?.(false);
-        companionHijackResolverRef.current = null;
+        cancelCompanionAsyncWork();
         setCompanionId('');
         setCompanionLog([]);
         setCompanionLogSheet(false);
@@ -450,6 +457,15 @@ const ShopApp: React.FC = () => {
         }
     };
 
+    const companionFallbackLine = (action: ShopCompanionStepAction | ShopCompanionReaction['action'], item?: ShopItem) => {
+        if (!item) return '我在，先陪你看这一屏。';
+        if (action === 'want') return `${item.emoji}${item.name}，我想先记下来。`;
+        if (action === 'ask_user_pay') return `${item.emoji}${item.name}，这件我有点想要。`;
+        if (action === 'auto_user_pay' || action === 'add_user_cart') return `${item.emoji}${item.name}，我想就选这件。`;
+        if (action === 'char_pay') return `${item.emoji}${item.name}，这件我买给你。`;
+        return `${item.emoji}${item.name}，这件我想多看一眼。`;
+    };
+
     const fallbackCompanionScript = async (char: CharacterProfile, surface: ShopCompanionSurface, item?: ShopItem, visibleItems?: ShopItem[]): Promise<ShopCompanionScript> => {
         if (item) {
             const speech = await companionSpeech(char, 'focus_item', {
@@ -458,7 +474,7 @@ const ShopApp: React.FC = () => {
                 visibleItems,
                 cart,
                 userAction: '陪逛脚本解析失败，改为临场指出当前商品',
-            });
+            }, companionFallbackLine('point', item));
             return {
                 steps: [
                     { action: 'point', itemId: item.id, ...(speech ? { speech } : {}) },
@@ -471,7 +487,7 @@ const ShopApp: React.FC = () => {
             visibleItems,
             cart,
             userAction: '陪逛脚本解析失败，改为临场说一句',
-        });
+        }, companionFallbackLine('say'));
         return { steps: [{ action: 'say', ...(speech ? { speech } : {}) }] };
     };
 
@@ -578,18 +594,39 @@ const ShopApp: React.FC = () => {
     };
 
     const runCompanionStep = async (char: CharacterProfile, step: ShopCompanionScriptStep, runId: number) => {
-        if (companionRunRef.current !== runId) return;
+        const stepStillActive = () => companionRunRef.current === runId;
+        if (!stepStillActive()) return;
         const item = step.itemId ? getShopItem(step.itemId) : undefined;
-        const speech = step.speech || '';
+        let speech = (step.speech || '').trim();
         if (step.delayMs) await waitCompanion(step.delayMs);
-        if (companionRunRef.current !== runId) return;
+        if (!stepStillActive()) return;
 
         if (step.action === 'say') {
+            if (!speech) {
+                speech = await companionSpeech(char, 'idle', {
+                    surface: companionSurfaceNow(),
+                    visibleItems: visibleItemsForCompanion(),
+                    cart,
+                    userAction: '陪逛脚本有说话动作但没有台词，需要补一句不沉默',
+                }, companionFallbackLine('say'));
+                if (!stepStillActive()) return;
+            }
             setCompanionFocus(undefined, speech, step.action, char);
             await waitCompanion(520);
             return;
         }
         if (!item) return;
+
+        if (!speech) {
+            speech = await companionSpeech(char, 'focus_item', {
+                surface: companionSurfaceNow(),
+                item,
+                visibleItems: visibleItemsForCompanion(item),
+                cart,
+                userAction: `陪逛动作 ${step.action} 没有台词，需要按角色补一句`,
+            }, companionFallbackLine(step.action, item));
+            if (!stepStillActive()) return;
+        }
 
         const pushDeclineHijackLine = async () => {
             const reply = await companionSpeech(char, 'decline_hijack', {
@@ -598,6 +635,7 @@ const ShopApp: React.FC = () => {
                 cart,
                 userAction: `用户拒绝了围绕 ${item.name} 的陪逛拦停 / 付款推进`,
             });
+            if (!stepStillActive()) return;
             if (reply) pushCompanionLine(reply, 'say', item.id);
         };
 
@@ -610,6 +648,7 @@ const ShopApp: React.FC = () => {
         if (step.action === 'open_item') {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
+            if (!stepStillActive()) return;
             setDetailItem(item);
             recordFootprint(item);
             await waitCompanion(720);
@@ -636,7 +675,9 @@ const ShopApp: React.FC = () => {
         if (step.action === 'ask_user_pay') {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
+            if (!stepStillActive()) return;
             const accepted = await waitForCompanionHijack(char, item, speech, step.action);
+            if (!stepStillActive()) return;
             if (!accepted) { await pushDeclineHijackLine(); return; }
             setCompanionRequest({ charId: char.id, item, speech });
             await waitCompanion(620);
@@ -645,7 +686,9 @@ const ShopApp: React.FC = () => {
         if (step.action === 'auto_user_pay') {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
+            if (!stepStillActive()) return;
             const accepted = await waitForCompanionHijack(char, item, speech, step.action);
+            if (!stepStillActive()) return;
             if (!accepted) { await pushDeclineHijackLine(); return; }
             await companionAutoUserPay(char, item, speech);
             await waitCompanion(620);
@@ -654,7 +697,9 @@ const ShopApp: React.FC = () => {
         if (step.action === 'char_pay') {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
+            if (!stepStillActive()) return;
             const accepted = await waitForCompanionHijack(char, item, speech, step.action);
+            if (!stepStillActive()) return;
             if (!accepted) { await pushDeclineHijackLine(); return; }
             await companionCharPay(char, item, speech);
             await waitCompanion(620);
@@ -681,19 +726,31 @@ const ShopApp: React.FC = () => {
         charOverride?: CharacterProfile,
     ) => {
         const char = charOverride || companion;
-        if (!char || companionBusy) return;
+        if (!char || (companionBusy && !opts.force)) return;
+        if (companionBusy && opts.force) {
+            cancelCompanionAsyncWork();
+            setCompanionBusy(false);
+            setCompanionPreparing(false);
+            setCompanionHijack(null);
+        }
+        const requestSession = companionSessionRef.current;
+        const isCurrentSession = () => companionSessionRef.current === requestSession;
         const now = Date.now();
-        if (!opts.force && now - lastCompanionAtRef.current < 3500) return;
+        if (!opts.force && now - lastCompanionAtRef.current < 1800) return;
         lastCompanionAtRef.current = now;
         setCompanionBusy(true);
         try {
             const visibleItems = opts.visibleItems || visibleItemsForCompanion(opts.item);
+            const visibleItemIds = visibleItems.map(item => item.id);
+            const fullCharacterSetting = buildFullCharacterSetting(char, { includeMemos: true });
             let script: ShopCompanionScript | null = null;
             const api = resolveAuxApi(auxApiConfig, apiConfig);
             if (api.apiKey) {
                 try {
+                    const activeUserSetting = await buildFullActiveUserSetting(userProfile);
+                    if (!isCurrentSession()) return;
                     const { system, user } = buildShopCompanionPrompt(
-                        { name: char.name, personaText: buildFullCharacterSetting(char, { includeMemos: true }), affection: char.affection },
+                        { name: char.name, personaText: fullCharacterSetting, affection: char.affection },
                         userProfile.name || '你',
                         {
                             surface,
@@ -704,7 +761,7 @@ const ShopApp: React.FC = () => {
                             budget: Math.round(80 + (char.affection ?? 50) * 4),
                             userBalance: balance,
                         },
-                        await buildFullActiveUserSetting(userProfile),
+                        activeUserSetting,
                     );
                     const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], {
                         temperature: 0.88,
@@ -718,9 +775,10 @@ const ShopApp: React.FC = () => {
                             charName: char.name,
                         }),
                     });
-                    script = parseShopCompanionScript(raw, opts.item?.id);
+                    if (!isCurrentSession()) return;
+                    script = parseShopCompanionScript(raw, opts.item?.id, visibleItemIds);
                     if (!script) {
-                        const legacy = parseShopCompanionReaction(raw, opts.item?.id);
+                        const legacy = parseShopCompanionReaction(raw, opts.item?.id, visibleItemIds);
                         if (legacy) {
                             const action: ShopCompanionScriptStep['action'] = legacy.action === 'comment' ? 'say' : legacy.action as ShopCompanionScriptStep['action'];
                             script = { steps: [{ action, itemId: legacy.itemId, speech: legacy.speech }] };
@@ -728,14 +786,23 @@ const ShopApp: React.FC = () => {
                     }
                 } catch { /* fallback below */ }
             }
-            if (!script) script = await fallbackCompanionScript(char, surface, opts.item || visibleItems[0], visibleItems);
+            if (!script) {
+                const fallbackItem = opts.item || pickShopCompanionFallbackItem(visibleItems, {
+                    name: char.name,
+                    personaText: fullCharacterSetting,
+                    affection: char.affection,
+                }, Math.round(80 + (char.affection ?? 50) * 4));
+                script = await fallbackCompanionScript(char, surface, fallbackItem, visibleItems);
+                if (!isCurrentSession()) return;
+            }
             await runCompanionScript(char, script);
         } finally {
-            setCompanionBusy(false);
+            if (isCurrentSession()) setCompanionBusy(false);
         }
     };
 
     const chooseCompanion = (char: CharacterProfile) => {
+        cancelCompanionAsyncWork();
         setCompanionId(char.id);
         setCompanionPicker(false);
         setCompanionLog([]);
@@ -744,7 +811,9 @@ const ShopApp: React.FC = () => {
         setCompanionHijack(null);
         setCompanionNotice(null);
         setCompanionCue(null);
+        setCompanionBusy(false);
         setCompanionPreparing(true);
+        const prepareSession = companionSessionRef.current;
         void (async () => {
             await Promise.all([
                 runCompanionReaction(tab === 'cart' ? 'cart' : tab === 'my' ? 'my' : tab === 'category' ? 'category' : 'home', {
@@ -755,31 +824,28 @@ const ShopApp: React.FC = () => {
                 }, char),
                 waitCompanion(780),
             ]);
-            setCompanionPreparing(false);
+            if (companionSessionRef.current === prepareSession) setCompanionPreparing(false);
         })();
     };
 
     const cancelCompanionRun = async () => {
-        companionRunRef.current += 1;
-        if (companionScrollTimerRef.current != null) {
-            window.clearTimeout(companionScrollTimerRef.current);
-            companionScrollTimerRef.current = null;
-        }
-        companionHijackResolverRef.current?.(false);
-        companionHijackResolverRef.current = null;
+        const char = companion;
+        cancelCompanionAsyncWork();
+        const stopSession = companionSessionRef.current;
         setCompanionBusy(false);
         setCompanionPreparing(false);
         setCompanionHijack(null);
         setCompanionCue(null);
-        const char = companion;
         if (char) {
+            const fallbackLine = '拉回来了，我先陪你看眼前这屏。';
+            setCompanionFocus(undefined, fallbackLine, 'say', char);
             const line = await companionSpeech(char, 'stop', {
                 surface: tab === 'cart' ? 'cart' : tab === 'my' ? 'my' : tab === 'category' ? 'category' : 'home',
                 visibleItems: visibleItemsForCompanion(),
                 cart,
-                userAction: '用户中止了这轮陪逛动作',
-            });
-            if (line) pushCompanionLine(line, 'say');
+                userAction: '用户把你拉回当前货架，请立刻回到这一屏继续一起逛',
+            }, fallbackLine);
+            if (companionSessionRef.current === stopSession && line && line !== fallbackLine) setCompanionFocus(undefined, line, 'say', char);
         }
     };
 
@@ -1213,7 +1279,32 @@ const ShopApp: React.FC = () => {
         setTab(t);
         setSub(null);
         const surface: ShopCompanionSurface = t === 'cart' ? 'cart' : t === 'my' ? 'my' : t === 'category' ? 'category' : 'home';
-        void runCompanionReaction(surface, { visibleItems: visibleItemsForCompanion(), cart, userAction: `切到${t === 'cart' ? '篮子' : t === 'my' ? '我的' : t === 'category' ? '分类' : '货架'}` });
+        void runCompanionReaction(surface, {
+            visibleItems: visibleItemsForCompanion(undefined, { tab: t }),
+            cart,
+            userAction: `切到${t === 'cart' ? '篮子' : t === 'my' ? '我的' : t === 'category' ? '分类' : '货架'}`,
+        });
+    };
+
+    const shopCategoryLabel = (key: string) =>
+        key === 'fav' ? '心头好' : key === 'all' ? '全部' : (SHOP_CATEGORIES.find(c => c.key === key)?.label || key);
+
+    const setHomeCategory = (next: string) => {
+        setCat(next);
+        void runCompanionReaction('category', {
+            visibleItems: visibleItemsForCompanion(undefined, { tab: 'home', cat: next }),
+            cart,
+            userAction: `切到${shopCategoryLabel(next)}`,
+        });
+    };
+
+    const setCategoryPageCategory = (next: string) => {
+        setCategoryTabCat(next);
+        void runCompanionReaction('category', {
+            visibleItems: visibleItemsForCompanion(undefined, { tab: 'category', categoryTabCat: next }),
+            cart,
+            userAction: `切到${shopCategoryLabel(next)}`,
+        });
     };
 
     const companionSurfaceNow = (): ShopCompanionSurface =>
@@ -1230,7 +1321,7 @@ const ShopApp: React.FC = () => {
                 cart,
                 userAction: '滑到这一屏继续一起看',
             });
-        }, 900);
+        }, 520);
     };
 
     const navItems: { id: MainTab; label: string; Icon: React.ElementType }[] = [
@@ -1248,6 +1339,8 @@ const ShopApp: React.FC = () => {
         orders: 'PARCELS', bag: 'CABINET', receipts: 'LEDGER',
         fav: 'FAVOURITES', footprints: 'FOOTPRINTS', coupons: 'COUPONS', advisor: 'GIFT ADVISOR',
     };
+    const activeCompanionCue = companion ? companionCue : null;
+    const activeCompanionAvatar = companion ? (companion.convoSettings?.charAvatarOverride || companion.avatar) : undefined;
 
     return (
         <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
@@ -1339,24 +1432,25 @@ const ShopApp: React.FC = () => {
                 ) : tab === 'home' ? (
                     <ShopCatalog
                         catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()} onSearchGen={searchGen}
-                        cat={cat} setCat={(next) => { setCat(next); void runCompanionReaction('category', { visibleItems: visibleItemsForCompanion(), userAction: `切到${next === 'fav' ? '心头好' : next === 'all' ? '全部' : (SHOP_CATEGORIES.find(c => c.key === next)?.label || next)}` }); }} search={search} setSearch={setSearch}
+                        cat={cat} setCat={setHomeCategory} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
                         charactersCount={characters.length} wishCount={wishCount} onOpenAdvisor={() => setSub('advisor')}
                         claimedCoupons={claimedCoupons} onClaimCoupon={claimCoupon} onBuyFlash={(it, p) => buyItem(it, 1, p)}
                         onCreateItem={() => setEditorTarget({})}
                         onBuy={(i) => openSku(i, 'buy')} onAddCart={addItemToCart}
                         onOpenDetail={openDetail} onToggleFav={toggleFav}
-                        companionCue={companionCue} companionAvatar={companion?.convoSettings?.charAvatarOverride || companion?.avatar}
+                        companionCue={activeCompanionCue} companionAvatar={activeCompanionAvatar}
                         registerItemRef={registerItemRef}
                     />
                 ) : tab === 'category' ? (
                     <CategoryPage catalog={catalog} balance={balance} favorites={favorites}
+                        activeCategory={categoryTabCat} onCategoryChange={setCategoryPageCategory}
                         onOpen={openDetail} onToggleFav={toggleFav} onBuy={(i) => openSku(i, 'buy')} onAddCart={addItemToCart}
-                        companionCue={companionCue} companionAvatar={companion?.convoSettings?.charAvatarOverride || companion?.avatar}
+                        companionCue={activeCompanionCue} companionAvatar={activeCompanionAvatar}
                         registerItemRef={registerItemRef} />
                 ) : tab === 'cart' ? (
                     <CartView cart={cart} isSel={isSel} onToggleSel={toggleSel} onQty={changeQty} onRemove={removeCartLine} onClear={clearMyCart} onGoShop={() => switchTab('home')}
-                        companionCue={companionCue} companionAvatar={companion?.convoSettings?.charAvatarOverride || companion?.avatar}
+                        companionCue={activeCompanionCue} companionAvatar={activeCompanionAvatar}
                         registerItemRef={registerItemRef} />
                 ) : (
                     <MyCenter
@@ -1437,8 +1531,8 @@ const ShopApp: React.FC = () => {
                     onEdit={(i) => setEditorTarget({ item: i })}
                     onAddCart={(i) => openSku(i, 'cart')} onBuy={(i) => openSku(i, 'buy')}
                     onAddWish={(i) => setWishItem(i)}
-                    companionCue={companionCue?.itemId === detailItem.id ? companionCue : null}
-                    companionAvatar={companion?.convoSettings?.charAvatarOverride || companion?.avatar}
+                    companionCue={activeCompanionCue?.itemId === detailItem.id ? activeCompanionCue : null}
+                    companionAvatar={activeCompanionAvatar}
                 />
             )}
 
@@ -1607,7 +1701,7 @@ const ShopCompanionStrip: React.FC<{
             <div className="flex flex-col gap-1 shrink-0">
                 {busy || preparing ? (
                     <button onClick={onSkip} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
-                        style={{ background: VIDEO_BLACK, color: '#fff' }}>跳过</button>
+                        style={{ background: VIDEO_BLACK, color: '#fff' }}>拉回</button>
                 ) : (
                     <button onClick={onReact} className="px-2.5 py-1 rounded-full text-[10px] font-black active:scale-95"
                         style={{ background: VIDEO_BLACK, color: '#fff' }}>问一句</button>
@@ -2057,11 +2151,12 @@ const ShopCatalog: React.FC<{
 // ── 分类页（左侧分类栏 + 右侧商品网格） ──
 const CategoryPage: React.FC<{
     catalog: ShopItem[]; balance: number; favorites: string[];
+    activeCategory: string; onCategoryChange: (key: string) => void;
     onOpen: (i: ShopItem) => void; onToggleFav: (id: string) => void; onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     companionCue?: CompanionCue | null; companionAvatar?: string;
     registerItemRef?: (itemId: string, el: HTMLDivElement | null) => void;
-}> = ({ catalog, balance, favorites, onOpen, onToggleFav, onBuy, onAddCart, companionCue, companionAvatar, registerItemRef }) => {
-    const [active, setActive] = useState<string>(SHOP_CATEGORIES[0]?.key || 'flower');
+}> = ({ catalog, balance, favorites, activeCategory, onCategoryChange, onOpen, onToggleFav, onBuy, onAddCart, companionCue, companionAvatar, registerItemRef }) => {
+    const active = activeCategory || SHOP_CATEGORIES[0]?.key || 'flower';
     const items = useMemo(() => catalog.filter(i => i.category === active), [catalog, active]);
     const cur = SHOP_CATEGORIES.find(c => c.key === active);
     return (
@@ -2070,7 +2165,7 @@ const CategoryPage: React.FC<{
                 {SHOP_CATEGORIES.map(c => {
                     const on = active === c.key;
                     return (
-                        <button key={c.key} onClick={() => setActive(c.key)}
+                        <button key={c.key} onClick={() => onCategoryChange(c.key)}
                             className="w-full py-2.5 rounded-xl flex flex-col items-center gap-0.5 transition-all active:scale-95"
                             style={on ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.55)', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.5)' }}>
                             <span className="text-[18px] leading-none">{c.emoji}</span>
