@@ -25,7 +25,7 @@ import { generateLifeProfile } from '../utils/lifeProfile';
 import { generateAppearanceTags } from '../utils/appearanceTags';
 import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
-import { buildCharacterCardExportData } from '../utils/characterCardExport';
+import { buildCharacterCardExportData, stripCharacterCardPrivateFields } from '../utils/characterCardExport';
 import { createCharacterId } from '../utils/characterIdentity';
 import { applyCharacterEditorMacros } from '../utils/characterEditorMacros';
 import { scrollToManualAnchor } from '../utils/manualDeepLink';
@@ -1020,9 +1020,9 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
           spec: _spec,
           spec_version: _specVersion,
           data: _stCompatData,
-          mountedWorldbooks: _exportMounted,
-          ...characterFields
-      } = data as CharacterExportData & { id?: string; modelId?: string };
+          ...rawCharacterFields
+      } = data as CharacterExportData & { id?: string; modelId?: string; convoSettings?: CharacterProfile['convoSettings'] };
+      const characterFields = stripCharacterCardPrivateFields(rawCharacterFields);
 
       const newChar: CharacterProfile = {
           ...characterFields,

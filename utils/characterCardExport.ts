@@ -15,10 +15,34 @@ export interface CharacterCardExportResult {
 }
 
 type MountedSnapshot = NonNullable<CharacterProfile['mountedWorldbooks']>[number] & Partial<Worldbook>;
+type CharacterCardPrivateField =
+    | 'id'
+    | 'modelId'
+    | 'memories'
+    | 'refinedMemories'
+    | 'activeMemoryMonths'
+    | 'guidebookInsights'
+    | 'mountedWorldbooks'
+    | 'convoSettings';
 
 const categoryOf = (category?: string): string => (category && category.trim()) || DEFAULT_WB_CATEGORY;
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+export function stripCharacterCardPrivateFields<T extends Record<string, any>>(value: T): Omit<T, CharacterCardPrivateField> {
+    const {
+        id: _id,
+        modelId: _modelId,
+        memories: _memories,
+        refinedMemories: _refinedMemories,
+        activeMemoryMonths: _activeMemoryMonths,
+        guidebookInsights: _guidebookInsights,
+        mountedWorldbooks: _mountedWorldbooks,
+        convoSettings: _convoSettings,
+        ...cardFields
+    } = value;
+    return cardFields;
+}
 
 const compactUndefined = <T extends Record<string, any>>(obj: T): T => {
     Object.keys(obj).forEach(key => {
@@ -218,17 +242,7 @@ function buildSillyTavernV2Data(
 }
 
 export function buildCharacterCardExportData(char: CharacterProfile, options: ExportOptions = {}): CharacterCardExportResult {
-    const {
-        id: _id,
-        modelId: _modelId,
-        memories: _memories,
-        refinedMemories: _refinedMemories,
-        activeMemoryMonths: _activeMemoryMonths,
-        guidebookInsights: _guidebookInsights,
-        mountedWorldbooks: _mountedWorldbooks,
-        regexScripts: rawRegexScripts,
-        ...cardProps
-    } = char;
+    const { regexScripts: rawRegexScripts, ...cardProps } = stripCharacterCardPrivateFields(char);
     const now = options.now ?? Date.now();
     const mountedWorldbooks = collectMountedWorldbooksForExport(char, options.worldbooks || [], now);
     const regexScripts = Array.isArray(rawRegexScripts) ? clone(rawRegexScripts) : [];

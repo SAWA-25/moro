@@ -83,6 +83,18 @@ export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> 
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-08-character-card-export-convo-settings-fix',
+    date: '2026-07-08',
+    title: '分享角色卡不会带走你的单聊称呼了',
+    kind: 'fix',
+    summary: '修复从剪影集导出角色卡发给别人后，对方导入时聊天设置里仍显示导出者称呼的问题。',
+    items: [
+      '单张角色卡导出会排除“TA 怎么称呼你”、给 TA 起的小名、特别关心、铃声、查手机权限等单聊设置。',
+      '别人导入后会按 TA 自己的用户身份重新生成默认称呼，不再继承你的名字或备注历史。',
+      '已经流出的旧 Moro 角色卡再次导入时，也会自动忽略其中残留的单聊设置。',
+    ],
+  },
+  {
     id: '2026-07-08-app-self-update-1084',
     date: '2026-07-08',
     title: 'App 自己拉取更新',

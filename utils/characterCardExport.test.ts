@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterProfile, Worldbook } from '../types';
 import { regex_placement, substitute_find_regex } from './regex/engine';
-import { buildCharacterCardExportData, collectMountedWorldbooksForExport } from './characterCardExport';
+import { buildCharacterCardExportData, collectMountedWorldbooksForExport, stripCharacterCardPrivateFields } from './characterCardExport';
 
 const baseChar = (overrides: Partial<CharacterProfile> = {}): CharacterProfile => ({
     id: 'char-local',
@@ -74,8 +74,44 @@ describe('collectMountedWorldbooksForExport', () => {
 });
 
 describe('buildCharacterCardExportData', () => {
+    it('导入旧 Moro 卡前可清掉本地身份、记忆和单聊设置残留', () => {
+        const raw = {
+            ...baseChar({
+                convoSettings: {
+                    remarkName: '旧卡里的私有小名',
+                    userNickname: '玉暖',
+                    userRemarkHistory: [{ remark: '玉暖', at: 1 }],
+                },
+                mountedWorldbooks: [{ id: 'wb-old', title: '旧世界书', content: '旧内容' }],
+            }),
+            version: 1,
+            type: 'moro_character_card' as const,
+        };
+
+        const stripped = stripCharacterCardPrivateFields(raw);
+
+        expect(stripped.name).toBe('小满');
+        expect(stripped.systemPrompt).toBe('小满是一位旅行画家。');
+        expect(stripped).not.toHaveProperty('id');
+        expect(stripped).not.toHaveProperty('modelId');
+        expect(stripped).not.toHaveProperty('memories');
+        expect(stripped).not.toHaveProperty('mountedWorldbooks');
+        expect(stripped).not.toHaveProperty('convoSettings');
+        expect(JSON.stringify(stripped)).not.toContain('玉暖');
+        expect(JSON.stringify(stripped)).not.toContain('旧卡里的私有小名');
+    });
+
     it('生成 Moro 单卡 + SillyTavern character_book / scoped regex 兼容字段', () => {
         const char = baseChar({
+            convoSettings: {
+                remarkName: '导出者给 TA 起的小名',
+                userNickname: '玉暖',
+                userRemarkMotivation: '这是导出者那边的关系备注，不该进分享卡。',
+                userRemarkUpdatedAt: 777,
+                userRemarkHistory: [{ remark: '玉暖', motivation: '旧称呼', at: 666 }],
+                specialCare: true,
+                ringtone: 'bell',
+            },
             mountedWorldbooks: [{ id: 'wb-depth', title: '深度线索', content: '旧', category: '小满的世界' }],
             regexScripts: [
                 {
@@ -158,6 +194,9 @@ describe('buildCharacterCardExportData', () => {
         expect(exportData).not.toHaveProperty('refinedMemories');
         expect(exportData).not.toHaveProperty('activeMemoryMonths');
         expect(exportData).not.toHaveProperty('guidebookInsights');
+        expect(exportData).not.toHaveProperty('convoSettings');
+        expect(JSON.stringify(exportData)).not.toContain('玉暖');
+        expect(JSON.stringify(exportData)).not.toContain('导出者给 TA 起的小名');
 
         const stData = exportData.data!;
         expect(stData.name).toBe('小满');
