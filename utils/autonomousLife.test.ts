@@ -161,6 +161,18 @@ describe('autonomous life v2', () => {
     expect(plan.event?.surfacedAsMsg).toBeFalsy();
   });
 
+  it('random smart mode sends low-score life events when the visible-message watchdog fires', async () => {
+    await DB.deleteDB();
+    const now = 1_788_000_000_000;
+    const char = mkChar({ proactiveConfig: { enabled: true, intervalMinutes: 60, randomMode: true, intensity: 'balanced' } as any });
+    await DB.saveLifeEvent(mkEvent({ timestamp: now - 5 * 60_000, intensity: 20, shareWillingness: 12, proactiveAngle: 'silence' }));
+
+    const plan = await planAutonomousProactiveTurn(char, API, { now, randomMode: true, forceSend: true });
+
+    expect(plan.decision).toBe('send');
+    expect(plan.event).toBeTruthy();
+  });
+
   it('fixed mode still sends even when the life event score is low', async () => {
     await DB.deleteDB();
     const now = 1_788_000_000_000;

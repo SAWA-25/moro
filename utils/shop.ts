@@ -972,6 +972,13 @@ export interface ShopCompanionContext {
     userAction?: string;
     budget?: number;
     userBalance?: number;
+    paymentPressure?: {
+        declinedCount?: number;
+        lastDeclinedItemName?: string;
+        viewedOtherItemAfterDecline?: boolean;
+        forcedPayEligible?: boolean;
+        forcedPayChancePct?: number;
+    };
 }
 
 export interface ShopCompanionReaction {
@@ -1019,6 +1026,7 @@ export type ShopCompanionSpeechIntent =
     | 'start'
     | 'idle'
     | 'focus_item'
+    | 'free_chat'
     | 'cart_idle'
     | 'decline_hijack'
     | 'stop'
@@ -1191,31 +1199,35 @@ export function buildShopCompanionPrompt(
     const visible = (Array.isArray(ctx.visibleItems) ? ctx.visibleItems : ctx.item ? [ctx.item] : SHOP_ITEMS).filter(Boolean);
     const visibleLine = visible.length ? compactShelf(visible) : '（当前界面没有可见商品）';
     const itemActionGuidance = visible.length
-        ? '开场或滑到新一屏时，除非角色确实只想旁观，否则至少给出一个涉及商品的动作（point / scroll_to_item / open_item / want / ask_user_pay / auto_user_pay / char_pay），体现你自己的选择。'
+        ? '开场或滑到新一屏时，先按你的完整角色设定、审美、偏好、雷点和当下心情，从可见商品里选出你自己最想看/想要/想送的一件，再输出涉及商品的脚本动作（point / scroll_to_item / open_item / want / ask_user_pay / auto_user_pay / char_pay）。'
         : '当前界面没有可见商品时，只能输出 "say" 动作陪用户说一句，不要输出 itemId，也不要编造或引用屏幕外商品。';
     const budget = ctx.budget ?? Math.round(80 + (char.affection ?? 50) * 4);
     const itemLine = ctx.item ? `${ctx.item.id} | ${ctx.item.emoji}${ctx.item.name} | ¥${formatPrice(ctx.item.price)} | ${ctx.item.blurb}` : '无单独商品详情';
     const cartLines = resolveCart(ctx.cart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、') || '空';
     const balanceLine = ctx.userBalance != null ? `可用余额：¥${formatPrice(ctx.userBalance)}\n` : '';
+    const pressure = ctx.paymentPressure;
+    const pressureLine = pressure
+        ? `强制付款触发状态：用户已连续拒绝 ${pressure.declinedCount || 0} 次${pressure.lastDeclinedItemName ? `，刚拒绝的是「${pressure.lastDeclinedItemName}」` : ''}；拒绝后${pressure.viewedOtherItemAfterDecline ? '已经滑开/看了别的商品' : '还没有明显滑开去看别的商品'}；本轮${pressure.forcedPayEligible ? `允许小概率强势结账（约 ${pressure.forcedPayChancePct || 0}%）` : '不允许强势结账'}。`
+        : '强制付款触发状态：用户还没有形成连续拒绝压力，本轮不允许强势结账。';
     const system = `你是「${char.name}」，正在陪 ${userName} 逛礼物商城「心意铺」。你能看到当前界面、商品、购物车和 ${userName} 的操作，也能像同屏逛街一样指东西、带 TA 滑到某件商品、打开详情、把商品放进篮子或推进结账。请完全按你的完整角色设定、${userName} 的完整用户设定、关系亲疏、预算感和当下心情行动。你的 speech 只说沉浸话，不提系统、Moro、本地、虚拟、模拟、现实支付、幕后规则等词。\n${persona ? `${persona}\n` : ''}${userSetting ? `\n【完整用户设定】\n${userSetting}\n` : ''}`;
     const user = `当前界面：${ctx.surface}
 用户刚做的事：${ctx.userAction || '正在浏览'}
 你的大致预算感：¥${formatPrice(budget)}
-${balanceLine}选品原则：先读你的完整角色设定、审美、习惯、关系和当下心情，再从可见商品里自己挑真正想看/想要/想送的一件；不要为了讨好 ${userName} 随机选，itemId 必须来自屏幕上可见商品。
+${balanceLine}选品脚本原则：先读你的完整角色设定、审美、习惯、雷点、关系和当下心情，再从可见商品里自己挑真正想看/想要/想送的一件；不要为了讨好 ${userName} 随机选，itemId 必须来自屏幕上可见商品。你输出的 steps 就是这次陪逛带看的执行脚本，每一步都要服务于你自己的选品判断。
 ${itemActionGuidance}
-结账边界：允许你在非常想推进、金额合理、符合关系和人设时使用 "auto_user_pay" 帮 ${userName} 直接结账；若余额不够，会改成请求确认。
+结账边界：${pressureLine} "auto_user_pay" 只允许在用户连续拒绝、拒绝后滑开去看别的商品、你仍然特别喜欢当前这件、金额合理且本轮概率允许时使用；否则即使你很喜欢，也只能用 "want" 或 "ask_user_pay" 弹请求窗口。
 正在看的商品：${itemLine}
 购物车：${cartLines}
 屏幕上可见商品：
 ${visibleLine}
 
-请输出一个 1~5 步的短脚本，像你真的在旁边一起逛。可用动作：
+请输出一个 1~5 步的短脚本，像你真的在旁边一起逛；脚本要体现“你为什么被这件商品吸引”，而不是平均推荐。可用动作：
 - "say"：只说一句话，不触发界面动作。
 - "point"：高亮指出某件商品。
 - "scroll_to_item"：把界面带到某件商品。
 - "open_item"：打开某件商品详情。
 - "add_user_cart"：把商品放进 ${userName} 的篮子。
-- "want"：你明显喜欢某件商品，先记进自己的心愿单。
+- "want"：你明显喜欢某件商品；会出现请求窗口，让 ${userName} 决定付款、先记心愿或暂时拒绝。
 - "ask_user_pay"：你想要某件商品，并向 ${userName} 撒娇/认真请求帮你付款；会出现请求窗口。
 - "auto_user_pay"：你主动推进，让 ${userName} 直接结账某件商品；只在你很确定时使用。
 - "char_pay"：你决定直接付款买给 ${userName}（适合你很想送、金额不离谱、关系/性格允许时）。
@@ -1240,7 +1252,10 @@ export function buildShopCompanionSpeechPrompt(
     const visibleLine = visible.length ? compactShelf(visible) : '无额外可见商品';
     const balanceLine = ctx.userBalance != null ? `\n可用余额：¥${formatPrice(ctx.userBalance)}` : '';
     const system = `你是「${char.name}」，正在陪 ${userName} 逛礼物商城「心意铺」。下面是完整角色设定和完整用户设定；请完全代入，只写你会当面对 ${userName} 说的一句话。不要提系统、Moro、本地、虚拟、模拟、模型、JSON、幕后规则。\n${persona ? `${persona}\n` : ''}${userSetting ? `\n【完整用户设定】\n${userSetting}\n` : ''}`;
-    const user = `台词意图：${intent}
+    const freeChatHint = intent === 'free_chat'
+        ? '\n这是心意铺内同屏陪逛对话，用户正在和你临场聊天；请直接回答用户，不要推进付款、不要写主聊天、不要跳出陪逛现场。'
+        : '';
+    const user = `台词意图：${intent}${freeChatHint}
 当前界面：${ctx.surface}
 用户刚做的事：${ctx.userAction || '正在浏览'}${balanceLine}
 相关商品：${itemLine}
@@ -1248,7 +1263,7 @@ export function buildShopCompanionSpeechPrompt(
 屏幕上可见商品：
 ${visibleLine}
 
-请调用你的角色口吻临场生成一句话，不要用固定模板；要贴合商品、关系、刚才发生的事和你的性格。长度 6~36 字，第一人称，像真人同屏逛街时顺口说的。
+请调用你的角色口吻临场生成一句话，不要用固定模板；要贴合商品、关系、刚才发生的事和你的性格。长度 6~36 字，第一人称，像真人同屏逛街时顺口说的。只输出一句角色回复，不要多段展开。
 只输出 JSON，不要多余文字：
 {"speech":"你对 ${userName} 说的一句话"}`;
     return { system, user };

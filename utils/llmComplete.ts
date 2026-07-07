@@ -25,8 +25,14 @@ export interface CompleteOptions extends PresetGenParams {
     temperature?: number;
     maxTokens?: number;
     signal?: AbortSignal;
+    maxRetries?: number;
+    timeoutMs?: number;
     /** 回复因长度被截断（finish_reason='length'）时自动「接着写」的最大续写轮数。默认 0（不续写）。 */
     continueRounds?: number;
+    continueOnMissingFinishReason?: boolean;
+    returnPartialOnContinueError?: boolean;
+    continueTimeoutMs?: number;
+    continueMaxRetries?: number;
     /** true = 调用方传入的 max_tokens / maxTokens 不被预设采样参数覆盖。 */
     preserveMaxTokens?: boolean;
     /** API 后台流水标注。 */

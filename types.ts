@@ -1695,6 +1695,10 @@ export interface BankTransaction {
     auto?: boolean;
     /** 这笔变动后的钱包余额。 */
     balanceAfter?: number;
+    /** 手动收入的来源依据，例如工资条、转账记录、退款单号或已有存款说明。 */
+    incomeBasis?: string;
+    /** 手动收入是新到账，还是补录过去已经存在的收入。 */
+    incomeTiming?: 'current' | 'past';
     /** 创建者：user 手动 / system 自动 / character 角色侧生成。 */
     createdBy?: 'user' | 'system' | 'character';
     /** 关联实体 id，如公司 id、贷款 id、持仓代码。 */
@@ -2196,6 +2200,75 @@ export interface BankStockHolding {
     avgCost: number;
 }
 
+export type BankInvestmentOrderSide = 'buy' | 'sell';
+export type BankInvestmentOrderKind = 'market' | 'limit' | 'take_profit' | 'stop_loss' | 'dip_buy';
+export type BankInvestmentOrderStatus = 'open' | 'filled' | 'cancelled' | 'failed';
+
+export interface BankInvestmentOrder {
+    id: string;
+    symbol: string;
+    side: BankInvestmentOrderSide;
+    kind: BankInvestmentOrderKind;
+    status: BankInvestmentOrderStatus;
+    amount?: number;
+    shares?: number;
+    targetPrice?: number;
+    triggerPrice?: number;
+    createdAt: number;
+    updatedAt: number;
+    filledAt?: number;
+    filledPrice?: number;
+    filledShares?: number;
+    fee?: number;
+    cost?: number;
+    revenue?: number;
+    pnl?: number;
+    note?: string;
+    error?: string;
+    source?: 'manual' | 'strategy' | 'system';
+    strategyId?: string;
+}
+
+export interface BankInvestmentStrategy {
+    id: string;
+    symbol: string;
+    kind: Extract<BankInvestmentOrderKind, 'take_profit' | 'stop_loss' | 'dip_buy'>;
+    enabled: boolean;
+    triggerPrice: number;
+    amount?: number;
+    shares?: number;
+    label?: string;
+    createdAt: number;
+    updatedAt: number;
+    lastTriggeredAt?: number;
+}
+
+export interface BankMarketRuntime {
+    tickMs: number;
+    lastTickAt?: number;
+    lastBucket?: number;
+    catchupTicks?: number;
+    status?: 'live' | 'idle';
+}
+
+export interface BankInvestmentLedgerEvent {
+    amount: number;
+    note: string;
+    category: string;
+    kind: string;
+    sourceId?: string;
+    relatedEntityId?: string;
+}
+
+export interface BankInvestmentTickResult {
+    life: BankLifeState;
+    ticksApplied: number;
+    orders: BankInvestmentOrder[];
+    ledgerEvents: BankInvestmentLedgerEvent[];
+    actionResults: BankLifeActionResult[];
+    balanceDelta: number;
+}
+
 export interface BankCompanyState {
     id: string;
     name: string;
@@ -2402,6 +2475,10 @@ export interface BankLifeState {
     stockMarket: BankStockQuote[];
     holdings: Record<string, BankStockHolding>;
     watchlist: string[];
+    marketRuntime?: BankMarketRuntime;
+    investOrders?: BankInvestmentOrder[];
+    investStrategies?: BankInvestmentStrategy[];
+    realizedPnl?: number;
     company?: BankCompanyState;
     loans: BankLoan[];
     events: BankLifeEvent[];
@@ -2894,6 +2971,18 @@ export interface XunjiReportItem {
   writtenBack?: boolean;
 }
 
+export interface XunjiCharacterLocationSettings {
+  locationSource?: 'character' | 'browser';
+  customLocation?: string;
+  customLocationUpdatedAt?: number;
+  browserLocation?: {
+    lat: number;
+    lng: number;
+    accuracy?: number;
+    capturedAt: number;
+  };
+}
+
 export interface XunjiSettings {
   id: 'settings';
   activeCharId?: string;
@@ -2905,6 +2994,9 @@ export interface XunjiSettings {
   /** per-char 的自动续写水位，避免同一段时间被重复生成。 */
   autoTraceLastAtByChar?: Record<string, number>;
   defaultDensity: XunjiDensity;
+  /** 每个目标角色自己的定位设置，避免一个角色的自定义地点串到另一个角色。 */
+  locationByCharId?: Record<string, XunjiCharacterLocationSettings>;
+  /** 旧版全局定位字段：仅用于迁移旧存档。 */
   locationSource?: 'character' | 'browser';
   customLocation?: string;
   customLocationUpdatedAt?: number;
@@ -3334,8 +3426,8 @@ export interface CharacterProfile {
   proactiveConfig?: {
     enabled: boolean;
     intervalMinutes: number; // 30, 60, 120, 240, etc.
-    /** 随机时间模式：间隔随机（1 小时 ~ 1 天），且用户刚回过消息时不打扰，
-     *  发不发、说什么完全交给角色性格 */
+    /** 随机时间模式：间隔随机（1 小时 ~ 12 小时），且用户刚回过消息时不打扰；
+     *  平时发不发、说什么交给角色性格，超过 24 小时没可见来信时会跳过智能沉默兜底。 */
     randomMode?: boolean;
     /** 离线自主生活：开启后角色在后台「过自己的日子」，主动消息从 TA 正在经历的
      *  生活事件取材（分享自己的生活、而不是催用户回复），离线期间的活动也会攒成

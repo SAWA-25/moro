@@ -4,6 +4,7 @@ import {
     BUSINESS_TEMPLATES,
     BANK_SHOP_CLOSE_HOUR,
     BANK_SHOP_DAILY_RESET_HOUR,
+    BANK_INVEST_TICK_MS,
     JOB_POSTINGS,
     bankShopBusinessDateStr,
     canFoundCompany,
@@ -11,12 +12,14 @@ import {
     canOpenBankShopForDate,
     canSettleBankShopForDate,
     getBankShopCloseBlockReason,
+    getBankShopRealtimeStatus,
     canUnlockLifeShop,
     advanceBankLifeDay,
     advanceJobApplicationStage,
     advanceJobApplicationStageWithAi,
     applyForJob,
     applyMarketPulses,
+    attachJobApplicationAiReview,
     appendJobChatMessage,
     appendBankActionRecord,
     borrowLoan,
@@ -24,15 +27,18 @@ import {
     createBankActionResult,
     computeCreditProfile,
     buyStock,
+    cancelBankInvestmentOrder,
     createDefaultBankShopState,
     createDefaultBankLifeState,
     claimBankShopDailyReward,
+    executeBankInvestmentOrders,
     foundCompany,
     getDefaultBankBranchName,
     migrateBankShopPortfolioState,
     openBankShopBranch,
     prepareBankStateForSave,
     applyCompanyIssueWithResult,
+    placeBankInvestmentOrder,
     leaveJob,
     loanTotal,
     mergeAiJobPostings,
@@ -43,7 +49,9 @@ import {
     sellStock,
     startJobApplication,
     switchActiveBankShop,
+    tickBankInvestmentMarket,
     updateResumeProfile,
+    upsertBankInvestmentStrategy,
     withdrawCompanyDividend,
 } from './bankLife';
 import { BankFullState } from '../types';
@@ -92,6 +100,39 @@ describe('bankLife', () => {
         expect(canOpenBankShopForDate(settled, new Date(2026, 5, 2, 3, 59))).toBe(false);
         expect(bankShopBusinessDateStr(new Date(2026, 5, 2, 4, 0))).toBe('2026-06-02');
         expect(canOpenBankShopForDate(settled, new Date(2026, 5, 2, 4, 0))).toBe(true);
+    });
+
+    it('describes realtime shop status for the BankApp action panel', () => {
+        const shop = createDefaultBankShopState('测试小店');
+        const readyToOpen = getBankShopRealtimeStatus(shop, new Date(2026, 5, 1, 10, 0));
+        expect(readyToOpen.kind).toBe('readyToOpen');
+        expect(readyToOpen.label).toBe('可开门营业');
+        expect(readyToOpen.canOpen).toBe(true);
+        expect(readyToOpen.canClose).toBe(false);
+
+        const opened = markBankShopBusinessOpened(shop, new Date(2026, 5, 1, 10, 0), new Date(2026, 5, 1, 10, 0).getTime());
+        const waitingForClose = getBankShopRealtimeStatus(opened, new Date(2026, 5, 1, 17, 30));
+        expect(waitingForClose.kind).toBe('openWaitingForClose');
+        expect(waitingForClose.label).toBe('营业中');
+        expect(waitingForClose.canOpen).toBe(false);
+        expect(waitingForClose.canClose).toBe(false);
+        expect(waitingForClose.nextActionAt).toBe(new Date(2026, 5, 1, 18, 0).getTime());
+
+        const readyToClose = getBankShopRealtimeStatus(opened, new Date(2026, 5, 1, 18, 0));
+        expect(readyToClose.kind).toBe('readyToClose');
+        expect(readyToClose.label).toBe('可打烊结算');
+        expect(readyToClose.canClose).toBe(true);
+
+        const settled = { ...opened, isBusinessOpen: false, openedBusinessDateStr: undefined, lastBusinessDateStr: '2026-06-01' };
+        const waitingForReset = getBankShopRealtimeStatus(settled, new Date(2026, 5, 1, 22, 0));
+        expect(waitingForReset.kind).toBe('waitingForReset');
+        expect(waitingForReset.label).toBe('未到可营业时间');
+        expect(waitingForReset.canOpen).toBe(false);
+        expect(waitingForReset.nextActionAt).toBe(new Date(2026, 5, 2, 4, 0).getTime());
+
+        const beforeReset = getBankShopRealtimeStatus(settled, new Date(2026, 5, 2, 3, 30));
+        expect(beforeReset.kind).toBe('waitingForReset');
+        expect(beforeReset.nextActionAt).toBe(new Date(2026, 5, 2, 4, 0).getTime());
     });
 
     it('initializes a Sims-like life calendar and personal status', () => {
@@ -290,6 +331,23 @@ describe('bankLife', () => {
         const life = appendJobChatMessage(started.life, started.application.id, { role: 'user', content: '我想了解排班。', at: '2026-06-01 10:00' });
         const messages = life.jobHistory[0].chatMessages || [];
         expect(messages[messages.length - 1]?.content).toContain('排班');
+    });
+
+    it('attaches late resume reviews without overwriting advanced application progress', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const started = startJobApplication(life0, JOB_POSTINGS[0]);
+        const screening = advanceJobApplicationStageWithAi(started.life, started.application.id, '我可以稳定排班', 0, { nextStage: 'screening', scoreDelta: 18 });
+        const beforeScore = screening.application?.score || 0;
+        const reviewed = attachJobApplicationAiReview(screening.life, started.application.id, {
+            score: 72,
+            strengths: ['沟通清楚'],
+            weaknesses: ['经历还可以补充'],
+            suggestion: '先继续沟通排班和结算。',
+        });
+
+        expect(reviewed.jobHistory[0].stage).toBe('screening');
+        expect(reviewed.jobHistory[0].score).toBe(beforeScore);
+        expect(reviewed.jobHistory[0].aiReview?.score).toBe(72);
     });
 
     it('opens a selected business type with its own product shelf', () => {
@@ -548,6 +606,124 @@ describe('bankLife', () => {
         expect(advanced.life.stockMarket[0].intraday?.length).toBeGreaterThan(3);
         expect(advanced.life.stockMarket[0].newsList?.length).toBeGreaterThan(0);
         expect(advanced.life.stockMarket[0].bidAsk?.bid).toBeGreaterThan(0);
+    });
+
+    it('ticks realtime virtual market once per time bucket', () => {
+        const now = new Date('2026-06-01T10:00:30').getTime();
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const first = tickBankInvestmentMarket(life0, { now, tickMs: BANK_INVEST_TICK_MS });
+        const second = tickBankInvestmentMarket(first.life, { now: now + 1000, tickMs: BANK_INVEST_TICK_MS });
+
+        expect(first.ticksApplied).toBe(1);
+        expect(first.life.stockMarket[0].price).not.toBe(life0.stockMarket[0].price);
+        expect(first.life.stockMarket[0].intraday?.[0]?.time).toBe('10:00:30');
+        expect(second.ticksApplied).toBe(0);
+        expect(second.life.stockMarket[0].price).toBe(first.life.stockMarket[0].price);
+    });
+
+    it('caps realtime market catch-up ticks after a long absence', () => {
+        const start = new Date('2026-06-01T09:30:00').getTime();
+        const later = start + BANK_INVEST_TICK_MS * 500;
+        const life0 = {
+            ...createDefaultBankLifeState('2026-06-01'),
+            marketRuntime: { tickMs: BANK_INVEST_TICK_MS, lastBucket: start, lastTickAt: start, status: 'live' as const },
+        };
+        const result = tickBankInvestmentMarket(life0, { now: later, tickMs: BANK_INVEST_TICK_MS, maxCatchupTicks: 5 });
+
+        expect(result.ticksApplied).toBe(5);
+        expect(result.life.stockMarket[0].intraday?.length).toBeLessThanOrEqual(120);
+        expect(result.life.marketRuntime?.catchupTicks).toBe(5);
+    });
+
+    it('fills limit orders and returns ledger events for virtual wallet sync', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const quote = life0.stockMarket.find(q => q.symbol === 'MORO')!;
+        const placed = placeBankInvestmentOrder(life0, {
+            symbol: 'MORO',
+            side: 'buy',
+            kind: 'limit',
+            targetPrice: quote.price + 1,
+            amount: 1000,
+            source: 'manual',
+        });
+        const executed = executeBankInvestmentOrders(placed.life, { walletBalance: 2000, now: Date.now() });
+
+        expect(executed.orders[0].status).toBe('filled');
+        expect(executed.ledgerEvents[0].amount).toBeLessThan(0);
+        expect(executed.life.holdings.MORO.shares).toBeGreaterThan(0);
+        expect(executed.life.actionHistory?.[0].kind).toBe('stock-auto-buy');
+    });
+
+    it('marks triggered buy orders as failed when virtual wallet is insufficient', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const quote = life0.stockMarket.find(q => q.symbol === 'MORO')!;
+        const placed = placeBankInvestmentOrder(life0, {
+            symbol: 'MORO',
+            side: 'buy',
+            kind: 'limit',
+            targetPrice: quote.price + 1,
+            amount: 5000,
+            source: 'manual',
+        });
+        const executed = executeBankInvestmentOrders(placed.life, { walletBalance: 20, now: Date.now() });
+
+        expect(executed.orders[0].status).toBe('failed');
+        expect(executed.orders[0].error).toContain('钱包余额不足');
+        expect(executed.ledgerEvents).toHaveLength(0);
+        expect(executed.life.holdings.MORO).toBeUndefined();
+    });
+
+    it('supports one-shot strategies and cancelling open investment orders', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const quote = life0.stockMarket.find(q => q.symbol === 'MORO')!;
+        const strategyLife = upsertBankInvestmentStrategy(life0, {
+            symbol: 'MORO',
+            kind: 'dip_buy',
+            triggerPrice: quote.price + 1,
+            amount: 800,
+        });
+        const executed = executeBankInvestmentOrders(strategyLife, { walletBalance: 1000, now: Date.now() });
+        expect(executed.orders[0].source).toBe('strategy');
+        expect(executed.orders[0].status).toBe('filled');
+        expect(executed.life.investStrategies?.[0].enabled).toBe(false);
+
+        const placed = placeBankInvestmentOrder(executed.life, {
+            symbol: 'CAFE',
+            side: 'buy',
+            kind: 'limit',
+            targetPrice: 1,
+            amount: 100,
+            source: 'manual',
+        });
+        const cancelled = cancelBankInvestmentOrder(placed.life, placed.order.id);
+        expect(cancelled.investOrders?.find(o => o.id === placed.order.id)?.status).toBe('cancelled');
+    });
+
+    it('migrates legacy investment state defaults without losing holdings or market', () => {
+        const legacyLife = createDefaultBankLifeState('2026-06-01');
+        const legacy = {
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: createDefaultBankShopState('旧店'),
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: {
+                ...legacyLife,
+                marketRuntime: undefined,
+                investOrders: undefined,
+                investStrategies: undefined,
+                realizedPnl: undefined,
+                holdings: { MORO: { symbol: 'MORO', shares: 2, avgCost: 40 } },
+            },
+        } as unknown as BankFullState;
+        const migrated = migrateBankLifeState(legacy);
+
+        expect(migrated.life?.marketRuntime?.tickMs).toBe(BANK_INVEST_TICK_MS);
+        expect(migrated.life?.investOrders).toEqual([]);
+        expect(migrated.life?.investStrategies).toEqual([]);
+        expect(migrated.life?.realizedPnl).toBe(0);
+        expect(migrated.life?.holdings.MORO.shares).toBe(2);
+        expect(migrated.life?.stockMarket.length).toBeGreaterThan(0);
     });
 
     it('creates company state with starting capital', () => {

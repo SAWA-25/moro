@@ -1,6 +1,10 @@
-import type { Message } from '../types';
+import type { CharacterProfile, Message } from '../types';
 
 export const CHAR_AVATAR_FROM_USER_IMAGE_EVENT = 'char-avatar-from-user-image';
+export const CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT = 'char-avatar-from-user-image-applied';
+export const CHAR_AVATAR_NOTICE_DISMISSED_KEY = 'moro_char_avatar_notice_dismissed_v1';
+export const CHAR_AVATAR_NOTICE_DISMISSED_LIMIT = 100;
+export const CHAR_AVATAR_HISTORY_LIMIT = 20;
 
 export type CharAvatarChangeSource = 'autonomous' | 'user_request';
 
@@ -9,6 +13,32 @@ export interface CharAvatarEventDetail {
     reason?: string;
     source?: CharAvatarChangeSource;
     sourceMessageId?: number;
+}
+
+export interface CharAvatarAppliedEventDetail extends CharAvatarEventDetail {
+    image: string;
+    previousOverride?: string;
+    at: number;
+    systemMessageId?: number;
+    noticeKey?: string;
+}
+
+export interface CharAvatarNoticeDraft extends CharAvatarAppliedEventDetail {
+    noticeKey: string;
+}
+
+export interface CharAvatarApplyPatchResult {
+    updates?: Partial<CharacterProfile>;
+    applied: CharAvatarNoticeDraft;
+    shouldWriteSystemMessage: boolean;
+    systemMessageContent: string;
+    systemMessageMetadata: {
+        charAvatarChanged: true;
+        sourceMessageId?: number;
+        reason?: string;
+        source: CharAvatarChangeSource;
+    };
+    duplicate: boolean;
 }
 
 export interface CharAvatarDirectiveResult {
@@ -21,6 +51,67 @@ export interface PendingUserAvatarRequest {
     imageMessageId: number;
     imageUrl: string;
     requestText: string;
+}
+
+const normalizeAvatarReason = (value?: string): string | undefined => {
+    const text = (value || '').trim();
+    return text || undefined;
+};
+
+export function makeCharAvatarNoticeKey(input: {
+    charId?: string;
+    at?: number;
+    sourceMessageId?: number;
+    source?: CharAvatarChangeSource;
+}): string | null {
+    if (!input.charId || typeof input.at !== 'number' || !Number.isFinite(input.at)) return null;
+    if (typeof input.sourceMessageId !== 'number') return null;
+    return `${input.charId}:${Math.trunc(input.at)}:${input.sourceMessageId}:${input.source || 'autonomous'}`;
+}
+
+export function parseDismissedCharAvatarNoticeKeys(raw: string | null | undefined): string[] {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        const keys = parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+        return Array.from(new Set(keys)).slice(0, CHAR_AVATAR_NOTICE_DISMISSED_LIMIT);
+    } catch {
+        return [];
+    }
+}
+
+export function isCharAvatarNoticeDismissed(keys: string[], noticeKey: string | null | undefined): boolean {
+    return !!noticeKey && keys.includes(noticeKey);
+}
+
+export function markCharAvatarNoticeDismissed(keys: string[], noticeKey: string | null | undefined): string[] {
+    if (!noticeKey) return keys.slice(0, CHAR_AVATAR_NOTICE_DISMISSED_LIMIT);
+    return [noticeKey, ...keys.filter(key => key !== noticeKey)].slice(0, CHAR_AVATAR_NOTICE_DISMISSED_LIMIT);
+}
+
+export function buildCharAvatarNoticeFromCharacter(char: CharacterProfile): CharAvatarNoticeDraft | null {
+    const cs = char.convoSettings;
+    if (!cs?.charAvatarOverride || typeof cs.charAvatarUpdatedAt !== 'number') return null;
+    if (typeof cs.charAvatarSourceMessageId !== 'number') return null;
+    const source = cs.charAvatarChangeSource || 'autonomous';
+    const noticeKey = makeCharAvatarNoticeKey({
+        charId: char.id,
+        at: cs.charAvatarUpdatedAt,
+        sourceMessageId: cs.charAvatarSourceMessageId,
+        source,
+    });
+    if (!noticeKey) return null;
+    return {
+        charId: char.id,
+        image: cs.charAvatarOverride,
+        reason: normalizeAvatarReason(cs.charAvatarChangeReason),
+        source,
+        sourceMessageId: cs.charAvatarSourceMessageId,
+        previousOverride: cs.charAvatarPreviousOverride,
+        at: cs.charAvatarUpdatedAt,
+        noticeKey,
+    };
 }
 
 const isImageUrlLike = (value: string): boolean =>
@@ -99,4 +190,87 @@ export function selectCharAvatarCandidateMessage(messages: Message[], sourceMess
         if (isUserImageAvatarCandidate(exact)) return exact;
     }
     return [...messages].reverse().find(isUserImageAvatarCandidate) || null;
+}
+
+export function buildCharAvatarApplyPatch(input: {
+    char: CharacterProfile;
+    target: Message;
+    detail?: Partial<CharAvatarEventDetail>;
+    now?: number;
+}): CharAvatarApplyPatchResult | null {
+    const { char, target } = input;
+    if (!isUserImageAvatarCandidate(target)) return null;
+    const cs = char.convoSettings || {};
+    const source = input.detail?.source || 'autonomous';
+    const reason = normalizeAvatarReason(input.detail?.reason);
+    const sourceMessageId = typeof target.id === 'number' ? target.id : input.detail?.sourceMessageId;
+    const existingSource = cs.charAvatarChangeSource || 'autonomous';
+    const duplicate =
+        cs.charAvatarOverride === target.content &&
+        cs.charAvatarSourceMessageId === sourceMessageId &&
+        existingSource === source &&
+        normalizeAvatarReason(cs.charAvatarChangeReason) === reason;
+    const at = duplicate && typeof cs.charAvatarUpdatedAt === 'number'
+        ? cs.charAvatarUpdatedAt
+        : input.now || Date.now();
+    const previousOverride = duplicate ? cs.charAvatarPreviousOverride : cs.charAvatarOverride;
+    const noticeKey = makeCharAvatarNoticeKey({
+        charId: char.id,
+        at,
+        sourceMessageId,
+        source,
+    });
+    if (!noticeKey) return null;
+
+    const systemMessageContent = source === 'user_request'
+        ? `「${char.name || 'TA'}」同意把你发来的图片换成本会话头像${reason ? `：${reason}` : ''}`
+        : `「${char.name || 'TA'}」把你刚发的图片设成了自己的头像${reason ? `：${reason}` : ''}`;
+    const applied: CharAvatarNoticeDraft = {
+        charId: char.id,
+        image: target.content,
+        reason,
+        source,
+        sourceMessageId,
+        previousOverride,
+        at,
+        noticeKey,
+    };
+
+    if (duplicate) {
+        return {
+            applied,
+            shouldWriteSystemMessage: false,
+            systemMessageContent,
+            systemMessageMetadata: { charAvatarChanged: true, sourceMessageId, reason, source },
+            duplicate: true,
+        };
+    }
+
+    const historyEntry = { sourceMessageId, reason, source, at };
+    const oldHistory = cs.charAvatarHistory || [];
+    const shouldAddHistory =
+        oldHistory[0]?.sourceMessageId !== sourceMessageId ||
+        normalizeAvatarReason(oldHistory[0]?.reason) !== reason ||
+        oldHistory[0]?.source !== source;
+    const nextHistory = (shouldAddHistory ? [historyEntry, ...oldHistory] : oldHistory)
+        .slice(0, CHAR_AVATAR_HISTORY_LIMIT);
+
+    return {
+        updates: {
+            convoSettings: {
+                charAvatarOverride: target.content,
+                charAvatarChangeReason: reason,
+                charAvatarUpdatedAt: at,
+                charAvatarChangeSource: source,
+                charAvatarSourceMessageId: sourceMessageId,
+                charAvatarPreviousOverride: previousOverride,
+                charAvatarHistory: nextHistory,
+            },
+        },
+        applied,
+        shouldWriteSystemMessage: true,
+        systemMessageContent,
+        systemMessageMetadata: { charAvatarChanged: true, sourceMessageId, reason, source },
+        duplicate: false,
+    };
 }

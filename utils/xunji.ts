@@ -3,6 +3,7 @@ import type {
   XunjiAppUsageSession,
   XunjiBatteryEvent,
   XunjiCallRecord,
+  XunjiCharacterLocationSettings,
   XunjiDensity,
   XunjiGeneratedMoment,
   XunjiLocationPoint,
@@ -392,8 +393,85 @@ export function createDefaultXunjiSettings(activeCharId?: string): XunjiSettings
     autoTraceEnabled: true,
     autoTraceLastAtByChar: {},
     defaultDensity: 'standard',
+    locationByCharId: {},
     locationSource: 'character',
     reportRules: { ...DEFAULT_XUNJI_REPORT_RULES },
+  };
+}
+
+const XUNJI_LOCATION_SETTING_KEYS = ['locationSource', 'customLocation', 'customLocationUpdatedAt', 'browserLocation'] as const;
+
+export function hasXunjiLocationPatch(patch: Partial<XunjiSettings> | Partial<XunjiCharacterLocationSettings>): boolean {
+  return XUNJI_LOCATION_SETTING_KEYS.some(key => Object.prototype.hasOwnProperty.call(patch, key));
+}
+
+function readLegacyLocationSettings(settings?: Partial<XunjiSettings> | null): XunjiCharacterLocationSettings | null {
+  if (!settings || !hasXunjiLocationPatch(settings)) return null;
+  return {
+    locationSource: settings.locationSource || 'character',
+    customLocation: settings.customLocation,
+    customLocationUpdatedAt: settings.customLocationUpdatedAt,
+    browserLocation: settings.browserLocation,
+  };
+}
+
+export function getXunjiCharacterLocationSettings(settings: XunjiSettings, charId?: string): XunjiCharacterLocationSettings {
+  if (!charId) return { locationSource: 'character' };
+  return settings.locationByCharId?.[charId] || { locationSource: 'character' };
+}
+
+export function buildXunjiLocationSourceForChar(settings: XunjiSettings, charId?: string): XunjiLocationSource {
+  const location = getXunjiCharacterLocationSettings(settings, charId);
+  return {
+    mode: location.locationSource || 'character',
+    customLocation: location.customLocation,
+    browserLocation: location.browserLocation,
+  };
+}
+
+export function patchXunjiCharacterLocationSettings(
+  settings: XunjiSettings,
+  charId: string | undefined,
+  patch: Partial<XunjiCharacterLocationSettings>,
+): XunjiSettings {
+  if (!charId || !hasXunjiLocationPatch(patch)) return settings;
+  const nextLocation = { ...getXunjiCharacterLocationSettings(settings, charId) };
+  if (Object.prototype.hasOwnProperty.call(patch, 'locationSource')) nextLocation.locationSource = patch.locationSource || 'character';
+  if (Object.prototype.hasOwnProperty.call(patch, 'customLocation')) nextLocation.customLocation = patch.customLocation;
+  if (Object.prototype.hasOwnProperty.call(patch, 'customLocationUpdatedAt')) nextLocation.customLocationUpdatedAt = patch.customLocationUpdatedAt;
+  if (Object.prototype.hasOwnProperty.call(patch, 'browserLocation')) nextLocation.browserLocation = patch.browserLocation;
+  return {
+    ...settings,
+    locationByCharId: {
+      ...(settings.locationByCharId || {}),
+      [charId]: nextLocation,
+    },
+  };
+}
+
+export function normalizeXunjiSettings(saved?: Partial<XunjiSettings> | null, preferredActiveCharId?: string): XunjiSettings {
+  const activeCharId = preferredActiveCharId || saved?.activeCharId;
+  const defaults = createDefaultXunjiSettings(activeCharId);
+  const locationByCharId = { ...(saved?.locationByCharId || {}) };
+  const legacyLocation = readLegacyLocationSettings(saved);
+  const legacyLocationCharId = saved?.activeCharId || activeCharId;
+  if (legacyLocationCharId && legacyLocation && !locationByCharId[legacyLocationCharId]) {
+    locationByCharId[legacyLocationCharId] = legacyLocation;
+  }
+  return {
+    ...defaults,
+    ...(saved || {}),
+    activeCharId,
+    defaultDensity: saved?.defaultDensity || defaults.defaultDensity,
+    locationSource: defaults.locationSource,
+    customLocation: undefined,
+    customLocationUpdatedAt: undefined,
+    browserLocation: undefined,
+    chatContextEnabled: saved?.chatContextEnabled !== false,
+    autoTraceEnabled: saved?.autoTraceEnabled !== false,
+    autoTraceLastAtByChar: saved?.autoTraceLastAtByChar || {},
+    reportRules: { ...DEFAULT_XUNJI_REPORT_RULES, ...(saved?.reportRules || {}) },
+    locationByCharId,
   };
 }
 

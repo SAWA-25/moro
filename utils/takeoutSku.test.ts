@@ -6,7 +6,7 @@ import {
     deliveryTimeSlots, effectiveTakeoutEtaAt, MIN_TAKEOUT_DELIVERY_MS, TAKEOUT_HOT_SEARCHES,
     getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard, getDefaultAddressCard,
     formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
-    TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
+    TAKEOUT_TASTE_TAGS, getTasteProfile, getTasteTags, saveTasteProfile, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
     recommendAddOnDishes, takeoutHistoryStats,
     sanitizeTakeoutDish, saveCustomDish, getCustomDishes, deleteCustomDish,
     saveCustomStore, getCustomStores, deleteCustomStore, mergeCustomStores, cloneDishForStore,
@@ -236,6 +236,7 @@ describe('口味小纸条', () => {
     beforeEach(() => { localStorage.removeItem('moro_takeout_taste_profiles_v1'); });
     it('按收货对象保存、切换偏好，并过滤未知标签', () => {
         expect(TAKEOUT_TASTE_TAGS).toContain('不要香菜');
+        expect(TAKEOUT_TASTE_TAGS).toContain('海鲜过敏');
         expect(getTasteTags('me')).toEqual([]);
         expect(toggleTasteTag('me', '不要香菜')).toEqual(['不要香菜']);
         expect(toggleTasteTag('char-a', '少辣')).toEqual(['少辣']);
@@ -243,10 +244,20 @@ describe('口味小纸条', () => {
         expect(toggleTasteTag('me', '不存在')).toEqual(['不要香菜']);
         expect(toggleTasteTag('me', '不要香菜')).toEqual([]);
     });
+    it('兼容旧数组格式，并能保存自由文本忌口', () => {
+        localStorage.setItem('moro_takeout_taste_profiles_v1', JSON.stringify({ me: ['少辣', '少糖', '不存在'] }));
+        expect(getTasteProfile('me')).toEqual({ tags: ['少辣', '少糖'] });
+        const saved = saveTasteProfile('me', { tags: ['海鲜过敏', '控糖'], note: '芒果过敏，不吃葱蒜。' });
+        expect(saved.tags).toEqual(['海鲜过敏', '控糖']);
+        expect(saved.note).toBe('芒果过敏，不吃葱蒜。');
+        expect(getTasteTags('me')).toEqual(['海鲜过敏', '控糖']);
+    });
     it('合并备注时不重复已有偏好', () => {
         expect(buildTasteNote(['少辣', '少辣', '少油'])).toBe('口味偏好：少辣、少油');
         expect(mergeNoteWithTaste('放门口；少辣', ['少辣', '少油'])).toBe('放门口；少辣；口味偏好：少油');
         expect(mergeNoteWithTaste('', ['热饮'])).toBe('口味偏好：热饮');
+        expect(buildTasteNote({ tags: ['海鲜过敏'], note: '芒果过敏' })).toBe('口味偏好：海鲜过敏；其它忌口/过敏：芒果过敏');
+        expect(mergeNoteWithTaste('芒果过敏', { tags: ['海鲜过敏'], note: '芒果过敏' })).toBe('芒果过敏；口味偏好：海鲜过敏');
     });
 });
 

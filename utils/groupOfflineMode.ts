@@ -140,6 +140,7 @@ interface GroupOfflineApi {
 // 群聊线下赴约默认走文具盒主 API / 主模型，让群体现场和主聊天保持同一套角色声音。
 const GROUP_OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮群体线下现场正文，不要前缀或解释。';
 const GROUP_OFFLINE_LLM_CONTINUE_ROUNDS = 2;
+const GROUP_OFFLINE_LLM_CONTINUE_TIMEOUT_MS = 45_000;
 
 const callGroupOfflineLLM = async (
   api: GroupOfflineApi,
@@ -156,6 +157,10 @@ const callGroupOfflineLLM = async (
     maxTokens,
     preserveMaxTokens: true,
     continueRounds: GROUP_OFFLINE_LLM_CONTINUE_ROUNDS,
+    continueOnMissingFinishReason: false,
+    returnPartialOnContinueError: true,
+    continueTimeoutMs: GROUP_OFFLINE_LLM_CONTINUE_TIMEOUT_MS,
+    continueMaxRetries: 0,
     presetScope: 'creative.text',
     presetMacros,
     meta: makeApiUsageMeta('chat.groupOfflineMode', {

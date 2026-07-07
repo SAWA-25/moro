@@ -16,7 +16,12 @@ const baseChar = (): CharacterProfile => ({
     autoOffline: true,
     allowCharAvatarFromUserImage: true,
     liveChatOverride: 'on',
+    charAvatarOverride: 'data:image/png;base64,current',
     charAvatarChangeReason: '就用这张',
+    charAvatarUpdatedAt: 123,
+    charAvatarChangeSource: 'user_request',
+    charAvatarSourceMessageId: 9,
+    charAvatarPreviousOverride: 'data:image/png;base64:old',
     charAvatarHistory: [{ sourceMessageId: 9, reason: '就用这张', source: 'user_request', at: 100 }],
   },
   socialProfile: {
@@ -92,6 +97,9 @@ describe('profile update merging', () => {
       source: 'user_request',
     });
     expect(merged.convoSettings?.charAvatarOverride).toBe('data:image/png;base64,new');
+    expect(merged.convoSettings?.charAvatarPreviousOverride).toBe('data:image/png;base64:old');
+    expect(merged.convoSettings?.charAvatarUpdatedAt).toBe(123);
+    expect(merged.convoSettings?.charAvatarSourceMessageId).toBe(9);
   });
 
   it('merges other private settings bags used by the chat settings page', () => {

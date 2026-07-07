@@ -519,33 +519,35 @@ const ManualUpdateNoticePopup: React.FC<{
                 </div>
               )}
 
-              <div className="space-y-3">
-                {group.notices.map((notice) => (
-                  <article key={notice.id} className="rounded-[18px] bg-white/82 border border-black/[0.08] px-4 py-4 shadow-[0_12px_28px_-24px_rgba(35,33,29,0.45)]">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-full bg-[#f1eadf] text-[#5c5143] text-[10px] font-black">
-                        {MANUAL_NOTICE_KIND_LABEL[notice.kind]}
-                      </span>
-                    </div>
-                    <h3 className="mt-3 text-[16px] font-black leading-snug text-[#2f2a24]">
-                      {notice.title}
-                    </h3>
-                    <p className="mt-2 text-[12px] leading-relaxed text-[#5c5143]">
-                      {notice.summary}
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {notice.items.map((item, index) => (
-                        <div key={`${notice.id}-${item}`} className="flex items-start gap-2.5 rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
-                          <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
-                            {index + 1}
-                          </span>
-                          <span className="text-[11.5px] leading-relaxed text-[#4d4439]">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
+              {group.notices.some(notice => !notice.popupOnly) && (
+                <div className="space-y-3">
+                  {group.notices.filter(notice => !notice.popupOnly).map((notice) => (
+                    <article key={notice.id} className="rounded-[18px] bg-white/82 border border-black/[0.08] px-4 py-4 shadow-[0_12px_28px_-24px_rgba(35,33,29,0.45)]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-full bg-[#f1eadf] text-[#5c5143] text-[10px] font-black">
+                          {MANUAL_NOTICE_KIND_LABEL[notice.kind]}
+                        </span>
+                      </div>
+                      <h3 className="mt-3 text-[16px] font-black leading-snug text-[#2f2a24]">
+                        {notice.title}
+                      </h3>
+                      <p className="mt-2 text-[12px] leading-relaxed text-[#5c5143]">
+                        {notice.summary}
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {notice.items.map((item, index) => (
+                          <div key={`${notice.id}-${item}`} className="flex items-start gap-2.5 rounded-[14px] bg-[#f7f1e6] border border-black/[0.06] px-3 py-2.5">
+                            <span className="shrink-0 w-5 h-5 rounded-full bg-[#23211d] text-[#fffdf8] label-mono text-[10px] font-bold flex items-center justify-center mt-0.5">
+                              {index + 1}
+                            </span>
+                            <span className="text-[11.5px] leading-relaxed text-[#4d4439]">{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
           ))}
           <div className="mt-3 flex items-center gap-2 rounded-[14px] bg-white/72 border border-black/[0.08] px-3 py-2.5 text-[#5c5143]">

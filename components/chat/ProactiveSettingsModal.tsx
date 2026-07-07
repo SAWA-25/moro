@@ -305,7 +305,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             </div>
                             {randomMode ? (
                                 <NoteStrip>
-                                    系统会根据最近聊天、角色状态和你的离线时间决定是否触发主动消息，不显示固定倒计时。
+                                    系统会根据最近聊天、角色状态和你的离线时间决定是否触发主动消息，不显示固定倒计时；若 24 小时内一直没有可见来信，会在下一次合适触发时兜底发出一封。
                                 </NoteStrip>
                             ) : (
                                 <>

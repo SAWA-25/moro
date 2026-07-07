@@ -761,9 +761,13 @@ const ManualApp: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  <div className="space-y-3">
-                    {group.notices.map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)}
-                  </div>
+                  {group.notices.some(notice => !notice.popupOnly) && (
+                    <div className="space-y-3">
+                      {group.notices
+                        .filter(notice => !notice.popupOnly)
+                        .map(notice => <UpdateNoticeCard key={notice.id} notice={notice} />)}
+                    </div>
+                  )}
                 </section>
               ))}
             </div>

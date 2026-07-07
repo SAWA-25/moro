@@ -28,6 +28,9 @@ interface Props {
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0];
+const txTypeLabel = (tx: BankTransaction) => tx.type === 'income'
+    ? (tx.incomeTiming === 'past' ? '过去收入' : '进账(收入)')
+    : '支出(花钱)';
 
 const avatarNode = (c?: CharacterProfile, size = 28) => {
     const cls = 'rounded-full object-cover shrink-0';
@@ -115,9 +118,10 @@ const BankLedger: React.FC<Props> = ({ transactions, onTxUpdated, characters, ap
         try {
             await injectMemoryPalace(char, undefined, tx.note);
             const base = await buildLedgerPromptBase(char);
-            const kind = tx.type === 'income' ? '进账(收入)' : '支出(花钱)';
+            const kind = txTypeLabel(tx);
+            const basisLine = tx.incomeBasis ? `\n收入依据：${tx.incomeBasis}。` : '';
             const prompt = `### 场景：翻看 ${userProfile.name} 的现实记账
-${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currency}${tx.amount}。
+${userProfile.name} 刚记了一笔${kind}：「${tx.note}」，金额 ${currency}${tx.amount}。${basisLine}
 
 ### 任务
 以你的人设，对这笔账说一句简短的点评/反应（关心、吐槽、调侃、心疼钱包都行）。
@@ -261,7 +265,8 @@ ${thread}
                                         <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0" style={{ background: income ? '#E3F2E5' : '#FCE9E4' }}>{income ? '📥' : '📤'}</span>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[14px] font-bold truncate">{tx.note}</div>
-                                            <div className="text-[10px] text-[#A1887F]">{tx.dateStr} · {income ? '进账' : '支出'}</div>
+                                            <div className="text-[10px] text-[#A1887F]">{tx.dateStr} · {txTypeLabel(tx)}</div>
+                                            {tx.incomeBasis && <div className="text-[10px] text-[#A1887F] truncate">依据：{tx.incomeBasis}</div>}
                                         </div>
                                         <div className="text-[16px] font-black shrink-0" style={{ color: income ? '#43A047' : '#E07A5F' }}>{income ? '+' : '-'}{currency}{tx.amount}</div>
                                     </div>

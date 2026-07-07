@@ -27,7 +27,7 @@ import {
 export interface ProactiveSchedule {
   charId: string;
   intervalMs: number; // must be multiple of 30 * 60 * 1000
-  /** 随机时间模式：每次触发后重抽下一个间隔（1 小时 ~ 1 天档位） */
+  /** 随机时间模式：每次触发后重抽下一个间隔（1 小时 ~ 12 小时档位） */
   random?: boolean;
 }
 
@@ -41,10 +41,10 @@ export interface ProactiveTriggerInfo {
   missedCount?: number;
 }
 
-// 随机模式的间隔档位（分钟）：对应「用户超过 1 小时 / 2 小时 / … / 1 天没回复」
-const RANDOM_INTERVAL_CHOICES_MIN = [60, 120, 240, 480, 720, 1440];
+// 随机模式的间隔档位（分钟）：对应「用户超过 1 小时 / 2 小时 / … / 12 小时没回复」
+export const RANDOM_INTERVAL_CHOICES_MIN = [60, 120, 240, 480, 720];
 
-function rollRandomIntervalMs(): number {
+export function rollRandomIntervalMs(): number {
   const pick = RANDOM_INTERVAL_CHOICES_MIN[Math.floor(Math.random() * RANDOM_INTERVAL_CHOICES_MIN.length)];
   return pick * 60 * 1000;
 }
@@ -368,7 +368,7 @@ export const ProactiveChat = {
 
   /**
    * Start or update one character's proactive schedule.
-   * opts.random: 随机时间模式——间隔从 1 小时 ~ 1 天档位随机抽取，每次触发后重抽。
+   * opts.random: 随机时间模式——间隔从 1 小时 ~ 12 小时档位随机抽取，每次触发后重抽。
    */
   start(charId: string, intervalMinutes: number, opts?: { random?: boolean }) {
     // 自定义时间直接生效（最少 5 分钟）。以前按 30 分钟取整会让「自定义 10 分钟」

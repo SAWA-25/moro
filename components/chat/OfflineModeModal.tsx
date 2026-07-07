@@ -199,15 +199,12 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [entries, busy]);
 
-    const runCharTurn = async (userInput?: string) => {
+    const runCharTurn = async (baseEntries: OfflineEntry[], userInput?: string) => {
         if (isEditing) return;
         setBusy(true);
         try {
-            const base = userInput
-                ? [...entries, { role: 'user' as const, text: userInput, at: Date.now() }]
-                : entries;
-            const reply = consumeGeneratedText(await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov, undefined, currentWordLimit()));
-            if (reply) pushEntries({ role: 'char', text: reply, at: Date.now() });
+            const reply = consumeGeneratedText(await generateOfflineTurn(char, userProfile, apiConfig, baseEntries, userInput, pov, undefined, currentWordLimit()));
+            if (reply) persistEntries([...baseEntries, { role: 'char', text: reply, at: Date.now() }]);
         } catch (e: any) {
             addToast(`线下情景生成失败：${e?.message || e}`, 'error');
         } finally {
@@ -275,8 +272,9 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         const text = input.trim();
         if (!text || busy || isEditing) return;
         setInput('');
-        pushEntries({ role: 'user', text, at: Date.now() });
-        await runCharTurn(text);
+        const next = [...entries, { role: 'user' as const, text, at: Date.now() }];
+        persistEntries(next);
+        await runCharTurn(next, text);
     };
 
     const handleEnd = async () => {
@@ -589,7 +587,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         </button>
                     ) : (
                         <button
-                            onClick={() => { if (!busy && !ending) void runCharTurn(); }}
+                            onClick={() => { if (!busy && !ending) void runCharTurn(entries); }}
                             disabled={busy || ending || isEditing || entries.length === 0}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                             style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#8a6478', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.24)', ...CUTE_STACK }}

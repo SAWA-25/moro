@@ -406,6 +406,11 @@ const BankJobCenter: React.FC<BankJobCenterProps> = ({
                             <b>简历匹配 {selectedApplication.aiReview.score} 分：</b>{selectedApplication.aiReview.suggestion}
                         </div>
                     )}
+                    {!selectedApplication.aiReview && activeStage === 'submitted' && (
+                        <div className="rounded-[16px] p-3 text-[12px] leading-relaxed" style={{ background: '#eefafa', color: '#0f766e' }}>
+                            简历已经递出，匹配评估会稍后补到这条进展里。
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 max-[420px]:grid-cols-1">
                         {(selectedApplication.todos || []).slice(0, 4).map(todo => (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CharacterProfile, PhoneEvidence } from '../types';
+import { AppID, type CharacterProfile, type PhoneEvidence } from '../types';
 import {
   buildCheckPhoneRecordPrompt,
   buildCheckPhoneStatusSummary,
@@ -285,5 +285,22 @@ describe('check phone utilities', () => {
     expect(parsed?.steps[1].app).toBe('twitter');
     expect(parsed?.steps[2].actionReason).toBe('占有欲上来');
     expect(parsed?.exitQuestions).toHaveLength(3);
+  });
+
+  it('accepts real desktop app ids for reverse phone check scripts', () => {
+    const parsed = safeParsePhoneCheckScript(JSON.stringify({
+      steps: [
+        { app: 'home', thought: '先看桌面。', intent: '确认桌面', emotion: '警觉', risk: 'normal', visibleClue: '真实桌面' },
+        { app: AppID.Almanac, thought: '岁时记里这些日程不像随便记的。', intent: '确认日程', emotion: '在意', risk: 'private', visibleClue: '岁时记待办', action: { type: 'post_moment', content: '乱发一条' } },
+        { app: AppID.Health, thought: '健康入口在这里，不能乱猜数值。', intent: '确认状态', emotion: '担心', risk: 'private', visibleClue: '健康 App 入口' },
+        { app: 'moments', thought: '这条动态确实有点刺眼。', intent: '确认动态', emotion: '吃醋', risk: 'suspicious', visibleClue: '此刻动态', action: { type: 'post_moment', content: '今天不想被打扰。' } },
+      ],
+      exitQuestions: ['你为什么藏着这些？', '这条日程是谁？', '你还打算瞒我多久？'],
+    }));
+
+    expect(parsed?.steps[1].app).toBe(AppID.Almanac);
+    expect(parsed?.steps[1].action?.type).toBe('none');
+    expect(parsed?.steps[2].app).toBe(AppID.Health);
+    expect(parsed?.steps[3].action?.type).toBe('post_moment');
   });
 });

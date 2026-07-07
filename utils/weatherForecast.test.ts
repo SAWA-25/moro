@@ -76,6 +76,99 @@ describe('parseOpenMeteoForecast', () => {
 });
 
 describe('fetchWeather geolocation permission', () => {
+    it('优先使用免密钥实况观测，减少当前天气和实际体感错位', async () => {
+        const getCurrentPosition = vi.fn();
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('get.geojs.io')) return jsonResponse({ latitude: '30.67', longitude: '104.07' });
+            if (url.includes('bigdatacloud.net')) return jsonResponse({ city: '成都' });
+            if (url.includes('wttr.in')) return jsonResponse({
+                current_condition: [{
+                    temp_C: '32',
+                    FeelsLikeC: '36',
+                    humidity: '58',
+                    weatherCode: '149',
+                    weatherDesc: [{ value: 'Smoky haze' }],
+                }],
+            });
+            if (url.includes('open-meteo.com')) return jsonResponse({ current: sample.current });
+            return jsonResponse({}, 404);
+        }));
+
+        const weather = await RealtimeContextManager.fetchWeather({
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'geo',
+        });
+
+        expect(getCurrentPosition).not.toHaveBeenCalled();
+        expect(weather).toMatchObject({
+            city: '成都',
+            temp: 32,
+            feelsLike: 36,
+            humidity: 58,
+            description: '霾',
+            source: 'wttr.in',
+        });
+    });
+
+    it('天气缓存按定位坐标隔离，坐标变化时不会复用上一处天气', async () => {
+        const coords = [
+            { latitude: 30, longitude: 104 },
+            { latitude: 31, longitude: 105 },
+        ];
+        const getCurrentPosition = vi.fn((success: PositionCallback) => {
+            const next = coords.shift()!;
+            success({
+                coords: next as GeolocationCoordinates,
+                timestamp: Date.now(),
+            } as GeolocationPosition);
+        });
+        let openMeteoCalls = 0;
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'granted' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            if (url.includes('wttr.in')) return jsonResponse({}, 404);
+            if (url.includes('bigdatacloud.net')) {
+                return jsonResponse({ city: url.includes('latitude=31') ? '新城' : '旧城' });
+            }
+            if (url.includes('open-meteo.com')) {
+                openMeteoCalls += 1;
+                const isNew = url.includes('latitude=31');
+                return jsonResponse({
+                    current: {
+                        temperature_2m: isNew ? 31.4 : 18.4,
+                        apparent_temperature: isNew ? 35.2 : 17.2,
+                        relative_humidity_2m: isNew ? 55 : 63,
+                        weather_code: isNew ? 2 : 61,
+                    },
+                });
+            }
+            return jsonResponse({}, 404);
+        }));
+
+        const config = {
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'geo' as const,
+            cacheMinutes: 30,
+        };
+        const first = await RealtimeContextManager.fetchWeather(config);
+        const second = await RealtimeContextManager.fetchWeather(config);
+
+        expect(first?.city).toBe('旧城');
+        expect(first?.temp).toBe(18);
+        expect(second?.city).toBe('新城');
+        expect(second?.temp).toBe(31);
+        expect(getCurrentPosition).toHaveBeenCalledTimes(2);
+        expect(openMeteoCalls).toBe(2);
+    });
+
     it('自动取天气时，定位权限未决定也不会弹浏览器定位授权', async () => {
         const getCurrentPosition = vi.fn();
         vi.stubGlobal('navigator', {

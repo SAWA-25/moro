@@ -52,6 +52,8 @@ type CompanionLog = { id: string; text: string; action?: ShopCompanionStepAction
 type CompanionCue = { itemId?: string; text: string; action?: ShopCompanionStepAction | ShopCompanionReaction['action']; at: number; cue: ShopCoPresenceCue };
 type CompanionRequest = { charId: string; item: ShopItem; speech: string };
 type CompanionHijack = { charId: string; item: ShopItem; speech: string; action: Extract<ShopCompanionStepAction, 'ask_user_pay' | 'auto_user_pay' | 'char_pay'>; at: number };
+type CompanionChatLine = { id: string; role: 'user' | 'char'; text: string; at: number; itemId?: string };
+type CompanionPayPressure = { declinedCount: number; lastDeclinedItemId?: string; lastDeclinedAt?: number; viewedOtherItemAfterDecline?: boolean };
 
 // ── 黑白拼贴手账·通用样式片 ───────────────────────────────────────────────
 /** 米白纸卡（缝线描边 + 纸面渐变） */
@@ -184,6 +186,10 @@ const ShopApp: React.FC = () => {
     const [companionHijack, setCompanionHijack] = useState<CompanionHijack | null>(null);
     const [companionNotice, setCompanionNotice] = useState<ShopCoPresencePaymentNotice | null>(null);
     const [companionCue, setCompanionCue] = useState<CompanionCue | null>(null);
+    const [companionChatOpen, setCompanionChatOpen] = useState(false);
+    const [companionChatInput, setCompanionChatInput] = useState('');
+    const [companionChatMessages, setCompanionChatMessages] = useState<CompanionChatLine[]>([]);
+    const [companionChatBusy, setCompanionChatBusy] = useState(false);
     const companion = useMemo(() => characters.find(c => c.id === companionId) || null, [characters, companionId]);
     const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const companionRunRef = useRef(0);
@@ -191,6 +197,7 @@ const ShopApp: React.FC = () => {
     const lastCompanionAtRef = useRef(0);
     const companionScrollTimerRef = useRef<number | null>(null);
     const companionHijackResolverRef = useRef<((accepted: boolean) => void) | null>(null);
+    const companionPayPressureRef = useRef<CompanionPayPressure>({ declinedCount: 0 });
 
     const cancelCompanionAsyncWork = () => {
         companionSessionRef.current += 1;
@@ -203,6 +210,10 @@ const ShopApp: React.FC = () => {
         companionHijackResolverRef.current = null;
     };
 
+    const resetCompanionPayPressure = () => {
+        companionPayPressureRef.current = { declinedCount: 0 };
+    };
+
     useEffect(() => {
         if (companionId && !characters.some(c => c.id === companionId)) {
             cancelCompanionAsyncWork();
@@ -213,6 +224,11 @@ const ShopApp: React.FC = () => {
             setCompanionHijack(null);
             setCompanionNotice(null);
             setCompanionCue(null);
+            setCompanionChatOpen(false);
+            setCompanionChatInput('');
+            setCompanionChatMessages([]);
+            setCompanionChatBusy(false);
+            resetCompanionPayPressure();
             setCompanionBusy(false);
             setCompanionPreparing(false);
         }
@@ -357,6 +373,55 @@ const ShopApp: React.FC = () => {
     const companionDisplayName = (char?: CharacterProfile | null) =>
         char ? (char.convoSettings?.remarkName?.trim() || char.name) : 'TA';
 
+    const markCompanionRequestDeclined = (item?: ShopItem) => {
+        const prev = companionPayPressureRef.current;
+        companionPayPressureRef.current = {
+            declinedCount: Math.min(9, (prev.declinedCount || 0) + 1),
+            lastDeclinedItemId: item?.id || prev.lastDeclinedItemId,
+            lastDeclinedAt: Date.now(),
+            viewedOtherItemAfterDecline: false,
+        };
+    };
+
+    const markCompanionViewedAfterDecline = (items: ShopItem[], focus?: ShopItem) => {
+        const pressure = companionPayPressureRef.current;
+        if (!pressure.declinedCount || !pressure.lastDeclinedItemId || pressure.viewedOtherItemAfterDecline) return;
+        const ids = [focus?.id, ...items.map(item => item.id)].filter(Boolean);
+        if (ids.some(id => id !== pressure.lastDeclinedItemId)) {
+            companionPayPressureRef.current = { ...pressure, viewedOtherItemAfterDecline: true };
+        }
+    };
+
+    const forcedPayChance = (char?: CharacterProfile | null): number => {
+        const pressure = companionPayPressureRef.current;
+        if ((pressure.declinedCount || 0) < 2 || !pressure.viewedOtherItemAfterDecline) return 0;
+        const extraRefusals = Math.max(0, pressure.declinedCount - 2) * 0.12;
+        const affectionBonus = Math.max(0, Math.min(0.18, ((char?.affection ?? 50) - 50) / 300));
+        return Math.min(0.65, 0.28 + extraRefusals + affectionBonus);
+    };
+
+    const companionPaymentPressurePrompt = (char?: CharacterProfile | null) => {
+        const pressure = companionPayPressureRef.current;
+        const last = pressure.lastDeclinedItemId ? getShopItem(pressure.lastDeclinedItemId) : undefined;
+        const chance = forcedPayChance(char);
+        return {
+            declinedCount: pressure.declinedCount || 0,
+            lastDeclinedItemName: last?.name,
+            viewedOtherItemAfterDecline: !!pressure.viewedOtherItemAfterDecline,
+            forcedPayEligible: chance > 0,
+            forcedPayChancePct: Math.round(chance * 100),
+        };
+    };
+
+    const shouldTriggerCompanionForcedPay = (char: CharacterProfile, item: ShopItem): boolean => {
+        const pressure = companionPayPressureRef.current;
+        if ((pressure.declinedCount || 0) < 2) return false;
+        if (!pressure.viewedOtherItemAfterDecline) return false;
+        if (pressure.lastDeclinedItemId === item.id) return false;
+        const chance = forcedPayChance(char);
+        return chance > 0 && Math.random() < chance;
+    };
+
     const pushCompanionLine = (text: string, action?: CompanionLog['action'], itemId?: string) => {
         const item = itemId ? getShopItem(itemId) : undefined;
         const coPresence = item && action ? buildShopCoPresenceLogEntry(action, item, text) : undefined;
@@ -393,6 +458,11 @@ const ShopApp: React.FC = () => {
         setCompanionHijack(null);
         setCompanionNotice(null);
         setCompanionCue(null);
+        setCompanionChatOpen(false);
+        setCompanionChatInput('');
+        setCompanionChatMessages([]);
+        setCompanionChatBusy(false);
+        resetCompanionPayPressure();
         setCompanionBusy(false);
         setCompanionPreparing(false);
     };
@@ -569,6 +639,7 @@ const ShopApp: React.FC = () => {
         } catch { /* ignore */ }
         addToast(`${char.name} 带你买下了 ${item.emoji}${item.name}`, 'success');
         showPaymentNotice(item, 'user', speech);
+        resetCompanionPayPressure();
         emitShopUpdated();
         setTab('my'); setSub('orders'); setOrderFilter('toReceive');
     };
@@ -579,9 +650,7 @@ const ShopApp: React.FC = () => {
         if (reaction.action === 'comment') return;
         if (!item) return;
         if (reaction.action === 'want') {
-            updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
-            addToast(`${char.name} 看中了 ${item.emoji}${item.name}`, 'success');
-            emitShopUpdated();
+            setCompanionRequest({ charId: char.id, item, speech: reaction.speech });
             return;
         }
         if (reaction.action === 'ask_user_pay') {
@@ -666,9 +735,9 @@ const ShopApp: React.FC = () => {
         }
         if (step.action === 'want') {
             setCompanionFocus(item.id, speech, step.action, char);
-            updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
-            addToast(`${char.name} 看中了 ${item.emoji}${item.name}`, 'success');
-            emitShopUpdated();
+            await scrollToCompanionItem(item.id);
+            if (!stepStillActive()) return;
+            setCompanionRequest({ charId: char.id, item, speech });
             await waitCompanion(620);
             return;
         }
@@ -676,9 +745,6 @@ const ShopApp: React.FC = () => {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
             if (!stepStillActive()) return;
-            const accepted = await waitForCompanionHijack(char, item, speech, step.action);
-            if (!stepStillActive()) return;
-            if (!accepted) { await pushDeclineHijackLine(); return; }
             setCompanionRequest({ charId: char.id, item, speech });
             await waitCompanion(620);
             return;
@@ -687,9 +753,11 @@ const ShopApp: React.FC = () => {
             setCompanionFocus(item.id, speech, step.action, char);
             await scrollToCompanionItem(item.id);
             if (!stepStillActive()) return;
-            const accepted = await waitForCompanionHijack(char, item, speech, step.action);
-            if (!stepStillActive()) return;
-            if (!accepted) { await pushDeclineHijackLine(); return; }
+            if (!shouldTriggerCompanionForcedPay(char, item)) {
+                setCompanionRequest({ charId: char.id, item, speech });
+                await waitCompanion(620);
+                return;
+            }
             await companionAutoUserPay(char, item, speech);
             await waitCompanion(620);
             return;
@@ -741,6 +809,9 @@ const ShopApp: React.FC = () => {
         setCompanionBusy(true);
         try {
             const visibleItems = opts.visibleItems || visibleItemsForCompanion(opts.item);
+            if (opts.item || /滑|切到|打开|搜索|翻新/.test(opts.userAction || '')) {
+                markCompanionViewedAfterDecline(visibleItems, opts.item);
+            }
             const visibleItemIds = visibleItems.map(item => item.id);
             const fullCharacterSetting = buildFullCharacterSetting(char, { includeMemos: true });
             let script: ShopCompanionScript | null = null;
@@ -760,6 +831,7 @@ const ShopApp: React.FC = () => {
                             userAction: opts.userAction,
                             budget: Math.round(80 + (char.affection ?? 50) * 4),
                             userBalance: balance,
+                            paymentPressure: companionPaymentPressurePrompt(char),
                         },
                         activeUserSetting,
                     );
@@ -811,6 +883,11 @@ const ShopApp: React.FC = () => {
         setCompanionHijack(null);
         setCompanionNotice(null);
         setCompanionCue(null);
+        setCompanionChatOpen(false);
+        setCompanionChatInput('');
+        setCompanionChatMessages([]);
+        setCompanionChatBusy(false);
+        resetCompanionPayPressure();
         setCompanionBusy(false);
         setCompanionPreparing(true);
         const prepareSession = companionSessionRef.current;
@@ -863,6 +940,16 @@ const ShopApp: React.FC = () => {
         if (line) pushCompanionLine(line, 'want', req.item.id);
         addToast(`${char.name} 的心愿单夹进 ${req.item.emoji}${req.item.name}`, 'success');
         emitShopUpdated();
+        resetCompanionPayPressure();
+        setCompanionRequest(null);
+    };
+
+    const declineCompanionRequest = () => {
+        const req = companionRequest;
+        if (req) {
+            markCompanionRequestDeclined(req.item);
+            pushCompanionLine(`先略过 ${req.item.emoji}${req.item.name}`, 'say', req.item.id);
+        }
         setCompanionRequest(null);
     };
 
@@ -911,8 +998,57 @@ const ShopApp: React.FC = () => {
         if (line) pushCompanionLine(line, 'want', req.item.id);
         addToast(`替 ${char.name} 付了 ${req.item.emoji}${req.item.name}`, 'success');
         showPaymentNotice(req.item, 'user', line || req.speech);
+        resetCompanionPayPressure();
         emitShopUpdated();
         setCompanionRequest(null);
+    };
+
+    const currentCompanionChatItem = (): ShopItem | undefined =>
+        detailItem || (companionCue?.itemId ? getShopItem(companionCue.itemId) : undefined);
+
+    const sendCompanionChat = async () => {
+        const char = companion;
+        const text = companionChatInput.trim();
+        if (!char || !text || companionChatBusy) return;
+        const item = currentCompanionChatItem();
+        const visibleItems = visibleItemsForCompanion(item);
+        const chatSession = companionSessionRef.current;
+        const recent = companionChatMessages.slice(-6)
+            .map(line => `${line.role === 'user' ? (userProfile.name || '你') : companionDisplayName(char)}：${line.text}`)
+            .join('\n');
+        const userLine: CompanionChatLine = {
+            id: `shop-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            role: 'user',
+            text,
+            at: Date.now(),
+            itemId: item?.id,
+        };
+        setCompanionChatMessages(prev => [...prev, userLine].slice(-24));
+        setCompanionChatInput('');
+        pushCompanionLine(`${userProfile.name || '你'}：${text}`, undefined, item?.id);
+        setCompanionChatBusy(true);
+        try {
+            const reply = await companionSpeech(char, 'free_chat', {
+                surface: companionSurfaceNow(),
+                item,
+                visibleItems,
+                cart,
+                userAction: `用户在陪逛对话里说：${text}${recent ? `\n\n本次陪逛小窗最近对话：\n${recent}` : ''}`,
+            }, '我听着，陪你慢慢看。');
+            if (companionSessionRef.current !== chatSession) return;
+            if (!reply) return;
+            const charLine: CompanionChatLine = {
+                id: `shop-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                role: 'char',
+                text: reply,
+                at: Date.now(),
+                itemId: item?.id,
+            };
+            setCompanionChatMessages(prev => [...prev, charLine].slice(-24));
+            setCompanionFocus(item?.id, reply, 'say', char);
+        } finally {
+            if (companionSessionRef.current === chatSession) setCompanionChatBusy(false);
+        }
     };
 
     // 确认收货：订单商品进背包 + 双方小票，标记 receivedAt
@@ -1341,6 +1477,16 @@ const ShopApp: React.FC = () => {
     };
     const activeCompanionCue = companion ? companionCue : null;
     const activeCompanionAvatar = companion ? (companion.convoSettings?.charAvatarOverride || companion.avatar) : undefined;
+    const companionChatItem = currentCompanionChatItem();
+    const companionChatContextLabel = companionChatItem
+        ? `正在看 ${companionChatItem.emoji}${companionChatItem.name}`
+        : tab === 'cart'
+            ? '正在看篮子'
+            : tab === 'my'
+                ? '正在看我的'
+                : tab === 'category'
+                    ? '正在看分类货架'
+                    : '正在看首页货架';
 
     return (
         <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
@@ -1367,6 +1513,13 @@ const ShopApp: React.FC = () => {
                         ) : <User size={13} weight="fill" />}
                         <span className="truncate">{companion ? (companion.convoSettings?.remarkName?.trim() || companion.name) : '陪逛'}</span>
                     </button>
+                    {companion && (
+                        <button onClick={() => setCompanionChatOpen(true)} title="和 TA 说一句"
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-transform shrink-0"
+                            style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>
+                            <ChatCircleDots size={14} weight="fill" />
+                        </button>
+                    )}
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-black tabular-nums" style={{ background: 'rgba(255,253,247,0.85)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>
                         <span style={{ color: INK }}>◑</span>{coins}
                     </span>
@@ -1389,13 +1542,7 @@ const ShopApp: React.FC = () => {
                         onEnd={finishCompanion}
                         onSkip={cancelCompanionRun}
                         onLog={() => setCompanionLogSheet(true)}
-                        onReact={() => void runCompanionReaction(tab === 'cart' ? 'cart' : tab === 'my' ? 'my' : tab === 'category' ? 'category' : 'home', {
-                            visibleItems: visibleItemsForCompanion(detailItem || undefined),
-                            cart,
-                            item: detailItem || undefined,
-                            userAction: '主动问 TA 看法',
-                            force: true,
-                        })}
+                        onReact={() => setCompanionChatOpen(true)}
                     />
                 )}
                 {sub === 'advisor' ? (
@@ -1610,12 +1757,26 @@ const ShopApp: React.FC = () => {
                 onEnd={() => { finishCompanion(); setCompanionPicker(false); }}
             />
 
+            {/* 陪逛：心意铺内和角色临场说一句 */}
+            <ShopCompanionChatOverlay
+                open={companionChatOpen}
+                companion={companion}
+                messages={companionChatMessages}
+                input={companionChatInput}
+                busy={companionChatBusy}
+                contextLabel={companionChatContextLabel}
+                contextItem={companionChatItem}
+                onInput={setCompanionChatInput}
+                onClose={() => setCompanionChatOpen(false)}
+                onSend={() => void sendCompanionChat()}
+            />
+
             {/* 陪逛：角色看中商品，请用户决定是否付款 */}
             <ShopCompanionPayRequestOverlay
                 request={companionRequest}
                 companion={companionRequest ? characters.find(c => c.id === companionRequest.charId) || companion : companion}
                 balance={balance}
-                onClose={() => setCompanionRequest(null)}
+                onClose={declineCompanionRequest}
                 onWishlist={() => void addCompanionRequestToWishlist()}
                 onPay={() => void payCompanionRequest()}
             />
@@ -1794,6 +1955,102 @@ const ShopCompanionPickerOverlay: React.FC<{
                         <button onClick={onEnd} className="w-full rounded-full py-3 text-[13px] font-black active:scale-95 transition-transform" style={{ background: '#f1f1f1', color: INK_SOFT }}>先自己逛</button>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+};
+
+const ShopCompanionChatOverlay: React.FC<{
+    open: boolean;
+    companion: CharacterProfile | null;
+    messages: CompanionChatLine[];
+    input: string;
+    busy: boolean;
+    contextLabel: string;
+    contextItem?: ShopItem;
+    onInput: (value: string) => void;
+    onClose: () => void;
+    onSend: () => void;
+}> = ({ open, companion, messages, input, busy, contextLabel, contextItem, onInput, onClose, onSend }) => {
+    if (!open || !companion) return null;
+    const name = companion.convoSettings?.remarkName?.trim() || companion.name;
+    const avatar = companion.convoSettings?.charAvatarOverride || companion.avatar;
+    const canSend = input.trim().length > 0 && !busy;
+    return (
+        <div className="fixed inset-0 z-[139] flex items-end justify-center animate-fade-in">
+            <div className="absolute inset-0" style={{ background: 'rgba(17,17,17,0.32)', backdropFilter: 'blur(5px)' }} onClick={onClose} />
+            <div className="relative w-full rounded-t-[30px] flex flex-col min-h-0" style={{ ...SHOP_VIEWPORT, maxHeight: '78vh', background: '#fff', color: VIDEO_BLACK, boxShadow: '0 -30px 78px -36px rgba(17,17,17,0.76)', paddingBottom: 'max(env(safe-area-inset-bottom,0px), 14px)' }}>
+                <div className="px-5 pt-4 pb-3 shrink-0" style={{ borderBottom: `1px solid ${VIDEO_LINE}` }}>
+                    <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-[18px] overflow-hidden flex items-center justify-center shrink-0 font-black" style={{ background: '#f4f4f4', border: `1px solid ${VIDEO_LINE}` }}>
+                            {avatar ? <img src={avatar} className="w-full h-full object-cover" alt="" /> : name[0] || 'T'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[8px] tracking-[0.32em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>CO-PRESENCE CHAT</div>
+                            <div className="text-[16px] font-black truncate mt-0.5">和 {name} 说一句</div>
+                            <div className="text-[11px] truncate mt-0.5" style={{ color: INK_SOFT }}>{contextLabel}</div>
+                        </div>
+                        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 active:scale-95" style={{ background: '#f1eee7' }}>
+                            <X size={15} weight="bold" />
+                        </button>
+                    </div>
+                    {contextItem && (
+                        <div className="mt-3 rounded-[18px] p-2.5 flex items-center gap-2.5" style={{ background: '#f7f7f7', border: `1px solid ${VIDEO_LINE}` }}>
+                            <span className="w-10 h-10 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 overflow-hidden" style={{ background: '#fff' }}>
+                                <ShopItemImage item={contextItem} className="w-full h-full object-cover" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[12px] font-black truncate">{contextItem.name}</span>
+                                <span className="block text-[11px] truncate mt-0.5" style={{ color: INK_SOFT }}>¥{formatPrice(contextItem.price)} · {contextItem.blurb}</span>
+                            </span>
+                        </div>
+                    )}
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-5 py-4 space-y-2.5">
+                    {messages.length === 0 ? (
+                        <div className="rounded-[22px] p-4 text-[12px] leading-relaxed text-center" style={{ background: '#f7f7f7', color: INK_SOFT, border: `1px dashed ${VIDEO_LINE}` }}>
+                            问问 TA 喜不喜欢、适不适合你，或者让 TA 再挑一眼。
+                        </div>
+                    ) : messages.map(line => {
+                        const mine = line.role === 'user';
+                        return (
+                            <div key={line.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                                <div className="max-w-[82%] rounded-[20px] px-3.5 py-2.5 text-[13px] leading-snug"
+                                    style={mine
+                                        ? { background: VIDEO_BLACK, color: '#fff' }
+                                        : { background: '#f4f1ec', color: VIDEO_BLACK, border: `1px solid ${VIDEO_LINE}` }}>
+                                    {line.text}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {busy && (
+                        <div className="flex justify-start">
+                            <div className="rounded-[20px] px-3.5 py-2.5 text-[12px]" style={{ background: '#f4f1ec', color: INK_SOFT, border: `1px solid ${VIDEO_LINE}` }}>
+                                {name} 正在看这一屏…
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <form onSubmit={e => { e.preventDefault(); if (canSend) onSend(); }} className="shrink-0 px-4 pt-3 pb-1" style={{ borderTop: `1px solid ${VIDEO_LINE}` }}>
+                    <div className="rounded-[22px] p-2 flex items-end gap-2" style={{ background: '#f7f7f7', border: `1px solid ${VIDEO_LINE}` }}>
+                        <textarea
+                            value={input}
+                            onChange={e => onInput(e.target.value)}
+                            rows={1}
+                            maxLength={160}
+                            placeholder="问 TA：这件适合我吗？"
+                            className="flex-1 min-h-[36px] max-h-24 resize-none bg-transparent outline-none text-[13px] leading-snug px-2 py-2"
+                            style={{ color: VIDEO_BLACK }}
+                            disabled={busy}
+                        />
+                        <button type="submit" disabled={!canSend}
+                            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 active:scale-95 disabled:opacity-40 transition-transform"
+                            style={{ background: VIDEO_BLACK, color: '#fff' }}>
+                            <ChatCircleDots size={17} weight="fill" />
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );

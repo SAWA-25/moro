@@ -21,6 +21,11 @@ import {
     BankLifeActionRecord,
     BankLifeActionResult,
     BankLifeActionTone,
+    BankInvestmentLedgerEvent,
+    BankInvestmentOrder,
+    BankInvestmentStrategy,
+    BankInvestmentTickResult,
+    BankMarketRuntime,
     BankLifeShopProduct,
     BankShopActionResult,
     BankShopBranch,
@@ -37,13 +42,15 @@ import {
     ShopStaff,
 } from '../types';
 
-export const BANK_LIFE_VERSION = 4;
+export const BANK_LIFE_VERSION = 5;
 export const SHOP_UNLOCK_COST = 10000;
 export const BANK_OPEN_BRANCH_ENERGY_COST = 30;
 export const INITIAL_HEADQUARTERS_ENERGY = 80;
 export const COMPANY_FOUND_COST = 100000;
 export const BANK_SHOP_CLOSE_HOUR = 18;
 export const BANK_SHOP_DAILY_RESET_HOUR = 4;
+export const BANK_INVEST_TICK_MS = 30_000;
+export const BANK_INVEST_MAX_CATCHUP_TICKS = 120;
 
 export function canCloseBankShopAt(date: Date | number = new Date()): boolean {
     const d = date instanceof Date ? date : new Date(date);
@@ -92,6 +99,136 @@ export function canSettleBankShopForDate(shop: BankShopBusinessGateState, date: 
     return shop.isBusinessOpen === true
         && shop.openedBusinessDateStr === day
         && shop.lastBusinessDateStr !== day;
+}
+
+export type BankShopRealtimeStatusKind = 'readyToOpen' | 'openWaitingForClose' | 'readyToClose' | 'readyToCloseOnly' | 'waitingForReset';
+
+export interface BankShopRealtimeStatus {
+    kind: BankShopRealtimeStatusKind;
+    label: string;
+    summary: string;
+    businessDateStr: string;
+    canOpen: boolean;
+    canClose: boolean;
+    settledToday: boolean;
+    openedToday: boolean;
+    openDisabledReason?: string;
+    closeDisabledReason?: string;
+    nextActionAt?: number;
+    nextActionLabel?: string;
+}
+
+export function nextBankShopDailyResetAt(date: Date | number = new Date()): number {
+    const d = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+    if (!isFinite(d.getTime())) return Date.now();
+    const next = new Date(d.getTime());
+    if (d.getHours() < BANK_SHOP_DAILY_RESET_HOUR) {
+        next.setHours(BANK_SHOP_DAILY_RESET_HOUR, 0, 0, 0);
+    } else {
+        next.setDate(next.getDate() + 1);
+        next.setHours(BANK_SHOP_DAILY_RESET_HOUR, 0, 0, 0);
+    }
+    return next.getTime();
+}
+
+export function nextBankShopCloseAt(date: Date | number = new Date()): number {
+    const d = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+    if (!isFinite(d.getTime())) return Date.now();
+    const next = new Date(d.getTime());
+    if (d.getHours() < BANK_SHOP_CLOSE_HOUR) {
+        next.setHours(BANK_SHOP_CLOSE_HOUR, 0, 0, 0);
+    } else {
+        next.setDate(next.getDate() + 1);
+        next.setHours(BANK_SHOP_CLOSE_HOUR, 0, 0, 0);
+    }
+    return next.getTime();
+}
+
+export function getBankShopRealtimeStatus(shop: BankShopBusinessGateState, date: Date | number = new Date()): BankShopRealtimeStatus {
+    const businessDateStr = normalizeBusinessDateStr(date);
+    const isOpen = shop.isBusinessOpen === true;
+    const settledToday = shop.lastBusinessDateStr === businessDateStr;
+    const openedToday = shop.openedBusinessDateStr === businessDateStr;
+    const canOpen = canOpenBankShopForDate(shop, date);
+    const canSettle = canSettleBankShopForDate(shop, date);
+    const canCloseNow = isOpen && canCloseBankShopAt(date);
+
+    if (isOpen && canCloseNow && canSettle) {
+        return {
+            kind: 'readyToClose',
+            label: '可打烊结算',
+            summary: '现在可以打烊结算，本轮收入、库存和顾客评价会在打烊后生成。',
+            businessDateStr,
+            canOpen: false,
+            canClose: true,
+            settledToday,
+            openedToday,
+            openDisabledReason: '店铺已经在营业中',
+            nextActionLabel: '现在可打烊结算',
+        };
+    }
+
+    if (isOpen && canCloseNow) {
+        return {
+            kind: 'readyToCloseOnly',
+            label: '可打烊关店',
+            summary: '现在可以打烊关店；这轮开门不属于当前营业日，可能不会生成新的打烊收入。',
+            businessDateStr,
+            canOpen: false,
+            canClose: true,
+            settledToday,
+            openedToday,
+            openDisabledReason: '店铺已经在营业中',
+            nextActionLabel: '现在可打烊关店',
+        };
+    }
+
+    if (isOpen) {
+        return {
+            kind: 'openWaitingForClose',
+            label: '营业中',
+            summary: `店铺已经开门，${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊结算。`,
+            businessDateStr,
+            canOpen: false,
+            canClose: false,
+            settledToday,
+            openedToday,
+            openDisabledReason: '店铺已经在营业中',
+            closeDisabledReason: `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊结算`,
+            nextActionAt: nextBankShopCloseAt(date),
+            nextActionLabel: `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 可打烊结算`,
+        };
+    }
+
+    if (!canOpen) {
+        return {
+            kind: 'waitingForReset',
+            label: '未到可营业时间',
+            summary: `本营业日已经结算过，${String(BANK_SHOP_DAILY_RESET_HOUR).padStart(2, '0')}:00 刷新后才能再开门。`,
+            businessDateStr,
+            canOpen: false,
+            canClose: false,
+            settledToday,
+            openedToday,
+            openDisabledReason: `未到每日刷新时间，${String(BANK_SHOP_DAILY_RESET_HOUR).padStart(2, '0')}:00 后再营业`,
+            closeDisabledReason: '店铺已经打烊',
+            nextActionAt: nextBankShopDailyResetAt(date),
+            nextActionLabel: `${String(BANK_SHOP_DAILY_RESET_HOUR).padStart(2, '0')}:00 可再次营业`,
+        };
+    }
+
+    return {
+        kind: 'readyToOpen',
+        label: '可开门营业',
+        summary: '点“营业”只会开门并消耗当前店精力；收入和评价要等打烊结算。',
+        businessDateStr,
+        canOpen: true,
+        canClose: false,
+        settledToday,
+        openedToday,
+        closeDisabledReason: '店铺还未营业',
+        nextActionLabel: '现在可开门营业',
+    };
 }
 
 export function markBankShopBusinessOpened<T extends BankShopState>(shop: T, date: BankShopBusinessDateInput = new Date(), now = Date.now()): T {
@@ -747,6 +884,13 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         stockMarket: BASE_STOCKS.map(s => ensureQuoteDetail({ ...s }, dateStr)),
         holdings: {},
         watchlist: ['MORO', 'CAFE'],
+        marketRuntime: {
+            tickMs: BANK_INVEST_TICK_MS,
+            status: 'idle',
+        },
+        investOrders: [],
+        investStrategies: [],
+        realizedPnl: 0,
         loans: [],
         events: [{ id: genId('life'), dateStr, title: '人生拟启动', detail: '你的虚拟人生账本翻开了第一页。', tone: 'info' }],
         actionHistory: [],
@@ -1206,6 +1350,16 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             stockMarket: ensureMarketDetail(state.life.stockMarket?.length ? state.life.stockMarket : BASE_STOCKS, state.life.dateStr || state.lastLoginDate || todayStr()),
             holdings: state.life.holdings || {},
             watchlist: state.life.watchlist || ['MORO', 'CAFE'],
+            marketRuntime: {
+                tickMs: state.life.marketRuntime?.tickMs || BANK_INVEST_TICK_MS,
+                lastTickAt: state.life.marketRuntime?.lastTickAt,
+                lastBucket: state.life.marketRuntime?.lastBucket,
+                catchupTicks: state.life.marketRuntime?.catchupTicks,
+                status: state.life.marketRuntime?.status || 'idle',
+            },
+            investOrders: state.life.investOrders || [],
+            investStrategies: state.life.investStrategies || [],
+            realizedPnl: state.life.realizedPnl || 0,
             loans: state.life.loans || [],
             events: state.life.events || [],
             actionHistory: state.life.actionHistory || [],
@@ -1811,6 +1965,20 @@ export function appendJobChatMessage(life: BankLifeState, applicationId: string,
     };
 }
 
+export function attachJobApplicationAiReview(life: BankLifeState, applicationId: string, aiReview: NonNullable<BankJobApplication['aiReview']>): BankLifeState {
+    let changed = false;
+    const jobHistory = life.jobHistory.map(app => {
+        if (app.id !== applicationId) return app;
+        changed = true;
+        return {
+            ...app,
+            aiReview,
+            score: typeof app.score === 'number' && app.score > 0 ? app.score : aiReview.score,
+        };
+    });
+    return changed ? { ...life, jobHistory } : life;
+}
+
 export function declineJobApplication(life: BankLifeState, applicationId: string, reason = '这份机会先不继续了。'): { life: BankLifeState; application?: BankJobApplication } {
     const rawApp = life.jobHistory.find(a => a.id === applicationId);
     if (!rawApp) return { life };
@@ -1997,6 +2165,410 @@ export function movingAverage(values: number[], window: number): number[] {
         const slice = values.slice(start, idx + 1);
         return roundMoney(slice.reduce((sum, n) => sum + n, 0) / slice.length);
     });
+}
+
+const marketTimeLabel = (ts: number): string => {
+    const d = new Date(ts);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+const marketRuntimeDefaults = (runtime?: BankMarketRuntime): BankMarketRuntime => ({
+    tickMs: Math.max(5_000, runtime?.tickMs || BANK_INVEST_TICK_MS),
+    lastTickAt: runtime?.lastTickAt,
+    lastBucket: runtime?.lastBucket,
+    catchupTicks: runtime?.catchupTicks,
+    status: runtime?.status || 'idle',
+});
+
+const sentimentBias = (sentiment?: BankMarketPulse['sentiment']): number => {
+    if (sentiment === 'bullish') return 0.0009;
+    if (sentiment === 'bearish') return -0.0009;
+    return 0;
+};
+
+const pulseBiasForQuote = (quote: BankStockQuote, pulses: BankMarketPulse[] = []): number => {
+    const matched = pulses.slice(0, 12).filter(p => p.affectedSymbols.includes(quote.symbol));
+    return clamp(matched.reduce((sum, p) => sum + sentimentBias(p.sentiment), 0), -0.0024, 0.0024);
+};
+
+const tickRealtimeQuote = (quote: BankStockQuote, tickAt: number, pulses: BankMarketPulse[] = []): BankStockQuote => {
+    const dateStr = localDateStr(new Date(tickAt));
+    const q = ensureQuoteDetail(quote, dateStr);
+    const history = [...(q.history || [])];
+    const last = history[history.length - 1];
+    const isNewDay = last?.dateStr !== dateStr;
+    const dayOpen = isNewDay ? q.price : (q.open || last?.open || q.price);
+    const previousPrice = isNewDay ? q.price : (q.previousPrice || last?.open || q.price);
+    const baseVolatility = 0.0008 + q.risk * 0.0007;
+    const trendDrift = q.trend === 'up' ? 0.00025 : q.trend === 'down' ? -0.00025 : 0;
+    const pulseDrift = pulseBiasForQuote(q, pulses);
+    const noise = seededNoise(`${q.symbol}:rt:${Math.floor(tickAt / BANK_INVEST_TICK_MS)}`) - 0.5;
+    const maxPct = 0.003 + q.risk * 0.0015;
+    const pct = clamp(noise * baseVolatility * 2 + trendDrift + pulseDrift, -maxPct, maxPct);
+    const price = Math.max(1, roundMoney(q.price * (1 + pct)));
+    const high = roundMoney(Math.max(isNewDay ? dayOpen : (q.high || dayOpen), price));
+    const low = roundMoney(Math.max(0.5, Math.min(isNewDay ? dayOpen : (q.low || dayOpen), price)));
+    const volume = Math.round((2400 + seededNoise(`${q.symbol}:rtvol:${tickAt}`) * 18000) * (1 + q.risk * 0.22));
+    const candle = { dateStr, open: dayOpen, high, low, close: price, volume: (isNewDay ? 0 : (last?.volume || 0)) + volume };
+    const nextHistory = isNewDay
+        ? [...history, candle].slice(-90)
+        : [...history.slice(0, -1), candle].slice(-90);
+    const nextIntraday = [
+        ...(isNewDay ? [] : (q.intraday || [])),
+        { time: marketTimeLabel(tickAt), price, volume },
+    ].slice(-120);
+    const changePct = previousPrice ? Math.round(((price - previousPrice) / previousPrice) * 10000) / 100 : 0;
+    const tickNews = pct > 0.006
+        ? `${q.name}盘中买盘变活跃，虚拟成交放大。`
+        : pct < -0.006
+            ? `${q.name}盘中抛压增多，短线波动加剧。`
+            : q.news;
+    const spread = 0.001 + q.risk * 0.00035;
+    return {
+        ...q,
+        open: dayOpen,
+        high,
+        low,
+        price,
+        previousPrice,
+        changePct,
+        trend: pct > 0.0015 ? 'up' : pct < -0.0015 ? 'down' : 'flat',
+        news: tickNews,
+        marketCap: q.marketCap ? Math.max(1, Math.round(q.marketCap * (price / Math.max(0.01, q.price)))) : q.marketCap,
+        turnoverRate: roundMoney(Math.max(0.1, (q.turnoverRate || 1) + volume / 220000)),
+        bidAsk: {
+            bid: roundMoney(price * (1 - spread)),
+            ask: roundMoney(price * (1 + spread)),
+            bidVolume: Math.round(600 + seededNoise(`${q.symbol}:rtbid:${tickAt}`) * 5200),
+            askVolume: Math.round(600 + seededNoise(`${q.symbol}:rtask:${tickAt}`) * 5200),
+        },
+        history: nextHistory,
+        intraday: nextIntraday,
+        eventTags: Array.from(new Set([...(q.eventTags || []), '实时'])).slice(0, 8),
+    };
+};
+
+const emptyInvestmentTick = (life: BankLifeState, ticksApplied = 0): BankInvestmentTickResult => ({
+    life,
+    ticksApplied,
+    orders: [],
+    ledgerEvents: [],
+    actionResults: [],
+    balanceDelta: 0,
+});
+
+export function tickBankInvestmentMarket(
+    life: BankLifeState,
+    options: { now?: number; tickMs?: number; maxCatchupTicks?: number } = {}
+): BankInvestmentTickResult {
+    const now = Number.isFinite(options.now) ? Number(options.now) : Date.now();
+    const tickMs = Math.max(5_000, options.tickMs || life.marketRuntime?.tickMs || BANK_INVEST_TICK_MS);
+    const maxCatchupTicks = Math.max(1, Math.floor(options.maxCatchupTicks || BANK_INVEST_MAX_CATCHUP_TICKS));
+    const bucket = Math.floor(now / tickMs) * tickMs;
+    const runtime = marketRuntimeDefaults({ ...life.marketRuntime, tickMs });
+    if (runtime.lastBucket === bucket) {
+        return emptyInvestmentTick({ ...life, marketRuntime: { ...runtime, lastTickAt: runtime.lastTickAt || now, status: 'live' } }, 0);
+    }
+    const rawTicks = runtime.lastBucket ? Math.max(1, Math.floor((bucket - runtime.lastBucket) / tickMs)) : 1;
+    const ticks = clamp(rawTicks, 1, maxCatchupTicks);
+    let market = ensureMarketDetail(life.stockMarket?.length ? life.stockMarket : BASE_STOCKS, life.dateStr || todayStr());
+    for (let i = ticks - 1; i >= 0; i--) {
+        const tickAt = bucket - i * tickMs;
+        market = market.map(q => tickRealtimeQuote(q, tickAt, life.marketPulses || []));
+    }
+    return emptyInvestmentTick({
+        ...life,
+        stockMarket: market,
+        marketRuntime: {
+            tickMs,
+            lastTickAt: now,
+            lastBucket: bucket,
+            catchupTicks: ticks,
+            status: 'live',
+        },
+    }, ticks);
+}
+
+const orderLabel = (kind: BankInvestmentOrder['kind']): string => {
+    if (kind === 'limit') return '限价单';
+    if (kind === 'take_profit') return '止盈策略';
+    if (kind === 'stop_loss') return '止损策略';
+    if (kind === 'dip_buy') return '逢低买入';
+    return '市价单';
+};
+
+const orderTriggerPrice = (order: BankInvestmentOrder): number | undefined =>
+    order.targetPrice ?? order.triggerPrice;
+
+const isOrderTriggered = (order: BankInvestmentOrder, quote: BankStockQuote): boolean => {
+    const trigger = orderTriggerPrice(order);
+    if (order.kind === 'market') return true;
+    if (!Number.isFinite(trigger)) return false;
+    if (order.kind === 'limit') return order.side === 'buy' ? quote.price <= trigger! : quote.price >= trigger!;
+    if (order.kind === 'take_profit') return quote.price >= trigger!;
+    if (order.kind === 'stop_loss') return quote.price <= trigger!;
+    if (order.kind === 'dip_buy') return quote.price <= trigger!;
+    return false;
+};
+
+const normalizeInvestmentOrders = (orders?: BankInvestmentOrder[]): BankInvestmentOrder[] =>
+    (orders || []).filter(o => o?.id && o.symbol).map(o => ({
+        ...o,
+        status: o.status || 'open',
+        createdAt: o.createdAt || Date.now(),
+        updatedAt: o.updatedAt || o.createdAt || Date.now(),
+    })).slice(0, 160);
+
+export function placeBankInvestmentOrder(
+    life: BankLifeState,
+    draft: Omit<BankInvestmentOrder, 'id' | 'status' | 'createdAt' | 'updatedAt'> & Partial<Pick<BankInvestmentOrder, 'id' | 'status' | 'createdAt' | 'updatedAt'>>
+): { life: BankLifeState; order: BankInvestmentOrder } {
+    const now = draft.createdAt || Date.now();
+    const order: BankInvestmentOrder = {
+        ...draft,
+        id: draft.id || genId('order'),
+        status: draft.status || 'open',
+        createdAt: now,
+        updatedAt: draft.updatedAt || now,
+    };
+    const actionResult = createBankActionResult({
+        category: 'invest',
+        kind: 'investment-order-open',
+        title: `${order.side === 'buy' ? '买入' : '卖出'}挂单`,
+        summary: `${order.symbol} ${orderLabel(order.kind)}已放入交易台，达到条件后会按虚拟行情自动撮合。`,
+        tone: 'info',
+        riskTags: ['虚拟投资', '自动撮合'],
+        metrics: [
+            { label: '代码', value: order.symbol },
+            { label: '方向', value: order.side === 'buy' ? '买入' : '卖出' },
+            ...(orderTriggerPrice(order) ? [{ label: '触发价', value: `¥${orderTriggerPrice(order)}` }] : []),
+            ...(order.amount ? [{ label: '金额', value: `¥${order.amount}` }] : []),
+            ...(order.shares ? [{ label: '份额', value: `${order.shares} 股` }] : []),
+        ],
+        payload: { orderId: order.id, symbol: order.symbol, side: order.side, kind: order.kind },
+    });
+    return {
+        order,
+        life: appendBankActionRecord({
+            ...life,
+            investOrders: [order, ...normalizeInvestmentOrders(life.investOrders)].slice(0, 160),
+        }, actionResult),
+    };
+}
+
+const failOrder = (order: BankInvestmentOrder, error: string, now: number): BankInvestmentOrder => ({
+    ...order,
+    status: 'failed',
+    error,
+    updatedAt: now,
+});
+
+export function executeBankInvestmentOrders(
+    life: BankLifeState,
+    options: { walletBalance: number; now?: number } = { walletBalance: 0 }
+): BankInvestmentTickResult {
+    const now = Number.isFinite(options.now) ? Number(options.now) : Date.now();
+    let availableCash = Math.max(0, Number(options.walletBalance) || 0);
+    let holdings: Record<string, BankStockHolding> = { ...(life.holdings || {}) };
+    let strategies = (life.investStrategies || []).map(s => ({ ...s }));
+    let orders = normalizeInvestmentOrders(life.investOrders);
+    const generatedOrders: BankInvestmentOrder[] = [];
+
+    strategies = strategies.map(strategy => {
+        if (!strategy.enabled || strategy.lastTriggeredAt) return strategy;
+        const quote = life.stockMarket.find(q => q.symbol === strategy.symbol);
+        if (!quote) return strategy;
+        const synthetic: BankInvestmentOrder = {
+            id: genId('order'),
+            symbol: strategy.symbol,
+            side: strategy.kind === 'dip_buy' ? 'buy' : 'sell',
+            kind: strategy.kind,
+            status: 'open',
+            triggerPrice: strategy.triggerPrice,
+            amount: strategy.kind === 'dip_buy' ? strategy.amount : undefined,
+            shares: strategy.kind !== 'dip_buy' ? (strategy.shares || holdings[strategy.symbol]?.shares) : undefined,
+            source: 'strategy',
+            strategyId: strategy.id,
+            note: strategy.label,
+            createdAt: now,
+            updatedAt: now,
+        };
+        if (!isOrderTriggered(synthetic, quote)) return strategy;
+        generatedOrders.push(synthetic);
+        return { ...strategy, enabled: false, lastTriggeredAt: now, updatedAt: now };
+    });
+    if (generatedOrders.length) orders = [...generatedOrders, ...orders];
+
+    const ledgerEvents: BankInvestmentLedgerEvent[] = [];
+    const actionResults: BankLifeActionResult[] = [];
+    let balanceDelta = 0;
+    let realizedDelta = 0;
+    let events = life.events || [];
+
+    const nextOrders = orders.map(order => {
+        if (order.status !== 'open') return order;
+        const quote = life.stockMarket.find(q => q.symbol === order.symbol);
+        if (!quote) return failOrder(order, '未找到这只虚拟股票', now);
+        if (!isOrderTriggered(order, quote)) return order;
+
+        if (order.side === 'buy') {
+            const amount = roundMoney(Number(order.amount) || 0);
+            if (amount <= 0) return failOrder(order, '买入金额无效', now);
+            if (amount > availableCash + 0.001) return failOrder(order, '钱包余额不足，挂单未成交', now);
+            const fee = Math.max(1, Math.round(amount * 0.003));
+            const shares = Math.floor((Math.max(0, amount - fee) / quote.price) * 1000) / 1000;
+            const cost = roundMoney(shares * quote.price + fee);
+            if (shares <= 0 || cost <= 0) return failOrder(order, '金额太小，无法成交', now);
+            if (cost > availableCash + 0.001) return failOrder(order, '钱包余额不足，挂单未成交', now);
+            const prev = holdings[quote.symbol];
+            const nextShares = roundMoney((prev?.shares || 0) + shares);
+            const avgCost = prev
+                ? roundMoney(((prev.avgCost * prev.shares) + (quote.price * shares)) / nextShares)
+                : quote.price;
+            holdings = { ...holdings, [quote.symbol]: { symbol: quote.symbol, shares: nextShares, avgCost } };
+            availableCash = roundMoney(availableCash - cost);
+            balanceDelta = roundMoney(balanceDelta - cost);
+            ledgerEvents.push({ amount: -cost, note: `${orderLabel(order.kind)}买入 ${quote.symbol}`, category: 'stock', kind: 'stock-auto-buy', sourceId: order.id, relatedEntityId: quote.symbol });
+            events = pushEvent(events, { dateStr: life.dateStr, title: '投资挂单成交', detail: `${quote.name} 按 ¥${quote.price} 买入 ${shares} 股。`, tone: quote.risk >= 4 ? 'warn' : 'good', amount: -cost });
+            actionResults.push(createBankActionResult({
+                category: 'invest',
+                kind: 'stock-auto-buy',
+                title: `${orderLabel(order.kind)}成交`,
+                summary: `${quote.name} 按 ¥${quote.price} 买入 ${shares} 股，手续费 ¥${fee}。`,
+                tone: quote.risk >= 4 ? 'warn' : 'good',
+                amount: -cost,
+                riskTags: quote.risk >= 4 ? ['高波动', '虚拟投资'] : ['虚拟投资'],
+                metrics: [
+                    { label: '代码', value: quote.symbol },
+                    { label: '成交价', value: `¥${quote.price}` },
+                    { label: '买入份额', value: `${shares} 股` },
+                    { label: '手续费', value: `¥${fee}`, tone: 'warn' },
+                    { label: '持仓均价', value: `¥${avgCost}` },
+                ],
+                payload: { orderId: order.id, symbol: quote.symbol, cost, shares, fee, price: quote.price },
+            }));
+            return { ...order, status: 'filled' as const, filledAt: now, updatedAt: now, filledPrice: quote.price, filledShares: shares, fee, cost };
+        }
+
+        const prev = holdings[quote.symbol];
+        if (!prev || prev.shares <= 0) return failOrder(order, '没有可卖出的持仓', now);
+        const requestedShares = Number(order.shares) || prev.shares;
+        const soldShares = Math.min(prev.shares, Math.max(0, Math.floor(requestedShares * 1000) / 1000));
+        if (soldShares <= 0) return failOrder(order, '卖出份额无效', now);
+        const fee = Math.max(1, Math.round(soldShares * quote.price * 0.003));
+        const revenue = roundMoney(soldShares * quote.price - fee);
+        const pnl = roundMoney((quote.price - prev.avgCost) * soldShares - fee);
+        const remain = roundMoney(prev.shares - soldShares);
+        holdings = { ...holdings };
+        if (remain <= 0) delete holdings[quote.symbol];
+        else holdings[quote.symbol] = { ...prev, shares: remain };
+        availableCash = roundMoney(availableCash + revenue);
+        balanceDelta = roundMoney(balanceDelta + revenue);
+        realizedDelta = roundMoney(realizedDelta + pnl);
+        ledgerEvents.push({ amount: revenue, note: `${orderLabel(order.kind)}卖出 ${quote.symbol}`, category: 'stock', kind: 'stock-auto-sell', sourceId: order.id, relatedEntityId: quote.symbol });
+        events = pushEvent(events, { dateStr: life.dateStr, title: '投资挂单成交', detail: `${quote.name} 按 ¥${quote.price} 卖出 ${soldShares} 股，到账 ¥${revenue}。`, tone: pnl >= 0 ? 'good' : 'warn', amount: revenue });
+        actionResults.push(createBankActionResult({
+            category: 'invest',
+            kind: 'stock-auto-sell',
+            title: `${orderLabel(order.kind)}成交`,
+            summary: `${quote.name} 按 ¥${quote.price} 卖出 ${soldShares} 股，${pnl >= 0 ? '盈利' : '亏损'}约 ¥${Math.abs(pnl)}。`,
+            tone: pnl >= 0 ? 'good' : 'warn',
+            amount: revenue,
+            riskTags: ['虚拟投资'],
+            metrics: [
+                { label: '代码', value: quote.symbol },
+                { label: '成交价', value: `¥${quote.price}` },
+                { label: '卖出份额', value: `${soldShares} 股` },
+                { label: '手续费', value: `¥${fee}`, tone: 'warn' },
+                { label: '本次盈亏', value: `${pnl >= 0 ? '+' : '-'}¥${Math.abs(pnl)}`, tone: pnl >= 0 ? 'good' : 'warn' },
+            ],
+            payload: { orderId: order.id, symbol: quote.symbol, revenue, soldShares, fee, price: quote.price, pnl },
+        }));
+        return { ...order, status: 'filled' as const, filledAt: now, updatedAt: now, filledPrice: quote.price, filledShares: soldShares, fee, revenue, pnl };
+    }).slice(0, 160);
+
+    let nextLife: BankLifeState = {
+        ...life,
+        holdings,
+        investOrders: nextOrders,
+        investStrategies: strategies,
+        realizedPnl: roundMoney((life.realizedPnl || 0) + realizedDelta),
+        events,
+    };
+    for (const result of actionResults) nextLife = appendBankActionRecord(nextLife, result);
+    return {
+        life: nextLife,
+        ticksApplied: 0,
+        orders: nextOrders.filter(o => o.updatedAt === now && (o.status === 'filled' || o.status === 'failed')),
+        ledgerEvents,
+        actionResults,
+        balanceDelta,
+    };
+}
+
+export function cancelBankInvestmentOrder(life: BankLifeState, orderId: string): BankLifeState {
+    const now = Date.now();
+    let cancelled: BankInvestmentOrder | undefined;
+    const orders = normalizeInvestmentOrders(life.investOrders).map(order => {
+        if (order.id !== orderId || order.status !== 'open') return order;
+        cancelled = { ...order, status: 'cancelled', updatedAt: now };
+        return cancelled;
+    });
+    if (!cancelled) return life;
+    const actionResult = createBankActionResult({
+        category: 'invest',
+        kind: 'investment-order-cancel',
+        title: '挂单已取消',
+        summary: `${cancelled.symbol} 的${orderLabel(cancelled.kind)}已取消，不会再自动撮合。`,
+        tone: 'info',
+        metrics: [
+            { label: '代码', value: cancelled.symbol },
+            { label: '方向', value: cancelled.side === 'buy' ? '买入' : '卖出' },
+        ],
+        payload: { orderId, symbol: cancelled.symbol },
+    });
+    return appendBankActionRecord({ ...life, investOrders: orders }, actionResult);
+}
+
+export function upsertBankInvestmentStrategy(
+    life: BankLifeState,
+    strategy: Partial<BankInvestmentStrategy> & Pick<BankInvestmentStrategy, 'symbol' | 'kind' | 'triggerPrice'>
+): BankLifeState {
+    const now = Date.now();
+    const existing = strategy.id ? (life.investStrategies || []).find(s => s.id === strategy.id) : undefined;
+    const nextStrategy: BankInvestmentStrategy = {
+        id: strategy.id || genId('strategy'),
+        symbol: strategy.symbol,
+        kind: strategy.kind,
+        enabled: strategy.enabled ?? true,
+        triggerPrice: roundMoney(Number(strategy.triggerPrice) || 0),
+        amount: strategy.amount ? roundMoney(Number(strategy.amount)) : undefined,
+        shares: strategy.shares ? Math.floor(Number(strategy.shares) * 1000) / 1000 : undefined,
+        label: strategy.label,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+        lastTriggeredAt: strategy.enabled === true ? undefined : existing?.lastTriggeredAt,
+    };
+    const strategies = [
+        nextStrategy,
+        ...(life.investStrategies || []).filter(s => s.id !== nextStrategy.id),
+    ].slice(0, 40);
+    const actionResult = createBankActionResult({
+        category: 'invest',
+        kind: 'investment-strategy-upsert',
+        title: existing ? '策略已更新' : '策略已启用',
+        summary: `${nextStrategy.symbol} 的${orderLabel(nextStrategy.kind)}将在触发价 ¥${nextStrategy.triggerPrice} 附近自动生成一次性订单。`,
+        tone: 'info',
+        riskTags: ['虚拟投资', '一次性策略'],
+        metrics: [
+            { label: '代码', value: nextStrategy.symbol },
+            { label: '策略', value: orderLabel(nextStrategy.kind) },
+            { label: '触发价', value: `¥${nextStrategy.triggerPrice}` },
+        ],
+        payload: { strategyId: nextStrategy.id, symbol: nextStrategy.symbol, kind: nextStrategy.kind },
+    });
+    return appendBankActionRecord({ ...life, investStrategies: strategies }, actionResult);
 }
 
 function settleLoans(loans: BankLoan[], dateStr: string): { loans: BankLoan[]; events: BankLifeEvent[] } {

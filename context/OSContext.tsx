@@ -17,7 +17,7 @@ import { DEFAULT_MAIN_API_CONFIG, normalizeApiPresetConfig, normalizeApiPresets,
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
-import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine, shouldAutoReactToCharTakeout } from '../utils/takeout';
+import { TAKEOUT_ORDER_EVENT, synthesizeCharOrderSafely, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine, shouldAutoReactToCharTakeout, getTasteProfile } from '../utils/takeout';
 import {
   applyCoupleAutoCareDraft,
   buildCoupleTakeoutMemoryCard,
@@ -41,6 +41,7 @@ import { isEmotionBuffFeatureOn, isScheduleFeatureOn } from '../utils/scheduleGe
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { maybeRunMomentsAutoPost } from '../utils/momentsAutoPost';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import { PresetRuntime, ensureDefaultPresetSeed, refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
 import { splitOutRichBlocks } from '../utils/chatRichContent';
@@ -49,6 +50,13 @@ import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 import { FORCE_REPLY_EVENT, FORCE_REPLY_STORAGE_KEY, extractForceReplyDirective, type ForceReplyEventDetail, type ForceReplyRequest } from '../utils/forceReply';
 import { extractCallUserDirective } from '../utils/callDirective';
 import { mergeCharacterProfileUpdate, mergeGroupProfileUpdate } from '../utils/profileUpdateMerge';
+import {
+  CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT,
+  CHAR_AVATAR_FROM_USER_IMAGE_EVENT,
+  buildCharAvatarApplyPatch,
+  selectCharAvatarCandidateMessage,
+  type CharAvatarEventDetail,
+} from '../utils/charAvatarSystem';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import {
@@ -159,6 +167,55 @@ let jszipCtorPromise: Promise<JSZipCtorLike> | null = null;
 
 export const IMPORT_IN_PROGRESS_KEY = 'moro_import_in_progress_v1';
 const PROACTIVE_CHAT_REPLY_TIMEOUT_MS = 180_000;
+const PROACTIVE_RANDOM_VISIBLE_WATCHDOG_MS = 24 * 60 * 60 * 1000;
+const PROACTIVE_HINT_REPLY_WINDOW_MS = 30 * 60 * 1000;
+
+function messageHasVisibleProactiveContent(message: Message): boolean {
+  if (message.role !== 'assistant' || message.groupId || message.metadata?.hidden || message.metadata?.proactiveHint) return false;
+  if (message.type === 'system') return false;
+  return ChatParser.hasDisplayContent(String(message.content || ''));
+}
+
+function messageHasProactiveDeliveryMeta(message: Message): boolean {
+  const meta = message.metadata || {};
+  const source = typeof meta.source === 'string' ? meta.source : '';
+  return !!(
+    meta.proactiveScheduledAt !== undefined ||
+    meta.proactiveGeneratedAt !== undefined ||
+    meta.proactiveOfflineReplay ||
+    source.startsWith('proactive')
+  );
+}
+
+function hasVisibleProactiveMessageSince(messages: Message[], cutoffMs: number): boolean {
+  const ordered = [...messages].sort((a, b) => (a.timestamp - b.timestamp) || (a.id - b.id));
+  let lastHiddenProactiveHintAt: number | null = null;
+
+  for (const message of ordered) {
+    const meta = message.metadata || {};
+    if (message.role === 'user' && !message.groupId && meta.proactiveHint && meta.hidden) {
+      lastHiddenProactiveHintAt = message.timestamp;
+      continue;
+    }
+
+    if (message.role === 'user' && !message.groupId && !meta.proactiveHint && !meta.hidden) {
+      lastHiddenProactiveHintAt = null;
+      continue;
+    }
+
+    if (message.timestamp < cutoffMs || !messageHasVisibleProactiveContent(message)) continue;
+    if (messageHasProactiveDeliveryMeta(message)) return true;
+    if (
+      lastHiddenProactiveHintAt !== null &&
+      message.timestamp >= lastHiddenProactiveHintAt &&
+      message.timestamp - lastHiddenProactiveHintAt <= PROACTIVE_HINT_REPLY_WINDOW_MS
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 type ImportProgressUpdate = {
   sourceSize?: number;
@@ -1824,13 +1881,26 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (!char || !char.convoSettings?.proactiveTakeoutOrder) return;
           const address = getDefaultTakeoutAddressLine();
           try {
-              const order = synthesizeCharOrder(d.charId, d.desc || '', address);
+              const profile = userProfileRef.current;
+              const fullUserSetting = await buildFullActiveUserSetting(profile, {
+                  fallback: `用户名：${profile?.name || '用户'}`,
+              });
+              const result = await synthesizeCharOrderSafely(d.charId, d.desc || '', address, {
+                  fullUserSetting,
+                  tasteProfile: getTasteProfile('me'),
+                  api: resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current),
+              });
+              if (!result.ok || !result.order) {
+                  addToast(result.blockedReason || '这张饭票没找到合适的安全餐品', 'info');
+                  return;
+              }
+              const order = result.order;
               order.cardPosted = true;
               await DB.saveTakeoutOrder(order);
               await postTakeoutPlacedToChat(order, nameOf);
               notifyTakeoutUpdated();
               bumpUnread(d.charId);
-              addToast(`${char.name} 悄悄给你撕了张饭票 🍱`, 'success');
+              addToast(result.changedReason ? `${char.name} 按你的忌口换了张更稳的饭票` : `${char.name} 悄悄给你撕了张饭票 🍱`, 'success');
           } catch { /* ignore */ }
       };
 
@@ -1915,6 +1985,60 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           window.removeEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
           window.removeEventListener(CHAR_PAT_SUFFIX_EVENT, onPatSuffix);
       };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // ─── 角色自主/同意把用户图片换成本会话头像 ───
+  // 数据落库放在 OS 层，而不是 Chat 页面里：同一轮回复后如果立刻弹查岗、线下现场，
+  // 或者后台主动消息触发该指令，头像变化也不会因为聊天页被打断而丢失。
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const onCharAvatarFromUserImage = async (e: Event) => {
+          const d = ((e as CustomEvent).detail || {}) as Partial<CharAvatarEventDetail>;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          const chatting = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === d.charId;
+          if (!char?.convoSettings?.allowCharAvatarFromUserImage) return;
+          try {
+              const recent = await DB.getRecentMessagesByCharId(d.charId, 80);
+              const target = selectCharAvatarCandidateMessage(recent, d.sourceMessageId);
+              if (!target) {
+                  if (chatting) addToast('没找到你刚发的头像候选图', 'info');
+                  return;
+              }
+
+              const liveChar = charactersRef.current.find(c => c.id === d.charId) || char;
+              if (!liveChar.convoSettings?.allowCharAvatarFromUserImage) return;
+              const applied = buildCharAvatarApplyPatch({ char: liveChar, target, detail: d, now: Date.now() });
+              if (!applied) return;
+
+              if (applied.updates) {
+                  await updateCharacter(d.charId, applied.updates);
+              }
+              const systemMessageId = applied.shouldWriteSystemMessage
+                  ? await DB.saveMessage({
+                      charId: d.charId,
+                      role: 'system',
+                      type: 'text',
+                      content: applied.systemMessageContent,
+                      metadata: applied.systemMessageMetadata,
+                  } as any)
+                  : undefined;
+              setLastMsgTimestamp(Date.now());
+              if (!chatting && !applied.duplicate) addToast(`${liveChar.name || 'TA'} 换上了自己的新头像`, 'success');
+              window.dispatchEvent(new CustomEvent(CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT, {
+                  detail: {
+                      ...applied.applied,
+                      systemMessageId,
+                  },
+              }));
+          } catch (err) {
+              console.warn('[OSContext] set char avatar from image failed', err);
+              if (chatting) addToast('头像更换失败', 'error');
+          }
+      };
+      window.addEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, onCharAvatarFromUserImage as EventListener);
+      return () => window.removeEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, onCharAvatarFromUserImage as EventListener);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
 
@@ -2327,6 +2451,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   console.log(`🔕 [Proactive/Global] Random mode: ${char.name} skipped (user replied recently)`);
                   return;
               }
+              const forceRandomVisibleSend = !!(
+                  !customHint &&
+                  !hasPendingProactiveReply &&
+                  pCfg?.randomMode &&
+                  !hasVisibleProactiveMessageSince(recentMsgs, runNowMs - PROACTIVE_RANDOM_VISIBLE_WATCHDOG_MS)
+              );
 
               // 2. Save hidden system hint
               // 主动语音通话：开关打开时允许角色用 [[CALL_USER]] 指令直接拨电话（按人设自行决定）
@@ -2351,6 +2481,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const lifePlan = await planAutonomousProactiveTurn(char, lifeApi, {
                       recentChat,
                       randomMode: pCfg?.randomMode,
+                      forceSend: forceRandomVisibleSend,
                       now: runNowMs,
                   });
                   lifeEvent = lifePlan.event;

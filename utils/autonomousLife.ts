@@ -72,6 +72,12 @@ export interface AutonomousProactivePlanOptions {
   signal?: AbortSignal;
   recentChat?: string;
   randomMode?: boolean;
+  /**
+   * Watchdog for smart/random mode: when no visible proactive message has landed
+   * for too long, keep quiet-hours behavior but do not let low-score life events
+   * silently turn this trigger into life_only again.
+   */
+  forceSend?: boolean;
 }
 
 const DEFAULT_MATERIAL_SOURCES: MaterialSource[] = ['life', 'recentChat', 'schedule', 'realtime'];
@@ -959,7 +965,7 @@ export async function planAutonomousProactiveTurn(
   }
 
   const score = scoreLifeEventForProactive(event);
-  const smartSkip = !!opts?.randomMode && char.proactiveConfig?.smartSkipEnabled !== false;
+  const smartSkip = !opts?.forceSend && !!opts?.randomMode && char.proactiveConfig?.smartSkipEnabled !== false;
   if (smartSkip && score < proactiveThreshold(getProactiveIntensity(char))) {
     return { decision: 'life_only', event, reason: 'low_share_willingness', generated, reused, quietHoursActive: quiet.active, score };
   }

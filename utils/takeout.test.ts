@@ -1,16 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
     effectiveTakeoutEtaAt,
     extractTakeoutOrderDirective,
     generateStores,
     generateStoreReviewsAI,
+    getCustomDishes,
+    inferTakeoutPreferenceHints,
     isTakeoutArrived,
     liveTakeoutStatus,
     MIN_TAKEOUT_DELIVERY_MS,
     PACK_FEE,
     resolveComplaint,
     rollOrderIssues,
+    saveCustomDish,
+    saveCustomStore,
     shouldAutoReactToCharTakeout,
+    synthesizeCharOrder,
+    synthesizeCharOrderSafely,
+    TAKEOUT_STORES_CACHE_KEY,
 } from './takeout';
 import type { TakeoutOrder, TakeoutOrderItem } from '../types';
 
@@ -61,6 +68,167 @@ describe('角色主动点外卖指令解析', () => {
         expect(result.desc).toBe('海鲜粥');
         expect(result.content).toBe('先吃这个。\n\n等会儿再喝点热的。');
         expect(result.content).not.toContain('TAKEOUT_ORDER');
+    });
+});
+
+describe('角色主动点外卖偏好兜底', () => {
+    const sweetFood = /奶茶|奶绿|奶昔|奶盖|波波|阿华田|焦糖|甘露|甜品|烘焙|蛋糕|提拉米苏|布朗尼|甜筒|冰淇淋|双皮奶|芋圆|烧仙草|绵绵冰|芝士挞|苹果派|糖水|可乐|雪碧|汽水|果蔬汁|酸奶|酸梅汤|冰镇西瓜|草莓|葡萄|芒果|红豆|脏脏包/;
+    const spicyFood = /辣|麻辣|麻婆|椒|川|湘|泡椒|剁椒|水煮|口水鸡|小龙虾|螺蛳粉|串串|麻辣烫|火锅|酸辣|麦辣|热辣|宫保|黑椒/;
+    const seafoodFood = /海鲜|虾|蟹|鱼|贝|蛤|蚝|鱿鱼|章鱼|三文鱼|鳗鱼|干贝|花甲|生蚝/;
+    const dairyFood = /奶|芝士|奶油|酸奶|乳酪|奶茶|奶盖|奶昔|双皮奶|冰淇淋|提拉米苏|芝士挞/;
+
+    beforeEach(() => {
+        localStorage.removeItem('moro_takeout_custom_dishes_v1');
+        localStorage.removeItem('moro_takeout_custom_stores_v1');
+        localStorage.removeItem(TAKEOUT_STORES_CACHE_KEY);
+        localStorage.removeItem('moro_takeout_taste_profiles_v1');
+    });
+
+    it('完整用户设定写了不喜欢甜时，本地合成会避开甜品奶茶', () => {
+        for (let i = 0; i < 20; i++) {
+            const order = synthesizeCharOrder('char-a', '热奶茶和草莓蛋糕', '测试地址', {
+                fullUserSetting: '【完整用户设定】\n用户名：小夏\n【扮相手账自述】\n我不喜欢甜的，也不喝奶茶。',
+            });
+            const orderText = `${order.storeName} ${order.items.map(item => item.name).join(' ')}`;
+            expect(order.note).toContain('不爱甜食');
+            expect(orderText).not.toMatch(sweetFood);
+        }
+    });
+
+    it('饭票口味小纸条写少糖时，会写入主动订单备注并避开过甜餐品', () => {
+        const order = synthesizeCharOrder('char-a', '下午茶甜品', '测试地址', {
+            tasteTags: ['少糖'],
+        });
+        const orderText = `${order.storeName} ${order.items.map(item => item.name).join(' ')}`;
+        expect(order.note).toContain('少糖');
+        expect(orderText).not.toMatch(sweetFood);
+    });
+
+    it('用户同时写多种忌口时，会一起识别而不是只看糖', () => {
+        const pref = inferTakeoutPreferenceHints({
+            fullUserSetting: '我忌辣，不能吃辣，也不要香菜，平时口味清淡，海鲜过敏，乳糖不耐。',
+            tasteProfile: { tags: ['少糖', '少油'], note: '花生过敏，不吃猪肉，不吃生冷。' },
+        });
+        expect(pref.avoidSweet).toBe(true);
+        expect(pref.hardAvoidSpicy).toBe(true);
+        expect(pref.avoidSpicy).toBe(true);
+        expect(pref.avoidCilantro).toBe(true);
+        expect(pref.avoidSeafood).toBe(true);
+        expect(pref.avoidDairy).toBe(true);
+        expect(pref.avoidNuts).toBe(true);
+        expect(pref.avoidPork).toBe(true);
+        expect(pref.avoidRawCold).toBe(true);
+        expect(pref.lowOil).toBe(true);
+    });
+
+    it('喜欢辣和喜欢甜不会被误判成忌口', () => {
+        const pref = inferTakeoutPreferenceHints({
+            fullUserSetting: '我无辣不欢，喜欢甜口，不忌口。',
+        });
+        expect(pref.avoidSpicy).toBe(false);
+        expect(pref.avoidSweet).toBe(false);
+    });
+
+    it('完整用户设定写了忌辣时，本地合成会避开辛辣餐品', () => {
+        for (let i = 0; i < 20; i++) {
+            const order = synthesizeCharOrder('char-a', '麻辣烫和香辣鸡腿堡', '测试地址', {
+                fullUserSetting: '【完整用户设定】\n用户名：小夏\n【扮相手账自述】\n我忌辣，不能吃辣，也不要香菜。',
+            });
+            const orderText = `${order.storeName} ${order.items.map(item => item.name).join(' ')}`;
+            expect(order.note).toContain('忌辣');
+            expect(order.note).toContain('不要香菜');
+            expect(orderText).not.toMatch(spicyFood);
+        }
+    });
+
+    it('饭票口味小纸条写无辣和少糖时，两种偏好会同时参与主动订单兜底', () => {
+        for (let i = 0; i < 20; i++) {
+            const order = synthesizeCharOrder('char-a', '麻辣烫配奶茶甜品', '测试地址', {
+                tasteTags: ['无辣', '少糖'],
+            });
+            const orderText = `${order.storeName} ${order.items.map(item => item.name).join(' ')}`;
+            expect(order.note).toContain('无辣');
+            expect(order.note).toContain('少糖');
+            expect(orderText).not.toMatch(spicyFood);
+            expect(orderText).not.toMatch(sweetFood);
+        }
+    });
+
+    it('自定义菜库里的安全菜会优先参与主动饭票', async () => {
+        saveCustomDish({ id: 'safe-rice', name: '温柔南瓜小米饭', price: 19, emoji: '🍚', desc: '自家常备' });
+        const result = await synthesizeCharOrderSafely('char-a', '想吃点热乎主食', '测试地址', {
+            tasteProfile: { tags: ['忌辣', '控糖'], note: '不要香菜' },
+            includeDefaultStores: false,
+        });
+        expect(result.ok).toBe(true);
+        expect(result.order?.storeName).toContain('我的菜库');
+        expect(result.order?.items[0].name).toBe('温柔南瓜小米饭');
+    });
+
+    it('当前街区缓存和自定义铺子都会参与主动饭票候选', async () => {
+        localStorage.setItem(TAKEOUT_STORES_CACHE_KEY, JSON.stringify([{
+            id: 'cache-store',
+            name: '街角清汤铺',
+            emoji: '🍜',
+            category: '中餐',
+            rating: 4.7,
+            monthlySales: 120,
+            deliveryMinutes: 25,
+            deliveryFee: 2,
+            minOrder: 0,
+            distanceKm: 1,
+            dishes: [{ id: 'cache-noodle', name: '清汤热面', price: 18, emoji: '🍜', popular: true }],
+        }]));
+        const cached = await synthesizeCharOrderSafely('char-a', '清汤热面', '测试地址', {
+            tasteProfile: { tags: ['口味清淡'] },
+            includeDefaultStores: false,
+        });
+        expect(cached.order?.storeName).toBe('街角清汤铺');
+
+        saveCustomStore({
+            id: 'mine-store',
+            name: '我的素食小铺',
+            emoji: '🥬',
+            category: '轻食沙拉',
+            rating: 4.8,
+            monthlySales: 88,
+            deliveryMinutes: 20,
+            deliveryFee: 0,
+            minOrder: 0,
+            distanceKm: 0.8,
+            dishes: [{ id: 'mine-dish', name: '热乎时蔬豆腐饭', price: 22, emoji: '🥬', popular: true }],
+        });
+        const custom = await synthesizeCharOrderSafely('char-a', '热乎时蔬豆腐饭', '测试地址', {
+            tasteProfile: { tags: ['素食', '不吃生冷'] },
+            includeDefaultStores: false,
+        });
+        expect(custom.order?.storeName).toBe('我的素食小铺');
+    });
+
+    it('冲突描述会自动改点安全餐食并写入原因', async () => {
+        const result = await synthesizeCharOrderSafely('char-a', '麻辣烫配奶茶甜品和虾仁', '测试地址', {
+            tasteProfile: { tags: ['忌辣', '控糖', '海鲜过敏', '乳糖不耐'] },
+        });
+        const orderText = `${result.order?.storeName || ''} ${result.order?.items.map(item => item.name).join(' ') || ''}`;
+        expect(result.ok).toBe(true);
+        expect(result.changedReason).toBeTruthy();
+        expect(result.order?.note).toContain('按忌口改成更稳妥餐食');
+        expect(orderText).not.toMatch(spicyFood);
+        expect(orderText).not.toMatch(sweetFood);
+        expect(orderText).not.toMatch(seafoodFood);
+        expect(orderText).not.toMatch(dairyFood);
+    });
+
+    it('没有现成候选时会生成安全菜并保存进我的菜库', async () => {
+        const result = await synthesizeCharOrderSafely('char-a', '随便来点能吃的', '测试地址', {
+            tasteProfile: { tags: ['忌辣', '控糖', '不吃生冷'], note: '海鲜过敏，花生过敏，不吃猪肉。' },
+            includeStoredSources: false,
+            includeDefaultStores: false,
+        });
+        expect(result.ok).toBe(true);
+        expect(result.generatedDish).toBeTruthy();
+        expect(result.order?.storeName).toBe('饭票安全灶');
+        expect(getCustomDishes().some(d => d.id === result.generatedDish?.id)).toBe(true);
     });
 });
 

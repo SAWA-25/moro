@@ -223,6 +223,33 @@ describe('llmClient', () => {
         expect(fetchFn).toHaveBeenCalledTimes(2);
     });
 
+    it('can skip heuristic continuation when finish_reason is missing', async () => {
+        const fetchFn = vi.fn(async () => res({ choices: [{ message: { content: '上半句' } }] }));
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await expect(completeText({ ...API, apiKey: 'k' }, [{ role: 'user', content: 'hi' }], {
+            continueRounds: 2,
+            continueOnMissingFinishReason: false,
+        })).resolves.toBe('上半句');
+        expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('can return accumulated text when a continuation round fails', async () => {
+        const q = [
+            res({ choices: [{ message: { content: '先写到这里' }, finish_reason: 'length' }] }),
+            res({ error: { message: 'continuation failed' } }, false, 502),
+        ];
+        const fetchFn = vi.fn(async () => q.shift()!);
+        global.fetch = fetchFn as unknown as typeof fetch;
+
+        await expect(completeText({ ...API, apiKey: 'k' }, [{ role: 'user', content: 'hi' }], {
+            continueRounds: 2,
+            continueMaxRetries: 0,
+            returnPartialOnContinueError: true,
+        })).resolves.toBe('先写到这里');
+        expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
     it('surfaces provider errors from JSON bodies', async () => {
         global.fetch = vi.fn(async () => res({ error: { message: 'bad key' } }, false, 401)) as unknown as typeof fetch;
         await expect(fetchModelList({ baseUrl: 'https://api.example.test/v1', apiKey: 'bad' }))

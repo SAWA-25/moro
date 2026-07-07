@@ -27,8 +27,14 @@ describe('shop companion helpers', () => {
         expect(p.user).toContain('当前界面：item');
         expect(p.user).toContain('rose');
         expect(p.user).toContain('草莓蛋糕×2');
+        expect(p.user).toContain('选品脚本原则');
         expect(p.user).toContain('自己挑真正想看/想要/想送的一件');
+        expect(p.user).toContain('完整角色设定、审美、习惯、雷点、关系和当下心情');
+        expect(p.user).toContain('steps 就是这次陪逛带看的执行脚本');
+        expect(p.user).toContain('你为什么被这件商品吸引');
         expect(p.user).toContain('itemId 必须来自屏幕上可见商品');
+        expect(p.user).toContain('强制付款触发状态');
+        expect(p.user).toContain('本轮不允许强势结账');
         expect(p.user).toContain('char_pay');
         expect(p.user).toContain('auto_user_pay');
         expect(p.user).toContain('steps');
@@ -158,6 +164,60 @@ describe('shop companion helpers', () => {
         expect(parseShopCompanionSpeech('{"speech":""}', '先停一下。')).toBe('先停一下。');
     });
 
+    it('builds a free-chat prompt for the in-shop companion dialogue sheet', () => {
+        const rose = getShopItem('rose')!;
+        const cake = getShopItem('cake')!;
+        const prompt = buildShopCompanionSpeechPrompt(
+            { name: '阿白', personaText: '完整角色设定：嘴硬心软，喜欢甜食', affection: 72 },
+            '小雨',
+            'free_chat',
+            {
+                surface: 'item',
+                item: rose,
+                visibleItems: [rose, cake],
+                cart: [{ itemId: 'cake', qty: 1 }],
+                userAction: '用户在陪逛对话里说：这件适合我吗？',
+            },
+            '完整用户设定：小雨怕浪费钱',
+        );
+        expect(prompt.system).toContain('完整角色设定');
+        expect(prompt.system).toContain('完整用户设定');
+        expect(prompt.user).toContain('free_chat');
+        expect(prompt.user).toContain('心意铺内同屏陪逛对话');
+        expect(prompt.user).toContain('用户在陪逛对话里说');
+        expect(prompt.user).toContain('屏幕上可见商品');
+        expect(prompt.user).toContain('草莓蛋糕×1');
+        expect(prompt.user).toContain('只输出一句角色回复');
+    });
+
+    it('buildShopCompanionPrompt constrains forced payment to repeated refusal pressure', () => {
+        const rose = getShopItem('rose')!;
+        const prompt = buildShopCompanionPrompt(
+            { name: '阿白', personaText: '完整角色设定：喜欢仪式感', affection: 80 },
+            '小雨',
+            {
+                surface: 'item',
+                item: rose,
+                visibleItems: [rose],
+                cart: [],
+                userAction: '用户拒绝后滑到别的商品',
+                paymentPressure: {
+                    declinedCount: 3,
+                    lastDeclinedItemName: '草莓蛋糕',
+                    viewedOtherItemAfterDecline: true,
+                    forcedPayEligible: true,
+                    forcedPayChancePct: 52,
+                },
+            },
+            '完整用户设定：小雨怕浪费钱',
+        );
+        expect(prompt.user).toContain('用户已连续拒绝 3 次');
+        expect(prompt.user).toContain('刚拒绝的是「草莓蛋糕」');
+        expect(prompt.user).toContain('已经滑开/看了别的商品');
+        expect(prompt.user).toContain('允许小概率强势结账');
+        expect(prompt.user).toContain('"auto_user_pay" 只允许在用户连续拒绝');
+    });
+
     it('maps companion actions to video-style co-presence cue copy', () => {
         expect(getShopCoPresenceCue('point', '燃')).toMatchObject({
             eyebrow: 'CO-PRESENCE',
@@ -208,5 +268,28 @@ describe('shop companion helpers', () => {
         expect(source).toContain("visibleItemsForCompanion(undefined, { tab: 'home', cat: next })");
         expect(source).toContain("visibleItemsForCompanion(undefined, { tab: 'category', categoryTabCat: next })");
         expect(source).toContain('activeCategory={categoryTabCat} onCategoryChange={setCategoryPageCategory}');
+    });
+
+    it('ShopApp opens the payment request when the companion only says they want an item', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        const start = source.indexOf("if (step.action === 'want')");
+        const end = source.indexOf("if (step.action === 'ask_user_pay')");
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        const block = source.slice(start, end);
+        expect(block).toContain('setCompanionRequest({ charId: char.id, item, speech })');
+        expect(block).not.toContain('updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) })');
+    });
+
+    it('ShopApp lets auto_user_pay go directly to payment instead of the hijack confirmation', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        const start = source.indexOf("if (step.action === 'auto_user_pay')");
+        const end = source.indexOf("if (step.action === 'char_pay')");
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        const block = source.slice(start, end);
+        expect(block).toContain('shouldTriggerCompanionForcedPay(char, item)');
+        expect(block).toContain('await companionAutoUserPay(char, item, speech)');
+        expect(block).not.toContain('waitForCompanionHijack');
     });
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread, PhoneCheckSession, PhoneEvidenceRisk } from '../../types';
+import { AmbientSocialEntry, CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread, PhoneCheckSession, PhoneEvidenceRisk, AppConfig, XhsFeedPost } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { extractContent } from '../../utils/safeApi';
@@ -54,10 +54,12 @@ type StepApp =
     | 'takeout'
     | 'wallet'
     | 'browser'
-    | 'map';
+    | 'map'
+    | AppID
+    | (string & {});
 
 export interface ScriptAction {
-    // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）；
+    // reply/block/delete/ignore 作用在 chat-thread；post_moment 仅作用在 moments（絮语·此刻，代发动态）；
     // clear_cart 作用在 shop（帮用户清空购物车·代付）
     type: 'none' | 'reply' | 'block' | 'delete' | 'ignore' | 'post_moment' | 'clear_cart';
     content?: string;
@@ -116,23 +118,46 @@ interface CharPhoneCheckOverlayProps {
 const STEP_MS = 6500;            // 每一步停留时长（想法框阅读时间）
 const TAP_MS = 950;              // 「点开 App」动画时长：先回桌面按图标，再进入页面
 // 浏览步骤 → 桌面图标（点开动画里高亮哪个图标）
-const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
+const BUILTIN_STEP_APPS = new Set<string>([
+    'home',
+    'chat-list',
+    'chat-thread',
+    'moments',
+    'twitter',
+    'schedule',
+    'gallery',
+    'music',
+    'phone',
+    'shop',
+    'takeout',
+    'wallet',
+    'browser',
+    'map',
+]);
+
+const APP_ID_SET = new Set<string>(INSTALLED_APPS.map(app => app.id));
+
+const STATIC_STEP_ICON: Record<string, string> = {
     'chat-list': 'Chat',
     'chat-thread': 'Chat',
-    'moments': 'Social',
-    'twitter': 'Twitter',
-    'schedule': 'Almanac',
-    'gallery': 'Gallery',
-    'music': 'Music',
-    'phone': 'Phone',
-    'shop': 'Shop',
-    'takeout': 'Takeout',
-    'wallet': 'Bank',
-    'browser': 'HotNews',
-    'map': 'Social',
+    moments: 'Chat',
+    twitter: 'Twitter',
+    schedule: 'Almanac',
+    gallery: 'Gallery',
+    music: 'Music',
+    phone: 'Phone',
+    shop: 'Shop',
+    takeout: 'Takeout',
+    wallet: 'Bank',
+    browser: 'HotNews',
+    map: 'Xunji',
+    [AppID.GroupChat]: 'Chat',
+    [AppID.Almanac]: 'Almanac',
+    [AppID.Bank]: 'Bank',
+    [AppID.HotNews]: 'HotNews',
 };
 
-const STEP_LABEL: Record<StepApp, string> = {
+const STATIC_STEP_LABEL: Record<string, string> = {
     home: '桌面',
     'chat-list': '聊天列表',
     'chat-thread': '聊天记录',
@@ -147,6 +172,39 @@ const STEP_LABEL: Record<StepApp, string> = {
     wallet: '钱包',
     browser: '浏览',
     map: '地区',
+    [AppID.GroupChat]: '絮语',
+    [AppID.Almanac]: '岁时记',
+    [AppID.Bank]: '人生拟',
+    [AppID.HotNews]: '热点',
+};
+
+const getStepAppConfig = (app?: StepApp | null): AppConfig | undefined =>
+    app ? INSTALLED_APPS.find(item => item.id === app) : undefined;
+
+const getStepIcon = (app?: StepApp | null): string | null =>
+    app && app !== 'home' ? (STATIC_STEP_ICON[app] || getStepAppConfig(app)?.icon || null) : null;
+
+const getStepLabel = (app?: StepApp | null): string =>
+    app ? (STATIC_STEP_LABEL[app] || getStepAppConfig(app)?.name || String(app)) : '手机';
+
+const normalizeScriptStepApp = (value: unknown): StepApp => {
+    const app = String(value || '').trim();
+    if (BUILTIN_STEP_APPS.has(app) || APP_ID_SET.has(app)) return app as StepApp;
+    return 'home';
+};
+
+const normalizeScriptAction = (raw: unknown, app: StepApp): ScriptAction | undefined => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const obj = raw as Record<string, unknown>;
+    let type = (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment', 'clear_cart'].includes(String(obj.type))
+        ? String(obj.type)
+        : 'none') as ScriptAction['type'];
+    if (type === 'post_moment' && app !== 'moments') type = 'none';
+    if ((type === 'reply' || type === 'block' || type === 'delete' || type === 'ignore') && app !== 'chat-thread') type = 'none';
+    return {
+        type,
+        content: typeof obj.content === 'string' ? obj.content.slice(0, 300) : undefined,
+    };
 };
 
 // 与 Launcher 同源的桌面布局持久化 key：角色看到的就是用户真实排列的桌面
@@ -181,6 +239,35 @@ interface UserDesktopSnapshot {
     pages: PlacedDeskItem[][];
     activePage: number;
 }
+
+interface PhoneCheckBrowseTarget {
+    key: StepApp;
+    label: string;
+    icon: string;
+    source: string;
+}
+
+const buildPhoneCheckBrowseTargets = (
+    snapshot: UserDesktopSnapshot,
+    dockApps: AppConfig[],
+): PhoneCheckBrowseTarget[] => {
+    const seen = new Set<string>();
+    const targets: PhoneCheckBrowseTarget[] = [];
+    const pushApp = (app: AppConfig | undefined, source: string) => {
+        if (!app || seen.has(app.id)) return;
+        seen.add(app.id);
+        targets.push({ key: app.id as StepApp, label: app.name, icon: app.icon, source });
+    };
+
+    snapshot.pages.forEach((page, pageIndex) => {
+        page.forEach(placed => {
+            if (placed.item.kind !== 'app') return;
+            pushApp(INSTALLED_APPS.find(app => app.id === placed.item.id), `桌面第 ${pageIndex + 1} 页`);
+        });
+    });
+    dockApps.forEach(app => pushApp(app, 'Dock'));
+    return targets;
+};
 
 const readStoredStringArray = (key: string): string[] => {
     try {
@@ -449,37 +536,20 @@ export const safeParsePhoneCheckScript = (raw: string): CheckScript | null => {
     if (!obj || !Array.isArray(obj.steps) || obj.steps.length === 0) return null;
     const steps: ScriptStep[] = obj.steps
         .filter((s: any) => s && typeof s.thought === 'string')
-        .map((s: any) => ({
-            app: ([
-                'home',
-                'chat-list',
-                'chat-thread',
-                'moments',
-                'twitter',
-                'schedule',
-                'gallery',
-                'music',
-                'phone',
-                'shop',
-                'takeout',
-                'wallet',
-                'browser',
-                'map',
-            ].includes(s.app) ? s.app : 'home') as StepApp,
-            targetName: typeof s.targetName === 'string' ? s.targetName : undefined,
-            thought: String(s.thought).slice(0, 300),
-            intent: typeof s.intent === 'string' ? s.intent.slice(0, 80) : undefined,
-            emotion: typeof s.emotion === 'string' ? s.emotion.slice(0, 40) : undefined,
-            risk: (['normal', 'private', 'suspicious'].includes(String(s.risk || '').toLowerCase()) ? String(s.risk).toLowerCase() : undefined) as PhoneEvidenceRisk | undefined,
-            visibleClue: typeof s.visibleClue === 'string' ? s.visibleClue.slice(0, 240) : undefined,
-            actionReason: typeof s.actionReason === 'string' ? s.actionReason.slice(0, 240) : undefined,
-            action: s.action && typeof s.action === 'object'
-                ? {
-                    type: (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment', 'clear_cart'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
-                    content: typeof s.action.content === 'string' ? s.action.content.slice(0, 300) : undefined,
-                }
-                : undefined,
-        }));
+        .map((s: any) => {
+            const app = normalizeScriptStepApp(s.app);
+            return {
+                app,
+                targetName: typeof s.targetName === 'string' ? s.targetName : undefined,
+                thought: String(s.thought).slice(0, 300),
+                intent: typeof s.intent === 'string' ? s.intent.slice(0, 80) : undefined,
+                emotion: typeof s.emotion === 'string' ? s.emotion.slice(0, 40) : undefined,
+                risk: (['normal', 'private', 'suspicious'].includes(String(s.risk || '').toLowerCase()) ? String(s.risk).toLowerCase() : undefined) as PhoneEvidenceRisk | undefined,
+                visibleClue: typeof s.visibleClue === 'string' ? s.visibleClue.slice(0, 240) : undefined,
+                actionReason: typeof s.actionReason === 'string' ? s.actionReason.slice(0, 240) : undefined,
+                action: normalizeScriptAction(s.action, app),
+            };
+        });
     const exitQuestions = (Array.isArray(obj.exitQuestions) ? obj.exitQuestions : [])
         .filter((q: any) => typeof q === 'string' && q.trim())
         .slice(0, 3);
@@ -502,6 +572,10 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
         () => DOCK_APPS.map(id => INSTALLED_APPS.find(a => a.id === id)).filter((a): a is typeof INSTALLED_APPS[number] => !!a),
         []
     );
+    const desktopBrowseTargets = useMemo(
+        () => buildPhoneCheckBrowseTargets(desktopSnapshot, dockApps),
+        [desktopSnapshot, dockApps],
+    );
     const contentColor = theme.contentColor || '#5a3140';
     const [phase, setPhase] = useState<'loading' | 'browsing' | 'finished'>('loading');
     const [script, setScript] = useState<CheckScript | null>(null);
@@ -511,6 +585,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     const [actionLog, setActionLog] = useState<string[]>([]);
     // 手机里的真实数据快照（朋友圈 / 相册 / 纪念日）——角色翻到对应页面时展示
     const [moments, setMoments] = useState<SocialPost[]>([]);
+    const [xhsPosts, setXhsPosts] = useState<XhsFeedPost[]>([]);
     const [twitterTweets, setTwitterTweets] = useState<TwitterTweet[]>([]);
     const [twitterDMThreads, setTwitterDMThreads] = useState<TwitterDMThread[]>([]);
     const [galleryImgs, setGalleryImgs] = useState<GalleryImage[]>([]);
@@ -684,6 +759,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 
                 // 朋友圈 / 相册 / 纪念日真实快照：页面展示 + 喂给脚本生成（想法贴真实内容）
                 let momentsSnap: SocialPost[] = [];
+                let xhsSnap: XhsFeedPost[] = [];
                 let twitterSnap: TwitterTweet[] = [];
                 let twitterDMSnap: TwitterDMThread[] = [];
                 let gallerySnap: GalleryImage[] = [];
@@ -697,6 +773,11 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                         .sort((a, b) => b.timestamp - a.timestamp)
                         .slice(0, 6);
                 } catch { /* 取不到不阻塞 */ }
+                try {
+                    xhsSnap = (await DB.getXhsFeedPosts())
+                        .sort((a, b) => b.createdAt - a.createdAt)
+                        .slice(0, 8);
+                } catch { /* ignore */ }
                 try {
                     twitterSnap = (await DB.getTwitterTweets())
                         .sort((a, b) => b.createdAt - a.createdAt)
@@ -730,6 +811,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 } catch { /* ignore */ }
                 if (cancelled) return;
                 setMoments(momentsSnap);
+                setXhsPosts(xhsSnap);
                 setTwitterTweets(twitterSnap);
                 setTwitterDMThreads(twitterDMSnap);
                 setGalleryImgs(gallerySnap);
@@ -752,6 +834,9 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 
                 const momentsBrief = momentsSnap
                     .map(p => `- ${p.authorName}：「${String(p.content || p.title || '').slice(0, 60)}」${p.location ? ` @${p.location}` : ''}${p.images?.length ? `（配图${p.images.length}张）` : ''}`)
+                    .join('\n');
+                const xhsBrief = xhsSnap
+                    .map(p => `- ${p.author}：「${String(p.title || '').slice(0, 40)}」${String(p.body || '').slice(0, 70)}${p.tags?.length ? ` #${p.tags.slice(0, 3).join(' #')}` : ''}`)
                     .join('\n');
                 const twitterBrief = twitterSnap
                     .map(t => `- ${t.authorName} ${t.authorHandle}${t.language ? ` [${t.language}]` : ''}${t.country ? ` ${t.country}` : ''}：「${String(t.content || '').slice(0, 90)}」${t.topics?.length ? ` #${t.topics.slice(0, 3).join(' #')}` : ''}`)
@@ -785,6 +870,29 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 const regionBrief = nextRegionHints.length
                     ? nextRegionHints.map(h => `- ${h}`).join('\n')
                     : '（没有明确地区线索，只能从聊天语境判断）';
+                const targetHint = (target: PhoneCheckBrowseTarget): string => {
+                    const key = String(target.key);
+                    if (key === AppID.GroupChat || key === 'chat-list') return `可看聊天列表、群聊、联系人和此刻入口；当前列表里有 ${snaps.length} 个可见联系人/群聊，想深入某人对话时下一步用 "chat-thread"。`;
+                    if (key === 'moments') return `絮语里的「此刻」动态子页；最近公开动态 ${momentsSnap.length} 条。只有动态本身触动动机时才看，不是默认查岗落点。`;
+                    if (key === AppID.Social) return `见闻簿本地信息流；最近卡片 ${xhsSnap.length} 条${xhsSnap[0]?.title ? `，最新「${xhsSnap[0].title.slice(0, 28)}」` : ''}。`;
+                    if (key === AppID.Twitter || key === 'twitter') return `推特时间线 ${twitterSnap.length} 条、私信 ${twitterDMSnap.length} 个。`;
+                    if (key === AppID.Almanac || key === AppID.Schedule || key === 'schedule') return `岁时记/日程；纪念日 ${annivSnap.length} 条，待办 ${taskSnap.length} 条。`;
+                    if (key === AppID.Gallery || key === 'gallery') return `相册；最近照片/截图 ${gallerySnap.length} 张。`;
+                    if (key === AppID.Phone || key === 'phone') return `回声亭；通话记录 ${callSnap.length} 条。`;
+                    if (key === AppID.Takeout || key === 'takeout') return `饭票；最近外卖/跑腿订单 ${takeoutSnap.length} 条。`;
+                    if (key === AppID.Shop || key === 'shop') return resolveCart(userProfile.shopCart).length > 0 ? `心意铺；购物车有 ${resolveCart(userProfile.shopCart).length} 种商品，合计 ¥${fmtPrice(cartTotal(userProfile.shopCart))}。` : '心意铺；购物车是空的。';
+                    if (key === AppID.Bank || key === 'wallet') return `人生拟/钱包；账户余额 ¥${fmtPrice(userProfile.balance || 0)}，购物小票 ${(userProfile.shopReceipts || []).length} 条。`;
+                    if (key === AppID.HotNews || key === AppID.Browser || key === 'browser') return `热点/浏览；可看当前网页来源和热点平台，不能编真实浏览器后台历史。`;
+                    if (key === AppID.Music || key === 'music') return '音乐；可看最近播放入口和音乐小组件痕迹，具体曲目没有快照时不要硬编。';
+                    if (key === AppID.Xunji) return '循迹；可看近期屏幕生活痕迹入口，但不要把它写成全知监控报告。';
+                    if (key === AppID.Health) return '健康；可看健康记录入口和设置痕迹，未给出具体数值时不要编医疗数据。';
+                    if (key === 'map') return `地区/位置线索；目前有 ${nextRegionHints.length + locationSnaps.length} 条位置相关线索。`;
+                    return `${target.label} 是用户真实桌面上的 App；可查看入口、最近状态、设置痕迹或与关系有关的本地线索，没有快照时不要凭空编造私密内容。`;
+                };
+                const desktopTargetBrief = desktopBrowseTargets
+                    .map(target => `- "${target.key}" ${target.label}（${target.source}）：${targetHint(target)}`)
+                    .join('\n');
+                const exampleAppKey = desktopBrowseTargets.find(target => target.key !== AppID.GroupChat)?.key || desktopBrowseTargets[0]?.key || AppID.Gallery;
 
                 const roleContext = await buildCharPhoneCheckRoleContext();
                 const prompt = `### 任务
@@ -803,8 +911,20 @@ ${snaps.map(s => {
 ### 可翻看的对话记录节选
 ${excerpts.join('\n\n') || '（手机里几乎没有聊天记录）'}
 
+### ${userProfile.name} 当前真实桌面 / Dock 可点开的 App
+第一步必须是 "home"。之后请按用户真实桌面展开，从下面这些真实 App key 里挑选查看；不要固定去朋友圈，也不要每次都发动态。App 如果没有专门快照，只能写 TA 看到了入口、设置、最近状态或本地痕迹，不能凭空编不存在的隐私内容。
+${desktopTargetBrief || '（桌面暂时没有可识别 App，只能停留在 home）'}
+
+絮语内部子页（只有先看絮语或被聊天线索触动时使用）：
+- "chat-thread" 某个联系人/群聊的聊天记录：targetName 必填，必须来自上面的聊天列表。
+- "moments" 絮语里的「此刻」动态：只有动态线索本身触动查岗动机时才看，不是默认步骤。
+- "map" 地区与位置线索：可由天气城市、外卖地址、位置分享或动态地点触发。
+
 ### 朋友圈最近的动态
 ${momentsBrief || '（朋友圈没什么动态）'}
+
+### 见闻簿最近的卡片
+${xhsBrief || '（见闻簿暂时没有卡片）'}
 
 ### 推特最近的时间线
 ${twitterBrief || '（推特时间线暂时空着）'}
@@ -840,11 +960,8 @@ ${resolveCart(userProfile.shopCart).length > 0
 
 ### 要求
 这次查岗必须围绕一个明确的情绪或剧情动机展开，例如怀疑、吃醋、担心、保护欲、被聊天线索刺到，或关系边界被触动；不能因为无聊、随便看看、系统允许、完成任务感或没话找话而查岗。每一步的 intent 都要能接住这个动机或从真实线索继续延伸，禁止写成“随便看看”“无聊”“系统允许”。
-生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
-- "home" 桌面
-- "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）
-- "moments" 朋友圈 / "twitter" 推特 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
-- "phone" 电话记录 / "shop" 心意铺购物与购物车 / "takeout" 饭票外卖 / "wallet" 钱包收支 / "browser" 热点与浏览痕迹 / "map" 地区与位置线索
+生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。第二步以后优先使用「当前真实桌面 / Dock 可点开的 App」里的 key；如果要深入絮语对话再用 "chat-thread"，如果确实被动态触动才用 "moments"。
+不要把「moments / 此刻 / 朋友圈」当成固定流程；一次查岗可以完全不看动态，也可以去看岁时记、相册、健康、饭票、见闻簿、热点、设置、剪影集、剪报夹等真实桌面 App。
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
 每一步还要写 intent / emotion / risk / visibleClue：
 - intent：TA 点开这里的动机（如确认关系、找生活线索、吃醋、照顾、试探），必须具体，不要写“随便看看”“无聊”或“系统允许”。
@@ -853,23 +970,23 @@ ${resolveCart(userProfile.shopCart).length > 0
 - visibleClue：TA 此刻真实看到的关键线索，必须来自上面的快照或对话节选，不要编真实设备外的新信息。
 如果 action 不为 none，再写 actionReason：TA 为什么会按人设做这个越界动作。
 ${charPhoneCheckScriptGuard(char.name, userProfile.name || '用户')}
-翻到 moments / twitter / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。twitter 里包含国际时间线和私信概况，看到外文推文时可以提到语言或翻译痕迹。
+翻到任何 App 时，想法要针对上面给出的真实桌面、真实快照或入口状态来写，不要凭空编造内容。twitter 里包含国际时间线和私信概况，看到外文推文时可以提到语言或翻译痕迹。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
 - {"type":"block"} 把这个联系人拉黑
 - {"type":"delete"} 删掉这个好友
 - {"type":"ignore"} 看完冷哼一声不动
 moments（朋友圈）步骤可以带 action：
-- {"type":"post_moment","content":"…"} 代替 ${userProfile.name} 发一条朋友圈（content 是以 ${userProfile.name} 口吻写的动态正文，30~80字；可以宣示主权、撒糖、调皮地替TA说点话，也可能阴阳怪气）
+- {"type":"post_moment","content":"…"} 代替 ${userProfile.name} 发一条朋友圈（content 是以 ${userProfile.name} 口吻写的动态正文，30~80字）。这是罕见越界动作：只有当 TA 已经真的翻到 moments、且具体动态线索强烈刺激到 TA 时才可能发生；默认不要发，不能为了制造戏剧性或完成流程而发。
 任意一步都可带 action（看到购物车有没结算的东西时）：
 - {"type":"clear_cart"} 帮 ${userProfile.name} 把心意铺购物车清空（你替 TA 代付）。宠溺/大方/想讨好或心疼 TA 的角色才会这么做；小气、在闹脾气或购物车是空的时候绝不要用。
-是否做这些动作、做哪种，严格按人设性格来：温柔克制的角色多半只看不动；占有欲、醋劲或保护欲强，且被具体线索刺激到时，才可能下手——回复别人、拉黑、抢着替TA发朋友圈昭告关系、或大方地帮 TA 清空购物车。不要为了戏剧性乱来。
+是否做这些动作、做哪种，严格按人设性格来：温柔克制的角色多半只看不动；占有欲、醋劲或保护欲强，且被具体线索刺激到时，才可能下手——回复别人、拉黑、极少数情况下替TA发动态、或大方地帮 TA 清空购物车。不要为了戏剧性乱来。
 另外生成 exitQuestions：3 个问题。${userProfile.name} 想中途拿回手机时，${char.name} 会要求 TA 先回答这 3 个问题（按人设出题：可以是审问、撒娇、试探）。
 endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用于之后 TA 主动发消息的语气基调）。
 
 ### 输出
 只输出一个 JSON 对象，不要任何其它文字：
-{"steps":[{"app":"home","thought":"…","intent":"…","emotion":"…","risk":"normal","visibleClue":"…"},{"app":"chat-thread","targetName":"…","thought":"…","intent":"…","emotion":"…","risk":"suspicious","visibleClue":"…","actionReason":"…","action":{"type":"reply","content":"…"}},{"app":"moments","thought":"…","intent":"…","emotion":"…","risk":"suspicious","visibleClue":"…","actionReason":"…","action":{"type":"post_moment","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
+{"steps":[{"app":"home","thought":"…","intent":"…","emotion":"…","risk":"normal","visibleClue":"…"},{"app":"${exampleAppKey}","thought":"…","intent":"…","emotion":"…","risk":"private","visibleClue":"${getStepLabel(exampleAppKey)}里的真实线索…"},{"app":"chat-thread","targetName":"…","thought":"…","intent":"…","emotion":"…","risk":"suspicious","visibleClue":"…","actionReason":"…","action":{"type":"reply","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
 
                 const raw = await llm(prompt);
                 if (cancelled) return;
@@ -903,7 +1020,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         const stepRecord = normalizePhoneCheckStep({
             at: Date.now(),
             app: currentStep.app,
-            title: STEP_LABEL[currentStep.app],
+            title: getStepLabel(currentStep.app),
             targetName: currentStep.targetName,
             thought: currentStep.thought,
             intent: currentStep.intent,
@@ -917,7 +1034,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
             steps: [...prev.steps, stepRecord],
             actions: [...prev.actions, makePhoneCheckAction({
                 type: 'browse_step',
-                label: currentStep.targetName ? `查看${STEP_LABEL[currentStep.app]}：${currentStep.targetName}` : `查看${STEP_LABEL[currentStep.app]}`,
+                label: currentStep.targetName ? `查看${getStepLabel(currentStep.app)}：${currentStep.targetName}` : `查看${getStepLabel(currentStep.app)}`,
                 detail: currentStep.visibleClue || currentStep.thought,
                 app: currentStep.app,
                 targetName: currentStep.targetName,
@@ -1040,7 +1157,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                     const line = `看完了与「${targetLabel}」的社交圈记录，什么都没做`;
                     log(line);
                     archiveAction('char_ignore', `看完社交圈记录后无视：${targetLabel}`, line);
-                } else if (act.type === 'post_moment' && act.content) {
+                } else if (act.type === 'post_moment' && act.content && currentStep.app === 'moments') {
                     // 代发朋友圈：以用户名义贴一条公开动态（角色随后能在上下文里看到这条）
                     const newPost: SocialPost = {
                         id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -1079,7 +1196,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         if (phase !== 'browsing' || !currentStep || currentStep.app === 'home') { setOpening(null); return; }
         // 连续两步都在聊天 App 内（chat-list → chat-thread）不回桌面，直接页内切换
         const prevStep = stepIdx > 0 ? script?.steps[stepIdx - 1] : null;
-        const sameAppFamily = prevStep && STEP_ICON[prevStep.app as Exclude<StepApp, 'home'>] === STEP_ICON[currentStep.app as Exclude<StepApp, 'home'>];
+        const sameAppFamily = prevStep && getStepIcon(prevStep.app) === getStepIcon(currentStep.app);
         if (sameAppFamily) { setOpening(null); return; }
         setOpening(currentStep.app);
         const t = setTimeout(() => setOpening(null), TAP_MS);
@@ -1106,7 +1223,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                 .map((s, i) => {
                     const where = s.app === 'chat-thread' && s.targetName
                         ? `点开了与「${s.targetName}」的对话`
-                        : `看了${STEP_LABEL[s.app]}`;
+                        : `看了${getStepLabel(s.app)}`;
                     return where;
                 });
             const exitDesc = exitMode === 'finished' ? `${char.name} 自己翻完了，把手机还了回去。`
@@ -1391,6 +1508,25 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         </div>
     );
 
+    const renderSocialApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-[#fff8f7]">
+            {screenHeader('见闻簿', `${xhsPosts.length} 条最近卡片`)}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {xhsPosts.length === 0 && <div className="text-center text-xs text-slate-400 pt-14">（见闻簿暂时没有卡片）</div>}
+                {xhsPosts.map(post => dataCard(
+                    post.id,
+                    post.title || `${post.author} 的卡片`,
+                    <span>
+                        <span className="font-bold text-rose-500">{post.author}</span>
+                        <span> · {String(post.body || '').slice(0, 120)}</span>
+                        {post.tags?.length > 0 && <span className="block mt-1 text-rose-400">#{post.tags.slice(0, 4).join(' #')}</span>}
+                    </span>,
+                    `${post.likes || 0}赞`
+                ))}
+            </div>
+        </div>
+    );
+
     const renderMapApp = () => (
         <div className="flex-1 overflow-hidden flex flex-col bg-[#f8fafc]">
             {screenHeader('地区', '位置线索')}
@@ -1407,11 +1543,70 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         </div>
     );
 
-    const renderDesktopItem = (item: DeskItem, openingIcon: string | null) => {
+    const renderGenericApp = (appKey: StepApp) => {
+        const appConfig = getStepAppConfig(appKey);
+        const title = appConfig?.name || getStepLabel(appKey);
+        const target = desktopBrowseTargets.find(item => item.key === appKey);
+        const rows: Array<{ id: string; title: string; detail: React.ReactNode; meta?: React.ReactNode }> = [
+            {
+                id: 'source',
+                title: '桌面来源',
+                detail: target ? `${title} 在 ${target.source}，是用户真实桌面上的 App。` : '这是从用户手机入口打开的页面。',
+            },
+        ];
+        if (currentStep?.visibleClue) {
+            rows.push({ id: 'clue', title: '这一眼看到的线索', detail: currentStep.visibleClue });
+        }
+        if (appKey === AppID.Settings) {
+            rows.push({ id: 'settings', title: '文具盒', detail: 'API、通知、外观、数据备份和本地开关入口。角色只能看到设置入口和公开标签，不会读取隐藏密钥。' });
+        } else if (appKey === AppID.Personas) {
+            rows.push({ id: 'personas', title: '剪影集', detail: `登场人物和用户人设入口。当前手机里可见 ${characters.length} 位角色档案。` });
+        } else if (appKey === AppID.Worldbook) {
+            rows.push({ id: 'worldbook', title: '剪报夹', detail: '世界书和剪报入口。这里能说明用户整理过哪些设定，但不能凭空展开未给出的条目正文。' });
+        } else if (appKey === AppID.Presets) {
+            rows.push({ id: 'presets', title: '活字盘', detail: '提示词预设和采样参数入口。查岗只能把它当作桌面痕迹，不把内部提示词当聊天内容复述。' });
+        } else if (appKey === AppID.Regex) {
+            rows.push({ id: 'regex', title: '补丁铺', detail: '正则脚本入口。能看见工具存在，不代表角色理解或泄露脚本细节。' });
+        } else if (appKey === AppID.Appearance) {
+            rows.push({ id: 'appearance', title: '拼贴册', detail: '主题、桌面、壁纸和小组件外观入口。当前壁纸和桌面布局已经展示在查岗首页。' });
+        } else if (appKey === AppID.MemoryPalace) {
+            rows.push({ id: 'memory', title: '回忆标本馆', detail: '长期记忆浏览入口。角色可以意识到这里有回忆管理，但不能在没有快照时编造具体记忆。' });
+        } else if (appKey === AppID.Room) {
+            rows.push({ id: 'room', title: '栖居志', detail: '像素小屋和同居生活入口。没有更多快照时，只能把它作为用户桌面上的生活 App 痕迹。' });
+        } else if (appKey === AppID.Health) {
+            rows.push({ id: 'health', title: '健康', detail: '健康记录入口。查岗脚本不能编造具体医疗或身体数据。', meta: '隐私' });
+        } else if (appKey === AppID.Xunji) {
+            rows.push({ id: 'xunji', title: '循迹', detail: 'Screenlife 与生活痕迹入口。它是整理线索的 App，不是全知监控后台。' });
+        } else if (appKey === AppID.Manual) {
+            rows.push({ id: 'manual', title: '说明书', detail: 'Moro 功能说明入口。角色能看到用户有翻说明书的入口，但不应把说明文案当成剧情证据。' });
+        } else {
+            rows.push({ id: 'generic', title: title, detail: '这个 App 没有专门查岗快照；只展示真实桌面入口和当前步骤给出的线索，避免编造不存在的数据。' });
+        }
+
+        return (
+            <div className="flex-1 overflow-hidden flex flex-col bg-[#f8fafc]">
+                {screenHeader(title, target ? target.source : '真实桌面 App')}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                    {appConfig && (
+                        <div className="bg-white rounded-2xl px-3.5 py-3 border border-slate-100 shadow-sm flex items-center gap-3">
+                            <AppIcon app={appConfig} onClick={() => { /* preview only */ }} size="sm" />
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-bold text-slate-700 truncate">{appConfig.name}</div>
+                                <div className="text-[11px] text-slate-400 truncate">{target?.source || '真实桌面入口'}</div>
+                            </div>
+                        </div>
+                    )}
+                    {rows.map(row => dataCard(row.id, row.title, row.detail, row.meta))}
+                </div>
+            </div>
+        );
+    };
+
+    const renderDesktopItem = (item: DeskItem, openingIcon: string | null, openingAppId?: string) => {
         if (item.kind === 'app') {
             const app = INSTALLED_APPS.find(a => a.id === item.id);
             if (!app) return null;
-            const isTapped = openingIcon === app.icon;
+            const isTapped = openingAppId ? openingAppId === app.id : openingIcon === app.icon;
             return (
                 <div className={`w-full h-full flex items-center justify-center transition-all duration-300 rounded-2xl ${isTapped ? 'scale-90 ring-4 ring-white/70 bg-white/30' : ''}`}>
                     <AppIcon app={app} onClick={() => { /* checking preview only */ }} size="md" />
@@ -1530,7 +1725,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
     const renderScreen = () => {
         // 点开动画期间强制回到桌面（高亮目标图标）
         const app = phase === 'finished' ? 'home' : (opening ? 'home' : (currentStep?.app || 'home'));
-        if (app === 'chat-list') {
+        if (app === 'chat-list' || app === AppID.GroupChat) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">絮语</div>
@@ -1597,8 +1792,9 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'twitter') return renderTwitterApp();
-        if (app === 'schedule') {
+        if (app === AppID.Social) return renderSocialApp();
+        if (app === 'twitter' || app === AppID.Twitter) return renderTwitterApp();
+        if (app === 'schedule' || app === AppID.Almanac || app === AppID.Schedule) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">日程</div>
@@ -1623,7 +1819,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'gallery') {
+        if (app === 'gallery' || app === AppID.Gallery) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">相册</div>
@@ -1638,7 +1834,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'music') {
+        if (app === 'music' || app === AppID.Music) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">音乐</div>
@@ -1649,17 +1845,23 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'phone') return renderPhoneApp();
-        if (app === 'shop') return renderShopApp();
-        if (app === 'takeout') return renderTakeoutApp();
-        if (app === 'wallet') return renderWalletApp();
-        if (app === 'browser') return renderBrowserApp();
+        if (app === 'phone' || app === AppID.Phone) return renderPhoneApp();
+        if (app === 'shop' || app === AppID.Shop) return renderShopApp();
+        if (app === 'takeout' || app === AppID.Takeout) return renderTakeoutApp();
+        if (app === 'wallet' || app === AppID.Bank) return renderWalletApp();
+        if (app === 'browser' || app === AppID.Browser || app === AppID.HotNews) return renderBrowserApp();
         if (app === 'map') return renderMapApp();
+        if (getStepAppConfig(app)) return renderGenericApp(app);
         // home / finished / opening：用户实时真实的桌面（真壁纸 + 全部 App + dock；
         // opening 时高亮即将点开的图标）
-        const openingIcon = opening && opening !== 'home' ? STEP_ICON[opening as Exclude<StepApp, 'home'>] : null;
-        const currentDesktopPage = desktopSnapshot.pages[desktopSnapshot.activePage] || desktopSnapshot.pages[0] || [];
-        const tappedApp = openingIcon ? INSTALLED_APPS.find(a => a.icon === openingIcon) : null;
+        const openingIcon = getStepIcon(opening);
+        const openingApp = getStepAppConfig(opening);
+        const openingPageIndex = openingApp
+            ? desktopSnapshot.pages.findIndex(page => page.some(({ item }) => item.kind === 'app' && item.id === openingApp.id))
+            : -1;
+        const visibleDesktopPageIndex = openingPageIndex >= 0 ? openingPageIndex : desktopSnapshot.activePage;
+        const currentDesktopPage = desktopSnapshot.pages[visibleDesktopPageIndex] || desktopSnapshot.pages[0] || [];
+        const tappedApp = openingApp || (openingIcon ? INSTALLED_APPS.find(a => a.icon === openingIcon) : null);
         return (
             <div className="flex-1 overflow-hidden flex flex-col relative" style={wallpaperBackground(theme.wallpaper)}>
                 {widgetCustomCss && <style>{widgetCustomCss}</style>}
@@ -1667,7 +1869,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                     {userProfile.name} 的手机
                 </div>
                 <div className="relative flex-1 min-h-0 px-5 pb-2 pointer-events-none">
-                    {desktopSnapshot.activePage === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (
+                    {visibleDesktopPageIndex === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (
                         <div className="absolute inset-0 overflow-hidden z-20">
                             {theme.desktopDecorations.map(deco => (
                                 <img
@@ -1701,7 +1903,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                                     gridRow: `${row + 1} / span ${item.h}`,
                                 }}
                             >
-                                {renderDesktopItem(item, openingIcon)}
+                                {renderDesktopItem(item, openingIcon, openingApp?.id)}
                             </div>
                         ))}
                     </div>
@@ -1711,7 +1913,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                         {desktopSnapshot.pages.map((_, idx) => (
                             <span
                                 key={idx}
-                                className={`h-1.5 rounded-full transition-all ${idx === desktopSnapshot.activePage ? 'w-5 bg-white/85' : 'w-1.5 bg-white/45'}`}
+                                className={`h-1.5 rounded-full transition-all ${idx === visibleDesktopPageIndex ? 'w-5 bg-white/85' : 'w-1.5 bg-white/45'}`}
                                 style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.28)' }}
                             />
                         ))}
@@ -1719,7 +1921,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 )}
                 {openingIcon && (
                     <div className="text-center text-white text-xs animate-fade-in pb-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
-                        {char.name} 点开了「{tappedApp?.name || STEP_LABEL[opening || 'home']}」…
+                        {char.name} 点开了「{tappedApp?.name || getStepLabel(opening || 'home')}」…
                     </div>
                 )}
                 {phase === 'finished' && (
@@ -1731,7 +1933,9 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 <div className="shrink-0 flex justify-center px-4 pb-3">
                     <div className="glass-pill rounded-full px-4 py-2 flex gap-4 items-center max-w-full overflow-x-auto no-scrollbar">
                         {dockApps.map(a => (
-                            <AppIcon key={a.id} app={a} onClick={() => { /* 角色在翻手机：禁点 */ }} variant="dock" size="sm" />
+                            <div key={a.id} className={`rounded-2xl transition-all ${openingApp?.id === a.id ? 'scale-90 ring-4 ring-white/70 bg-white/25' : ''}`}>
+                                <AppIcon app={a} onClick={() => { /* 角色在翻手机：禁点 */ }} variant="dock" size="sm" />
+                            </div>
                         ))}
                     </div>
                 </div>

@@ -43,7 +43,16 @@ import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
 import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
 import { CHAR_PAT_EVENT, DEFAULT_PAT_SUFFIX } from '../utils/patSuffix';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
-import { CHAR_AVATAR_FROM_USER_IMAGE_EVENT, selectCharAvatarCandidateMessage, type CharAvatarEventDetail } from '../utils/charAvatarSystem';
+import {
+    CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT,
+    CHAR_AVATAR_NOTICE_DISMISSED_KEY,
+    buildCharAvatarNoticeFromCharacter,
+    isCharAvatarNoticeDismissed,
+    makeCharAvatarNoticeKey,
+    markCharAvatarNoticeDismissed,
+    parseDismissedCharAvatarNoticeKeys,
+    type CharAvatarNoticeDraft,
+} from '../utils/charAvatarSystem';
 import { createMessageFollowup } from '../utils/chatFollowups';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
@@ -138,6 +147,16 @@ const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
 ]);
 
 const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+
+const readDismissedCharAvatarNoticeKeys = (): string[] => {
+    if (typeof localStorage === 'undefined') return [];
+    return parseDismissedCharAvatarNoticeKeys(localStorage.getItem(CHAR_AVATAR_NOTICE_DISMISSED_KEY));
+};
+
+const writeDismissedCharAvatarNoticeKeys = (keys: string[]) => {
+    if (typeof localStorage === 'undefined') return;
+    try { localStorage.setItem(CHAR_AVATAR_NOTICE_DISMISSED_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
+};
 
 const ReplyTimerInlineChip: React.FC<{ timer: ReplyTimerMetadata | null; now: number }> = ({ timer, now }) => {
     const value = formatReplyTimerValue(timer, now);
@@ -872,15 +891,20 @@ const Chat: React.FC = () => {
     const [remarkChangeNotice, setRemarkChangeNotice] = useState<{ remark: string; motivation?: string } | null>(null);
     const [remarkMotivationOpen, setRemarkMotivationOpen] = useState(false);
     // 角色把用户图片换成本会话头像后的提示卡：可撤回，也可同步到角色卡头像。
-    const [charAvatarNotice, setCharAvatarNotice] = useState<{
-        image: string;
-        reason?: string;
-        source?: CharAvatarEventDetail['source'];
-        sourceMessageId?: number;
-        previousOverride?: string;
-        at: number;
-    } | null>(null);
+    const [charAvatarNotice, setCharAvatarNotice] = useState<CharAvatarNoticeDraft | null>(null);
     const [charAvatarNoticeBusy, setCharAvatarNoticeBusy] = useState<'undo' | 'sync' | null>(null);
+    const charAvatarNoticeRef = useRef<CharAvatarNoticeDraft | null>(null);
+    useEffect(() => {
+        charAvatarNoticeRef.current = charAvatarNotice;
+    }, [charAvatarNotice]);
+    const markCharAvatarNoticeHandled = useCallback((notice: CharAvatarNoticeDraft | null | undefined) => {
+        if (!notice?.noticeKey) return;
+        writeDismissedCharAvatarNoticeKeys(markCharAvatarNoticeDismissed(readDismissedCharAvatarNoticeKeys(), notice.noticeKey));
+    }, []);
+    const closeCharAvatarNotice = useCallback(() => {
+        markCharAvatarNoticeHandled(charAvatarNoticeRef.current);
+        setCharAvatarNotice(null);
+    }, [markCharAvatarNoticeHandled]);
     const userBlockNoticeShownRef = useRef<string | null>(null);
     // 被角色拉黑后重新发送好友验证
     const [showFriendVerify, setShowFriendVerify] = useState(false);
@@ -3412,73 +3436,69 @@ ${recent || '（你们相处了很久）'}
         return () => window.removeEventListener(CHAR_USER_REMARK_EVENT, handler);
     }, []);
 
-    // ── 角色自主把用户刚发的图片设为自己的头像：[[SET_CHAR_AVATAR_FROM_LAST_IMAGE]] ──
+    // ── 角色自主把用户刚发的图片设为自己的头像：OS 层先落库，这里只展示撤回/同步提示卡 ──
     useEffect(() => {
         const handler = (e: Event) => {
-            const d = (e as CustomEvent).detail as Partial<CharAvatarEventDetail>;
+            const d = (e as CustomEvent).detail as Partial<CharAvatarNoticeDraft>;
             if (!d?.charId || d.charId !== activeCharIdRef.current) return;
-            void (async () => {
-                try {
-                    const liveChar = charRef.current;
-                    if (!liveChar?.convoSettings?.allowCharAvatarFromUserImage) return;
-                    const recent = await DB.getRecentMessagesByCharId(d.charId!, 80);
-                    const target = selectCharAvatarCandidateMessage(recent, d.sourceMessageId);
-                    if (!target) {
-                        addToast('没找到你刚发的头像候选图', 'info');
-                        return;
-                    }
-                    const reason = d.reason?.trim();
-                    const now = Date.now();
-                    const source = d.source || 'autonomous';
-                    const previousOverride = liveChar.convoSettings?.charAvatarOverride;
-                    const historyEntry = {
-                        sourceMessageId: target.id,
-                        reason,
-                        source,
-                        at: now,
-                    };
-                    const oldHistory = liveChar.convoSettings?.charAvatarHistory || [];
-                    const shouldAddHistory = oldHistory[0]?.sourceMessageId !== target.id || oldHistory[0]?.reason !== reason || oldHistory[0]?.source !== source;
-                    const nextHistory = (shouldAddHistory ? [historyEntry, ...oldHistory] : oldHistory).slice(0, 20);
-                    await updateCharacter(d.charId!, {
-                        convoSettings: {
-                            charAvatarOverride: target.content,
-                            charAvatarChangeReason: reason,
-                            charAvatarUpdatedAt: now,
-                            charAvatarChangeSource: source,
-                            charAvatarSourceMessageId: target.id,
-                            charAvatarPreviousOverride: previousOverride,
-                            charAvatarHistory: nextHistory,
-                        },
-                    });
-                    await DB.saveMessage({
-                        charId: d.charId!,
-                        role: 'system',
-                        type: 'text',
-                        content: source === 'user_request'
-                            ? `「${liveChar?.name || 'TA'}」同意把你发来的图片换成本会话头像${reason ? `：${reason}` : ''}`
-                            : `「${liveChar?.name || 'TA'}」把你刚发的图片设成了自己的头像${reason ? `：${reason}` : ''}`,
-                        metadata: { charAvatarChanged: true, sourceMessageId: target.id, reason, source },
-                    } as any);
-                    setCharAvatarNotice({
-                        image: target.content,
-                        reason,
-                        source,
-                        sourceMessageId: target.id,
-                        previousOverride,
-                        at: now,
-                    });
-                    await reloadMessages(visibleCountRef.current);
-                    addToast(`${liveChar?.name || 'TA'} 换上了自己的新头像`, 'success');
-                } catch (err) {
-                    console.warn('[Chat] set char avatar from image failed', err);
-                    addToast('头像更换失败', 'error');
-                }
-            })();
+            if (!d.image) return;
+            const source = d.source || 'autonomous';
+            const noticeKey = d.noticeKey || makeCharAvatarNoticeKey({
+                charId: d.charId,
+                at: d.at,
+                sourceMessageId: d.sourceMessageId,
+                source,
+            });
+            if (!noticeKey) return;
+            if (isCharAvatarNoticeDismissed(readDismissedCharAvatarNoticeKeys(), noticeKey)) {
+                void reloadMessages(visibleCountRef.current);
+                return;
+            }
+            const liveChar = charRef.current;
+            const currentNoticeKey = charAvatarNoticeRef.current?.noticeKey;
+            setCharAvatarNotice({
+                charId: d.charId,
+                image: d.image,
+                reason: d.reason?.trim(),
+                source,
+                sourceMessageId: d.sourceMessageId,
+                previousOverride: d.previousOverride,
+                at: d.at || Date.now(),
+                noticeKey,
+            });
+            void reloadMessages(visibleCountRef.current);
+            if (currentNoticeKey !== noticeKey) addToast(`${liveChar?.name || 'TA'} 换上了自己的新头像`, 'success');
         };
-        window.addEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, handler);
-        return () => window.removeEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, handler);
-    }, [addToast, reloadMessages, updateCharacter]);
+        window.addEventListener(CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT, handler);
+        return () => window.removeEventListener(CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT, handler);
+    }, [addToast, reloadMessages]);
+
+    useEffect(() => {
+        if (!char || char.id !== activeCharacterId) {
+            setCharAvatarNotice(null);
+            return;
+        }
+        const notice = buildCharAvatarNoticeFromCharacter(char);
+        const current = charAvatarNoticeRef.current;
+        if (!notice) {
+            if (current?.charId === char.id) setCharAvatarNotice(null);
+            return;
+        }
+        if (isCharAvatarNoticeDismissed(readDismissedCharAvatarNoticeKeys(), notice.noticeKey)) {
+            if (current?.noticeKey === notice.noticeKey) setCharAvatarNotice(null);
+            return;
+        }
+        if (current?.noticeKey !== notice.noticeKey) setCharAvatarNotice(notice);
+    }, [
+        activeCharacterId,
+        char?.id,
+        char?.convoSettings?.charAvatarOverride,
+        char?.convoSettings?.charAvatarUpdatedAt,
+        char?.convoSettings?.charAvatarSourceMessageId,
+        char?.convoSettings?.charAvatarChangeSource,
+        char?.convoSettings?.charAvatarChangeReason,
+        char?.convoSettings?.charAvatarPreviousOverride,
+    ]);
 
     const handleUndoCharAvatarChange = useCallback(async () => {
         if (!char || !charAvatarNotice) return;
@@ -3502,6 +3522,7 @@ ${recent || '（你们相处了很久）'}
                 metadata: { charAvatarChangeUndone: true, sourceMessageId: charAvatarNotice.sourceMessageId },
             } as any);
             await reloadMessages(visibleCountRef.current);
+            markCharAvatarNoticeHandled(charAvatarNotice);
             setCharAvatarNotice(null);
             addToast('已恢复之前的头像', 'success');
         } catch (err) {
@@ -3510,7 +3531,7 @@ ${recent || '（你们相处了很久）'}
         } finally {
             setCharAvatarNoticeBusy(null);
         }
-    }, [addToast, char, charAvatarNotice, reloadMessages, updateCharacter]);
+    }, [addToast, char, charAvatarNotice, markCharAvatarNoticeHandled, reloadMessages, updateCharacter]);
 
     const handleSyncCharAvatarToProfile = useCallback(async () => {
         if (!char || !charAvatarNotice) return;
@@ -3543,6 +3564,7 @@ ${recent || '（你们相处了很久）'}
                 metadata: { charAvatarSyncedToCharacter: true, sourceMessageId: charAvatarNotice.sourceMessageId },
             } as any);
             await reloadMessages(visibleCountRef.current);
+            markCharAvatarNoticeHandled(charAvatarNotice);
             setCharAvatarNotice(null);
             addToast('已同步到角色卡头像', 'success');
         } catch (err) {
@@ -3551,7 +3573,7 @@ ${recent || '（你们相处了很久）'}
         } finally {
             setCharAvatarNoticeBusy(null);
         }
-    }, [addToast, char, charAvatarNotice, reloadMessages, updateCharacter]);
+    }, [addToast, char, charAvatarNotice, markCharAvatarNoticeHandled, reloadMessages, updateCharacter]);
 
     // 进入/切换角色时兜底：有 pending（事件发出时不在本聊天页）或未结束的线下会话则恢复弹窗
     useEffect(() => {
@@ -8760,8 +8782,17 @@ ${privateCallDecisionPromptBody({
 
             {/* 「TA 换上了用户发来的头像」弹窗：默认会话生效，可撤回 / 同步角色卡 */}
             {charAvatarNotice && char && (
-                <div className="absolute inset-0 z-[405] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setCharAvatarNotice(null)}>
-                    <div className="w-[min(84vw,336px)] rounded-3xl overflow-hidden animate-pop-in" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}66`, boxShadow: '0 30px 60px -24px rgba(20,18,14,0.6)', color: INK }} onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-[405] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={closeCharAvatarNotice}>
+                    <div className="relative w-[min(84vw,336px)] rounded-3xl overflow-hidden animate-pop-in" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}66`, boxShadow: '0 30px 60px -24px rgba(20,18,14,0.6)', color: INK }} onClick={e => e.stopPropagation()}>
+                        <button
+                            type="button"
+                            aria-label="关闭头像提示"
+                            onClick={closeCharAvatarNotice}
+                            className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/65 active:scale-95 transition-transform"
+                            style={{ color: INK_SOFT, border: `1px solid ${INK_SOFT}44` }}
+                        >
+                            <XIcon size={15} weight="bold" />
+                        </button>
                         <div className="px-6 pt-6 pb-5 text-center">
                             <img src={charAvatarNotice.image} className="w-20 h-20 mx-auto mb-3 rounded-full object-cover shadow" style={{ border: '3px solid #fbf9f2', outline: `1px solid ${INK_SOFT}66` }} alt="" />
                             <div className="text-[15px] font-black" style={{ color: INK }}>{displayCharName} 换上了新头像</div>

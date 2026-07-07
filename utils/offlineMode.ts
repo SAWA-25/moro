@@ -123,8 +123,10 @@ const groupOfflinePositiveRes: RegExp[] = [
 ];
 
 const futureAppointmentTimeRe = /(?:今天|今晚|明天|明早|明晚|明儿|明日|后天|周[一二三四五六日天末]|星期[一二三四五六日天]|礼拜[一二三四五六日天]|下周[一二三四五六日天末])/;
-const futureAppointmentActionRe = /(?:见|见面|碰面|碰头|汇合|会合|赴约|约定|聚|聚会|楼下|门口|路口|店门口|校门|地铁口|车站|餐厅|咖啡馆|包厢|现场|一起出门|一起吃饭|一起走)/;
-const futureAppointmentBlockingRe = /(?:如果|假如|要是|要不要|想不想|可不可以|可以吗|好吗|好不好|怎么样|吗|嘛|么|也许|可能|大概|改天|下次|哪天|有空|找时间|再说|上次|之前|以前|回忆|记得.*见|梦里|模拟|番外)/;
+const futureAppointmentExplicitTimeRe = /(?:(?:^|[^\d])(?:[01]?\d|2[0-3])\s*[:：]\s*[0-5]\d(?:[^\d]|$)|[零〇一二两三四五六七八九十\d]{1,3}\s*点(?:\s*[零〇一二两三四五六七八九十\d]{1,3}\s*分?)?(?:\s*半)?)/;
+const futureAppointmentPeriodRe = /(?:凌晨|清晨|早上|上午|中午|下午|晚上|傍晚|今晚|明早|明晚|夜里)/;
+const futureAppointmentActionRe = /(?:见|见面|碰面|碰头|汇合|会合|赴约|约定|聚|聚会|楼下|门口|路口|店门口|校门|地铁口|车站|餐厅|咖啡馆|包厢|现场|一起出门|一起吃饭|一起走|接你|接我|来接|去接|等你|等我|开车去|开到)/;
+const futureAppointmentBlockingRe = /(?:如果|假如|要是|要不要|想不想|可不可以|可以吗|好吗|好不好|怎么样|(?:吗|嘛|么)(?:[，,。！？?!\s]|$)|也许|可能|大概|改天|下次|哪天|有空|找时间|再说|上次|之前|以前|回忆|记得.*见|梦里|模拟|番外)/;
 
 const cnDigitMap: Record<string, number> = {
     零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
@@ -156,19 +158,45 @@ const defaultFutureHourOf = (text: string): number => {
     return 9;
 };
 
-const parseFutureTimeOfDay = (text: string): { hour: number; minute: number; explicit: boolean } => {
+interface ParsedFutureTimeOfDay {
+    hour: number;
+    minute: number;
+    explicit: boolean;
+    rawHour?: number;
+    hasPeriod?: boolean;
+}
+
+const normalizeFutureHourByPeriod = (hour: number, text: string): number => {
+    if (/(?:下午|晚上|傍晚|今晚|明晚|夜里)/.test(text) && hour >= 1 && hour < 12) return hour + 12;
+    if (/(?:中午)/.test(text) && hour >= 1 && hour < 11) return hour + 12;
+    return hour;
+};
+
+const hasFutureAppointmentTimeSignal = (text: string): boolean =>
+    futureAppointmentTimeRe.test(text) || futureAppointmentExplicitTimeRe.test(text);
+
+const parseFutureTimeOfDay = (text: string): ParsedFutureTimeOfDay => {
+    const hasPeriod = futureAppointmentPeriodRe.test(text);
     const colon = /(?:^|[^\d])([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)(?:[^\d]|$)/.exec(text);
-    if (colon) return { hour: parseInt(colon[1], 10), minute: parseInt(colon[2], 10), explicit: true };
+    if (colon) {
+        const rawHour = parseInt(colon[1], 10);
+        return {
+            hour: normalizeFutureHourByPeriod(rawHour, text),
+            minute: parseInt(colon[2], 10),
+            explicit: true,
+            rawHour,
+            hasPeriod,
+        };
+    }
 
     const point = /([零〇一二两三四五六七八九十\d]{1,3})\s*点(?:\s*([零〇一二两三四五六七八九十\d]{1,3})\s*分?)?(\s*半)?/.exec(text);
     if (point) {
-        let hour = parseChineseNumber(point[1]) ?? defaultFutureHourOf(text);
+        const rawHour = parseChineseNumber(point[1]) ?? defaultFutureHourOf(text);
+        let hour = normalizeFutureHourByPeriod(rawHour, text);
         let minute = point[3] ? 30 : (point[2] ? (parseChineseNumber(point[2]) ?? 0) : 0);
-        if (/(?:下午|晚上|傍晚|今晚|明晚|夜里)/.test(text) && hour >= 1 && hour < 12) hour += 12;
-        if (/(?:中午)/.test(text) && hour >= 1 && hour < 11) hour += 12;
         hour = Math.max(0, Math.min(23, hour));
         minute = Math.max(0, Math.min(59, minute));
-        return { hour, minute, explicit: true };
+        return { hour, minute, explicit: true, rawHour, hasPeriod };
     }
 
     return { hour: defaultFutureHourOf(text), minute: 0, explicit: false };
@@ -189,6 +217,7 @@ const weekdayIndexOf = (text: string): number | undefined => {
 
 const resolveFutureOfflineDueAt = (text: string, nowMs: number): number | undefined => {
     const now = new Date(nowMs);
+    const time = parseFutureTimeOfDay(text);
     let dayOffset: number | undefined;
     if (/(?:后天)/.test(text)) dayOffset = 2;
     else if (/(?:明天|明早|明晚|明儿|明日)/.test(text)) dayOffset = 1;
@@ -202,14 +231,26 @@ const resolveFutureOfflineDueAt = (text: string, nowMs: number): number | undefi
             dayOffset = delta;
         } else if (/(?:今天|今晚)/.test(text)) {
             dayOffset = 0;
+        } else if (time.explicit) {
+            dayOffset = 0;
         }
     }
     if (typeof dayOffset !== 'number') return undefined;
 
-    const time = parseFutureTimeOfDay(text);
     const due = new Date(now);
     due.setDate(now.getDate() + dayOffset);
     due.setHours(time.hour, time.minute, 0, 0);
+    if (
+        dayOffset === 0
+        && due.getTime() <= nowMs + 5 * 60 * 1000
+        && time.explicit
+        && !time.hasPeriod
+        && typeof time.rawHour === 'number'
+        && time.rawHour >= 1
+        && time.rawHour < 12
+    ) {
+        due.setHours(time.rawHour + 12, time.minute, 0, 0);
+    }
     if (due.getTime() <= nowMs + 5 * 60 * 1000) return undefined;
     return due.getTime();
 };
@@ -265,6 +306,8 @@ export const detectOfflineAutoStart = (input: OfflineAutoStartInput): OfflineAut
         ? [...privateOfflinePositiveRes, ...groupOfflinePositiveRes]
         : privateOfflinePositiveRes;
     for (const line of candidates) {
+        const scheduled = detectOfflineScheduledStart({ ...input, recentTexts: [], latestText: line });
+        if (scheduled.scheduled) continue;
         const hit = positiveRes.find(re => re.test(line));
         if (!hit || isOfflineLineNegative(line, true)) continue;
         if (hit) {
@@ -307,7 +350,7 @@ export const detectOfflineScheduledStart = (
         .map(cleanOfflineDetectionText)
         .filter(Boolean);
     for (const line of candidates) {
-        if (!futureAppointmentTimeRe.test(line) || !futureAppointmentActionRe.test(line)) continue;
+        if (!hasFutureAppointmentTimeSignal(line) || !futureAppointmentActionRe.test(line)) continue;
         if (futureAppointmentBlockingRe.test(line) || /[?？]$/.test(line.trim())) continue;
         const dueAt = resolveFutureOfflineDueAt(line, nowMs);
         if (!dueAt) continue;
@@ -607,6 +650,7 @@ interface OfflineApi {
 
 const OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。';
 const OFFLINE_LLM_CONTINUE_ROUNDS = 2;
+const OFFLINE_LLM_CONTINUE_TIMEOUT_MS = 45_000;
 
 const callLLM = async (
     api: OfflineApi,
@@ -624,6 +668,10 @@ const callLLM = async (
         maxTokens,
         preserveMaxTokens: true,
         continueRounds: OFFLINE_LLM_CONTINUE_ROUNDS,
+        continueOnMissingFinishReason: false,
+        returnPartialOnContinueError: true,
+        continueTimeoutMs: OFFLINE_LLM_CONTINUE_TIMEOUT_MS,
+        continueMaxRetries: 0,
         presetScope: 'creative.text',
         presetMacros,
         meta: makeApiUsageMeta('chat.offlineMode', {

@@ -23,11 +23,11 @@ import {
     TAKEOUT_ADDRESS_TAGS, getAddressCards, saveAddressCard, deleteAddressCard, setDefaultAddressCard,
     getDefaultAddressCard, formatAddressCard, getDefaultTakeoutAddressLine, ensureCharacterAddressSeeds,
     deliveryTimeSlots, MIN_TAKEOUT_DELIVERY_MINUTES, effectiveTakeoutEtaAt, type DeliverySlot,
-    TAKEOUT_TASTE_TAGS, getTasteTags, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
+    TAKEOUT_TASTE_TAGS, getTasteProfile, getTasteTags, saveTasteProfile, toggleTasteTag, buildTasteNote, mergeNoteWithTaste,
     recommendAddOnDishes, takeoutHistoryStats,
     getCustomDishes, saveCustomDish, deleteCustomDish,
     getCustomStores, saveCustomStore, mergeCustomStores, cloneDishForStore,
-    sanitizeTakeoutDish, sanitizeTakeoutStore,
+    sanitizeTakeoutDish, sanitizeTakeoutStore, TAKEOUT_STORES_CACHE_KEY,
 } from '../utils/takeout';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
@@ -263,10 +263,9 @@ const TakeoutApp: React.FC = () => {
 
     const [view, setView] = useState<View>('home');
     // 店铺缓存：进 App 先用上次实时生成的那条街（避免空白/本地占位闪一下），没有才本地占位
-    const STORES_CACHE_KEY = 'moro_takeout_stores_v1';
     const [stores, setStores] = useState<TakeoutStore[]>(() => {
         try {
-            const cached = JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null');
+            const cached = JSON.parse(localStorage.getItem(TAKEOUT_STORES_CACHE_KEY) || 'null');
             if (Array.isArray(cached) && cached.length) return mergeCustomStores(cached);
         } catch { /* ignore */ }
         return mergeCustomStores(generateStores(20));
@@ -311,6 +310,7 @@ const TakeoutApp: React.FC = () => {
     const [slot, setSlot] = useState<DeliverySlot>({ label: '尽快送达', at: null });
     const [tableware, setTableware] = useState(1);
     const [tasteTags, setTasteTags] = useState<string[]>(() => getTasteTags('me'));
+    const [tasteNote, setTasteNote] = useState<string>(() => getTasteProfile('me').note || '');
 
     // 跟跑腿 / 铺子 / 平台对话
     const [chatTarget, setChatTarget] = useState<ChatTarget>('rider');
@@ -364,7 +364,11 @@ const TakeoutApp: React.FC = () => {
             setRecipient(intent.recipientCharId);
         }
     }, [characters]);
-    useEffect(() => { setTasteTags(getTasteTags(recipient)); }, [recipient]);
+    useEffect(() => {
+        const profile = getTasteProfile(recipient);
+        setTasteTags(profile.tags);
+        setTasteNote(profile.note || '');
+    }, [recipient]);
     const addressOwnerType = recipient === 'me' ? 'me' : 'char';
     const addressOwnerId = recipient === 'me' ? undefined : recipient;
     useEffect(() => {
@@ -377,7 +381,7 @@ const TakeoutApp: React.FC = () => {
 
     const writeStores = (next: TakeoutStore[]) => {
         setStores(next);
-        try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+        try { localStorage.setItem(TAKEOUT_STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
     };
     const refreshCustomMenus = () => {
         setCustomDishes(getCustomDishes());
@@ -411,7 +415,7 @@ const TakeoutApp: React.FC = () => {
     };
     // 进 App：没有缓存才实时生成一批（有缓存就先看缓存，点「换一条街」再现写）
     useEffect(() => {
-        const hasCache = (() => { try { return !!JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null')?.length; } catch { return false; } })();
+        const hasCache = (() => { try { return !!JSON.parse(localStorage.getItem(TAKEOUT_STORES_CACHE_KEY) || 'null')?.length; } catch { return false; } })();
         if (aiReady && !hasCache) void loadStoresAI();
         /* eslint-disable-next-line react-hooks/exhaustive-deps */
     }, []);
@@ -673,7 +677,12 @@ const TakeoutApp: React.FC = () => {
         const next = toggleTasteTag(recipient, tag);
         setTasteTags(next);
     };
-    const addTasteToNote = () => setNote(prev => mergeNoteWithTaste(prev, tasteTags));
+    const updateTasteNote = (value: string) => {
+        const clean = value.slice(0, 160);
+        setTasteNote(clean);
+        saveTasteProfile(recipient, { tags: tasteTags, note: clean });
+    };
+    const addTasteToNote = () => setNote(prev => mergeNoteWithTaste(prev, { tags: tasteTags, note: tasteNote }));
 
     // 收货地址卡
     const addressOwnerName = recipient === 'me' ? '我' : (nameOf(recipient) || 'TA');
@@ -802,7 +811,7 @@ const TakeoutApp: React.FC = () => {
         }
         const addressLine = selectedAddressCard ? formatAddressCard(selectedAddressCard) : getDefaultTakeoutAddressLine();
         const addressSnapshot = recipient !== 'me' ? `送给 ${nameOf(recipient)} · ${addressLine}` : addressLine;
-        const finalNote = mergeNoteWithTaste(note, tasteTags);
+        const finalNote = mergeNoteWithTaste(note, { tags: tasteTags, note: tasteNote });
 
         const rider = newRider();
         const placedAt = Date.now();
@@ -1764,7 +1773,7 @@ const TakeoutApp: React.FC = () => {
         const notEnough = payByMe && wallet < total;
         const slots = deliveryTimeSlots(activeStore.deliveryMinutes, now);
         const tasteOwner = recipient === 'me' ? '我' : (nameOf(recipient) || 'TA');
-        const tastePreview = buildTasteNote(tasteTags);
+        const tastePreview = buildTasteNote({ tags: tasteTags, note: tasteNote });
         return (
             <TakeoutShell key="checkout">
                 <ScrapHeader title="写一张饭票" en="FILL THE TICKET" onBack={() => setView('store')} backLabel="回铺子" right={walletChip} />
@@ -1801,6 +1810,14 @@ const TakeoutApp: React.FC = () => {
                                 <ChoiceChip key={t} on={tasteTags.includes(t)} onClick={() => toggleTaste(t)}>{t}</ChoiceChip>
                             ))}
                         </div>
+                        <textarea
+                            value={tasteNote}
+                            onChange={e => updateTasteNote(e.target.value)}
+                            placeholder="其它忌口 / 过敏，例如：不吃葱蒜、芒果过敏、最近胃不舒服…"
+                            rows={2}
+                            className="mt-2.5 w-full rounded-[8px] px-2.5 py-2 text-[12px] outline-none resize-none"
+                            style={paperInput}
+                        />
                         <div className="mt-2.5 text-[11px] rounded-[8px] px-2.5 py-2" style={{ background: '#efeae0', color: tastePreview ? '#3a362f' : INK_SOFT, border: '1px dashed rgba(150,144,132,0.55)' }}>
                             {tastePreview || '还没记口味；选几个常用忌口或偏好，盖章下单时会自动带进小票备注。'}
                         </div>

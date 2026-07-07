@@ -34,6 +34,14 @@ export interface LlmRequestOptions {
 export interface CompleteTextOptions extends LlmRequestOptions, PresetGenParams {
     maxTokens?: number;
     continueRounds?: number;
+    /** false = 只在服务端明确 finish_reason='length' 时续写，避免缺失 finish_reason 的代理误触发续写。 */
+    continueOnMissingFinishReason?: boolean;
+    /** 续写轮失败时，如果已有可见正文，直接返回已有正文，适合即时 UI。 */
+    returnPartialOnContinueError?: boolean;
+    /** 仅续写轮使用的超时；首轮仍沿用 timeoutMs。 */
+    continueTimeoutMs?: number;
+    /** 仅续写轮使用的重试次数。 */
+    continueMaxRetries?: number;
     /** true = 调用方传入的 max_tokens / maxTokens 不被预设采样参数覆盖。 */
     preserveMaxTokens?: boolean;
 }
@@ -406,11 +414,28 @@ export async function completeText(
 
     let full = '';
     for (let round = 0; round <= rounds; round++) {
-        const { content, finishReason } = await callOnce(api, convo, effectiveOpts);
+        const roundOpts: CompleteTextOptions = round > 0
+            ? {
+                ...effectiveOpts,
+                ...(opts.continueTimeoutMs !== undefined ? { timeoutMs: opts.continueTimeoutMs } : {}),
+                ...(opts.continueMaxRetries !== undefined ? { maxRetries: opts.continueMaxRetries } : {}),
+            }
+            : effectiveOpts;
+        let content = '';
+        let finishReason: string | null = null;
+        try {
+            const result = await callOnce(api, convo, roundOpts);
+            content = result.content;
+            finishReason = result.finishReason;
+        } catch (e) {
+            if (round > 0 && opts.returnPartialOnContinueError && full.trim()) break;
+            throw e;
+        }
         const chunk = stripThink(content);
         full += chunk;
+        const allowMissingFinishHeuristic = opts.continueOnMissingFinishReason !== false;
         const needMore = finishReason === 'length'
-            || (finishReason == null && looksTruncated(full));
+            || (allowMissingFinishHeuristic && finishReason == null && looksTruncated(full));
         if (!needMore || !chunk.trim() || round === rounds) break;
         convo = [
             ...convo,

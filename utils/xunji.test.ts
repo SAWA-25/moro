@@ -3,11 +3,14 @@ import type { CharacterProfile } from '../types';
 import {
   DEFAULT_XUNJI_REPORT_RULES,
   XUNJI_REPORT_TYPES,
+  buildXunjiLocationSourceForChar,
   createDefaultXunjiSettings,
   generateXunjiMonitorSnapshot,
   generateXunjiReports,
   generateXunjiScreenlifeRun,
   buildXunjiChatContextBlock,
+  normalizeXunjiSettings,
+  patchXunjiCharacterLocationSettings,
   shouldAutoAdvanceXunji,
   summarizeXunjiForCharacter,
 } from './xunji';
@@ -33,6 +36,39 @@ describe('xunji generators', () => {
     expect(settings.autoTraceEnabled).toBe(true);
     expect(Object.keys(settings.reportRules).sort()).toEqual([...XUNJI_REPORT_TYPES].sort());
     expect(Object.values(settings.reportRules).every(Boolean)).toBe(true);
+  });
+
+  it('keeps Xunji location settings scoped to each character', () => {
+    let settings = normalizeXunjiSettings(createDefaultXunjiSettings('char-a'));
+
+    settings = patchXunjiCharacterLocationSettings(settings, 'char-a', {
+      locationSource: 'character',
+      customLocation: '夜阑城',
+      customLocationUpdatedAt: 100,
+    });
+    settings = patchXunjiCharacterLocationSettings(settings, 'char-b', {
+      locationSource: 'character',
+      customLocation: '须弥云端酒店',
+      customLocationUpdatedAt: 200,
+    });
+
+    expect(buildXunjiLocationSourceForChar(settings, 'char-a').customLocation).toBe('夜阑城');
+    expect(buildXunjiLocationSourceForChar(settings, 'char-b').customLocation).toBe('须弥云端酒店');
+  });
+
+  it('migrates legacy Xunji location to the previously selected character only', () => {
+    const legacy = {
+      ...createDefaultXunjiSettings('char-a'),
+      locationSource: 'character' as const,
+      customLocation: '夜阑城',
+      customLocationUpdatedAt: 100,
+    };
+    const settings = normalizeXunjiSettings(legacy, 'char-b');
+
+    expect(settings.activeCharId).toBe('char-b');
+    expect(buildXunjiLocationSourceForChar(settings, 'char-a').customLocation).toBe('夜阑城');
+    expect(buildXunjiLocationSourceForChar(settings, 'char-b').customLocation).toBeUndefined();
+    expect(settings.customLocation).toBeUndefined();
   });
 
   it('advances traces only after an initial screenlife seed and enough time', async () => {

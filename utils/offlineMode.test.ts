@@ -7,6 +7,8 @@ import {
   consumeOfflinePending,
   consumeOfflinePendingScenario,
   DEFAULT_OFFLINE_POV,
+  detectOfflineAutoStart,
+  detectOfflineScheduledStart,
   generateOfflineOpening,
   hasOfflineSession,
   isOfflineSessionActive,
@@ -83,6 +85,51 @@ describe('offline mode draft sessions', () => {
     clearOfflineSession('char-1');
 
     expect(isOfflineSessionActive('char-1')).toBe(false);
+  });
+
+  it('schedules bare appointment times like 七点半 instead of treating them as already arrived', () => {
+    const now = new Date(2026, 6, 8, 18, 4, 0, 0).getTime();
+    const text = '外面现在三十多度，去湖边散什么步。七点半，我会准时把车开到你们商场楼下接你。';
+
+    const immediate = detectOfflineAutoStart({
+      latestText: text,
+      userName: '小夏',
+      charName: '阿迟',
+    });
+    expect(immediate.offline).toBe(false);
+
+    const scheduled = detectOfflineScheduledStart({
+      latestText: text,
+      userName: '小夏',
+      charName: '阿迟',
+    }, now);
+    expect(scheduled.scheduled).toBe(true);
+    expect(scheduled.matchedText).toBe(text);
+    expect(scheduled.scenario).toContain('现在已经到了约定时间');
+
+    const due = new Date(scheduled.dueAt!);
+    expect(due.getFullYear()).toBe(2026);
+    expect(due.getMonth()).toBe(6);
+    expect(due.getDate()).toBe(8);
+    expect(due.getHours()).toBe(19);
+    expect(due.getMinutes()).toBe(30);
+  });
+
+  it('recognizes 五点半 as a concrete appointment time too', () => {
+    const now = new Date(2026, 6, 8, 16, 0, 0, 0).getTime();
+    const scheduled = detectOfflineScheduledStart({
+      latestText: '五点半我去楼下接你。',
+      userName: '小夏',
+      charName: '阿迟',
+    }, now);
+
+    expect(scheduled.scheduled).toBe(true);
+    const due = new Date(scheduled.dueAt!);
+    expect(due.getFullYear()).toBe(2026);
+    expect(due.getMonth()).toBe(6);
+    expect(due.getDate()).toBe(8);
+    expect(due.getHours()).toBe(17);
+    expect(due.getMinutes()).toBe(30);
   });
 
   it('persists custom word limits per character id', () => {

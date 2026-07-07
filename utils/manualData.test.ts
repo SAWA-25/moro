@@ -344,6 +344,19 @@ describe('manual guide data', () => {
     expect(text).toContain('同步到角色卡');
   });
 
+  it('documents stable private chat avatar changes through interruptions and refreshes', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-08-chat-char-avatar-change-interruption');
+    const text = [notice?.summary, ...(notice?.items || [])].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(text).toContain('头像');
+    expect(text).toContain('查岗');
+    expect(text).toContain('线下');
+    expect(text).toContain('刷新');
+    expect(text).toContain('提示');
+    expect(text).toContain('不会反复刷系统记录');
+  });
+
   it('documents automatic offline detection for private and group chats', () => {
     const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-05-chat-auto-offline-detection');
     const groupEntry = MANUAL_ENTRIES.find(entry => entry.app === '絮语·群聊设置');

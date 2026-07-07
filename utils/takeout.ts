@@ -316,6 +316,7 @@ export function cartLineKey(dishId: string, spec?: string, addons?: string[]): s
 // ── 自定义菜库 / 铺子（local-first，保存在当前浏览器）──────────────────
 const CUSTOM_DISHES_KEY = 'moro_takeout_custom_dishes_v1';
 const CUSTOM_STORES_KEY = 'moro_takeout_custom_stores_v1';
+export const TAKEOUT_STORES_CACHE_KEY = 'moro_takeout_stores_v1';
 
 const asText = (v: unknown, fallback = '', max = 80): string => {
     const s = String(v ?? '').trim();
@@ -730,53 +731,111 @@ export function deliveryTimeSlots(deliveryMinutes: number, now = Date.now()): De
 }
 
 // ── 饭票长期使用：凑单推荐 / 口味小纸条 / 本月统计 ───────────────
-export const TAKEOUT_TASTE_TAGS = ['不要香菜', '少辣', '无辣', '多辣', '少油', '少盐', '多放饭', '汤汁分开', '热饮', '少糖'];
+export const TAKEOUT_TASTE_TAGS = [
+    '不要香菜', '忌辣', '少辣', '无辣', '多辣', '口味清淡',
+    '少油', '少盐', '少油少盐', '多放饭', '汤汁分开', '热饮',
+    '少糖', '控糖', '海鲜过敏', '坚果过敏', '乳糖不耐',
+    '不吃猪肉', '素食', '不吃生冷',
+];
 const TASTE_PROFILE_KEY = 'moro_takeout_taste_profiles_v1';
 const tasteKey = (targetId?: string | null) => (targetId && targetId.trim()) || 'me';
 
-function readTasteProfiles(): Record<string, string[]> {
+export interface TakeoutTasteProfile {
+    tags: string[];
+    /** 其它自由文本忌口/过敏，按收货对象保存。 */
+    note?: string;
+    updatedAt?: number;
+}
+
+type TakeoutTasteInput = string[] | TakeoutTasteProfile | undefined | null;
+
+const normalizeTasteTags = (tags: unknown): string[] => Array.isArray(tags)
+    ? tags.filter((x, i, a): x is string => typeof x === 'string' && TAKEOUT_TASTE_TAGS.includes(x) && a.indexOf(x) === i)
+    : [];
+
+function normalizeTasteProfile(raw: unknown): TakeoutTasteProfile {
+    if (Array.isArray(raw)) return { tags: normalizeTasteTags(raw) };
+    if (!raw || typeof raw !== 'object') return { tags: [] };
+    const obj = raw as Record<string, unknown>;
+    const note = String(obj.note ?? '').trim().slice(0, 160);
+    const updatedAt = Number(obj.updatedAt);
+    return {
+        tags: normalizeTasteTags(obj.tags),
+        note: note || undefined,
+        updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
+    };
+}
+
+function readTasteProfiles(): Record<string, TakeoutTasteProfile> {
     try {
         const raw = JSON.parse(localStorage.getItem(TASTE_PROFILE_KEY) || '{}');
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-        const out: Record<string, string[]> = {};
+        const out: Record<string, TakeoutTasteProfile> = {};
         for (const [k, v] of Object.entries(raw)) {
-            if (!Array.isArray(v)) continue;
-            out[k] = v.filter((x): x is string => typeof x === 'string' && TAKEOUT_TASTE_TAGS.includes(x));
+            const profile = normalizeTasteProfile(v);
+            if (profile.tags.length || profile.note) out[k] = profile;
         }
         return out;
     } catch { return {}; }
 }
 
-function writeTasteProfiles(profiles: Record<string, string[]>): void {
+function writeTasteProfiles(profiles: Record<string, TakeoutTasteProfile>): void {
     try { localStorage.setItem(TASTE_PROFILE_KEY, JSON.stringify(profiles)); } catch { /* ignore */ }
+}
+
+export function getTasteProfile(targetId: string = 'me'): TakeoutTasteProfile {
+    return normalizeTasteProfile(readTasteProfiles()[tasteKey(targetId)]);
+}
+
+export function saveTasteProfile(targetId: string, profile: TakeoutTasteProfile): TakeoutTasteProfile {
+    const key = tasteKey(targetId);
+    const profiles = readTasteProfiles();
+    const next: TakeoutTasteProfile = {
+        tags: normalizeTasteTags(profile.tags),
+        note: String(profile.note || '').trim().slice(0, 160) || undefined,
+        updatedAt: Date.now(),
+    };
+    profiles[key] = next;
+    writeTasteProfiles(profiles);
+    return next;
 }
 
 /** 按收货对象保存的口味偏好（me 或 charId），用于下单备注。 */
 export function getTasteTags(targetId: string = 'me'): string[] {
-    return readTasteProfiles()[tasteKey(targetId)] || [];
+    return getTasteProfile(targetId).tags;
 }
 
 export function toggleTasteTag(targetId: string, tag: string): string[] {
     if (!TAKEOUT_TASTE_TAGS.includes(tag)) return getTasteTags(targetId);
     const key = tasteKey(targetId);
     const profiles = readTasteProfiles();
-    const cur = profiles[key] || [];
-    const next = cur.includes(tag) ? cur.filter(x => x !== tag) : [...cur, tag].slice(0, 8);
-    profiles[key] = next;
+    const curProfile = normalizeTasteProfile(profiles[key]);
+    const cur = curProfile.tags;
+    const next = cur.includes(tag) ? cur.filter(x => x !== tag) : [...cur, tag].slice(0, 12);
+    profiles[key] = { ...curProfile, tags: next, updatedAt: Date.now() };
     writeTasteProfiles(profiles);
     return next;
 }
 
-export function buildTasteNote(tags: string[]): string {
-    const clean = tags.filter((x, i, a) => TAKEOUT_TASTE_TAGS.includes(x) && a.indexOf(x) === i);
-    return clean.length ? `口味偏好：${clean.join('、')}` : '';
+function tasteInputToProfile(input: TakeoutTasteInput): TakeoutTasteProfile {
+    return Array.isArray(input) ? { tags: normalizeTasteTags(input) } : normalizeTasteProfile(input);
+}
+
+export function buildTasteNote(input: TakeoutTasteInput): string {
+    const profile = tasteInputToProfile(input);
+    const parts: string[] = [];
+    if (profile.tags.length) parts.push(`口味偏好：${profile.tags.join('、')}`);
+    if (profile.note) parts.push(`其它忌口/过敏：${profile.note}`);
+    return parts.join('；');
 }
 
 /** 把口味小纸条并进备注；已写过的偏好不重复塞。 */
-export function mergeNoteWithTaste(note: string | undefined, tags: string[]): string {
+export function mergeNoteWithTaste(note: string | undefined, input: TakeoutTasteInput): string {
     const base = (note || '').trim();
-    const missing = tags.filter(t => !base.includes(t));
-    const taste = buildTasteNote(missing);
+    const profile = tasteInputToProfile(input);
+    const missingTags = profile.tags.filter(t => !base.includes(t));
+    const missingNote = profile.note && !base.includes(profile.note) ? profile.note : undefined;
+    const taste = buildTasteNote({ tags: missingTags, note: missingNote });
     if (!taste) return base;
     return base ? `${base}；${taste}` : taste;
 }
@@ -1266,6 +1325,397 @@ export interface TakeoutOrderDirectiveResult {
     desc?: string;
 }
 
+export interface TakeoutOrderSynthesisOptions {
+    /** 完整用户设定：用于从用户资料/当前扮相里读取忌口与口味偏好。 */
+    fullUserSetting?: string;
+    /** 饭票里按收货对象保存的口味小纸条。 */
+    tasteTags?: string[];
+    tasteProfile?: TakeoutTasteProfile;
+    /** 测试或调用方显式传入的候选店铺，会优先参与主动饭票合成。 */
+    sourceStores?: TakeoutStore[];
+    /** 是否读取当前饭票街区缓存、自定义铺子和菜库。默认 true。 */
+    includeStoredSources?: boolean;
+    /** 是否补入本地种子街。默认 true。 */
+    includeDefaultStores?: boolean;
+    /** 是否把兜底生成的新菜保存进“我的菜库”。默认 true。 */
+    saveGeneratedDish?: boolean;
+    /** 副 API 可用时，用来现写一批更贴近忌口的店铺。 */
+    api?: ResolvedApi;
+}
+
+export interface TakeoutPreferenceHints {
+    avoidSweet: boolean;
+    hardAvoidSweet: boolean;
+    lowSugar: boolean;
+    avoidSpicy: boolean;
+    hardAvoidSpicy: boolean;
+    lowSpicy: boolean;
+    plainTaste: boolean;
+    avoidCilantro: boolean;
+    avoidSeafood: boolean;
+    avoidNuts: boolean;
+    avoidDairy: boolean;
+    avoidPork: boolean;
+    vegetarian: boolean;
+    avoidRawCold: boolean;
+    lowOil: boolean;
+    lowSalt: boolean;
+}
+
+const compactTasteText = (text: unknown): string => String(text || '').replace(/\s+/g, '');
+const HARD_AVOID_SWEET_RE = /(不(?:太|怎么|大)?(?:喜欢|爱|吃|喝|要|碰|能接受)[^。；，,\n]{0,8}甜|不(?:吃|喝)[^。；，,\n]{0,8}(?:甜食|甜品|甜饮|奶茶)|讨厌[^。；，,\n]{0,8}甜|怕甜|甜腻|忌口[^。；，,\n]{0,12}甜|甜(?:食|品|饮)?[^。；，,\n]{0,12}(?:忌口|不吃|不喝|不喜欢|不要))/;
+const LOW_SUGAR_RE = /(少糖|无糖|低糖|控糖|戒糖|抗糖|减糖|不要糖|糖尿病|高血糖|血糖高)/;
+const HARD_AVOID_SPICY_RE = /(不(?:太|怎么|大)?(?:喜欢|爱|吃|喝|要|碰|能接受)[^。；，,\n]{0,8}(?:辣|辛辣|麻辣)|不(?:吃|喝|要|放)[^。；，,\n]{0,8}(?:辣|辣椒|辛辣|麻辣)|(?:吃不了|不能吃|受不了)[^。；，,\n]{0,6}(?:辣|辛辣|麻辣)|忌口?[^。；，,\n]{0,12}(?:辣|辛辣|麻辣)|(?:辣|辛辣|麻辣)[^。；，,\n]{0,12}(?:忌口|不吃|不喝|不要|不放|不能吃|吃不了|受不了)|怕辣|无辣(?!不欢)|不辣(?!不欢))/;
+const LOW_SPICY_RE = /(少辣|微辣|轻辣|低辣|辣少点|少放辣|不要太辣|别太辣)/;
+const PLAIN_TASTE_RE = /(口味清淡|吃清淡|清淡一点|清淡些|清淡为主)/;
+const AVOID_CILANTRO_RE = /(不要香菜|不吃香菜|不放香菜|别放香菜|香菜[^。；，,\n]{0,8}(?:不要|不吃|别放|不放)|不要芫荽|不吃芫荽|不放芫荽|别放芫荽|芫荽[^。；，,\n]{0,8}(?:不要|不吃|别放|不放))/;
+const AVOID_SEAFOOD_RE = /(海鲜过敏|鱼虾过敏|虾蟹过敏|不(?:吃|碰|能吃)[^。；，,\n]{0,8}(?:海鲜|鱼|虾|蟹|贝|蚝)|(?:海鲜|鱼|虾|蟹|贝|蚝)[^。；，,\n]{0,12}(?:过敏|忌口|不吃|不能吃))/;
+const AVOID_NUTS_RE = /(坚果过敏|花生过敏|不(?:吃|碰|能吃)[^。；，,\n]{0,8}(?:坚果|花生|腰果|杏仁|核桃)|(?:坚果|花生|腰果|杏仁|核桃)[^。；，,\n]{0,12}(?:过敏|忌口|不吃|不能吃))/;
+const AVOID_DAIRY_RE = /(乳糖不耐|牛奶过敏|乳制品过敏|不(?:喝|吃|碰|能吃)[^。；，,\n]{0,8}(?:牛奶|奶制品|乳制品|奶茶|奶油|芝士)|(?:牛奶|奶制品|乳制品|奶茶|奶油|芝士)[^。；，,\n]{0,12}(?:过敏|忌口|不吃|不能吃))/;
+const AVOID_PORK_RE = /(不(?:吃|碰|能吃)[^。；，,\n]{0,8}(?:猪肉|猪|五花肉|排骨)|(?:猪肉|猪|五花肉|排骨)[^。；，,\n]{0,12}(?:忌口|不吃|不能吃)|清真)/;
+const VEGETARIAN_RE = /(素食|吃素|纯素|不(?:吃|碰|能吃)[^。；，,\n]{0,8}(?:肉|荤)|(?:肉|荤)[^。；，,\n]{0,12}(?:忌口|不吃|不能吃))/;
+const AVOID_RAW_COLD_RE = /(不(?:吃|喝|碰|能吃)[^。；，,\n]{0,8}(?:生冷|冷饮|冰的|凉的|刺身|生食)|(?:生冷|冷饮|冰的|凉的|刺身|生食)[^。；，,\n]{0,12}(?:忌口|不吃|不能吃)|胃寒|热饮)/;
+const LOW_OIL_RE = /(少油|低油|不要太油|别太油|少放油)/;
+const LOW_SALT_RE = /(少盐|低盐|不要太咸|别太咸|少放盐)/;
+const SWEET_STORE_RE = /(奶茶|甜品|烘焙|糖水|甜点)/;
+const SWEET_DISH_RE = /(甜|糖|奶茶|奶绿|奶昔|奶盖|波波|阿华田|焦糖|甘露|蛋糕|提拉米苏|布朗尼|甜筒|冰淇淋|双皮奶|芋圆|烧仙草|绵绵冰|芝士挞|苹果派|糖水|可乐|雪碧|汽水|果蔬汁|酸奶|酸梅汤|冰镇西瓜|草莓|葡萄|芒果|红豆|脏脏包)/;
+const SPICY_STORE_RE = /(麻辣|热辣|川菜|湘菜|火锅|串串|烧烤|小龙虾|螺蛳粉)/;
+const SPICY_DISH_RE = /(辣|麻辣|麻婆|椒|川|湘|泡椒|剁椒|水煮|口水鸡|小龙虾|螺蛳粉|串串|麻辣烫|火锅|酸辣|麦辣|热辣|宫保|黑椒)/;
+const CILANTRO_DISH_RE = /(香菜|芫荽)/;
+const SEAFOOD_DISH_RE = /(海鲜|虾|蟹|鱼|贝|蛤|蚝|鱿鱼|章鱼|三文鱼|鳗鱼|干贝|花甲|生蚝)/;
+const NUTS_DISH_RE = /(花生|坚果|腰果|杏仁|核桃|榛子|开心果|麻酱)/;
+const DAIRY_DISH_RE = /(奶|芝士|奶油|酸奶|乳酪|奶茶|奶盖|奶昔|双皮奶|冰淇淋|提拉米苏|芝士挞)/;
+const PORK_DISH_RE = /(猪|排骨|五花肉|扣肉|午餐肉|培根|香肠|火腿)/;
+const MEAT_DISH_RE = /(肉|鸡|鸭|牛|羊|鱼|虾|蟹|排骨|牛排|炸鸡|鸡翅|午餐肉|培根|火腿|蛋)/;
+const RAW_COLD_DISH_RE = /(冰|冷|凉|刺身|沙拉|冰镇|冰淇淋|绵绵冰|甜筒|寿司|生腌)/;
+
+export function inferTakeoutPreferenceHints(options: TakeoutOrderSynthesisOptions = {}): TakeoutPreferenceHints {
+    const full = compactTasteText(options.fullUserSetting);
+    const profile = options.tasteProfile || (options.tasteTags ? { tags: options.tasteTags } : undefined);
+    const taste = compactTasteText(buildTasteNote(profile));
+    const text = `${full}\n${taste}`;
+    const hardAvoidSweet = HARD_AVOID_SWEET_RE.test(text) || /(控糖|戒糖|忌糖|糖尿病|高血糖|血糖高|不吃糖|不能吃糖)/.test(text);
+    const lowSugar = LOW_SUGAR_RE.test(text);
+    const hardAvoidSpicy = HARD_AVOID_SPICY_RE.test(text);
+    const plainTaste = PLAIN_TASTE_RE.test(text);
+    const lowSpicy = LOW_SPICY_RE.test(text) || plainTaste;
+    return {
+        hardAvoidSweet,
+        lowSugar,
+        avoidSweet: hardAvoidSweet || lowSugar,
+        hardAvoidSpicy,
+        lowSpicy,
+        avoidSpicy: hardAvoidSpicy || lowSpicy,
+        plainTaste,
+        avoidCilantro: AVOID_CILANTRO_RE.test(text),
+        avoidSeafood: AVOID_SEAFOOD_RE.test(text),
+        avoidNuts: AVOID_NUTS_RE.test(text),
+        avoidDairy: AVOID_DAIRY_RE.test(text),
+        avoidPork: AVOID_PORK_RE.test(text),
+        vegetarian: VEGETARIAN_RE.test(text),
+        avoidRawCold: AVOID_RAW_COLD_RE.test(text),
+        lowOil: LOW_OIL_RE.test(text) || plainTaste,
+        lowSalt: LOW_SALT_RE.test(text) || plainTaste,
+    };
+}
+
+const hasDishAvoidancePreference = (pref: TakeoutPreferenceHints): boolean => (
+    pref.avoidSweet || pref.avoidSpicy || pref.avoidCilantro || pref.avoidSeafood || pref.avoidNuts
+    || pref.avoidDairy || pref.avoidPork || pref.vegetarian || pref.avoidRawCold
+);
+
+const dishConflictsWithPreference = (dish: TakeoutDish, pref: TakeoutPreferenceHints): boolean => {
+    const name = dish.name;
+    return (
+        (pref.avoidSweet && SWEET_DISH_RE.test(name))
+        || (pref.avoidSpicy && SPICY_DISH_RE.test(name))
+        || (pref.avoidCilantro && CILANTRO_DISH_RE.test(name))
+        || (pref.avoidSeafood && SEAFOOD_DISH_RE.test(name))
+        || (pref.avoidNuts && NUTS_DISH_RE.test(name))
+        || (pref.avoidDairy && DAIRY_DISH_RE.test(name))
+        || (pref.avoidPork && PORK_DISH_RE.test(name))
+        || (pref.vegetarian && MEAT_DISH_RE.test(name))
+        || (pref.avoidRawCold && RAW_COLD_DISH_RE.test(name))
+    );
+};
+
+const storeConflictsWithPreference = (store: TakeoutStore, pref: TakeoutPreferenceHints): boolean => {
+    const text = `${store.name}${store.category}`;
+    return (
+        (pref.avoidSweet && SWEET_STORE_RE.test(text))
+        || (pref.avoidSpicy && SPICY_STORE_RE.test(text))
+    );
+};
+
+function synthesizedOrderNote(options: TakeoutOrderSynthesisOptions, pref: TakeoutPreferenceHints): string {
+    const notes: string[] = [];
+    if (pref.hardAvoidSweet) notes.push('用户资料：不爱甜食，避开甜品、奶茶和含糖饮品');
+    else if (pref.lowSugar) notes.push('用户资料：偏好少糖，尽量避开过甜餐品');
+    if (pref.hardAvoidSpicy) notes.push('用户资料：忌辣，避开辛辣餐品');
+    else if (pref.lowSpicy) notes.push(pref.plainTaste ? '用户资料：偏好清淡' : '用户资料：偏好少辣，尽量避开重辣餐品');
+    if (pref.avoidCilantro) notes.push('用户资料：不要香菜');
+    if (pref.avoidSeafood) notes.push('用户资料：不吃海鲜/鱼虾蟹');
+    if (pref.avoidNuts) notes.push('用户资料：坚果或花生忌口');
+    if (pref.avoidDairy) notes.push('用户资料：乳制品忌口');
+    if (pref.avoidPork) notes.push('用户资料：不吃猪肉');
+    if (pref.vegetarian) notes.push('用户资料：素食');
+    if (pref.avoidRawCold) notes.push('用户资料：避开生冷');
+    if (pref.lowOil && !pref.plainTaste) notes.push('用户资料：少油');
+    if (pref.lowSalt && !pref.plainTaste) notes.push('用户资料：少盐');
+    const base = notes.join('；');
+    return mergeNoteWithTaste(base, options.tasteProfile || options.tasteTags || []);
+}
+
+type TakeoutCandidateSource = 'customDish' | 'customStore' | 'cache' | 'ai' | 'default' | 'explicit' | 'generated';
+
+interface TakeoutCandidateStore {
+    store: TakeoutStore;
+    source: TakeoutCandidateSource;
+    index: number;
+}
+
+interface TakeoutDishCandidate extends TakeoutCandidateStore {
+    dish: TakeoutDish;
+    score: number;
+}
+
+export interface TakeoutSafeSynthesisResult {
+    ok: boolean;
+    order?: TakeoutOrder;
+    changedReason?: string;
+    generatedDish?: TakeoutDish;
+    blockedReason?: string;
+}
+
+function readCachedTakeoutStores(): TakeoutStore[] {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+        const raw = JSON.parse(localStorage.getItem(TAKEOUT_STORES_CACHE_KEY) || '[]');
+        if (!Array.isArray(raw)) return [];
+        return raw.map(s => sanitizeTakeoutStore(s)).filter((s): s is TakeoutStore => !!s);
+    } catch {
+        return [];
+    }
+}
+
+function virtualStoreFromDishes(name: string, dishes: TakeoutDish[], source: TakeoutCandidateSource): TakeoutCandidateStore | null {
+    const safeDishes = dishes.map(d => sanitizeTakeoutDish(d)).filter((d): d is TakeoutDish => !!d);
+    if (!safeDishes.length) return null;
+    return {
+        source,
+        index: 0,
+        store: {
+            id: genId(source === 'generated' ? 'safe_store' : 'library_store'),
+            name,
+            emoji: '🍱',
+            category: '中餐',
+            rating: 4.8,
+            monthlySales: Math.max(20, safeDishes.length * 12),
+            deliveryMinutes: Math.floor(rand(22, 38)),
+            deliveryFee: pick([0, 2, 3]),
+            minOrder: 0,
+            distanceKm: round1(rand(0.6, 2.4)),
+            promo: undefined,
+            blurb: source === 'generated' ? '按忌口临时现做' : '从我的菜库里挑',
+            integrity: 0.92,
+            dishes: decorateDishes(safeDishes, 500),
+        },
+    };
+}
+
+function dedupeCandidateStores(stores: TakeoutCandidateStore[]): TakeoutCandidateStore[] {
+    const seen = new Set<string>();
+    const out: TakeoutCandidateStore[] = [];
+    stores.forEach((entry, index) => {
+        const key = entry.store.id || `${entry.store.name}|${entry.store.category}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({ ...entry, index });
+    });
+    return out;
+}
+
+function collectStoredCandidateStores(options: TakeoutOrderSynthesisOptions): TakeoutCandidateStore[] {
+    const entries: TakeoutCandidateStore[] = [];
+    let idx = 0;
+    for (const store of options.sourceStores || []) {
+        const clean = sanitizeTakeoutStore(store);
+        if (clean) entries.push({ store: clean, source: 'explicit', index: idx++ });
+    }
+    if (options.includeStoredSources !== false) {
+        const library = virtualStoreFromDishes('我的菜库·常备饭票', getCustomDishes(), 'customDish');
+        if (library) entries.push({ ...library, index: idx++ });
+        for (const store of getCustomStores()) entries.push({ store, source: 'customStore', index: idx++ });
+        for (const store of mergeCustomStores(readCachedTakeoutStores())) entries.push({ store, source: 'cache', index: idx++ });
+    }
+    if (options.includeDefaultStores !== false) {
+        for (const store of generateStores(20)) entries.push({ store, source: 'default', index: idx++ });
+    }
+    return dedupeCandidateStores(entries);
+}
+
+async function collectCandidateStores(desc: string, pref: TakeoutPreferenceHints, options: TakeoutOrderSynthesisOptions): Promise<TakeoutCandidateStore[]> {
+    const entries = collectStoredCandidateStores(options);
+    const api = options.api;
+    if (api?.baseUrl && api.model) {
+        const query = [desc.trim(), preferenceSearchText(pref), '清淡主食'].filter(Boolean).join(' ');
+        try {
+            const generated = await generateStoresAI(api, 12, query);
+            let idx = entries.length;
+            for (const store of generated) entries.push({ store, source: 'ai', index: idx++ });
+        } catch {
+            // 主动饭票不能因为副 API 失败就放弃，本地候选和兜底生成继续工作。
+        }
+    }
+    return dedupeCandidateStores(entries);
+}
+
+function preferenceSearchText(pref: TakeoutPreferenceHints): string {
+    const parts: string[] = [];
+    if (pref.plainTaste || pref.lowOil || pref.lowSalt) parts.push('清淡');
+    if (pref.avoidSpicy) parts.push('不辣');
+    if (pref.avoidSweet) parts.push('低糖');
+    if (pref.avoidSeafood) parts.push('无海鲜');
+    if (pref.avoidNuts) parts.push('无坚果');
+    if (pref.avoidDairy) parts.push('无乳制品');
+    if (pref.avoidPork) parts.push('不含猪肉');
+    if (pref.vegetarian) parts.push('素食');
+    if (pref.avoidRawCold) parts.push('热食');
+    return parts.join(' ');
+}
+
+function descConflictsWithPreference(desc: string, pref: TakeoutPreferenceHints): boolean {
+    const text = desc.trim();
+    if (!text) return false;
+    const fakeDish = { id: 'desc', name: text, price: 0 } as TakeoutDish;
+    const fakeStore = { name: text, category: text } as TakeoutStore;
+    return dishConflictsWithPreference(fakeDish, pref) || storeConflictsWithPreference(fakeStore, pref);
+}
+
+function safeDishBias(dish: TakeoutDish, pref: TakeoutPreferenceHints): number {
+    const name = dish.name;
+    let score = 0;
+    if (/(粥|汤|面|粉|米线|饭|盖饭|套餐|小米|白粥|蔬菜|时蔬|豆腐)/.test(name)) score += 12;
+    if (/(清|淡|热|暖|养胃|家常|素|蔬)/.test(name)) score += 8;
+    if (pref.vegetarian && /(蔬|素|豆腐|菌菇|时蔬|青菜|南瓜|小米)/.test(name)) score += 16;
+    if (pref.avoidRawCold && /(热|汤|粥|面|饭|煲)/.test(name)) score += 10;
+    if (pref.lowOil || pref.lowSalt || pref.plainTaste) {
+        if (/(清|白|蒸|煮|汤|粥|小米|时蔬)/.test(name)) score += 10;
+        if (/(炸|煎|烤|烧烤|油|酥|香锅)/.test(name)) score -= 10;
+    }
+    return score;
+}
+
+function scoreDishCandidate(entry: TakeoutCandidateStore, dish: TakeoutDish, kw: string[], pref: TakeoutPreferenceHints): number {
+    const sourceScore: Record<TakeoutCandidateSource, number> = {
+        customDish: 100,
+        customStore: 82,
+        explicit: 75,
+        cache: 58,
+        ai: 54,
+        default: 32,
+        generated: 120,
+    };
+    let score = sourceScore[entry.source] || 0;
+    for (const k of kw) {
+        if (dish.name.includes(k) || k.includes(dish.name)) score += 22;
+        if (entry.store.name.includes(k) || entry.store.category.includes(k)) score += 8;
+    }
+    if (dish.popular) score += 6;
+    if (dish.userCustom || dish.userEdited) score += 14;
+    if (entry.store.userCustom || entry.store.userEdited) score += 8;
+    if (storeConflictsWithPreference(entry.store, pref)) score -= 16;
+    score += safeDishBias(dish, pref);
+    score -= entry.index * 0.01;
+    return score;
+}
+
+function pickSafeDishCandidate(stores: TakeoutCandidateStore[], desc: string, pref: TakeoutPreferenceHints): TakeoutDishCandidate | null {
+    const kw = KEYWORDIZE(desc).split(' ').filter(Boolean);
+    let best: TakeoutDishCandidate | null = null;
+    for (const entry of stores) {
+        for (const dish of entry.store.dishes || []) {
+            if (dishConflictsWithPreference(dish, pref)) continue;
+            const score = scoreDishCandidate(entry, dish, kw, pref);
+            if (!best || score > best.score) best = { ...entry, dish, score };
+        }
+    }
+    return best;
+}
+
+function generatedSafeDish(pref: TakeoutPreferenceHints, desc: string): TakeoutDish {
+    let name = '暖胃小米粥';
+    let emoji = '🥣';
+    let descText = '按忌口现做';
+    let price = 16;
+    if (pref.vegetarian) {
+        name = pref.avoidRawCold ? '热乎时蔬豆腐饭' : '时蔬豆腐饭';
+        emoji = '🥬';
+        descText = '素食清淡';
+        price = 22;
+    } else if (pref.avoidRawCold || pref.plainTaste || pref.lowOil || pref.lowSalt) {
+        name = '清汤鸡丝面';
+        emoji = '🍜';
+        descText = '清淡热食';
+        price = 24;
+        if (pref.avoidPork) descText = '不含猪肉';
+    } else if (/饭|盖饭|米饭/.test(desc)) {
+        name = '家常时蔬鸡肉饭';
+        emoji = '🍚';
+        descText = '稳妥主食';
+        price = 24;
+    }
+    if (pref.avoidDairy || pref.avoidSeafood || pref.avoidNuts || pref.avoidSweet || pref.avoidSpicy || pref.avoidCilantro || pref.avoidPork) {
+        descText = `${descText}·避开忌口`.slice(0, 30);
+    }
+    const dish = sanitizeTakeoutDish({
+        id: genId('safe_dish'),
+        name,
+        emoji,
+        desc: descText,
+        price,
+        popular: true,
+        userCustom: true,
+        userEdited: true,
+    });
+    return dish || { id: genId('safe_dish'), name: '热白粥', emoji: '🥣', desc: '按忌口现做', price: 12, popular: true, userCustom: true, userEdited: true };
+}
+
+function buildSynthesizedOrder(
+    charId: string,
+    address: string,
+    store: TakeoutStore,
+    dishes: TakeoutDish[],
+    options: TakeoutOrderSynthesisOptions,
+    pref: TakeoutPreferenceHints,
+    changedReason?: string,
+): TakeoutOrder {
+    const chosen = dishes.slice(0, 3);
+    const items: TakeoutOrderItem[] = chosen.map(d => ({ dishId: d.id, name: d.name, price: d.price, qty: 1, emoji: d.emoji }));
+    const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+    const placedAt = Date.now();
+    const etaAt = effectiveTakeoutEtaAt({ placedAt, etaAt: placedAt + store.deliveryMinutes * 60000 });
+    const rider = newRider();
+    const noteParts = [changedReason ? `按忌口改成更稳妥餐食：${changedReason}` : '', synthesizedOrderNote(options, pref)].filter(Boolean);
+    const note = noteParts.join('；');
+    return {
+        id: genId('order'),
+        storeId: store.id, storeName: store.name, storeEmoji: store.emoji,
+        items,
+        subtotal, deliveryFee: store.deliveryFee, packFee: PACK_FEE,
+        total: subtotal + store.deliveryFee + PACK_FEE,
+        recipient: 'me', payer: charId, charId,
+        payStatus: 'paid',
+        status: 'preparing',
+        riderName: rider.name, riderEmoji: rider.emoji,
+        address: address || '城南花园 3 栋 502',
+        note: note || undefined,
+        placedAt, etaAt,
+        chat: [], chatTarget: 'rider',
+        initiatedBy: 'char',
+    };
+}
+
 /** 解析并剥离 [[TAKEOUT_ORDER: 菜品/店铺]]，供聊天与线下模式共用。 */
 export function extractTakeoutOrderDirective(content: string): TakeoutOrderDirectiveResult {
     if (!content || !content.includes('TAKEOUT_ORDER')) return { content };
@@ -1281,24 +1731,33 @@ export function extractTakeoutOrderDirective(content: string): TakeoutOrderDirec
  * 依据一句菜品/店铺描述，合成一张「角色为用户点」的外卖订单（recipient=me, payer=char）。
  * 尽量从描述里匹配店铺与菜名，匹配不到则随机选店 + 招牌菜兜底。
  */
-export function synthesizeCharOrder(charId: string, desc: string, address: string): TakeoutOrder {
+export function synthesizeCharOrder(charId: string, desc: string, address: string, options: TakeoutOrderSynthesisOptions = {}): TakeoutOrder {
     const stores = generateStores(16);
+    const pref = inferTakeoutPreferenceHints(options);
+    const candidateStores = hasDishAvoidancePreference(pref)
+        ? stores.filter(s => !storeConflictsWithPreference(s, pref) && s.dishes.some(d => !dishConflictsWithPreference(d, pref)))
+        : stores;
+    const searchStores = candidateStores.length ? candidateStores : stores;
     const kw = KEYWORDIZE(desc).split(' ').filter(Boolean);
     const matchScore = (s: TakeoutStore) => {
         let score = 0;
         for (const k of kw) {
             if (s.name.includes(k) || s.category.includes(k)) score += 2;
-            score += s.dishes.filter(d => d.name.includes(k) || k.includes(d.name)).length;
+            score += s.dishes.filter(d => !dishConflictsWithPreference(d, pref) && (d.name.includes(k) || k.includes(d.name))).length;
         }
         return score;
     };
-    let store = stores[0];
+    let store = searchStores[0] || stores[0];
     let best = -1;
-    for (const s of stores) { const sc = matchScore(s); if (sc > best) { best = sc; store = s; } }
+    for (const s of searchStores) { const sc = matchScore(s); if (sc > best) { best = sc; store = s; } }
 
     // 选菜：优先描述里点到的菜，否则用招牌（popular）兜底，最多 3 样
-    let chosen = store.dishes.filter(d => kw.some(k => d.name.includes(k) || k.includes(d.name)));
-    if (chosen.length === 0) chosen = store.dishes.filter(d => d.popular);
+    const eligibleDishes = hasDishAvoidancePreference(pref)
+        ? store.dishes.filter(d => !dishConflictsWithPreference(d, pref))
+        : store.dishes;
+    let chosen = eligibleDishes.filter(d => kw.some(k => d.name.includes(k) || k.includes(d.name)));
+    if (chosen.length === 0) chosen = eligibleDishes.filter(d => d.popular);
+    if (chosen.length === 0) chosen = eligibleDishes.slice(0, 2);
     if (chosen.length === 0) chosen = store.dishes.slice(0, 2);
     chosen = chosen.slice(0, 3);
     const items: TakeoutOrderItem[] = chosen.map(d => ({ dishId: d.id, name: d.name, price: d.price, qty: 1, emoji: d.emoji }));
@@ -1306,6 +1765,7 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
     const placedAt = Date.now();
     const etaAt = effectiveTakeoutEtaAt({ placedAt, etaAt: placedAt + store.deliveryMinutes * 60000 });
     const rider = newRider();
+    const note = synthesizedOrderNote(options, pref);
     return {
         id: genId('order'),
         storeId: store.id, storeName: store.name, storeEmoji: store.emoji,
@@ -1317,9 +1777,55 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
         status: 'preparing',
         riderName: rider.name, riderEmoji: rider.emoji,
         address: address || '城南花园 3 栋 502',
+        note: note || undefined,
         placedAt, etaAt,
         chat: [], chatTarget: 'rider',
         initiatedBy: 'char',
+    };
+}
+
+export async function synthesizeCharOrderSafely(
+    charId: string,
+    desc: string,
+    address: string,
+    options: TakeoutOrderSynthesisOptions = {},
+): Promise<TakeoutSafeSynthesisResult> {
+    const pref = inferTakeoutPreferenceHints(options);
+    const stores = await collectCandidateStores(desc, pref, options);
+    const candidate = pickSafeDishCandidate(stores, desc, pref);
+    const conflicts = descConflictsWithPreference(desc, pref);
+    if (candidate) {
+        const changedReason = conflicts ? '原本想点的内容和口味小纸条冲突，已换成安全餐食' : undefined;
+        return {
+            ok: true,
+            order: buildSynthesizedOrder(charId, address, candidate.store, [candidate.dish], options, pref, changedReason),
+            changedReason,
+        };
+    }
+
+    const generated = generatedSafeDish(pref, desc);
+    if (dishConflictsWithPreference(generated, pref)) {
+        return {
+            ok: false,
+            blockedReason: '没有找到能避开忌口/过敏的安全餐品',
+        };
+    }
+    const saved = options.saveGeneratedDish === false ? generated : (saveCustomDish(generated) || generated);
+    const virtual = virtualStoreFromDishes('饭票安全灶', [saved], 'generated');
+    if (!virtual) {
+        return {
+            ok: false,
+            blockedReason: '安全餐品生成失败',
+        };
+    }
+    const changedReason = conflicts
+        ? '原本想点的内容和口味小纸条冲突，已现做安全餐食'
+        : '没有合适现成菜，已按口味小纸条现做安全餐食';
+    return {
+        ok: true,
+        order: buildSynthesizedOrder(charId, address, virtual.store, [saved], options, pref, changedReason),
+        changedReason,
+        generatedDish: saved,
     };
 }
 

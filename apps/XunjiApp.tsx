@@ -19,6 +19,7 @@ import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
 import type {
   CharacterProfile,
+  XunjiCharacterLocationSettings,
   XunjiDensity,
   XunjiGeneratedMoment,
   XunjiMonitorSnapshot,
@@ -31,13 +32,18 @@ import { AppID } from '../types';
 import {
   DEFAULT_XUNJI_REPORT_RULES,
   XUNJI_REPORT_LABELS,
+  buildXunjiLocationSourceForChar,
   buildXunjiMemoText,
   createDefaultXunjiSettings,
   generateXunjiMonitorSnapshot,
   generateXunjiRealtimeSnapshot,
   generateXunjiReports,
   generateXunjiScreenlifeRun,
+  getXunjiCharacterLocationSettings,
+  hasXunjiLocationPatch,
+  normalizeXunjiSettings,
   notifyXunjiReports,
+  patchXunjiCharacterLocationSettings,
   shouldAutoAdvanceXunji,
   summarizeXunjiForCharacter,
   xunjiBatteryEventLabel,
@@ -317,27 +323,55 @@ const XunjiApp: React.FC = () => {
     return characters.find(c => c.id === id) || characters[0];
   }, [characters, defaultCharId, settings.activeCharId]);
 
-  const buildLocationSource = (s: XunjiSettings = settings) => ({
-    mode: s.locationSource || 'character' as const,
-    customLocation: s.customLocation,
-    browserLocation: s.browserLocation,
-  });
+  const activeSnapshot = activeChar && snapshot?.charId === activeChar.id ? snapshot : null;
+  const activeReports = activeChar ? reports.filter(r => r.charId === activeChar.id) : [];
+  const activeRuns = activeChar ? runs.filter(r => r.charId === activeChar.id) : [];
+
+  const buildLocationSource = (s: XunjiSettings = settings, char: CharacterProfile | undefined = activeChar) => (
+    buildXunjiLocationSourceForChar(s, char?.id)
+  );
 
   const persistSettings = (patch: Partial<XunjiSettings>) => {
-    const projected = { ...settings, ...patch, reportRules: patch.reportRules || settings.reportRules };
+    if (patch.activeCharId && patch.activeCharId !== settings.activeCharId) {
+      setSnapshot(null);
+      setReports([]);
+      setRuns([]);
+      setActiveCharacterId(patch.activeCharId);
+    }
+    const containsLocationPatch = hasXunjiLocationPatch(patch);
+    const targetCharId = patch.activeCharId || activeChar?.id || settings.activeCharId || defaultCharId;
+    const applyPatch = (base: XunjiSettings): XunjiSettings => {
+      const restPatch = { ...patch };
+      if (containsLocationPatch) {
+        delete restPatch.locationSource;
+        delete restPatch.customLocation;
+        delete restPatch.customLocationUpdatedAt;
+        delete restPatch.browserLocation;
+      }
+      const nextBase = {
+        ...base,
+        ...(containsLocationPatch ? restPatch : patch),
+        reportRules: patch.reportRules || base.reportRules,
+        locationByCharId: base.locationByCharId || {},
+      };
+      return containsLocationPatch
+        ? patchXunjiCharacterLocationSettings(nextBase, targetCharId, patch as Partial<XunjiCharacterLocationSettings>)
+        : nextBase;
+    };
+    const projected = applyPatch(settings);
     setSettings(prev => {
-      const next = { ...prev, ...patch, reportRules: patch.reportRules || prev.reportRules };
+      const next = applyPatch(prev);
       void DB.saveXunjiSettings(next);
       return next;
     });
     if (
       activeChar
-      && ('locationSource' in patch || 'customLocation' in patch || 'browserLocation' in patch || 'customLocationUpdatedAt' in patch)
+      && containsLocationPatch
     ) {
       const nextSnapshot = generateXunjiMonitorSnapshot({
         char: activeChar,
-        previous: snapshot,
-        locationSource: buildLocationSource(projected),
+        previous: activeSnapshot,
+        locationSource: buildLocationSource(projected, activeChar),
       });
       void DB.saveXunjiSnapshot(nextSnapshot);
       setSnapshot(nextSnapshot);
@@ -348,17 +382,7 @@ const XunjiApp: React.FC = () => {
     let alive = true;
     DB.getXunjiSettings().then(saved => {
       if (!alive) return;
-      const base = saved || createDefaultXunjiSettings(defaultCharId);
-      const next = {
-        ...base,
-        activeCharId: activeCharacterId || base.activeCharId || defaultCharId,
-        defaultDensity: base.defaultDensity || 'standard',
-        locationSource: base.locationSource || 'character',
-        chatContextEnabled: base.chatContextEnabled !== false,
-        autoTraceEnabled: base.autoTraceEnabled !== false,
-        autoTraceLastAtByChar: base.autoTraceLastAtByChar || {},
-        reportRules: { ...DEFAULT_XUNJI_REPORT_RULES, ...(base.reportRules || {}) },
-      };
+      const next = normalizeXunjiSettings(saved || createDefaultXunjiSettings(defaultCharId), activeCharacterId || saved?.activeCharId || defaultCharId);
       setSettings(next);
       setDensity(next.defaultDensity);
       void DB.saveXunjiSettings(next);
@@ -368,12 +392,14 @@ const XunjiApp: React.FC = () => {
 
   const selectCharacter = (id: string) => {
     persistSettings({ activeCharId: id });
-    setActiveCharacterId(id);
   };
 
   useEffect(() => {
     if (!activeChar) return;
     let alive = true;
+    setSnapshot(null);
+    setReports([]);
+    setRuns([]);
     (async () => {
       const [latest, savedReports, savedRuns] = await Promise.all([
         DB.getLatestXunjiSnapshot(activeChar.id),
@@ -386,13 +412,13 @@ const XunjiApp: React.FC = () => {
       } else {
         const generated = generateXunjiMonitorSnapshot({
           char: activeChar,
-          locationSource: buildLocationSource(),
+          locationSource: buildLocationSource(settings, activeChar),
         });
         await DB.saveXunjiSnapshot(generated);
         if (alive) setSnapshot(generated);
       }
-      setReports(savedReports);
-      setRuns(savedRuns);
+      setReports(savedReports.filter(r => r.charId === activeChar.id));
+      setRuns(savedRuns.filter(run => run.charId === activeChar.id));
     })().catch(() => addToast('循迹数据读取失败', 'error'));
     return () => { alive = false; };
   }, [activeChar?.id]);
@@ -418,17 +444,17 @@ const XunjiApp: React.FC = () => {
       const hasApi = !!(api.baseUrl && api.model);
       const next = await generateXunjiRealtimeSnapshot({
         char: activeChar,
-        previous: snapshot,
+        previous: activeSnapshot,
         api: hasApi ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
-        locationSource: buildLocationSource(),
+        locationSource: buildLocationSource(settings, activeChar),
       });
       await DB.saveXunjiSnapshot(next);
       setSnapshot(next);
-      const items = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: next, rules: settings.reportRules }).slice(0, 6), reports);
+      const items = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: next, rules: settings.reportRules }).slice(0, 6), activeReports);
       if (items.length) {
         await DB.saveXunjiReports(items);
         notifyXunjiReports(items, activeChar);
-        setReports(prev => mergeReports(items, prev));
+        setReports(prev => mergeReports(items, prev.filter(r => r.charId === activeChar.id)));
       }
       addToast(hasApi ? '实时数据已更新' : '今日数据已更新', 'success');
     } catch (e) {
@@ -441,34 +467,35 @@ const XunjiApp: React.FC = () => {
 
   const generateReportsNow = async () => {
     if (!activeChar) return;
-    let snap = snapshot;
+    let snap = activeSnapshot;
     if (!snap) {
-      snap = generateXunjiMonitorSnapshot({ char: activeChar, locationSource: buildLocationSource() });
+      snap = generateXunjiMonitorSnapshot({ char: activeChar, locationSource: buildLocationSource(settings, activeChar) });
       await DB.saveXunjiSnapshot(snap);
       setSnapshot(snap);
     }
-    const items = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: snap, rules: settings.reportRules }), reports);
+    const items = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: snap, rules: settings.reportRules }), activeReports);
     await DB.saveXunjiReports(items);
     notifyXunjiReports(items, activeChar);
-    setReports(prev => mergeReports(items, prev));
+    setReports(prev => mergeReports(items, prev.filter(r => r.charId === activeChar.id)));
     addToast(`已生成 ${items.length} 条事件提醒`, 'success');
   };
 
   const markReport = async (id: string, patch: Partial<XunjiReportItem>) => {
+    if (!activeReports.some(r => r.id === id)) return;
     await DB.updateXunjiReport(id, patch);
     setReports(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
   };
 
   const markAllRead = async () => {
-    const targets = reports.filter(r => !r.acknowledged);
+    const targets = activeReports.filter(r => !r.acknowledged);
     await Promise.all(targets.map(r => DB.updateXunjiReport(r.id, { acknowledged: true })));
-    setReports(prev => prev.map(r => ({ ...r, acknowledged: true })));
+    setReports(prev => prev.map(r => targets.some(target => target.id === r.id) ? { ...r, acknowledged: true } : r));
     addToast('事件提醒已全部标记已读', 'success');
   };
 
   const writeReportsBack = async () => {
-    if (!activeChar || reports.length === 0) return;
-    const chosen = reports.filter(r => !r.writtenBack).slice(0, 8);
+    if (!activeChar || activeReports.length === 0) return;
+    const chosen = activeReports.filter(r => !r.writtenBack).slice(0, 8);
     const memo = {
       id: `memo_xunji_reports_${Date.now()}`,
       by: 'char' as const,
@@ -483,8 +510,8 @@ const XunjiApp: React.FC = () => {
 
   const writeLatestTraceBack = async () => {
     if (!activeChar) return;
-    const latestRun = runs[0];
-    const text = summarizeXunjiForCharacter({ run: latestRun, snapshot: snapshot || undefined, reports: reports.slice(0, 4) });
+    const latestRun = activeRuns[0];
+    const text = summarizeXunjiForCharacter({ run: latestRun, snapshot: activeSnapshot || undefined, reports: activeReports.slice(0, 4) });
     if (!text.trim()) {
       addToast('还没有可写回的循迹内容', 'error');
       return;
@@ -523,13 +550,13 @@ const XunjiApp: React.FC = () => {
       });
       await DB.saveXunjiRun(run);
 
-      let nextSnapshot = snapshot;
+      let nextSnapshot = activeSnapshot;
       if (options?.auto) {
         nextSnapshot = await generateXunjiRealtimeSnapshot({
           char: activeChar,
-          previous: snapshot,
+          previous: activeSnapshot,
           api: api.baseUrl && api.model ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
-          locationSource: buildLocationSource(),
+          locationSource: buildLocationSource(settings, activeChar),
           now,
         });
         await DB.saveXunjiSnapshot(nextSnapshot);
@@ -538,8 +565,8 @@ const XunjiApp: React.FC = () => {
 
       let linkedReports: XunjiReportItem[] = [];
       if (run.writeBack) {
-        const snap = snapshot || generateXunjiMonitorSnapshot({ char: activeChar, locationSource: buildLocationSource() });
-        if (!snapshot) {
+        const snap = activeSnapshot || generateXunjiMonitorSnapshot({ char: activeChar, locationSource: buildLocationSource(settings, activeChar) });
+        if (!activeSnapshot) {
           await DB.saveXunjiSnapshot(snap);
           setSnapshot(snap);
         }
@@ -552,24 +579,24 @@ const XunjiApp: React.FC = () => {
           text: buildXunjiMemoText(run, linkedReports),
         };
         await updateCharacter(activeChar.id, { memos: [memo, ...(activeChar.memos || [])].slice(0, 80) });
-        setReports(prev => mergeReports(linkedReports, prev));
+        setReports(prev => mergeReports(linkedReports, prev.filter(r => r.charId === activeChar.id)));
         addToast('屏幕记录已写入角色日常', 'success');
       } else if (options?.auto) {
-        const reportSource = nextSnapshot || snapshot;
+        const reportSource = nextSnapshot || activeSnapshot;
         if (reportSource) {
           linkedReports = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: reportSource, rules: settings.reportRules, now })
             .filter(item => item.timestamp >= rangeStart - AUTO_TRACE_REPORT_GRACE_MS && item.timestamp <= rangeEnd + AUTO_TRACE_REPORT_GRACE_MS)
-            .slice(0, 4), reports);
+            .slice(0, 4), activeReports);
           if (linkedReports.length) {
             await DB.saveXunjiReports(linkedReports);
             notifyXunjiReports(linkedReports, activeChar);
-            setReports(prev => mergeReports(linkedReports, prev));
+            setReports(prev => mergeReports(linkedReports, prev.filter(r => r.charId === activeChar.id)));
           }
         }
       } else {
         addToast('屏幕记录已保存', 'success');
       }
-      setRuns(prev => [run, ...prev].slice(0, 10));
+      setRuns(prev => [run, ...prev.filter(item => item.charId === activeChar.id)].slice(0, 10));
       if (options?.auto) {
         setSettings(prev => {
           const nextSettings = {
@@ -597,8 +624,8 @@ const XunjiApp: React.FC = () => {
       const decision = shouldAutoAdvanceXunji({
         settings,
         charId: activeChar.id,
-        latestRun: runs[0],
-        latestSnapshot: snapshot,
+        latestRun: activeRuns[0],
+        latestSnapshot: activeSnapshot,
       });
       if (!decision.shouldRun) return;
       autoAdvancingRef.current = true;
@@ -618,9 +645,9 @@ const XunjiApp: React.FC = () => {
   }, [
     activeChar?.id,
     settings,
-    runs[0]?.id,
-    runs[0]?.rangeEnd,
-    snapshot?.generatedAt,
+    activeRuns[0]?.id,
+    activeRuns[0]?.rangeEnd,
+    activeSnapshot?.generatedAt,
     loading,
     syncing,
   ]);
@@ -658,15 +685,15 @@ const XunjiApp: React.FC = () => {
           char={activeChar}
           characters={characters}
           settings={settings}
-          snapshot={snapshot}
+          snapshot={activeSnapshot}
           syncing={syncing}
           onSelect={selectCharacter}
         />
 
         <WorkbenchHome
-          snapshot={snapshot}
-          reports={reports}
-          runs={runs}
+          snapshot={activeSnapshot}
+          reports={activeReports}
+          runs={activeRuns}
           settings={settings}
           syncing={syncing}
           loading={loading}
@@ -692,9 +719,9 @@ const XunjiApp: React.FC = () => {
             char={activeChar}
             characters={characters}
             settings={settings}
-            snapshot={snapshot}
-            reports={reports}
-            runs={runs}
+            snapshot={activeSnapshot}
+            reports={activeReports}
+            runs={activeRuns}
             rangePreset={rangePreset}
             setRangePreset={setRangePreset}
             customStart={customStart}
@@ -1593,10 +1620,15 @@ const SettingsTab: React.FC<{
   onClear: () => void;
 }> = ({ char, characters, settings, onPatch, onClear }) => {
   const [locationEditorOpen, setLocationEditorOpen] = useState(false);
-  const [locationDraft, setLocationDraft] = useState(settings.customLocation || cityLabel(char));
+  const locationSettings = getXunjiCharacterLocationSettings(settings, char.id);
+  const [locationDraft, setLocationDraft] = useState(locationSettings.customLocation || cityLabel(char));
+
+  useEffect(() => {
+    if (!locationEditorOpen) setLocationDraft(locationSettings.customLocation || cityLabel(char));
+  }, [char.id, locationEditorOpen, locationSettings.customLocation]);
 
   const editCharacterLocation = () => {
-    setLocationDraft(settings.customLocation || cityLabel(char));
+    setLocationDraft(locationSettings.customLocation || cityLabel(char));
     setLocationEditorOpen(true);
   };
 
@@ -1651,13 +1683,13 @@ const SettingsTab: React.FC<{
         <div>
           <div className="text-[12px] font-black mb-2">定位来源</div>
           <div className="grid grid-cols-2 gap-2">
-            <PillButton active={(settings.locationSource || 'character') === 'character'} onClick={editCharacterLocation}>角色设定</PillButton>
-            <PillButton active={settings.locationSource === 'browser'} onClick={requestBrowserLocation}>真实定位</PillButton>
+            <PillButton active={(locationSettings.locationSource || 'character') === 'character'} onClick={editCharacterLocation}>角色设定</PillButton>
+            <PillButton active={locationSettings.locationSource === 'browser'} onClick={requestBrowserLocation}>真实定位</PillButton>
           </div>
           <div className="mt-2 rounded-[8px] bg-slate-50 px-3 py-2 text-[11px] text-slate-600 font-bold leading-relaxed">
-            {(settings.locationSource || 'character') === 'browser' && settings.browserLocation
-              ? `已授权：${settings.browserLocation.lat.toFixed(5)}, ${settings.browserLocation.lng.toFixed(5)} · ${fmtDateTime(settings.browserLocation.capturedAt)}`
-              : `角色设定：${settings.customLocation || cityLabel(char)}${settings.customLocationUpdatedAt ? ` · ${fmtDateTime(settings.customLocationUpdatedAt)}` : ''}`}
+            {(locationSettings.locationSource || 'character') === 'browser' && locationSettings.browserLocation
+              ? `已授权：${locationSettings.browserLocation.lat.toFixed(5)}, ${locationSettings.browserLocation.lng.toFixed(5)} · ${fmtDateTime(locationSettings.browserLocation.capturedAt)}`
+              : `角色设定：${locationSettings.customLocation || cityLabel(char)}${locationSettings.customLocationUpdatedAt ? ` · ${fmtDateTime(locationSettings.customLocationUpdatedAt)}` : ''}`}
           </div>
         </div>
         <div>

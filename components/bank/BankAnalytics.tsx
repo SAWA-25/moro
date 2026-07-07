@@ -35,6 +35,10 @@ const PERIODS = [
     { key: 'month', label: '本月', icon: bankPixelRef('ui/calendar-month', 64) },
 ] as const;
 
+const txTypeLabel = (tx: BankTransaction, fallback: string) => tx.type === 'income'
+    ? (tx.incomeTiming === 'past' ? '过去收入' : '进账')
+    : fallback;
+
 const BUDGET_GOOD_ICON = bankPixelRef('ui/budget-good', 64);
 const BUDGET_OVER_ICON = bankPixelRef('ui/budget-over', 64);
 const AI_ICON = bankPixelRef('ui/ai', 64);
@@ -85,7 +89,7 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
     const handleExportCSV = () => {
         if (transactions.length === 0) return;
         const BOM = '\uFEFF';
-        const header = '日期,时间,类型,金额,备注,分类\n';
+        const header = '日期,时间,类型,金额,备注,分类,收入依据\n';
         const rows = transactions
             .sort((a, b) => b.timestamp - a.timestamp)
             .map(tx => {
@@ -94,7 +98,8 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
                 const isIncome = tx.type === 'income';
                 const cat = CATEGORIES[categorizedTx[tx.id] || guessCategory(tx.note)]?.label || '其他';
                 const note = tx.note.replace(/,/g, '，').replace(/"/g, '""');
-                return `${date},${time},${isIncome ? '收入' : '支出'},${isIncome ? tx.amount : -tx.amount},"${note}",${cat}`;
+                const basis = (tx.incomeBasis || '').replace(/,/g, '，').replace(/"/g, '""');
+                return `${date},${time},${txTypeLabel(tx, '支出')},${isIncome ? tx.amount : -tx.amount},"${note}",${cat},"${basis}"`;
             })
             .join('\n');
         const csv = BOM + header + rows;
@@ -407,8 +412,9 @@ ${txList}
                                                 <div className="font-bold text-[#5D4037] text-sm">{tx.note}</div>
                                                 <div className="text-[10px] text-[#A1887F] flex items-center gap-2">
                                                     <span>{new Date(tx.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: isIncome ? '#43A047' : cat.color }}>{isIncome ? '进账' : cat.label}</span>
+                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: isIncome ? '#43A047' : cat.color }}>{txTypeLabel(tx, cat.label)}</span>
                                                 </div>
+                                                {tx.incomeBasis && <div className="text-[10px] text-[#A1887F] truncate max-w-[220px]">依据：{tx.incomeBasis}</div>}
                                             </div>
                                         </div>
                                         <div className={`font-mono font-bold ${isIncome ? 'text-[#43A047]' : 'text-[#E64A19]'}`}>

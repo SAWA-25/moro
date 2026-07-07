@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone, BankInvestmentOrder, BankInvestmentStrategy } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
+import { validateManualIncomeBasis } from '../utils/bankLedger';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
@@ -31,6 +32,7 @@ import {
 } from './ui/insScrapKit';
 import {
     BANK_LIFE_VERSION,
+    BANK_INVEST_TICK_MS,
     BANK_SHOP_CLOSE_HOUR,
     BANK_SHOP_DAILY_RESET_HOUR,
     BANK_OPEN_BRANCH_ENERGY_COST,
@@ -46,20 +48,24 @@ import {
     appendBankActionRecord,
     advanceBankLifeDay,
     appendJobChatMessage,
+    attachJobApplicationAiReview,
     applyMarketPulses,
     applyCompanyIssue,
     applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
     getBankShopCloseBlockReason,
+    getBankShopRealtimeStatus,
     canOpenBankShopForDate,
     canSettleBankShopForDate,
     claimBankShopDailyReward,
     computeCreditProfile,
     createBankActionResult,
     buyStock,
+    cancelBankInvestmentOrder,
     channelLabel,
     declineJobApplication,
+    executeBankInvestmentOrders,
     foundCompany,
     leaveJob,
     loanTotal,
@@ -71,6 +77,7 @@ import {
     getDefaultBankBranchName,
     openBankShopBranch,
     openLifeShop,
+    placeBankInvestmentOrder,
     prepareBankStateForSave,
     repayLoan,
     sellStock,
@@ -80,7 +87,9 @@ import {
     stockMarketValue,
     syncActiveBranchFromMirror,
     syncActiveShopMirror,
+    tickBankInvestmentMarket,
     updateResumeProfile,
+    upsertBankInvestmentStrategy,
     withdrawCompanyDividend,
 } from '../utils/bankLife';
 import {
@@ -225,6 +234,30 @@ const cleanCardStyle: React.CSSProperties = {
 };
 
 const shopEnergyText = (value: number) => `${value} 点店员精力`;
+const bankTransactionTypeLabel = (tx: BankTransaction): string => {
+    if (tx.type === 'income') return tx.incomeTiming === 'past' ? '过去收入' : '收入';
+    return '支出';
+};
+
+const formatShopCountdown = (targetAt: number, now: number): string => {
+    const totalMinutes = Math.max(0, Math.ceil((targetAt - now) / 60000));
+    if (totalMinutes <= 0) return '现在';
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const restHours = hours % 24;
+        return restHours > 0 ? `${days} 天 ${restHours} 小时` : `${days} 天`;
+    }
+    if (hours > 0) return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+    return `${minutes} 分钟`;
+};
+
+const formatShopActionTime = (targetAt: number): string => {
+    const d = new Date(targetAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const buildLocalGuestbookEntries = (
     shopName: string,
@@ -352,7 +385,8 @@ const BankApp: React.FC = () => {
     // Forms
     const [txAmount, setTxAmount] = useState('');
     const [txNote, setTxNote] = useState('');
-    const [txType, setTxType] = useState<'income' | 'expense'>('expense');
+    const [txType, setTxType] = useState<'income' | 'pastIncome' | 'expense'>('expense');
+    const [txIncomeBasis, setTxIncomeBasis] = useState('');
     // 账本子视图：分析 / 互评账本
     const [reportView, setReportView] = useState<'analytics' | 'ledger'>('analytics');
     const [goalName, setGoalName] = useState('');
@@ -360,6 +394,11 @@ const BankApp: React.FC = () => {
     const [jobCategory, setJobCategory] = useState('全部');
     const [stockBudget, setStockBudget] = useState<Record<string, string>>({});
     const [stockSellShares, setStockSellShares] = useState<Record<string, string>>({});
+    const [stockLimitPrice, setStockLimitPrice] = useState<Record<string, string>>({});
+    const [stockStrategyKind, setStockStrategyKind] = useState<Record<string, BankInvestmentStrategy['kind']>>({});
+    const [stockStrategyPrice, setStockStrategyPrice] = useState<Record<string, string>>({});
+    const [stockStrategyAmount, setStockStrategyAmount] = useState<Record<string, string>>({});
+    const [stockStrategyShares, setStockStrategyShares] = useState<Record<string, string>>({});
     const [companyName, setCompanyName] = useState('');
     const [companyDirection, setCompanyDirection] = useState(COMPANY_DIRECTIONS[0]);
     const [loanAmount, setLoanAmount] = useState('5000');
@@ -376,6 +415,7 @@ const BankApp: React.FC = () => {
     const [marketView, setMarketView] = useState<'all' | 'watch' | 'gainers' | 'losers'>('all');
     const [selectedLoanId, setSelectedLoanId] = useState('');
     const [shopClockNow, setShopClockNow] = useState(() => Date.now());
+    const walletBalanceRef = useRef(userProfile.balance || 0);
 
     // Staff Edit Form
     const [editingStaff, setEditingStaff] = useState<ShopStaff | null>(null);
@@ -409,9 +449,53 @@ const BankApp: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        walletBalanceRef.current = userProfile.balance || 0;
+    }, [userProfile.balance]);
+
+    useEffect(() => {
         const t = window.setInterval(() => setShopClockNow(Date.now()), 30000);
         return () => window.clearInterval(t);
     }, []);
+
+    useEffect(() => {
+        if (!isBankDataLoaded) return;
+
+        const runInvestmentTick = () => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            const cur = migrateBankLifeState(stateRef.current);
+            if (!cur.life?.stockMarket?.length) return;
+            const now = Date.now();
+            const ticked = tickBankInvestmentMarket(cur.life, { now, tickMs: BANK_INVEST_TICK_MS });
+            const executed = executeBankInvestmentOrders(ticked.life, { now, walletBalance: walletBalanceRef.current });
+            if (ticked.ticksApplied <= 0 && executed.orders.length === 0) return;
+            commitBankStateSync({ ...cur, life: executed.life });
+            executed.ledgerEvents.forEach(ev => {
+                adjustUserBalance(ev.amount, {
+                    note: ev.note,
+                    category: ev.category,
+                    kind: ev.kind,
+                    sourceApp: '人生拟',
+                    sourceId: ev.sourceId,
+                    relatedEntityId: ev.relatedEntityId,
+                });
+            });
+            const filled = executed.orders.filter(o => o.status === 'filled');
+            const failed = executed.orders.filter(o => o.status === 'failed');
+            if (filled.length) addToast(`投资挂单成交 ${filled.length} 笔`, 'success');
+            if (failed.length) addToast(`投资挂单未成交 ${failed.length} 笔，可在订单里查看原因`, 'info');
+        };
+
+        runInvestmentTick();
+        const timer = window.setInterval(runInvestmentTick, BANK_INVEST_TICK_MS);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') runInvestmentTick();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [isBankDataLoaded, adjustUserBalance, addToast]);
 
     useEffect(() => {
         const onAutoTx = (e: Event) => {
@@ -879,7 +963,28 @@ const BankApp: React.FC = () => {
         }
         
         const amount = parseFloat(txAmount);
+        if (amount <= 0) {
+            addToast('金额要大于 0 哦', 'error');
+            return;
+        }
+
+        const isIncomeTx = txType !== 'expense';
+        const isPastIncome = txType === 'pastIncome';
+        const incomeLabel = isPastIncome ? '过去收入' : '收入';
+        const incomeBasisResult = isIncomeTx ? validateManualIncomeBasis(txNote, txIncomeBasis) : null;
+        if (incomeBasisResult && !incomeBasisResult.ok) {
+            addToast(incomeBasisResult.reason, 'error');
+            return;
+        }
+
+        const walletBefore = Math.round((userProfile.balance || 0) * 100) / 100;
+        if (txType === 'expense' && amount > walletBefore) {
+            addToast(`钱包余额不足（当前 ${state.config.currencySymbol}${walletBefore}），先记一笔收入再支出`, 'error');
+            return;
+        }
+
         const today = new Date().toISOString().split('T')[0];
+        const balanceAfter = adjustUserBalance(isIncomeTx ? amount : -amount, { ledger: false });
         
         const newTx: BankTransaction = {
             id: `tx-${Date.now()}`,
@@ -888,7 +993,14 @@ const BankApp: React.FC = () => {
             note: txNote,
             timestamp: Date.now(),
             dateStr: today,
-            type: txType
+            type: isIncomeTx ? 'income' : 'expense',
+            sourceApp: '人生拟',
+            kind: isPastIncome ? 'past-income' : 'ledger-add',
+            auto: false,
+            balanceAfter,
+            incomeBasis: incomeBasisResult?.ok ? incomeBasisResult.basis : undefined,
+            incomeTiming: isIncomeTx ? (isPastIncome ? 'past' : 'current') : undefined,
+            createdBy: 'user',
         };
         
         await DB.saveTransaction(newTx);
@@ -899,18 +1011,19 @@ const BankApp: React.FC = () => {
         let actionResult = createBankActionResult({
             category: 'ledger',
             kind: 'ledger-add',
-            title: txType === 'income' ? '进账已记录' : '支出已记录',
-            summary: `${txNote} · ${txType === 'income' ? '收入' : '支出'} ¥${amount}`,
-            tone: txType === 'income' ? 'good' : newSpent > cur.config.dailyBudget ? 'warn' : 'info',
-            amount: txType === 'income' ? amount : -amount,
+            title: isIncomeTx ? `${incomeLabel}已记录` : '支出已记录',
+            summary: `${txNote} · ${isIncomeTx ? incomeLabel : '支出'} ¥${amount}`,
+            tone: isIncomeTx ? 'good' : newSpent > cur.config.dailyBudget ? 'warn' : 'info',
+            amount: isIncomeTx ? amount : -amount,
             riskTags: txType === 'expense' && newSpent > cur.config.dailyBudget ? ['超过今日预算'] : [],
             metrics: [
-                { label: '金额', value: `¥${amount}`, tone: txType === 'income' ? 'good' : 'warn' },
-                { label: '类型', value: txType === 'income' ? '收入' : '支出' },
+                { label: '金额', value: `¥${amount}`, tone: isIncomeTx ? 'good' : 'warn' },
+                { label: '类型', value: isIncomeTx ? incomeLabel : '支出' },
+                ...(incomeBasisResult?.ok ? [{ label: '收入依据', value: incomeBasisResult.basis, tone: 'info' as const }] : []),
                 { label: '今日支出', value: `¥${Math.round(newSpent)}`, tone: newSpent > cur.config.dailyBudget ? 'warn' : 'info' },
                 { label: '今日预算', value: `¥${cur.config.dailyBudget}` },
             ],
-            payload: { txId: newTx.id, note: txNote, type: txType },
+            payload: { txId: newTx.id, note: txNote, type: newTx.type, incomeTiming: newTx.incomeTiming, incomeBasis: newTx.incomeBasis, balanceAfter },
         });
         actionResult = await enrichResultWithAi(actionResult, 'ledger', () => generateAiLedgerInsight(auxApi, cur.life!, { transaction: newTx, todaySpent: newSpent, dailyBudget: cur.config.dailyBudget }));
         const newState = { ...cur, todaySpent: newSpent, life: appendBankActionRecord(cur.life!, actionResult) };
@@ -921,10 +1034,11 @@ const BankApp: React.FC = () => {
         setShowAddTxModal(false);
         setTxAmount('');
         setTxNote('');
+        setTxIncomeBasis('');
         setTxType('expense');
 
-        if (txType === 'income') {
-            addToast(`进账已记下 +${cur.config.currencySymbol}${amount}`, 'success');
+        if (isIncomeTx) {
+            addToast(`${incomeLabel}已记下 +${cur.config.currencySymbol}${amount}`, 'success');
         } else if (newSpent > cur.config.dailyBudget) {
             addToast('支出已记下 · 今天有点超出预算啦', 'info');
         } else {
@@ -952,8 +1066,11 @@ const BankApp: React.FC = () => {
 
         const newState = { ...cur, todaySpent: newSpent };
         await commitBankState(newState);
+        if (tx.createdBy === 'user' && !tx.auto) {
+            adjustUserBalance(tx.type === 'income' ? -tx.amount : tx.amount, { ledger: false });
+        }
         setTransactions(prev => prev.filter(t => t.id !== id));
-        addToast('记录已删除', 'success');
+        addToast(tx.createdBy === 'user' && !tx.auto ? '记录已删除，余额已同步恢复' : '记录已删除', 'success');
     };
 
     // --- Game Logic ---
@@ -1657,17 +1774,28 @@ ${previousGuestbook}
 
     const handleStartJobApplication = async (posting: BankJobPosting) => {
         const cur = migrateBankLifeState(stateRef.current);
-        setAiBusy('resume');
         try {
-            const aiReview = await generateAiResumeReview(auxApi, cur.life!, posting);
             const result = startJobApplication(cur.life!, posting);
-            result.application.aiReview = aiReview;
-            result.life.jobHistory = result.life.jobHistory.map(app => app.id === result.application.id ? { ...app, aiReview } : app);
             await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
             setSelectedApplicationId(result.application.id);
             addToast('简历已投出', 'success');
-        } finally {
-            setAiBusy(null);
+            void (async () => {
+                try {
+                    const aiReview = await generateAiResumeReview(auxApi, cur.life!, posting);
+                    await persistStateUpdate(prev => {
+                        const withLife = migrateBankLifeState(prev);
+                        return {
+                            ...withLife,
+                            life: attachJobApplicationAiReview(withLife.life!, result.application.id, aiReview),
+                        };
+                    });
+                } catch (error) {
+                    console.warn('[BankApp] resume review failed', error);
+                }
+            })();
+        } catch (error) {
+            console.warn('[BankApp] failed to start job application', error);
+            addToast('简历暂时没投出去，请再试一次', 'error');
         }
     };
 
@@ -1847,6 +1975,78 @@ ${previousGuestbook}
             return appendBankActionRecord({ ...life, watchlist: exists ? life.watchlist.filter(s => s !== symbol) : [symbol, ...life.watchlist] }, nextActionResult);
         });
         showActionResult(actionResult);
+    };
+
+    const handlePlaceLimitOrder = async (symbol: string, side: 'buy' | 'sell') => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const quote = cur.life?.stockMarket.find(s => s.symbol === symbol);
+        if (!quote) return;
+        const targetPrice = Number(stockLimitPrice[symbol]);
+        if (!Number.isFinite(targetPrice) || targetPrice <= 0) { addToast('请输入限价', 'error'); return; }
+        const amount = Number(stockBudget[symbol]);
+        const own = cur.life?.holdings[symbol]?.shares || 0;
+        const sharesInput = stockSellShares[symbol]?.trim();
+        const shares = sharesInput ? Number(sharesInput) : own;
+        if (side === 'buy' && (!Number.isFinite(amount) || amount <= 0)) { addToast('请输入买入金额', 'error'); return; }
+        if (side === 'sell' && (!Number.isFinite(shares) || shares <= 0)) { addToast('请输入卖出份额', 'error'); return; }
+        if (side === 'sell' && own <= 0) { addToast('没有可卖持仓', 'info'); return; }
+
+        const placed = placeBankInvestmentOrder(cur.life!, {
+            symbol,
+            side,
+            kind: 'limit',
+            targetPrice: Math.round(targetPrice * 100) / 100,
+            amount: side === 'buy' ? Math.round(amount * 100) / 100 : undefined,
+            shares: side === 'sell' ? Math.min(own, Math.floor(shares * 1000) / 1000) : undefined,
+            source: 'manual',
+        });
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: placed.life }));
+        setStockLimitPrice(prev => ({ ...prev, [symbol]: '' }));
+        addToast(`${quote.name} 限价${side === 'buy' ? '买入' : '卖出'}已挂单`, 'success');
+    };
+
+    const handleCancelInvestmentOrder = async (orderId: string) => {
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            return { ...withLife, life: cancelBankInvestmentOrder(withLife.life!, orderId) };
+        });
+        addToast('挂单已取消', 'info');
+    };
+
+    const handleSaveInvestmentStrategy = async (symbol: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const quote = cur.life?.stockMarket.find(s => s.symbol === symbol);
+        if (!quote) return;
+        const kind = stockStrategyKind[symbol] || (cur.life?.holdings[symbol] ? 'take_profit' : 'dip_buy');
+        const triggerPrice = Number(stockStrategyPrice[symbol]);
+        if (!Number.isFinite(triggerPrice) || triggerPrice <= 0) { addToast('请输入策略触发价', 'error'); return; }
+        const own = cur.life?.holdings[symbol]?.shares || 0;
+        const amount = Number(stockStrategyAmount[symbol] || stockBudget[symbol]);
+        const sharesInput = stockStrategyShares[symbol] || stockSellShares[symbol];
+        const shares = sharesInput ? Number(sharesInput) : own;
+        if (kind === 'dip_buy' && (!Number.isFinite(amount) || amount <= 0)) { addToast('逢低买入需要金额', 'error'); return; }
+        if (kind !== 'dip_buy' && (!Number.isFinite(shares) || shares <= 0 || own <= 0)) { addToast('卖出策略需要已有持仓和份额', 'error'); return; }
+        const nextLife = upsertBankInvestmentStrategy(cur.life!, {
+            symbol,
+            kind,
+            enabled: true,
+            triggerPrice: Math.round(triggerPrice * 100) / 100,
+            amount: kind === 'dip_buy' ? Math.round(amount * 100) / 100 : undefined,
+            shares: kind !== 'dip_buy' ? Math.min(own, Math.floor(shares * 1000) / 1000) : undefined,
+            label: `${quote.name} ${kind === 'take_profit' ? '止盈' : kind === 'stop_loss' ? '止损' : '逢低买入'}`,
+        });
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+        addToast('一次性策略已启用', 'success');
+    };
+
+    const handleToggleInvestmentStrategy = async (strategyId: string, enabled: boolean) => {
+        await updateLifeState(life => ({
+            ...life,
+            investStrategies: (life.investStrategies || []).map(s =>
+                s.id === strategyId ? { ...s, enabled, lastTriggeredAt: enabled ? undefined : s.lastTriggeredAt, updatedAt: Date.now() } : s
+            ),
+        }));
+        addToast(enabled ? '策略已重新启用' : '策略已暂停', 'info');
     };
 
     const handleFoundCompany = async () => {
@@ -2529,7 +2729,7 @@ ${JSON.stringify(list, null, 2)}
                 <div className="mt-2">
                     {transactions.slice(0, 5).map(tx => (
                         <button key={tx.id} onClick={() => setBankModal({ kind: 'transactionDetail', txId: tx.id })} className="w-full flex items-center justify-between py-2 text-[12px] border-b last:border-0 text-left active:scale-[0.99] transition-transform" style={{ borderColor: 'rgba(43,41,51,0.06)' }}>
-                            <span className="truncate pr-2">{tx.note}<span style={{ color: INK_SOFT }}> · {tx.sourceApp || '手动'}</span></span>
+                            <span className="truncate pr-2">{tx.note}<span style={{ color: INK_SOFT }}> · {bankTransactionTypeLabel(tx)}</span></span>
                             <span className="font-black shrink-0" style={{ color: tx.type === 'income' ? '#16a34a' : '#e11d48' }}>{tx.type === 'income' ? '+' : '-'}¥{tx.amount}</span>
                         </button>
                     ))}
@@ -2566,63 +2766,171 @@ ${JSON.stringify(list, null, 2)}
     );
 
     const renderInvest = () => {
+        const orderKindLabel = (kind: BankInvestmentOrder['kind']) => kind === 'limit' ? '限价' : kind === 'take_profit' ? '止盈' : kind === 'stop_loss' ? '止损' : kind === 'dip_buy' ? '逢低' : '市价';
+        const orderStatusLabel = (status: BankInvestmentOrder['status']) => status === 'open' ? '等待' : status === 'filled' ? '成交' : status === 'cancelled' ? '已撤' : '失败';
+        const statusTone = (status: BankInvestmentOrder['status']) => status === 'filled' ? 'green' : status === 'failed' ? 'red' : status === 'cancelled' ? 'amber' : 'blue';
         const market = [...life.stockMarket].filter(q => marketView === 'watch' ? life.watchlist.includes(q.symbol) : true);
         const sorted = marketView === 'gainers' ? market.sort((a, b) => b.changePct - a.changePct) : marketView === 'losers' ? market.sort((a, b) => a.changePct - b.changePct) : market;
         const q = selectedStock || sorted[0];
         const hold = q ? life.holdings[q.symbol] : undefined;
         const pnl = q && hold ? Math.round((q.price - hold.avgCost) * hold.shares) : 0;
+        const costBasis = Object.values(life.holdings).reduce((sum, h) => sum + h.avgCost * h.shares, 0);
+        const floatingPnl = Math.round(stockValue - costBasis);
+        const runtime = life.marketRuntime;
+        const openOrders = (life.investOrders || []).filter(o => o.status === 'open');
+        const recentOrders = (life.investOrders || []).filter(o => o.status !== 'open').slice(0, 8);
+        const strategies = life.investStrategies || [];
+        const selectedStrategyKind = q ? (stockStrategyKind[q.symbol] || (hold ? 'take_profit' : 'dip_buy')) : 'dip_buy';
+        const strategyButtons: BankInvestmentStrategy['kind'][] = ['take_profit', 'stop_loss', 'dip_buy'];
+
         return (
             <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-3">
                 <PaperCard className="p-4">
                     <div className="flex items-start justify-between gap-3">
                         <div>
-                            <SectionTag en="market">行情</SectionTag>
+                            <SectionTag en="live desk">实时交易台</SectionTag>
                             <div className="mt-2 text-[24px] font-black" style={{ color: INK, fontFamily: HAND_FONT }}>¥{Math.round(stockValue)}</div>
-                            <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓总市值</div>
+                            <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓总市值 · 仅 Moro 内虚拟投资</div>
                         </div>
-                        <div className="flex flex-wrap justify-end gap-1.5 max-w-[180px]">
-                            {(['all', 'watch', 'gainers', 'losers'] as const).map(k => <button key={k} onClick={() => setMarketView(k)} className="px-2.5 py-1.5 text-[11px] font-bold press-soft" style={chipStyle(marketView === k)}>{k === 'all' ? '全部' : k === 'watch' ? '自选' : k === 'gainers' ? '涨幅' : '跌幅'}</button>)}
+                        <div className="text-right text-[11px]" style={{ color: INK_SOFT }}>
+                            <div className="font-black" style={{ color: '#16a34a' }}>{runtime?.status === 'live' ? 'LIVE' : 'WAIT'}</div>
+                            <div>{runtime?.lastTickAt ? formatShopActionTime(runtime.lastTickAt) : '等待刷新'}</div>
+                            <div>追赶 {runtime?.catchupTicks || 0} tick</div>
                         </div>
                     </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{openOrders.length}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>挂单</div></div>
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black" style={{ color: floatingPnl >= 0 ? '#e11d48' : '#16a34a' }}>{floatingPnl >= 0 ? '+' : ''}¥{floatingPnl}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>浮动盈亏</div></div>
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black" style={{ color: (life.realizedPnl || 0) >= 0 ? '#e11d48' : '#16a34a' }}>{(life.realizedPnl || 0) >= 0 ? '+' : ''}¥{Math.round(life.realizedPnl || 0)}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>已实现</div></div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                        {(['all', 'watch', 'gainers', 'losers'] as const).map(k => <button key={k} onClick={() => setMarketView(k)} className="px-2.5 py-1.5 text-[11px] font-bold press-soft" style={chipStyle(marketView === k)}>{k === 'all' ? '全部' : k === 'watch' ? '自选' : k === 'gainers' ? '涨幅' : '跌幅'}</button>)}
+                    </div>
                 </PaperCard>
+
                 {q && (
                     <PaperCard className="p-4 space-y-3">
                         <div className="flex justify-between gap-3">
                             <div className="min-w-0">
                                 <div className="text-[20px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{q.name} <span className="text-[11px]" style={{ color: INK_SOFT }}>{q.symbol}</span></div>
-                                <div className="text-[11px]" style={{ color: INK_SOFT }}>{q.industry} · 风险 {q.risk}/5</div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>{q.industry} · 风险 {q.risk}/5 · {life.watchlist.includes(q.symbol) ? '自选' : '未自选'}</div>
                             </div>
                             <div className="text-right shrink-0">
                                 <div className="text-[20px] font-black" style={{ color: q.changePct >= 0 ? '#e11d48' : '#16a34a' }}>¥{q.price}</div>
                                 <div className="text-[11px]" style={{ color: q.changePct >= 0 ? '#e11d48' : '#16a34a' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct}%</div>
                             </div>
                         </div>
-                        <button onClick={() => setBankModal({ kind: 'stockDetail', symbol: q.symbol })} className="w-full py-2 text-[12px] font-black" style={chipStyle(false)}>查看行情详情 / 风险</button>
                         {renderStockChart(q)}
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.[q.intraday.length - 1]?.time || '15:00'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.[q.intraday.length - 1]?.time || '—'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#fff1f2' }}><div className="text-[13px] font-black" style={{ color: '#e11d48' }}>¥{q.bidAsk?.ask || q.price}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>卖一</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#f0fdf4' }}><div className="text-[13px] font-black" style={{ color: '#16a34a' }}>¥{q.bidAsk?.bid || q.price}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>买一</div></div>
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.history?.[q.history.length - 1]?.volume.toLocaleString() || 0}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>成交量</div></div>
-                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{life.watchlist.includes(q.symbol) ? '已加' : '未加'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>自选</div></div>
                         </div>
                         <p className="text-[12px] rounded-2xl px-3 py-2" style={{ color: '#4a4750', background: '#faf8f5' }}>{q.aiReason || q.news}</p>
-                        {(q.newsList || []).slice(0, 3).map(n => (
-                            <div key={n.id} className="text-[11px] rounded-2xl px-3 py-2" style={{ background: '#fff7ed', color: '#9a3412' }}><b>{n.source}：</b>{n.title}</div>
-                        ))}
                         <div className="flex flex-wrap gap-1.5">{(q.eventTags || []).map(tag => <CleanBadge key={tag} tone="blue">{tag}</CleanBadge>)}</div>
                         {hold && <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓 {hold.shares} 股 · 成本 ¥{hold.avgCost} · 浮盈亏 <b style={{ color: pnl >= 0 ? '#e11d48' : '#16a34a' }}>{pnl >= 0 ? '+' : ''}¥{pnl}</b></div>}
                         <div className="grid grid-cols-2 gap-2">
                             <div className="flex gap-1.5">
                                 <input type="number" value={stockBudget[q.symbol] || ''} onChange={e => setStockBudget(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="买入金额" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'buy', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#f43f5e')}>买</button>
+                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'buy', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#f43f5e')}>市价买</button>
                             </div>
                             <div className="flex gap-1.5">
                                 <input type="number" value={stockSellShares[q.symbol] || ''} onChange={e => setStockSellShares(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="卖出股数" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
-                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'sell', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#16a34a')}>卖</button>
+                                <button onClick={() => setBankModal({ kind: 'stockOrder', side: 'sell', symbol: q.symbol })} className="px-3 text-[12px] font-black" style={smallBtn('#16a34a')}>市价卖</button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-1.5">
+                            <input type="number" value={stockLimitPrice[q.symbol] || ''} onChange={e => setStockLimitPrice(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="限价" className="min-w-0 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                            <button onClick={() => handlePlaceLimitOrder(q.symbol, 'buy')} className="px-3 text-[12px] font-black" style={smallBtn('#fb7185')}>挂买</button>
+                            <button onClick={() => handlePlaceLimitOrder(q.symbol, 'sell')} className="px-3 text-[12px] font-black" style={smallBtn('#22c55e')}>挂卖</button>
+                        </div>
+                        <div className="rounded-2xl p-3 space-y-2" style={{ background: '#faf8f5' }}>
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-[12px] font-black" style={{ color: INK }}>一次性策略</div>
+                                <button onClick={() => handleSaveInvestmentStrategy(q.symbol)} className="px-3 py-1.5 text-[11px] font-black" style={smallBtn('#8b5cf6')}>保存策略</button>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {strategyButtons.map(kind => (
+                                    <button key={kind} onClick={() => setStockStrategyKind(prev => ({ ...prev, [q.symbol]: kind }))} className="px-2.5 py-1.5 text-[11px] font-bold press-soft" style={chipStyle(selectedStrategyKind === kind)}>{orderKindLabel(kind)}</button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                                <input type="number" value={stockStrategyPrice[q.symbol] || ''} onChange={e => setStockStrategyPrice(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="触发价" className="min-w-0 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                                <input type="number" value={stockStrategyAmount[q.symbol] || ''} onChange={e => setStockStrategyAmount(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="买入金额" className="min-w-0 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                                <input type="number" value={stockStrategyShares[q.symbol] || ''} onChange={e => setStockStrategyShares(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="卖出股数" className="min-w-0 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
                             </div>
                         </div>
                         <button onClick={() => handleToggleWatchlist(q.symbol)} className="w-full py-2 text-[12px] font-black" style={chipStyle(false)}>{life.watchlist.includes(q.symbol) ? '移出自选' : '加入自选'}</button>
                     </PaperCard>
                 )}
+
+                {Object.keys(life.holdings).length > 0 && (
+                    <PaperCard className="p-4">
+                        <SectionTag en="portfolio">持仓</SectionTag>
+                        <div className="mt-3 space-y-2">
+                            {Object.values(life.holdings).map(h => {
+                                const quote = life.stockMarket.find(s => s.symbol === h.symbol);
+                                const value = quote ? Math.round(quote.price * h.shares) : 0;
+                                const itemPnl = quote ? Math.round((quote.price - h.avgCost) * h.shares) : 0;
+                                return (
+                                    <button key={h.symbol} onClick={() => setSelectedStockSymbol(h.symbol)} className="w-full flex justify-between gap-3 text-left rounded-2xl px-3 py-2 press-soft" style={{ background: '#faf8f5' }}>
+                                        <div><div className="font-black" style={{ color: INK }}>{quote?.name || h.symbol}</div><div className="text-[11px]" style={{ color: INK_SOFT }}>{h.shares} 股 · 均价 ¥{h.avgCost}</div></div>
+                                        <div className="text-right"><div className="font-black">¥{value}</div><div className="text-[11px]" style={{ color: itemPnl >= 0 ? '#e11d48' : '#16a34a' }}>{itemPnl >= 0 ? '+' : ''}¥{itemPnl}</div></div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </PaperCard>
+                )}
+
+                {(openOrders.length > 0 || recentOrders.length > 0 || strategies.length > 0) && (
+                    <PaperCard className="p-4 space-y-4">
+                        <SectionTag en="orders">订单 / 策略</SectionTag>
+                        {openOrders.length > 0 && <div className="space-y-2">
+                            {openOrders.slice(0, 8).map(order => (
+                                <div key={order.id} className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0"><div className="font-black truncate" style={{ color: INK }}>{order.symbol} · {order.side === 'buy' ? '买入' : '卖出'} {orderKindLabel(order.kind)}</div><div className="text-[11px]" style={{ color: INK_SOFT }}>触发 ¥{order.targetPrice || order.triggerPrice || '市价'} · {order.amount ? `金额 ¥${order.amount}` : `${order.shares || '全部'} 股`}</div></div>
+                                        <button onClick={() => handleCancelInvestmentOrder(order.id)} className="px-2.5 py-1.5 text-[11px] font-black" style={chipStyle(false)}>撤单</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>}
+                        {strategies.length > 0 && <div className="space-y-2">
+                            {strategies.slice(0, 6).map(strategy => (
+                                <div key={strategy.id} className="rounded-2xl px-3 py-2 flex items-center justify-between gap-2" style={{ background: '#f8fafc' }}>
+                                    <div className="min-w-0"><div className="font-black truncate" style={{ color: INK }}>{strategy.symbol} · {orderKindLabel(strategy.kind)}</div><div className="text-[11px]" style={{ color: INK_SOFT }}>触发 ¥{strategy.triggerPrice} · {strategy.enabled ? '等待触发' : strategy.lastTriggeredAt ? '已触发' : '已暂停'}</div></div>
+                                    <button onClick={() => handleToggleInvestmentStrategy(strategy.id, !strategy.enabled)} className="px-2.5 py-1.5 text-[11px] font-black" style={chipStyle(strategy.enabled)}>{strategy.enabled ? '暂停' : '启用'}</button>
+                                </div>
+                            ))}
+                        </div>}
+                        {recentOrders.length > 0 && <div className="space-y-2">
+                            {recentOrders.map(order => (
+                                <div key={order.id} className="rounded-2xl px-3 py-2 flex items-center justify-between gap-2" style={{ background: '#fff' }}>
+                                    <div className="min-w-0"><div className="font-black truncate" style={{ color: INK }}>{order.symbol} · {orderKindLabel(order.kind)}</div><div className="text-[11px]" style={{ color: INK_SOFT }}>{order.error || (order.filledPrice ? `成交 ¥${order.filledPrice}` : '已结束')}</div></div>
+                                    <CleanBadge tone={statusTone(order.status)}>{orderStatusLabel(order.status)}</CleanBadge>
+                                </div>
+                            ))}
+                        </div>}
+                    </PaperCard>
+                )}
+
+                {(life.marketPulses || []).length > 0 && (
+                    <PaperCard className="p-4">
+                        <SectionTag en="pulse">市场脉冲 / 复盘</SectionTag>
+                        <div className="mt-3 space-y-2">
+                            {(life.marketPulses || []).slice(0, 5).map(pulse => (
+                                <div key={pulse.id} className="rounded-2xl px-3 py-2 text-[12px]" style={{ background: '#faf8f5', color: '#4a4750' }}>
+                                    <div className="font-black" style={{ color: INK }}>{pulse.headline}</div>
+                                    <div className="mt-0.5">{pulse.summary}</div>
+                                    <div className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>{pulse.affectedSymbols.join(' / ')} · {pulse.sentiment}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </PaperCard>
+                )}
+
                 <div className="grid gap-2">
                     {sorted.map(item => (
                         <button key={item.symbol} onClick={() => setSelectedStockSymbol(item.symbol)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: q?.symbol === item.symbol ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
@@ -2818,17 +3126,20 @@ ${JSON.stringify(list, null, 2)}
         }
 
         const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
-        const shopIsOpen = state.shop.isBusinessOpen === true;
-        const currentBusinessDateStr = bankShopBusinessDateStr(shopClockNow);
-        const canOpenShopToday = canOpenBankShopForDate(state.shop, shopClockNow);
-        const shopSettledToday = state.shop.lastBusinessDateStr === currentBusinessDateStr;
-        const closeShopBlockReason = getBankShopCloseBlockReason(state.shop, shopClockNow);
-        const closeShopBlocked = closeShopBlockReason !== undefined;
-        const closeShopTitle = closeShopBlockReason === 'tooEarly'
-            ? `${String(BANK_SHOP_CLOSE_HOUR).padStart(2, '0')}:00 后才能打烊结算`
-            : closeShopBlockReason === 'alreadyClosed'
-                ? '店铺已经打烊'
-                : '打烊结算';
+        const shopStatus = getBankShopRealtimeStatus(state.shop, shopClockNow);
+        const statusTone: Record<typeof shopStatus.kind, { bg: string; fg: string; border: string }> = {
+            readyToOpen: { bg: '#ecfdf5', fg: '#166534', border: '#bbf7d0' },
+            openWaitingForClose: { bg: '#eff6ff', fg: '#1d4ed8', border: '#bfdbfe' },
+            readyToClose: { bg: '#fff7ed', fg: '#c2410c', border: '#fed7aa' },
+            readyToCloseOnly: { bg: '#fff7ed', fg: '#c2410c', border: '#fed7aa' },
+            waitingForReset: { bg: '#f4f4f5', fg: '#52525b', border: '#e4e4e7' },
+        };
+        const statusStyle = statusTone[shopStatus.kind];
+        const statusNextText = shopStatus.nextActionAt
+            ? `${shopStatus.nextActionLabel || '下一次可操作'} · ${formatShopActionTime(shopStatus.nextActionAt)} · 还有 ${formatShopCountdown(shopStatus.nextActionAt, shopClockNow)}`
+            : shopStatus.nextActionLabel || '现在可操作';
+        const openShopTitle = shopStatus.canOpen ? '开门营业' : shopStatus.openDisabledReason || shopStatus.summary;
+        const closeShopTitle = shopStatus.canClose ? shopStatus.nextActionLabel || '打烊' : shopStatus.closeDisabledReason || shopStatus.summary;
         const shopActionButtonStyle = (bg: string, muted: boolean): React.CSSProperties => ({
             ...smallBtn(muted ? '#f4f4f5' : bg, muted ? '#8a8790' : '#fff'),
             opacity: muted ? 0.72 : 1,
@@ -2843,31 +3154,40 @@ ${JSON.stringify(list, null, 2)}
                                 <span className="w-12 h-12 rounded-[18px] flex items-center justify-center text-[24px]" style={{ background: '#faf8f5' }}>{tpl.icon}</span>
                                 <div className="min-w-0">
                                     <div className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.shopBusinessName || state.shop.shopName || tpl.name}</div>
-                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopIsOpen ? '营业中' : shopSettledToday ? `未到${BANK_SHOP_DAILY_RESET_HOUR}:00不能营业` : '已打烊'} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
+                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · {shopStatus.label} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
                                 </div>
                             </div>
                             <div className="shrink-0 flex items-center gap-1.5">
                                 <button
                                     type="button"
                                     onClick={handleOpenShop}
-                                    aria-disabled={!canOpenShopToday}
-                                    title={shopIsOpen ? '店铺正在营业中' : shopSettledToday ? `未到每日刷新时间，凌晨 ${BANK_SHOP_DAILY_RESET_HOUR}:00 后再营业` : '开门营业'}
+                                    disabled={!shopStatus.canOpen}
+                                    aria-disabled={!shopStatus.canOpen}
+                                    title={openShopTitle}
                                     className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
-                                    style={shopActionButtonStyle('#16a34a', !canOpenShopToday)}
+                                    style={shopActionButtonStyle('#16a34a', !shopStatus.canOpen)}
                                 >
-                                    {shopSettledToday && !shopIsOpen ? '不能营业' : '营业'}
+                                    {shopStatus.kind === 'waitingForReset' ? '不能营业' : '营业'}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={handleCloseShop}
-                                    aria-disabled={closeShopBlocked}
+                                    disabled={!shopStatus.canClose}
+                                    aria-disabled={!shopStatus.canClose}
                                     title={closeShopTitle}
                                     className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform"
-                                    style={shopActionButtonStyle('#f43f5e', closeShopBlocked)}
+                                    style={shopActionButtonStyle('#f43f5e', !shopStatus.canClose)}
                                 >
-                                    {closeShopBlockReason === 'tooEarly' ? '不能打烊' : '打烊'}
+                                    {shopStatus.kind === 'openWaitingForClose' ? '不能打烊' : '打烊'}
                                 </button>
                             </div>
+                        </div>
+                        <div className="rounded-[18px] px-3 py-2.5" style={{ background: statusStyle.bg, color: statusStyle.fg, border: `1px solid ${statusStyle.border}` }}>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="text-[12px] font-black" style={{ fontFamily: HAND_FONT }}>当前状态 · {shopStatus.label}</span>
+                                <span className="text-[10px] font-bold opacity-80">{statusNextText}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: INK }}>{shopStatus.summary}</div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
                             <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5', color: INK_SOFT }}><b style={{ color: INK }}>总部</b><br />{shopPortfolio?.headquartersEnergy ?? 0} 精力</div>
@@ -2878,12 +3198,11 @@ ${JSON.stringify(list, null, 2)}
                             {shopBranches.map(branch => {
                                 const branchTpl = BUSINESS_TEMPLATES.find(b => b.id === branch.businessTypeId) || BUSINESS_TEMPLATES[0];
                                 const active = branch.id === activeShopId;
-                                const branchSettledToday = branch.shop.lastBusinessDateStr === currentBusinessDateStr;
-                                const branchStatus = branch.shop.isBusinessOpen ? '营业中' : branchSettledToday ? `未到${BANK_SHOP_DAILY_RESET_HOUR}:00不能营业` : '已打烊';
+                                const branchStatus = getBankShopRealtimeStatus(branch.shop, shopClockNow);
                                 return (
                                     <button key={branch.id} onClick={() => { void handleSwitchBankShop(branch.id); }} className="shrink-0 px-3 py-2 text-left active:scale-95 transition-transform" style={chipStyle(active)}>
                                         <span className="text-[12px] font-black">{branchTpl.icon} {branch.shop.shopName}</span>
-                                        <span className="block text-[10px] opacity-75">{branchStatus} · Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
+                                        <span className="block text-[10px] opacity-75">{branchStatus.label} · Lv.{branch.shop.shopLevel || 1} · {branch.shop.actionPoints || 0} 精力</span>
                                     </button>
                                 );
                             })}
@@ -3102,8 +3421,10 @@ ${JSON.stringify(list, null, 2)}
                     {tx ? <div className="space-y-3">
                         <BankMetricGrid items={[
                             { label: '金额', value: `${tx.type === 'income' ? '+' : '-'}${state.config.currencySymbol}${tx.amount}`, tone: tx.type === 'income' ? 'good' : 'warn' },
+                            { label: '类型', value: bankTransactionTypeLabel(tx), tone: tx.type === 'income' ? 'good' : 'warn' },
                             { label: '分类', value: tx.category || 'general' },
                             { label: '来源', value: tx.sourceApp || '手动记录' },
+                            ...(tx.incomeBasis ? [{ label: '收入依据', value: tx.incomeBasis, tone: 'info' as const }] : []),
                             { label: '时间', value: new Date(tx.timestamp).toLocaleString() },
                         ]} />
                         {tx.charComment && <p className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#f5f3ff', color: '#4c1d95' }}><b>{tx.charComment.charName}：</b>{tx.charComment.text}</p>}
@@ -3331,16 +3652,13 @@ ${JSON.stringify(list, null, 2)}
         return null;
     };
 
-    const headerBusinessDateStr = bankShopBusinessDateStr(shopClockNow);
-    const headerShopCanOpen = life.shopUnlocked && canOpenBankShopForDate(state.shop, shopClockNow);
-    const headerShopSettledToday = state.shop.lastBusinessDateStr === headerBusinessDateStr;
+    const headerShopStatus = getBankShopRealtimeStatus(state.shop, shopClockNow);
+    const headerShopCanOpen = life.shopUnlocked && headerShopStatus.canOpen;
     const headerShopTitle = !life.shopUnlocked
         ? '先解锁店铺'
-        : state.shop.isBusinessOpen === true
-            ? '店铺正在营业中'
-            : headerShopSettledToday
-                ? `未到每日刷新时间，凌晨 ${BANK_SHOP_DAILY_RESET_HOUR}:00 后再营业`
-                : '开门营业';
+        : headerShopStatus.canOpen
+            ? '开门营业'
+            : headerShopStatus.openDisabledReason || headerShopStatus.summary;
 
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAGE_BG, color: INK }}>
@@ -3370,19 +3688,14 @@ ${JSON.stringify(list, null, 2)}
                             </div>
                         </div>
                         <button
-                            onClick={() => {
-                                if (!life.shopUnlocked) {
-                                    addToast('先解锁店铺，再开门营业', 'info');
-                                    return;
-                                }
-                                void handleOpenShop();
-                            }}
+                            onClick={() => { void handleOpenShop(); }}
+                            disabled={!headerShopCanOpen}
                             aria-disabled={!headerShopCanOpen}
                             title={headerShopTitle}
                             className="hidden sm:inline-flex px-3 py-2 text-[12px] font-black active:scale-95 transition-transform items-center gap-1"
                             style={smallBtn(headerShopCanOpen ? '#16a34a' : '#e5e7eb', headerShopCanOpen ? '#fff' : INK_SOFT)}
                         >
-                            {life.shopUnlocked && headerShopSettledToday && state.shop.isBusinessOpen !== true ? '不能营业' : '营业'}
+                            {life.shopUnlocked && headerShopStatus.kind === 'waitingForReset' ? '不能营业' : '营业'}
                         </button>
                         <button
                             onClick={() => setShowAddTxModal(true)}
@@ -3576,11 +3889,11 @@ ${JSON.stringify(list, null, 2)}
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>是进是出</FieldLabel>
-                        <div className="flex gap-2 mt-2">
-                            {([['expense', '📤 花出去'], ['income', '📥 进账来']] as const).map(([k, label]) => (
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                            {([['expense', '📤 花出去'], ['income', '📥 新收入'], ['pastIncome', '🧾 过去收入']] as const).map(([k, label]) => (
                                 <button key={k} onClick={() => setTxType(k)} className="flex-1 py-2.5 text-[14px] font-black active:scale-95 transition-transform" style={{ borderRadius: 12, fontFamily: HAND_FONT,
                                     ...(txType === k
-                                        ? (k === 'income' ? { background: '#dfeccd', color: '#3f7a38', boxShadow: '0 2px 6px rgba(96,66,40,0.18)' } : { background: '#f6ddc9', color: '#b1543f', boxShadow: '0 2px 6px rgba(96,66,40,0.18)' })
+                                        ? (k === 'expense' ? { background: '#f6ddc9', color: '#b1543f', boxShadow: '0 2px 6px rgba(96,66,40,0.18)' } : { background: '#dfeccd', color: '#3f7a38', boxShadow: '0 2px 6px rgba(96,66,40,0.18)' })
                                         : { background: '#f3ead7', color: '#a98e6f' }) }}>
                                     {label}
                                 </button>
@@ -3596,8 +3909,15 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                     <div>
                         <FieldLabel>记点什么</FieldLabel>
-                        <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder={txType === 'income' ? '这笔钱哪来的？' : '钱花哪了？'} className="w-full px-4 py-3 text-[15px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
+                        <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder={txType === 'expense' ? '钱花哪了？' : txType === 'pastIncome' ? '比如：上月工资、已有存款' : '比如：7月工资、兼职结算'} className="w-full px-4 py-3 text-[15px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
                     </div>
+                    {txType !== 'expense' && (
+                        <div>
+                            <FieldLabel>收入依据</FieldLabel>
+                            <input value={txIncomeBasis} onChange={e => setTxIncomeBasis(e.target.value)} placeholder={txType === 'pastIncome' ? '例如：银行卡余额、工资条、转账记录' : '例如：工资条、转账记录、退款单号'} className="w-full px-4 py-3 text-[15px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
+                            <div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: '#a98e6f' }}>只补录真实发生过的收入，不能凭空加钱。</div>
+                        </div>
+                    )}
                 </div>
             </HbModal>
 

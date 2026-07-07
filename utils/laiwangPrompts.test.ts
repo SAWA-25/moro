@@ -58,6 +58,16 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('它们不是实际发生过的历史');
   });
 
+  it('keeps proactive takeout tied to multiple dietary constraints and safe fallback', () => {
+    const text = convoLines.proactiveTakeoutOrder('小夏');
+
+    expect(text).toContain('口味/忌口/过敏');
+    expect(text).toContain('多条饮食约束');
+    expect(text).toContain('饭票菜库');
+    expect(text).toContain('安全兜底');
+    expect(text).toContain('[[TAKEOUT_ORDER:');
+  });
+
   it('marks live draft text as unsent and not persisted', () => {
     const text = livePrivateDraftPromptBody({
       userName: '小夏',
@@ -358,5 +368,16 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('以我的性格');
     expect(text).toContain('更自然的是');
     expect(text).toContain('只输出要发出去的正文');
+  });
+
+  it('keeps reverse phone checks rooted in the real desktop instead of default moments', () => {
+    const text = convoLines.allowPhoneBrowse;
+
+    expect(text).toContain('真实桌面');
+    expect(text).toContain('Dock');
+    expect(text).toContain('安装/摆放的 App');
+    expect(text).toContain('不要默认去朋友圈');
+    expect(text).toContain('不要把查岗目标写成发动态');
+    expect(text).toContain('极少数情况下');
   });
 });

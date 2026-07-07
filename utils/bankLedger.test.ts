@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAutoBankTransaction } from './bankLedger';
+import { createAutoBankTransaction, validateManualIncomeBasis } from './bankLedger';
 
 describe('bankLedger', () => {
     it('creates automatic ledger records for wallet balance changes', () => {
@@ -55,5 +55,14 @@ describe('bankLedger', () => {
     it('skips ledger records when disabled or delta is zero', () => {
         expect(createAutoBankTransaction(10, 100, { ledger: false })).toBeNull();
         expect(createAutoBankTransaction(0, 100)).toBeNull();
+    });
+
+    it('requires a concrete basis for manual income records', () => {
+        expect(validateManualIncomeBasis('补一笔收入', '')).toMatchObject({ ok: false });
+        expect(validateManualIncomeBasis('补一笔收入', '凭空加钱测试')).toMatchObject({ ok: false });
+        expect(validateManualIncomeBasis('7月工资', '嗯嗯')).toMatchObject({ ok: false });
+        expect(validateManualIncomeBasis('7月工资', '工资条已到账')).toMatchObject({ ok: true, basis: '工资条已到账' });
+        expect(validateManualIncomeBasis('退货退款', '支付宝退款记录')).toMatchObject({ ok: true, basis: '支付宝退款记录' });
+        expect(validateManualIncomeBasis('过去收入', '已有存款余额补录')).toMatchObject({ ok: true, basis: '已有存款余额补录' });
     });
 });

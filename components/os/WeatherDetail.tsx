@@ -32,9 +32,13 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose }) => {
     const [forecast, setForecast] = useState<WeatherForecast | null>(null);
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
-    const load = React.useCallback(() => {
+    const load = React.useCallback((force = false) => {
         setStatus('loading');
-        RealtimeContextManager.fetchWeatherForecast(realtimeConfig)
+        if (force) RealtimeContextManager.clearWeatherCache();
+        RealtimeContextManager.fetchWeatherForecast(
+            realtimeConfig,
+            force ? { requestLocationPermission: true } : undefined,
+        )
             .then(f => {
                 if (f) { setForecast(f); setStatus('ready'); }
                 else setStatus('error');
@@ -90,7 +94,7 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose }) => {
                         可能是定位被拒绝或网络问题。可在「设置 → 风向标」里改用手填城市，或检查网络后重试。
                     </div>
                     <div className="flex gap-2 mt-1">
-                        <button onClick={load} className="px-4 py-2 rounded-full bg-white/25 backdrop-blur text-xs font-bold active:scale-95 transition-transform">重试</button>
+                        <button onClick={() => load()} className="px-4 py-2 rounded-full bg-white/25 backdrop-blur text-xs font-bold active:scale-95 transition-transform">重试</button>
                         <button onClick={() => { onClose(); openApp(AppID.Settings); }} className="px-4 py-2 rounded-full bg-white/15 text-xs font-bold active:scale-95 transition-transform">去配置</button>
                     </div>
                 </div>
@@ -147,8 +151,8 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose }) => {
 
                     {/* 数据来源 + 刷新 */}
                     <div className="flex items-center justify-between mt-5 px-1 text-[10px] opacity-55 label-mono">
-                        <span>数据 · Open-Meteo</span>
-                        <button onClick={load} className="underline active:opacity-70">刷新</button>
+                        <span>实时 · {forecast.current.source || 'Open-Meteo'} · 预报 · Open-Meteo</span>
+                        <button onClick={() => load(true)} className="underline active:opacity-70">刷新</button>
                     </div>
                 </div>
             )}
