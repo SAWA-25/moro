@@ -40,7 +40,12 @@ import {
 } from '../utils/offlineMode';
 import { hasGroupOfflineSession } from '../utils/groupOfflineMode';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
-import { resolveUnblockAppealDecision, type UnblockAppealDecision } from '../utils/unblockAppealActions';
+import {
+    buildMissingUnblockAppealRetryUpdate,
+    getLatestPendingUnblockAppealMessage,
+    resolveUnblockAppealDecision,
+    type UnblockAppealDecision,
+} from '../utils/unblockAppealActions';
 import { unblockCharacterByUser, unblockCharactersByUser } from '../utils/blockActions';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, buildGroupRedPacketMetadata, isPasswordRedPacketPhraseAccepted } from '../utils/redPacket';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -1589,13 +1594,12 @@ const ChatHub: React.FC = () => {
         }
         void (async () => {
             const next: PendingUnblockAppeal[] = [];
+            const staleAwaitingChars: CharacterProfile[] = [];
             for (const c of candidates) {
                 try {
-                    const allMessages = await DB.getMessagesByCharId(c.id, true);
-                    const msg = [...allMessages]
-                        .sort((a, b) => (b.timestamp - a.timestamp) || (b.id - a.id))
-                        .find(m => m.metadata?.unblockAppeal?.status === 'pending');
+                    const msg = await getLatestPendingUnblockAppealMessage(c.id);
                     if (msg) next.push({ charId: c.id, message: msg });
+                    else staleAwaitingChars.push(c);
                 } catch (err) {
                     console.warn('[ChatHub] load pending unblock appeal failed', c.id, err);
                 }
@@ -1607,6 +1611,18 @@ const ChatHub: React.FC = () => {
                 if (!prev) return prev;
                 return next.find(item => item.message.id === prev.message.id) || null;
             });
+            for (const c of staleAwaitingChars) {
+                if (cancelled) return;
+                const updates = buildMissingUnblockAppealRetryUpdate(c);
+                if (!updates) continue;
+                try {
+                    // awaiting=true without a pending message can be left by interrupted writes or old backups.
+                    // Clear it so the scheduler can generate a fresh validation message instead of spinning forever.
+                    await updateCharacter(c.id, updates);
+                } catch (err) {
+                    console.warn('[ChatHub] reset stale unblock appeal failed', c.id, err);
+                }
+            }
         })();
         return () => { cancelled = true; };
     }, [visibleCharacters, convoRefreshTick]);

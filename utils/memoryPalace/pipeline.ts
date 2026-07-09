@@ -797,6 +797,7 @@ export async function injectMemoryPalace(
     queryHint?: string,
     userName?: string,
 ): Promise<void> {
+    char.memoryPalaceInjection = undefined;
     if (!isMemoryFeatureEnabled(char)) return;
     try {
         const msgs = recentMessages ?? await DB.getMessagesByCharId(char.id);
@@ -814,6 +815,7 @@ export async function injectMemoryPalace(
             char.memoryPalaceInjection = context;
         }
     } catch (e: any) {
+        char.memoryPalaceInjection = undefined;
         console.warn(`🏰 [MemoryPalace] injectMemoryPalace failed: ${e.message}`);
     }
 }

@@ -60,6 +60,19 @@ export function normalizeMessageContent(
         return `[心意铺礼物] ${giver}送了${receiver} ${g.emoji || ''}${g.name || '一份礼物'}${note}`;
     }
 
+    // 日常寄物：回形针里的轻量互寄，不走心意铺订单/背包/余额。
+    if (type === 'parcel_card') {
+        const p = msg.metadata?.parcel || {};
+        const note = typeof p.note === 'string' && p.note.trim() ? `，附言「${p.note.trim()}」` : '';
+        const method = typeof p.method === 'string' && p.method.trim() ? `，${p.method.trim()}` : '';
+        const origin = typeof p.originLabel === 'string' && p.originLabel.trim() ? `，来自${p.originLabel.trim()}` : '';
+        const travel = typeof p.travelSnippet === 'string' && p.travelSnippet.trim() ? `，路上见闻「${p.travelSnippet.trim()}」` : '';
+        const giver = msg.role === 'user' ? userName : charName;
+        const receiver = msg.role === 'user' ? charName : userName;
+        const label = p.mode === 'travel_frog' ? '蛙游收件' : p.mode === 'proactive' ? '主动寄来' : '日常寄物';
+        return `[${label}] ${giver}寄给${receiver} ${p.emoji || '📦'}${p.itemName || '一份小包裹'}${method}${origin}${travel}${note}`;
+    }
+
     // 结算卡：几种 app 产生，用字段逐一翻成自然文本
     if (type === 'score_card') {
         try {
@@ -205,5 +218,5 @@ export function isMessageSemanticallyRelevant(msg: Message): boolean {
     // 语音：只有带转写文字的（用户录音）才有语义价值
     if (type === 'voice') return !!(typeof msg.metadata?.transcript === 'string' && msg.metadata.transcript.trim());
     // 有内容或有结构化 metadata 才算
-    return !!(msg.content?.trim() || msg.metadata?.scoreCard || msg.metadata?.amount || msg.metadata?.song || msg.metadata?.trpg);
+    return !!(msg.content?.trim() || msg.metadata?.scoreCard || msg.metadata?.amount || msg.metadata?.song || msg.metadata?.trpg || msg.metadata?.parcel);
 }

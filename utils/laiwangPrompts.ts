@@ -1238,8 +1238,26 @@ ${exitLine}
 // ║ [8] 主动消息 / 系统提示 (Proactive & System Hints)                         ║
 // ║   以 [系统提示（非用户发言）…] 形式临时注入的一次性提示句。                ║
 // ║   用在：context/OSContext.tsx（主动消息）、utils/chatPrompts.ts（时间间隔）、║
-// ║         utils/takeout.ts（收到外卖）、apps/Chat.tsx（求婚结果）            ║
+// ║         utils/takeout.ts（收到外卖）、utils/offlineMode.ts（线下时间边界）、║
+// ║         apps/Chat.tsx（求婚结果）                                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface OfflineTemporalBoundaryParams {
+    nowText: string;
+    charName: string;
+    userName: string;
+    latestMessageAge: string;
+}
+
+/** 线下模式：把带时间戳的线上记录和当前现场分清，避免旧食物/旧台词被当成刚发生。 */
+export function offlineTemporalBoundaryPrompt(p: OfflineTemporalBoundaryParams): string {
+    return `### [时间线与记忆边界]
+现在是 ${p.nowText}。最近线上聊天中，距离当前最近的一条记录是${p.latestMessageAge || '未知时间'}。
+- [最近的线上聊天] 每行开头都是真实发送时间；只有“刚刚 / 几分钟前 / 几小时前”的内容，才能当作这场线下现场的直接上一拍。
+- 标成“昨天 / N天前 / 更早”的内容只是 ${p.charName} 和 ${p.userName} 曾经经历或说过的背景，不是当前正在发生的动作，也不是现场还摆着的道具。
+- 几天前或昨天的食物、礼物、外卖、台词、动作，如果上下文没有明确写“现在又拿到 / 现在仍在吃 / 这次重新提起”，就只能当作已经发生过、已经结束的记忆，不能重新写成手边正在发生。
+- 如果旧记忆、回忆标本馆和当前线下现场冲突，优先相信：[线下现场已发生的情景]、${p.userName} 最新输入、带时间戳的最新聊天记录。`;
+}
 
 /** 时间间隔系统提示（距上一条消息多久 → 提醒角色"现在过了多久"）。 */
 export function timeGapHint(lastTimestamp: number | undefined, currentTimestamp: number): string {

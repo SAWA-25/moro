@@ -5,6 +5,32 @@ import { nextAppealDelayMs } from './unblockAppeal';
 export type UnblockAppealDecision = 'accept' | 'reject';
 export type UnblockAppealHandledFrom = 'contacts' | 'chat' | 'manual' | 'bulk';
 
+export async function getPendingUnblockAppealMessages(charId: string): Promise<Message[]> {
+    const messages = await DB.getMessagesByCharId(charId, true);
+    return messages
+        .filter(m => m.metadata?.unblockAppeal?.status === 'pending')
+        .sort((a, b) => (b.timestamp - a.timestamp) || ((b.id || 0) - (a.id || 0)));
+}
+
+export async function getLatestPendingUnblockAppealMessage(charId: string): Promise<Message | null> {
+    return (await getPendingUnblockAppealMessages(charId))[0] || null;
+}
+
+export function buildMissingUnblockAppealRetryUpdate(
+    char: CharacterProfile,
+    now = Date.now(),
+): Partial<CharacterProfile> | null {
+    const appeal = char.unblockAppeal;
+    if (!char.blacklisted || !appeal?.active || !appeal.awaiting) return null;
+    return {
+        unblockAppeal: {
+            ...appeal,
+            awaiting: false,
+            nextAt: now,
+        },
+    };
+}
+
 export async function resolveUnblockAppealDecision(args: {
     char: CharacterProfile;
     message: Message;

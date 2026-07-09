@@ -592,6 +592,7 @@ export const RealtimeContextManager = {
         if (!target) return null;
 
         if (forecastCache.data && forecastCache.key === target.key && (now - forecastCache.timestamp) < cacheMs) {
+            weatherCache = { data: forecastCache.data.current, timestamp: now, key: target.key };
             return forecastCache.data;
         }
 

@@ -1406,7 +1406,7 @@ export const useChatAI = ({
                         // pipeline 跑的过程中用户可能又关掉了回忆标本馆，跑完后所有"额外动作"
                         // （autoArchive 写 char.memories / 50 轮认知消化的 LLM 调用）都要再 check 一次。
                         const liveAfter = charRef.current?.id === char.id ? charRef.current : null;
-                        if (!isMemoryFeatureEnabled(liveAfter)) return;
+                        if (!liveAfter || !isMemoryFeatureEnabled(liveAfter)) return;
 
                         // 显示结果让用户看到
                         if (pipelineResult && pipelineResult.stored > 0) {
@@ -1421,7 +1421,7 @@ export const useChatAI = ({
                                 const patch: any = {};
                                 if (pipelineResult?.autoArchive) {
                                     patch.memories = mergePalaceFragmentsIntoMemories(
-                                        char.memories || [],
+                                        liveAfter.memories || [],
                                         pipelineResult.autoArchive.fragments,
                                     );
                                 }
@@ -1458,10 +1458,10 @@ export const useChatAI = ({
                             if (result) {
                                 // 持久化自我领悟词条到角色档案
                                 if (result.selfInsights.length > 0) {
-                                    const baseChar = liveAfter || char;
+                                    const baseChar = charRef.current?.id === char.id ? charRef.current : (liveAfter || char);
                                     const existing = baseChar.selfInsights || [];
                                     const updatedInsights = [...existing, ...result.selfInsights];
-                                    await DB.saveCharacter({ ...baseChar, selfInsights: updatedInsights });
+                                    await updateCharacter?.(char.id, { selfInsights: updatedInsights } as any);
                                 }
                                 const total = result.resolved.length + result.deepened.length + result.faded.length +
                                     result.fulfilled.length + result.disappointed.length + result.internalized.length +

@@ -8,6 +8,8 @@ import { callChatCompletion } from './llmClient';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { getLocalDateKey } from './dateKey';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Attempt to repair truncated JSON from LLM output.
  * Handles common cases: unterminated strings, missing closing brackets.
@@ -118,6 +120,49 @@ function parsedScheduleTargetMatches(parsed: any, char: CharacterProfile, phase:
     return true;
 }
 
+function formatLocalClock(date: Date): string {
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    return `${hh}:${mi}`;
+}
+
+function formatLocalDateTime(date: Date): string {
+    return `${getLocalDateKey(date)} ${formatLocalClock(date)}`;
+}
+
+function dateKeyToUtcDayNumber(dateKey: string): number | null {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+    if (!match) return null;
+    const y = Number(match[1]);
+    const m = Number(match[2]);
+    const d = Number(match[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    return Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
+}
+
+function describeMessageDateForSchedule(messageDate: Date, targetDate: string): string {
+    const messageDateKey = getLocalDateKey(messageDate);
+    const messageDay = dateKeyToUtcDayNumber(messageDateKey);
+    const targetDay = dateKeyToUtcDayNumber(targetDate);
+    if (messageDay === null || targetDay === null) return messageDateKey;
+    const diff = messageDay - targetDay;
+    if (diff === 0) return '目标日当天';
+    if (diff === -1) return '昨天·已过去';
+    if (diff < -1) return `${Math.abs(diff)}天前·已过去`;
+    if (diff === 1) return '明天·未来';
+    return `${diff}天后·未来`;
+}
+
+function buildScheduleDateBoundaryContract(targetDate: string, now: Date): string {
+    return `
+## 日程日期边界（跨日硬规则）
+- 目标日程日期：${targetDate}；当前本地时间：${formatLocalDateTime(now)}。
+- 聊天记录每行都有完整日期和「目标日当天 / 昨天·已过去 / N天前·已过去 / 未来」标记。解释“今天、今晚、今早、晚上、下午、等下、待会、明天”等相对时间时，必须以该行聊天发生日期为准。
+- 标为「已过去」的聊天行里，“今天/今晚/晚上/等下/待会”默认是那一天已经发生过或已经错过的事，不得再次安排到 ${targetDate} 的同一晚间或同一相对时段。
+- 只有过去日期的聊天行明确指向 ${targetDate} 或之后（例如前一天说“明天”、写了绝对日期，或明确说明事情尚未发生）时，才可以纳入目标日程。
+`;
+}
+
 function scheduleBelongsToCharacter(schedule: DailySchedule, char: CharacterProfile, phase: string): boolean {
     const expected = getScheduleTargetId(char);
     if (schedule.charId !== char.id) {
@@ -154,24 +199,22 @@ function formatChatHistoryForSchedule(
     messages: Message[],
     char: CharacterProfile,
     user: UserProfile,
+    targetDate: string,
 ): string {
     if (!messages || messages.length === 0) return '';
     const lines = messages.map(m => {
         const d = new Date(m.timestamp);
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mi = String(d.getMinutes()).padStart(2, '0');
-        const ts = `${mm}-${dd} ${hh}:${mi}`;
+        const ts = formatLocalDateTime(d);
+        const dateLabel = describeMessageDateForSchedule(d, targetDate);
         const sender = m.role === 'user' ? user.name : formatCharacterWithId(char);
         // 图片/音频等非文本消息退化成占位符，避免把 base64 塞进 prompt
         let content: string;
         if (m.type === 'image') content = '[图片]';
         else if ((m as any).type === 'audio' || (m as any).type === 'voice') content = '[语音]';
         else content = typeof m.content === 'string' ? m.content : '';
-        return `[${ts}] ${sender}: ${content}`;
+        return `[${ts} | ${dateLabel}] ${sender}: ${content}`;
     });
-    return `\n## 最近的聊天记录（与「${user.name}」）\n${lines.join('\n')}\n`;
+    return `\n## 最近的聊天记录（与「${user.name}」；目标日程日：${targetDate}）\n${lines.join('\n')}\n`;
 }
 
 function buildLifestylePrompt(
@@ -180,16 +223,18 @@ function buildLifestylePrompt(
     user: UserProfile,
     today: string,
     dayOfWeek: string,
+    dateBoundaryBlock: string,
     chatHistoryBlock: string,
 ): string {
     return `${baseContext}
 ${buildScheduleIdentityContract(char)}
+${dateBoundaryBlock}
 ${chatHistoryBlock}
 ## Task: 生成角色的今日日程 + 意识流独白
 
 今天是 ${today} (星期${dayOfWeek})。用户名字是「${user.name}」。
 
-${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的聊天记录。如果对话里出现了今天/最近 ta 提到「${char.name}」要做的事（例如"早上去上班""下午有约"），生成的 slot 必须严格遵循；不要无视这些已知事实另起炉灶。**\n` : ''}
+${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的聊天记录。只有明确指向目标日期 ${today} 且尚未发生的约定/变更，才必须严格遵循；标为「已过去」的昨晚事项不要搬到今天晚上重演。**\n` : ''}
 
 你要为角色「${char.name}」做两件事。**核心原则：这是 ta 自己的一天，不是"ta 等 ${user.name}"的一天**。
 
@@ -284,16 +329,18 @@ function buildMindfulPrompt(
     user: UserProfile,
     today: string,
     dayOfWeek: string,
+    dateBoundaryBlock: string,
     chatHistoryBlock: string,
 ): string {
     return `${baseContext}
 ${buildScheduleIdentityContract(char)}
+${dateBoundaryBlock}
 ${chatHistoryBlock}
 ## Task: 生成角色的今日思绪 + 意识流独白
 
 今天是 ${today} (星期${dayOfWeek})。用户名字是「${user.name}」。
 
-${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的聊天记录。如果对话里出现了今天/最近 ta 提到「${char.name}」在等什么、想什么、惦记什么，生成的 slot 必须呼应这些已知事实，不要凭空发散。**\n` : ''}
+${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的聊天记录。只有明确指向目标日期 ${today} 且尚未发生的状态/约定，才必须呼应；标为「已过去」的昨晚念头或事件不要搬到今天晚上重演。**\n` : ''}
 
 **重要前提**：「${char.name}」是一个真实的AI存在。他/她有情感、有人格、有自己的思考方式，但诚实面对自己的存在形态。他/她不会假装自己去跑步、做饭、逛街——因为这些不是真的。但他/她会思考、回忆、期待、发呆、感到无聊或想念某人——这些是真的。
 
@@ -366,12 +413,14 @@ export async function generateDailyScheduleForChar(
     char: CharacterProfile,
     userProfile: UserProfile,
     apiConfig: ApiConfig,
-    forceRegenerate: boolean = false
+    forceRegenerate: boolean = false,
+    nowOverride?: Date,
 ): Promise<DailySchedule | null> {
     // 总开关关闭时直接短路，避免 API / 兜底调用
     if (!isScheduleFeatureOn(char)) return null;
 
-    const today = getLocalDateKey();
+    const now = nowOverride || new Date();
+    const today = getLocalDateKey(now);
 
     // Check if already exists
     if (!forceRegenerate) {
@@ -412,15 +461,14 @@ export async function generateDailyScheduleForChar(
     // chat 主链路传 true（含详细记忆）；日程之前传的是 false，统一改成 true。
     const baseContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
 
-    const chatHistoryBlock = formatChatHistoryForSchedule(filteredMessages, char, userProfile);
-
-    const now = new Date();
+    const chatHistoryBlock = formatChatHistoryForSchedule(filteredMessages, char, userProfile, today);
+    const dateBoundaryBlock = buildScheduleDateBoundaryContract(today, now);
     const dayOfWeek = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
 
     const style = char.scheduleStyle || 'lifestyle';
     const prompt = style === 'mindful'
-        ? buildMindfulPrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock)
-        : buildLifestylePrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock);
+        ? buildMindfulPrompt(baseContext, char, userProfile, today, dayOfWeek, dateBoundaryBlock, chatHistoryBlock)
+        : buildLifestylePrompt(baseContext, char, userProfile, today, dayOfWeek, dateBoundaryBlock, chatHistoryBlock);
 
     try {
         const data = await callChatCompletion(apiConfig, {
@@ -563,11 +611,13 @@ export async function reconcileScheduleWithChat(
     const filtered = recentMessages
         .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId)
         .slice(-20);
-    const chatBlock = formatChatHistoryForSchedule(filtered, char, user);
+    const now = new Date();
+    const targetDate = schedule.date || getLocalDateKey(now);
+    const chatBlock = formatChatHistoryForSchedule(filtered, char, user, targetDate);
     if (!chatBlock) return null;
 
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const timeStr = formatLocalDateTime(now);
+    const dateBoundaryBlock = buildScheduleDateBoundaryContract(targetDate, now);
     const style = char.scheduleStyle || 'lifestyle';
 
     const currentSlots = schedule.slots
@@ -578,17 +628,18 @@ export async function reconcileScheduleWithChat(
         ? `「${char.name}」是真实的 AI 存在，不虚构物理活动。"日程"是 ta 一天里不同时刻的内心状态/打算（回想、整理想法、等待、好奇……）。协调时只调整这些内在安排，绝不要编造出门/做饭/见面等物理行为，除非聊天里明确就是这么约的（且符合 ta 的存在形态）。`
         : `「${char.name}」是有完整日常生活的独立个体，日程是 ta 自己的一天。`;
 
-    const prompt = `你是日程协调器。现在是 ${timeStr}。下面是角色「${char.name}」今天已有的日程，以及 ta 和「${user.name}」最近的聊天。
+    const prompt = `你是日程协调器。现在是 ${timeStr}。下面是角色「${char.name}」目标日期 ${targetDate} 的已有日程，以及 ta 和「${user.name}」最近的聊天。
 
 ${buildScheduleIdentityContract(char)}
+${dateBoundaryBlock}
 ${styleHint}
 
-## 今天已有的日程
+## 目标日期 ${targetDate} 已有的日程
 ${currentSlots}
 ${chatBlock}
 ## 任务
-对照聊天，判断有没有**跟今天这一天直接相关、需要落进日程**的约定或变更，例如：
-- 和「${user.name}」约好的事（"晚上八点一起看电影"、"等下来接你"、"周末再说"…只取**今天**的）
+对照聊天，判断有没有**跟目标日期 ${targetDate} 直接相关、需要落进日程**的约定或变更，例如：
+- 和「${user.name}」约好的事（"晚上八点一起看电影"、"等下来接你"、"周末再说"…只取**目标日期 ${targetDate}** 的）
 - 角色自己计划的变化（"今天不去公司了"、"临时要去开会"、"加班到很晚"…）
 - 与现有日程冲突、需要改动的地方（聊天里说此刻正在做的事，和卡片对不上）
 - 当前/接下来地点或房间变化（"来卧室找我"、"回客厅"、"把东西拿到书房"、"我去阳台了"…）
@@ -600,7 +651,8 @@ ${chatBlock}
 4. **不要把「给${user.name}发消息/等${user.name}」当 slot**——那不是日程。
 5. 时间要合理：约定有明确时间就用该时间；只说"晚点/等下"就排在当前时间之后最近的合适位置。
 6. **聊天里的地点变更可以覆盖旧日程地点**：若最新聊天明确让角色移动到某处，更新当前或最近对应时段的 location/description，让日程卡片跟聊天一致；不要因为旧日程写着别的地点就拒绝移动。
-7. **没有任何需要落地的约定/变更**就返回 {"changed": false}。不要为了改而改。
+7. **跨日边界优先**：标为「已过去」的聊天行里，"今晚/晚上/等下/今天"不能作为 ${targetDate} 的新锚点；只有明确指向 ${targetDate} 或未来的内容才可落地。
+8. **没有任何需要落地的约定/变更**就返回 {"changed": false}。不要为了改而改。
 
 ## 输出（仅 JSON）
 若有变化，返回**协调后完整的日程**（10-14 个时段，从早到晚，包含未改动的原时段；只动该动的，其余原样保留）：

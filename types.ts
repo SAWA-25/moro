@@ -5360,7 +5360,29 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'forum_card' | 'chat_forward' | 'screen_peek_card' | 'screen_watch_card' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'forum_card' | 'chat_forward' | 'screen_peek_card' | 'screen_watch_card' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card' | 'parcel_card';
+
+export type ChatParcelDirection = 'user_to_char' | 'char_to_user';
+export type ChatParcelMode = 'everyday' | 'proactive' | 'travel_frog';
+
+/** 絮语·日常寄物：回形针里的轻量小包裹，不走心意铺订单/余额/背包。 */
+export interface ChatParcelMeta {
+    id: string;
+    direction: ChatParcelDirection;
+    mode?: ChatParcelMode;
+    senderRole: 'user' | 'char';
+    fromName: string;
+    toName: string;
+    itemName: string;
+    emoji?: string;
+    note?: string;
+    method?: string;
+    originLabel?: string;
+    travelSnippet?: string;
+    requestHint?: string;
+    generatedBy?: 'user' | 'char_ai' | 'fallback';
+    at: number;
+}
 
 export type ChatAlarmKind = 'sleep' | 'wake' | 'custom';
 export type ChatAlarmChannel = 'auto' | 'reminder' | 'call';

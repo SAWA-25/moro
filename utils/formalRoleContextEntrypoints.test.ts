@@ -51,4 +51,12 @@ describe('formal role LLM entrypoints keep complete context', () => {
         expect(source.match(/makeApiUsageMeta\('checkPhone\.generate'/g)?.length).toBe(4);
         expect(source.match(/presetMacros: \{ charName: targetChar\.name, userName: userProfile\.name \|\| '用户' \}/g)?.length).toBe(4);
     });
+
+    it('daily parcel character-picked gifts use full core context and private chat preset macros', () => {
+        const source = read('utils/dailyParcel.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain("makeApiUsageMeta('chat.privateReply'");
+        expect(source).toContain("presetScope: 'chat.private'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName }');
+    });
 });

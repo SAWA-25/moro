@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, MonitorPlay, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
+import { Alarm, ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Gift, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, MonitorPlay, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
@@ -747,6 +747,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
                             <ActionStrip label="发红包" hint="转账或发送红包" dark={isDiscordStyle} onClick={() => onPanelAction('transfer')}>
                                 <Coins className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="寄东西" hint="日常小包裹，互相寄" dark={isDiscordStyle} onClick={() => onPanelAction('daily-parcel')}>
+                                <Gift className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             {/* 「设置」已迁移到聊天页右上角齿轮按钮（ChatHeaderShell.onOpenChatSettings） */}

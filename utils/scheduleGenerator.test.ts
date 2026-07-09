@@ -113,6 +113,37 @@ describe('schedule generator character identity', () => {
     await expect(DB.getDailySchedule('char-isaac', today)).resolves.toBeNull();
   });
 
+  it('marks previous-night chat as elapsed when generating after midnight', async () => {
+    await DB.saveMessage({
+      charId: 'char-isaac',
+      role: 'user',
+      type: 'text',
+      content: '今晚八点我们已经看完电影了，刚才那场很好看。',
+      timestamp: new Date(2026, 6, 9, 21, 0).getTime(),
+    });
+    vi.mocked(callChatCompletion).mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            targetCharId: 'model-isaac',
+            slots: [slot],
+            flowNarrative: { morning: 'I am Isaac this morning.' },
+          }),
+        },
+      }],
+    } as any);
+
+    const result = await generateDailyScheduleForChar(char, user, API, true, new Date(2026, 6, 10, 0, 30));
+
+    expect(result?.date).toBe('2026-07-10');
+    const request = vi.mocked(callChatCompletion).mock.calls[0][1] as any;
+    const prompt = request.messages[0].content as string;
+    expect(prompt).toContain('目标日程日期：2026-07-10；当前本地时间：2026-07-10 00:30');
+    expect(prompt).toContain('[2026-07-09 21:00 | 昨天·已过去] User: 今晚八点我们已经看完电影了，刚才那场很好看。');
+    expect(prompt).toContain('不得再次安排到 2026-07-10 的同一晚间或同一相对时段');
+    expect(prompt).toContain('标为「已过去」的昨晚事项不要搬到今天晚上重演');
+  });
+
   it('does not reconcile a schedule with another character id', async () => {
     const today = getLocalDateKey();
     const existing = {

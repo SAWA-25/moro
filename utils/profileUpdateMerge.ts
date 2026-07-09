@@ -44,6 +44,28 @@ export const mergeCharacterProfileUpdate = (
   return next;
 };
 
+const hasEmotionBuffPatch = (updates: Partial<CharacterProfile>): boolean =>
+  hasOwn(updates, 'activeBuffs') || hasOwn(updates, 'buffInjection');
+
+/**
+ * Some background jobs update archival/profile fields after emotion eval has
+ * already saved fresher buffs to IndexedDB. If the job did not explicitly
+ * touch buffs, keep the persisted emotion state instead of writing an older
+ * in-memory snapshot back over it.
+ */
+export const preserveCharacterEmotionState = (
+  candidate: CharacterProfile,
+  latestPersisted: CharacterProfile | null | undefined,
+  updates: Partial<CharacterProfile>,
+): CharacterProfile => {
+  if (!latestPersisted || hasEmotionBuffPatch(updates)) return candidate;
+  return {
+    ...candidate,
+    activeBuffs: latestPersisted.activeBuffs,
+    buffInjection: latestPersisted.buffInjection,
+  };
+};
+
 export const mergeGroupProfileUpdate = (
   current: GroupProfile,
   updates: Partial<GroupProfile>,

@@ -9,6 +9,7 @@ import {
   DEFAULT_OFFLINE_POV,
   detectOfflineAutoStart,
   detectOfflineScheduledStart,
+  formatOfflineRecentChatContext,
   generateOfflineOpening,
   hasOfflineSession,
   isOfflineSessionActive,
@@ -21,6 +22,7 @@ import {
   setOfflinePending,
   type OfflineEntry,
 } from './offlineMode';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 
 const entries: OfflineEntry[] = [
   { role: 'scene', text: '雨停在门口。', at: 1 },
@@ -36,6 +38,7 @@ describe('offline mode draft sessions', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('keeps draft sessions isolated per character id', () => {
@@ -153,6 +156,45 @@ describe('offline mode draft sessions', () => {
     expect(result.content).not.toContain('TAKEOUT_ORDER');
   });
 
+  it('labels stale online chat by date before feeding offline mode', () => {
+    const now = new Date(2026, 6, 10, 10, 0, 0, 0).getTime();
+    const ctx = formatOfflineRecentChatContext([
+      {
+        id: 1,
+        charId: 'char-1',
+        role: 'user',
+        type: 'text',
+        content: '最开始那句自便。',
+        timestamp: new Date(2026, 6, 6, 9, 15, 0, 0).getTime(),
+      },
+      {
+        id: 2,
+        charId: 'char-1',
+        role: 'assistant',
+        type: 'text',
+        content: '我把温热的虾粥端到桌边。',
+        timestamp: new Date(2026, 6, 9, 20, 30, 0, 0).getTime(),
+      },
+    ], '伊萨克', '我', now);
+
+    expect(ctx.text).toContain('[2026-07-06 09:15 · 4天前 09:15] 我: 最开始那句自便。');
+    expect(ctx.text).toContain('[2026-07-09 20:30 · 昨天 20:30] 伊萨克: 我把温热的虾粥端到桌边。');
+    expect(ctx.latestMessageAge).toBe('昨天 20:30');
+  });
+
+  it('clears stale memory palace injection when this turn retrieves nothing', async () => {
+    const char = {
+      id: 'char-empty',
+      memoryMode: 'cognitive_flow',
+      memoryPalaceEnabled: true,
+      memoryPalaceInjection: 'OLD MEMORY SHOULD NOT SURVIVE',
+    } as any;
+
+    await injectMemoryPalace(char, [], undefined, 'Me');
+
+    expect(char.memoryPalaceInjection).toBeUndefined();
+  });
+
   it('commits offline sessions as concise event records without leaking follow-up rules', async () => {
     const char = { id: 'char-1', name: 'Mia', avatar: 'mia.png' } as CharacterProfile;
 
@@ -207,6 +249,10 @@ describe('offline mode draft sessions', () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toContain('### [线下模式]');
+    expect(body.messages[0].content).toContain('### [时间线与记忆边界]');
+    expect(body.messages[0].content).toContain('几天前或昨天的食物、礼物、外卖、台词、动作');
+    expect(body.messages[0].content).toContain('你们此前在线上聊天');
+    expect(body.messages[0].content).not.toContain('你们刚刚还在线上聊天');
     expect(body.messages[0].content).toContain('Me 到 Mia 家门口见面。');
     expect(body.messages[1]).toMatchObject({
       role: 'user',

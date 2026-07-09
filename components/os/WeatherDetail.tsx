@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOS } from '../../context/OSContext';
-import { RealtimeContextManager, WeatherForecast } from '../../utils/realtimeContext';
+import { RealtimeContextManager, WeatherData, WeatherForecast } from '../../utils/realtimeContext';
 import { AppID } from '../../types';
 import WeatherGlyph from './WeatherGlyph';
 
@@ -25,9 +25,10 @@ const skyBackground = (icon?: string): string => {
 
 interface WeatherDetailProps {
     onClose: () => void;
+    onWeatherUpdate?: (weather: WeatherData) => void;
 }
 
-const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose }) => {
+const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose, onWeatherUpdate }) => {
     const { realtimeConfig, openApp } = useOS();
     const [forecast, setForecast] = useState<WeatherForecast | null>(null);
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -40,11 +41,11 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose }) => {
             force ? { requestLocationPermission: true } : undefined,
         )
             .then(f => {
-                if (f) { setForecast(f); setStatus('ready'); }
+                if (f) { setForecast(f); setStatus('ready'); onWeatherUpdate?.(f.current); }
                 else setStatus('error');
             })
             .catch(() => setStatus('error'));
-    }, [realtimeConfig]);
+    }, [realtimeConfig, onWeatherUpdate]);
 
     useEffect(() => { load(); }, [load]);
 

@@ -64,6 +64,10 @@ const messageSummary = (m: Message): string => {
   if (m.type === 'voice') return '[语音]';
   if (m.type === 'takeout_card') return '[饭票小票]';
   if (m.type === 'proposal_card') return '[求婚]';
+  if (m.type === 'parcel_card') {
+    const parcel = meta.parcel || {};
+    return `[${parcel.mode === 'travel_frog' ? '蛙游收件' : parcel.mode === 'proactive' ? '主动寄来' : '小包裹'}] ${parcel.emoji || '📦'}${parcel.itemName || '日常寄物'}`;
+  }
   if (m.type === 'call_log') return '[通话记录]';
   if (typeof m.content === 'string') return clip(m.content);
   return `[${m.type}]`;

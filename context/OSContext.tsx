@@ -49,7 +49,7 @@ import { extractThinkingChainFromCompletion, flattenContent, stripThinkBlocks } 
 import { sanitizeAssistantVisibleText } from '../utils/promptPrivacy';
 import { FORCE_REPLY_EVENT, FORCE_REPLY_STORAGE_KEY, extractForceReplyDirective, type ForceReplyEventDetail, type ForceReplyRequest } from '../utils/forceReply';
 import { extractCallUserDirective } from '../utils/callDirective';
-import { mergeCharacterProfileUpdate, mergeGroupProfileUpdate } from '../utils/profileUpdateMerge';
+import { mergeCharacterProfileUpdate, mergeGroupProfileUpdate, preserveCharacterEmotionState } from '../utils/profileUpdateMerge';
 import {
   CHAR_AVATAR_FROM_USER_IMAGE_APPLIED_EVENT,
   CHAR_AVATAR_FROM_USER_IMAGE_EVENT,
@@ -4063,7 +4063,24 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
     });
     if (target) {
-      try { await DB.saveCharacter(target); } catch (e) { console.warn('[updateCharacter] DB.saveCharacter failed:', e); }
+      let targetForSave = target;
+      try {
+        const persistedChars = await DB.getAllCharacters();
+        const persistedTarget = persistedChars.find(c => c.id === id) || null;
+        targetForSave = preserveCharacterEmotionState(target, persistedTarget, updates);
+        if (targetForSave.activeBuffs !== target.activeBuffs || targetForSave.buffInjection !== target.buffInjection) {
+          setCharacters(prev => prev.map(c => c.id === id
+            ? normalizeCharacterDefaults({
+                ...c,
+                activeBuffs: targetForSave.activeBuffs,
+                buffInjection: targetForSave.buffInjection,
+              })
+            : c));
+        }
+      } catch (e) {
+        console.warn('[updateCharacter] emotion preservation lookup failed:', e);
+      }
+      try { await DB.saveCharacter(targetForSave); } catch (e) { console.warn('[updateCharacter] DB.saveCharacter failed:', e); }
     }
   };
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };

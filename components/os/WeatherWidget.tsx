@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { RealtimeContextManager, WeatherData } from '../../utils/realtimeContext';
 import { AppID } from '../../types';
@@ -16,6 +16,9 @@ const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentC
     const { realtimeConfig, openApp } = useOS();
     const [weather, setWeather] = useState<WeatherData | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
+    const handleDetailWeatherUpdate = useCallback((nextWeather: WeatherData) => {
+        setWeather(nextWeather);
+    }, []);
     // geo 模式免密钥；manual 模式仍需 Key
     const mode = realtimeConfig.weatherMode || 'geo';
     const configured = !!(realtimeConfig.weatherEnabled && (mode !== 'manual' || realtimeConfig.weatherApiKey));
@@ -34,7 +37,7 @@ const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentC
 
     return (
         <>
-        {detailOpen && <WeatherDetail onClose={() => setDetailOpen(false)} />}
+        {detailOpen && <WeatherDetail onClose={() => setDetailOpen(false)} onWeatherUpdate={handleDetailWeatherUpdate} />}
         <div
             className="moro-widget-weather relative h-full w-full rounded-[1.75rem] px-4 py-4 cursor-pointer press-soft animate-rise-in overflow-hidden flex flex-col justify-between"
             style={{ color: contentColor, animationDelay: '40ms' }}

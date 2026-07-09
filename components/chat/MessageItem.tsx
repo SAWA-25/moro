@@ -2,7 +2,7 @@
 
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Message, ChatTheme, TakeoutOrder } from '../../types';
+import { Message, ChatTheme, TakeoutOrder, ChatParcelMeta } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { liveTakeoutStatus, STATUS_LABEL, etaText, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
 import { DB } from '../../utils/db';
@@ -2690,6 +2690,55 @@ const MessageItem = React.memo(({
                         </div>
                     </div>
                     {g.note && <div className="mt-2.5 text-[12px] leading-relaxed line-clamp-3" style={{ color: '#8a5345' }}>「{String(g.note).slice(0, 60)}」</div>}
+                </div>
+            </div>
+        );
+    }
+
+    if (m.type === 'parcel_card') {
+        // 日常寄物：回形针里的轻量互寄小包裹，不属于心意铺。
+        const p: Partial<ChatParcelMeta> = m.metadata?.parcel || {};
+        const fromName = p.fromName || (isUser ? '你' : charName);
+        const toName = p.toName || (isUser ? charName : '你');
+        const itemName = p.itemName || '一份小包裹';
+        const method = p.method || '日常寄来';
+        const fromChar = p.senderRole === 'char' || (!isUser && p.senderRole !== 'user');
+        const isTravelFrog = p.mode === 'travel_frog';
+        const isProactiveParcel = p.mode === 'proactive';
+        const routeText = fromChar ? `${fromName}${isProactiveParcel ? ' 主动寄给你' : ' 寄给你'}` : `你寄给 ${toName}`;
+        return commonLayout(
+            <div
+                className="w-64 rounded-[1.35rem] overflow-hidden relative"
+                style={isTravelFrog
+                    ? { background: 'linear-gradient(160deg,#fffdfa 0%,#edf7ee 52%,#eef4ff 100%)', border: '1px solid #cfe3da', boxShadow: '0 16px 30px -18px rgba(87,120,105,0.42)' }
+                    : isProactiveParcel
+                        ? { background: 'linear-gradient(160deg,#fffdfa 0%,#f7f1df 52%,#eef7f4 100%)', border: '1px solid #e7dec8', boxShadow: '0 16px 30px -18px rgba(111,106,77,0.36)' }
+                    : { background: 'linear-gradient(160deg,#fffdfa 0%,#eef7f4 54%,#fff4f7 100%)', border: '1px solid #d7e7df', boxShadow: '0 16px 30px -18px rgba(87,120,105,0.42)' }}
+            >
+                <div aria-hidden className="absolute -top-5 -right-3 text-[72px] opacity-10 select-none">{isTravelFrog ? '🏞️' : isProactiveParcel ? '💌' : '📦'}</div>
+                <div className="px-4 py-2.5 flex items-center justify-between relative" style={{ background: 'rgba(255,255,255,0.62)', borderBottom: '1px dashed rgba(90,49,64,0.18)' }}>
+                    <span className="text-[10px] font-mono font-black tracking-[0.24em] uppercase" style={{ color: isTravelFrog ? '#3e6a58' : isProactiveParcel ? '#6f6a4d' : '#5a3140' }}>{isTravelFrog ? 'Travel Mail' : isProactiveParcel ? 'Care Parcel' : 'Daily Parcel'}</span>
+                    <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full" style={{ background: '#fffdfa', color: '#608271', border: '1px solid #cfe3da' }}>{method}</span>
+                </div>
+                <div className="px-4 pt-3.5 pb-4 relative">
+                    <div className="flex items-center gap-3">
+                        <span className="w-12 h-12 rounded-[18px] bg-white/85 flex items-center justify-center text-[25px] shrink-0 shadow-sm" style={{ border: '1px solid rgba(215,231,223,0.9)' }}>
+                            {p.emoji || '📦'}
+                        </span>
+                        <div className="min-w-0">
+                            <div className="text-[14px] font-black truncate" style={{ color: '#334d42' }}>{itemName}</div>
+                            <div className="text-[11px] font-bold truncate" style={{ color: '#7d978a' }}>
+                                {routeText}
+                            </div>
+                        </div>
+                    </div>
+                    {isTravelFrog && (p.originLabel || p.travelSnippet) && (
+                        <div className="mt-3 rounded-2xl px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(255,255,255,0.62)', color: '#486d5b', border: '1px solid rgba(207,227,218,0.85)' }}>
+                            {p.originLabel && <div className="font-black truncate">来自：{p.originLabel}</div>}
+                            {p.travelSnippet && <div className="mt-0.5 line-clamp-2">{String(p.travelSnippet).slice(0, 80)}</div>}
+                        </div>
+                    )}
+                    {p.note && <div className="mt-3 rounded-2xl px-3 py-2 text-[12px] leading-relaxed line-clamp-3" style={{ background: 'rgba(255,255,255,0.66)', color: '#5a3140', border: '1px solid rgba(238,214,223,0.75)' }}>「{String(p.note).slice(0, 80)}」</div>}
                 </div>
             </div>
         );

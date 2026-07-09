@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Briefcase,
     Buildings,
@@ -90,7 +91,7 @@ const IconButton: React.FC<{ title: string; children: React.ReactNode; onClick?:
 
 const JobModal: React.FC<{ open: boolean; title: string; sub?: string; onClose: () => void; footer?: React.ReactNode; children: React.ReactNode }> = ({ open, title, sub, onClose, footer, children }) => {
     if (!open) return null;
-    return (
+    const modal = (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-5" onClick={onClose}>
             <div className="absolute inset-0 bg-black/40 animate-fade-in" style={{ backdropFilter: 'blur(6px)' }} />
             <div className="relative w-full max-w-sm animate-slide-up flex flex-col" style={{ background: '#fff', borderRadius: 24, boxShadow: '0 34px 80px -32px rgba(20,18,16,0.58)', maxHeight: '86vh' }} onClick={e => e.stopPropagation()}>
@@ -100,10 +101,11 @@ const JobModal: React.FC<{ open: boolean; title: string; sub?: string; onClose: 
                     {!sub && <div className="mb-4" />}
                     {children}
                 </div>
-                {footer && <div className="px-5 pb-5">{footer}</div>}
+                {footer && <div className="px-5 pb-5 shrink-0" style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}>{footer}</div>}
             </div>
         </div>
     );
+    return typeof document === 'undefined' ? modal : createPortal(modal, document.body);
 };
 
 const trimK = (n: number) => {
@@ -496,7 +498,7 @@ const BankJobCenter: React.FC<BankJobCenterProps> = ({
             {view === 'pipeline' && <div className="pt-2 space-y-3">{renderCurrentJob()}{renderPipelineView()}</div>}
             {view === 'resume' && <div className="pt-2">{renderResumeView()}</div>}
 
-            {jobModal && (
+            {jobModal && typeof document !== 'undefined' && createPortal((
                 <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center p-0 sm:p-5" onClick={() => setJobModalId(null)}>
                     <div className="absolute inset-0 bg-black/35 animate-fade-in" style={{ backdropFilter: 'blur(6px)' }} />
                     <div className="relative w-full max-w-md animate-slide-up flex flex-col" style={{ background: '#fff', borderRadius: '22px 22px 0 0', boxShadow: '0 -20px 70px -34px rgba(15,23,42,0.55)', maxHeight: '92vh' }} onClick={e => e.stopPropagation()}>
@@ -594,7 +596,7 @@ const BankJobCenter: React.FC<BankJobCenterProps> = ({
                                 </div>
                             ))}
                         </div>
-                        <div className="px-5 py-4" style={{ borderTop: `1px solid ${LINE}`, background: '#fff' }}>
+                        <div className="px-5 pt-4 shrink-0" style={{ borderTop: `1px solid ${LINE}`, background: '#fff', paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
                             {activeApplicationForModal ? (
                                 <button onClick={() => { setJobModalId(null); setView('pipeline'); onSelectApplication(activeApplicationForModal.id); }} className="w-full py-3 text-[15px] font-black active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5" style={{ background: TEAL, color: '#fff', borderRadius: 14 }}>
                                     查看求职进展
@@ -608,7 +610,7 @@ const BankJobCenter: React.FC<BankJobCenterProps> = ({
                         </div>
                     </div>
                 </div>
-            )}
+            ), document.body)}
 
             <JobModal
                 open={!!resultApplication}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CharacterProfile, GroupProfile } from '../types';
-import { mergeCharacterProfileUpdate, mergeGroupProfileUpdate } from './profileUpdateMerge';
+import { mergeCharacterProfileUpdate, mergeGroupProfileUpdate, preserveCharacterEmotionState } from './profileUpdateMerge';
 
 const baseChar = (): CharacterProfile => ({
   id: 'char-a',
@@ -115,6 +115,45 @@ describe('profile update merging', () => {
     expect(merged.emotionConfig?.moodApi?.model).toBe('mood');
     expect(merged.emotionConfig?.enabled).toBe(false);
     expect(merged.proactiveConfig).toMatchObject({ enabled: false, intervalMinutes: 60, randomMode: true });
+  });
+
+  it('keeps newer persisted emotion buffs when an unrelated background patch saves a stale character snapshot', () => {
+    const stale = {
+      ...baseChar(),
+      activeBuffs: [{ id: 'old', name: 'old_mood', label: '旧心情', intensity: 2 as const }],
+      buffInjection: '旧的情绪底色',
+    };
+    const latest = {
+      ...stale,
+      activeBuffs: [{ id: 'new', name: 'new_mood', label: '新心情', intensity: 3 as const }],
+      buffInjection: '新的情绪底色',
+    };
+    const updates: Partial<CharacterProfile> = { hideBeforeMessageId: 100 };
+    const candidate = mergeCharacterProfileUpdate(stale, updates);
+    const merged = preserveCharacterEmotionState(candidate, latest, updates);
+
+    expect(merged.activeBuffs?.[0]?.id).toBe('new');
+    expect(merged.buffInjection).toBe('新的情绪底色');
+    expect(merged.hideBeforeMessageId).toBe(100);
+  });
+
+  it('allows explicit emotion buff patches to clear or replace buffs', () => {
+    const current = {
+      ...baseChar(),
+      activeBuffs: [{ id: 'old', name: 'old_mood', label: '旧心情', intensity: 2 as const }],
+      buffInjection: '旧的情绪底色',
+    };
+    const latest = {
+      ...current,
+      activeBuffs: [{ id: 'new', name: 'new_mood', label: '新心情', intensity: 3 as const }],
+      buffInjection: '新的情绪底色',
+    };
+    const updates: Partial<CharacterProfile> = { activeBuffs: [], buffInjection: '' };
+    const candidate = mergeCharacterProfileUpdate(current, updates);
+    const merged = preserveCharacterEmotionState(candidate, latest, updates);
+
+    expect(merged.activeBuffs).toEqual([]);
+    expect(merged.buffInjection).toBe('');
   });
 
   it('merges group convo setting patches without dropping siblings', () => {

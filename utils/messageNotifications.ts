@@ -14,6 +14,7 @@ export const cleanMessagePreview = (content: string, type?: string): string => {
     if (type === 'takeout_card') return '[外卖小票]';
     if (type === 'proposal_card') return '[求婚]';
     if (type === 'gift_card') return '[礼物]';
+    if (type === 'parcel_card') return content?.includes('蛙游') ? '[蛙游收件]' : content?.includes('主动') ? '[主动寄来]' : '[小包裹]';
     return '[消息]';
 };
 

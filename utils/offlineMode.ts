@@ -5,6 +5,9 @@ import { RealtimeContextManager } from './realtimeContext';
 import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractTakeoutOrderDirective } from './takeout';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
+import { isMessageSemanticallyRelevant, normalizeMessageContent } from './messageFormat';
+import { offlineTemporalBoundaryPrompt } from './laiwangPrompts';
 import type { PresetMacroCtx } from './presets';
 
 /**
@@ -651,6 +654,8 @@ interface OfflineApi {
 const OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。';
 const OFFLINE_LLM_CONTINUE_ROUNDS = 2;
 const OFFLINE_LLM_CONTINUE_TIMEOUT_MS = 45_000;
+const OFFLINE_RECENT_MESSAGE_LIMIT = 30;
+const OFFLINE_RECENT_CONTEXT_LIMIT = 20;
 
 const callLLM = async (
     api: OfflineApi,
@@ -672,7 +677,6 @@ const callLLM = async (
         returnPartialOnContinueError: true,
         continueTimeoutMs: OFFLINE_LLM_CONTINUE_TIMEOUT_MS,
         continueMaxRetries: 0,
-        presetScope: 'creative.text',
         presetMacros,
         meta: makeApiUsageMeta('chat.offlineMode', {
             apiRole: api.apiRole || 'main',
@@ -683,14 +687,97 @@ const callLLM = async (
     })).trim();
 };
 
-const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
-    const core = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
-    const recent = await DB.getRecentMessagesByCharId(char.id, 30).catch(() => [] as Message[]);
-    const recentLines = recent
-        .filter(m => m.role !== 'system' && typeof m.content === 'string')
-        .slice(-20)
-        .map(m => `${m.role === 'user' ? userProfile.name : char.name}: ${String(m.content).slice(0, 200)}`)
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+const formatOfflineDateTime = (timestamp: number): string => {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知时间';
+    const d = new Date(timestamp);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+const formatOfflineNowText = (timestamp: number): string => {
+    const d = new Date(timestamp);
+    const week = '日一二三四五六'[d.getDay()] || '';
+    return `${formatOfflineDateTime(timestamp)} 周${week}`;
+};
+
+export const describeOfflineMessageAge = (timestamp: number, now: number = Date.now()): string => {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知时间';
+    const diffMs = now - timestamp;
+    if (diffMs < 0) return '未来时间';
+    const diffMins = Math.floor(diffMs / 60_000);
+    if (diffMins < 5) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+
+    const msgDate = new Date(timestamp);
+    const nowDate = new Date(now);
+    const msgDay = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate()).getTime();
+    const nowDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+    const dayDelta = Math.floor((nowDay - msgDay) / 86_400_000);
+    const hm = `${pad2(msgDate.getHours())}:${pad2(msgDate.getMinutes())}`;
+
+    if (dayDelta <= 0) {
+        const hours = Math.floor(diffMins / 60);
+        return `${Math.max(1, hours)}小时前`;
+    }
+    if (dayDelta === 1) return `昨天 ${hm}`;
+    if (dayDelta === 2) return `前天 ${hm}`;
+    if (dayDelta < 7) return `${dayDelta}天前 ${hm}`;
+    return formatOfflineDateTime(timestamp);
+};
+
+export interface OfflineRecentChatContext {
+    text: string;
+    latestMessageAge: string;
+    latestTimestamp?: number;
+}
+
+export const formatOfflineRecentChatContext = (
+    messages: Message[],
+    charName: string,
+    userName: string,
+    now: number = Date.now(),
+): OfflineRecentChatContext => {
+    const semantic = messages
+        .filter(m => m.role !== 'system' && isMessageSemanticallyRelevant(m))
+        .slice(-OFFLINE_RECENT_CONTEXT_LIMIT);
+
+    const lines = semantic.map(m => {
+        const speaker = m.role === 'user' ? userName : charName;
+        const content = normalizeMessageContent(m, charName, userName)
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 220);
+        return `[${formatOfflineDateTime(m.timestamp)} · ${describeOfflineMessageAge(m.timestamp, now)}] ${speaker}: ${content || '（空消息）'}`;
+    });
+    const latest = semantic[semantic.length - 1];
+    return {
+        text: lines.join('\n') || '（你们还没怎么聊过）',
+        latestMessageAge: latest ? describeOfflineMessageAge(latest.timestamp, now) : '没有可用的线上聊天记录',
+        latestTimestamp: latest?.timestamp,
+    };
+};
+
+const buildOfflineRecallQueryHint = (recentContext: OfflineRecentChatContext, scenario?: string): string => {
+    const recentTail = recentContext.text
+        .split('\n')
+        .filter(Boolean)
+        .slice(-8)
         .join('\n');
+    return [
+        '线下模式：当前要从线上聊天切换到面对面现场。检索与最新聊天、见面约定、已完成/未完成状态相关的记忆；旧食物、旧台词和旧外卖只作为背景，不要当成当前仍在发生。',
+        scenario?.trim() ? `这场见面方式：${scenario.trim().slice(0, 600)}` : '',
+        recentTail ? `带时间戳的线上聊天片段：\n${recentTail}` : '',
+    ].filter(Boolean).join('\n\n');
+};
+
+const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
+    const now = Date.now();
+    const recent = await DB.getRecentMessagesByCharId(char.id, OFFLINE_RECENT_MESSAGE_LIMIT).catch(() => [] as Message[]);
+    const recentContext = formatOfflineRecentChatContext(recent, char.name, userProfile.name, now);
+    try {
+        await injectMemoryPalace(char, recent, buildOfflineRecallQueryHint(recentContext), userProfile.name);
+    } catch { /* 线下现场不能被记忆召回失败卡住 */ }
+    const core = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
     // 实时感知·线下（会话设置）：开启后把当前真实时间告诉模型，让线下场景贴着现实钟点。
     let clockBlock = '';
     if (char.convoSettings?.realtimeClockOffline) {
@@ -699,16 +786,25 @@ const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile
             clockBlock = `\n\n### [当前真实时间]\n现在是 ${t.dateStr} ${t.dayOfWeek} ${t.timeOfDay} ${t.timeStr}，这场见面就发生在此刻，请让环境、光线和你们的状态贴合这个时间。`;
         } catch { /* 取时间失败时静默跳过 */ }
     }
+    const temporalBoundary = offlineTemporalBoundaryPrompt({
+        nowText: formatOfflineNowText(now),
+        charName: char.name,
+        userName: userProfile.name,
+        latestMessageAge: recentContext.latestMessageAge,
+    });
     return `${core}
 
 ### [最近的线上聊天]
-${recentLines || '（你们还没怎么聊过）'}
+${recentContext.text}
+
+${temporalBoundary}
 
 ### [线下模式]
-你们刚刚还在线上聊天（见上面[最近的线上聊天]），现在对话发展到了见面情境，切换成线下面对面模式。
+你们此前在线上聊天（见上面[最近的线上聊天]），现在对话发展到了见面情境，切换成线下面对面模式。
 **这场见面是上面那段线上聊天的直接延续**，请把它当成同一段关系、同一条时间线上的事：
 - 承接线上聊到的话题、约定、心情和未说完的话，自然延续，而不是另起一段毫无关联的剧情；
 - 记得你们线上是什么关系、聊到哪儿了，见面时的熟悉度、语气、称呼都要和线上一致；
+- 严格按[时间线与记忆边界]判断哪些内容是刚发生、哪些只是旧背景；不要把昨天或几天前已经吃过、说过、送过、结束过的东西重新写成当前现场正在发生；
 - 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开；
 - 现场反应要像真人刚碰面：先看见对方、听见周围声音、注意到衣着/气味/天气/手里的东西，再决定怎么开口或靠近，不要直接跳成总结、告白或大段独白；
 - 关系没到的地方不要硬亲密，性格克制的人可以尴尬、嘴硬、岔开，熟悉的人也可以用玩笑、沉默或顺手的小动作表达。
