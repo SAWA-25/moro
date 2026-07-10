@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneCheckMode, PhoneCheckSession, PhoneEvidence, PhoneCustomApp, PhoneProfile, SocialPost, XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun } from '../types';
+import { CharacterProfile, Message, PhoneCheckMode, PhoneCheckSession, PhoneEvidence, PhoneCustomApp, PhoneProfile, SocialPost, XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { extractContent } from '../utils/safeApi';
@@ -514,13 +514,19 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         setIsRefreshingPhoneStatus(true);
         try {
             const promptUserName = userProfile?.name || '用户';
-            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` });
+            const [fullUserSetting, recentMessages] = await Promise.all([
+                buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` }),
+                auxApi.baseUrl && auxApi.model
+                    ? DB.getRecentMessagesByCharId(targetChar.id, 20, true).catch(() => [] as Message[])
+                    : Promise.resolve([] as Message[]),
+            ]);
             const nextSnapshot = await generateXunjiRealtimeSnapshot({
                 char: targetChar,
                 previous: xunjiSnapshot,
                 api: auxApi.baseUrl && auxApi.model ? { baseUrl: auxApi.baseUrl, apiKey: auxApi.apiKey, model: auxApi.model } : null,
                 userSetting: fullUserSetting,
                 userName: promptUserName,
+                recentMessages,
             });
             const nextReports = generateXunjiReports({
                 char: targetChar,

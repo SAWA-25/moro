@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     BankShopState, DollhouseState, DollhouseRoom, DollhouseSticker,
-    ShopStaff, CharacterProfile, UserProfile, APIConfig, RoomLayout
+    ShopStaff, CharacterProfile, UserProfile, APIConfig, RoomLayout, BankLifeShopProduct
 } from '../../types';
 import {
     ROOM_LAYOUTS, WALLPAPER_PRESETS, FLOOR_PRESETS, STICKER_LIBRARY, INITIAL_DOLLHOUSE,
@@ -17,6 +17,7 @@ const WEATHER_TINT: Record<string, string> = {
 };
 import BankAssetIcon, { isBankAssetUrl } from './BankAssetIcon';
 import {
+    BANK_PIXEL_CUSTOMER_DEFS,
     bankPixelRef,
     bankPixelStyle,
     getBankPixelAssetMeta,
@@ -66,6 +67,22 @@ interface CustomFurnitureAsset {
     url: string;
 }
 
+type AmbientCustomerMood = 'browsing' | 'happy' | 'curious' | 'impatient' | 'photo' | 'buying';
+
+interface AmbientShopCustomer {
+    id: string;
+    typeId: string;
+    name: string;
+    avatar: string;
+    roomId: string;
+    x: number;
+    y: number;
+    scale: number;
+    mood: AmbientCustomerMood;
+    reaction: string;
+    leaveAt: number;
+}
+
 interface Props {
     shopState: BankShopState;
     dollhouseState: DollhouseState;
@@ -79,6 +96,8 @@ interface Props {
     onOpenGuestbook: () => void;
     /** 擦吧台攒 AP：返回本次实得 AP（0 = 冷却中） */
     onWipeCounter?: () => Promise<number>;
+    onRemoveShopProduct?: (productId: string) => Promise<void>;
+    shopProducts?: BankLifeShopProduct[];
 }
 
 // 咖啡店「默认布景」——纯展示层，只在主店铺、且用户没自定义「全屋贴图」时渲染。
@@ -276,7 +295,7 @@ const PixelCafeBackdrop = React.memo(({ isOpen }: { isOpen: boolean }) => (
 ));
 
 const BankDollhouse: React.FC<Props> = ({
-    shopState, dollhouseState, onDollhouseChange, characters, updateState, onConsumeDecorEnergy, onStaffClick, onOpenGuestbook, onWipeCounter
+    shopState, dollhouseState, onDollhouseChange, characters, updateState, onConsumeDecorEnergy, onStaffClick, onOpenGuestbook, onWipeCounter, onRemoveShopProduct, shopProducts = []
 }) => {
     const { addToast } = useOS();
 
@@ -336,6 +355,7 @@ const BankDollhouse: React.FC<Props> = ({
     const [editMode, setEditMode] = useState(false);
     const [draggingActorId, setDraggingActorId] = useState<string | null>(null);
     const [actorPositions, setActorPositions] = useState<Record<string, { x: number; y: number }>>({});
+    const [ambientCustomers, setAmbientCustomers] = useState<AmbientShopCustomer[]>([]);
 
     const longPressTimerRef = useRef<number | null>(null);
     const dragStateRef = useRef<{ actorId: string; roomId: string; isVisitor: boolean } | null>(null);
@@ -358,15 +378,23 @@ const BankDollhouse: React.FC<Props> = ({
 
     // Sticker drag state
     const [draggingStickerInfo, setDraggingStickerInfo] = useState<{ stickerId: string; roomId: string; surface: string } | null>(null);
+    const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+    const [resizingStickerInfo, setResizingStickerInfo] = useState<{ stickerId: string; roomId: string; startX: number; startY: number; startScale: number; baseSize: number } | null>(null);
     const stickerLongPressRef = useRef<number | null>(null);
     // Local sticker positions during drag (avoids rapid DB writes)
     const [localStickerPos, setLocalStickerPos] = useState<Record<string, { x: number; y: number }>>({});
+    const [localStickerScale, setLocalStickerScale] = useState<Record<string, number>>({});
+    const localStickerScaleRef = useRef<Record<string, number>>({});
     // Trash zone hover during sticker drag
     const [overTrash, setOverTrash] = useState(false);
     const trashRef = useRef<HTMLDivElement>(null);
 
     // --- Local scale for debounced slider ---
     const [localRoomScale, setLocalRoomScale] = useState<number | null>(null);
+
+    useEffect(() => {
+        localStickerScaleRef.current = localStickerScale;
+    }, [localStickerScale]);
 
     // Convert base64 room textures to stable Blob URLs to prevent flickering on re-render.
     // When the parent re-renders (e.g. actor idle movement every 3.2s), a base64 src forces
@@ -407,6 +435,7 @@ const BankDollhouse: React.FC<Props> = ({
         x: Math.max(8, Math.min(92, x)),
         y: Math.max(56, Math.min(92, y)),
     });
+    const clampStickerScale = (scale: number) => Math.max(0.25, Math.min(4, scale));
 
     // Save dollhouse directly to its own DB record (same pattern as RoomApp's saveRoom)
     const saveDollhouse = async (updater: DollhouseState | ((prev: DollhouseState) => DollhouseState)) => {
@@ -508,6 +537,110 @@ const BankDollhouse: React.FC<Props> = ({
     const activeRoom = orderedRooms.find(r => r.id === activeRoomId) || orderedRooms[0];
     const activeRoomIndex = orderedRooms.findIndex(r => r.id === activeRoom.id);
 
+    const shopProductsById = useMemo(
+        () => new Map(shopProducts.map(product => [product.id, product])),
+        [shopProducts]
+    );
+
+    const pickAmbientCustomerReaction = (room: DollhouseRoom, customer: typeof BANK_PIXEL_CUSTOMER_DEFS[number]): { mood: AmbientCustomerMood; reaction: string } => {
+        const productStickers = room.stickers.filter(sticker => sticker.kind === 'shop-product' && sticker.productId);
+        const placedProducts = productStickers
+            .map(sticker => shopProductsById.get(sticker.productId || ''))
+            .filter((product): product is BankLifeShopProduct => Boolean(product));
+        const stockedProducts = placedProducts.filter(product => !product.needsRestock && product.stock > 0);
+        const restockProducts = placedProducts.filter(product => product.needsRestock || product.stock <= 0);
+        const decorCount = room.stickers.filter(sticker => sticker.kind !== 'shop-product').length;
+        const hasStaffNearby = room.staffIds.length > 0 || (room.id === MAIN_ROOM_ID && shopState.staff.length > 0);
+
+        if (restockProducts.length > 0 && Math.random() < 0.4) {
+            const product = randOf(restockProducts);
+            return { mood: 'impatient', reaction: `想买${product.name}，但货架要先补货。` };
+        }
+        if (stockedProducts.length > 0 && Math.random() < 0.55) {
+            const product = randOf(stockedProducts);
+            return { mood: 'buying', reaction: `${product.name}摆得很顺手，我想拿一份。` };
+        }
+        if (productStickers.length === 0 && Math.random() < 0.65) {
+            return { mood: 'curious', reaction: '货架还空着，我先看看装修和座位。' };
+        }
+        if (decorCount > 0 && Math.random() < 0.35) {
+            return { mood: 'photo', reaction: '这个角落好适合拍照，摆件也很有记忆点。' };
+        }
+        if (hasStaffNearby && Math.random() < 0.35) {
+            return { mood: 'happy', reaction: '店员招呼得很快，逛起来很舒服。' };
+        }
+        const fallback = [
+            '我先绕一圈看看今天有什么新东西。',
+            '店里的动线挺顺，货架一眼就能看到。',
+            '这个小店有点像会呼吸的经营游戏现场。',
+            `我是${customer.name}，${customer.trait}。`,
+        ];
+        return { mood: Math.random() < 0.5 ? 'browsing' : 'happy', reaction: randOf(fallback) };
+    };
+
+    useEffect(() => {
+        if (!shopState.isBusinessOpen) {
+            setAmbientCustomers([]);
+            return;
+        }
+
+        const spawnOrRefreshCustomers = () => {
+            const unlockedRooms = orderedRooms.filter(room => room.isUnlocked);
+            setAmbientCustomers(prev => {
+                const now = Date.now();
+                if (unlockedRooms.length === 0) return [];
+                const allowedRoomIds = new Set(unlockedRooms.map(room => room.id));
+                const living = prev.filter(customer => customer.leaveAt > now && allowedRoomIds.has(customer.roomId));
+                const maxCustomers = Math.min(8, 3 + Math.floor((shopState.shopLevel || 1) / 2) + (shopState.staff.length >= 3 ? 1 : 0));
+                if (living.length >= maxCustomers) return living;
+                if (living.length > 0 && Math.random() > 0.68) return living;
+
+                const usedTypes = new Set(living.map(customer => customer.typeId));
+                const availableDefs = BANK_PIXEL_CUSTOMER_DEFS.filter(customer => !usedTypes.has(customer.id));
+                const def = randOf(availableDefs.length ? availableDefs : BANK_PIXEL_CUSTOMER_DEFS);
+                const mainRoom = unlockedRooms.find(room => room.id === MAIN_ROOM_ID);
+                const targetRoom = mainRoom && Math.random() < 0.68 ? mainRoom : randOf(unlockedRooms);
+                const pos = clampActorPos(16 + Math.random() * 68, 68 + Math.random() * 18);
+                const { mood, reaction } = pickAmbientCustomerReaction(targetRoom, def);
+                return [
+                    ...living,
+                    {
+                        id: `ambient-${def.id}-${now}-${Math.random().toString(36).slice(2, 5)}`,
+                        typeId: def.id,
+                        name: def.name,
+                        avatar: bankPixelRef(def.assetId, 64),
+                        roomId: targetRoom.id,
+                        x: pos.x,
+                        y: pos.y,
+                        scale: 1.18 + Math.random() * 0.18,
+                        mood,
+                        reaction,
+                        leaveAt: now + 26000 + Math.random() * 24000,
+                    },
+                ];
+            });
+        };
+
+        const first = window.setTimeout(spawnOrRefreshCustomers, 700);
+        const timer = window.setInterval(spawnOrRefreshCustomers, 5200);
+        return () => {
+            window.clearTimeout(first);
+            window.clearInterval(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shopState.isBusinessOpen, shopState.shopLevel, shopState.staff.length, dh.rooms, shopProductsById]);
+
+    useEffect(() => {
+        if (ambientCustomers.length === 0) return;
+        const timer = window.setInterval(() => {
+            if (Math.random() > 0.58) return;
+            const customer = randOf(ambientCustomers);
+            showQuip(customer.id, customer.reaction);
+        }, 7600);
+        return () => window.clearInterval(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ambientCustomers]);
+
     useEffect(() => {
         const next: Record<string, { x: number; y: number }> = {};
         shopState.staff.forEach(staff => {
@@ -516,9 +649,12 @@ const BankDollhouse: React.FC<Props> = ({
         if (shopState.activeVisitor?.charId) {
             next[shopState.activeVisitor.charId] = clampActorPos(shopState.activeVisitor.x ?? 55, shopState.activeVisitor.y ?? 76);
         }
+        ambientCustomers.forEach(customer => {
+            next[customer.id] = clampActorPos(customer.x, customer.y);
+        });
         setActorPositions(next);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shopState.staff, shopState.activeVisitor?.charId, shopState.activeVisitor?.x, shopState.activeVisitor?.y]);
+    }, [shopState.staff, shopState.activeVisitor?.charId, shopState.activeVisitor?.x, shopState.activeVisitor?.y, ambientCustomers]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -702,10 +838,15 @@ const BankDollhouse: React.FC<Props> = ({
     };
 
     const handleDeleteSticker = async (roomId: string, stickerId: string) => {
+        const sticker = dollhouseState.rooms.find(r => r.id === roomId)?.stickers.find(s => s.id === stickerId);
         await saveDollhouse(prev => ({
             ...prev,
             rooms: prev.rooms.map(r => r.id === roomId ? { ...r, stickers: r.stickers.filter(s => s.id !== stickerId) } : r)
         }));
+        setSelectedStickerId(prev => prev === stickerId ? null : prev);
+        if (sticker?.kind === 'shop-product' && sticker.productId) {
+            await onRemoveShopProduct?.(sticker.productId);
+        }
     };
 
     const cancelStickerLongPress = () => {
@@ -715,10 +856,16 @@ const BankDollhouse: React.FC<Props> = ({
         }
     };
 
-    const handleStickerPressStart = (stickerId: string, roomId: string, surface: string) => {
+    const handleStickerPressStart = (sticker: DollhouseSticker, roomId: string) => {
         cancelStickerLongPress();
+        setSelectedStickerId(sticker.id);
+        if (editMode) {
+            setDraggingStickerInfo({ stickerId: sticker.id, roomId, surface: sticker.surface });
+            setOverTrash(false);
+            return;
+        }
         stickerLongPressRef.current = window.setTimeout(() => {
-            setDraggingStickerInfo({ stickerId, roomId, surface });
+            setDraggingStickerInfo({ stickerId: sticker.id, roomId, surface: sticker.surface });
         }, 280);
     };
 
@@ -781,6 +928,22 @@ const BankDollhouse: React.FC<Props> = ({
         }
     };
 
+    const handleStickerResizeStart = (event: React.PointerEvent, roomId: string, sticker: DollhouseSticker, baseSize: number) => {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelStickerLongPress();
+        setSelectedStickerId(sticker.id);
+        setDraggingStickerInfo(null);
+        setResizingStickerInfo({
+            stickerId: sticker.id,
+            roomId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startScale: localStickerScale[sticker.id] ?? sticker.scale,
+            baseSize,
+        });
+    };
+
     useEffect(() => {
         if (!draggingStickerInfo) return;
         const finishDrag = (event: PointerEvent) => {
@@ -794,13 +957,53 @@ const BankDollhouse: React.FC<Props> = ({
         };
     }, [draggingStickerInfo, overTrash, localStickerPos]);
 
+    useEffect(() => {
+        if (!resizingStickerInfo) return;
+        const info = resizingStickerInfo;
+        const move = (event: PointerEvent) => {
+            event.preventDefault();
+            const delta = ((event.clientX - info.startX) + (event.clientY - info.startY)) / Math.max(40, info.baseSize);
+            const nextScale = clampStickerScale(info.startScale + delta);
+            localStickerScaleRef.current = { ...localStickerScaleRef.current, [info.stickerId]: nextScale };
+            setLocalStickerScale(prev => ({ ...prev, [info.stickerId]: nextScale }));
+        };
+        const finish = async () => {
+            const nextScale = localStickerScaleRef.current[info.stickerId];
+            if (typeof nextScale === 'number') {
+                await saveDollhouse(prev => ({
+                    ...prev,
+                    rooms: prev.rooms.map(r => r.id === info.roomId ? {
+                        ...r,
+                        stickers: r.stickers.map(s =>
+                            s.id === info.stickerId ? { ...s, scale: clampStickerScale(nextScale) } : s
+                        )
+                    } : r)
+                }));
+            }
+            setLocalStickerScale(prev => {
+                const next = { ...prev };
+                delete next[info.stickerId];
+                return next;
+            });
+            setResizingStickerInfo(null);
+        };
+        window.addEventListener('pointermove', move, { passive: false });
+        window.addEventListener('pointerup', finish);
+        window.addEventListener('pointercancel', finish);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', finish);
+            window.removeEventListener('pointercancel', finish);
+        };
+    }, [resizingStickerInfo]);
+
     const handleStickerScaleChange = async (roomId: string, stickerId: string, delta: number) => {
         await saveDollhouse(prev => ({
             ...prev,
             rooms: prev.rooms.map(r => r.id === roomId ? {
                 ...r,
                 stickers: r.stickers.map(s =>
-                    s.id === stickerId ? { ...s, scale: Math.max(0.3, Math.min(3, s.scale + delta)) } : s
+                    s.id === stickerId ? { ...s, scale: clampStickerScale(s.scale + delta) } : s
                 )
             } : r)
         }));
@@ -1060,6 +1263,91 @@ const BankDollhouse: React.FC<Props> = ({
         const floorStickers = room.stickers.filter(s => s.surface === 'floor');
 
         const isPlacing = placingFurniture && room.id === activeRoom.id;
+        const renderSticker = (sticker: DollhouseSticker) => {
+            const isDraggingThis = draggingStickerInfo?.stickerId === sticker.id;
+            const isResizingThis = resizingStickerInfo?.stickerId === sticker.id;
+            const isSelected = selectedStickerId === sticker.id || isDraggingThis || isResizingThis;
+            const pixelMeta = decorPixelMeta(sticker.url);
+            const pixelSize = pixelMeta?.defaultSize;
+            const pixelSrc = resolveBankPixelSrc(sticker.url, pixelSize);
+            const stickerSrc = pixelSrc || resolveDecorSrc(sticker.url);
+            const isImage = !!stickerSrc && (Boolean(pixelSrc) || isBankAssetUrl(sticker.url));
+            const stkPos = localStickerPos[sticker.id] || { x: sticker.x, y: sticker.y };
+            const baseSize = pixelSize || 64;
+            const effectiveScale = localStickerScale[sticker.id] ?? sticker.scale;
+            return (
+                <div
+                    key={sticker.id}
+                    className={`absolute select-none group/sticker ${
+                        isDraggingThis ? 'cursor-grabbing' : editMode ? 'cursor-grab' : 'cursor-pointer'
+                    } ${isSelected ? 'ring-2 ring-[#FF8E6B] ring-offset-1 rounded-lg' : ''} transition-transform`}
+                    style={{
+                        left: `${stkPos.x}%`,
+                        top: `${stkPos.y}%`,
+                        transform: `translate(-50%, -50%) scale(${effectiveScale}) ${isDraggingThis ? 'scale(1.08)' : ''}`,
+                        zIndex: isDraggingThis || isResizingThis ? 50 : isSelected ? Math.max(45, sticker.zIndex) : sticker.zIndex,
+                        fontSize: '1.5rem',
+                    }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedStickerId(sticker.id); }}
+                    onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker, room.id); }}
+                    onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
+                >
+                    {isImage
+                        ? <img
+                            src={stickerSrc}
+                            alt=""
+                            className="object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]"
+                            style={{
+                                width: baseSize,
+                                height: baseSize,
+                                ...(pixelSrc ? pixelated : {}),
+                            }}
+                            draggable={false}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                        : <span className="block text-[64px] leading-none drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]">{sticker.url}</span>}
+                    {editMode && isSelected && (
+                        <>
+                            <div
+                                className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40"
+                                style={{ transform: `scale(${1 / Math.max(0.4, effectiveScale)})`, transformOrigin: 'top left' }}
+                            >
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, 0.15); }}
+                                    onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
+                                    className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
+                                >+</button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, -0.15); }}
+                                    onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
+                                    className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
+                                >-</button>
+                                <button
+                                    title="删除家具"
+                                    onClick={(e) => { e.stopPropagation(); void handleDeleteSticker(room.id, sticker.id).then(() => addToast('家具已删除', 'success')); }}
+                                    onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
+                                    className="w-5 h-5 rounded-full bg-white/90 border border-[#F2B8B5] shadow-sm flex items-center justify-center text-[#B42318] active:scale-90 transition-transform"
+                                ><Trash size={12} weight="bold" /></button>
+                            </div>
+                            <button
+                                type="button"
+                                title="拖动调整大小"
+                                aria-label="拖动调整家具大小"
+                                className="absolute -right-3 -bottom-3 z-40 h-7 w-7 cursor-nwse-resize border-2 bg-[#FF8E6B] shadow-[2px_2px_0_rgba(34,27,27,0.35)] active:scale-95"
+                                style={{
+                                    borderColor: PIXEL_INK,
+                                    transform: `scale(${1 / Math.max(0.4, effectiveScale)})`,
+                                    transformOrigin: 'center',
+                                }}
+                                onPointerDown={(e) => handleStickerResizeStart(e, room.id, sticker, baseSize)}
+                            >
+                                <span className="absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-white" />
+                            </button>
+                        </>
+                    )}
+                </div>
+            );
+        };
 
         return (
             <div className="w-full h-full overflow-hidden border-4 shadow-[6px_6px_0_rgba(34,27,27,0.28)] bg-[#f7e7b7]" style={{ borderColor: PIXEL_INK }}>
@@ -1074,6 +1362,7 @@ const BankDollhouse: React.FC<Props> = ({
                     onPointerLeave={handleRoomPointerUp}
                     onClick={() => {
                         if (isPlacing) handlePlacementConfirm();
+                        else if (editMode) setSelectedStickerId(null);
                     }}
                 >
                     {/* Wall */}
@@ -1085,59 +1374,7 @@ const BankDollhouse: React.FC<Props> = ({
                         onPointerCancel={() => { void handleStickerPointerUp(); }}
                     >
                         <div className="absolute inset-0 opacity-[0.18]" style={{ backgroundImage: 'linear-gradient(90deg, rgba(34,27,27,0.22) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.20) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
-                        {!locked && wallStickers.map(sticker => {
-                            const isDraggingThis = draggingStickerInfo?.stickerId === sticker.id;
-                            const pixelMeta = decorPixelMeta(sticker.url);
-                            const pixelSize = pixelMeta?.defaultSize;
-                            const pixelSrc = resolveBankPixelSrc(sticker.url, pixelSize);
-                            const stickerSrc = pixelSrc || resolveDecorSrc(sticker.url);
-                            const isImage = !!stickerSrc && (Boolean(pixelSrc) || isBankAssetUrl(sticker.url));
-                            const stkPos = localStickerPos[sticker.id] || { x: sticker.x, y: sticker.y };
-                            return (
-                                <div
-                                    key={sticker.id}
-                                    className={`absolute select-none group/sticker ${isDraggingThis ? 'cursor-grabbing ring-2 ring-[#FF8E6B] ring-offset-1 rounded-lg' : 'cursor-grab'} transition-transform`}
-                                    style={{ left: `${stkPos.x}%`, top: `${stkPos.y}%`, transform: `translate(-50%, -50%) scale(${sticker.scale}) ${isDraggingThis ? 'scale(1.1)' : ''}`, zIndex: isDraggingThis ? 50 : sticker.zIndex, fontSize: '1.5rem' }}
-                                    onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
-                                    onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
-                                >
-                                    {isImage
-                                        ? <img
-                                            src={stickerSrc}
-                                            alt=""
-                                            className="object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]"
-                                            style={{
-                                                width: pixelSize || 64,
-                                                height: pixelSize || 64,
-                                                ...(pixelSrc ? pixelated : {}),
-                                            }}
-                                            draggable={false}
-                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                        />
-                                        : <span className="block text-[64px] leading-none drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]">{sticker.url}</span>}
-                                    {editMode && (
-                                        <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, 0.15); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
-                                            >+</button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, -0.15); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
-                                            >-</button>
-                                            <button
-                                                title="删除家具"
-                                                onClick={(e) => { e.stopPropagation(); void handleDeleteSticker(room.id, sticker.id).then(() => addToast('家具已删除', 'success')); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#F2B8B5] shadow-sm flex items-center justify-center text-[#B42318] active:scale-90 transition-transform"
-                                            ><Trash size={12} weight="bold" /></button>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                        {!locked && wallStickers.map(renderSticker)}
                     </div>
 
                     {/* Floor */}
@@ -1149,59 +1386,7 @@ const BankDollhouse: React.FC<Props> = ({
                         onPointerCancel={() => { void handleStickerPointerUp(); }}
                     >
                         <div className="absolute inset-0 opacity-[0.18]" style={{ backgroundImage: 'linear-gradient(0deg, rgba(34,27,27,0.32) 2px, transparent 2px),linear-gradient(90deg, rgba(255,255,255,0.15) 2px, transparent 2px)', backgroundSize: '24px 16px' }} />
-                        {!locked && floorStickers.map(sticker => {
-                            const isDraggingThis = draggingStickerInfo?.stickerId === sticker.id;
-                            const pixelMeta = decorPixelMeta(sticker.url);
-                            const pixelSize = pixelMeta?.defaultSize;
-                            const pixelSrc = resolveBankPixelSrc(sticker.url, pixelSize);
-                            const stickerSrc = pixelSrc || resolveDecorSrc(sticker.url);
-                            const isImage = !!stickerSrc && (Boolean(pixelSrc) || isBankAssetUrl(sticker.url));
-                            const stkPos = localStickerPos[sticker.id] || { x: sticker.x, y: sticker.y };
-                            return (
-                                <div
-                                    key={sticker.id}
-                                    className={`absolute select-none group/sticker ${isDraggingThis ? 'cursor-grabbing ring-2 ring-[#FF8E6B] ring-offset-1 rounded-lg' : 'cursor-grab'} transition-transform`}
-                                    style={{ left: `${stkPos.x}%`, top: `${stkPos.y}%`, transform: `translate(-50%, -50%) scale(${sticker.scale}) ${isDraggingThis ? 'scale(1.1)' : ''}`, zIndex: isDraggingThis ? 50 : sticker.zIndex, fontSize: '1.5rem' }}
-                                    onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
-                                    onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
-                                >
-                                    {isImage
-                                        ? <img
-                                            src={stickerSrc}
-                                            alt=""
-                                            className="object-contain drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]"
-                                            style={{
-                                                width: pixelSize || 64,
-                                                height: pixelSize || 64,
-                                                ...(pixelSrc ? pixelated : {}),
-                                            }}
-                                            draggable={false}
-                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                        />
-                                        : <span className="block text-[64px] leading-none drop-shadow-[3px_3px_0_rgba(34,27,27,0.25)]">{sticker.url}</span>}
-                                    {editMode && (
-                                        <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, 0.15); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
-                                            >+</button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); void handleStickerScaleChange(room.id, sticker.id, -0.15); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#E0CBBA] shadow-sm flex items-center justify-center text-[10px] font-bold text-[#6B4528] active:scale-90 transition-transform"
-                                            >-</button>
-                                            <button
-                                                title="删除家具"
-                                                onClick={(e) => { e.stopPropagation(); void handleDeleteSticker(room.id, sticker.id).then(() => addToast('家具已删除', 'success')); }}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelStickerLongPress(); }}
-                                                className="w-5 h-5 rounded-full bg-white/90 border border-[#F2B8B5] shadow-sm flex items-center justify-center text-[#B42318] active:scale-90 transition-transform"
-                                            ><Trash size={12} weight="bold" /></button>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                        {!locked && floorStickers.map(renderSticker)}
                     </div>
 
                     {/* 默认咖啡店布景：仅主店铺、且无自定义全屋贴图时显示（纯展示、不写存档） */}
@@ -1332,6 +1517,48 @@ const BankDollhouse: React.FC<Props> = ({
                         );
                     })}
 
+                    {/* Ambient Pixel Customers */}
+                    {!locked && ambientCustomers.filter(customer => customer.roomId === room.id).map(customer => {
+                        const pos = actorPositions[customer.id] || clampActorPos(customer.x, customer.y);
+                        const customerSrc = resolveBankPixelSrc(customer.avatar, 64) || resolveBankPixelSrc(bankPixelRef('customer/office-runner', 64));
+                        const effectId = customer.mood === 'impatient'
+                            ? 'effect/zzz'
+                            : customer.mood === 'happy' || customer.mood === 'buying'
+                                ? 'effect/heart'
+                                : customer.mood === 'photo' || customer.mood === 'curious'
+                                    ? 'effect/sparkles'
+                                    : '';
+                        const effectSrc = effectId ? resolveBankPixelSrc(bankPixelRef(effectId, 64), 64) : undefined;
+                        return (
+                            <div
+                                key={customer.id}
+                                className="absolute cursor-pointer select-none group/customer transition-[left,top] duration-300 ease-out"
+                                style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -100%)', zIndex: 33 }}
+                                onPointerUp={(e) => { e.stopPropagation(); showQuip(customer.id, customer.reaction); }}
+                            >
+                                {quips[customer.id] && (
+                                    <div className="absolute left-1/2 bottom-full mb-1 -translate-x-1/2 px-2 py-1 rounded-xl text-[10px] font-bold leading-snug animate-fade-in z-40" style={{ background: '#fffef9', color: '#6b4528', boxShadow: '0 3px 10px rgba(96,66,40,0.25)', border: '1px solid #efdcc4', maxWidth: 160, width: 'max-content' }}>
+                                        {quips[customer.id]}
+                                        <span className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45" style={{ background: '#fffef9', borderRight: '1px solid #efdcc4', borderBottom: '1px solid #efdcc4' }} />
+                                    </div>
+                                )}
+                                {effectSrc && (
+                                    <img
+                                        src={effectSrc}
+                                        alt=""
+                                        className="absolute -top-7 -right-4 w-9 h-9 animate-bounce pointer-events-none"
+                                        draggable={false}
+                                        style={pixelated}
+                                    />
+                                )}
+                                <div className="drop-shadow-[3px_3px_0_rgba(34,27,27,0.24)] origin-bottom" style={{ transform: `scale(${customer.scale})` }}>
+                                    {customerSrc && <img src={customerSrc} className="w-14 h-14 object-contain" draggable={false} style={pixelated} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                </div>
+                                <div className="mt-0.5 px-2 py-0.5 border-2 text-[10px] font-black text-center shadow-[2px_2px_0_rgba(34,27,27,0.18)] opacity-0 group-hover/customer:opacity-100 transition-opacity" style={{ background: '#fff4c7', borderColor: PIXEL_INK, color: PIXEL_INK }}>{customer.name}</div>
+                            </div>
+                        );
+                    })}
+
                     {/* Visitor */}
                     {!locked && visitor && shopState.activeVisitor && (() => {
                         const visitorPos = actorPositions[visitor.id] || clampActorPos(shopState.activeVisitor.x ?? 55, shopState.activeVisitor.y ?? 76);
@@ -1389,7 +1616,9 @@ const BankDollhouse: React.FC<Props> = ({
     const furnitureCategories = [
         { id: 'all', label: '全部' },
         { id: 'furniture', label: '家具' },
+        { id: 'daily', label: '日常' },
         { id: 'decor', label: '装饰' },
+        { id: 'decor-set', label: '套装' },
         { id: 'wall', label: '挂饰' },
         { id: 'floor', label: '地面' },
         { id: 'food', label: '美食' },
@@ -1399,7 +1628,11 @@ const BankDollhouse: React.FC<Props> = ({
 
     const filteredFurniture = furnitureFilter === 'all'
         ? builtinFurniture
-        : builtinFurniture.filter(f => f.category === furnitureFilter);
+        : builtinFurniture.filter(f =>
+            furnitureFilter === 'decor'
+                ? f.category === 'decor' || f.category === 'decor-set'
+                : f.category === furnitureFilter
+        );
 
     const displayScaleValue = localRoomScale ?? (activeRoom.roomTextureScale ?? 1);
 
@@ -1466,7 +1699,7 @@ const BankDollhouse: React.FC<Props> = ({
                 <div className="mx-2 mb-1 px-3 py-1.5 rounded-xl bg-[#E8F5E9] border border-[#A5D6A7] flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-[#4CAF50] animate-pulse" />
                     <span className="text-[10px] font-bold text-[#2E7D32]">装修模式</span>
-                    <span className="text-[10px] text-[#4CAF50]">可调整大小 / 拖到垃圾桶删除</span>
+                    <span className="text-[10px] text-[#4CAF50]">自由移位 / 手柄缩放 / 拖到垃圾桶删除</span>
                 </div>
             )}
 
@@ -1788,7 +2021,7 @@ const BankDollhouse: React.FC<Props> = ({
                                                 key={sticker.id}
                                                 onClick={() => startPlacingFurniture(
                                                     sticker.url,
-                                                    sticker.category === 'wall' ? 'leftWall' : 'floor',
+                                                    decorPixelMeta(sticker.url)?.surface || (sticker.category === 'wall' ? 'leftWall' : 'floor'),
                                                     sticker.name
                                                 )}
                                                 className="flex flex-col items-center gap-1 p-2 bg-white border-2 hover:shadow-[3px_3px_0_rgba(34,27,27,0.22)] transition-all active:scale-95 group"
@@ -1835,7 +2068,7 @@ const BankDollhouse: React.FC<Props> = ({
                                             <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
                                         </svg>
                                         <div className="text-[10px] text-[#A67E62] leading-relaxed">
-                                            点击家具即可进入摆放模式，在房间内选择位置。长按已放置的家具可拖动。开启右侧「装修模式」可调整大小，拖入垃圾桶删除。
+                                            点击家具即可进入摆放模式，在房间内选择位置。开启右侧「装修模式」后，已放家具可直接拖动、拉右下角手柄缩放，或拖入垃圾桶删除。
                                         </div>
                                     </div>
                                 </div>

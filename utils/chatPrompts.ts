@@ -134,6 +134,9 @@ export const ChatPrompts = {
             artists: string;
             lyricWindow: string[];
             activeIdx: number;
+            progress?: number;
+            duration?: number;
+            playing?: boolean;
         } | null,
         // char 是否和 user 处于"一起听"状态（来自 MusicContext.listeningTogetherWith）。
         // 影响氛围措辞和互动工具提示；暂停/切歌/user 踢出都会让这个值变 false。

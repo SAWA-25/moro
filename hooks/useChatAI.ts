@@ -506,7 +506,10 @@ export const useChatAI = ({
                 source: 'generated',
                 chatContext: contextMsgs
                     .slice(-10)
-                    .map(m => `${m.role === 'user' ? (userProfile.name || '用户') : charSnapshot.name}: ${String(m.content || '').slice(0, 120)}`),
+                    .map(m => {
+                        const content = m.type === 'image' ? '[图片]' : String(m.content || '').slice(0, 120);
+                        return `${m.role === 'user' ? (userProfile.name || '用户') : charSnapshot.name}: ${content}`;
+                    }),
             });
             delete perTurnImageErrorNotifiedRef.current[charSnapshot.id];
             if (charRef.current?.id === charSnapshot.id) {
@@ -631,6 +634,8 @@ export const useChatAI = ({
                     musicSnapshot: {
                         current: deps.music.current,
                         playing: deps.music.playing,
+                        progress: deps.music.progress,
+                        duration: deps.music.duration || deps.music.current?.duration || 0,
                         lyric: deps.music.lyric,
                         activeLyricIdx: deps.music.activeLyricIdx,
                         listeningTogetherWith: deps.music.listeningTogetherWith,
@@ -832,6 +837,9 @@ export const useChatAI = ({
                                 artists: music.current.artists,
                                 lyricWindow: window,
                                 activeIdx: idx - from,
+                                progress: music.progress,
+                                duration: music.duration || music.current.duration,
+                                playing: music.playing,
                             };
                         }
                     }
@@ -841,6 +849,9 @@ export const useChatAI = ({
                             artists: music.current.artists,
                             lyricWindow: [],
                             activeIdx: -1,
+                            progress: music.progress,
+                            duration: music.duration || music.current.duration,
+                            playing: music.playing,
                         };
                     }
                     return null;

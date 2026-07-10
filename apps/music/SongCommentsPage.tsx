@@ -9,9 +9,10 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { useMusic } from '../../context/MusicContext';
+import { musicApi, useMusic, type Song } from '../../context/MusicContext';
 import { CharacterProfile, CharMusicProfile, CharMusicReview } from '../../types';
 import { resolveAuxApi } from '../../utils/auxApi';
+import { buildMusicExternalUrl, shareToExternalMusicApp, type MusicExternalShareItem } from '../../utils/musicExternalShare';
 import {
   NeteaseComment, UserComment,
   fetchSongComments, generateCharComment, generateCharReply,
@@ -20,10 +21,16 @@ import {
 } from '../../utils/musicComments';
 import { cleanLyricText } from '../../utils/musicLyricContext';
 import { C, Sparkle, MizuHeader, BokehBg, isMusicAvatarImage } from './MusicUI';
-import { Heart, PaperPlaneRight, ChatCircleText, MusicNote, Trash, PenNib } from '@phosphor-icons/react';
+import { Heart, PaperPlaneRight, ChatCircleText, MusicNote, Trash, PenNib, ShareNetwork } from '@phosphor-icons/react';
+
+type MusicCommentShareDraft = Omit<MusicExternalShareItem, 'kind'> & { kind: 'comment' };
+type MusicCommentUserRef = { userId: string | number; nickname?: string; avatarUrl?: string; source?: 'netease' | 'qq' };
 
 interface Props {
   onBack: () => void;
+  onShareComment?: (draft: MusicCommentShareDraft) => void;
+  onShareExternal?: (item: MusicExternalShareItem) => void;
+  onOpenUserProfile?: (user: MusicCommentUserRef) => void;
 }
 
 /* ── 小头像：emoji / url / data: 三种都兼容 ── */
@@ -78,7 +85,37 @@ const SectionLabel: React.FC<{ icon?: React.ReactNode; children: React.ReactNode
   </div>
 );
 
-const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
+const CommentActions: React.FC<{
+  onShareToChat?: () => void;
+  onShareExternal: () => void;
+}> = ({ onShareToChat, onShareExternal }) => (
+  <div className="flex items-center gap-1.5 shrink-0">
+    {onShareToChat && (
+      <button
+        type="button"
+        onClick={onShareToChat}
+        className="w-6 h-6 rounded-full flex items-center justify-center transition-all active:scale-90"
+        style={{ color: C.accent, background: `${C.glow}20`, border: `1px solid ${C.faint}25` }}
+        title="分享给角色"
+        aria-label="分享给角色"
+      >
+        <PaperPlaneRight size={11} weight="fill" />
+      </button>
+    )}
+    <button
+      type="button"
+      onClick={onShareExternal}
+      className="w-6 h-6 rounded-full flex items-center justify-center transition-all active:scale-90"
+      style={{ color: C.muted, background: 'rgba(255,255,255,0.22)', border: `1px solid ${C.faint}22` }}
+      title="分享到外部音乐 App"
+      aria-label="分享到外部音乐 App"
+    >
+      <ShareNetwork size={11} weight="bold" />
+    </button>
+  </div>
+);
+
+const SongCommentsPage: React.FC<Props> = ({ onBack, onShareComment, onShareExternal, onOpenUserProfile }) => {
   const { characters, userProfile, apiConfig, auxApiConfig, updateCharacter, addToast } = useOS();
   // 评论区是「聊天以外」的辅助任务：走副 API（未配置时回退主 API）
   const auxApi = useMemo(() => ({ ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }), [apiConfig, auxApiConfig]);
@@ -86,10 +123,22 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
 
   const songId = current?.id ?? null;
   const isLocal = !!current?.local;
+  const canSyncNetEase = !!cfg.cookie && current?.source !== 'qq' && !isLocal;
   const lyricSnippet = activeLyricIdx >= 0 && lyric[activeLyricIdx]
     ? cleanLyricText(lyric[activeLyricIdx].text) || undefined
     : undefined;
   const songMeta = current ? { name: current.name, artists: current.artists } : null;
+  const [syncToRemote, setSyncToRemote] = useState(false);
+  const [syncingRemote, setSyncingRemote] = useState(false);
+  const songExternalUrl = useMemo(() => {
+    if (!current) return undefined;
+    return buildMusicExternalUrl({
+      kind: 'song',
+      title: current.name,
+      song: current,
+      source: current.source === 'qq' ? 'qq' : 'netease',
+    });
+  }, [current]);
 
   // ── 网易云评论 ──
   const [netease, setNetease] = useState<{ total: number; hot: NeteaseComment[]; latest: NeteaseComment[] } | null>(null);
@@ -191,19 +240,92 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
   }, [songId, songMeta, replyingFor, userProfile, auxApi, lyricSnippet, addToast]);
 
   /* ── 发一条你的留言；若正一起听，在场的 TA 自动接话 ── */
+  useEffect(() => {
+    setSyncToRemote(false);
+  }, [songId]);
+
+  const buildCommentShareItem = useCallback((input: {
+    subtitle?: string;
+    text?: string;
+    id?: string | number;
+  }): MusicCommentShareDraft | null => {
+    if (!current) return null;
+    const source = current.source === 'qq' ? 'qq' : 'netease';
+    return {
+      kind: 'comment',
+      title: current.name,
+      subtitle: input.subtitle,
+      text: input.text,
+      image: current.albumPic,
+      url: songExternalUrl,
+      song: current,
+      id: input.id,
+      source,
+    };
+  }, [current, songExternalUrl]);
+
+  const shareCommentToChat = useCallback((input: {
+    subtitle?: string;
+    text?: string;
+    id?: string | number;
+  }) => {
+    const item = buildCommentShareItem(input);
+    if (!item) return;
+    onShareComment?.(item);
+  }, [buildCommentShareItem, onShareComment]);
+
+  const shareCommentExternal = useCallback(async (input: {
+    subtitle?: string;
+    text?: string;
+    id?: string | number;
+  }) => {
+    const item = buildCommentShareItem(input);
+    if (!item) return;
+    try {
+      if (onShareExternal) {
+        await Promise.resolve(onShareExternal(item));
+      } else {
+        await shareToExternalMusicApp(item);
+        addToast('已打开外部音乐分享', 'success');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') addToast(`外部分享失败：${err?.message || err}`, 'error');
+    }
+  }, [addToast, buildCommentShareItem, onShareExternal]);
+
   const postComment = useCallback(async () => {
     const text = input.trim();
     if (!text || songId == null || posting) return;
     setPosting(true);
+    let synced = false;
+    if (syncToRemote) {
+      setSyncingRemote(true);
+      if (canSyncNetEase) {
+        try {
+          await musicApi.postComment(cfg, songId, text);
+          synced = true;
+        } catch (e: any) {
+          addToast(`网易云同步失败，已保存在 Moro：${e?.message || '未知错误'}`, 'error');
+        }
+      } else if (current?.source === 'qq') {
+        addToast('QQ 音乐暂不支持评论同步，已保存在 Moro', 'info');
+      } else if (isLocal) {
+        addToast('本地歌曲只能保存在 Moro 评论区', 'info');
+      } else {
+        addToast('先登录网易云，才能同步到外部评论区；这条已保存在 Moro', 'info');
+      }
+      setSyncingRemote(false);
+    }
     const comment = addUserComment(songId, text);
     setInput('');
     setUserComments(loadUserComments(songId));
     setPosting(false);
+    if (synced) addToast('已同步到网易云评论区', 'success');
     // 正在「一起听」的角色自动盖楼回你（自然、不用手动点）
     const companionId = listeningTogetherWith[0];
     const companion = companionId ? characters.find(c => c.id === companionId) : null;
     if (companion) requestReply(comment, companion);
-  }, [input, songId, posting, listeningTogetherWith, characters, requestReply]);
+  }, [addToast, canSyncNetEase, cfg, characters, current?.source, input, isLocal, listeningTogetherWith, posting, requestReply, songId, syncToRemote]);
 
   const deleteComment = useCallback((id: string) => {
     if (songId == null) return;
@@ -322,7 +444,21 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
                   </div>
                   <div className="flex items-center justify-between mt-1.5">
                     <span className="text-[9px]" style={{ color: C.faint }}>{fmtCommentTime(review.createdAt)}</span>
-                    <LikeHeart likeKey={`char:${review.id}`} baseCount={0} />
+                    <div className="flex items-center gap-1.5">
+                      <CommentActions
+                        onShareToChat={onShareComment ? () => shareCommentToChat({
+                          subtitle: `${char.name} 的乐评`,
+                          text: review.content,
+                          id: review.id,
+                        }) : undefined}
+                        onShareExternal={() => void shareCommentExternal({
+                          subtitle: `${char.name} 的乐评`,
+                          text: review.content,
+                          id: review.id,
+                        })}
+                      />
+                      <LikeHeart likeKey={`char:${review.id}`} baseCount={0} />
+                    </div>
                   </div>
                   <div className="mt-2 h-px" style={{ background: `${C.faint}22` }} />
                 </div>
@@ -348,9 +484,23 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
                     <div className="text-[12.5px] leading-relaxed mt-1" style={{ color: C.text }}>{uc.text}</div>
                     <div className="flex items-center justify-between mt-1.5">
                       <span className="text-[9px]" style={{ color: C.faint }}>{fmtCommentTime(uc.at)}</span>
-                      <button onClick={() => deleteComment(uc.id)} className="shrink-0 opacity-50 active:scale-90 transition-transform" style={{ color: C.faint }} title="删除">
-                        <Trash size={12} />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <CommentActions
+                          onShareToChat={onShareComment ? () => shareCommentToChat({
+                            subtitle: `${userProfile?.name || '我'} 的评论`,
+                            text: uc.text,
+                            id: uc.id,
+                          }) : undefined}
+                          onShareExternal={() => void shareCommentExternal({
+                            subtitle: `${userProfile?.name || '我'} 的评论`,
+                            text: uc.text,
+                            id: uc.id,
+                          })}
+                        />
+                        <button onClick={() => deleteComment(uc.id)} className="shrink-0 opacity-50 active:scale-90 transition-transform" style={{ color: C.faint }} title="删除">
+                          <Trash size={12} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* 角色盖楼回复 */}
@@ -421,7 +571,15 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
               <>
                 <SectionLabel icon={<Sparkle size={9} color={C.glow} delay={0.3} />}>精彩评论</SectionLabel>
                 <div className="space-y-3.5">
-                  {netease.hot.map(c => <NeteaseRow key={`h-${c.id}`} c={c} />)}
+                  {netease.hot.map(c => (
+                    <NeteaseRow
+                      key={`h-${c.id}`}
+                      c={c}
+                      onShareToChat={onShareComment ? () => shareCommentToChat({ subtitle: `${c.nickname} 的评论`, text: c.content, id: c.id }) : undefined}
+                      onShareExternal={() => void shareCommentExternal({ subtitle: `${c.nickname} 的评论`, text: c.content, id: c.id })}
+                      onOpenUserProfile={onOpenUserProfile}
+                    />
+                  ))}
                 </div>
               </>
             )}
@@ -430,7 +588,15 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
               <>
                 <SectionLabel>最新评论</SectionLabel>
                 <div className="space-y-3.5">
-                  {netease.latest.map(c => <NeteaseRow key={`l-${c.id}`} c={c} />)}
+                  {netease.latest.map(c => (
+                    <NeteaseRow
+                      key={`l-${c.id}`}
+                      c={c}
+                      onShareToChat={onShareComment ? () => shareCommentToChat({ subtitle: `${c.nickname} 的评论`, text: c.content, id: c.id }) : undefined}
+                      onShareExternal={() => void shareCommentExternal({ subtitle: `${c.nickname} 的评论`, text: c.content, id: c.id })}
+                      onOpenUserProfile={onOpenUserProfile}
+                    />
+                  ))}
                 </div>
               </>
             )}
@@ -447,31 +613,74 @@ const SongCommentsPage: React.FC<Props> = ({ onBack }) => {
       </div>
 
       {/* 输入条 — 我也说一句 */}
-      <div className="relative z-10 px-3 py-2.5 shizuku-glass-strong flex items-center gap-2"
+      <div className="relative z-10 px-3 py-2.5 shizuku-glass-strong flex flex-col gap-2"
         style={{ borderTop: `1px solid rgba(255,255,255,0.3)` }}>
-        <Avatar avatar={userProfile?.avatar} name={userProfile?.name || '你'} size={28} ring={C.glow} />
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') postComment(); }}
-          placeholder="听到这里，想说点什么…"
-          className="flex-1 bg-transparent outline-none text-sm px-1"
-          style={{ color: C.text }}
-        />
-        <button onClick={postComment} disabled={!input.trim() || posting}
-          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
-          style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, boxShadow: `0 2px 10px ${C.primary}30` }}>
-          <PaperPlaneRight size={16} weight="fill" color="#fff" />
-        </button>
+        <div className="flex items-center gap-2">
+          <Avatar avatar={userProfile?.avatar} name={userProfile?.name || '你'} size={28} ring={C.glow} />
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') postComment(); }}
+            placeholder="听到这里，想说点什么…"
+            className="flex-1 bg-transparent outline-none text-sm px-1"
+            style={{ color: C.text }}
+          />
+          <button onClick={postComment} disabled={!input.trim() || posting || syncingRemote}
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
+            style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, boxShadow: `0 2px 10px ${C.primary}30` }}>
+            <PaperPlaneRight size={16} weight="fill" color="#fff" />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-[10px] px-1">
+          <button
+            type="button"
+            onClick={() => setSyncToRemote(v => !v)}
+            className="inline-flex items-center gap-2"
+            style={{ color: syncToRemote ? C.primary : C.faint }}
+          >
+            <span
+              className="w-4 h-4 rounded-full border flex items-center justify-center"
+              style={{ borderColor: syncToRemote ? C.primary : C.faint, background: syncToRemote ? `${C.primary}20` : 'transparent' }}
+            >
+              {syncToRemote && <span className="w-2 h-2 rounded-full" style={{ background: C.primary }} />}
+            </span>
+            {current?.source === 'qq'
+              ? '同步到 QQ 音乐'
+              : canSyncNetEase
+                ? '同步到网易云'
+                : '仅保存在 Moro'}
+          </button>
+          <span style={{ color: C.faint }}>
+            {syncToRemote
+              ? (current?.source === 'qq'
+                ? 'QQ 暂不支持同步评论'
+                : canSyncNetEase
+                  ? '会先发到外部平台'
+                  : '外部同步不可用')
+              : '只在 Moro 内显示'}
+          </span>
+        </div>
       </div>
     </div>
   );
 };
 
 /* ── 一条网易云评论 ── */
-const NeteaseRow: React.FC<{ c: NeteaseComment }> = ({ c }) => (
+const NeteaseRow: React.FC<{
+  c: NeteaseComment;
+  onShareToChat?: () => void;
+  onShareExternal: () => void;
+  onOpenUserProfile?: (user: MusicCommentUserRef) => void;
+}> = ({ c, onShareToChat, onShareExternal, onOpenUserProfile }) => (
   <div className="flex items-start gap-2.5">
-    <Avatar avatar={c.avatar} name={c.nickname} size={32} ring={C.faint} />
+    <button
+      type="button"
+      onClick={() => c.userId && onOpenUserProfile?.({ userId: c.userId, nickname: c.nickname, avatarUrl: c.avatar, source: 'netease' })}
+      className="shrink-0"
+      title={c.userId ? '打开主页' : c.nickname}
+    >
+      <Avatar avatar={c.avatar} name={c.nickname} size={32} ring={C.faint} />
+    </button>
     <div className="flex-1 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] truncate" style={{ color: C.muted }}>{c.nickname}</span>
@@ -486,6 +695,7 @@ const NeteaseRow: React.FC<{ c: NeteaseComment }> = ({ c }) => (
       )}
       <div className="flex items-center justify-between mt-1">
         <span className="text-[9px]" style={{ color: C.faint }}>{fmtCommentTime(c.time)}</span>
+        <CommentActions onShareToChat={onShareToChat} onShareExternal={onShareExternal} />
       </div>
       <div className="mt-1.5 h-px" style={{ background: `${C.faint}22` }} />
     </div>

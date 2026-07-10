@@ -178,6 +178,7 @@ export const SearchBar: React.FC<{
 export const SongRow: React.FC<{
   name: string;
   artists: string;
+  artistIds?: { id: number | string; name: string; source?: 'netease' | 'qq' }[];
   album: string;
   albumPic: string;
   duration: string;
@@ -185,7 +186,8 @@ export const SongRow: React.FC<{
   isActive: boolean;
   onClick: () => void;
   onShare?: () => void;
-}> = ({ name, artists, album, albumPic, duration, isVip, isActive, onClick, onShare }) => (
+  onArtistClick?: (artist: { id?: number | string; name: string; source?: 'netease' | 'qq' }) => void;
+}> = ({ name, artists, artistIds, album, albumPic, duration, isVip, isActive, onClick, onShare, onArtistClick }) => (
   <div
     role="button"
     tabIndex={0}
@@ -220,7 +222,24 @@ export const SongRow: React.FC<{
         )}
         <span className="truncate font-normal">{name}</span>
       </div>
-      <div className="text-[11px] truncate mt-0.5" style={{ color: C.muted }}>{artists} · {album}</div>
+      <div className="text-[11px] truncate mt-0.5" style={{ color: C.muted }}>
+        {onArtistClick ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              const first = artistIds?.[0];
+              onArtistClick(first || { name: artists });
+            }}
+            className="underline-offset-2 hover:underline truncate max-w-[70%] align-baseline"
+            style={{ color: C.accent }}
+            title="查看歌手页"
+          >
+            {artists || '未知歌手'}
+          </button>
+        ) : artists}
+        <span> · {album}</span>
+      </div>
     </div>
     {onShare && (
       <button
@@ -513,8 +532,8 @@ export const MetaChip: React.FC<{ children: React.ReactNode; className?: string 
   </span>
 );
 
-/* ══════════ 子操作行 (Like / Sync / Loop / Add) ══════════ */
-export type SubPlayMode = 'loop' | 'single' | 'shuffle';
+/* ══════════ 子操作行 (Like / Sync / Mode / Add) ══════════ */
+export type SubPlayMode = 'heart' | 'loop' | 'single' | 'shuffle';
 export const SubActions: React.FC<{
   onLike?: () => void;
   liked?: boolean;
@@ -523,7 +542,7 @@ export const SubActions: React.FC<{
   onDownload?: () => void;         // 下载本地生成的音频 (仅本地歌显示)
   showDownload?: boolean;
   playMode?: SubPlayMode;
-  onCyclePlayMode?: () => void;    // 循环模式切换
+  onCyclePlayMode?: () => void;    // 播放模式切换
   onAdd?: () => void;
 }> = ({ onLike, liked, onSync, showSync, onDownload, showDownload, playMode = 'loop', onCyclePlayMode, onAdd }) => {
   const Item = ({ icon, label, onClick, active }: { icon: React.ReactNode; label: string; onClick?: () => void; active?: boolean }) => (
@@ -552,7 +571,13 @@ export const SubActions: React.FC<{
       <circle cx="12" cy="12" r="2" fill={C.primary} stroke="none" />
     </svg>
   );
-  const loopSvg = playMode === 'single' ? (
+  const modeSvg = playMode === 'heart' ? (
+    // 心动模式 — 优先播放红心/喜欢歌曲
+    <svg width="18" height="18" viewBox="0 0 24 24" fill={C.sakura} stroke={C.primary} strokeWidth="1.5" strokeLinejoin="round">
+      <path d="M12 21s-7-4.5-7-11a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 6.5-7 11-7 11z" />
+      <path d="M3 13h4l1.4-3.2 2.6 6.2 2.2-5 1.2 2h6.6" fill="none" strokeLinecap="round" />
+    </svg>
+  ) : playMode === 'single' ? (
     // 单曲循环 — 圆环带数字 1
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="1.5">
       <path d="M17 4l3 3-3 3" /><path d="M20 7H8a4 4 0 0 0-4 4v0" />
@@ -584,14 +609,14 @@ export const SubActions: React.FC<{
     </svg>
   );
 
-  const playModeLabel: Record<SubPlayMode, string> = { loop: 'Loop', single: 'One', shuffle: 'Mix' };
+  const playModeLabel: Record<SubPlayMode, string> = { heart: 'Heart', loop: 'Loop', single: 'One', shuffle: 'Mix' };
 
   return (
     <div className="flex items-end justify-around gap-4 max-w-[280px] mx-auto">
       <Item onClick={onLike} active={liked} label="Like" icon={heartSvg} />
       {showSync && onSync && <Item onClick={onSync} active label="Sync" icon={syncSvg} />}
       {showDownload && onDownload && <Item onClick={onDownload} active label="Save" icon={downloadSvg} />}
-      {onCyclePlayMode && <Item onClick={onCyclePlayMode} active={playMode !== 'loop'} label={playModeLabel[playMode]} icon={loopSvg} />}
+      {onCyclePlayMode && <Item onClick={onCyclePlayMode} active={playMode !== 'loop'} label={playModeLabel[playMode]} icon={modeSvg} />}
       {onAdd && <Item onClick={onAdd} label="Add" icon={addSvg} />}
     </div>
   );

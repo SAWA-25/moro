@@ -38,7 +38,13 @@ const sanitizeAction = (value: unknown): ListenAction | undefined => {
   if (!value || typeof value !== 'object') return undefined;
   const action = value as Partial<ListenAction>;
   if (action.kind === 'none') return { kind: 'none' };
-  if (action.kind === 'pause' || action.kind === 'resume' || action.kind === 'next') return { kind: action.kind };
+  if (action.kind === 'pause' || action.kind === 'resume' || action.kind === 'previous' || action.kind === 'next') return { kind: action.kind };
+  if (action.kind === 'seek') {
+    const seconds = Number(action.seconds);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return { kind: 'seek', seconds: Math.round(seconds * 10) / 10 };
+    }
+  }
   if (action.kind === 'change_song' && typeof action.query === 'string' && action.query.trim()) {
     return { kind: 'change_song', query: action.query.trim().slice(0, 80) };
   }
@@ -171,6 +177,24 @@ export function buildListenActionNotice(
       title: `${name} 继续播放`,
       body: '音乐继续响起来了。',
       toast: `${name} 继续播放`,
+      tag: `music-listen-action-${action.kind}`,
+    };
+  }
+  if (action.kind === 'seek') {
+    const m = Math.floor(Math.max(0, action.seconds) / 60);
+    const s = Math.floor(Math.max(0, action.seconds) % 60).toString().padStart(2, '0');
+    return {
+      title: `${name} 拖动了进度条`,
+      body: `TA 想听 ${m}:${s} 附近的这一段。`,
+      toast: `${name} 跳到 ${m}:${s}`,
+      tag: `music-listen-action-${action.kind}`,
+    };
+  }
+  if (action.kind === 'previous') {
+    return {
+      title: `${name} 回到上一首`,
+      body: 'TA 想把刚才那首接回来。',
+      toast: `${name} 回到上一首`,
       tag: `music-listen-action-${action.kind}`,
     };
   }

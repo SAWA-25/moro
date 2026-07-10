@@ -141,4 +141,35 @@ describe('ChatPrompts prompt switch gates', () => {
     expect(block).not.toContain('SecretMix');
     expect(block).not.toContain('secret lyric');
   });
+
+  it('includes live playback progress for readable listening context', () => {
+    const block = ContextBuilder.buildMusicAtmosphere(
+      baseChar,
+      user.name,
+      {
+        songName: 'Rain Loop',
+        artists: 'Moro Band',
+        lyricWindow: ['before', 'now', 'after'],
+        activeIdx: 1,
+        progress: 83,
+        duration: 198,
+        playing: true,
+      },
+      null,
+      true,
+    );
+
+    expect(block).toContain('你正在和 User 一起听《Rain Loop》');
+    expect(block).toContain('播放进度：1:23 / 3:18');
+    expect(block).toContain('>> now');
+  });
+
+  it('allows restrained playback controls once already listening together', () => {
+    const guide = ContextBuilder.buildMusicActionGuide(true, true);
+
+    expect(guide).toContain('一起听控歌语法');
+    expect(guide).toContain('[[MUSIC_ACTION:seek|83]]');
+    expect(guide).toContain('[[MUSIC_ACTION:previous]]');
+    expect(guide).toContain('[[MUSIC_ACTION:play|歌名 艺人]]');
+  });
 });

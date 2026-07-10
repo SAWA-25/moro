@@ -13,7 +13,7 @@ import {
     XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings, PhoneCheckSession, UserScreenWatchSession,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
     TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession, TheaterQuizSession, TheaterFauxPiece, TheaterCustomLibraryItem,
-    TheaterReflectionSession,
+    TheaterReflectionSession, TheaterSleepSession, TheaterGomokuGame, TheaterGomokuInvitation, TheaterGoGame, TheaterGoInvitation, TheaterDoudizhuGame, TheaterDoudizhuInvitation, TheaterTurtleSoupGame, TheaterTurtleSoupInvitation, TheaterMahjongGame, TheaterMahjongInvitation,
     TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord,
     DesktopPetState,
     MusicLibraryTrack, MusicLibraryPlaylist, MusicPlaylistItem, MusicPlayEvent, MusicSearchHistoryItem, MusicRecommendCacheEntry,
@@ -26,7 +26,7 @@ import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 95; // Bumped: v95 health wearable import batches
+const DB_VERSION = 101; // Bumped: v101 theater mahjong games and invitations
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -248,6 +248,17 @@ const STORE_THEATER_QUIZ_SESSIONS = 'theater_quiz_sessions'; // 折子戏·番�
 const STORE_THEATER_FAUX_PIECES = 'theater_faux_pieces'; // 折子戏·仿真图文历史（微信/微博/备忘录等截图结构化结果）
 const STORE_THEATER_CUSTOM_LIBRARY = 'theater_custom_library'; // 幕间集·用户导入小剧场 / 问卷库
 const STORE_THEATER_REFLECTION_SESSIONS = 'theater_reflection_sessions'; // 折子戏·对影会话（两个时间里的 TA + 用户短会面）
+const STORE_THEATER_SLEEP_SESSIONS = 'theater_sleep_sessions'; // 幕间集·一起入眠会话（文字 / 电话式语音陪伴记录）
+const STORE_THEATER_GOMOKU_GAMES = 'theater_gomoku_games'; // 幕间集·五子棋对局（15x15 休闲规则，可续局/回看）
+const STORE_THEATER_GOMOKU_INVITATIONS = 'theater_gomoku_invitations'; // 幕间集·五子棋邀请（聊天卡片 + App 待处理）
+const STORE_THEATER_GO_GAMES = 'theater_go_games'; // 幕间集·围棋对局（19 路休闲规则，可续局/回看）
+const STORE_THEATER_GO_INVITATIONS = 'theater_go_invitations'; // 幕间集·围棋邀请（聊天卡片 + App 待处理）
+const STORE_THEATER_DOUDIZHU_GAMES = 'theater_doudizhu_games'; // 幕间集·斗地主对局（三人牌桌，可续局/回看）
+const STORE_THEATER_DOUDIZHU_INVITATIONS = 'theater_doudizhu_invitations'; // 幕间集·斗地主邀请（聊天卡片 + App 待处理）
+const STORE_THEATER_TURTLE_SOUP_GAMES = 'theater_turtle_soup_games'; // 幕间集·海龟汤汤局（主持人 + 多角色猜题，可续局/回看）
+const STORE_THEATER_TURTLE_SOUP_INVITATIONS = 'theater_turtle_soup_invitations'; // 幕间集·海龟汤邀请（聊天卡片 + App 待处理）
+const STORE_THEATER_MAHJONG_GAMES = 'theater_mahjong_games'; // 幕间集·麻将牌局（四人牌桌，可续局/回看）
+const STORE_THEATER_MAHJONG_INVITATIONS = 'theater_mahjong_invitations'; // 幕间集·麻将邀请（聊天卡片 + App 待处理）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/折子戏内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
 const STORE_DIVINATION_CARDS = 'divination_cards'; // 折子戏·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
@@ -1184,7 +1195,80 @@ export const openDB = (): Promise<IDBDatabase> => {
           trStore.createIndex('charId', 'charId', { unique: false });
           trStore.createIndex('updatedAt', 'updatedAt', { unique: false });
       }
+      // ─── v96: 幕间集·一起入眠会话 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_SLEEP_SESSIONS)) {
+          const sleepStore = db.createObjectStore(STORE_THEATER_SLEEP_SESSIONS, { keyPath: 'id' });
+          sleepStore.createIndex('charId', 'charId', { unique: false });
+          sleepStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          sleepStore.createIndex('status', 'status', { unique: false });
+      }
+      // ─── v97: 幕间集·五子棋 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_GOMOKU_GAMES)) {
+          const gomokuStore = db.createObjectStore(STORE_THEATER_GOMOKU_GAMES, { keyPath: 'id' });
+          gomokuStore.createIndex('charId', 'charId', { unique: false });
+          gomokuStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          gomokuStore.createIndex('status', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_THEATER_GOMOKU_INVITATIONS)) {
+          const inviteStore = db.createObjectStore(STORE_THEATER_GOMOKU_INVITATIONS, { keyPath: 'id' });
+          inviteStore.createIndex('charId', 'charId', { unique: false });
+          inviteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          inviteStore.createIndex('status', 'status', { unique: false });
+      }
+      // ─── v98: 幕间集·围棋 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_GO_GAMES)) {
+          const goStore = db.createObjectStore(STORE_THEATER_GO_GAMES, { keyPath: 'id' });
+          goStore.createIndex('charId', 'charId', { unique: false });
+          goStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          goStore.createIndex('status', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_THEATER_GO_INVITATIONS)) {
+          const inviteStore = db.createObjectStore(STORE_THEATER_GO_INVITATIONS, { keyPath: 'id' });
+          inviteStore.createIndex('charId', 'charId', { unique: false });
+          inviteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          inviteStore.createIndex('status', 'status', { unique: false });
+      }
+      // ─── v99: 幕间集·斗地主 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_DOUDIZHU_GAMES)) {
+          const doudizhuStore = db.createObjectStore(STORE_THEATER_DOUDIZHU_GAMES, { keyPath: 'id' });
+          doudizhuStore.createIndex('charIds', 'charIds', { unique: false, multiEntry: true });
+          doudizhuStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          doudizhuStore.createIndex('status', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_THEATER_DOUDIZHU_INVITATIONS)) {
+          const inviteStore = db.createObjectStore(STORE_THEATER_DOUDIZHU_INVITATIONS, { keyPath: 'id' });
+          inviteStore.createIndex('charId', 'charId', { unique: false });
+          inviteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          inviteStore.createIndex('status', 'status', { unique: false });
+      }
+      // ─── v100: 幕间集·海龟汤 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_TURTLE_SOUP_GAMES)) {
+          const soupStore = db.createObjectStore(STORE_THEATER_TURTLE_SOUP_GAMES, { keyPath: 'id' });
+          soupStore.createIndex('charIds', 'charIds', { unique: false, multiEntry: true });
+          soupStore.createIndex('hostCharId', 'host.charId', { unique: false });
+          soupStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          soupStore.createIndex('status', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_THEATER_TURTLE_SOUP_INVITATIONS)) {
+          const inviteStore = db.createObjectStore(STORE_THEATER_TURTLE_SOUP_INVITATIONS, { keyPath: 'id' });
+          inviteStore.createIndex('charId', 'charId', { unique: false });
+          inviteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          inviteStore.createIndex('status', 'status', { unique: false });
+      }
       // ─── v70: 岁时记·典藏馆收录条目 ───
+      // ─── v101: 幕间集·麻将 ───
+      if (!db.objectStoreNames.contains(STORE_THEATER_MAHJONG_GAMES)) {
+          const mahjongStore = db.createObjectStore(STORE_THEATER_MAHJONG_GAMES, { keyPath: 'id' });
+          mahjongStore.createIndex('charIds', 'charIds', { unique: false, multiEntry: true });
+          mahjongStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+          mahjongStore.createIndex('status', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_THEATER_MAHJONG_INVITATIONS)) {
+          const inviteStore = db.createObjectStore(STORE_THEATER_MAHJONG_INVITATIONS, { keyPath: 'id' });
+          inviteStore.createIndex('charId', 'charId', { unique: false });
+          inviteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          inviteStore.createIndex('status', 'status', { unique: false });
+      }
       if (!db.objectStoreNames.contains(STORE_COLLECTION_ITEMS)) {
           const ciStore = db.createObjectStore(STORE_COLLECTION_ITEMS, { keyPath: 'id' });
           ciStore.createIndex('collectedAt', 'collectedAt', { unique: false });
@@ -1400,9 +1484,45 @@ export const DB = {
         STORE_CHARACTERS,
         ...(db.objectStoreNames.contains(STORE_CHAT_ALARMS) ? [STORE_CHAT_ALARMS] : []),
         ...(db.objectStoreNames.contains(STORE_USER_SCREEN_WATCH) ? [STORE_USER_SCREEN_WATCH] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_GOMOKU_GAMES) ? [STORE_THEATER_GOMOKU_GAMES] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_GOMOKU_INVITATIONS) ? [STORE_THEATER_GOMOKU_INVITATIONS] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_GO_GAMES) ? [STORE_THEATER_GO_GAMES] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_GO_INVITATIONS) ? [STORE_THEATER_GO_INVITATIONS] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_DOUDIZHU_GAMES) ? [STORE_THEATER_DOUDIZHU_GAMES] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_DOUDIZHU_INVITATIONS) ? [STORE_THEATER_DOUDIZHU_INVITATIONS] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_TURTLE_SOUP_GAMES) ? [STORE_THEATER_TURTLE_SOUP_GAMES] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_TURTLE_SOUP_INVITATIONS) ? [STORE_THEATER_TURTLE_SOUP_INVITATIONS] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_MAHJONG_GAMES) ? [STORE_THEATER_MAHJONG_GAMES] : []),
+        ...(db.objectStoreNames.contains(STORE_THEATER_MAHJONG_INVITATIONS) ? [STORE_THEATER_MAHJONG_INVITATIONS] : []),
     ];
     const transaction = db.transaction(stores, 'readwrite');
     transaction.objectStore(STORE_CHARACTERS).delete(id);
+    const deleteByCharId = (storeName: string) => {
+        if (!db.objectStoreNames.contains(storeName)) return;
+        const store = transaction.objectStore(storeName);
+        if (!store.indexNames.contains('charId')) return;
+        const idx = store.index('charId');
+        const req = idx.openCursor(IDBKeyRange.only(id));
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+    };
+    const deleteByCharIds = (storeName: string) => {
+        if (!db.objectStoreNames.contains(storeName)) return;
+        const store = transaction.objectStore(storeName);
+        if (!store.indexNames.contains('charIds')) return;
+        const idx = store.index('charIds');
+        const req = idx.openCursor(IDBKeyRange.only(id));
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+        };
+    };
     if (db.objectStoreNames.contains(STORE_CHAT_ALARMS)) {
         const alarmStore = transaction.objectStore(STORE_CHAT_ALARMS);
         const idx = alarmStore.index('charId');
@@ -1425,6 +1545,16 @@ export const DB = {
             cursor.continue();
         };
     }
+    deleteByCharId(STORE_THEATER_GOMOKU_GAMES);
+    deleteByCharId(STORE_THEATER_GOMOKU_INVITATIONS);
+    deleteByCharId(STORE_THEATER_GO_GAMES);
+    deleteByCharId(STORE_THEATER_GO_INVITATIONS);
+    deleteByCharIds(STORE_THEATER_DOUDIZHU_GAMES);
+    deleteByCharId(STORE_THEATER_DOUDIZHU_INVITATIONS);
+    deleteByCharIds(STORE_THEATER_TURTLE_SOUP_GAMES);
+    deleteByCharId(STORE_THEATER_TURTLE_SOUP_INVITATIONS);
+    deleteByCharIds(STORE_THEATER_MAHJONG_GAMES);
+    deleteByCharId(STORE_THEATER_MAHJONG_INVITATIONS);
     return new Promise((resolve, reject) => {
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
@@ -2961,7 +3091,247 @@ export const DB = {
       return DB.deleteByIndex(STORE_THEATER_REFLECTION_SESSIONS, 'charId', charId);
   },
 
+  // ─── 幕间集·一起入眠会话 ───
+  getAllTheaterSleepSessions: async (): Promise<TheaterSleepSession[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_SLEEP_SESSIONS)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_SLEEP_SESSIONS, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_SLEEP_SESSIONS).getAll();
+          req.onsuccess = () => resolve(((req.result as TheaterSleepSession[]) || []).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterSleepSession: async (id: string): Promise<TheaterSleepSession | undefined> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_SLEEP_SESSIONS)) return undefined;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_SLEEP_SESSIONS, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_SLEEP_SESSIONS).get(id);
+          req.onsuccess = () => resolve(req.result as TheaterSleepSession | undefined);
+          req.onerror = () => reject(req.error);
+      });
+  },
+  saveTheaterSleepSession: async (session: TheaterSleepSession): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_SLEEP_SESSIONS)) return;
+      const tx = db.transaction(STORE_THEATER_SLEEP_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_THEATER_SLEEP_SESSIONS).put(session);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTheaterSleepSession: async (id: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_SLEEP_SESSIONS)) return;
+      const tx = db.transaction(STORE_THEATER_SLEEP_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_THEATER_SLEEP_SESSIONS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTheaterSleepSessionsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_THEATER_SLEEP_SESSIONS, 'charId', charId);
+  },
+
+  // ─── 幕间集·五子棋 ───
+  getAllTheaterGomokuGames: async (): Promise<TheaterGomokuGame[]> => (
+      await getAllStoreItems<TheaterGomokuGame>(STORE_THEATER_GOMOKU_GAMES)
+  ).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)),
+  getTheaterGomokuGamesByCharId: async (charId: string): Promise<TheaterGomokuGame[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_GOMOKU_GAMES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_GOMOKU_GAMES, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_GOMOKU_GAMES).index('charId').getAll(charId);
+          req.onsuccess = () => resolve(((req.result as TheaterGomokuGame[]) || []).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterGomokuGame: (id: string): Promise<TheaterGomokuGame | null> =>
+      getStoreItem<TheaterGomokuGame>(STORE_THEATER_GOMOKU_GAMES, id),
+  saveTheaterGomokuGame: (game: TheaterGomokuGame): Promise<void> =>
+      putStoreItem(STORE_THEATER_GOMOKU_GAMES, game),
+  deleteTheaterGomokuGame: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_GOMOKU_GAMES, id),
+  deleteTheaterGomokuGamesByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_GOMOKU_GAMES, 'charId', charId),
+
+  getAllTheaterGomokuInvitations: async (): Promise<TheaterGomokuInvitation[]> => (
+      await getAllStoreItems<TheaterGomokuInvitation>(STORE_THEATER_GOMOKU_INVITATIONS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+  getPendingTheaterGomokuInvitations: async (charId?: string): Promise<TheaterGomokuInvitation[]> => {
+      const all = await DB.getAllTheaterGomokuInvitations();
+      return all.filter(inv => inv.status === 'pending' && (!charId || inv.charId === charId));
+  },
+  getTheaterGomokuInvitation: (id: string): Promise<TheaterGomokuInvitation | null> =>
+      getStoreItem<TheaterGomokuInvitation>(STORE_THEATER_GOMOKU_INVITATIONS, id),
+  saveTheaterGomokuInvitation: (invitation: TheaterGomokuInvitation): Promise<void> =>
+      putStoreItem(STORE_THEATER_GOMOKU_INVITATIONS, invitation),
+  deleteTheaterGomokuInvitation: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_GOMOKU_INVITATIONS, id),
+  deleteTheaterGomokuInvitationsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_GOMOKU_INVITATIONS, 'charId', charId),
+
+  // ─── 幕间集·围棋 ───
+  getAllTheaterGoGames: async (): Promise<TheaterGoGame[]> => (
+      await getAllStoreItems<TheaterGoGame>(STORE_THEATER_GO_GAMES)
+  ).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)),
+  getTheaterGoGamesByCharId: async (charId: string): Promise<TheaterGoGame[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_GO_GAMES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_GO_GAMES, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_GO_GAMES).index('charId').getAll(charId);
+          req.onsuccess = () => resolve(((req.result as TheaterGoGame[]) || []).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterGoGame: (id: string): Promise<TheaterGoGame | null> =>
+      getStoreItem<TheaterGoGame>(STORE_THEATER_GO_GAMES, id),
+  saveTheaterGoGame: (game: TheaterGoGame): Promise<void> =>
+      putStoreItem(STORE_THEATER_GO_GAMES, game),
+  deleteTheaterGoGame: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_GO_GAMES, id),
+  deleteTheaterGoGamesByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_GO_GAMES, 'charId', charId),
+
+  getAllTheaterGoInvitations: async (): Promise<TheaterGoInvitation[]> => (
+      await getAllStoreItems<TheaterGoInvitation>(STORE_THEATER_GO_INVITATIONS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+  getPendingTheaterGoInvitations: async (charId?: string): Promise<TheaterGoInvitation[]> => {
+      const all = await DB.getAllTheaterGoInvitations();
+      return all.filter(inv => inv.status === 'pending' && (!charId || inv.charId === charId));
+  },
+  getTheaterGoInvitation: (id: string): Promise<TheaterGoInvitation | null> =>
+      getStoreItem<TheaterGoInvitation>(STORE_THEATER_GO_INVITATIONS, id),
+  saveTheaterGoInvitation: (invitation: TheaterGoInvitation): Promise<void> =>
+      putStoreItem(STORE_THEATER_GO_INVITATIONS, invitation),
+  deleteTheaterGoInvitation: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_GO_INVITATIONS, id),
+  deleteTheaterGoInvitationsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_GO_INVITATIONS, 'charId', charId),
+
+  // ─── 幕间集·斗地主 ───
+  getAllTheaterDoudizhuGames: async (): Promise<TheaterDoudizhuGame[]> => (
+      await getAllStoreItems<TheaterDoudizhuGame>(STORE_THEATER_DOUDIZHU_GAMES)
+  ).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)),
+  getTheaterDoudizhuGamesByCharId: async (charId: string): Promise<TheaterDoudizhuGame[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_DOUDIZHU_GAMES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_DOUDIZHU_GAMES, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_DOUDIZHU_GAMES).index('charIds').getAll(charId);
+          req.onsuccess = () => resolve(((req.result as TheaterDoudizhuGame[]) || []).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterDoudizhuGame: (id: string): Promise<TheaterDoudizhuGame | null> =>
+      getStoreItem<TheaterDoudizhuGame>(STORE_THEATER_DOUDIZHU_GAMES, id),
+  saveTheaterDoudizhuGame: (game: TheaterDoudizhuGame): Promise<void> =>
+      putStoreItem(STORE_THEATER_DOUDIZHU_GAMES, game),
+  deleteTheaterDoudizhuGame: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_DOUDIZHU_GAMES, id),
+  deleteTheaterDoudizhuGamesByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_DOUDIZHU_GAMES, 'charIds', charId),
+
+  getAllTheaterDoudizhuInvitations: async (): Promise<TheaterDoudizhuInvitation[]> => (
+      await getAllStoreItems<TheaterDoudizhuInvitation>(STORE_THEATER_DOUDIZHU_INVITATIONS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+  getPendingTheaterDoudizhuInvitations: async (charId?: string): Promise<TheaterDoudizhuInvitation[]> => {
+      const all = await DB.getAllTheaterDoudizhuInvitations();
+      return all.filter(inv => inv.status === 'pending' && (!charId || inv.charId === charId));
+  },
+  getTheaterDoudizhuInvitation: (id: string): Promise<TheaterDoudizhuInvitation | null> =>
+      getStoreItem<TheaterDoudizhuInvitation>(STORE_THEATER_DOUDIZHU_INVITATIONS, id),
+  saveTheaterDoudizhuInvitation: (invitation: TheaterDoudizhuInvitation): Promise<void> =>
+      putStoreItem(STORE_THEATER_DOUDIZHU_INVITATIONS, invitation),
+  deleteTheaterDoudizhuInvitation: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_DOUDIZHU_INVITATIONS, id),
+  deleteTheaterDoudizhuInvitationsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_DOUDIZHU_INVITATIONS, 'charId', charId),
+
+  // ─── 幕间集·海龟汤 ───
+  getAllTheaterTurtleSoupGames: async (): Promise<TheaterTurtleSoupGame[]> => (
+      await getAllStoreItems<TheaterTurtleSoupGame>(STORE_THEATER_TURTLE_SOUP_GAMES)
+  ).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)),
+  getTheaterTurtleSoupGamesByCharId: async (charId: string): Promise<TheaterTurtleSoupGame[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_TURTLE_SOUP_GAMES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_TURTLE_SOUP_GAMES, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_TURTLE_SOUP_GAMES).index('charIds').getAll(charId);
+          req.onsuccess = () => resolve(((req.result as TheaterTurtleSoupGame[]) || []).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterTurtleSoupGame: (id: string): Promise<TheaterTurtleSoupGame | null> =>
+      getStoreItem<TheaterTurtleSoupGame>(STORE_THEATER_TURTLE_SOUP_GAMES, id),
+  saveTheaterTurtleSoupGame: (game: TheaterTurtleSoupGame): Promise<void> =>
+      putStoreItem(STORE_THEATER_TURTLE_SOUP_GAMES, game),
+  deleteTheaterTurtleSoupGame: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_TURTLE_SOUP_GAMES, id),
+  deleteTheaterTurtleSoupGamesByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_TURTLE_SOUP_GAMES, 'charIds', charId),
+
+  getAllTheaterTurtleSoupInvitations: async (): Promise<TheaterTurtleSoupInvitation[]> => (
+      await getAllStoreItems<TheaterTurtleSoupInvitation>(STORE_THEATER_TURTLE_SOUP_INVITATIONS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+  getPendingTheaterTurtleSoupInvitations: async (charId?: string): Promise<TheaterTurtleSoupInvitation[]> => {
+      const all = await DB.getAllTheaterTurtleSoupInvitations();
+      return all.filter(inv => inv.status === 'pending' && (!charId || inv.charId === charId));
+  },
+  getTheaterTurtleSoupInvitation: (id: string): Promise<TheaterTurtleSoupInvitation | null> =>
+      getStoreItem<TheaterTurtleSoupInvitation>(STORE_THEATER_TURTLE_SOUP_INVITATIONS, id),
+  saveTheaterTurtleSoupInvitation: (invitation: TheaterTurtleSoupInvitation): Promise<void> =>
+      putStoreItem(STORE_THEATER_TURTLE_SOUP_INVITATIONS, invitation),
+  deleteTheaterTurtleSoupInvitation: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_TURTLE_SOUP_INVITATIONS, id),
+  deleteTheaterTurtleSoupInvitationsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_TURTLE_SOUP_INVITATIONS, 'charId', charId),
+
   // ─── 岁时记·典藏馆收录条目 ───
+  // ─── 幕间集·麻将 ───
+  getAllTheaterMahjongGames: async (): Promise<TheaterMahjongGame[]> => (
+      await getAllStoreItems<TheaterMahjongGame>(STORE_THEATER_MAHJONG_GAMES)
+  ).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)),
+  getTheaterMahjongGamesByCharId: async (charId: string): Promise<TheaterMahjongGame[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_THEATER_MAHJONG_GAMES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_THEATER_MAHJONG_GAMES, 'readonly');
+          const req = tx.objectStore(STORE_THEATER_MAHJONG_GAMES).index('charIds').getAll(charId);
+          req.onsuccess = () => resolve(((req.result as TheaterMahjongGame[]) || []).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0)));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  getTheaterMahjongGame: (id: string): Promise<TheaterMahjongGame | null> =>
+      getStoreItem<TheaterMahjongGame>(STORE_THEATER_MAHJONG_GAMES, id),
+  saveTheaterMahjongGame: (game: TheaterMahjongGame): Promise<void> =>
+      putStoreItem(STORE_THEATER_MAHJONG_GAMES, game),
+  deleteTheaterMahjongGame: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_MAHJONG_GAMES, id),
+  deleteTheaterMahjongGamesByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_MAHJONG_GAMES, 'charIds', charId),
+
+  getAllTheaterMahjongInvitations: async (): Promise<TheaterMahjongInvitation[]> => (
+      await getAllStoreItems<TheaterMahjongInvitation>(STORE_THEATER_MAHJONG_INVITATIONS)
+  ).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+  getPendingTheaterMahjongInvitations: async (charId?: string): Promise<TheaterMahjongInvitation[]> => {
+      const all = await DB.getAllTheaterMahjongInvitations();
+      return all.filter(inv => inv.status === 'pending' && (!charId || inv.charId === charId));
+  },
+  getTheaterMahjongInvitation: (id: string): Promise<TheaterMahjongInvitation | null> =>
+      getStoreItem<TheaterMahjongInvitation>(STORE_THEATER_MAHJONG_INVITATIONS, id),
+  saveTheaterMahjongInvitation: (invitation: TheaterMahjongInvitation): Promise<void> =>
+      putStoreItem(STORE_THEATER_MAHJONG_INVITATIONS, invitation),
+  deleteTheaterMahjongInvitation: (id: string): Promise<void> =>
+      deleteStoreItem(STORE_THEATER_MAHJONG_INVITATIONS, id),
+  deleteTheaterMahjongInvitationsByCharId: async (charId: string): Promise<number> =>
+      DB.deleteByIndex(STORE_THEATER_MAHJONG_INVITATIONS, 'charId', charId),
+
   getCollectionItems: async (): Promise<CollectionItem[]> => {
       const db = await openDB();
       return new Promise((resolve, reject) => {
@@ -3191,6 +3561,7 @@ export const DB = {
       transaction.objectStore(STORE_GALLERY).put({
           ...img,
           review: typeof img.review === 'string' ? cleanVisibleRoleText(img.review) : img.review,
+          charEssay: typeof img.charEssay === 'string' ? cleanVisibleRoleText(img.charEssay) : img.charEssay,
       });
   },
 
@@ -3225,6 +3596,7 @@ export const DB = {
               }
               const cleanPatch: Partial<Omit<GalleryImage, 'id'>> = { ...patch };
               if (typeof patch.review === 'string') cleanPatch.review = cleanVisibleRoleText(patch.review);
+              if (typeof patch.charEssay === 'string') cleanPatch.charEssay = cleanVisibleRoleText(patch.charEssay);
               const updated: GalleryImage = { ...data, ...cleanPatch, id: data.id, updatedAt: Date.now() };
               const putReq = store.put(updated);
               putReq.onsuccess = () => resolve(updated);
@@ -5768,7 +6140,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, healthImportBatches, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMediaRaw, coviewBooks, coviewSessions, coviewMessages, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterCustomLibrary, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords, takeoutOrders] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, healthImportBatches, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMediaRaw, coviewBooks, coviewSessions, coviewMessages, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterCustomLibrary, theaterReflectionSessions, theaterSleepSessions, theaterGomokuGames, theaterGomokuInvitations, theaterGoGames, theaterGoInvitations, theaterDoudizhuGames, theaterDoudizhuInvitations, theaterTurtleSoupGames, theaterTurtleSoupInvitations, theaterMahjongGames, theaterMahjongInvitations, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords, takeoutOrders] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -5829,6 +6201,17 @@ export const DB = {
           getAllFromStore(STORE_THEATER_FAUX_PIECES),
           getAllFromStore(STORE_THEATER_CUSTOM_LIBRARY),
           getAllFromStore(STORE_THEATER_REFLECTION_SESSIONS),
+          getAllFromStore(STORE_THEATER_SLEEP_SESSIONS),
+          getAllFromStore(STORE_THEATER_GOMOKU_GAMES),
+          getAllFromStore(STORE_THEATER_GOMOKU_INVITATIONS),
+          getAllFromStore(STORE_THEATER_GO_GAMES),
+          getAllFromStore(STORE_THEATER_GO_INVITATIONS),
+          getAllFromStore(STORE_THEATER_DOUDIZHU_GAMES),
+          getAllFromStore(STORE_THEATER_DOUDIZHU_INVITATIONS),
+          getAllFromStore(STORE_THEATER_TURTLE_SOUP_GAMES),
+          getAllFromStore(STORE_THEATER_TURTLE_SOUP_INVITATIONS),
+          getAllFromStore(STORE_THEATER_MAHJONG_GAMES),
+          getAllFromStore(STORE_THEATER_MAHJONG_INVITATIONS),
           getAllFromStore(STORE_COLLECTION_ITEMS),
           getAllFromStore(STORE_SCHEDULED),
           getAllFromStore(STORE_LIFE_SIM),
@@ -5876,7 +6259,8 @@ export const DB = {
           STORE_TWITTER_TWEETS, STORE_TWITTER_NOTIFS, STORE_TWITTER_PROFILE, STORE_TWITTER_ACCOUNTS, STORE_TWITTER_DM, STORE_TWITTER_SEARCH,
           STORE_SONGS, STORE_MUSIC_TRACKS, STORE_MUSIC_PLAYLISTS, STORE_MUSIC_PLAYLIST_ITEMS, STORE_MUSIC_PLAY_EVENTS,
           STORE_MUSIC_SEARCH_HISTORY, STORE_MUSIC_RECOMMEND_CACHE, STORE_QUIZZES, STORE_GUIDEBOOK,
-          STORE_THEATER_QUIZ_SESSIONS, STORE_THEATER_FAUX_PIECES, STORE_THEATER_CUSTOM_LIBRARY, STORE_THEATER_REFLECTION_SESSIONS, STORE_COLLECTION_ITEMS,
+          STORE_THEATER_QUIZ_SESSIONS, STORE_THEATER_FAUX_PIECES, STORE_THEATER_CUSTOM_LIBRARY, STORE_THEATER_REFLECTION_SESSIONS, STORE_THEATER_SLEEP_SESSIONS,
+          STORE_THEATER_GOMOKU_GAMES, STORE_THEATER_GOMOKU_INVITATIONS, STORE_THEATER_GO_GAMES, STORE_THEATER_GO_INVITATIONS, STORE_THEATER_DOUDIZHU_GAMES, STORE_THEATER_DOUDIZHU_INVITATIONS, STORE_THEATER_TURTLE_SOUP_GAMES, STORE_THEATER_TURTLE_SOUP_INVITATIONS, STORE_THEATER_MAHJONG_GAMES, STORE_THEATER_MAHJONG_INVITATIONS, STORE_COLLECTION_ITEMS,
           STORE_SCHEDULED, STORE_LIFE_SIM, STORE_HANDBOOK, STORE_TRACKERS, STORE_TRACKER_ENTRIES, STORE_HOTNEWS,
           STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK,
           STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
@@ -5932,6 +6316,17 @@ export const DB = {
           theaterFauxPieces,
           theaterCustomLibrary,
           theaterReflectionSessions,
+          theaterSleepSessions,
+          theaterGomokuGames,
+          theaterGomokuInvitations,
+          theaterGoGames,
+          theaterGoInvitations,
+          theaterDoudizhuGames,
+          theaterDoudizhuInvitations,
+          theaterTurtleSoupGames,
+          theaterTurtleSoupInvitations,
+          theaterMahjongGames,
+          theaterMahjongInvitations,
           collectionItems,
           scheduledMessages,
           lifeSimState: lifeSimStates[0] || null,
@@ -6001,6 +6396,17 @@ export const DB = {
           STORE_THEATER_FAUX_PIECES,
           STORE_THEATER_CUSTOM_LIBRARY,
           STORE_THEATER_REFLECTION_SESSIONS,
+          STORE_THEATER_SLEEP_SESSIONS,
+          STORE_THEATER_GOMOKU_GAMES,
+          STORE_THEATER_GOMOKU_INVITATIONS,
+          STORE_THEATER_GO_GAMES,
+          STORE_THEATER_GO_INVITATIONS,
+          STORE_THEATER_DOUDIZHU_GAMES,
+          STORE_THEATER_DOUDIZHU_INVITATIONS,
+          STORE_THEATER_TURTLE_SOUP_GAMES,
+          STORE_THEATER_TURTLE_SOUP_INVITATIONS,
+          STORE_THEATER_MAHJONG_GAMES,
+          STORE_THEATER_MAHJONG_INVITATIONS,
           STORE_COLLECTION_ITEMS,
           STORE_SCHEDULED,
           STORE_LIFE_SIM,
@@ -6101,6 +6507,17 @@ export const DB = {
           data.theaterQuizSessions !== undefined,
           data.theaterFauxPieces !== undefined,
           data.theaterReflectionSessions !== undefined,
+          data.theaterSleepSessions !== undefined,
+          data.theaterGomokuGames !== undefined,
+          data.theaterGomokuInvitations !== undefined,
+          data.theaterGoGames !== undefined,
+          data.theaterGoInvitations !== undefined,
+          data.theaterDoudizhuGames !== undefined,
+          data.theaterDoudizhuInvitations !== undefined,
+          data.theaterTurtleSoupGames !== undefined,
+          data.theaterTurtleSoupInvitations !== undefined,
+          data.theaterMahjongGames !== undefined,
+          data.theaterMahjongInvitations !== undefined,
           data.collectionItems !== undefined,
           data.scheduledMessages !== undefined,
           data.lifeSimState !== undefined,
@@ -6618,6 +7035,50 @@ export const DB = {
           await clearAndAdd(STORE_THEATER_REFLECTION_SESSIONS, data.theaterReflectionSessions, '对影册', false);
           data.theaterReflectionSessions = undefined as any;
       }, data.theaterReflectionSessions?.length || 0);
+      await runSection('一起入眠', data.theaterSleepSessions !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_SLEEP_SESSIONS, data.theaterSleepSessions, '一起入眠', false);
+          data.theaterSleepSessions = undefined as any;
+      }, data.theaterSleepSessions?.length || 0);
+      await runSection('五子棋棋局', data.theaterGomokuGames !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_GOMOKU_GAMES, data.theaterGomokuGames, '五子棋棋局', false);
+          data.theaterGomokuGames = undefined as any;
+      }, data.theaterGomokuGames?.length || 0);
+      await runSection('五子棋邀请', data.theaterGomokuInvitations !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_GOMOKU_INVITATIONS, data.theaterGomokuInvitations, '五子棋邀请', false);
+          data.theaterGomokuInvitations = undefined as any;
+      }, data.theaterGomokuInvitations?.length || 0);
+      await runSection('围棋棋局', data.theaterGoGames !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_GO_GAMES, data.theaterGoGames, '围棋棋局', false);
+          data.theaterGoGames = undefined as any;
+      }, data.theaterGoGames?.length || 0);
+      await runSection('围棋邀请', data.theaterGoInvitations !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_GO_INVITATIONS, data.theaterGoInvitations, '围棋邀请', false);
+          data.theaterGoInvitations = undefined as any;
+      }, data.theaterGoInvitations?.length || 0);
+      await runSection('斗地主牌局', data.theaterDoudizhuGames !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_DOUDIZHU_GAMES, data.theaterDoudizhuGames, '斗地主牌局', false);
+          data.theaterDoudizhuGames = undefined as any;
+      }, data.theaterDoudizhuGames?.length || 0);
+      await runSection('斗地主邀请', data.theaterDoudizhuInvitations !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_DOUDIZHU_INVITATIONS, data.theaterDoudizhuInvitations, '斗地主邀请', false);
+          data.theaterDoudizhuInvitations = undefined as any;
+      }, data.theaterDoudizhuInvitations?.length || 0);
+      await runSection('海龟汤汤局', data.theaterTurtleSoupGames !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_TURTLE_SOUP_GAMES, data.theaterTurtleSoupGames, '海龟汤汤局', false);
+          data.theaterTurtleSoupGames = undefined as any;
+      }, data.theaterTurtleSoupGames?.length || 0);
+      await runSection('海龟汤邀请', data.theaterTurtleSoupInvitations !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_TURTLE_SOUP_INVITATIONS, data.theaterTurtleSoupInvitations, '海龟汤邀请', false);
+          data.theaterTurtleSoupInvitations = undefined as any;
+      }, data.theaterTurtleSoupInvitations?.length || 0);
+      await runSection('麻将牌局', data.theaterMahjongGames !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_MAHJONG_GAMES, data.theaterMahjongGames, '麻将牌局', false);
+          data.theaterMahjongGames = undefined as any;
+      }, data.theaterMahjongGames?.length || 0);
+      await runSection('麻将邀请', data.theaterMahjongInvitations !== undefined, async () => {
+          await clearAndAdd(STORE_THEATER_MAHJONG_INVITATIONS, data.theaterMahjongInvitations, '麻将邀请', false);
+          data.theaterMahjongInvitations = undefined as any;
+      }, data.theaterMahjongInvitations?.length || 0);
       await runSection('典藏馆收录', data.collectionItems !== undefined, async () => {
           await clearAndAdd(STORE_COLLECTION_ITEMS, data.collectionItems, '典藏馆收录', false);
           data.collectionItems = undefined as any;

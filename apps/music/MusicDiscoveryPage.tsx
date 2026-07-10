@@ -26,6 +26,7 @@ interface Props {
   onOpenPlayer: () => void;
   onVisitChar: (charId: string) => void;
   onShareSong: (song: Song) => void;
+  onOpenArtist?: (artist: { id?: number | string; name: string; source?: 'netease' | 'qq' }) => void;
   tabBar?: React.ReactNode;
 }
 
@@ -33,6 +34,9 @@ const songFromNetease = (s: any): Song => ({
   id: s.id,
   name: s.name,
   artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
+  artistIds: (s.ar || s.artists || [])
+    .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+    .filter((a: any) => a.id && a.name),
   album: s.al?.name || s.album?.name || '',
   albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || '') || FALLBACK_COVER,
   duration: (s.dt || s.duration || 0) / 1000,
@@ -70,6 +74,7 @@ const MusicDiscoveryPage: React.FC<Props> = ({
   onOpenPlayer,
   onVisitChar,
   onShareSong,
+  onOpenArtist,
   tabBar,
 }) => {
   const { characters, addToast, userProfile } = useOS();
@@ -453,6 +458,7 @@ const MusicDiscoveryPage: React.FC<Props> = ({
                   key={`${song.source || 'netease'}-${song.id}-${i}`}
                   name={song.name}
                   artists={song.artists}
+                  artistIds={song.artistIds}
                   album={song.album}
                   albumPic={song.albumPic}
                   duration={fmtTime(song.duration)}
@@ -460,6 +466,7 @@ const MusicDiscoveryPage: React.FC<Props> = ({
                   isActive={current?.id === song.id}
                   onClick={() => { playSong(song, { replaceQueue: songCards, startIdx: i, playSource: 'discover' }); onOpenPlayer(); }}
                   onShare={() => onShareSong(song)}
+                  onArtistClick={onOpenArtist}
                 />
               ))}
             </div>

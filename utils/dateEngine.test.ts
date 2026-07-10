@@ -58,4 +58,109 @@ describe('dateEngine prompt context', () => {
         expect(prompt).toContain('FULL_DATE_USER_SENTINEL');
         expect(prompt).toContain('FULL_DATE_USER_WORLDBOOK_SENTINEL');
     });
+
+    it('asks for and carries forward character inner OS', () => {
+        const char = {
+            id: 'char-date-thinking',
+            name: '阿澈',
+            avatar: '',
+            description: '雨天会下意识照顾人',
+            systemPrompt: '雨天会下意识照顾人',
+            memories: [],
+        } as CharacterProfile;
+        const user = { name: '小夏' } as UserProfile;
+        const scene: DateScene = {
+            id: 'rain',
+            name: '雨天街角',
+            emoji: '🌧️',
+            vibe: '雨声和靠近',
+            opening: '雨落下来。',
+        };
+        const worldline: DateWorldline = {
+            id: 'worldline-thinking',
+            charId: char.id,
+            sceneId: scene.id,
+            sceneName: scene.name,
+            sceneEmoji: scene.emoji,
+            vibe: scene.vibe,
+            title: '雨中一线',
+            createdAt: 1,
+            updatedAt: 1,
+            turnCount: 1,
+            messages: [
+                {
+                    id: 'm1',
+                    role: 'char',
+                    speech: '慢点，别踩到水。',
+                    thinking: '她把伞往我这边偏了，我不能表现得太明显。',
+                    ts: 1,
+                },
+            ],
+        };
+
+        const prompt = buildDateTurnPrompt(
+            char,
+            user,
+            scene,
+            worldline,
+            '你也靠过来一点。',
+            '',
+            false,
+            '完整角色和用户设定',
+        );
+
+        expect(prompt).toContain('"thinking"');
+        expect(prompt).toContain('内心OS');
+        expect(prompt).toContain('心里想：她把伞往我这边偏了');
+    });
+
+    it('switches to side narration without placing the character in scene', () => {
+        const char = {
+            id: 'char-date-side',
+            name: '阿澈',
+            avatar: '',
+            description: '侧幕测试角色',
+            systemPrompt: '不应在侧幕里登场',
+            memories: [],
+        } as CharacterProfile;
+        const user = { name: '小夏' } as UserProfile;
+        const scene: DateScene = {
+            id: 'market',
+            name: '旧街夜市',
+            emoji: '🏮',
+            vibe: '人声、灯影、支线线索',
+            opening: '夜市亮起来。',
+        };
+        const worldline: DateWorldline = {
+            id: 'worldline-side',
+            charId: char.id,
+            sceneId: scene.id,
+            sceneName: scene.name,
+            sceneEmoji: scene.emoji,
+            vibe: scene.vibe,
+            title: '夜市侧影',
+            createdAt: 1,
+            updatedAt: 1,
+            turnCount: 1,
+            sideNarrationEnabled: true,
+            messages: [],
+        };
+
+        const prompt = buildDateTurnPrompt(
+            char,
+            user,
+            scene,
+            worldline,
+            '去问问摊主刚才看见了什么。',
+            '独自走进巷口',
+            false,
+            '完整角色和用户设定',
+            true,
+        );
+
+        expect(prompt).toContain('侧幕描写模式');
+        expect(prompt).toContain('阿澈」不在当前现场');
+        expect(prompt).toContain('char_speech、char_action、thinking 必须为空字符串');
+        expect(prompt).toContain('不要让 阿澈 回应');
+    });
 });

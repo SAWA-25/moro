@@ -1,4 +1,4 @@
-type BankPixelKind = 'furniture' | 'recipe' | 'staff' | 'effect' | 'ui';
+type BankPixelKind = 'furniture' | 'recipe' | 'staff' | 'effect' | 'ui' | 'product' | 'customer';
 
 export interface BankPixelAssetMeta {
     id: string;
@@ -12,6 +12,45 @@ export interface BankPixelStickerItem {
     name: string;
     url: string;
     category: string;
+}
+
+export interface BankPixelDecorSetDef {
+    id: string;
+    assetId: string;
+    name: string;
+    category: 'decor-set';
+    theme: string;
+    tags: string[];
+    size?: 64 | 96 | 128;
+    surface?: 'floor' | 'leftWall';
+}
+
+export interface BankPixelDailyFurnitureDef {
+    id: string;
+    assetId: string;
+    name: string;
+    category: 'daily';
+    theme: string;
+    tags: string[];
+    size?: 64 | 96 | 128;
+    surface?: 'floor' | 'leftWall';
+}
+
+export interface BankPixelStaffDef {
+    id: string;
+    assetId: string;
+    name: string;
+    role: 'manager' | 'waiter' | 'chef';
+    maxFatigue: number;
+    personality: string;
+}
+
+export interface BankPixelCustomerDef {
+    id: string;
+    assetId: string;
+    name: string;
+    trait: string;
+    reactionTags: string[];
 }
 
 const REF_PREFIX = 'bank-pixel:';
@@ -61,6 +100,444 @@ const meta: Record<string, BankPixelAssetMeta> = {};
 function addMeta(id: string, kind: BankPixelKind, defaultSize: 64 | 96 | 128, surface?: 'floor' | 'leftWall') {
     meta[id] = { id, kind, defaultSize, surface };
 }
+
+type DecorSetItem = [slug: string, name: string, surface?: 'floor' | 'leftWall', size?: 64 | 96 | 128];
+type DailyFurnitureItem = [slug: string, name: string, surface?: 'floor' | 'leftWall', size?: 64 | 96 | 128];
+
+const DECOR_SET_CATALOGS: Array<{ key: string; theme: string; tags: string[]; items: DecorSetItem[] }> = [
+    {
+        key: 'roastery',
+        theme: '咖啡烘焙',
+        tags: ['装饰套装', '咖啡', '烘焙'],
+        items: [
+            ['bean-wreath', '咖啡豆花环', 'leftWall', 64],
+            ['espresso-neon', '浓缩霓虹灯', 'leftWall', 96],
+            ['origin-map', '产区地图', 'leftWall', 96],
+            ['steam-lamp', '蒸汽小灯', 'leftWall', 64],
+            ['receipt-clip', '小票夹板', 'leftWall', 64],
+            ['chalk-arrow', '手写箭头牌', 'leftWall', 64],
+            ['menu-ribbons', '菜单丝带', 'leftWall', 96],
+            ['latte-frame', '拉花相框', 'leftWall', 64],
+            ['burlap-rug', '麻布咖啡地毯', 'floor', 96],
+            ['brass-grinder', '黄铜磨豆机', 'floor', 64],
+            ['tasting-tray', '杯测托盘', 'floor', 64],
+            ['roaster-drum', '迷你烘豆桶', 'floor', 96],
+            ['copper-kettle', '铜色手冲壶', 'floor', 64],
+            ['jar-shelf', '咖啡罐小架', 'floor', 96],
+            ['bean-scoop', '豆勺摆件', 'floor', 64],
+            ['crate-stack', '咖啡木箱堆', 'floor', 96],
+            ['cupping-spoons', '杯测勺架', 'floor', 64],
+            ['sack-pile', '咖啡麻袋堆', 'floor', 96],
+        ],
+    },
+    {
+        key: 'bakery',
+        theme: '粉彩烘焙',
+        tags: ['装饰套装', '甜点', '粉彩'],
+        items: [
+            ['croissant-garland', '可颂挂串', 'leftWall', 96],
+            ['cupcake-sign', '纸杯蛋糕招牌', 'leftWall', 96],
+            ['rolling-pin-wall', '擀面杖墙饰', 'leftWall', 64],
+            ['recipe-frame', '手写配方框', 'leftWall', 64],
+            ['ribbon-awning', '粉彩缎带棚', 'leftWall', 128],
+            ['donut-neon', '甜甜圈霓虹', 'leftWall', 64],
+            ['whisk-rack', '打蛋器挂架', 'leftWall', 64],
+            ['oven-mitt-banner', '隔热手套挂旗', 'leftWall', 96],
+            ['gingham-rug', '格纹烘焙地毯', 'floor', 96],
+            ['pastel-cake-stand', '粉彩蛋糕座', 'floor', 64],
+            ['macaron-tower', '马卡龙塔', 'floor', 64],
+            ['sugar-jar', '砂糖玻璃罐', 'floor', 64],
+            ['flour-sack', '面粉袋', 'floor', 64],
+            ['cookie-tin', '曲奇铁盒', 'floor', 64],
+            ['frosting-lamp', '奶油裱花灯', 'floor', 64],
+            ['bread-basket', '面包篮', 'floor', 64],
+            ['milk-bottle', '牛奶瓶组', 'floor', 64],
+            ['pie-display', '派点展示盘', 'floor', 96],
+        ],
+    },
+    {
+        key: 'cyber',
+        theme: '赛博夜市',
+        tags: ['装饰套装', '赛博', '霓虹'],
+        items: [
+            ['noodle-neon', '霓虹面碗牌', 'leftWall', 96],
+            ['holo-menu', '全息菜单屏', 'leftWall', 96],
+            ['pixel-kanji', '像素文字牌', 'leftWall', 64],
+            ['led-strip', 'LED 灯带', 'leftWall', 96],
+            ['ramen-poster', '拉面海报', 'leftWall', 64],
+            ['warning-stripes', '警戒条装饰', 'leftWall', 96],
+            ['glitch-frame', '故障风相框', 'leftWall', 64],
+            ['data-lantern', '数据灯笼', 'leftWall', 64],
+            ['circuit-mat', '电路地垫', 'floor', 96],
+            ['vending-panel', '迷你贩卖面板', 'floor', 96],
+            ['synth-speaker', '合成器音箱', 'floor', 64],
+            ['cable-plant', '电线盆栽', 'floor', 64],
+            ['prism-cube', '棱镜方块', 'floor', 64],
+            ['steam-vent', '蒸汽排风口', 'floor', 64],
+            ['robot-mascot', '机器人招财仔', 'floor', 64],
+            ['mini-server', '迷你服务器架', 'floor', 96],
+            ['chrome-tray', '铬色托盘', 'floor', 64],
+            ['noodle-stack', '杯面叠叠', 'floor', 64],
+        ],
+    },
+    {
+        key: 'botanica',
+        theme: '植物温室',
+        tags: ['装饰套装', '植物', '温室'],
+        items: [
+            ['hanging-fern', '悬挂蕨叶', 'leftWall', 64],
+            ['herb-rack', '香草墙架', 'leftWall', 96],
+            ['floral-arch', '花藤拱门', 'leftWall', 128],
+            ['seed-board', '种子包板', 'leftWall', 64],
+            ['greenhouse-pane', '温室窗格', 'leftWall', 96],
+            ['leaf-garland', '叶片挂串', 'leftWall', 96],
+            ['botany-print', '植物图鉴', 'leftWall', 64],
+            ['bee-sign', '小蜜蜂招牌', 'leftWall', 64],
+            ['moss-mat', '苔藓地垫', 'floor', 96],
+            ['terrarium', '玻璃生态瓶', 'floor', 64],
+            ['watering-can', '绿铜浇水壶', 'floor', 64],
+            ['clay-pot-stack', '陶盆叠叠', 'floor', 64],
+            ['vine-curtain', '藤蔓帘脚', 'floor', 96],
+            ['garden-lantern', '花园灯笼', 'floor', 64],
+            ['mushroom-stool', '蘑菇小墩', 'floor', 64],
+            ['compost-crate', '园艺木箱', 'floor', 96],
+            ['butterfly-mobile', '蝴蝶小挂件', 'floor', 64],
+            ['herb-jars', '香草罐组', 'floor', 64],
+        ],
+    },
+    {
+        key: 'diner',
+        theme: '复古餐车',
+        tags: ['装饰套装', '复古', '餐车'],
+        items: [
+            ['vinyl-wall', '黑胶唱片墙', 'leftWall', 64],
+            ['milkshake-neon', '奶昔霓虹牌', 'leftWall', 96],
+            ['chrome-clock', '铬边挂钟', 'leftWall', 64],
+            ['menu-letters', '字母菜单板', 'leftWall', 96],
+            ['license-plate', '旧车牌墙饰', 'leftWall', 64],
+            ['soda-sign', '汽水招牌', 'leftWall', 96],
+            ['checker-banner', '棋盘格挂旗', 'leftWall', 96],
+            ['pie-clock', '派形小钟', 'leftWall', 64],
+            ['checker-rug', '黑白棋盘地毯', 'floor', 96],
+            ['jukebox', '迷你点唱机', 'floor', 96],
+            ['booth-pillow', '红卡座靠垫', 'floor', 64],
+            ['ketchup-pair', '番茄酱瓶组', 'floor', 64],
+            ['starburst-lamp', '星芒台灯', 'floor', 64],
+            ['gumball', '糖球机', 'floor', 64],
+            ['diner-pennant', '餐车小旗', 'floor', 64],
+            ['napkin-holder', '餐巾架', 'floor', 64],
+            ['straw-dispenser', '吸管筒', 'floor', 64],
+            ['roller-skate', '轮滑鞋摆件', 'floor', 64],
+        ],
+    },
+    {
+        key: 'ocean',
+        theme: '海边小铺',
+        tags: ['装饰套装', '海滨', '蓝白'],
+        items: [
+            ['shell-garland', '贝壳挂串', 'leftWall', 96],
+            ['fish-sign', '小鱼招牌', 'leftWall', 96],
+            ['net-wall', '渔网墙饰', 'leftWall', 96],
+            ['driftwood-menu', '漂流木菜单', 'leftWall', 96],
+            ['starfish-frame', '海星相框', 'leftWall', 64],
+            ['anchor-banner', '锚形挂旗', 'leftWall', 96],
+            ['seagull-sign', '海鸥小牌', 'leftWall', 64],
+            ['tide-clock', '潮汐钟', 'leftWall', 64],
+            ['wave-rug', '海浪地毯', 'floor', 96],
+            ['lighthouse-lamp', '灯塔小灯', 'floor', 64],
+            ['coral-vase', '珊瑚花瓶', 'floor', 64],
+            ['boat-shelf', '小船置物架', 'floor', 96],
+            ['pearl-jar', '珍珠玻璃罐', 'floor', 64],
+            ['surfboard', '冲浪板摆件', 'floor', 96],
+            ['blue-lantern', '蓝白提灯', 'floor', 64],
+            ['rope-coil', '缆绳卷', 'floor', 64],
+            ['ice-bucket', '碎冰小桶', 'floor', 64],
+            ['message-bottle', '漂流瓶', 'floor', 64],
+        ],
+    },
+    {
+        key: 'moon',
+        theme: '月光茶铺',
+        tags: ['装饰套装', '月相', '魔法'],
+        items: [
+            ['moon-lantern', '月亮灯笼', 'leftWall', 64],
+            ['star-curtain', '星星帘', 'leftWall', 96],
+            ['tarot-menu', '塔罗菜单牌', 'leftWall', 96],
+            ['crescent-sign', '弯月招牌', 'leftWall', 96],
+            ['constellation-board', '星座板', 'leftWall', 96],
+            ['star-garland', '星光挂串', 'leftWall', 96],
+            ['oracle-frame', '占卜相框', 'leftWall', 64],
+            ['eclipse-clock', '月蚀钟', 'leftWall', 64],
+            ['galaxy-rug', '银河地毯', 'floor', 96],
+            ['crystal-display', '水晶陈列座', 'floor', 64],
+            ['potion-syrups', '魔法糖浆瓶', 'floor', 64],
+            ['velvet-runner', '丝绒长垫', 'floor', 128],
+            ['incense-burner', '线香炉', 'floor', 64],
+            ['cat-statue', '黑猫小像', 'floor', 64],
+            ['spell-jar-shelf', '咒语罐小架', 'floor', 96],
+            ['midnight-teapot', '午夜茶壶', 'floor', 64],
+            ['rune-tray', '符文石托盘', 'floor', 64],
+            ['cloud-pillow', '云朵靠垫', 'floor', 64],
+        ],
+    },
+];
+
+export const BANK_PIXEL_DECOR_SET_DEFS: BankPixelDecorSetDef[] = DECOR_SET_CATALOGS.flatMap(group =>
+    group.items.map(([slug, name, surface, size]) => ({
+        id: `stk-decor-${group.key}-${slug}`,
+        assetId: `furniture/decor-${group.key}-${slug}`,
+        name,
+        category: 'decor-set' as const,
+        theme: group.theme,
+        tags: ['decor', '装饰', '套装', ...group.tags],
+        surface,
+        size,
+    }))
+);
+
+const DAILY_FURNITURE_CATALOGS: Array<{ key: string; theme: string; tags: string[]; items: DailyFurnitureItem[] }> = [
+    {
+        key: 'front',
+        theme: '前台收银',
+        tags: ['日常家具', '前台', '收银'],
+        items: [
+            ['queue-post', '排队立柱', 'floor', 64],
+            ['receipt-printer', '小票打印机', 'floor', 64],
+            ['card-reader', '刷卡机', 'floor', 64],
+            ['cash-drawer', '零钱抽屉', 'floor', 64],
+            ['pickup-number', '取餐号码牌', 'leftWall', 64],
+            ['order-bell', '叫号铃', 'floor', 64],
+            ['clipboard-desk', '桌面夹板', 'floor', 64],
+            ['stamp-pad', '印章台', 'floor', 64],
+            ['price-tags', '价格标签盒', 'floor', 64],
+            ['counter-mat', '收银防滑垫', 'floor', 96],
+            ['service-sign', '服务提示牌', 'leftWall', 64],
+            ['open-hours', '营业时间牌', 'leftWall', 96],
+            ['queue-arrow', '排队箭头牌', 'leftWall', 64],
+            ['notice-board', '公告小板', 'leftWall', 96],
+            ['coupon-stand', '优惠券立牌', 'floor', 64],
+            ['tip-jar', '小费罐', 'floor', 64],
+            ['barcode-scanner', '扫码枪', 'floor', 64],
+            ['card-tray', '卡片托盘', 'floor', 64],
+        ],
+    },
+    {
+        key: 'kitchen',
+        theme: '后厨备餐',
+        tags: ['日常家具', '后厨', '备餐'],
+        items: [
+            ['prep-bowl', '备餐大碗', 'floor', 64],
+            ['cutting-board', '切菜板', 'floor', 64],
+            ['knife-block', '刀具座', 'floor', 64],
+            ['spice-rack', '调料墙架', 'leftWall', 96],
+            ['apron-hook', '围裙挂钩', 'leftWall', 64],
+            ['towel-rail', '擦手巾杆', 'leftWall', 96],
+            ['soup-pot', '汤锅', 'floor', 64],
+            ['rice-cooker', '电饭锅', 'floor', 64],
+            ['hand-mixer', '手持搅拌器', 'floor', 64],
+            ['ingredient-bin', '食材分装箱', 'floor', 96],
+            ['dish-stack', '盘子叠叠', 'floor', 64],
+            ['sauce-bottles', '酱汁瓶组', 'floor', 64],
+            ['prep-labels', '备餐标签条', 'leftWall', 64],
+            ['freezer-box', '冷冻盒', 'floor', 64],
+            ['timer-clock', '厨房计时钟', 'leftWall', 64],
+            ['serving-cart', '出餐推车', 'floor', 96],
+            ['tray-stack', '托盘叠叠', 'floor', 64],
+            ['cooling-rack', '晾凉架', 'floor', 96],
+        ],
+    },
+    {
+        key: 'clean',
+        theme: '清洁维护',
+        tags: ['日常家具', '清洁', '维护'],
+        items: [
+            ['mop-bucket', '拖把桶', 'floor', 64],
+            ['broom-set', '扫帚簸箕组', 'floor', 64],
+            ['wet-floor-sign', '小心地滑牌', 'floor', 64],
+            ['dustpan', '簸箕', 'floor', 64],
+            ['spray-bottle', '清洁喷瓶', 'floor', 64],
+            ['towel-stack', '抹布叠叠', 'floor', 64],
+            ['trash-bag-roll', '垃圾袋卷', 'floor', 64],
+            ['recycle-bin', '分类回收桶', 'floor', 64],
+            ['soap-dispenser', '洗手液泵', 'floor', 64],
+            ['sanitizer-stand', '消毒液立架', 'floor', 64],
+            ['glove-box', '手套盒', 'floor', 64],
+            ['tissue-box', '纸巾盒', 'floor', 64],
+            ['floor-squeegee', '地刮', 'floor', 64],
+            ['window-wiper', '擦窗器', 'floor', 64],
+            ['laundry-basket', '待洗布草篮', 'floor', 96],
+            ['cleaning-shelf', '清洁用品架', 'floor', 96],
+            ['drain-mat', '沥水垫', 'floor', 96],
+            ['checklist-board', '清洁检查表', 'leftWall', 96],
+        ],
+    },
+    {
+        key: 'stock',
+        theme: '仓储补货',
+        tags: ['日常家具', '仓储', '补货'],
+        items: [
+            ['delivery-box', '到货纸箱', 'floor', 96],
+            ['parcel-stack', '包裹叠叠', 'floor', 96],
+            ['label-printer', '标签打印机', 'floor', 64],
+            ['inventory-board', '库存看板', 'leftWall', 96],
+            ['rolling-ladder', '补货梯', 'floor', 96],
+            ['hand-truck', '手推车', 'floor', 96],
+            ['stock-shelf', '库存货架', 'floor', 96],
+            ['canister-row', '密封罐排', 'floor', 64],
+            ['paper-bag-stack', '纸袋叠叠', 'floor', 64],
+            ['cup-sleeve-box', '杯套盒', 'floor', 64],
+            ['straw-box', '吸管盒', 'floor', 64],
+            ['napkin-box', '餐巾纸盒', 'floor', 64],
+            ['takeout-bag', '外带袋架', 'floor', 64],
+            ['receipt-rolls', '小票纸卷', 'floor', 64],
+            ['seal-stickers', '封口贴卷', 'floor', 64],
+            ['price-gun', '标价枪', 'floor', 64],
+            ['counter-scale', '台秤', 'floor', 64],
+            ['freezer-crate', '冷链周转箱', 'floor', 96],
+        ],
+    },
+    {
+        key: 'staff',
+        theme: '员工休息',
+        tags: ['日常家具', '员工', '休息'],
+        items: [
+            ['staff-locker', '员工储物柜', 'floor', 96],
+            ['break-table', '休息小桌', 'floor', 96],
+            ['staff-chair', '员工椅', 'floor', 64],
+            ['water-cooler', '饮水机', 'floor', 96],
+            ['microwave', '微波炉', 'floor', 64],
+            ['lunchbox', '便当盒', 'floor', 64],
+            ['thermos', '保温杯', 'floor', 64],
+            ['schedule-board', '排班表', 'leftWall', 96],
+            ['punch-clock', '打卡钟', 'leftWall', 64],
+            ['uniform-hook', '制服挂钩', 'leftWall', 64],
+            ['shoe-rack', '换班鞋架', 'floor', 96],
+            ['first-aid-kit', '急救箱', 'leftWall', 64],
+            ['message-board', '员工留言板', 'leftWall', 96],
+            ['charging-station', '充电小站', 'floor', 64],
+            ['snack-basket', '零食篮', 'floor', 64],
+            ['cushion-bench', '休息长凳', 'floor', 96],
+            ['umbrella-hook', '雨伞挂钩', 'leftWall', 64],
+            ['staff-mug-row', '员工杯架', 'floor', 64],
+        ],
+    },
+    {
+        key: 'customer',
+        theme: '顾客便利',
+        tags: ['日常家具', '顾客', '便利'],
+        items: [
+            ['basket-stack', '购物篮叠叠', 'floor', 64],
+            ['child-seat', '儿童椅', 'floor', 64],
+            ['bag-hook', '包包挂钩', 'leftWall', 64],
+            ['coat-bench', '外套长凳', 'floor', 96],
+            ['umbrella-basket', '客用伞筐', 'floor', 64],
+            ['phone-charger', '客用充电器', 'floor', 64],
+            ['water-cups', '自取水杯', 'floor', 64],
+            ['tissue-stand', '纸巾立架', 'floor', 64],
+            ['menu-holder', '桌面菜单夹', 'floor', 64],
+            ['feedback-box', '意见箱', 'floor', 64],
+            ['lost-found-box', '失物招领盒', 'floor', 64],
+            ['waiting-stool', '等候小凳', 'floor', 64],
+            ['stroller-sign', '婴儿车停放牌', 'leftWall', 64],
+            ['pet-water-bowl', '宠物水碗', 'floor', 64],
+            ['reading-rack', '等候读物架', 'floor', 96],
+            ['umbrella-dryer', '雨伞甩干桶', 'floor', 64],
+            ['receipt-bin', '小票回收盒', 'floor', 64],
+            ['queue-cushion', '排队坐垫', 'floor', 64],
+        ],
+    },
+    {
+        key: 'routine',
+        theme: '开店收摊',
+        tags: ['日常家具', '开店', '收摊'],
+        items: [
+            ['shop-key-hook', '店钥匙挂板', 'leftWall', 64],
+            ['open-sign', '开店翻牌', 'leftWall', 96],
+            ['cash-bag', '备用钱袋', 'floor', 64],
+            ['apron-stack', '围裙叠叠', 'floor', 64],
+            ['daily-ledger', '日营业账本', 'floor', 64],
+            ['task-board', '今日任务板', 'leftWall', 96],
+            ['delivery-clipboard', '配送夹板', 'floor', 64],
+            ['broom-corner', '角落扫帚', 'floor', 64],
+            ['folding-sign', '折叠立牌', 'floor', 96],
+            ['patio-chair-stack', '外摆椅叠叠', 'floor', 96],
+            ['table-number-set', '桌号牌组', 'floor', 64],
+            ['reservation-book', '预约本', 'floor', 64],
+            ['takeout-shelf', '外带取餐架', 'floor', 96],
+            ['courier-bell', '骑手取餐铃', 'floor', 64],
+            ['rain-mat', '雨天吸水垫', 'floor', 96],
+            ['sunshade-stand', '遮阳伞座', 'floor', 96],
+            ['tool-roll', '维修工具卷', 'floor', 64],
+            ['closing-box', '打烊收纳箱', 'floor', 96],
+        ],
+    },
+];
+
+export const BANK_PIXEL_DAILY_FURNITURE_DEFS: BankPixelDailyFurnitureDef[] = DAILY_FURNITURE_CATALOGS.flatMap(group =>
+    group.items.map(([slug, name, surface, size]) => ({
+        id: `stk-daily-${group.key}-${slug}`,
+        assetId: `furniture/daily-${group.key}-${slug}`,
+        name,
+        category: 'daily' as const,
+        theme: group.theme,
+        tags: ['daily', '日常', '店铺日常', ...group.tags],
+        surface,
+        size,
+    }))
+);
+
+export const BANK_PIXEL_STAFF_DEFS: BankPixelStaffDef[] = [
+    { id: 'staff-night-manager-01', assetId: 'staff/night-manager', name: '夜班店长澄澄', role: 'manager', maxFatigue: 135, personality: '冷静会控场，擅长晚高峰排班和安抚客人。' },
+    { id: 'staff-pastry-chef-01', assetId: 'staff/pastry-chef', name: '奶油主厨米娅', role: 'chef', maxFatigue: 145, personality: '甜品手很稳，喜欢把新品摆得漂漂亮亮。' },
+    { id: 'staff-latte-artist-01', assetId: 'staff/latte-artist', name: '拉花师阿岚', role: 'waiter', maxFatigue: 115, personality: '动作轻快，会记住熟客常点的饮品。' },
+    { id: 'staff-stock-clerk-01', assetId: 'staff/stock-clerk', name: '补货员小满', role: 'manager', maxFatigue: 125, personality: '对库存数字很敏感，缺料前会先提醒。' },
+    { id: 'staff-cleaner-01', assetId: 'staff/cleaner', name: '清洁员明净', role: 'waiter', maxFatigue: 130, personality: '爱把角落擦亮，忙起来也会保持店面清爽。' },
+    { id: 'staff-packaging-01', assetId: 'staff/packaging', name: '打包员柚子', role: 'waiter', maxFatigue: 110, personality: '外带袋封得很整齐，适合照顾取餐高峰。' },
+    { id: 'staff-dessert-chef-01', assetId: 'staff/dessert-chef', name: '甜品师绵绵', role: 'chef', maxFatigue: 140, personality: '擅长小蛋糕和布丁，做事慢一点但很细。' },
+    { id: 'staff-greeter-01', assetId: 'staff/greeter', name: '门迎店员晴子', role: 'waiter', maxFatigue: 105, personality: '笑容很亮，适合招呼排队和安排座位。' },
+    { id: 'staff-buyer-01', assetId: 'staff/buyer', name: '采购经理柏舟', role: 'manager', maxFatigue: 120, personality: '会比较成本和品质，擅长给店里挑稳定供货。' },
+    { id: 'staff-trainee-01', assetId: 'staff/trainee', name: '新人店员豆豆', role: 'waiter', maxFatigue: 95, personality: '还在学习，但热情很足，适合轻量排班。' },
+];
+
+export const BANK_PIXEL_CUSTOMER_DEFS: BankPixelCustomerDef[] = [
+    { id: 'customer-office-runner-01', assetId: 'customer/office-runner', name: '赶班白领岚岚', trait: '来得快、看商品标签也快', reactionTags: ['通勤', '外带', '效率'] },
+    { id: 'customer-sketch-student-01', assetId: 'customer/sketch-student', name: '速写学生小禾', trait: '会盯着装饰角落找灵感', reactionTags: ['学生', '拍照', '装饰'] },
+    { id: 'customer-dog-walker-01', assetId: 'customer/dog-walker', name: '遛狗邻居阿川', trait: '常在门口和休息区停一下', reactionTags: ['邻居', '散步', '熟客'] },
+    { id: 'customer-courier-rider-01', assetId: 'customer/courier-rider', name: '风风快递员', trait: '喜欢拿了就走的货架动线', reactionTags: ['外带', '赶时间', '补给'] },
+    { id: 'customer-tourist-camera-01', assetId: 'customer/tourist-camera', name: '相机游客南南', trait: '看到好看的货架会想拍照', reactionTags: ['游客', '拍照', '装饰'] },
+    { id: 'customer-parent-kid-01', assetId: 'customer/parent-kid', name: '亲子客小满', trait: '会在展示柜前多看一会儿', reactionTags: ['亲子', '甜品', '停留'] },
+    { id: 'customer-fitness-coach-01', assetId: 'customer/fitness-coach', name: '健身教练青山', trait: '会留意清爽低负担的商品', reactionTags: ['健康', '饮品', '日常'] },
+    { id: 'customer-raincoat-guest-01', assetId: 'customer/raincoat-guest', name: '雨衣客绵绵', trait: '下雨天也会进店避一避', reactionTags: ['雨天', '热饮', '停留'] },
+    { id: 'customer-bookworm-01', assetId: 'customer/bookworm', name: '抱书客页页', trait: '偏爱安静角落和书架附近', reactionTags: ['阅读', '安静', '座位'] },
+    { id: 'customer-date-planner-01', assetId: 'customer/date-planner', name: '约会策划人栀子', trait: '会挑适合分享的小物和甜品', reactionTags: ['约会', '礼物', '甜品'] },
+    { id: 'customer-plant-neighbor-01', assetId: 'customer/plant-neighbor', name: '植物邻居青芽', trait: '会对绿植和自然风装饰有反应', reactionTags: ['植物', '装饰', '邻居'] },
+    { id: 'customer-coffee-critic-01', assetId: 'customer/coffee-critic', name: '咖啡点评员摩卡', trait: '会认真观察吧台和新品', reactionTags: ['点评', '饮品', '新品'] },
+    { id: 'customer-night-owl-01', assetId: 'customer/night-owl', name: '夜归客阿泊', trait: '喜欢灯光暖一点的角落', reactionTags: ['夜晚', '灯光', '热饮'] },
+    { id: 'customer-vlogger-01', assetId: 'customer/vlogger', name: '探店博主莓莓', trait: '会围着招牌和货架找镜头', reactionTags: ['探店', '拍照', '人气'] },
+    { id: 'customer-retired-teacher-01', assetId: 'customer/retired-teacher', name: '退休老师方叔', trait: '会慢慢看完菜单和陈列', reactionTags: ['慢逛', '菜单', '熟客'] },
+    { id: 'customer-taxi-driver-01', assetId: 'customer/taxi-driver', name: '出租司机老许', trait: '喜欢能快速补能量的东西', reactionTags: ['赶路', '外带', '补给'] },
+    { id: 'customer-interviewee-01', assetId: 'customer/interviewee', name: '面试归来安安', trait: '会找让人放松的小物', reactionTags: ['放松', '甜品', '座位'] },
+    { id: 'customer-gamer-01', assetId: 'customer/gamer', name: '掌机玩家小电', trait: '喜欢有趣的角落和能量饮品', reactionTags: ['游戏', '饮品', '停留'] },
+    { id: 'customer-florist-01', assetId: 'customer/florist', name: '花店老板洛洛', trait: '会注意包装、色彩和香味', reactionTags: ['花艺', '礼物', '装饰'] },
+    { id: 'customer-med-student-01', assetId: 'customer/med-student', name: '医学生阿澈', trait: '常买能撑过自习的补给', reactionTags: ['自习', '补给', '夜晚'] },
+    { id: 'customer-handmade-fan-01', assetId: 'customer/handmade-fan', name: '手作爱好者柚柚', trait: '会看包装和手作摆件', reactionTags: ['手作', '礼物', '小物'] },
+    { id: 'customer-remote-worker-01', assetId: 'customer/remote-worker', name: '远程办公客星回', trait: '会找插座感和安静座位', reactionTags: ['办公', '安静', '座位'] },
+    { id: 'customer-cosplay-visitor-01', assetId: 'customer/cosplay-visitor', name: '换装客璃璃', trait: '喜欢有风格主题的店面', reactionTags: ['主题', '拍照', '装饰'] },
+    { id: 'customer-budget-hunter-01', assetId: 'customer/budget-hunter', name: '精打细算客豆子', trait: '会比较价格和库存状态', reactionTags: ['价格', '补货', '日常'] },
+];
+
+export const BANK_PIXEL_PRODUCT_IDS = [
+    'drink-americano', 'drink-latte', 'drink-fruit-tea', 'drink-sparkling-yuzu',
+    'snack-skewer', 'snack-noodle', 'snack-box', 'snack-rice-ball',
+    'cv-bento', 'cv-drink', 'cv-bundle', 'cv-battery',
+    'fl-bouquet', 'fl-mini', 'fl-card', 'fl-dried',
+    'ds-roll', 'ds-pudding', 'ds-set', 'ds-macaron',
+    'pet-food', 'pet-toy', 'pet-care', 'pet-treats',
+    'st-pen', 'st-note', 'st-box', 'st-sticker',
+    'sh-book', 'sh-lamp', 'sh-cloth', 'sh-camera',
+    'hm-keychain', 'hm-ring', 'hm-custom', 'hm-candle',
+    'on-case', 'on-bag', 'on-set', 'on-poster',
+] as const;
 
 const FURNITURE: Array<Omit<BankPixelStickerItem, 'url'> & { assetId: string; size?: 64 | 96 | 128; surface?: 'floor' | 'leftWall' }> = [
     { id: 'stk-counter', assetId: 'furniture/counter', name: '像素吧台', category: 'furniture', size: 128 },
@@ -113,6 +590,24 @@ const FURNITURE: Array<Omit<BankPixelStickerItem, 'url'> & { assetId: string; si
     { id: 'stk-heart', assetId: 'effect/heart', name: '爱心', category: 'decor', size: 64 },
 ];
 
+FURNITURE.push(...BANK_PIXEL_DECOR_SET_DEFS.map(item => ({
+    id: item.id,
+    assetId: item.assetId,
+    name: item.name,
+    category: item.category,
+    size: item.size,
+    surface: item.surface,
+})));
+
+FURNITURE.push(...BANK_PIXEL_DAILY_FURNITURE_DEFS.map(item => ({
+    id: item.id,
+    assetId: item.assetId,
+    name: item.name,
+    category: item.category,
+    size: item.size,
+    surface: item.surface,
+})));
+
 for (const item of FURNITURE) addMeta(item.assetId, item.assetId.startsWith('effect/') ? 'effect' : 'furniture', item.size || 96, item.surface);
 
 [
@@ -122,6 +617,10 @@ for (const item of FURNITURE) addMeta(item.assetId, item.assetId.startsWith('eff
 [
     'staff/manager', 'staff/waiter', 'staff/chef', 'staff/cat', 'staff/dog', 'staff/bear', 'staff/rabbit', 'staff/penguin', 'staff/generic', 'staff/tired',
 ].forEach(id => addMeta(id, 'staff', 64));
+BANK_PIXEL_STAFF_DEFS.forEach(staff => addMeta(staff.assetId, 'staff', 64));
+
+BANK_PIXEL_PRODUCT_IDS.forEach(id => addMeta(`product/${id}`, 'product', 64));
+BANK_PIXEL_CUSTOMER_DEFS.forEach(customer => addMeta(customer.assetId, 'customer', 64));
 
 ['effect/heart', 'effect/sparkles', 'effect/zzz', 'effect/guestbook'].forEach(id => addMeta(id, 'effect', 64));
 [
@@ -379,7 +878,217 @@ function drawAsset(ctx: CanvasRenderingContext2D, id: string) {
     if (id.startsWith('staff/')) return drawStaff(ctx, id.slice(6));
     if (id.startsWith('effect/')) return drawEffect(ctx, id.slice(7));
     if (id.startsWith('ui/')) return drawUi(ctx, id.slice(3));
+    if (id.startsWith('product/')) return drawProduct(ctx, id.slice(8));
+    if (id.startsWith('customer/')) return drawCustomer(ctx, id.slice(9));
     return drawFurniture(ctx, id.replace(/^furniture\//, ''));
+}
+
+function drawProduct(ctx: CanvasRenderingContext2D, id: string) {
+    const colors = [P.teal2, P.rose2, P.amber2, P.green2, P.blue2, P.cream1, P.wood2, P.rose3];
+    const accent = colors[hash(id) % colors.length];
+    const accent2 = colors[(hash(`${id}:b`) + 3) % colors.length];
+    shadow(ctx, 7, 28, 18);
+
+    if (id.startsWith('drink-')) {
+        if (id.includes('sparkling')) {
+            box(ctx, 12, 8, 8, 18, P.blue2);
+            r(ctx, 13, 10, 6, 4, P.blue3);
+            p(ctx, 15, 15, P.white);
+            p(ctx, 18, 19, P.white);
+            r(ctx, 14, 5, 4, 4, P.green2);
+        } else {
+            drawCup(ctx, 10, 12, 1, id.includes('latte') ? P.cream1 : id.includes('fruit') ? P.rose3 : P.cream0);
+            r(ctx, 12, 10, 8, 2, id.includes('fruit') ? P.green2 : P.wood2);
+            if (id.includes('latte')) drawSpark(ctx, 22, 12, P.amber2);
+            if (id.includes('fruit')) {
+                p(ctx, 13, 16, P.rose2);
+                p(ctx, 17, 18, P.amber2);
+            }
+        }
+        return;
+    }
+
+    if (id.startsWith('snack-')) {
+        if (id.includes('skewer')) {
+            line(ctx, 8, 24, 24, 8, P.wood1);
+            [9, 13, 17, 21].forEach((x, i) => box(ctx, x, 20 - i * 4, 4, 4, i % 2 ? P.rose2 : P.amber2));
+        } else if (id.includes('noodle')) {
+            box(ctx, 8, 17, 16, 8, P.rose2);
+            r(ctx, 10, 15, 12, 3, P.cream0);
+            line(ctx, 12, 13, 21, 8, P.wood1);
+        } else if (id.includes('rice')) {
+            r(ctx, 10, 18, 12, 9, P.ink);
+            r(ctx, 11, 17, 10, 9, P.cream0);
+            r(ctx, 14, 20, 4, 4, P.green0);
+        } else {
+            box(ctx, 7, 13, 18, 12, P.amber1);
+            r(ctx, 10, 16, 12, 2, P.cream0);
+            r(ctx, 11, 20, 9, 2, P.rose2);
+        }
+        return;
+    }
+
+    if (id.startsWith('cv-')) {
+        if (id.includes('drink')) {
+            box(ctx, 11, 8, 10, 18, P.blue1);
+            r(ctx, 13, 11, 6, 6, P.blue3);
+        } else if (id.includes('battery')) {
+            box(ctx, 9, 13, 16, 9, P.gray2);
+            r(ctx, 25, 16, 2, 3, P.ink);
+            r(ctx, 11, 16, 8, 3, P.green2);
+        } else if (id.includes('bundle')) {
+            box(ctx, 7, 11, 18, 14, P.cream1);
+            r(ctx, 9, 14, 14, 2, P.rose2);
+            r(ctx, 10, 19, 10, 2, P.teal2);
+        } else {
+            box(ctx, 8, 12, 16, 12, P.cream0);
+            r(ctx, 10, 15, 12, 3, P.green2);
+            r(ctx, 12, 19, 8, 2, P.rose2);
+        }
+        return;
+    }
+
+    if (id.startsWith('fl-')) {
+        if (id.includes('card')) {
+            box(ctx, 8, 9, 16, 16, P.cream0);
+            drawMiniFlower(ctx, 16, 15, P.rose2);
+            r(ctx, 11, 21, 10, 1, P.ink2);
+        } else {
+            r(ctx, 14, 18, 4, 9, id.includes('dried') ? P.wood2 : P.green1);
+            for (let i = 0; i < (id.includes('mini') ? 4 : 7); i++) {
+                const x = 9 + i * 2 + (i % 2);
+                const y = 10 + (i % 3);
+                line(ctx, 16, 21, x, y, P.green1);
+                drawMiniFlower(ctx, x, y, id.includes('dried') ? P.cream1 : colors[i % colors.length]);
+            }
+            r(ctx, 11, 22, 10, 4, P.rose3);
+        }
+        return;
+    }
+
+    if (id.startsWith('ds-')) {
+        if (id.includes('macaron')) {
+            [8, 13, 18].forEach((x, i) => {
+                r(ctx, x, 16 + i % 2, 6, 3, colors[i]);
+                r(ctx, x, 19 + i % 2, 6, 3, P.cream0);
+            });
+        } else if (id.includes('pudding')) {
+            r(ctx, 10, 14, 12, 10, P.amber2);
+            r(ctx, 12, 11, 8, 4, P.wood2);
+            r(ctx, 11, 23, 10, 3, P.cream0);
+        } else if (id.includes('set')) {
+            drawCup(ctx, 7, 13, 1, P.teal3);
+            drawMiniCake(ctx, 20, 15, P.rose2, 1);
+        } else {
+            box(ctx, 8, 15, 16, 8, P.cream0);
+            r(ctx, 10, 13, 12, 4, P.rose3);
+            r(ctx, 11, 18, 10, 2, P.wood2);
+        }
+        return;
+    }
+
+    if (id.startsWith('pet-')) {
+        if (id.includes('toy')) {
+            r(ctx, 9, 15, 14, 8, accent);
+            r(ctx, 7, 17, 4, 4, accent2);
+            r(ctx, 21, 17, 4, 4, accent2);
+        } else if (id.includes('care')) {
+            box(ctx, 9, 10, 14, 15, P.blue2);
+            r(ctx, 14, 7, 4, 4, P.gray2);
+            r(ctx, 13, 16, 6, 2, P.white);
+            r(ctx, 15, 14, 2, 6, P.white);
+        } else {
+            box(ctx, 8, 11, 16, 15, id.includes('treats') ? P.rose2 : P.green2);
+            r(ctx, 11, 16, 10, 2, P.cream0);
+            drawMiniFlower(ctx, 16, 22, P.amber2);
+        }
+        return;
+    }
+
+    if (id.startsWith('st-')) {
+        if (id.includes('pen')) {
+            line(ctx, 8, 23, 23, 8, P.blue1);
+            line(ctx, 10, 25, 25, 10, P.amber2);
+            r(ctx, 22, 7, 3, 3, P.gray2);
+        } else if (id.includes('note')) {
+            box(ctx, 9, 7, 14, 20, P.cream0);
+            r(ctx, 12, 11, 8, 1, P.blue1);
+            r(ctx, 12, 15, 8, 1, P.blue1);
+            r(ctx, 12, 19, 7, 1, P.rose2);
+        } else {
+            box(ctx, 8, 12, 16, 12, id.includes('sticker') ? P.rose3 : P.amber2);
+            r(ctx, 11, 15, 10, 2, P.cream0);
+            drawSpark(ctx, 21, 11, P.teal2);
+        }
+        return;
+    }
+
+    if (id.startsWith('sh-')) {
+        if (id.includes('lamp')) {
+            r(ctx, 15, 11, 2, 13, P.wood1);
+            box(ctx, 10, 8, 12, 7, P.amber2);
+            r(ctx, 11, 24, 10, 3, P.wood2);
+        } else if (id.includes('camera')) {
+            box(ctx, 8, 13, 17, 11, P.gray1);
+            r(ctx, 13, 10, 7, 4, P.gray2);
+            r(ctx, 14, 16, 6, 6, P.blue2);
+        } else if (id.includes('cloth')) {
+            r(ctx, 10, 10, 12, 15, accent);
+            r(ctx, 8, 13, 4, 8, accent2);
+            r(ctx, 20, 13, 4, 8, accent2);
+        } else {
+            box(ctx, 8, 9, 16, 17, P.wood2);
+            r(ctx, 11, 12, 10, 2, P.cream0);
+            r(ctx, 11, 17, 8, 2, P.cream1);
+        }
+        return;
+    }
+
+    if (id.startsWith('hm-')) {
+        if (id.includes('ring')) {
+            r(ctx, 11, 12, 10, 10, P.amber2);
+            r(ctx, 14, 15, 4, 4, P.cream0);
+            drawSpark(ctx, 21, 11, P.blue3);
+        } else if (id.includes('candle')) {
+            box(ctx, 11, 13, 10, 12, P.rose3);
+            r(ctx, 14, 9, 4, 4, P.amber2);
+            p(ctx, 16, 8, P.white);
+        } else if (id.includes('keychain')) {
+            r(ctx, 10, 9, 8, 8, P.amber2);
+            r(ctx, 12, 11, 4, 4, P.cream0);
+            line(ctx, 16, 17, 22, 25, P.wood1);
+        } else {
+            box(ctx, 8, 11, 16, 14, P.cream1);
+            r(ctx, 15, 11, 2, 14, P.rose2);
+            r(ctx, 8, 17, 16, 2, P.rose2);
+        }
+        return;
+    }
+
+    if (id.startsWith('on-')) {
+        if (id.includes('case')) {
+            box(ctx, 11, 7, 10, 20, P.blue1);
+            r(ctx, 14, 10, 4, 10, accent);
+            p(ctx, 16, 24, P.gray3);
+        } else if (id.includes('bag')) {
+            box(ctx, 8, 13, 16, 12, P.cream1);
+            line(ctx, 12, 13, 12, 9, P.wood1);
+            line(ctx, 20, 13, 20, 9, P.wood1);
+            r(ctx, 13, 10, 7, 2, P.wood1);
+        } else if (id.includes('poster')) {
+            box(ctx, 9, 7, 14, 20, P.cream0);
+            r(ctx, 11, 10, 10, 7, accent);
+            r(ctx, 12, 20, 8, 1, P.ink2);
+        } else {
+            box(ctx, 7, 11, 18, 14, P.rose3);
+            r(ctx, 10, 14, 12, 3, P.cream0);
+            drawSpark(ctx, 23, 11, P.amber2);
+        }
+        return;
+    }
+
+    box(ctx, 8, 11, 16, 14, accent);
+    r(ctx, 11, 15, 10, 2, P.cream0);
 }
 
 function drawUi(ctx: CanvasRenderingContext2D, id: string) {
@@ -549,7 +1258,285 @@ function drawUi(ctx: CanvasRenderingContext2D, id: string) {
     }
 }
 
+function shopDecorPalette(id: string) {
+    if (id.includes('cyber')) return { dark: P.blue0, mid: P.teal1, light: P.teal3, accent: P.rose2 };
+    if (id.includes('bakery')) return { dark: P.rose0, mid: P.rose1, light: P.rose3, accent: P.amber2 };
+    if (id.includes('botanica')) return { dark: P.green0, mid: P.green1, light: P.green3, accent: P.amber2 };
+    if (id.includes('diner')) return { dark: P.rose0, mid: P.rose2, light: P.cream0, accent: P.teal2 };
+    if (id.includes('ocean')) return { dark: P.blue0, mid: P.blue1, light: P.blue3, accent: P.amber2 };
+    if (id.includes('moon')) return { dark: P.ink2, mid: P.blue0, light: P.blue3, accent: P.amber2 };
+    return { dark: P.wood0, mid: P.wood2, light: P.cream1, accent: P.green2 };
+}
+
+function drawShopDecor(ctx: CanvasRenderingContext2D, id: string) {
+    const pal = shopDecorPalette(id);
+    const isWall = /wreath|neon|map|clip|arrow|ribbons|frame|garland|sign|wall|poster|strip|banner|curtain|board|awning|rack|print|letters|plate|menu|net|clock/.test(id);
+    shadow(ctx, isWall ? 8 : 7, isWall ? 26 : 28, isWall ? 16 : 18);
+
+    if (/rug|mat|runner/.test(id)) {
+        const wide = id.includes('runner');
+        const x = wide ? 3 : 5;
+        const w = wide ? 26 : 22;
+        r(ctx, x, 18, w, 8, P.ink);
+        r(ctx, x + 1, 19, w - 2, 6, pal.mid);
+        r(ctx, x + 4, 21, w - 8, 2, pal.light);
+        for (let i = 0; i < w - 2; i += 4) p(ctx, x + 1 + i, 18, pal.accent);
+        return;
+    }
+
+    if (/neon|strip/.test(id)) {
+        box(ctx, 6, 10, 20, 12, P.black);
+        r(ctx, 8, 12, 16, 2, pal.accent);
+        r(ctx, 10, 16, 12, 2, pal.light);
+        p(ctx, 9, 20, P.white);
+        p(ctx, 23, 20, pal.accent);
+        return;
+    }
+
+    if (/garland|ribbons|banner|curtain/.test(id)) {
+        line(ctx, 5, 8, 27, 9, P.wood0);
+        for (let x = 7; x <= 25; x += 4) {
+            line(ctx, x, 9, x + 1, 18, pal.dark);
+            r(ctx, x - 1, 18, 4, 4, x % 8 === 0 ? pal.accent : pal.light);
+        }
+        if (id.includes('curtain')) {
+            r(ctx, 8, 10, 7, 16, pal.mid);
+            r(ctx, 17, 10, 7, 16, pal.dark);
+            r(ctx, 11, 12, 2, 12, pal.light);
+        }
+        return;
+    }
+
+    if (/sign|menu|board|map|poster|frame|plate|print/.test(id)) {
+        box(ctx, 7, 6, 18, 18, id.includes('neon') ? P.black : P.cream0);
+        r(ctx, 9, 8, 14, 4, pal.mid);
+        r(ctx, 10, 14, 11, 2, pal.dark);
+        r(ctx, 10, 18, 8, 2, pal.accent);
+        if (id.includes('clock')) {
+            r(ctx, 12, 9, 8, 8, P.white);
+            line(ctx, 16, 13, 16, 10, P.ink);
+            line(ctx, 16, 13, 19, 14, P.ink);
+        }
+        return;
+    }
+
+    if (/lamp|lantern|light/.test(id)) {
+        r(ctx, 15, id.includes('moon') ? 8 : 12, 2, 15, P.ink2);
+        r(ctx, 10, 24, 12, 3, pal.dark);
+        box(ctx, 10, 9, 12, 8, pal.accent);
+        r(ctx, 12, 11, 8, 3, P.cream0);
+        p(ctx, 16, 8, P.white);
+        return;
+    }
+
+    if (/plant|fern|herb|terrarium|vase|pot|jars|bottle/.test(id)) {
+        box(ctx, 10, 20, 12, 7, id.includes('bottle') || id.includes('jar') ? P.blue2 : pal.mid);
+        for (let i = 0; i < 6; i++) {
+            const x = 9 + i * 3;
+            line(ctx, 16, 20, x, 8 + (i % 3), P.green1);
+            p(ctx, x, 8 + (i % 3), i % 2 ? P.green3 : pal.accent);
+        }
+        if (id.includes('crystal') || id.includes('potion')) {
+            r(ctx, 12, 11, 4, 8, pal.light);
+            r(ctx, 17, 9, 4, 10, pal.accent);
+        }
+        return;
+    }
+
+    if (/shelf|display|rack|crate|stack|pile|server|vending|jukebox|machine|tower/.test(id)) {
+        box(ctx, 7, 8, 18, 19, pal.dark);
+        r(ctx, 9, 12, 14, 2, P.ink2);
+        r(ctx, 9, 18, 14, 2, P.ink2);
+        for (let i = 0; i < 8; i++) {
+            const x = 10 + (i % 4) * 3;
+            const y = 9 + Math.floor(i / 4) * 7;
+            r(ctx, x, y, 2, 5, [pal.light, pal.mid, pal.accent, P.cream0][i % 4]);
+        }
+        if (id.includes('jukebox') || id.includes('vending')) r(ctx, 11, 7, 10, 5, pal.accent);
+        return;
+    }
+
+    if (/tray|bowl|tin|bucket|holder|dispenser|kettle|grinder|cup|teapot|scoop|spoons/.test(id)) {
+        r(ctx, 8, 23, 16, 3, P.gray2);
+        box(ctx, 10, 15, 12, 8, pal.mid);
+        r(ctx, 12, 12, 8, 4, pal.light);
+        p(ctx, 21, 18, pal.accent);
+        if (/cup|teapot|kettle/.test(id)) drawCup(ctx, 11, 12, 1, pal.light);
+        return;
+    }
+
+    if (/wreath|arch|mobile|shell|fish|anchor|star|moon|crystal|rune|cat|mascot|statue|robot|ball|skate|pillow/.test(id)) {
+        if (/moon|star/.test(id)) {
+            r(ctx, 12, 8, 9, 12, pal.light);
+            r(ctx, 17, 7, 8, 13, P.black);
+            drawSpark(ctx, 8, 13, pal.accent);
+            drawSpark(ctx, 23, 18, pal.light);
+        } else if (/wreath|shell/.test(id)) {
+            for (let i = 0; i < 12; i++) {
+                const x = 16 + Math.round(Math.cos(i / 12 * Math.PI * 2) * 8);
+                const y = 16 + Math.round(Math.sin(i / 12 * Math.PI * 2) * 8);
+                r(ctx, x, y, 3, 3, i % 2 ? pal.light : pal.accent);
+            }
+        } else {
+            box(ctx, 10, 13, 12, 12, pal.mid);
+            r(ctx, 12, 10, 8, 5, pal.light);
+            p(ctx, 14, 17, P.ink);
+            p(ctx, 19, 17, P.ink);
+        }
+        return;
+    }
+
+    box(ctx, 9, 12, 14, 13, pal.mid);
+    r(ctx, 11, 9, 10, 5, pal.light);
+    p(ctx, 16, 17, pal.accent);
+}
+
+function shopDailyPalette(id: string) {
+    if (id.includes('kitchen')) return { dark: P.wood0, mid: P.amber1, light: P.cream0, accent: P.rose2 };
+    if (id.includes('clean')) return { dark: P.blue0, mid: P.blue1, light: P.blue3, accent: P.teal2 };
+    if (id.includes('stock')) return { dark: P.wood0, mid: P.wood2, light: P.cream1, accent: P.green2 };
+    if (id.includes('staff')) return { dark: P.green0, mid: P.green1, light: P.green3, accent: P.rose2 };
+    if (id.includes('customer')) return { dark: P.teal0, mid: P.teal1, light: P.teal3, accent: P.amber2 };
+    if (id.includes('routine')) return { dark: P.rose0, mid: P.wood2, light: P.cream0, accent: P.amber2 };
+    return { dark: P.ink2, mid: P.teal1, light: P.cream0, accent: P.amber2 };
+}
+
+function drawShopDaily(ctx: CanvasRenderingContext2D, id: string) {
+    const pal = shopDailyPalette(id);
+    const isWall = /board|sign|hook|clock|rail|hours|number|labels/.test(id);
+    shadow(ctx, isWall ? 8 : 7, isWall ? 26 : 28, isWall ? 16 : 18);
+
+    if (/mat|rug/.test(id)) {
+        const wide = id.includes('rain') || id.includes('drain') || id.includes('counter');
+        const x = wide ? 3 : 5;
+        const w = wide ? 26 : 22;
+        r(ctx, x, 18, w, 8, P.ink);
+        r(ctx, x + 1, 19, w - 2, 6, pal.mid);
+        r(ctx, x + 4, 21, w - 8, 2, pal.light);
+        for (let i = 0; i < w - 2; i += 4) p(ctx, x + 1 + i, 24, pal.accent);
+        return;
+    }
+
+    if (/board|sign|hook|clock|rail|hours|number|labels/.test(id)) {
+        if (/hook|rail/.test(id)) {
+            r(ctx, 7, 8, 18, 3, pal.dark);
+            for (let x = 9; x <= 23; x += 5) {
+                line(ctx, x, 10, x - 1, 16, pal.dark);
+                r(ctx, x - 2, 16, 4, 5, x % 2 ? pal.accent : pal.light);
+            }
+            return;
+        }
+        box(ctx, 7, 6, 18, 18, P.cream0);
+        r(ctx, 9, 8, 14, 4, pal.mid);
+        r(ctx, 10, 14, 11, 2, pal.dark);
+        r(ctx, 10, 18, 8, 2, pal.accent);
+        if (/clock/.test(id)) {
+            r(ctx, 12, 9, 8, 8, P.white);
+            line(ctx, 16, 13, 16, 10, P.ink);
+            line(ctx, 16, 13, 19, 14, P.ink);
+        }
+        return;
+    }
+
+    if (/printer|reader|scanner|microwave|cooler|dispenser|scale|timer|charger|bell/.test(id)) {
+        box(ctx, 8, 12, 16, 13, P.gray2);
+        r(ctx, 10, 14, 12, 3, pal.mid);
+        r(ctx, 11, 19, 10, 2, P.ink2);
+        p(ctx, 21, 15, pal.accent);
+        p(ctx, 21, 18, pal.light);
+        if (/cooler|dispenser/.test(id)) {
+            r(ctx, 12, 6, 8, 8, P.blue2);
+            r(ctx, 14, 8, 4, 4, P.blue3);
+        }
+        if (/bell/.test(id)) {
+            r(ctx, 10, 20, 12, 4, P.gray1);
+            r(ctx, 12, 14, 8, 6, pal.accent);
+        }
+        return;
+    }
+
+    if (/bucket|broom|mop|wiper|squeegee|spray|trash|recycle|soap|glove|tissue|sanitizer|dustpan/.test(id)) {
+        if (/broom|mop|wiper|squeegee/.test(id)) {
+            line(ctx, 12, 7, 20, 26, pal.dark);
+            line(ctx, 18, 7, 10, 26, pal.mid);
+            r(ctx, 8, 23, 8, 4, pal.accent);
+            r(ctx, 18, 23, 6, 4, pal.light);
+            return;
+        }
+        box(ctx, 10, 17, 12, 10, /trash|recycle|bucket/.test(id) ? pal.mid : P.blue2);
+        r(ctx, 12, 13, 8, 5, pal.light);
+        p(ctx, 17, 11, P.white);
+        if (/spray|soap|sanitizer/.test(id)) r(ctx, 15, 9, 4, 4, P.gray1);
+        return;
+    }
+
+    if (/shelf|locker|rack|cart|stand|stack|row|box|bin|crate|basket|bag|rolls|stickers|holder|station|drawer|post/.test(id)) {
+        if (/cart|truck|ladder/.test(id)) {
+            box(ctx, 7, 12, 18, 11, pal.mid);
+            r(ctx, 9, 23, 4, 4, P.ink2);
+            r(ctx, 20, 23, 4, 4, P.ink2);
+            line(ctx, 23, 12, 27, 8, pal.dark);
+            return;
+        }
+        box(ctx, 7, 8, 18, 19, pal.dark);
+        r(ctx, 9, 12, 14, 2, P.ink2);
+        r(ctx, 9, 18, 14, 2, P.ink2);
+        for (let i = 0; i < 8; i++) {
+            const x = 10 + (i % 4) * 3;
+            const y = 9 + Math.floor(i / 4) * 7;
+            r(ctx, x, y, 2, 5, [pal.light, pal.mid, pal.accent, P.cream0][i % 4]);
+        }
+        if (/post/.test(id)) {
+            r(ctx, 15, 8, 3, 18, pal.dark);
+            r(ctx, 11, 7, 11, 3, pal.accent);
+        }
+        return;
+    }
+
+    if (/table|chair|bench|stool|seat|ladder|truck/.test(id)) {
+        if (/ladder/.test(id)) {
+            line(ctx, 10, 6, 7, 27, pal.dark);
+            line(ctx, 21, 6, 24, 27, pal.dark);
+            for (let y = 10; y <= 23; y += 4) line(ctx, 11, y, 22, y, pal.mid);
+            return;
+        }
+        box(ctx, 7, 13, 18, 7, pal.mid);
+        if (/chair|seat/.test(id)) box(ctx, 10, 7, 12, 9, pal.light);
+        r(ctx, 10, 20, 3, 7, pal.dark);
+        r(ctx, 20, 20, 3, 7, pal.dark);
+        return;
+    }
+
+    if (/bowl|cup|mug|tray|pot|cooker|bottle|thermos|lunchbox|ledger|book|clipboard|pad|tag|coupon|jar|cash|gun|key|tool|apron|number/.test(id)) {
+        r(ctx, 8, 23, 16, 3, P.gray2);
+        box(ctx, 10, 15, 12, 8, pal.mid);
+        r(ctx, 12, 12, 8, 4, pal.light);
+        p(ctx, 21, 18, pal.accent);
+        if (/cup|mug|thermos/.test(id)) drawCup(ctx, 11, 12, 1, pal.light);
+        if (/ledger|book|clipboard/.test(id)) {
+            r(ctx, 11, 10, 10, 14, P.cream0);
+            r(ctx, 13, 13, 6, 1, pal.dark);
+            r(ctx, 13, 17, 5, 1, pal.accent);
+        }
+        return;
+    }
+
+    box(ctx, 9, 12, 14, 13, pal.mid);
+    r(ctx, 11, 9, 10, 5, pal.light);
+    p(ctx, 16, 17, pal.accent);
+}
+
 function drawFurniture(ctx: CanvasRenderingContext2D, id: string) {
+    if (id.startsWith('daily-')) {
+        drawShopDaily(ctx, id);
+        return;
+    }
+
+    if (id.startsWith('decor-')) {
+        drawShopDecor(ctx, id);
+        return;
+    }
+
     switch (id) {
         case 'counter': {
             shadow(ctx, 2, 28, 28);
@@ -937,6 +1924,122 @@ function drawRecipe(ctx: CanvasRenderingContext2D, id: string) {
     }
 }
 
+interface ShopStaffLook {
+    skin: string;
+    hair: string;
+    shirt: string;
+    apron: string;
+    accent: string;
+    hat?: 'visor' | 'chef' | 'cap' | 'beret' | 'headband' | 'beanie';
+    hairStyle?: 'bob' | 'short' | 'side' | 'bun';
+    accessory?: 'clipboard' | 'cake' | 'cup' | 'box' | 'mop' | 'bag' | 'pudding' | 'sparkle' | 'phone' | 'badge';
+}
+
+const SHOP_STAFF_LOOKS: Record<string, ShopStaffLook> = {
+    'night-manager': { skin: P.cream1, hair: P.ink2, shirt: P.blue0, apron: P.rose1, accent: P.amber2, hat: 'visor', hairStyle: 'short', accessory: 'clipboard' },
+    'pastry-chef': { skin: P.cream0, hair: P.rose0, shirt: P.white, apron: P.rose3, accent: P.amber2, hat: 'chef', hairStyle: 'bob', accessory: 'cake' },
+    'latte-artist': { skin: P.cream1, hair: P.wood1, shirt: P.teal1, apron: P.cream0, accent: P.teal3, hairStyle: 'side', accessory: 'cup' },
+    'stock-clerk': { skin: P.cream2, hair: P.wood0, shirt: P.green1, apron: P.wood2, accent: P.cream1, hat: 'cap', hairStyle: 'short', accessory: 'box' },
+    cleaner: { skin: P.cream0, hair: P.blue0, shirt: P.blue1, apron: P.blue3, accent: P.teal2, hat: 'headband', hairStyle: 'bun', accessory: 'mop' },
+    packaging: { skin: P.cream1, hair: P.rose0, shirt: P.rose2, apron: P.cream0, accent: P.amber2, hairStyle: 'bob', accessory: 'bag' },
+    'dessert-chef': { skin: P.cream0, hair: P.wood1, shirt: P.white, apron: P.teal2, accent: P.rose2, hat: 'beret', hairStyle: 'side', accessory: 'pudding' },
+    greeter: { skin: P.cream1, hair: P.ink2, shirt: P.teal2, apron: P.green3, accent: P.amber2, hat: 'headband', hairStyle: 'bob', accessory: 'sparkle' },
+    buyer: { skin: P.cream2, hair: P.gray0, shirt: P.blue0, apron: P.gray2, accent: P.green2, hat: 'beanie', hairStyle: 'short', accessory: 'phone' },
+    trainee: { skin: P.cream0, hair: P.amber0, shirt: P.green2, apron: P.cream1, accent: P.rose2, hat: 'cap', hairStyle: 'side', accessory: 'badge' },
+};
+
+function drawShopStaff(ctx: CanvasRenderingContext2D, look: ShopStaffLook) {
+    if (look.hairStyle === 'bun') {
+        r(ctx, 8, 9, 5, 5, look.hair);
+        r(ctx, 20, 9, 5, 5, look.hair);
+    }
+    r(ctx, 11, 8, 11, 11, look.skin);
+    r(ctx, 10, 10, 13, 8, look.skin);
+    if (look.hairStyle === 'bob') {
+        r(ctx, 9, 7, 15, 5, look.hair);
+        r(ctx, 8, 10, 4, 8, look.hair);
+        r(ctx, 21, 10, 4, 8, look.hair);
+    } else if (look.hairStyle === 'side') {
+        r(ctx, 9, 7, 14, 5, look.hair);
+        r(ctx, 9, 10, 6, 6, look.hair);
+    } else {
+        r(ctx, 11, 7, 11, 4, look.hair);
+        r(ctx, 10, 10, 4, 4, look.hair);
+    }
+
+    if (look.hat === 'chef') {
+        r(ctx, 10, 4, 13, 5, P.white);
+        r(ctx, 12, 2, 3, 3, P.white);
+        r(ctx, 17, 2, 3, 3, P.white);
+    } else if (look.hat === 'visor') {
+        r(ctx, 9, 6, 14, 3, look.accent);
+        r(ctx, 19, 7, 6, 2, look.accent);
+    } else if (look.hat === 'cap') {
+        r(ctx, 10, 5, 12, 4, look.accent);
+        r(ctx, 20, 7, 5, 2, look.accent);
+    } else if (look.hat === 'beret') {
+        r(ctx, 9, 5, 13, 4, look.accent);
+        p(ctx, 16, 4, look.accent);
+    } else if (look.hat === 'headband') {
+        r(ctx, 10, 8, 13, 2, look.accent);
+    } else if (look.hat === 'beanie') {
+        r(ctx, 10, 5, 13, 5, look.accent);
+        r(ctx, 12, 4, 4, 2, look.accent);
+    }
+
+    p(ctx, 14, 13, P.black);
+    p(ctx, 19, 13, P.black);
+    r(ctx, 16, 16, 2, 1, P.rose0);
+    box(ctx, 10, 19, 13, 10, look.shirt);
+    r(ctx, 12, 20, 9, 7, look.apron);
+    r(ctx, 14, 21, 5, 1, P.white);
+    r(ctx, 11, 27, 4, 3, P.ink2);
+    r(ctx, 19, 27, 4, 3, P.ink2);
+
+    switch (look.accessory) {
+        case 'clipboard':
+            box(ctx, 4, 17, 7, 9, P.cream0);
+            r(ctx, 6, 20, 3, 1, look.accent);
+            break;
+        case 'cake':
+            drawMiniCake(ctx, 4, 18, look.accent);
+            break;
+        case 'cup':
+            drawCup(ctx, 4, 18, 1, look.accent);
+            break;
+        case 'box':
+            box(ctx, 4, 18, 8, 7, P.wood2);
+            line(ctx, 5, 19, 11, 24, P.wood0);
+            break;
+        case 'mop':
+            line(ctx, 5, 8, 10, 26, P.wood1);
+            r(ctx, 4, 24, 8, 4, look.accent);
+            break;
+        case 'bag':
+            box(ctx, 4, 18, 8, 8, P.cream0);
+            line(ctx, 6, 18, 8, 15, look.accent);
+            line(ctx, 10, 18, 8, 15, look.accent);
+            break;
+        case 'pudding':
+            r(ctx, 4, 24, 8, 3, P.gray2);
+            r(ctx, 5, 19, 6, 5, P.cream1);
+            r(ctx, 6, 17, 4, 2, look.accent);
+            break;
+        case 'sparkle':
+            drawSpark(ctx, 5, 17, look.accent);
+            drawSpark(ctx, 24, 10, P.white);
+            break;
+        case 'phone':
+            box(ctx, 4, 16, 6, 10, P.gray0);
+            r(ctx, 5, 18, 4, 5, P.blue2);
+            break;
+        case 'badge':
+            r(ctx, 19, 21, 3, 3, look.accent);
+            p(ctx, 20, 22, P.white);
+            break;
+    }
+}
+
 function drawStaff(ctx: CanvasRenderingContext2D, id: string) {
     shadow(ctx, 9, 29, 14);
     if (id === 'cat' || id === 'dog' || id === 'bear' || id === 'rabbit' || id === 'penguin') {
@@ -966,6 +2069,12 @@ function drawStaff(ctx: CanvasRenderingContext2D, id: string) {
         return;
     }
 
+    const look = SHOP_STAFF_LOOKS[id];
+    if (look) {
+        drawShopStaff(ctx, look);
+        return;
+    }
+
     const shirt = id === 'chef' ? P.white : id === 'manager' ? P.rose1 : id === 'waiter' ? P.teal1 : id === 'tired' ? P.gray1 : P.green1;
     if (id === 'chef') {
         r(ctx, 11, 5, 11, 4, P.white);
@@ -984,6 +2093,223 @@ function drawStaff(ctx: CanvasRenderingContext2D, id: string) {
         r(ctx, 21, 5, 4, 1, P.blue1);
         r(ctx, 23, 3, 5, 1, P.blue1);
         r(ctx, 25, 1, 4, 1, P.blue1);
+    }
+}
+
+interface ShopCustomerLook {
+    skin: string;
+    hair: string;
+    shirt: string;
+    bottom: string;
+    accent: string;
+    hairStyle?: 'bob' | 'short' | 'side' | 'bun' | 'long' | 'cap';
+    outfit?: 'coat' | 'hoodie' | 'dress' | 'jacket' | 'apron' | 'suit';
+    accessory?: 'briefcase' | 'sketchbook' | 'leash' | 'parcel' | 'camera' | 'kid' | 'bottle' | 'umbrella' | 'book' | 'gift' | 'plant' | 'cup' | 'moon' | 'phone' | 'menu' | 'taxi' | 'resume' | 'console' | 'flower' | 'notes' | 'craft' | 'laptop' | 'star' | 'coin';
+}
+
+const SHOP_CUSTOMER_LOOKS: Record<string, ShopCustomerLook> = {
+    'office-runner': { skin: P.cream1, hair: P.ink2, shirt: P.blue0, bottom: P.gray0, accent: P.amber2, hairStyle: 'short', outfit: 'suit', accessory: 'briefcase' },
+    'sketch-student': { skin: P.cream0, hair: P.wood1, shirt: P.green2, bottom: P.blue0, accent: P.cream0, hairStyle: 'bob', outfit: 'hoodie', accessory: 'sketchbook' },
+    'dog-walker': { skin: P.cream2, hair: P.gray0, shirt: P.teal1, bottom: P.wood1, accent: P.rose2, hairStyle: 'cap', outfit: 'jacket', accessory: 'leash' },
+    'courier-rider': { skin: P.cream1, hair: P.ink2, shirt: P.amber1, bottom: P.gray0, accent: P.green2, hairStyle: 'cap', outfit: 'jacket', accessory: 'parcel' },
+    'tourist-camera': { skin: P.cream0, hair: P.amber0, shirt: P.rose2, bottom: P.blue1, accent: P.amber2, hairStyle: 'side', outfit: 'coat', accessory: 'camera' },
+    'parent-kid': { skin: P.cream1, hair: P.wood0, shirt: P.green1, bottom: P.rose0, accent: P.rose3, hairStyle: 'bun', outfit: 'dress', accessory: 'kid' },
+    'fitness-coach': { skin: P.cream2, hair: P.ink2, shirt: P.green2, bottom: P.gray0, accent: P.teal3, hairStyle: 'short', outfit: 'hoodie', accessory: 'bottle' },
+    'raincoat-guest': { skin: P.cream0, hair: P.blue0, shirt: P.blue1, bottom: P.gray1, accent: P.amber2, hairStyle: 'cap', outfit: 'coat', accessory: 'umbrella' },
+    bookworm: { skin: P.cream1, hair: P.wood1, shirt: P.cream1, bottom: P.green0, accent: P.blue2, hairStyle: 'long', outfit: 'jacket', accessory: 'book' },
+    'date-planner': { skin: P.cream0, hair: P.rose0, shirt: P.rose2, bottom: P.cream1, accent: P.amber2, hairStyle: 'bob', outfit: 'dress', accessory: 'gift' },
+    'plant-neighbor': { skin: P.cream2, hair: P.green0, shirt: P.green1, bottom: P.wood1, accent: P.green3, hairStyle: 'side', outfit: 'apron', accessory: 'plant' },
+    'coffee-critic': { skin: P.cream1, hair: P.gray0, shirt: P.wood2, bottom: P.ink2, accent: P.cream0, hairStyle: 'short', outfit: 'coat', accessory: 'cup' },
+    'night-owl': { skin: P.cream0, hair: P.blue0, shirt: P.ink2, bottom: P.blue0, accent: P.amber2, hairStyle: 'long', outfit: 'hoodie', accessory: 'moon' },
+    vlogger: { skin: P.cream1, hair: P.rose0, shirt: P.teal2, bottom: P.cream1, accent: P.rose3, hairStyle: 'bun', outfit: 'jacket', accessory: 'phone' },
+    'retired-teacher': { skin: P.cream2, hair: P.gray2, shirt: P.blue1, bottom: P.wood1, accent: P.cream0, hairStyle: 'short', outfit: 'coat', accessory: 'menu' },
+    'taxi-driver': { skin: P.cream2, hair: P.ink2, shirt: P.amber2, bottom: P.gray0, accent: P.black, hairStyle: 'cap', outfit: 'jacket', accessory: 'taxi' },
+    interviewee: { skin: P.cream0, hair: P.wood0, shirt: P.white, bottom: P.gray0, accent: P.blue1, hairStyle: 'side', outfit: 'suit', accessory: 'resume' },
+    gamer: { skin: P.cream1, hair: P.blue0, shirt: P.rose1, bottom: P.gray0, accent: P.teal3, hairStyle: 'short', outfit: 'hoodie', accessory: 'console' },
+    florist: { skin: P.cream0, hair: P.green0, shirt: P.rose3, bottom: P.green1, accent: P.rose2, hairStyle: 'long', outfit: 'apron', accessory: 'flower' },
+    'med-student': { skin: P.cream1, hair: P.ink2, shirt: P.white, bottom: P.blue0, accent: P.teal2, hairStyle: 'short', outfit: 'coat', accessory: 'notes' },
+    'handmade-fan': { skin: P.cream0, hair: P.amber0, shirt: P.amber2, bottom: P.rose0, accent: P.teal2, hairStyle: 'bob', outfit: 'apron', accessory: 'craft' },
+    'remote-worker': { skin: P.cream2, hair: P.wood1, shirt: P.teal1, bottom: P.gray0, accent: P.blue2, hairStyle: 'side', outfit: 'jacket', accessory: 'laptop' },
+    'cosplay-visitor': { skin: P.cream0, hair: P.rose0, shirt: P.blue1, bottom: P.cream1, accent: P.amber2, hairStyle: 'long', outfit: 'dress', accessory: 'star' },
+    'budget-hunter': { skin: P.cream1, hair: P.wood0, shirt: P.green2, bottom: P.wood1, accent: P.amber2, hairStyle: 'cap', outfit: 'hoodie', accessory: 'coin' },
+};
+
+function drawCustomer(ctx: CanvasRenderingContext2D, id: string) {
+    const look = SHOP_CUSTOMER_LOOKS[id] || SHOP_CUSTOMER_LOOKS['office-runner'];
+    shadow(ctx, 9, 29, 14);
+
+    r(ctx, 11, 26, 4, 4, P.ink2);
+    r(ctx, 19, 26, 4, 4, P.ink2);
+    r(ctx, 11, 21, 4, 6, look.bottom);
+    r(ctx, 19, 21, 4, 6, look.bottom);
+
+    if (look.outfit === 'coat') {
+        box(ctx, 9, 18, 15, 11, look.shirt);
+        r(ctx, 10, 19, 5, 9, look.accent);
+        r(ctx, 18, 19, 5, 9, look.accent);
+    } else if (look.outfit === 'dress') {
+        r(ctx, 10, 18, 13, 6, look.shirt);
+        r(ctx, 8, 23, 17, 6, look.shirt);
+        r(ctx, 12, 20, 8, 2, look.accent);
+    } else if (look.outfit === 'hoodie') {
+        box(ctx, 9, 18, 15, 11, look.shirt);
+        r(ctx, 11, 19, 11, 2, look.accent);
+        r(ctx, 14, 22, 2, 2, P.white);
+        r(ctx, 18, 22, 2, 2, P.white);
+    } else if (look.outfit === 'apron') {
+        box(ctx, 9, 18, 15, 11, look.shirt);
+        r(ctx, 12, 19, 9, 8, look.accent);
+        r(ctx, 14, 21, 5, 1, P.white);
+    } else if (look.outfit === 'suit') {
+        box(ctx, 9, 18, 15, 11, look.shirt);
+        r(ctx, 15, 18, 3, 11, P.white);
+        r(ctx, 16, 20, 1, 5, look.accent);
+    } else {
+        box(ctx, 9, 18, 15, 11, look.shirt);
+        r(ctx, 11, 20, 11, 2, look.accent);
+    }
+
+    if (look.hairStyle === 'bun') {
+        r(ctx, 8, 9, 5, 5, look.hair);
+        r(ctx, 20, 9, 5, 5, look.hair);
+    }
+    r(ctx, 11, 8, 11, 11, look.skin);
+    r(ctx, 10, 10, 13, 8, look.skin);
+
+    if (look.hairStyle === 'bob') {
+        r(ctx, 9, 7, 15, 5, look.hair);
+        r(ctx, 8, 10, 4, 8, look.hair);
+        r(ctx, 21, 10, 4, 8, look.hair);
+    } else if (look.hairStyle === 'side') {
+        r(ctx, 9, 7, 14, 5, look.hair);
+        r(ctx, 9, 10, 6, 6, look.hair);
+    } else if (look.hairStyle === 'long') {
+        r(ctx, 9, 7, 15, 5, look.hair);
+        r(ctx, 8, 11, 4, 10, look.hair);
+        r(ctx, 21, 11, 4, 10, look.hair);
+    } else {
+        r(ctx, 11, 7, 11, 4, look.hair);
+        r(ctx, 10, 10, 4, 4, look.hair);
+    }
+    if (look.hairStyle === 'cap') {
+        r(ctx, 10, 5, 12, 4, look.accent);
+        r(ctx, 20, 7, 5, 2, look.accent);
+    }
+
+    p(ctx, 14, 13, P.black);
+    p(ctx, 19, 13, P.black);
+    r(ctx, 16, 16, 2, 1, P.rose0);
+
+    switch (look.accessory) {
+        case 'briefcase':
+            box(ctx, 4, 20, 7, 6, P.wood0);
+            r(ctx, 6, 18, 3, 2, P.wood0);
+            break;
+        case 'sketchbook':
+            box(ctx, 4, 17, 8, 10, P.cream0);
+            line(ctx, 5, 20, 10, 18, look.accent);
+            break;
+        case 'leash':
+            line(ctx, 5, 19, 2, 26, look.accent);
+            r(ctx, 1, 25, 5, 2, P.wood2);
+            p(ctx, 2, 24, P.black);
+            break;
+        case 'parcel':
+            box(ctx, 4, 18, 8, 8, P.wood2);
+            line(ctx, 5, 19, 11, 25, P.wood0);
+            break;
+        case 'camera':
+            box(ctx, 4, 16, 8, 7, P.gray0);
+            r(ctx, 7, 18, 3, 3, P.blue2);
+            r(ctx, 5, 14, 4, 2, P.gray1);
+            break;
+        case 'kid':
+            r(ctx, 24, 17, 5, 5, look.skin);
+            r(ctx, 23, 21, 7, 7, look.accent);
+            p(ctx, 25, 19, P.black);
+            break;
+        case 'bottle':
+            box(ctx, 4, 18, 5, 9, P.blue2);
+            r(ctx, 5, 16, 3, 2, P.gray2);
+            break;
+        case 'umbrella':
+            line(ctx, 5, 9, 9, 27, P.wood1);
+            r(ctx, 1, 8, 11, 5, look.accent);
+            break;
+        case 'book':
+            box(ctx, 4, 18, 8, 7, P.blue1);
+            r(ctx, 8, 18, 1, 7, P.cream0);
+            break;
+        case 'gift':
+            box(ctx, 4, 19, 8, 7, P.rose2);
+            r(ctx, 7, 19, 2, 7, P.amber2);
+            r(ctx, 4, 22, 8, 2, P.amber2);
+            break;
+        case 'plant':
+            box(ctx, 4, 22, 7, 5, P.wood2);
+            line(ctx, 8, 22, 5, 15, P.green1);
+            line(ctx, 8, 22, 11, 15, P.green1);
+            p(ctx, 5, 15, P.green3);
+            p(ctx, 11, 15, P.green2);
+            break;
+        case 'cup':
+            drawCup(ctx, 4, 18, 1, look.accent);
+            break;
+        case 'moon':
+            r(ctx, 4, 17, 8, 8, P.amber2);
+            r(ctx, 7, 15, 6, 8, P.ink2);
+            break;
+        case 'phone':
+            box(ctx, 4, 16, 6, 10, P.gray0);
+            r(ctx, 5, 18, 4, 5, P.blue2);
+            break;
+        case 'menu':
+            box(ctx, 4, 15, 8, 11, P.cream0);
+            r(ctx, 6, 18, 4, 1, look.accent);
+            r(ctx, 6, 21, 4, 1, look.accent);
+            break;
+        case 'taxi':
+            box(ctx, 2, 21, 10, 5, P.amber2);
+            r(ctx, 4, 18, 6, 4, P.amber1);
+            p(ctx, 4, 26, P.black);
+            p(ctx, 10, 26, P.black);
+            break;
+        case 'resume':
+            box(ctx, 4, 15, 8, 12, P.white);
+            r(ctx, 6, 18, 4, 1, P.blue1);
+            r(ctx, 6, 21, 3, 1, P.rose2);
+            break;
+        case 'console':
+            box(ctx, 4, 19, 9, 5, P.gray0);
+            p(ctx, 6, 21, P.teal2);
+            p(ctx, 11, 21, P.rose2);
+            break;
+        case 'flower':
+            line(ctx, 8, 24, 5, 16, P.green1);
+            drawMiniFlower(ctx, 5, 16, P.rose2);
+            drawMiniFlower(ctx, 10, 17, P.amber2);
+            break;
+        case 'notes':
+            box(ctx, 4, 16, 8, 10, P.cream0);
+            r(ctx, 6, 19, 4, 1, P.teal2);
+            r(ctx, 6, 22, 3, 1, P.teal2);
+            break;
+        case 'craft':
+            box(ctx, 4, 19, 8, 6, P.cream1);
+            drawSpark(ctx, 10, 17, look.accent);
+            break;
+        case 'laptop':
+            box(ctx, 3, 19, 10, 6, P.gray1);
+            r(ctx, 5, 20, 6, 3, P.blue2);
+            break;
+        case 'star':
+            drawSpark(ctx, 6, 17, look.accent);
+            drawSpark(ctx, 24, 9, P.rose3);
+            break;
+        case 'coin':
+            r(ctx, 5, 19, 6, 6, P.amber2);
+            p(ctx, 7, 21, P.white);
+            break;
     }
 }
 

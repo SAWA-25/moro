@@ -23,6 +23,7 @@ import {
   startHeartbeat,
   stopHeartbeat,
 } from './proactivePushConfig';
+import { swReadAll } from './swProactiveBridge';
 
 export interface ProactiveSchedule {
   charId: string;
@@ -169,11 +170,74 @@ let preciseTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Main-thread polling acts as the bottom-line safety net in case Service
 // Worker timers get terminated by the browser AND the precise setTimeout gets
-// throttled in a background tab.  20 s is cheap (just a localStorage read)
-// and keeps the worst-case delay under one bucket for hidden-tab throttling.
+// throttled in a background tab.  The overdue check also occasionally peeks at
+// the SW mirror so offline-generated messages are not replayed a second time.
 const MAIN_THREAD_CHECK_INTERVAL = 20_000;
 const OFFLINE_REPLAY_GRACE_MS = 60_000;
-const MAX_REPLAY_FIRES_PER_CHECK = 3;
+const EXTERNAL_FIRE_RECONCILE_THROTTLE_MS = 60_000;
+
+export interface ProactiveReplayPlan {
+  missedCount: number;
+  scheduledTimes: number[];
+  nextLastFire: number;
+  droppedBacklog: boolean;
+}
+
+export function planProactiveReplay(schedule: ProactiveSchedule, lastFire: number, now: number): ProactiveReplayPlan | null {
+  if (lastFire <= 0 || schedule.intervalMs <= 0) return null;
+  const elapsed = now - lastFire;
+  if (elapsed < schedule.intervalMs) return null;
+
+  const missedCount = Math.max(1, Math.floor(elapsed / schedule.intervalMs));
+  const replayLimit = missedCount;
+  const startIndex = 1;
+  const scheduledTimes = Array.from({ length: replayLimit }, (_, i) => {
+    const slotIndex = startIndex + i;
+    return lastFire + schedule.intervalMs * slotIndex;
+  }).filter(ts => ts <= now);
+  if (scheduledTimes.length === 0) return null;
+
+  return {
+    missedCount,
+    scheduledTimes,
+    droppedBacklog: false,
+    nextLastFire: lastFire + schedule.intervalMs * missedCount,
+  };
+}
+
+let externalFireReconcilePromise: Promise<void> | null = null;
+let lastExternalFireReconcileAt = 0;
+
+async function reconcileExternalFires(force = false): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  const now = Date.now();
+  if (!force && now - lastExternalFireReconcileAt < EXTERNAL_FIRE_RECONCILE_THROTTLE_MS) return;
+  if (externalFireReconcilePromise) return externalFireReconcilePromise;
+
+  externalFireReconcilePromise = (async () => {
+    const schedules = loadSchedules();
+    if (Object.keys(schedules).length === 0) return;
+    const snapshots = await swReadAll();
+    const lastFireMap = loadLastFireTimes();
+    let changed = false;
+    for (const snap of snapshots) {
+      const ts = Number(snap.lastGenAt || 0);
+      if (!schedules[snap.charId] || !Number.isFinite(ts) || ts <= 0) continue;
+      if (ts > (lastFireMap[snap.charId] || 0)) {
+        lastFireMap[snap.charId] = ts;
+        changed = true;
+      }
+    }
+    if (changed) saveLastFireTimes(lastFireMap);
+  })()
+    .catch(() => { /* SW mirror is a best-effort offline enhancement. */ })
+    .finally(() => {
+      lastExternalFireReconcileAt = Date.now();
+      externalFireReconcilePromise = null;
+    });
+
+  return externalFireReconcilePromise;
+}
 
 function handleSWMessage(e: MessageEvent) {
   if (e.data?.type !== 'proactive-trigger') return;
@@ -206,7 +270,9 @@ function handleSWMessage(e: MessageEvent) {
 }
 
 /** Check all schedules and fire any that are overdue. */
-function checkOverdueSchedules() {
+async function checkOverdueSchedules(opts?: { forceExternalReconcile?: boolean }) {
+  if (!triggerCallback) return;
+  await reconcileExternalFires(!!opts?.forceExternalReconcile);
   if (!triggerCallback) return;
 
   const schedules = Object.values(loadSchedules());
@@ -226,31 +292,24 @@ function checkOverdueSchedules() {
 
     const elapsed = now - lastFire;
     if (elapsed >= schedule.intervalMs) {
-      const missedCount = Math.max(1, Math.floor(elapsed / schedule.intervalMs));
-      const replayTotal = schedule.random ? 1 : Math.min(missedCount, MAX_REPLAY_FIRES_PER_CHECK);
-      const startIndex = schedule.random
-        ? 1
-        : Math.max(1, missedCount - replayTotal + 1);
-      const scheduledTimes = Array.from({ length: replayTotal }, (_, i) => {
-        const slotIndex = startIndex + i;
-        return lastFire + schedule.intervalMs * slotIndex;
-      }).filter(ts => ts <= now);
-      if (scheduledTimes.length === 0) continue;
+      const replayPlan = planProactiveReplay(schedule, lastFire, now);
+      if (!replayPlan) continue;
 
-      const shouldDropOldBacklog = schedule.random || missedCount > scheduledTimes.length;
-      const nextLastFire = shouldDropOldBacklog ? now : lastFire + schedule.intervalMs * missedCount;
-      console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed, replay ${scheduledTimes.length}/${missedCount}`);
-      setLastFireTime(schedule.charId, nextLastFire);
+      console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed, replay ${replayPlan.scheduledTimes.length}/${replayPlan.missedCount}`);
+      setLastFireTime(schedule.charId, replayPlan.nextLastFire);
       if (schedule.random) rerollRandomInterval(schedule.charId);
       firedAny = true;
 
-      scheduledTimes.forEach((scheduledAt, idx) => {
+      replayPlan.scheduledTimes.forEach((scheduledAt, idx) => {
+        const offlineReplay = replayPlan.droppedBacklog
+          || replayPlan.missedCount > 1
+          || now - scheduledAt > OFFLINE_REPLAY_GRACE_MS;
         void triggerCallback?.(schedule.charId, {
           scheduledAt,
-          offlineReplay: now - scheduledAt > OFFLINE_REPLAY_GRACE_MS,
+          offlineReplay,
           replayIndex: idx + 1,
-          replayTotal: scheduledTimes.length,
-          missedCount,
+          replayTotal: replayPlan.scheduledTimes.length,
+          missedCount: replayPlan.missedCount,
         });
       });
     }
@@ -292,7 +351,7 @@ function schedulePreciseTimer() {
   const delay = Math.min(Math.max(nextDue - now, 500), 2_147_000_000);
   preciseTimer = setTimeout(() => {
     preciseTimer = null;
-    checkOverdueSchedules();
+    void checkOverdueSchedules();
   }, delay);
 }
 
@@ -300,16 +359,16 @@ function handleVisibility() {
   if (document.visibilityState !== 'visible') return;
   // When the page becomes visible again, do an immediate overdue check and
   // re-arm the precise timer (background throttling may have delayed it).
-  checkOverdueSchedules();
+  void checkOverdueSchedules({ forceExternalReconcile: true });
 }
 
 function handleFocus() {
-  checkOverdueSchedules();
+  void checkOverdueSchedules({ forceExternalReconcile: true });
 }
 
 function startMainThreadTimer() {
   if (mainThreadTimer) return;
-  mainThreadTimer = setInterval(checkOverdueSchedules, MAIN_THREAD_CHECK_INTERVAL);
+  mainThreadTimer = setInterval(() => { void checkOverdueSchedules(); }, MAIN_THREAD_CHECK_INTERVAL);
 }
 
 function stopMainThreadTimer() {
@@ -363,7 +422,7 @@ export const ProactiveChat = {
     // Catch up anything that came due while the callback wasn't registered
     // yet (e.g. between `ProactiveChat.resume()` on boot and OSContext
     // finishing its first render).
-    checkOverdueSchedules();
+    void checkOverdueSchedules({ forceExternalReconcile: true });
   },
 
   /**

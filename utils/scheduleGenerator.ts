@@ -7,6 +7,7 @@ import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { formatCharacterWithId, getCharacterModelId } from './characterIdentity';
 import { getLocalDateKey } from './dateKey';
+import { extractJson } from './safeApi';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,6 +55,59 @@ function repairTruncatedJson(raw: string): string {
   while (braces > 0) { s += '}'; braces--; }
 
   return s;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function withInheritedTarget(candidate: any, parent: Record<string, any>): any {
+    if (!isRecord(candidate)) return candidate;
+    const inheritedTarget = candidate.targetCharId ?? candidate.charId ?? candidate.characterId
+        ?? parent.targetCharId ?? parent.charId ?? parent.characterId;
+    return inheritedTarget ? { ...candidate, targetCharId: inheritedTarget } : candidate;
+}
+
+function normalizeSchedulePayload(parsed: any): any {
+    if (Array.isArray(parsed)) return { slots: parsed };
+    if (!isRecord(parsed)) return parsed;
+    if (Array.isArray(parsed.slots)) return parsed;
+    const changed = parseChangedFlag(parsed.changed);
+    if (changed === false) return parsed;
+
+    for (const key of ['schedule', 'dailySchedule', 'result', 'data', 'payload', 'output', 'plan']) {
+        const nested = normalizeSchedulePayload(parsed[key]);
+        if (Array.isArray(nested?.slots) || nested?.changed !== undefined) {
+            return withInheritedTarget(nested, parsed);
+        }
+    }
+
+    return parsed;
+}
+
+function parseScheduleJson(raw: string): any | null {
+    const parsed = extractJson(raw);
+    if (parsed !== null && parsed !== undefined) return normalizeSchedulePayload(parsed);
+
+    const content = String(raw || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+    try { return normalizeSchedulePayload(JSON.parse(content)); } catch {}
+    try { return normalizeSchedulePayload(JSON.parse(repairTruncatedJson(content))); } catch {}
+    return null;
+}
+
+function parseChangedFlag(value: unknown): boolean | null {
+    if (value === true) return true;
+    if (value === false) return false;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', 'yes', 'y', '1', 'changed'].includes(normalized)) return true;
+        if (['false', 'no', 'n', '0', 'unchanged', 'none'].includes(normalized)) return false;
+    }
+    if (typeof value === 'number') {
+        if (value === 1) return true;
+        if (value === 0) return false;
+    }
+    return null;
 }
 
 interface ApiConfig {
@@ -485,16 +539,11 @@ export async function generateDailyScheduleForChar(
             }),
         });
 
-        let content = data.choices?.[0]?.message?.content || '';
-        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        let parsed: any;
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          // LLM output may be truncated — attempt repair
-          const repaired = repairTruncatedJson(content);
-          parsed = JSON.parse(repaired);
+        const content = data.choices?.[0]?.message?.content || '';
+        const parsed = parseScheduleJson(content);
+        if (!parsed) {
+            console.warn('[Schedule] Could not parse generated schedule JSON:', content.slice(0, 240));
+            return null;
         }
         if (!parsedScheduleTargetMatches(parsed, char, 'Generate')) return null;
         const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => ({
@@ -681,14 +730,10 @@ ${chatBlock}
                 apiBinding: apiConfig.apiBinding,
             }),
         });
-        let content = data.choices?.[0]?.message?.content || '';
-        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        let parsed: any;
-        try { parsed = JSON.parse(content); }
-        catch { parsed = JSON.parse(repairTruncatedJson(content)); }
-
-        if (!parsed || parsed.changed !== true || !Array.isArray(parsed.slots)) {
+        const content = data.choices?.[0]?.message?.content || '';
+        const parsed = parseScheduleJson(content);
+        const changed = parseChangedFlag(parsed?.changed);
+        if (!parsed || changed === false || !Array.isArray(parsed.slots)) {
             console.log(`📅 [Schedule/Reconcile] ${char.name}: 无需协调（changed=${parsed?.changed}）`);
             return null;
         }

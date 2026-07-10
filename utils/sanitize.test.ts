@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { matchAssistantReplyQuoteMarker, sanitizeForBubble, sanitizeForNotification, sanitizeIntoSegments } from './sanitize';
 
+describe('mahjong invite sanitize', () => {
+  it('strips mahjong invite directives from notifications and bubbles', () => {
+    expect(sanitizeForNotification('来一桌？[[MAHJONG_INVITE: 打麻将]]')).toBe('来一桌？');
+    expect(sanitizeForNotification('A[[MAHJONG_INVITE：模式=每步评估，摸一圈]]B')).toBe('AB');
+    expect(sanitizeForBubble('来麻将？[[MAHJONG_INVITE: 开桌]]')).toBe('来麻将？');
+    expect(sanitizeForBubble('A[[MAHJONG_INVITE：模式=开局定档，打一圈？]]B')).toBe('AB');
+  });
+});
+
 // ─── Oracle: 原版 chatParser.sanitize (来自 commit e97f9ed) ─────────────────
 // 用来跟 sanitizeForBubble 字节对齐校验. refactor 后改 sanitize.ts 就立刻能
 // 看到行为漂移.
@@ -61,6 +70,34 @@ describe('sanitizeForNotification', () => {
     expect(sanitizeForNotification('你看着我。[[FORCE_REPLY: 不准装没看到]]'))
       .toBe('你看着我。');
     expect(sanitizeForNotification('A[[force_reply：现在就回我]]B'))
+      .toBe('AB');
+  });
+
+  it('A4+ 五子棋邀请指令不残留在通知预览', () => {
+    expect(sanitizeForNotification('要不要来一局？[[GOMOKU_INVITE: 来下五子棋]]'))
+      .toBe('要不要来一局？');
+    expect(sanitizeForNotification('A[[GOMOKU_INVITE：模式=每步评估，走一盘]]B'))
+      .toBe('AB');
+  });
+
+  it('A4+ 围棋邀请指令不残留在通知预览', () => {
+    expect(sanitizeForNotification('要不要手谈？[[GO_INVITE: 来下围棋]]'))
+      .toBe('要不要手谈？');
+    expect(sanitizeForNotification('A[[GO_INVITE：模式=每步评估，走一盘]]B'))
+      .toBe('AB');
+  });
+
+  it('A4+ 斗地主邀请指令不残留在通知预览', () => {
+    expect(sanitizeForNotification('来一局？[[DOUDIZHU_INVITE: 开桌斗地主]]'))
+      .toBe('来一局？');
+    expect(sanitizeForNotification('A[[DOUDIZHU_INVITE：模式=每步评估，打一局]]B'))
+      .toBe('AB');
+  });
+
+  it('A4+ 海龟汤邀请指令不残留在通知预览', () => {
+    expect(sanitizeForNotification('来一碗？[[TURTLE_SOUP_INVITE: 暗黑汤开局]]'))
+      .toBe('来一碗？');
+    expect(sanitizeForNotification('A[[TURTLE_SOUP_INVITE：模式=每步评估，喝一碗]]B'))
       .toBe('AB');
   });
 
@@ -241,6 +278,26 @@ describe('bubble vs notification differences', () => {
 
   it('bubble 路径剥强制回话指令', () => {
     expect(sanitizeForBubble('别躲。[[FORCE_REPLY: 现在回我]]')).toBe('别躲。');
+  });
+
+  it('bubble 路径剥五子棋邀请指令', () => {
+    expect(sanitizeForBubble('要不要下棋？[[GOMOKU_INVITE: 来一盘]]')).toBe('要不要下棋？');
+    expect(sanitizeForBubble('A[[GOMOKU_INVITE：模式=开局定档，五子棋？]]B')).toBe('AB');
+  });
+
+  it('bubble 路径剥围棋邀请指令', () => {
+    expect(sanitizeForBubble('要不要手谈？[[GO_INVITE: 来一盘]]')).toBe('要不要手谈？');
+    expect(sanitizeForBubble('A[[GO_INVITE：模式=开局定档，围棋？]]B')).toBe('AB');
+  });
+
+  it('bubble 路径剥斗地主邀请指令', () => {
+    expect(sanitizeForBubble('来斗地主？[[DOUDIZHU_INVITE: 开桌]]')).toBe('来斗地主？');
+    expect(sanitizeForBubble('A[[DOUDIZHU_INVITE：模式=开局定档，打牌？]]B')).toBe('AB');
+  });
+
+  it('bubble 路径剥海龟汤邀请指令', () => {
+    expect(sanitizeForBubble('来一碗？[[TURTLE_SOUP_INVITE: 暗黑汤]]')).toBe('来一碗？');
+    expect(sanitizeForBubble('A[[TURTLE_SOUP_INVITE：模式=开局定档，喝汤？]]B')).toBe('AB');
   });
 
   it('bubble 路径剥行首心意铺标签', () => {

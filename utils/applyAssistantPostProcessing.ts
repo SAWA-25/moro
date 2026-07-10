@@ -39,6 +39,11 @@ import { extractThinkingChainFromCompletion } from './llmReasoning';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
 import { TAKEOUT_ORDER_EVENT, extractTakeoutOrderDirective } from './takeout';
+import { GOMOKU_INVITE_EVENT, extractGomokuInviteDirective } from './theaterGomokuInvite';
+import { GO_INVITE_EVENT, extractGoInviteDirective } from './theaterGoInvite';
+import { DOUDIZHU_INVITE_EVENT, extractDoudizhuInviteDirective } from './theaterDoudizhuInvite';
+import { TURTLE_SOUP_INVITE_EVENT, extractTurtleSoupInviteDirective } from './theaterTurtleSoupInvite';
+import { MAHJONG_INVITE_EVENT, extractMahjongInviteDirective } from './theaterMahjongInvite';
 import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
 import {
     assistantAcceptsAvatarRequest,
@@ -266,6 +271,13 @@ export interface PostProcessMusicHooks {
         fee: number;
     } | null;
     joinListeningTogether: (charId: string) => void;
+    controlPlayback?: (action:
+        | { kind: 'pause' }
+        | { kind: 'resume' }
+        | { kind: 'next' }
+        | { kind: 'previous' }
+        | { kind: 'seek'; seconds: number }
+    ) => void;
     addSongToCharPlaylist: (
         charId: string,
         song: any,
@@ -273,6 +285,11 @@ export interface PostProcessMusicHooks {
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
     /** char 主动分享歌曲：真实搜索返回可播放快照 */
     searchSong?: (keyword: string) => Promise<{
+        songId: number; name: string; artists: string; album: string;
+        albumPic: string; duration: number; fee: number;
+    } | null>;
+    /** char 在一起听时点播歌曲：真实搜索并切到这首 */
+    playSongByQuery?: (keyword: string) => Promise<{
         songId: number; name: string; artists: string; album: string;
         albumPic: string; duration: number; fee: number;
     } | null>;
@@ -690,8 +707,8 @@ export async function applyAssistantPostProcessing(
         }
     }
 
-    // ─── Step 1.75: 来往·关系 / 求婚 / 角色点外卖 / 婚事 指令 ───
-    // 先剥后播：OSContext 监听对应事件落库（更新关系 / 生成求婚小卡 / 下外卖单 / 推进婚事）。
+    // ─── Step 1.75: 来往·关系 / 求婚 / 角色点外卖 / 五子棋约局 / 婚事 指令 ───
+    // 先剥后播：OSContext 监听对应事件落库（更新关系 / 生成求婚小卡 / 下外卖单 / 约棋邀请 / 推进婚事）。
     // 这些都是「决定性 / 主动行为」类副作用，跟 BLOCK_USER 一样客户端直接派发，不回连 LLM。
     if (typeof window !== 'undefined') {
         // [[REL: stage | label | reason]]  关系决定性变更（表白成功 / 分手 / 决裂…）
@@ -716,6 +733,76 @@ export async function applyAssistantPostProcessing(
             if (takeoutExtract.desc !== undefined) {
                 aiContent = takeoutExtract.content;
                 window.dispatchEvent(new CustomEvent(TAKEOUT_ORDER_EVENT, { detail: { charId: char.id, desc: takeoutExtract.desc } }));
+            }
+        }
+        // [[GOMOKU_INVITE: 邀请文案]]  角色主动约五子棋（需会话开关）
+        {
+            const gomokuExtract = extractGomokuInviteDirective(aiContent);
+            if (gomokuExtract.invited) {
+                aiContent = gomokuExtract.content;
+                window.dispatchEvent(new CustomEvent(GOMOKU_INVITE_EVENT, {
+                    detail: {
+                        charId: char.id,
+                        message: gomokuExtract.message,
+                        difficultyMode: gomokuExtract.difficultyMode,
+                    },
+                }));
+            }
+        }
+        // [[GO_INVITE: 邀请文案]]  角色主动约围棋（需要会话开关）
+        {
+            const goExtract = extractGoInviteDirective(aiContent);
+            if (goExtract.invited) {
+                aiContent = goExtract.content;
+                window.dispatchEvent(new CustomEvent(GO_INVITE_EVENT, {
+                    detail: {
+                        charId: char.id,
+                        message: goExtract.message,
+                        difficultyMode: goExtract.difficultyMode,
+                    },
+                }));
+            }
+        }
+        // [[DOUDIZHU_INVITE: 邀请文案]]  角色主动约斗地主（需要会话开关）
+        {
+            const doudizhuExtract = extractDoudizhuInviteDirective(aiContent);
+            if (doudizhuExtract.invited) {
+                aiContent = doudizhuExtract.content;
+                window.dispatchEvent(new CustomEvent(DOUDIZHU_INVITE_EVENT, {
+                    detail: {
+                        charId: char.id,
+                        message: doudizhuExtract.message,
+                        difficultyMode: doudizhuExtract.difficultyMode,
+                    },
+                }));
+            }
+        }
+        // [[TURTLE_SOUP_INVITE: 邀请文案]]  角色主动约海龟汤（需要会话开关）
+        {
+            const turtleSoupExtract = extractTurtleSoupInviteDirective(aiContent);
+            if (turtleSoupExtract.invited) {
+                aiContent = turtleSoupExtract.content;
+                window.dispatchEvent(new CustomEvent(TURTLE_SOUP_INVITE_EVENT, {
+                    detail: {
+                        charId: char.id,
+                        message: turtleSoupExtract.message,
+                        difficultyMode: turtleSoupExtract.difficultyMode,
+                    },
+                }));
+            }
+        }
+        // [[MAHJONG_INVITE: 邀请文案]]  角色主动约麻将（需要会话开关）
+        {
+            const mahjongExtract = extractMahjongInviteDirective(aiContent);
+            if (mahjongExtract.invited) {
+                aiContent = mahjongExtract.content;
+                window.dispatchEvent(new CustomEvent(MAHJONG_INVITE_EVENT, {
+                    detail: {
+                        charId: char.id,
+                        message: mahjongExtract.message,
+                        difficultyMode: mahjongExtract.difficultyMode,
+                    },
+                }));
             }
         }
         // [[WEDDING_PLAN: kind | date | note]]  婚事推进（plan/register/wedding/custom）

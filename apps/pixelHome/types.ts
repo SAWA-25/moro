@@ -17,6 +17,7 @@ export interface PixelAsset {
   height: number;             // 像素高
   createdAt: number;
   tags: string[];
+  isBuiltin?: boolean;        // 系统内置素材：可摆放 / 导出，不写入用户素材库
 }
 
 // ─── 房间槽位定义（保留作为默认家具模板） ─────────────
@@ -44,6 +45,13 @@ export interface PlacedFurniture {
   interactionPrompt?: string;
   placedBy: 'user' | 'character';
   isDefault?: boolean;        // 是否为默认槽位家具（false/undefined = 用户自由放置）
+  /**
+   * 手动图层：
+   *   'carpet' = 独立地毯层，固定在家具下方，不参与碰撞
+   *   'furniture' = 普通家具层，即使素材标签像地毯也按家具处理
+   *   undefined = 由槽位 / 素材标签自动判断
+   */
+  layer?: 'carpet' | 'furniture';
   /**
    * 前后遮挡手动覆盖：
    *   'front' = 总是压在其他家具上方
@@ -194,4 +202,5 @@ export interface PixelAssetPreset {
   palette: string[];
   width: number;
   height: number;
+  tags?: string[];
 }

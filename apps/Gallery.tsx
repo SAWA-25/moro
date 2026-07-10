@@ -15,16 +15,17 @@ import {
     INK, INK_SOFT, HAIRLINE,
 } from '../components/ui/insKit';
 import {
-    ArrowsClockwise, CaretLeft, ChatCircleText, DownloadSimple, Funnel,
-    Camera, Heart, Images, MagnifyingGlass, NotePencil, PencilSimpleLine, ShareNetwork,
+    ArrowsClockwise, BookOpenText, CaretLeft, ChatCircleText, DownloadSimple, Funnel,
+    Camera, Images, MagnifyingGlass, NotePencil, PencilSimpleLine, ShareNetwork,
     Sparkle, Spinner, Star, Tag, Trash, UploadSimple, X,
 } from '@phosphor-icons/react';
 
 const AC = 'orange' as const;
 
 type View = 'albums' | 'stock' | 'grid' | 'detail';
-type GalleryFilter = 'all' | 'favorite' | 'reviewed' | 'unreviewed' | 'tagged' | 'untagged';
+type GalleryFilter = 'all' | 'favorite' | 'reviewed' | 'unreviewed' | 'essayed' | 'tagged' | 'untagged';
 type SortMode = 'newest' | 'oldest' | 'favorite';
+type GalleryRoleTextKind = 'review' | 'charEssay';
 
 interface AlbumStats {
     total: number;
@@ -37,6 +38,8 @@ interface AlbumStats {
 interface EditDraft {
     title: string;
     note: string;
+    userEssay: string;
+    charEssay: string;
     tags: string;
     savedDate: string;
     review: string;
@@ -117,6 +120,8 @@ const sortImages = (items: GalleryImage[], mode: SortMode) => {
     return next;
 };
 
+const hasEssay = (img: GalleryImage) => !!(img.userEssay?.trim() || img.charEssay?.trim());
+
 const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
     const { closeApp, characters, apiConfig, addToast, userProfile } = useOS();
     const [view, setView] = useState<View>(initialView);
@@ -124,6 +129,7 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
     const [images, setImages] = useState<GalleryImage[]>([]);
     const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
     const [isReviewing, setIsReviewing] = useState(false);
+    const [isWritingEssay, setIsWritingEssay] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [showChatContext, setShowChatContext] = useState(false);
     const [showControls, setShowControls] = useState(true);
@@ -132,7 +138,7 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
     const [sortMode, setSortMode] = useState<SortMode>('newest');
     const [activeTag, setActiveTag] = useState<string | null>(null);
     const [editImage, setEditImage] = useState<GalleryImage | null>(null);
-    const [editDraft, setEditDraft] = useState<EditDraft>({ title: '', note: '', tags: '', savedDate: '', review: '' });
+    const [editDraft, setEditDraft] = useState<EditDraft>({ title: '', note: '', userEssay: '', charEssay: '', tags: '', savedDate: '', review: '' });
     const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; confirmText: string; onConfirm: () => void; } | null>(null);
     const [albumStats, setAlbumStats] = useState<Record<string, AlbumStats>>({});
     const [stockCount, setStockCount] = useState(0);
@@ -220,12 +226,13 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
             if (filter === 'favorite' && !img.favorite) return false;
             if (filter === 'reviewed' && !img.review) return false;
             if (filter === 'unreviewed' && img.review) return false;
+            if (filter === 'essayed' && !hasEssay(img)) return false;
             if (filter === 'tagged' && !(img.tags || []).length) return false;
             if (filter === 'untagged' && (img.tags || []).length) return false;
             if (activeTag && !(img.tags || []).includes(activeTag)) return false;
             if (!q) return true;
             const haystack = [
-                img.title, img.note, img.review, img.savedDate, img.originalName,
+                img.title, img.note, img.userEssay, img.charEssay, img.review, img.savedDate, img.originalName,
                 sourceLabel(img), ...(img.tags || []),
             ].filter(Boolean).join(' ').toLocaleLowerCase();
             return haystack.includes(q);
@@ -246,6 +253,7 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
         total: images.length,
         favorites: images.filter(img => img.favorite).length,
         reviewed: images.filter(img => img.review).length,
+        essays: images.filter(hasEssay).length,
         tagged: images.filter(img => (img.tags || []).length > 0).length,
     }), [images]);
 
@@ -395,6 +403,8 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
         setEditDraft({
             title: img.title || '',
             note: img.note || '',
+            userEssay: img.userEssay || '',
+            charEssay: img.charEssay || '',
             tags: (img.tags || []).join(' '),
             savedDate: img.savedDate || '',
             review: img.review || '',
@@ -405,13 +415,18 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
         if (!editImage) return;
         const nextReview = editDraft.review.trim();
         const oldReview = editImage.review || '';
+        const nextCharEssay = editDraft.charEssay.trim();
+        const oldCharEssay = editImage.charEssay || '';
         const updated = await DB.updateGalleryImage(editImage.id, {
             title: editDraft.title.trim() || undefined,
             note: editDraft.note.trim() || undefined,
+            userEssay: editDraft.userEssay.trim() || undefined,
+            charEssay: nextCharEssay || undefined,
             tags: uniqueTags(editDraft.tags),
             savedDate: editDraft.savedDate.trim() || undefined,
             review: nextReview || undefined,
             reviewTimestamp: nextReview !== oldReview ? Date.now() : editImage.reviewTimestamp,
+            charEssayTimestamp: nextCharEssay ? (nextCharEssay !== oldCharEssay ? Date.now() : editImage.charEssayTimestamp) : undefined,
         });
         updateImageInState(updated);
         setEditImage(null);
@@ -444,13 +459,13 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
                 if (selectedImage.url.startsWith('data:')) {
                     const file = await dataUrlToFile(selectedImage.url, filename);
                     if (nav.canShare?.({ files: [file] })) {
-                        await nav.share({ title: selectedImage.title || 'Moro 相册', text: selectedImage.note || selectedImage.review || '', files: [file] });
+                        await nav.share({ title: selectedImage.title || 'Moro 相册', text: selectedImage.note || selectedImage.userEssay || selectedImage.charEssay || selectedImage.review || '', files: [file] });
                         return;
                     }
                 }
                 await nav.share({
                     title: selectedImage.title || 'Moro 相册',
-                    text: selectedImage.note || selectedImage.review || '这张照片保存在 Moro 相册里。',
+                    text: selectedImage.note || selectedImage.userEssay || selectedImage.charEssay || selectedImage.review || '这张照片保存在 Moro 相册里。',
                     ...(selectedImage.url.startsWith('http') ? { url: selectedImage.url } : {}),
                 });
                 return;
@@ -461,31 +476,40 @@ const Gallery: React.FC<GalleryProps> = ({ initialView = 'albums' }) => {
         handleDownload(selectedImage);
     };
 
-    const handleReview = async () => {
+    const handleGenerateRoleText = async (kind: GalleryRoleTextKind) => {
         if (!selectedImage || !activeCharId || !apiConfig.baseUrl || !apiConfig.model) {
             addToast('还没配好 API 或缺图片信息', 'error');
             return;
         }
         const char = characters.find(c => c.id === activeCharId);
         if (!char) return;
+        const isEssay = kind === 'charEssay';
 
-        setIsReviewing(true);
+        if (isEssay) setIsWritingEssay(true);
+        else setIsReviewing(true);
         try {
             const metaLines = [
                 selectedImage.title ? `Title: ${selectedImage.title}` : '',
                 selectedImage.note ? `User note: ${selectedImage.note}` : '',
+                selectedImage.userEssay ? `User essay: ${selectedImage.userEssay}` : '',
+                selectedImage.review ? `Existing back caption: ${selectedImage.review}` : '',
+                selectedImage.charEssay ? `Existing character essay: ${selectedImage.charEssay}` : '',
                 (selectedImage.tags || []).length ? `Tags: ${(selectedImage.tags || []).join(', ')}` : '',
                 selectedImage.savedDate ? `Saved date: ${selectedImage.savedDate}` : '',
+                `Source: ${sourceLabel(selectedImage)}`,
             ].filter(Boolean).join('\n');
             const chatContextStr = selectedImage.chatContext?.length
                 ? `\n\nConversation context when this photo was saved:\n${selectedImage.chatContext.join('\n')}\n`
                 : '';
+            const task = isEssay
+                ? 'The user is looking at one saved photo in your shared gallery. Write a warm, in-character photo essay in Chinese, about 80-180 Chinese characters. It can be reflective, diary-like, playful, intimate, or restrained according to your personality and relationship with the user.'
+                : 'The user is looking at one saved photo in your shared gallery. Write a short note on the back of the photo in your own voice, 1-3 natural Chinese sentences.';
             const systemContent = `You are ${char.name}.
 ${buildFullCharacterSetting(char, { includeMemos: true })}
 
 ${await buildFullActiveUserSetting(userProfile)}
 
-Task: The user is looking at one saved photo in your shared gallery. Write a short note on the back of the photo in your own voice, 1-3 natural Chinese sentences.
+Task: ${task}
 ${metaLines ? `Photo metadata:\n${metaLines}\n` : ''}${chatContextStr}
 Style: intimate, casual, in character. Do not say you are an AI. Do not merely describe "this is an image"; react like you remember or are seeing this photo with the user.`;
 
@@ -496,13 +520,13 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                     {
                         role: 'user',
                         content: [
-                            { type: 'text', text: '给这张相册照片写一句背面留言。' },
+                            { type: 'text', text: isEssay ? '请用你的语气给这张相册照片写一段随笔。' : '给这张相册照片写一句背面留言。' },
                             { type: 'image_url', image_url: { url: selectedImage.url } },
                         ],
                     },
                 ],
-                max_tokens: 1200,
-                temperature: 0.75,
+                max_tokens: isEssay ? 1800 : 1200,
+                temperature: isEssay ? 0.82 : 0.75,
                 stream: false,
             };
 
@@ -511,29 +535,33 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                     charId: char.id,
                     charName: char.name,
                     apiRole: 'main',
-                    apiBinding: '相册题字',
+                    apiBinding: isEssay ? '相册随笔' : '相册题字',
                 }),
+                presetScope: 'creative.text',
+                presetMacros: { charName: char.name, userName: userProfile.name || '用户' },
             });
 
             const choice = data.choices?.[0];
             if (choice?.finish_reason === 'content_filter') throw new Error('AI 拒绝回复（图片可能包含敏感内容）');
 
-            let reviewText = extractContent(data) || choice?.message?.reasoning_content || choice?.text || choice?.delta?.content || '';
-            reviewText = String(reviewText).trim();
-            if (!reviewText) throw new Error('AI 返回内容为空，请重试');
+            let text = extractContent(data) || choice?.message?.reasoning_content || choice?.text || choice?.delta?.content || '';
+            text = String(text).trim();
+            if (!text) throw new Error('AI 返回内容为空，请重试');
 
-            await DB.updateGalleryImageReview(selectedImage.id, reviewText);
-            const updatedImage = { ...selectedImage, review: reviewText, reviewTimestamp: Date.now(), updatedAt: Date.now() };
+            const updatedImage = await DB.updateGalleryImage(selectedImage.id, isEssay
+                ? { charEssay: text, charEssayTimestamp: Date.now() }
+                : { review: text, reviewTimestamp: Date.now() });
             updateImageInState(updatedImage);
             void loadAlbumStats();
-            addToast('TA 留了句话', 'success');
+            addToast(isEssay ? 'TA 写下了随笔' : 'TA 留了句话', 'success');
         } catch (e: any) {
             console.error('Review Error:', e);
             let msg = e?.message || '未知错误';
             if (/vision|image|multimodal|不支持/i.test(msg)) msg = '当前模型可能不支持图片识别(Vision)，请切换模型。';
-            addToast(`留言失败：${msg}`, 'error');
+            addToast(`${isEssay ? '随笔' : '留言'}失败：${msg}`, 'error');
         } finally {
-            setIsReviewing(false);
+            if (isEssay) setIsWritingEssay(false);
+            else setIsReviewing(false);
         }
     };
 
@@ -627,9 +655,9 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                     <Star size={11} weight="fill" />
                 </span>
             )}
-            {img.review && (
+            {(img.review || hasEssay(img)) && (
                 <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.92)', color: accent(AC).solid }}>
-                    <ChatCircleText size={11} weight="fill" />
+                    {hasEssay(img) ? <BookOpenText size={11} weight="fill" /> : <ChatCircleText size={11} weight="fill" />}
                 </span>
             )}
         </button>
@@ -643,11 +671,12 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                         <StoryRing src={activeChar?.avatar} size={64} active={images.length > 0} spin={false} fallback={activeChar?.name?.charAt(0)} />
                         <div className="min-w-0 flex-1">
                             <div className="text-[18px] font-extrabold truncate" style={{ color: INK }}>{activeChar?.name || '相册'}</div>
-                            <div className="grid grid-cols-3 gap-2 mt-2">
+                            <div className="grid grid-cols-4 gap-2 mt-2">
                                 {[
                                     ['照片', currentStats.total],
                                     ['喜欢', currentStats.favorites],
                                     ['题字', currentStats.reviewed],
+                                    ['随笔', currentStats.essays],
                                 ].map(([label, value]) => (
                                     <div key={label} className="rounded-2xl px-2.5 py-2 text-center" style={{ background: accent(AC).soft }}>
                                         <div className="text-[15px] font-black tabular-nums" style={{ color: INK }}>{value}</div>
@@ -666,7 +695,7 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                     <input
                         value={query}
                         onChange={e => setQuery(e.target.value)}
-                        placeholder="搜标题、题字、标签、日期"
+                        placeholder="搜标题、随笔、题字、标签、日期"
                         className="min-w-0 flex-1 bg-transparent outline-none text-[13px] placeholder:text-[#bbb5ae]"
                         style={{ color: INK }}
                     />
@@ -681,6 +710,7 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                                 ['favorite', '喜欢'],
                                 ['reviewed', '有题字'],
                                 ['unreviewed', '待题字'],
+                                ['essayed', '有随笔'],
                                 ['tagged', '有标签'],
                                 ['untagged', '未整理'],
                             ] as Array<[GalleryFilter, string]>).map(([key, label]) => (
@@ -777,6 +807,26 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                         </div>
                     </div>
 
+                    {hasEssay(selectedImage) && (
+                        <div className="mt-3 rounded-2xl p-3.5 space-y-3" style={{ background: '#fffaf2', border: `1px solid ${accent(AC).soft}` }}>
+                            <SectionLabel en="PHOTO ESSAY" accent={AC}>照片随笔</SectionLabel>
+                            {selectedImage.userEssay && (
+                                <div>
+                                    <div className="text-[10px] font-black mb-1" style={{ color: INK_SOFT }}>我写的</div>
+                                    <p className="text-[13px] leading-relaxed whitespace-pre-wrap select-text" style={{ color: '#5a5660' }}>{selectedImage.userEssay}</p>
+                                </div>
+                            )}
+                            {selectedImage.charEssay && (
+                                <div>
+                                    <div className="text-[10px] font-black mb-1 inline-flex items-center gap-1" style={{ color: accent(AC).solid }}>
+                                        <BookOpenText size={11} weight="bold" />{activeChar?.name || 'TA'} 写的
+                                    </div>
+                                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap select-text" style={{ color: INK, fontFamily: 'var(--font-hand)' }}>{selectedImage.charEssay}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {(selectedImage.note || (selectedImage.tags || []).length > 0 || selectedImage.originalName) && (
                         <div className="mt-3 rounded-2xl p-3.5 space-y-2" style={{ background: accent(AC).soft }}>
                             {selectedImage.note && <div className="text-[13px] leading-relaxed" style={{ color: '#5a5660' }}>{selectedImage.note}</div>}
@@ -789,12 +839,15 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                         </div>
                     )}
 
-                    <div className="grid grid-cols-4 gap-2 pt-3 mt-3" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                    <div className="grid grid-cols-5 gap-2 pt-3 mt-3" style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                         <button onClick={() => openEditSheet(selectedImage)} className="flex flex-col items-center gap-1 py-2 rounded-2xl press-soft" style={{ background: accent(AC).soft, color: accent(AC).ink }}>
                             <NotePencil size={17} weight="bold" /><span className="text-[10px] font-bold">整理</span>
                         </button>
-                        <button onClick={handleReview} disabled={isReviewing} className="flex flex-col items-center gap-1 py-2 rounded-2xl press-soft disabled:opacity-50" style={{ background: accent(AC).soft, color: accent(AC).ink }}>
+                        <button onClick={() => void handleGenerateRoleText('review')} disabled={isReviewing} className="flex flex-col items-center gap-1 py-2 rounded-2xl press-soft disabled:opacity-50" style={{ background: accent(AC).soft, color: accent(AC).ink }}>
                             {isReviewing ? <Spinner size={17} className="animate-spin" /> : <ArrowsClockwise size={17} weight="bold" />}<span className="text-[10px] font-bold">{selectedImage.review ? '换句' : '题字'}</span>
+                        </button>
+                        <button onClick={() => void handleGenerateRoleText('charEssay')} disabled={isWritingEssay} className="flex flex-col items-center gap-1 py-2 rounded-2xl press-soft disabled:opacity-50" style={{ background: accent(AC).soft, color: accent(AC).ink }}>
+                            {isWritingEssay ? <Spinner size={17} className="animate-spin" /> : <Sparkle size={17} weight="bold" />}<span className="text-[10px] font-bold">{selectedImage.charEssay ? '重写' : '随笔'}</span>
                         </button>
                         <button onClick={() => void handleShare()} className="flex flex-col items-center gap-1 py-2 rounded-2xl press-soft" style={{ background: accent(AC).soft, color: accent(AC).ink }}>
                             <ShareNetwork size={17} weight="bold" /><span className="text-[10px] font-bold">分享</span>
@@ -854,6 +907,8 @@ Style: intimate, casual, in character. Do not say you are an AI. Do not merely d
                         </div>
                     </div>
                     <textarea value={editDraft.note} onChange={e => setEditDraft(prev => ({ ...prev, note: e.target.value }))} rows={3} placeholder="自己的备注：这张图为什么想留下？" className="w-full px-3 py-2 rounded-2xl text-[13px] outline-none resize-none" style={{ border: `1px solid ${HAIRLINE}` }} />
+                    <textarea value={editDraft.userEssay} onChange={e => setEditDraft(prev => ({ ...prev, userEssay: e.target.value }))} rows={4} placeholder="我的随笔：可以写得长一点，留给以后翻相册时看" className="w-full px-3 py-2 rounded-2xl text-[13px] outline-none resize-none" style={{ border: `1px solid ${HAIRLINE}` }} />
+                    <textarea value={editDraft.charEssay} onChange={e => setEditDraft(prev => ({ ...prev, charEssay: e.target.value }))} rows={4} placeholder="TA 的随笔：可手动修改，也可回详情页点“随笔”让 TA 重写" className="w-full px-3 py-2 rounded-2xl text-[13px] outline-none resize-none" style={{ border: `1px solid ${HAIRLINE}` }} />
                     <div>
                         <div className="flex items-center gap-1.5 text-[11px] font-bold mb-1.5" style={{ color: INK_SOFT }}><Tag size={12} weight="bold" />标签，用空格或逗号分隔</div>
                         <input value={editDraft.tags} onChange={e => setEditDraft(prev => ({ ...prev, tags: e.target.value }))} placeholder="约会 雨天 合照" className="w-full px-3 py-2 rounded-2xl text-[13px] outline-none" style={{ border: `1px solid ${HAIRLINE}` }} />

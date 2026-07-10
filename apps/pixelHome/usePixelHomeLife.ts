@@ -353,6 +353,8 @@ ${JSON.stringify(interactables)}
     }
   }, [assets, char, roomState, userProfile?.name]);
 
+  const clearInspection = useCallback(() => setInspection(null), []);
+
   return {
     today,
     todo,
@@ -370,6 +372,6 @@ ${JSON.stringify(interactables)}
     addNote,
     deleteNote,
     inspectFurniture,
-    clearInspection: () => setInspection(null),
+    clearInspection,
   };
 }

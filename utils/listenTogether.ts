@@ -1,6 +1,6 @@
 /**
  * 「一起听歌」AI 对话 + 音乐控制。
- * 音乐 App 的一起听界面里，角色和用户讨论正在放的歌；角色还能主动换歌 / 暂停 / 继续 / 下一首。
+ * 音乐 App 的一起听界面里，角色和用户讨论正在放的歌；角色还能主动换歌 / 暂停 / 继续 / 上下首 / 拖动进度。
  * 纯一次性调用（不走主聊天管线），返回角色的话 + 一个可执行的音乐动作。
  */
 
@@ -10,13 +10,14 @@ import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import type { MusicLyricSource } from './musicLyricContext';
-import { buildFullActiveUserSetting } from './characterPromptProfile';
 
 export type ListenAction =
     | { kind: 'none' }
     | { kind: 'change_song'; query: string }
+    | { kind: 'seek'; seconds: number }
     | { kind: 'pause' }
     | { kind: 'resume' }
+    | { kind: 'previous' }
     | { kind: 'next' };
 
 export interface ListenMsg { role: 'user' | 'char'; text: string; action?: ListenAction; at: number; }
@@ -45,15 +46,17 @@ export interface DiscussInput {
     lyricSnippet?: string;
     history: ListenMsg[];
     userMsg?: string;
-    trigger: 'enter' | 'song_changed' | 'take_over' | 'user';
+    trigger: 'enter' | 'song_changed' | 'take_over' | 'progress_check' | 'user';
     fullUserSetting?: string;
+    fullCoreContext?: string;
 }
 
 const TRIGGER_TASK: Record<DiscussInput['trigger'], string> = {
     enter: '你和对方刚点开「一起听」，开始一起听歌。自然地打个招呼，聊聊正在放的这首歌；如果此刻没在放歌，可以挑一首你想一起听的（change_song）。',
     song_changed: '刚刚换了一首歌 / 新歌开始放了。说说你对这首的第一感觉、它让你想到什么，像真的在一起听歌那样随口聊。',
     take_over: '对方把选歌权交给你了——由你来安排：可以换成一首你此刻特别想和对方一起听的歌（change_song，给真实歌名+艺人），或者先暂停下来说点想说的话（pause），按你的心情和你们的关系来。',
-    user: '回应对方刚说的话，自然地接着聊音乐。如果聊着想换歌 / 暂停 / 继续 / 下一首，就顺手做。',
+    progress_check: '对方让你听听此刻播放到哪里。请根据当前时间点、正在唱到的歌词和上下文自然回应；如果你想回听某句、跳到副歌、上一首 / 下一首或点播别的歌，可以顺手控制播放器。',
+    user: '回应对方刚说的话，自然地接着聊音乐。如果对方像在打字跟唱 / 哼唱歌词，你可以接住那一句的情绪或轻轻跟着哼，不要像点评作业。如果聊着想换歌 / 暂停 / 继续 / 上一首 / 下一首 / 跳到某段，就顺手做。',
 };
 
 const fmtTime = (value: unknown): string | null => {
@@ -85,7 +88,7 @@ const formatNowPlaying = (song: ListenSongContext | null, playing: boolean, lega
     const album = song.album ? `，专辑《${song.album}》` : '';
     const lines = [
         `正在播放：《${song.name}》— ${song.artists}${album}（${isPlaying ? '播放中' : '已暂停'}${progress}）。`,
-        `你不是只看到歌名：你能听到这首歌的氛围，也能参考播放器给出的歌词上下文。`,
+        `你不是只看到歌名：你能听到这首歌的氛围，也能参考播放器给出的实时进度、当前歌词和歌词上下文。`,
     ];
 
     const window = (song.lyricWindow || []).filter(Boolean).slice(0, 5);
@@ -117,7 +120,8 @@ const formatNowPlaying = (song: ListenSongContext | null, playing: boolean, lega
 
 export function buildListenTogetherPrompt(input: DiscussInput): string {
     const { char, user, song, playing, lyricSnippet, history, userMsg, trigger } = input;
-    const context = ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting: input.fullUserSetting });
+    const context = input.fullCoreContext
+        || ContextBuilder.buildCoreContext(char, user, true, undefined, { fullUserSetting: input.fullUserSetting });
     const musicTaste = char.musicProfile
         ? `\n你的音乐口味：${(char.musicProfile.genreTags || []).join(' / ')}；常听 ${(char.musicProfile.signatureArtists || []).map(a => a.name).join('、')}。`
         : '';
@@ -133,11 +137,13 @@ ${userMsg ? `\n${user.name || '对方'} 刚说：${userMsg}` : ''}
 ### [Task]
 ${TRIGGER_TASK[trigger]}
 以「${char.name}」第一人称，用口语、贴合你的人设和你们的关系，说 1~3 句（像一起听歌时随口聊天，别太长）。
-如果歌词窗口或片段里有触动你的意象，可以贴着那句歌词的画面、情绪或转折聊；如果歌词不可用，就不要假装知道歌词。
+你能感知播放器给出的当前进度和歌词窗口；如果歌词窗口或片段里有触动你的意象，可以贴着那句歌词的画面、情绪或转折聊，也可以像正在一起听那样轻轻接一句“嗯/哼/这句好像……”。
+只引用上面给出的歌词内容；如果歌词不可用，就不要假装知道歌词。
 不要每次都机械复述歌名/歌手/风格，也不用每轮都评价音乐。可以把歌当作背景，先回应对方。
 你还可以顺手控制播放（按心情来，别每次都换歌）：
 - 想换歌：action = {"kind":"change_song","query":"歌名 艺人"}（必须真实存在、网易云能搜到）
-- 想暂停：{"kind":"pause"}；想继续：{"kind":"resume"}；想跳过这首：{"kind":"next"}；只说话：{"kind":"none"}
+- 想拖到某个时间点 / 回听一句 / 跳到副歌：{"kind":"seek","seconds":83}（seconds 是目标播放秒数）
+- 想暂停：{"kind":"pause"}；想继续：{"kind":"resume"}；想上一首：{"kind":"previous"}；想跳过这首：{"kind":"next"}；只说话：{"kind":"none"}
 
 只输出一个 JSON（不要 markdown、不要解释）：
 {"reply":"你要说的话","action":{"kind":"none"}}`;
@@ -149,9 +155,13 @@ export async function discussMusic(input: DiscussInput): Promise<{ reply: string
     const fallback = { reply: song ? `这首《${song.name}》还挺合现在的氛围的。` : '想听点什么？我来放。', action: { kind: 'none' } as ListenAction };
     if (!api.baseUrl || !api.apiKey || !api.model) return fallback;
     try {
+        const fullCoreContext = input.fullCoreContext
+            || await ContextBuilder.buildFullCoreContext(input.char, input.user, true, undefined, {
+                fullUserSetting: input.fullUserSetting,
+            });
         const prompt = buildListenTogetherPrompt({
             ...input,
-            fullUserSetting: input.fullUserSetting || await buildFullActiveUserSetting(input.user, { fallback: `用户名：${input.user.name || '用户'}` }),
+            fullCoreContext,
         });
         const data = await callChatCompletion(api, {
             model: api.model,
@@ -163,6 +173,8 @@ export async function discussMusic(input: DiscussInput): Promise<{ reply: string
                 charId: char.id,
                 charName: char.name,
             }),
+            presetScope: 'chat.private',
+            presetMacros: { charName: char.name, userName: input.user.name || '用户' },
         });
         const content = (extractContent(data) || '').trim();
         const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -173,7 +185,11 @@ export async function discussMusic(input: DiscussInput): Promise<{ reply: string
             const a = parsed.action;
             if (a && typeof a === 'object') {
                 if (a.kind === 'change_song' && typeof a.query === 'string' && a.query.trim()) action = { kind: 'change_song', query: a.query.trim().slice(0, 60) };
-                else if (a.kind === 'pause' || a.kind === 'resume' || a.kind === 'next') action = { kind: a.kind };
+                else if (a.kind === 'seek') {
+                    const seconds = Number(a.seconds ?? a.second ?? a.time ?? a.progress);
+                    if (Number.isFinite(seconds) && seconds >= 0) action = { kind: 'seek', seconds: Math.round(seconds * 10) / 10 };
+                }
+                else if (a.kind === 'pause' || a.kind === 'resume' || a.kind === 'previous' || a.kind === 'next') action = { kind: a.kind };
             }
             return { reply, action };
         }

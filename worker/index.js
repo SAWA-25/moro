@@ -724,6 +724,8 @@ const NETEASE_ACTION_REWRITE = {
   "search": "/cloudsearch",           // 用 cloudsearch 返回更完整的字段
   "song/url": "/song/url/v1",
   "user/detail": "/user/detail",
+  "user/follows": "/user/follows",
+  "user/followeds": "/user/followeds",
   "user/playlist": "/user/playlist",
   "user/record": "/user/record",
   "user/cloud": "/user/cloud",
@@ -754,6 +756,7 @@ const NETEASE_ACTION_REWRITE = {
   "lyric": "/lyric",
   "lyric/new": "/lyric/new",
   "comment/music": "/comment/music",
+  "comment": "/comment",
   "album": "/album",
   "artists": "/artists",
   "artist/songs": "/artist/songs",
@@ -801,6 +804,10 @@ function buildNeteaseUpstream(action, body, cookie) {
   } else if (action === "user/record") {
     if (body.uid != null) p.set("uid", String(body.uid));
     p.set("type", String(body.type ?? 1)); // 0: 全部, 1: 最近一周
+  } else if (action === "user/follows" || action === "user/followeds") {
+    if (body.uid != null) p.set("uid", String(body.uid));
+    p.set("limit", String(body.limit || 30));
+    p.set("offset", String(body.offset || 0));
   } else if (action === "user/cloud") {
     p.set("limit", String(body.limit || 30));
     p.set("offset", String(body.offset || 0));

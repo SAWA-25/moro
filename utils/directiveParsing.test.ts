@@ -3,6 +3,38 @@ import { extractCallUserDirective } from './callDirective';
 import { extractCharAvatarDirective } from './charAvatarSystem';
 import { detectOfflineAutoStart, detectOfflineScheduledStart, extractOfflineStartDirective } from './offlineMode';
 import { sanitizeForBubble } from './sanitize';
+import { extractGomokuInviteDirective } from './theaterGomokuInvite';
+import { extractGoInviteDirective } from './theaterGoInvite';
+import { extractDoudizhuInviteDirective } from './theaterDoudizhuInvite';
+import { extractTurtleSoupInviteDirective } from './theaterTurtleSoupInvite';
+import { extractMahjongInviteDirective } from './theaterMahjongInvite';
+
+describe('mahjong invite directive parsing', () => {
+  it('recognizes mahjong invite directives and strips them from visible text', () => {
+    expect(extractMahjongInviteDirective('来吧。\n[[MAHJONG_INVITE: 摸一圈？]]')).toEqual({
+      invited: true,
+      content: '来吧。',
+      message: '摸一圈？',
+    });
+
+    expect(extractMahjongInviteDirective('[[MAHJONG_INVITE：模式=每步评估，四个人刚好，来打麻将？]]走？')).toEqual({
+      invited: true,
+      content: '走？',
+      message: '四个人刚好，来打麻将？',
+      difficultyMode: 'per_move',
+    });
+
+    expect(extractMahjongInviteDirective('[[mahjong_invite: 开局定档，打一圈？]]')).toEqual({
+      invited: true,
+      content: '',
+      message: '打一圈？',
+      difficultyMode: 'opening',
+    });
+
+    expect(extractMahjongInviteDirective('没有指令')).toEqual({ content: '没有指令' });
+    expect(sanitizeForBubble('别露出来 [[MAHJONG_INVITE: 来一桌]]')).toBe('别露出来');
+  });
+});
 
 describe('chat side-effect directive parsing', () => {
   it('recognizes flexible proactive call directives and strips them from text', () => {
@@ -95,5 +127,105 @@ describe('chat side-effect directive parsing', () => {
       reason: '就用这张',
       content: '这张像我',
     });
+  });
+
+  it('recognizes gomoku invite directives and strips them from visible text', () => {
+    expect(extractGomokuInviteDirective('来吧。\n[[GOMOKU_INVITE: 下一局？]]')).toEqual({
+      invited: true,
+      content: '来吧。',
+      message: '下一局？',
+    });
+
+    expect(extractGomokuInviteDirective('[[GOMOKU_INVITE：模式=每步评估，敢不敢下一盘？]]走？')).toEqual({
+      invited: true,
+      content: '走？',
+      message: '敢不敢下一盘？',
+      difficultyMode: 'per_move',
+    });
+
+    expect(extractGomokuInviteDirective('[[gomoku_invite: 开局定档，手谈一局？]]')).toEqual({
+      invited: true,
+      content: '',
+      message: '手谈一局？',
+      difficultyMode: 'opening',
+    });
+
+    expect(extractGomokuInviteDirective('没有指令')).toEqual({ content: '没有指令' });
+    expect(sanitizeForBubble('别露出来 [[GOMOKU_INVITE: 来一盘]]')).toBe('别露出来');
+  });
+
+  it('recognizes go invite directives and strips them from visible text', () => {
+    expect(extractGoInviteDirective('来吧。\n[[GO_INVITE: 下一盘？]]')).toEqual({
+      invited: true,
+      content: '来吧。',
+      message: '下一盘？',
+    });
+
+    expect(extractGoInviteDirective('[[GO_INVITE：模式=每步评估，手谈一局？]]走？')).toEqual({
+      invited: true,
+      content: '走？',
+      message: '手谈一局？',
+      difficultyMode: 'per_move',
+    });
+
+    expect(extractGoInviteDirective('[[go_invite: 开局定档，围棋？]]')).toEqual({
+      invited: true,
+      content: '',
+      message: '围棋？',
+      difficultyMode: 'opening',
+    });
+
+    expect(extractGoInviteDirective('没有指令')).toEqual({ content: '没有指令' });
+    expect(sanitizeForBubble('别露出来 [[GO_INVITE: 来一盘]]')).toBe('别露出来');
+  });
+
+  it('recognizes doudizhu invite directives and strips them from visible text', () => {
+    expect(extractDoudizhuInviteDirective('来吧。\n[[DOUDIZHU_INVITE: 来一局？]]')).toEqual({
+      invited: true,
+      content: '来吧。',
+      message: '来一局？',
+    });
+
+    expect(extractDoudizhuInviteDirective('[[DOUDIZHU_INVITE：模式=每步评估，来一局斗地主？]]走？')).toEqual({
+      invited: true,
+      content: '走？',
+      message: '来一局斗地主？',
+      difficultyMode: 'per_move',
+    });
+
+    expect(extractDoudizhuInviteDirective('[[doudizhu_invite: 开局定档，开桌？]]')).toEqual({
+      invited: true,
+      content: '',
+      message: '开桌？',
+      difficultyMode: 'opening',
+    });
+
+    expect(extractDoudizhuInviteDirective('没有指令')).toEqual({ content: '没有指令' });
+    expect(sanitizeForBubble('别露出来 [[DOUDIZHU_INVITE: 来一局]]')).toBe('别露出来');
+  });
+
+  it('recognizes turtle soup invite directives and strips them from visible text', () => {
+    expect(extractTurtleSoupInviteDirective('来吧。\n[[TURTLE_SOUP_INVITE: 来一碗？]]')).toEqual({
+      invited: true,
+      content: '来吧。',
+      message: '来一碗？',
+    });
+
+    expect(extractTurtleSoupInviteDirective('[[TURTLE_SOUP_INVITE：模式=每步评估，敢不敢喝一碗暗黑汤？]]走？')).toEqual({
+      invited: true,
+      content: '走？',
+      message: '敢不敢喝一碗暗黑汤？',
+      difficultyMode: 'per_move',
+    });
+
+    expect(extractTurtleSoupInviteDirective('[[turtle_soup_invite: 开局定档，来碗汤？]]')).toEqual({
+      invited: true,
+      content: '',
+      message: '来碗汤？',
+      difficultyMode: 'opening',
+    });
+
+    expect(extractTurtleSoupInviteDirective('没有指令')).toEqual({ content: '没有指令' });
+    expect(sanitizeForBubble('别露出来 [[TURTLE_SOUP_INVITE: 来一碗]]')).toBe('别露出来');
   });
 });

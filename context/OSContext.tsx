@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, SuspendedOfflineSessionInfo, ChatAlarm, PeriodReminderSettings, HealthReminder } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta, SuspendedVideoCallInfo, SuspendedOfflineSessionInfo, ChatAlarm, PeriodReminderSettings, HealthReminder, TheaterGomokuInvitation, TheaterGoInvitation, TheaterDoudizhuInvitation, TheaterTurtleSoupInvitation, TheaterMahjongInvitation } from '../types';
 import { DB } from '../utils/db';
 import { createAutoBankTransaction } from '../utils/bankLedger';
 import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupSettingsFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupSettingsToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope, type WorldbookGroupSettings } from '../utils/worldbookRuntime';
@@ -18,6 +18,11 @@ import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/use
 import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
 import { TAKEOUT_ORDER_EVENT, synthesizeCharOrderSafely, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine, shouldAutoReactToCharTakeout, getTasteProfile } from '../utils/takeout';
+import { GOMOKU_INVITE_EVENT, extractGomokuInviteDirective } from '../utils/theaterGomokuInvite';
+import { GO_INVITE_EVENT, extractGoInviteDirective } from '../utils/theaterGoInvite';
+import { DOUDIZHU_INVITE_EVENT, extractDoudizhuInviteDirective } from '../utils/theaterDoudizhuInvite';
+import { TURTLE_SOUP_INVITE_EVENT, extractTurtleSoupInviteDirective } from '../utils/theaterTurtleSoupInvite';
+import { MAHJONG_INVITE_EVENT, extractMahjongInviteDirective } from '../utils/theaterMahjongInvite';
 import {
   applyCoupleAutoCareDraft,
   buildCoupleTakeoutMemoryCard,
@@ -1835,7 +1840,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
 
-  // ─── 来往·关系系统 / 求婚 / 角色主动点外卖 / 婚事推进（聊天指令 → 落库） ───
+  // ─── 来往·关系系统 / 求婚 / 角色主动点外卖 / 五子棋约局 / 婚事推进（聊天指令 → 落库） ───
   useEffect(() => {
       if (!isDataLoaded) return;
       const nameOf = (id: string) => charactersRef.current.find(c => c.id === id)?.name || '';
@@ -1886,6 +1891,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   fallback: `用户名：${profile?.name || '用户'}`,
               });
               const result = await synthesizeCharOrderSafely(d.charId, d.desc || '', address, {
+                  characterName: char.name,
+                  userName: profile?.name || '你',
                   fullUserSetting,
                   tasteProfile: getTasteProfile('me'),
                   api: resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current),
@@ -1901,6 +1908,226 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               notifyTakeoutUpdated();
               bumpUnread(d.charId);
               addToast(result.changedReason ? `${char.name} 按你的忌口换了张更稳的饭票` : `${char.name} 悄悄给你撕了张饭票 🍱`, 'success');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动约五子棋（[[GOMOKU_INVITE:message]]）—— 需会话开关打开
+      const onGomokuInvite = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; message?: string; difficultyMode?: 'opening' | 'per_move' } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveGomokuInvite) return;
+          const now = Date.now();
+          const profile = userProfileRef.current;
+          const message = sanitizeAssistantVisibleText(d.message || '要不要来一局五子棋？').replace(/\s+/g, ' ').trim().slice(0, 120) || '要不要来一局五子棋？';
+          const invitation: TheaterGomokuInvitation = {
+              id: `gmi_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              charId: d.charId,
+              charName: char.name,
+              userName: profile?.name || '你',
+              status: 'pending',
+              message,
+              difficultyMode: d.difficultyMode,
+              createdAt: now,
+              updatedAt: now,
+          };
+          try {
+              await DB.saveTheaterGomokuInvitation(invitation);
+              await DB.saveMessage({
+                  charId: d.charId,
+                  role: 'assistant',
+                  type: 'gomoku_invite_card',
+                  content: '[五子棋邀请]',
+                  metadata: {
+                      gomokuInvite: {
+                          invitationId: invitation.id,
+                          charId: invitation.charId,
+                          charName: invitation.charName,
+                          message: invitation.message,
+                          status: invitation.status,
+                          difficultyMode: invitation.difficultyMode,
+                          at: now,
+                      },
+                  },
+              } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 约你下一局五子棋`, 'info');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动约围棋（[[GO_INVITE:message]]）——需要会话开关打开
+      const onGoInvite = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; message?: string; difficultyMode?: 'opening' | 'per_move' } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveGoInvite) return;
+          const now = Date.now();
+          const profile = userProfileRef.current;
+          const message = sanitizeAssistantVisibleText(d.message || '要不要手谈一局？').replace(/\s+/g, ' ').trim().slice(0, 120) || '要不要手谈一局？';
+          const invitation: TheaterGoInvitation = {
+              id: `goi_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              charId: d.charId,
+              charName: char.name,
+              userName: profile?.name || '你',
+              status: 'pending',
+              message,
+              difficultyMode: d.difficultyMode,
+              createdAt: now,
+              updatedAt: now,
+          };
+          try {
+              await DB.saveTheaterGoInvitation(invitation);
+              await DB.saveMessage({
+                  charId: d.charId,
+                  role: 'assistant',
+                  type: 'go_invite_card',
+                  content: '[围棋邀请]',
+                  metadata: {
+                      goInvite: {
+                          invitationId: invitation.id,
+                          charId: invitation.charId,
+                          charName: invitation.charName,
+                          message: invitation.message,
+                          status: invitation.status,
+                          difficultyMode: invitation.difficultyMode,
+                          at: now,
+                      },
+                  },
+              } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 约你手谈一局`, 'info');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动约斗地主（[[DOUDIZHU_INVITE:message]]）——需要会话开关打开
+      const onDoudizhuInvite = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; message?: string; difficultyMode?: 'opening' | 'per_move' } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveDoudizhuInvite) return;
+          const now = Date.now();
+          const profile = userProfileRef.current;
+          const message = sanitizeAssistantVisibleText(d.message || '来一局斗地主？').replace(/\s+/g, ' ').trim().slice(0, 120) || '来一局斗地主？';
+          const invitation: TheaterDoudizhuInvitation = {
+              id: `ddzi_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              charId: d.charId,
+              charName: char.name,
+              userName: profile?.name || '你',
+              status: 'pending',
+              message,
+              difficultyMode: d.difficultyMode,
+              createdAt: now,
+              updatedAt: now,
+          };
+          try {
+              await DB.saveTheaterDoudizhuInvitation(invitation);
+              await DB.saveMessage({
+                  charId: d.charId,
+                  role: 'assistant',
+                  type: 'doudizhu_invite_card',
+                  content: '[斗地主邀请]',
+                  metadata: {
+                      doudizhuInvite: {
+                          invitationId: invitation.id,
+                          charId: invitation.charId,
+                          charName: invitation.charName,
+                          message: invitation.message,
+                          status: invitation.status,
+                          difficultyMode: invitation.difficultyMode,
+                          at: now,
+                      },
+                  },
+              } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 约你打一局斗地主`, 'info');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动约海龟汤（[[TURTLE_SOUP_INVITE:message]]）——需要会话开关打开
+      const onTurtleSoupInvite = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; message?: string; difficultyMode?: 'opening' | 'per_move' } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveTurtleSoupInvite) return;
+          const now = Date.now();
+          const profile = userProfileRef.current;
+          const message = sanitizeAssistantVisibleText(d.message || '来一碗海龟汤？').replace(/\s+/g, ' ').trim().slice(0, 120) || '来一碗海龟汤？';
+          const invitation: TheaterTurtleSoupInvitation = {
+              id: `tsi_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              charId: d.charId,
+              charName: char.name,
+              userName: profile?.name || '你',
+              status: 'pending',
+              message,
+              difficultyMode: d.difficultyMode,
+              createdAt: now,
+              updatedAt: now,
+          };
+          try {
+              await DB.saveTheaterTurtleSoupInvitation(invitation);
+              await DB.saveMessage({
+                  charId: d.charId,
+                  role: 'assistant',
+                  type: 'turtle_soup_invite_card',
+                  content: '[海龟汤邀请]',
+                  metadata: {
+                      turtleSoupInvite: {
+                          invitationId: invitation.id,
+                          charId: invitation.charId,
+                          charName: invitation.charName,
+                          message: invitation.message,
+                          status: invitation.status,
+                          difficultyMode: invitation.difficultyMode,
+                          at: now,
+                      },
+                  },
+              } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 约你喝一碗海龟汤`, 'info');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动约麻将（[[MAHJONG_INVITE:message]]）——需要会话开关打开
+      const onMahjongInvite = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; message?: string; difficultyMode?: 'opening' | 'per_move' } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveMahjongInvite) return;
+          const now = Date.now();
+          const profile = userProfileRef.current;
+          const message = sanitizeAssistantVisibleText(d.message || '来打一桌麻将？').replace(/\s+/g, ' ').trim().slice(0, 120) || '来打一桌麻将？';
+          const invitation: TheaterMahjongInvitation = {
+              id: `mji_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              charId: d.charId,
+              charName: char.name,
+              userName: profile?.name || '你',
+              status: 'pending',
+              message,
+              difficultyMode: d.difficultyMode,
+              createdAt: now,
+              updatedAt: now,
+          };
+          try {
+              await DB.saveTheaterMahjongInvitation(invitation);
+              await DB.saveMessage({
+                  charId: d.charId,
+                  role: 'assistant',
+                  type: 'mahjong_invite_card',
+                  content: '[麻将邀请]',
+                  metadata: {
+                      mahjongInvite: {
+                          invitationId: invitation.id,
+                          charId: invitation.charId,
+                          charName: invitation.charName,
+                          message: invitation.message,
+                          status: invitation.status,
+                          difficultyMode: invitation.difficultyMode,
+                          at: now,
+                      },
+                  },
+              } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 约你打一桌麻将`, 'info');
           } catch { /* ignore */ }
       };
 
@@ -1936,11 +2163,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       window.addEventListener(RELATIONSHIP_EVENT, onRelationship);
       window.addEventListener(PROPOSAL_EVENT, onPropose as EventListener);
       window.addEventListener(TAKEOUT_ORDER_EVENT, onCharTakeout as EventListener);
+      window.addEventListener(GOMOKU_INVITE_EVENT, onGomokuInvite as EventListener);
+      window.addEventListener(GO_INVITE_EVENT, onGoInvite as EventListener);
+      window.addEventListener(DOUDIZHU_INVITE_EVENT, onDoudizhuInvite as EventListener);
+      window.addEventListener(TURTLE_SOUP_INVITE_EVENT, onTurtleSoupInvite as EventListener);
+      window.addEventListener(MAHJONG_INVITE_EVENT, onMahjongInvite as EventListener);
       window.addEventListener(MARRIAGE_PLAN_EVENT, onMarriagePlan as EventListener);
       return () => {
           window.removeEventListener(RELATIONSHIP_EVENT, onRelationship);
           window.removeEventListener(PROPOSAL_EVENT, onPropose as EventListener);
           window.removeEventListener(TAKEOUT_ORDER_EVENT, onCharTakeout as EventListener);
+          window.removeEventListener(GOMOKU_INVITE_EVENT, onGomokuInvite as EventListener);
+          window.removeEventListener(GO_INVITE_EVENT, onGoInvite as EventListener);
+          window.removeEventListener(DOUDIZHU_INVITE_EVENT, onDoudizhuInvite as EventListener);
+          window.removeEventListener(TURTLE_SOUP_INVITE_EVENT, onTurtleSoupInvite as EventListener);
+          window.removeEventListener(MAHJONG_INVITE_EVENT, onMahjongInvite as EventListener);
           window.removeEventListener(MARRIAGE_PLAN_EVENT, onMarriagePlan as EventListener);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2462,6 +2699,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 主动语音通话：开关打开时允许角色用 [[CALL_USER]] 指令直接拨电话（按人设自行决定）
               const proactiveCallAllowed = !!char.convoSettings?.proactiveCallEnabled;
               const forceReplyAllowed = !!char.convoSettings?.forceReplyEnabled;
+              const proactiveGomokuInviteAllowed = !!char.convoSettings?.proactiveGomokuInvite;
+              const proactiveGoInviteAllowed = !!char.convoSettings?.proactiveGoInvite;
+              const proactiveDoudizhuInviteAllowed = !!char.convoSettings?.proactiveDoudizhuInvite;
+              const proactiveTurtleSoupInviteAllowed = !!char.convoSettings?.proactiveTurtleSoupInvite;
+              const proactiveMahjongInviteAllowed = !!char.convoSettings?.proactiveMahjongInvite;
 
               // 离线自主生活：先让角色的生活往前走一格，主动消息就从 TA 此刻正在经历的事
               // 取材——分享自己的生活，而不是反复催用户回复（不每天围着用户转）。
@@ -2510,10 +2752,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       randomMode: pCfg?.randomMode,
                       proactiveCallAllowed,
                       forceReplyAllowed,
+                      proactiveGomokuInviteAllowed,
+                      proactiveGoInviteAllowed,
+                      proactiveDoudizhuInviteAllowed,
+                      proactiveTurtleSoupInviteAllowed,
+                      proactiveMahjongInviteAllowed,
                     })
                   : lifeEvent
-                  ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed })
-                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed });
+                  ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed })
+                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed });
 
               const proactiveDeliveryMeta = {
                   ...(scheduledAt !== undefined ? { proactiveScheduledAt: scheduledAt } : {}),
@@ -2664,6 +2911,76 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               if (forceReplyExtract.forceReply) {
                   aiContent = forceReplyExtract.content;
                   if (forceReplyAllowed) pendingForceReplyReason = forceReplyExtract.reason;
+              }
+
+              const gomokuInviteExtract = extractGomokuInviteDirective(aiContent);
+              if (gomokuInviteExtract.invited) {
+                  aiContent = gomokuInviteExtract.content;
+                  if (proactiveGomokuInviteAllowed) {
+                      window.dispatchEvent(new CustomEvent(GOMOKU_INVITE_EVENT, {
+                          detail: {
+                              charId,
+                              message: gomokuInviteExtract.message,
+                              difficultyMode: gomokuInviteExtract.difficultyMode,
+                          },
+                      }));
+                  }
+              }
+
+              const goInviteExtract = extractGoInviteDirective(aiContent);
+              if (goInviteExtract.invited) {
+                  aiContent = goInviteExtract.content;
+                  if (proactiveGoInviteAllowed) {
+                      window.dispatchEvent(new CustomEvent(GO_INVITE_EVENT, {
+                          detail: {
+                              charId,
+                              message: goInviteExtract.message,
+                              difficultyMode: goInviteExtract.difficultyMode,
+                          },
+                      }));
+                  }
+              }
+
+              const doudizhuInviteExtract = extractDoudizhuInviteDirective(aiContent);
+              if (doudizhuInviteExtract.invited) {
+                  aiContent = doudizhuInviteExtract.content;
+                  if (proactiveDoudizhuInviteAllowed) {
+                      window.dispatchEvent(new CustomEvent(DOUDIZHU_INVITE_EVENT, {
+                          detail: {
+                              charId,
+                              message: doudizhuInviteExtract.message,
+                              difficultyMode: doudizhuInviteExtract.difficultyMode,
+                          },
+                      }));
+                  }
+              }
+
+              const turtleSoupInviteExtract = extractTurtleSoupInviteDirective(aiContent);
+              if (turtleSoupInviteExtract.invited) {
+                  aiContent = turtleSoupInviteExtract.content;
+                  if (proactiveTurtleSoupInviteAllowed) {
+                      window.dispatchEvent(new CustomEvent(TURTLE_SOUP_INVITE_EVENT, {
+                          detail: {
+                              charId,
+                              message: turtleSoupInviteExtract.message,
+                              difficultyMode: turtleSoupInviteExtract.difficultyMode,
+                          },
+                      }));
+                  }
+              }
+
+              const mahjongInviteExtract = extractMahjongInviteDirective(aiContent);
+              if (mahjongInviteExtract.invited) {
+                  aiContent = mahjongInviteExtract.content;
+                  if (proactiveMahjongInviteAllowed) {
+                      window.dispatchEvent(new CustomEvent(MAHJONG_INVITE_EVENT, {
+                          detail: {
+                              charId,
+                              message: mahjongInviteExtract.message,
+                              difficultyMode: mahjongInviteExtract.difficultyMode,
+                          },
+                      }));
+                  }
               }
 
               const savedPreviewChunks: string[] = [];

@@ -1,13 +1,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { useMusic, musicApi, normalizeCookie, toHttps, Song } from '../context/MusicContext';
+import { useMusic, musicApi, normalizeCookie, toHttps, type DesktopLyricLineMode, type PlayMode, type Song } from '../context/MusicContext';
 import { AppID } from '../types';
 import { DB } from '../utils/db';
 import { discussMusic, type ListenAction, type ListenMsg, type ListenSongContext } from '../utils/listenTogether';
-import { MUSIC_PENDING_CHAT_SHARE_KEY, buildMusicPendingChatSharePayload, songToMusicShareMetadata } from '../utils/musicShare';
+import { MUSIC_PENDING_CHAT_SHARE_KEY, MUSIC_PENDING_RICH_SHARE_KEY, buildMusicPendingChatSharePayload, buildMusicRichSharePayload, songToMusicShareMetadata, type MusicRichShareKind } from '../utils/musicShare';
+import { buildMusicExternalUrl, shareToExternalMusicApp, type MusicExternalShareItem } from '../utils/musicExternalShare';
 import {
   buildLyricWindow,
+  cleanLyricText,
   lyricLinesFromRaw,
   lyricLinesFromTimedLines,
   mergeTranslatedLyricLines,
@@ -21,7 +23,7 @@ import {
 } from '../utils/listenTogetherSession';
 import { showLocalNotification } from '../utils/browserNotify';
 import { resolveAuxApi } from '../utils/auxApi';
-import { Gear, User as UserIcon, Crosshair, Play as PlayIcon, Pause as PauseIcon, UsersThree, PaperPlaneRight, DiceFive, SkipForward } from '@phosphor-icons/react';
+import { Gear, User as UserIcon, Crosshair, Play as PlayIcon, Pause as PauseIcon, UsersThree, PaperPlaneRight, DiceFive, SkipBack, SkipForward } from '@phosphor-icons/react';
 import {
   C, Sparkle, CrossStar, MizuHeader, SearchBar, SongRow, MiniPlayer,
   VinylDisc, GlassProgress, PlayControls, BokehBg,
@@ -36,6 +38,7 @@ import MusicLibraryPage from './music/MusicLibraryPage';
 import { Books, Compass, MagnifyingGlass, UserCircle } from '@phosphor-icons/react';
 import { addSongToMusicPlaylist, createMusicPlaylist, listMusicSearchHistory, listRecentMusicSongs, saveMusicSearch } from '../utils/musicLibrary';
 import type { MusicLibraryPlaylist } from '../types';
+import MusicArtistPage, { type MusicArtistRef } from './music/MusicArtistPage';
 
 // ------------------------- 工具 -------------------------
 const fmtTime = (s: number) => {
@@ -45,7 +48,18 @@ const fmtTime = (s: number) => {
   return `${m}:${ss.toString().padStart(2, '0')}`;
 };
 
-type View = 'discover' | 'library' | 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'listen_together' | 'comments';
+type View = 'discover' | 'library' | 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'listen_together' | 'comments' | 'artist' | 'lyrics';
+
+type MusicChatShareDraft =
+  | { kind: 'song'; song: Song }
+  | { kind: Exclude<MusicRichShareKind, 'song'>; title: string; subtitle?: string; text?: string; image?: string; url?: string; song?: Song; id?: string | number };
+
+const PLAY_MODE_TEXT: Record<PlayMode, string> = {
+  heart: '心动模式',
+  single: '单曲循环',
+  loop: '列表循环',
+  shuffle: '随机播放',
+};
 
 // ========================= 主组件 =========================
 const MusicApp: React.FC = () => {
@@ -63,6 +77,8 @@ const MusicApp: React.FC = () => {
     listeningTogetherWith, addListeningPartner, removeListeningPartner,
     addLocalSong, removeLocalSong, localAlbumSongs,
     playMode, setPlayMode,
+    desktopLyricEnabled, setDesktopLyricEnabled,
+    desktopLyricLineMode, setDesktopLyricLineMode,
     regeneratingId, regeneratingStatus,
     libraryVersion,
     refreshLibrary,
@@ -96,11 +112,20 @@ const MusicApp: React.FC = () => {
   }, [current, addToast]);
 
   const cyclePlayMode = useCallback(() => {
-    const order: ('loop' | 'single' | 'shuffle')[] = ['loop', 'single', 'shuffle'];
-    const next = order[(order.indexOf(playMode) + 1) % order.length];
+    const order: PlayMode[] = ['heart', 'single', 'loop', 'shuffle'];
+    const cur = Math.max(0, order.indexOf(playMode));
+    const next = order[(cur + 1) % order.length];
     setPlayMode(next);
-    addToast(next === 'loop' ? '列表循环' : next === 'single' ? '单曲循环' : '随机播放', 'info');
+    addToast(PLAY_MODE_TEXT[next], 'info');
   }, [playMode, setPlayMode, addToast]);
+  const choosePlayMode = useCallback((mode: PlayMode) => {
+    setPlayMode(mode);
+    addToast(PLAY_MODE_TEXT[mode], 'info');
+  }, [setPlayMode, addToast]);
+  const chooseDesktopLyricLineMode = useCallback((mode: DesktopLyricLineMode) => {
+    setDesktopLyricLineMode(mode);
+    addToast(mode === 'single' ? '桌面歌词：单行' : '桌面歌词：双行', 'info');
+  }, [setDesktopLyricLineMode, addToast]);
 
   // 伴听 char 名单（用于 MiniPlayer / 播放页徽章）—— 带头像，给"小情侣"头像块用
   const companions = useMemo(() => {
@@ -155,6 +180,7 @@ const MusicApp: React.FC = () => {
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
   const [libraryPlaylists, setLibraryPlaylists] = useState<MusicLibraryPlaylist[]>([]);
   const lyricBoxRef = useRef<HTMLDivElement | null>(null);
+  const fullLyricBoxRef = useRef<HTMLDivElement | null>(null);
   const pendingAutoSearchRef = useRef(false);
 
   useEffect(() => {
@@ -258,6 +284,9 @@ const MusicApp: React.FC = () => {
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [sharePickerMode, setSharePickerMode] = useState<'listen_together' | 'chat_share'>('listen_together');
   const [shareTargetSong, setShareTargetSong] = useState<Song | null>(null);
+  const [chatShareDraft, setChatShareDraft] = useState<MusicChatShareDraft | null>(null);
+  const [artistTarget, setArtistTarget] = useState<MusicArtistRef | null>(null);
+  const [profileTarget, setProfileTarget] = useState<{ userId: string | number; nickname?: string; avatarUrl?: string; source?: 'netease' | 'qq' } | null>(null);
   const listenScrollRef = useRef<HTMLDivElement | null>(null);
   // 角色自己换/跳的歌 → 抑制紧接着的 song_changed，避免重复发言或连锁触发。
   const suppressSongChangedRef = useRef(false);
@@ -336,7 +365,7 @@ const MusicApp: React.FC = () => {
     });
   }, [listenChar?.id, listenChar?.name, addToast]);
 
-  // 执行角色的播放控制动作（换歌 / 暂停 / 继续 / 下一首）
+  // 执行角色的播放控制动作（换歌 / 拖进度 / 暂停 / 继续 / 上下首）
   const executeListenAction = useCallback(async (action: ListenAction, actor?: { id: string; name: string }) => {
     if (action.kind === 'change_song') {
       // 先真实搜索网易云取最佳匹配；搜不到则回退角色歌单 / 一起写的歌。
@@ -380,16 +409,27 @@ const MusicApp: React.FC = () => {
     } else if (action.kind === 'resume') {
       if (!playing) togglePlay();
       notifyListenAction(action, undefined, actor?.name, actor?.id);
+    } else if (action.kind === 'seek') {
+      if (duration > 0) {
+        seek(Math.max(0, Math.min(duration, action.seconds)) / duration);
+        notifyListenAction(action, undefined, actor?.name, actor?.id);
+      } else {
+        addToast(`${actor?.name || listenChar?.name || 'TA'} 想拖进度，但这首歌还没有时长`, 'info');
+      }
+    } else if (action.kind === 'previous') {
+      suppressSongChangedRef.current = true;
+      prevSong();
+      notifyListenAction(action, undefined, actor?.name, actor?.id);
     } else if (action.kind === 'next') {
       suppressSongChangedRef.current = true;
       nextSong();
       notifyListenAction(action, undefined, actor?.name, actor?.id);
     }
-  }, [cfg, playSong, listenChar, localAlbumSongs, addToast, playing, togglePlay, nextSong, notifyListenAction]);
+  }, [cfg, playSong, listenChar, localAlbumSongs, addToast, playing, togglePlay, duration, seek, prevSong, nextSong, notifyListenAction]);
 
   // 让角色就当前音乐说一句话（一次性调用，不走主聊天管线）
   const runDiscuss = useCallback(async (
-    trigger: 'enter' | 'song_changed' | 'take_over' | 'user',
+    trigger: 'enter' | 'song_changed' | 'take_over' | 'progress_check' | 'user',
     userMsg?: string,
     historyOverride?: ListenMsg[],
     charIdOverride?: string,
@@ -450,30 +490,75 @@ const MusicApp: React.FC = () => {
 
   const openChatShare = useCallback((song: Song) => {
     setShareTargetSong(song);
+    setChatShareDraft({ kind: 'song', song });
     setSharePickerMode('chat_share');
     setShowSharePicker(true);
   }, []);
 
+  const openRichChatShare = useCallback((draft: Exclude<MusicChatShareDraft, { kind: 'song'; song: Song }>) => {
+    setShareTargetSong(draft.song || null);
+    setChatShareDraft(draft);
+    setSharePickerMode('chat_share');
+    setShowSharePicker(true);
+  }, []);
+
+  const openArtistPage = useCallback((artist: MusicArtistRef) => {
+    const normalized = artist.id || artist.name
+      ? { ...artist, source: artist.source || 'netease' as const }
+      : artist;
+    setArtistTarget(normalized);
+    setView('artist');
+  }, []);
+
+  const shareExternal = useCallback(async (item: MusicExternalShareItem) => {
+    try {
+      await shareToExternalMusicApp(item);
+      addToast('已打开外部音乐分享', 'success');
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') addToast(`外部分享失败：${err?.message || err}`, 'error');
+    }
+  }, [addToast]);
+
   const shareSongToChat = useCallback((charId: string) => {
     const char = characters.find(c => c.id === charId);
-    const song = shareTargetSong || current;
-    if (!char || !song) return;
+    const draft = chatShareDraft || (shareTargetSong || current ? { kind: 'song' as const, song: (shareTargetSong || current)! } : null);
+    if (!char || !draft) return;
     try {
-      const payload = buildMusicPendingChatSharePayload({
-        song,
-        targetId: charId,
-        userName: userProfile?.name || '我',
-      });
-      localStorage.setItem(MUSIC_PENDING_CHAT_SHARE_KEY, JSON.stringify(payload));
+      if (draft.kind === 'song') {
+        const payload = buildMusicPendingChatSharePayload({
+          song: draft.song,
+          targetId: charId,
+          userName: userProfile?.name || '我',
+        });
+        localStorage.setItem(MUSIC_PENDING_CHAT_SHARE_KEY, JSON.stringify(payload));
+      } else {
+        const payload = buildMusicRichSharePayload({
+          kind: draft.kind,
+          title: draft.title,
+          subtitle: draft.subtitle,
+          text: draft.text,
+          image: draft.image,
+          url: draft.url,
+          song: draft.song,
+          playlistId: draft.kind === 'playlist' ? draft.id : undefined,
+          artistId: draft.kind === 'artist' ? draft.id : undefined,
+          commentId: draft.kind === 'comment' ? draft.id : undefined,
+          targetId: charId,
+          userName: userProfile?.name || '我',
+        });
+        localStorage.setItem(MUSIC_PENDING_RICH_SHARE_KEY, JSON.stringify(payload));
+      }
       setShowSharePicker(false);
       setShareTargetSong(null);
+      setChatShareDraft(null);
       setActiveCharacterId(charId);
       openApp(AppID.Chat);
-      addToast(`已把《${song.name}》分享给 ${char.name}`, 'success');
+      const title = draft.kind === 'song' ? `《${draft.song.name}》` : `「${draft.title}」`;
+      addToast(`已把${title}分享给 ${char.name}`, 'success');
     } catch (err: any) {
       addToast(`分享失败：${err?.message || err}`, 'error');
     }
-  }, [characters, shareTargetSong, current, userProfile?.name, setActiveCharacterId, openApp, addToast]);
+  }, [characters, chatShareDraft, shareTargetSong, current, userProfile?.name, setActiveCharacterId, openApp, addToast]);
 
   const sendListenMsg = useCallback(() => {
     const text = listenInput.trim();
@@ -483,6 +568,23 @@ const MusicApp: React.FC = () => {
     setListenInput('');
     runDiscuss('user', text, next);
   }, [listenInput, listenBusy, listenMsgs, runDiscuss]);
+
+  const sendHummingLine = useCallback(() => {
+    if (listenBusy) return;
+    const typed = listenInput.trim();
+    const snap = buildListenSongContext();
+    const lyricLine = cleanLyricText(snap?.lyricCurrent || '', { maxLineChars: 120 });
+    const raw = typed || lyricLine;
+    const text = raw.startsWith('♪') ? raw : `♪ ${raw}`;
+    if (!raw.trim()) {
+      addToast('还没有可跟唱的歌词', 'info');
+      return;
+    }
+    const next = [...listenMsgs, { role: 'user' as const, text, at: Date.now() }];
+    setListenMsgs(next);
+    setListenInput('');
+    runDiscuss('user', text, next);
+  }, [listenBusy, listenInput, buildListenSongContext, listenMsgs, runDiscuss, addToast]);
 
   // 自然切歌（非角色发起）→ 角色随口评一句
   useEffect(() => {
@@ -549,6 +651,22 @@ const MusicApp: React.FC = () => {
     box.scrollTo({ top: elTopInBox - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
   }, [activeLyricIdx, view]);
 
+  const scrollFullLyricsToActive = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const box = fullLyricBoxRef.current; if (!box || activeLyricIdx < 0) return;
+    const el = box.querySelector<HTMLButtonElement>(`[data-full-lyric-idx="${activeLyricIdx}"]`);
+    if (!el) return;
+    const boxRect = box.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const elTopInBox = elRect.top - boxRect.top + box.scrollTop;
+    box.scrollTo({ top: elTopInBox - box.clientHeight / 2 + el.clientHeight / 2, behavior });
+  }, [activeLyricIdx]);
+
+  useEffect(() => {
+    if (view !== 'lyrics') return;
+    const timer = window.setTimeout(() => scrollFullLyricsToActive('auto'), 80);
+    return () => window.clearTimeout(timer);
+  }, [scrollFullLyricsToActive, view]);
+
   // ── 搜索 ──
   const doSearch = useCallback(async () => {
     const kw = keyword.trim(); if (!kw) return;
@@ -558,6 +676,9 @@ const MusicApp: React.FC = () => {
       const songs: Song[] = (r?.result?.songs || []).map((s: any) => ({
         id: s.id, name: s.name,
         artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
+        artistIds: (s.ar || s.artists || [])
+          .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+          .filter((a: any) => a.id && a.name),
         album: s.al?.name || s.album?.name || '',
         albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || ''),
         duration: (s.dt || s.duration || 0) / 1000,
@@ -710,6 +831,7 @@ const MusicApp: React.FC = () => {
                     key={`${song.source || 'netease'}-${song.id}-${i}`}
                     name={song.name}
                     artists={song.artists}
+                    artistIds={song.artistIds}
                     album={song.album}
                     albumPic={song.albumPic}
                     duration={fmtTime(song.duration)}
@@ -717,6 +839,7 @@ const MusicApp: React.FC = () => {
                     isActive={current?.id === song.id}
                     onClick={() => { void playSong(song, { replaceQueue: searchRecent, startIdx: i, playSource: 'library' }).then(() => openPlayerFrom('search')); }}
                     onShare={() => openChatShare(song)}
+                    onArtistClick={openArtistPage}
                   />
                 ))}
               </div>
@@ -735,6 +858,7 @@ const MusicApp: React.FC = () => {
             key={s.id}
             name={s.name}
             artists={s.artists}
+            artistIds={s.artistIds}
             album={s.album}
             albumPic={s.albumPic}
             duration={fmtTime(s.duration)}
@@ -742,6 +866,7 @@ const MusicApp: React.FC = () => {
             isActive={current?.id === s.id}
             onClick={() => { void playSong(s, { replaceQueue: results, startIdx: results.findIndex(x => x.id === s.id), playSource: 'search' }).then(() => openPlayerFrom('search')); }}
             onShare={() => openChatShare(s)}
+            onArtistClick={openArtistPage}
           />
         ))}
       </div>
@@ -779,6 +904,12 @@ const MusicApp: React.FC = () => {
 
   const renderPlayer = () => {
     if (!current) return null;
+    const playModeOptions: Array<{ mode: PlayMode; label: string; sub: string }> = [
+      { mode: 'heart', label: '心动', sub: '红心优先' },
+      { mode: 'single', label: '单曲', sub: '循环这首' },
+      { mode: 'loop', label: '列表', sub: '顺序循环' },
+      { mode: 'shuffle', label: '随机', sub: '打散队列' },
+    ];
     return (
       <div className="flex flex-col h-full relative"
         style={{ background: `linear-gradient(180deg, #ffffff 0%, ${C.bg} 60%, ${C.bgDeep} 100%)` }}>
@@ -848,10 +979,27 @@ const MusicApp: React.FC = () => {
               style={{ color: C.primary, fontFamily: `'Noto Serif','Georgia',serif`, fontSize: '22px' }}>
               {current.name}
             </h2>
-            <p className="text-[10px] uppercase opacity-70"
+            <div className="text-[10px] uppercase opacity-80 flex items-center justify-center gap-1 flex-wrap"
               style={{ color: C.muted, fontFamily: `'Space Grotesk','SF Mono',monospace`, letterSpacing: '0.2em' }}>
-              {current.artists}
-            </p>
+              {(current.artistIds?.length ? current.artistIds : current.artists.split(/\s*\/\s*/).filter(Boolean).map(name => ({
+                id: undefined,
+                name,
+                source: current.source === 'qq' ? 'qq' as const : 'netease' as const,
+              }))).map((artist, i, arr) => (
+                <React.Fragment key={`${artist.id || artist.name}-${i}`}>
+                  <button
+                    type="button"
+                    onClick={() => openArtistPage(artist)}
+                    className="underline-offset-2 hover:underline"
+                    style={{ color: C.accent, letterSpacing: '0.12em' }}
+                    title="查看歌手页"
+                  >
+                    {artist.name}
+                  </button>
+                  {i < arr.length - 1 && <span>/</span>}
+                </React.Fragment>
+              ))}
+            </div>
           </section>
 
           <div
@@ -942,6 +1090,15 @@ const MusicApp: React.FC = () => {
             )}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setView('lyrics')}
+            className="shrink-0 -mt-1 mb-2 px-3 py-1 rounded-full text-[10px] tracking-wider shizuku-glass active:scale-95 transition-all"
+            style={{ color: C.primary, border: `1px solid ${C.faint}30` }}
+          >
+            全屏歌词
+          </button>
+
           <div className="w-full shrink-0 max-w-sm">
             <div className="flex justify-between items-center mb-2 px-0.5">
               <MetaChip>{fmtTime(progress)}</MetaChip>
@@ -971,6 +1128,75 @@ const MusicApp: React.FC = () => {
               onCyclePlayMode={cyclePlayMode}
               onAdd={() => setShowAddToPlaylist(true)}
             />
+          </div>
+
+          <div className="shrink-0 mt-2 w-full max-w-sm space-y-2">
+            <div
+              className="grid grid-cols-4 gap-1.5 rounded-2xl p-1 shizuku-glass"
+              style={{ border: `1px solid ${C.faint}30` }}
+            >
+              {playModeOptions.map(opt => {
+                const active = playMode === opt.mode;
+                return (
+                  <button
+                    key={opt.mode}
+                    type="button"
+                    onClick={() => choosePlayMode(opt.mode)}
+                    className="min-w-0 rounded-xl px-1.5 py-1.5 text-center active:scale-95 transition-all"
+                    style={{
+                      background: active ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : 'rgba(255,255,255,0.42)',
+                      color: active ? 'white' : C.primary,
+                      boxShadow: active ? `0 3px 12px ${C.glow}35` : 'none',
+                    }}
+                    title={PLAY_MODE_TEXT[opt.mode]}
+                  >
+                    <div className="text-[10px] font-bold leading-tight truncate">{opt.label}</div>
+                    <div className="text-[8px] leading-tight truncate opacity-70 mt-0.5">{opt.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !desktopLyricEnabled;
+                  setDesktopLyricEnabled(next);
+                  addToast(next ? '桌面歌词已开启' : '桌面歌词已关闭', 'info');
+                }}
+                className="h-9 flex-1 min-w-0 rounded-2xl px-3 flex items-center justify-between text-[11px] active:scale-[0.98] transition-all"
+                style={{
+                  background: desktopLyricEnabled ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : 'rgba(255,255,255,0.52)',
+                  color: desktopLyricEnabled ? 'white' : C.primary,
+                  border: `1px solid ${desktopLyricEnabled ? 'rgba(255,255,255,0.2)' : C.faint + '45'}`,
+                }}
+              >
+                <span className="font-bold truncate">桌面歌词</span>
+                <span className="text-[10px] opacity-75 shrink-0">{desktopLyricEnabled ? '开' : '关'}</span>
+              </button>
+              <div
+                className="h-9 rounded-2xl p-1 flex items-center gap-1 shrink-0"
+                style={{ background: 'rgba(255,255,255,0.52)', border: `1px solid ${C.faint}45` }}
+              >
+                {(['single', 'double'] as DesktopLyricLineMode[]).map(mode => {
+                  const active = desktopLyricLineMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => chooseDesktopLyricLineMode(mode)}
+                      className="h-7 min-w-10 rounded-xl px-2 text-[10px] font-bold active:scale-95 transition-all"
+                      style={{
+                        background: active ? C.primary : 'transparent',
+                        color: active ? 'white' : C.muted,
+                      }}
+                    >
+                      {mode === 'single' ? '单行' : '双行'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* 角色乐评探头 — 有 char 给这首歌留过言就让它在播放页冒个泡 */}
@@ -1021,6 +1247,83 @@ const MusicApp: React.FC = () => {
                 : <span>分享给 TA · 一起听</span>}
             </button>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFullLyrics = () => {
+    if (!current) return null;
+    return (
+      <div className="flex flex-col h-full relative"
+        style={{ background: `linear-gradient(180deg, #ffffff 0%, ${C.bg} 55%, ${C.bgDeep} 100%)` }}>
+        <BokehBg />
+        <MizuHeader
+          title="全屏歌词"
+          onBack={() => setView('player')}
+          right={
+            <button
+              type="button"
+              onClick={() => scrollFullLyricsToActive()}
+              className="px-2 py-1 rounded-full text-[10px] shizuku-glass"
+              style={{ color: C.primary }}
+            >
+              当前
+            </button>
+          }
+        />
+        <div className="relative z-10 px-5 pt-4 pb-3 shrink-0 text-center">
+          <div className="text-lg truncate" style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>{current.name}</div>
+          <div className="text-[10px] truncate mt-1" style={{ color: C.muted }}>{current.artists}</div>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <button onClick={prevSong} className="px-3 py-1.5 rounded-full text-[10px] shizuku-glass" style={{ color: C.muted }}>上一首</button>
+            <button onClick={togglePlay} className="px-4 py-1.5 rounded-full text-[10px] text-white" style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})` }}>
+              {playing ? '暂停' : '播放'}
+            </button>
+            <button onClick={nextSong} className="px-3 py-1.5 rounded-full text-[10px] shizuku-glass" style={{ color: C.muted }}>下一首</button>
+          </div>
+        </div>
+        <div
+          ref={fullLyricBoxRef}
+          className="flex-1 overflow-y-auto px-5 py-6 relative z-10 shizuku-scrollbar"
+          style={{
+            maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)',
+          }}
+        >
+          {lyric.length === 0 ? (
+            <div className="text-center text-[12px] pt-24" style={{ color: C.faint }}>
+              {loadingSong ? '歌词加载中…' : '暂无歌词'}
+            </div>
+          ) : (
+            <div className="space-y-2 py-[35vh]">
+              {lyric.map((line, i) => {
+                const active = i === activeLyricIdx;
+                const tr = tlyric.find(t => Math.abs(t.t - line.t) < 0.2);
+                return (
+                  <button
+                    key={`${line.t}-${i}`}
+                    data-full-lyric-idx={i}
+                    type="button"
+                    onClick={() => seek(duration > 0 ? line.t / duration : 0)}
+                    className="w-full text-center rounded-2xl px-3 py-2.5 transition-all active:scale-[0.99]"
+                    style={{
+                      background: active ? `${C.glow}30` : 'transparent',
+                      color: active ? C.primary : C.muted,
+                      transform: active ? 'scale(1.04)' : 'scale(1)',
+                    }}
+                  >
+                    <div className="text-[18px] leading-relaxed" style={{ fontFamily: `'Noto Serif','Georgia',serif`, fontWeight: active ? 700 : 400 }}>
+                      {line.text}
+                    </div>
+                    {tr && (
+                      <div className="text-[12px] mt-1" style={{ color: active ? C.accent : C.faint }}>{tr.text}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1149,8 +1452,10 @@ const MusicApp: React.FC = () => {
     const actionLabel = (a?: ListenAction): string | null => {
       if (!a || a.kind === 'none') return null;
       return a.kind === 'change_song' ? '🎵 换了首歌'
+        : a.kind === 'seek' ? `↪ 跳到 ${fmtTime(a.seconds)}`
         : a.kind === 'pause' ? '⏸ 暂停了'
         : a.kind === 'resume' ? '▶️ 继续播放'
+        : a.kind === 'previous' ? '⏮ 上一首'
         : '⏭ 下一首';
     };
     const charAva = (size: number) => charIsImg
@@ -1159,6 +1464,10 @@ const MusicApp: React.FC = () => {
     const userAvaEl = (size: number) => userIsImg
       ? <img src={userAva} alt="" className="rounded-full object-cover shrink-0" style={{ width: size, height: size, border: `1.5px solid ${C.glow}` }} />
       : <span className="rounded-full flex items-center justify-center shrink-0 text-white font-medium" style={{ width: size, height: size, fontSize: Math.round(size * 0.42), background: `linear-gradient(135deg, ${C.glow}, ${C.accent})` }}>{(userProfile?.name || '你').slice(0, 1)}</span>;
+    const liveSong = buildListenSongContext();
+    const liveLyric = cleanLyricText(liveSong?.lyricCurrent || '', { maxLineChars: 100 });
+    const liveProgressPct = liveSong?.duration ? Math.max(0, Math.min(100, ((liveSong.progress || 0) / liveSong.duration) * 100)) : 0;
+    const canHum = !!(listenInput.trim() || liveLyric);
 
     return (
       <div className="flex flex-col h-full relative"
@@ -1188,6 +1497,9 @@ const MusicApp: React.FC = () => {
                 <div className="text-xs font-medium truncate" style={{ color: C.text }}>{current.name}</div>
                 <div className="text-[10px] truncate" style={{ color: C.muted }}>{current.artists}</div>
               </div>
+              <button onClick={prevSong} className="p-1.5 rounded-full shrink-0" style={{ color: C.muted }} title="上一首">
+                <SkipBack size={14} weight="fill" />
+              </button>
               <button onClick={togglePlay} className="p-2 rounded-full shrink-0"
                 style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, boxShadow: `0 2px 10px ${C.primary}30` }}>
                 {playing ? <PauseIcon size={13} weight="fill" color="#fff" /> : <PlayIcon size={13} weight="fill" color="#fff" />}
@@ -1213,6 +1525,55 @@ const MusicApp: React.FC = () => {
           {charAva(22)}
           <span className="text-[10px] ml-1" style={{ color: C.muted }}>一起听 · {char.name}</span>
         </div>
+
+        {/* 实时歌词 / 进度感知 */}
+        {current && (
+          <div className="relative z-10 mx-4 mb-1 px-3 py-2.5 rounded-2xl shizuku-glass-strong"
+            style={{ boxShadow: `0 3px 16px ${C.glow}16` }}>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-mono shrink-0" style={{ color: C.muted }}>{fmtTime(progress)}</span>
+              <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: `${C.lavender}35` }}>
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${liveProgressPct}%`, background: `linear-gradient(90deg, ${C.primary}, ${C.accent})` }} />
+              </div>
+              <span className="text-[9px] font-mono shrink-0" style={{ color: C.muted }}>{fmtTime(duration)}</span>
+            </div>
+            <div className="mt-2 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-[9px] tracking-wider" style={{ color: C.faint }}>此刻唱到</div>
+                <div className="text-[11px] leading-relaxed line-clamp-2" style={{ color: liveLyric ? C.text : C.muted }}>
+                  {liveLyric || '这首歌暂时没有可跟随的歌词'}
+                </div>
+                {listenInput.trim() && (
+                  <div className="mt-1 text-[10px] truncate" style={{ color: C.primary }}>
+                    你正在轻声哼：♪ {listenInput.trim()}
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 flex items-center gap-1.5">
+                <button
+                  onClick={() => { if (!listenBusy) runDiscuss('progress_check'); }}
+                  disabled={listenBusy}
+                  className="h-8 px-2 rounded-full flex items-center gap-1 text-[10px] transition-all active:scale-95 disabled:opacity-40"
+                  style={{ background: `${C.glow}22`, color: C.primary, border: `1px solid ${C.glow}44` }}
+                  title="让 TA 听听现在唱到哪"
+                >
+                  <Crosshair size={13} weight="bold" />
+                  <span>听此刻</span>
+                </button>
+                <button
+                  onClick={sendHummingLine}
+                  disabled={listenBusy || !canHum}
+                  className="h-8 px-2 rounded-full flex items-center gap-1 text-[10px] transition-all active:scale-95 disabled:opacity-40"
+                  style={{ background: `${C.sakura}24`, color: C.primary, border: `1px solid ${C.sakura}44` }}
+                  title="把当前输入或歌词发成跟唱"
+                >
+                  <ChatCircleText size={13} weight="fill" />
+                  <span>跟唱</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 讨论区 */}
         <div ref={listenScrollRef} className="flex-1 overflow-y-auto px-4 py-2 relative z-10 shizuku-scrollbar space-y-3">
@@ -1295,6 +1656,7 @@ const MusicApp: React.FC = () => {
           onOpenPlayer={() => openPlayerFrom('discover')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
           onShareSong={openChatShare}
+          onOpenArtist={openArtistPage}
           tabBar={renderTabBar()}
         />
       )}
@@ -1306,13 +1668,25 @@ const MusicApp: React.FC = () => {
           onOpenPlayer={() => openPlayerFrom('library')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
           onShareSong={openChatShare}
+          onOpenArtist={openArtistPage}
           tabBar={renderTabBar()}
         />
       )}
       {view === 'search' && renderSearch()}
       {view === 'player' && renderPlayer()}
+      {view === 'lyrics' && renderFullLyrics()}
       {view === 'listen_together' && renderListenTogether()}
-      {view === 'comments' && <SongCommentsPage onBack={() => setView('player')} />}
+      {view === 'comments' && (
+        <SongCommentsPage
+          onBack={() => setView('player')}
+          onShareComment={draft => openRichChatShare(draft)}
+          onShareExternal={shareExternal}
+          onOpenUserProfile={user => {
+            setProfileTarget(user);
+            setView('profile');
+          }}
+        />
+      )}
       {view === 'settings' && renderSettings()}
       {view === 'profile' && (
         <>
@@ -1323,9 +1697,38 @@ const MusicApp: React.FC = () => {
             onOpenSettings={() => setView('settings')}
             onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
             onShareSong={openChatShare}
+            onOpenArtist={openArtistPage}
+            openUserProfile={profileTarget}
+            onConsumedOpenUserProfile={() => setProfileTarget(null)}
+            onSharePlaylist={(playlist) => openRichChatShare({
+              kind: 'playlist',
+              title: playlist.name,
+              subtitle: `${playlist.trackCount || 0} 首 · ${playlist.creatorNickname || '音乐歌单'}`,
+              image: playlist.coverImgUrl,
+              id: playlist.id,
+              url: buildMusicExternalUrl({ kind: 'playlist', title: playlist.name, id: playlist.id, source: playlist.source || 'netease' }),
+            })}
+            onShareExternal={shareExternal}
           />
           {renderTabBar()}
         </>
+      )}
+      {view === 'artist' && artistTarget && (
+        <MusicArtistPage
+          artist={artistTarget}
+          onBack={() => setView(playerBackView === 'player' ? 'player' : playerBackView)}
+          onOpenPlayer={() => openPlayerFrom('artist')}
+          onShareSong={openChatShare}
+          onOpenArtist={openArtistPage}
+          onShareArtist={(artist) => openRichChatShare({
+            kind: 'artist',
+            title: artist.name,
+            subtitle: artist.description || '歌手主页',
+            image: artist.image,
+            id: artist.id,
+            url: artist.url,
+          })}
+        />
       )}
       {/* 手动对轴 modal — 全屏覆盖，不开新 view */}
       {showLyricSync && current && current.local && (() => {

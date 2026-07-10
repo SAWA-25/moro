@@ -20,6 +20,7 @@ import { PushVapidSettingsModal } from '../components/settings/PushVapidSettings
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
+import McpConsole from '../components/settings/McpConsole';
 import { PresetRuntime } from '../utils/presets';
 import { DB } from '../utils/db';
 import { AppID } from '../types';
@@ -3176,6 +3177,8 @@ const Settings: React.FC = () => {
                       </div>
                   )}
               </div>
+
+              <McpConsole addToast={addToast} />
 
               {/* 测试状态 */}
               {rtTestStatus && (

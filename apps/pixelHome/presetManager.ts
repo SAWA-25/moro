@@ -10,6 +10,7 @@ import type {
   PixelHomeState, PixelRoomLayout, PixelAsset,
 } from './types';
 import { PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
+import { hasBuiltinPixelAsset } from './builtinFurnitureCatalog';
 
 // ─── 导出 ────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ export async function exportPreset(
       palette: a.palette,
       width: a.width,
       height: a.height,
+      tags: a.tags,
     }));
 
   const preset: PixelHomePreset = {
@@ -64,7 +66,7 @@ export async function exportPreset(
     assets,
   };
 
-  return JSON.stringify(preset);
+  return JSON.stringify(preset, null, 2);
 }
 
 /** 导出并下载为 .json 文件 */
@@ -73,13 +75,14 @@ export async function downloadPreset(
   allAssets: PixelAsset[],
   presetName: string,
   author: string,
+  filePrefix = 'pixel_home',
 ): Promise<void> {
   const json = await exportPreset(homeState, allAssets, presetName, author);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `pixel_home_${presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
+  a.download = `${filePrefix}_${presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -113,12 +116,13 @@ export async function importPreset(
       const existingIds = new Set(existingAssets.map(a => a.id));
 
       for (const presetAsset of preset.assets) {
+        if (hasBuiltinPixelAsset(presetAsset.id)) continue;
         if (!existingIds.has(presetAsset.id)) {
           const fullAsset: PixelAsset = {
             ...presetAsset,
             originalImage: presetAsset.pixelImage, // 没有原图，用像素图代替
             createdAt: Date.now(),
-            tags: ['imported'],
+            tags: Array.from(new Set([...(presetAsset.tags || []), 'imported'])),
           };
           await PixelAssetDB.save(fullAsset);
           assetsImported++;

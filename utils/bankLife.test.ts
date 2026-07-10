@@ -474,6 +474,63 @@ describe('bankLife', () => {
         expect(life.shopProducts?.map(p => p.name)).toEqual(flower.products.map(p => p.name));
     });
 
+    it('defines a 40 item pixel shop product catalog with unique purchase costs', () => {
+        const products = BUSINESS_TEMPLATES.flatMap(tpl => tpl.products);
+        expect(products).toHaveLength(40);
+        expect(products.length).toBeGreaterThanOrEqual(40);
+        expect(new Set(products.map(p => p.id)).size).toBe(products.length);
+        expect(new Set(products.map(p => p.name)).size).toBe(products.length);
+        expect(new Set(products.map(p => p.cost)).size).toBe(products.length);
+        expect(products.every(p => p.icon?.startsWith('bank-pixel:product/'))).toBe(true);
+    });
+
+    it('starts new pixel shop products unplaced and requires restock before business', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const opened = openLifeShop(life0, 'drinks', 'Pixel Corner');
+        expect(opened.shopProducts?.every(p => p.shelfPlaced === false)).toBe(true);
+        expect(opened.shopProducts?.every(p => p.stock === 0)).toBe(true);
+        expect(opened.shopProducts?.every(p => p.needsRestock === true)).toBe(true);
+
+        const legacyProducts = BUSINESS_TEMPLATES[0].products.map(p => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            cost: p.cost,
+            stock: 3,
+            appeal: p.appeal,
+        }));
+        const legacy = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '楼' },
+            shop: { actionPoints: 20, shopName: 'Legacy Shelf', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: {
+                ...createDefaultBankLifeState('2026-06-01', true),
+                shopBusinessType: 'drinks',
+                shopProducts: legacyProducts,
+            },
+        } as unknown as BankFullState);
+
+        expect(legacy.life?.shopProducts?.every(p => p.shelfPlaced === true)).toBe(true);
+        expect(legacy.life?.shopProducts?.every(p => p.needsRestock === true)).toBe(true);
+
+        const explicitPlaced = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 20, shopName: 'Explicit Shelf', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: {
+                ...createDefaultBankLifeState('2026-06-01', true),
+                shopBusinessType: 'drinks',
+                shopProducts: legacyProducts.map(p => ({ ...p, shelfPlaced: true, needsRestock: false })),
+            },
+        } as unknown as BankFullState);
+
+        expect(explicitPlaced.life?.shopProducts?.every(p => p.needsRestock === true)).toBe(true);
+    });
+
     it('opens repeat business-type branches with startup costs and headquarters energy checks', () => {
         const base = migrateBankLifeState({
             config: { dailyBudget: 100, currencySymbol: '¥' },

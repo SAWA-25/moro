@@ -94,6 +94,56 @@ describe('schedule generator character identity', () => {
     expect(saved?.slots[0]?.activity).toBe('Morning');
   });
 
+  it('saves generated schedules from mixed prose and fenced JSON', async () => {
+    vi.mocked(callChatCompletion).mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: [
+            '好的，结果如下：',
+            '```json',
+            JSON.stringify({
+              targetCharId: 'model-isaac',
+              slots: [slot],
+              flowNarrative: { morning: 'I am still Isaac this morning.' },
+            }),
+            '```',
+            '如果还要我再排一版也可以。',
+          ].join('\n'),
+        },
+      }],
+    } as any);
+
+    const result = await generateDailyScheduleForChar(char, user, API, true);
+
+    expect(result?.slots[0]?.activity).toBe('Morning');
+    const saved = await DB.getDailySchedule('char-isaac', getLocalDateKey());
+    expect(saved?.slots[0]?.activity).toBe('Morning');
+  });
+
+  it('unwraps nested schedule payloads when saving generated schedules', async () => {
+    vi.mocked(callChatCompletion).mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            data: {
+              schedule: {
+                targetCharId: 'model-isaac',
+                slots: [slot],
+                flowNarrative: { morning: 'Nested but valid.' },
+              },
+            },
+          }),
+        },
+      }],
+    } as any);
+
+    const result = await generateDailyScheduleForChar(char, user, API, true);
+
+    expect(result?.modelId).toBe('model-isaac');
+    const saved = await DB.getDailySchedule('char-isaac', getLocalDateKey());
+    expect(saved?.slots[0]?.activity).toBe('Morning');
+  });
+
   it('does not save a generated schedule returned for another character id', async () => {
     vi.mocked(callChatCompletion).mockResolvedValueOnce({
       choices: [{
@@ -178,6 +228,51 @@ describe('schedule generator character identity', () => {
 
     expect(result).toBeNull();
     await expect(DB.getDailySchedule('char-isaac', today)).resolves.toBeNull();
+  });
+
+  it('reconciles nested or string-flagged schedule payloads', async () => {
+    const today = getLocalDateKey();
+    const existing = {
+      id: `char-isaac_${today}`,
+      charId: 'char-isaac',
+      modelId: 'model-isaac',
+      date: today,
+      generatedAt: Date.now(),
+      slots: [slot],
+    } as DailySchedule;
+    const messages = [{
+      id: 1,
+      charId: 'char-isaac',
+      role: 'user',
+      type: 'text',
+      content: 'Tonight at 8, change the plan.',
+      timestamp: Date.now(),
+    }] as Message[];
+    vi.mocked(callChatCompletion).mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: [
+            '我按聊天把日程改好了：',
+            '```json',
+            JSON.stringify({
+              result: {
+                targetCharId: 'model-isaac',
+                changed: 'true',
+                slots: [{ ...slot, activity: 'Movie Night', anchored: true }],
+              },
+            }),
+            '```',
+          ].join('\n'),
+        },
+      }],
+    } as any);
+
+    const result = await reconcileScheduleWithChat(char, user, existing, messages, API);
+
+    expect(result?.slots[0]?.activity).toBe('Movie Night');
+    const saved = await DB.getDailySchedule('char-isaac', today);
+    expect(saved?.slots[0]?.activity).toBe('Movie Night');
+    expect(saved?.slots[0]?.anchored).toBe(true);
   });
 
   it('treats explicit room movement as a schedule signal', () => {

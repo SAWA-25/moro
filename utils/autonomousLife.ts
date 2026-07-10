@@ -1032,8 +1032,13 @@ export function buildAutonomousProactiveHint(args: {
   randomMode?: boolean;
   proactiveCallAllowed?: boolean;
   forceReplyAllowed?: boolean;
+  proactiveGomokuInviteAllowed?: boolean;
+  proactiveGoInviteAllowed?: boolean;
+  proactiveDoudizhuInviteAllowed?: boolean;
+  proactiveTurtleSoupInviteAllowed?: boolean;
+  proactiveMahjongInviteAllowed?: boolean;
 }): string {
-  const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed, forceReplyAllowed } = args;
+  const { char, userName, timeStr, timeSinceUser, event, randomMode, proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed } = args;
   const location = event.location ? sanitizeLifeText(event.location) : '';
   const moodText = event.mood ? sanitizeLifeText(event.mood) : '';
   const where = location ? `（在${location}）` : '';
@@ -1054,6 +1059,11 @@ export function buildAutonomousProactiveHint(args: {
     randomMode,
     proactiveCallAllowed,
     forceReplyAllowed,
+    proactiveGomokuInviteAllowed,
+    proactiveGoInviteAllowed,
+    proactiveDoudizhuInviteAllowed,
+    proactiveTurtleSoupInviteAllowed,
+    proactiveMahjongInviteAllowed,
     eventKind: event.eventKind,
     energy: event.energy,
     proactiveAngle: event.proactiveAngle,

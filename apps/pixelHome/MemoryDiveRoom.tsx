@@ -12,13 +12,19 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
-import type { PixelRoomLayout, PixelAsset } from './types';
+import type { PixelRoomLayout, PixelAsset, PlacedFurniture } from './types';
 import { decodeColorField } from './types';
 import { ROOM_SIZES, ROOM_SLOTS } from './roomTemplates';
 import { defaultFurniturePixelSrc } from './roomPixelRenderer';
 import { getRoomSurfaceStyle, wallTextureStyle, floorTextureStyle } from './roomSurfaceStyles';
 
 const TILE_BASE = 28;
+
+function isCarpetLayer(f: PlacedFurniture, asset: PixelAsset | null | undefined): boolean {
+  if (f.layer === 'furniture') return false;
+  if (f.layer === 'carpet') return true;
+  return !!asset?.tags?.includes('rug') || (!asset && f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat'));
+}
 
 interface Props {
   roomId: MemoryRoom;
@@ -152,7 +158,7 @@ const MemoryDiveRoom: React.FC<Props> = ({
 
             const slot = slotDefs.find(s => s.id === f.slotId);
             const furSize = Math.round(furBase * 0.22 * f.scale);
-            const isRug = !!asset?.tags?.includes('rug') || (!asset && f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat'));
+            const isRug = isCarpetLayer(f, asset);
 
             const autoZ = Math.round(f.y * 4) + 20;
             let zIdx: number;

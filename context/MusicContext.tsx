@@ -50,6 +50,7 @@ export interface Song {
   id: number;
   name: string;
   artists: string;
+  artistIds?: { id: number | string; name: string; source?: 'netease' | 'qq' }[];
   album: string;
   albumPic: string;
   duration: number;
@@ -80,6 +81,8 @@ export interface Song {
 }
 
 export interface LyricLine { t: number; text: string; }
+export type PlayMode = 'heart' | 'loop' | 'shuffle' | 'single';
+export type DesktopLyricLineMode = 'single' | 'double';
 
 export interface NeteaseProfile {
   userId: number;
@@ -100,6 +103,53 @@ export interface NeteaseProfile {
 const LS_CFG_KEY = 'moro_music_cfg_v1';
 const LS_STATE_KEY = 'moro_music_state_v1';
 const LS_LOCAL_ALBUM_KEY = 'moro_music_local_album_v1';
+const LS_UI_PREFS_KEY = 'moro_music_ui_prefs_v1';
+
+interface MusicUiPrefs {
+  playMode: PlayMode;
+  desktopLyricEnabled: boolean;
+  desktopLyricLineMode: DesktopLyricLineMode;
+}
+
+const MUSIC_DEFAULT_UI_PREFS: MusicUiPrefs = {
+  playMode: 'loop',
+  desktopLyricEnabled: false,
+  desktopLyricLineMode: 'single',
+};
+
+const normalizePlayMode = (mode: unknown): PlayMode => {
+  return mode === 'heart' || mode === 'loop' || mode === 'shuffle' || mode === 'single'
+    ? mode
+    : MUSIC_DEFAULT_UI_PREFS.playMode;
+};
+
+const normalizeDesktopLyricLineMode = (mode: unknown): DesktopLyricLineMode => {
+  return mode === 'double' ? 'double' : 'single';
+};
+
+const loadUiPrefs = (): MusicUiPrefs => {
+  try {
+    const raw = localStorage.getItem(LS_UI_PREFS_KEY);
+    if (!raw) return MUSIC_DEFAULT_UI_PREFS;
+    const parsed = JSON.parse(raw);
+    return {
+      playMode: normalizePlayMode(parsed?.playMode),
+      desktopLyricEnabled: typeof parsed?.desktopLyricEnabled === 'boolean'
+        ? parsed.desktopLyricEnabled
+        : MUSIC_DEFAULT_UI_PREFS.desktopLyricEnabled,
+      desktopLyricLineMode: normalizeDesktopLyricLineMode(parsed?.desktopLyricLineMode),
+    };
+  } catch {
+    return MUSIC_DEFAULT_UI_PREFS;
+  }
+};
+
+const saveUiPrefs = (patch: Partial<MusicUiPrefs>) => {
+  try {
+    const next = { ...loadUiPrefs(), ...patch };
+    localStorage.setItem(LS_UI_PREFS_KEY, JSON.stringify(next));
+  } catch {}
+};
 
 const loadLocalAlbum = (): Song[] => {
   try {
@@ -165,6 +215,8 @@ export const loadMusicCfgStandalone = (): MusicCfg => loadCfg();
 export interface MusicPlaybackSnapshot {
   current: Song | null;
   playing: boolean;
+  progress: number;
+  duration: number;
   lyric: LyricLine[];
   activeLyricIdx: number;
   listeningTogetherWith: string[];
@@ -265,6 +317,12 @@ export const musicApi = {
   userDetail(cfg: MusicCfg, uid: number) {
     return musicApi.call(cfg, '/user/detail', { uid });
   },
+  userFollows(cfg: MusicCfg, uid: number, limit = 30, offset = 0) {
+    return musicApi.call(cfg, '/user/follows', { uid, limit, offset });
+  },
+  userFolloweds(cfg: MusicCfg, uid: number, limit = 30, offset = 0) {
+    return musicApi.call(cfg, '/user/followeds', { uid, limit, offset });
+  },
   userPlaylist(cfg: MusicCfg, uid: number) {
     return musicApi.call(cfg, '/user/playlist', { uid, limit: 60 });
   },
@@ -282,6 +340,18 @@ export const musicApi = {
   },
   playlistTrackAll(cfg: MusicCfg, id: number, limit = 50, offset = 0) {
     return musicApi.call(cfg, '/playlist/track/all', { id, limit, offset });
+  },
+  artistSearch(cfg: MusicCfg, keyword: string, limit = 10) {
+    return musicApi.call(cfg, '/search', { keyword, limit, offset: 0, type: 100 });
+  },
+  artistDetail(cfg: MusicCfg, id: number | string) {
+    return musicApi.call(cfg, '/artists', { id });
+  },
+  artistSongs(cfg: MusicCfg, id: number | string, limit = 50, offset = 0) {
+    return musicApi.call(cfg, '/artist/songs', { id, limit, offset, order: 'hot' });
+  },
+  postComment(cfg: MusicCfg, songId: number, content: string) {
+    return musicApi.call(cfg, '/comment', { t: 1, type: 0, id: songId, content });
   },
   recommendSongs(cfg: MusicCfg) {
     return musicApi.call(cfg, '/recommend/songs', {});
@@ -420,8 +490,6 @@ export const musicApi = {
 };
 
 /* ───────────── Context 定义 ───────────── */
-type PlayMode = 'loop' | 'shuffle' | 'single';
-
 interface MusicContextType {
   cfg: MusicCfg;
   setCfg: (next: MusicCfg) => void;
@@ -462,6 +530,10 @@ interface MusicContextType {
   // 播放模式 & 喜欢
   playMode: PlayMode;
   setPlayMode: (m: PlayMode) => void;
+  desktopLyricEnabled: boolean;
+  setDesktopLyricEnabled: (enabled: boolean) => void;
+  desktopLyricLineMode: DesktopLyricLineMode;
+  setDesktopLyricLineMode: (mode: DesktopLyricLineMode) => void;
   liked: boolean;
   toggleLike: () => Promise<void>;
   isSongLiked: (song: Song | null | undefined) => boolean;
@@ -509,6 +581,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const initialState = useMemo(loadState, []);
+  const initialUiPrefs = useMemo(loadUiPrefs, []);
   const [queue, setQueueState] = useState<Song[]>(initialState.queue);
   const [idx, setIdx] = useState<number>(initialState.idx);
   const current = idx >= 0 && idx < queue.length ? queue[idx] : null;
@@ -729,8 +802,22 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await toggleSongLike(current);
   }, [current, toggleSongLike]);
 
-  // 播放模式
-  const [playMode, setPlayMode] = useState<PlayMode>('loop');
+  // 播放模式 / 桌面歌词偏好
+  const [playMode, setPlayModeState] = useState<PlayMode>(initialUiPrefs.playMode);
+  const [desktopLyricEnabled, setDesktopLyricEnabledState] = useState<boolean>(initialUiPrefs.desktopLyricEnabled);
+  const [desktopLyricLineMode, setDesktopLyricLineModeState] = useState<DesktopLyricLineMode>(initialUiPrefs.desktopLyricLineMode);
+  const setPlayMode = useCallback((mode: PlayMode) => {
+    setPlayModeState(mode);
+    saveUiPrefs({ playMode: mode });
+  }, []);
+  const setDesktopLyricEnabled = useCallback((enabled: boolean) => {
+    setDesktopLyricEnabledState(enabled);
+    saveUiPrefs({ desktopLyricEnabled: enabled });
+  }, []);
+  const setDesktopLyricLineMode = useCallback((mode: DesktopLyricLineMode) => {
+    setDesktopLyricLineModeState(mode);
+    saveUiPrefs({ desktopLyricLineMode: mode });
+  }, []);
 
   // 一起听 - char 加入后在 miniPlayer / 播放页显示徽标；切歌 / 结束自动清空
   const [listeningTogetherWith, setListeningTogetherWith] = useState<string[]>([]);
@@ -759,6 +846,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const queueRef = useRef(queue); queueRef.current = queue;
   const idxRef = useRef(idx); idxRef.current = idx;
   const modeRef = useRef(playMode); modeRef.current = playMode;
+  const likedPredicateRef = useRef<(song: Song) => boolean>(() => false);
+  likedPredicateRef.current = isSongLiked;
   const cfgRef = useRef(cfg); cfgRef.current = cfg;
   const listeningTogetherRef = useRef(listeningTogetherWith); listeningTogetherRef.current = listeningTogetherWith;
   const currentPlayEventIdRef = useRef<string | null>(null);
@@ -1013,7 +1102,16 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const q = queueRef.current; if (!q.length) return;
     const cur = idxRef.current; if (cur < 0) return;
     let n: number;
-    if (modeRef.current === 'shuffle' && q.length > 1) {
+    if (modeRef.current === 'heart' && q.length > 1) {
+      const candidates = q
+        .map((song, i) => ({ song, i }))
+        .filter(({ song, i }) => i !== cur && likedPredicateRef.current(song));
+      if (candidates.length > 0) {
+        n = candidates[Math.floor(Math.random() * candidates.length)].i;
+      } else {
+        n = (cur + 1) % q.length;
+      }
+    } else if (modeRef.current === 'shuffle' && q.length > 1) {
       do { n = Math.floor(Math.random() * q.length); } while (n === cur);
     } else if (modeRef.current === 'single') {
       n = cur;
@@ -1097,12 +1195,14 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     __musicPlaybackSnapshot = {
       current,
       playing,
+      progress,
+      duration,
       lyric,
       activeLyricIdx,
       listeningTogetherWith,
       cfg,
     };
-  }, [current, playing, lyric, activeLyricIdx, listeningTogetherWith, cfg]);
+  }, [current, playing, progress, duration, lyric, activeLyricIdx, listeningTogetherWith, cfg]);
 
   // 把整组 musicHooks 写到模块级 slot — useChatAI 和 instant push activeMsgRuntime 都从这里取.
   // current / addListeningPartner 变化时刷新闭包, 保证读到的是最新 React state.
@@ -1123,6 +1223,28 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       joinListeningTogether: (cid: string) => {
         addListeningPartner(cid);
+      },
+      controlPlayback: (action) => {
+        if (action.kind === 'pause') {
+          if (playing) togglePlay();
+          return;
+        }
+        if (action.kind === 'resume') {
+          if (!playing) togglePlay();
+          return;
+        }
+        if (action.kind === 'next') {
+          nextSong();
+          return;
+        }
+        if (action.kind === 'previous') {
+          prevSong();
+          return;
+        }
+        if (action.kind === 'seek') {
+          const total = duration || current?.duration || 0;
+          if (total > 0) seek(Math.max(0, Math.min(total, action.seconds)) / total);
+        }
       },
       addSongToCharPlaylist: async (cid, song, target) => {
         try {
@@ -1215,8 +1337,52 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return null;
         }
       },
+      playSongByQuery: async (keyword: string) => {
+        try {
+          const c = loadMusicCfgStandalone();
+          if (!c.workerUrl) return null;
+          const r = await musicApi.search(c, keyword);
+          const s: any = (r?.result?.songs || [])[0];
+          if (!s) return null;
+          const song: Song = {
+            id: s.id,
+            name: s.name,
+            artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
+            album: s.al?.name || s.album?.name || '',
+            albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || ''),
+            duration: (s.dt || s.duration || 0) / 1000,
+            fee: s.fee ?? 0,
+          };
+          await playSong(song);
+          return {
+            songId: song.id,
+            name: song.name,
+            artists: song.artists,
+            album: song.album,
+            albumPic: song.albumPic,
+            duration: song.duration,
+            fee: song.fee,
+          };
+        } catch {
+          return null;
+        }
+      },
     };
-  }, [current, addListeningPartner]);
+  }, [current, playing, duration, addListeningPartner, togglePlay, nextSong, prevSong, seek, playSong]);
+
+  const desktopLyric = useMemo(() => {
+    const activeIdx = activeLyricIdx >= 0 ? activeLyricIdx : (lyric.length > 0 ? 0 : -1);
+    const activeLine = activeIdx >= 0 ? lyric[activeIdx] : null;
+    const translatedLine = activeLine
+      ? tlyric.find(line => Math.abs(line.t - activeLine.t) < 0.2)
+      : null;
+    const nextLine = activeIdx >= 0 ? lyric[activeIdx + 1] : null;
+    const primary = activeLine?.text || current?.name || '暂无歌词';
+    const secondary = desktopLyricLineMode === 'double'
+      ? (translatedLine?.text || nextLine?.text || current?.artists || '')
+      : '';
+    return { primary, secondary };
+  }, [activeLyricIdx, current?.artists, current?.name, desktopLyricLineMode, lyric, tlyric]);
 
   const value: MusicContextType = {
     cfg, setCfg,
@@ -1228,6 +1394,8 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     removeQueueItem, moveQueueItem, clearQueue,
     libraryVersion, refreshLibrary,
     playMode, setPlayMode,
+    desktopLyricEnabled, setDesktopLyricEnabled,
+    desktopLyricLineMode, setDesktopLyricLineMode,
     liked, toggleLike, isSongLiked, toggleSongLike,
     listeningTogetherWith, addListeningPartner, removeListeningPartner, clearListeningPartners,
     toast, setToastHandler,
@@ -1235,7 +1403,83 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     regeneratingId, regeneratingStatus, markRegenerating,
   };
 
-  return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
+  return (
+    <MusicContext.Provider value={value}>
+      {children}
+      {desktopLyricEnabled && current && (
+        <div
+          className="fixed left-1/2 z-[9998] -translate-x-1/2 pointer-events-none px-3"
+          style={{
+            bottom: 'calc(var(--safe-bottom, 0px) + 86px)',
+            width: 'min(92vw, 680px)',
+          }}
+        >
+          <div
+            className="mx-auto relative overflow-hidden rounded-2xl px-4 py-2.5 text-center"
+            style={{
+              pointerEvents: 'auto',
+              width: 'fit-content',
+              maxWidth: '100%',
+              minWidth: 220,
+              color: '#f8fafc',
+              background: 'linear-gradient(135deg, rgba(17,17,17,0.84), rgba(45,45,45,0.76))',
+              border: '1px solid rgba(255,255,255,0.16)',
+              boxShadow: '0 12px 36px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12)',
+              backdropFilter: 'blur(14px) saturate(1.15)',
+              WebkitBackdropFilter: 'blur(14px) saturate(1.15)',
+            }}
+          >
+            <div className="absolute top-1 right-1 flex items-center gap-1 opacity-75">
+              <button
+                type="button"
+                onClick={() => setDesktopLyricLineMode(desktopLyricLineMode === 'single' ? 'double' : 'single')}
+                className="h-5 min-w-5 rounded-full px-1.5 text-[10px] font-bold active:scale-95"
+                style={{ color: '#111827', background: 'rgba(255,255,255,0.76)' }}
+                title={desktopLyricLineMode === 'single' ? '切到双行歌词' : '切到单行歌词'}
+                aria-label={desktopLyricLineMode === 'single' ? '切到双行歌词' : '切到单行歌词'}
+              >
+                {desktopLyricLineMode === 'single' ? '单' : '双'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDesktopLyricEnabled(false)}
+                className="h-5 w-5 rounded-full text-[12px] leading-none active:scale-95"
+                style={{ color: '#111827', background: 'rgba(255,255,255,0.76)' }}
+                title="关闭桌面歌词"
+                aria-label="关闭桌面歌词"
+              >
+                ×
+              </button>
+            </div>
+            <div
+              className="truncate px-8"
+              style={{
+                fontSize: 17,
+                lineHeight: 1.35,
+                fontWeight: 700,
+                textShadow: '0 2px 10px rgba(0,0,0,0.65)',
+              }}
+            >
+              {desktopLyric.primary}
+            </div>
+            {desktopLyricLineMode === 'double' && desktopLyric.secondary && (
+              <div
+                className="mt-1 truncate px-8"
+                style={{
+                  fontSize: 13,
+                  lineHeight: 1.25,
+                  color: 'rgba(248,250,252,0.78)',
+                  textShadow: '0 2px 8px rgba(0,0,0,0.55)',
+                }}
+              >
+                {desktopLyric.secondary}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </MusicContext.Provider>
+  );
 };
 
 export const useMusic = (): MusicContextType => {

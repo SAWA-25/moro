@@ -54,6 +54,9 @@ export interface UserListeningContext {
     artists: string;
     lyricWindow: string[];
     activeIdx: number;
+    progress?: number;
+    duration?: number;
+    playing?: boolean;
 }
 
 export interface BuildChatPayloadInput {
@@ -125,7 +128,7 @@ function deriveListeningFromSnapshot(
     charId: string,
 ): { userListeningContext: UserListeningContext | null; isListeningTogether: boolean; musicCfg?: MusicCfg } {
     if (!snap) return { userListeningContext: null, isListeningTogether: false };
-    const { current, playing, lyric, activeLyricIdx, listeningTogetherWith, cfg } = snap;
+    const { current, playing, progress, duration, lyric, activeLyricIdx, listeningTogetherWith, cfg } = snap;
     let userListeningContext: UserListeningContext | null = null;
     if (current && playing && lyric.length > 0) {
         const window = buildLyricWindow(lyric, activeLyricIdx, { before: 2, after: 2 });
@@ -135,6 +138,9 @@ function deriveListeningFromSnapshot(
                 artists: current.artists,
                 lyricWindow: window.lines,
                 activeIdx: window.activeIdx,
+                progress,
+                duration: duration || current.duration,
+                playing,
             };
         }
     } else if (current && playing) {
@@ -143,6 +149,9 @@ function deriveListeningFromSnapshot(
             artists: current.artists,
             lyricWindow: [],
             activeIdx: -1,
+            progress,
+            duration: duration || current.duration,
+            playing,
         };
     }
     const isListeningTogether = !!(userListeningContext && listeningTogetherWith.includes(charId));
@@ -342,6 +351,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                     writeBack: false,
                     userSetting: fullUserSetting,
                     userName: userProfile.name || '用户',
+                    recentMessages: recentMsgsHint,
                     seed: `${char.id}_${auto.rangeStart}_${auto.rangeEnd}_chat_auto`,
                 });
                 const nextSnapshot = generateXunjiMonitorSnapshot({

@@ -69,8 +69,8 @@ export function forkWorldline(source: DateWorldline, atMessageIndex: number): Da
         createdAt: now,
         updatedAt: now,
         messages: copied,
-        // turnCount 按复制下来的"角色回合"重新估：保留原值的近似（用消息里 char 计数）
-        turnCount: copied.filter(m => m.role === 'char').length,
+        // turnCount 按复制下来的用户回合重新估；侧幕描写可能没有 char 消息。
+        turnCount: copied.filter(m => m.role === 'user').length,
         parentId: source.id,
         forkedAtTurn: source.turnCount,
         // BGM 不继承（氛围会因分叉而不同）

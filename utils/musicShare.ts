@@ -4,8 +4,29 @@ import { getCharLyricSnippet } from './charLyricCache';
 import { lyricLinesFromRaw, lyricLinesFromTimedLines } from './musicLyricContext';
 
 export const MUSIC_PENDING_CHAT_SHARE_KEY = 'moro_music_pending_chat_share_v1';
+export const MUSIC_PENDING_RICH_SHARE_KEY = 'moro_music_pending_rich_share_v1';
 
 export type MusicShareMode = 'user_to_char';
+export type MusicRichShareKind = 'song' | 'playlist' | 'artist' | 'comment' | 'profile';
+
+export interface MusicRichSharePayload {
+    id: string;
+    targetId: string;
+    charId: string;
+    shareMode: MusicShareMode;
+    kind: MusicRichShareKind;
+    title: string;
+    subtitle?: string;
+    text?: string;
+    image?: string;
+    url?: string;
+    song?: MusicShareSongSnapshot;
+    playlistId?: string | number;
+    artistId?: string | number;
+    commentId?: string | number;
+    createdAt: number;
+    userName?: string;
+}
 
 export interface MusicShareSongSnapshot {
     /** New canonical id. */
@@ -14,6 +35,7 @@ export interface MusicShareSongSnapshot {
     songId: number;
     name: string;
     artists: string;
+    artistIds?: Song['artistIds'];
     album: string;
     albumPic: string;
     duration: number;
@@ -98,6 +120,16 @@ export function normalizeMusicShareSongSnapshot(input: unknown): MusicShareSongS
         songId: finiteNumber(input.songId ?? input.id, id),
         name,
         artists: cleanText(input.artists, 180),
+        artistIds: Array.isArray(input.artistIds)
+            ? input.artistIds
+                .map((item: any) => ({
+                    id: typeof item?.id === 'number' || typeof item?.id === 'string' ? item.id : '',
+                    name: cleanText(item?.name, 80),
+                    source: (item?.source === 'qq' ? 'qq' : 'netease') as 'netease' | 'qq',
+                }))
+                .filter(item => item.id && item.name)
+                .slice(0, 12)
+            : undefined,
         album: cleanText(input.album, 180),
         albumPic: typeof input.albumPic === 'string' ? input.albumPic.trim().slice(0, 1200) : '',
         duration: Math.max(0, finiteNumber(input.duration, 0)),
@@ -123,6 +155,7 @@ export function buildMusicShareSongSnapshot(song: Song): MusicShareSongSnapshot 
         songId: id,
         name: song.name,
         artists: song.artists,
+        artistIds: song.artistIds,
         album: song.album,
         albumPic: song.albumPic,
         duration: song.duration,
@@ -150,6 +183,7 @@ export function songFromMusicShareSnapshot(input: unknown): Song | null {
         id: snapshot.id,
         name: snapshot.name,
         artists: snapshot.artists,
+        artistIds: snapshot.artistIds,
         album: snapshot.album,
         albumPic: snapshot.albumPic,
         duration: snapshot.duration,
@@ -207,6 +241,82 @@ export function normalizeMusicPendingChatSharePayload(
         charId: targetId,
         shareMode: 'user_to_char',
         song,
+        createdAt: finiteNumber(input.createdAt, Date.now()),
+        userName: cleanText(input.userName, 80) || undefined,
+    };
+}
+
+const cleanUrl = (value: unknown, max = 1200): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const text = value.trim();
+    if (!text) return undefined;
+    return text.slice(0, max);
+};
+
+export function buildMusicRichSharePayload(args: {
+    kind: MusicRichShareKind;
+    targetId: string;
+    title: string;
+    subtitle?: string;
+    text?: string;
+    image?: string;
+    url?: string;
+    song?: Song;
+    playlistId?: string | number;
+    artistId?: string | number;
+    commentId?: string | number;
+    userName?: string;
+    now?: number;
+    id?: string;
+}): MusicRichSharePayload {
+    const now = args.now ?? Date.now();
+    const targetId = cleanText(args.targetId, 120);
+    const song = args.song ? buildMusicShareSongSnapshot(args.song) : undefined;
+    return {
+        id: args.id || `music-rich-share-${now}-${Math.random().toString(36).slice(2, 8)}`,
+        targetId,
+        charId: targetId,
+        shareMode: 'user_to_char',
+        kind: args.kind,
+        title: cleanText(args.title, 120),
+        subtitle: cleanText(args.subtitle, 180) || undefined,
+        text: cleanText(args.text, 500) || undefined,
+        image: cleanUrl(args.image),
+        url: cleanUrl(args.url),
+        song,
+        playlistId: args.playlistId,
+        artistId: args.artistId,
+        commentId: args.commentId,
+        createdAt: now,
+        userName: cleanText(args.userName, 80) || undefined,
+    };
+}
+
+export function normalizeMusicRichSharePayload(input: unknown, opts?: NormalizeOptions): MusicRichSharePayload | null {
+    if (!isPlainObject(input)) return null;
+    const validCharIds = Array.isArray(opts) ? opts : opts?.validCharIds;
+    const targetId = cleanText(input.targetId || input.charId, 120);
+    if (!targetId) return null;
+    if (validCharIds && !validCharIds.includes(targetId)) return null;
+    const kind = ['song', 'playlist', 'artist', 'comment', 'profile'].includes(String(input.kind))
+        ? String(input.kind) as MusicRichShareKind
+        : 'song';
+    const song = input.song ? normalizeMusicShareSongSnapshot(input.song) : null;
+    return {
+        id: cleanText(input.id, 120) || `music-rich-share-${Date.now()}`,
+        targetId,
+        charId: targetId,
+        shareMode: 'user_to_char',
+        kind,
+        title: cleanText(input.title, 120),
+        subtitle: cleanText(input.subtitle, 180) || undefined,
+        text: cleanText(input.text, 500) || undefined,
+        image: cleanUrl(input.image),
+        url: cleanUrl(input.url),
+        song: song || undefined,
+        playlistId: input.playlistId != null ? input.playlistId : undefined,
+        artistId: input.artistId != null ? input.artistId : undefined,
+        commentId: input.commentId != null ? input.commentId : undefined,
         createdAt: finiteNumber(input.createdAt, Date.now()),
         userName: cleanText(input.userName, 80) || undefined,
     };

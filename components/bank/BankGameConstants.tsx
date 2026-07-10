@@ -1,6 +1,6 @@
 
 import { ShopRecipe, ShopStaff, RoomLayout, DollhouseState } from '../../types';
-import { BANK_PIXEL_STICKER_LIBRARY, bankPixelRef } from './bankPixelArt';
+import { BANK_PIXEL_STAFF_DEFS, BANK_PIXEL_STICKER_LIBRARY, bankPixelRef } from './bankPixelArt';
 
 // Pixel Art Assets
 export const BANK_ASSETS = {
@@ -193,6 +193,14 @@ export const AVAILABLE_STAFF: Omit<ShopStaff, 'hireDate' | 'fatigue'>[] = [
     { id: 'staff-bear-01', name: '棕熊大厨', avatar: bankPixelRef('staff/bear', 64), role: 'chef', maxFatigue: 150 },
     { id: 'staff-rabbit-01', name: '兔兔前台', avatar: bankPixelRef('staff/rabbit', 64), role: 'waiter', maxFatigue: 80 },
     { id: 'staff-penguin-01', name: '企鹅采购', avatar: bankPixelRef('staff/penguin', 64), role: 'manager', maxFatigue: 110 },
+    ...BANK_PIXEL_STAFF_DEFS.map(staff => ({
+        id: staff.id,
+        name: staff.name,
+        avatar: bankPixelRef(staff.assetId, 64),
+        role: staff.role,
+        maxFatigue: staff.maxFatigue,
+        personality: staff.personality,
+    })),
 ];
 
 // --- DOLLHOUSE ROOM LAYOUTS ---

@@ -84,5 +84,16 @@ describe('listen together action notification copy', () => {
       body: '现在播放《旅行》。',
       toast: '林夏 换到《旅行》',
     });
+
+    expect(buildListenActionNotice('林夏', { kind: 'seek', seconds: 83 })).toMatchObject({
+      title: '林夏 拖动了进度条',
+      body: 'TA 想听 1:23 附近的这一段。',
+      toast: '林夏 跳到 1:23',
+    });
+
+    expect(buildListenActionNotice('林夏', { kind: 'previous' })).toMatchObject({
+      title: '林夏 回到上一首',
+      toast: '林夏 回到上一首',
+    });
   });
 });

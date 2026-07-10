@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone, BankInvestmentOrder, BankInvestmentStrategy, BankLifeProfileMode } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, DollhouseSticker, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone, BankInvestmentOrder, BankInvestmentStrategy, BankLifeProfileMode } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { balanceRestoreDeltaForDeletedTransaction, validateManualIncomeBasis } from '../utils/bankLedger';
@@ -903,10 +903,8 @@ const BankApp: React.FC = () => {
                     for (const id of branch.shop.unlockedRecipes) {
                         replenishedStock[id] = Math.max(replenishedStock[id] || 0, DAILY_STOCK_FLOOR);
                     }
-                    const shopProducts = branch.shopProducts.map(p => ({ ...p, stock: Math.max(p.stock || 0, DAILY_STOCK_FLOOR) }));
                     return {
                         ...branch,
-                        shopProducts,
                         shop: {
                             ...branch.shop,
                             actionPoints: (branch.shop.actionPoints || 0) + dailyEnergy,
@@ -1246,7 +1244,11 @@ const BankApp: React.FC = () => {
         const cur = migrateBankLifeState(stateRef.current);
         const product = cur.life?.shopProducts?.find(p => p.id === productId);
         if (!product) return;
-        if (product.stock >= STOCK_CAP) {
+        if (!product.shelfPlaced) {
+            addToast(`${product.name} 还没摆到货架上，先上架再补货`, 'info');
+            return;
+        }
+        if (product.stock >= STOCK_CAP && !product.needsRestock) {
             addToast(`${product.name} 库存已满`, 'info');
             return;
         }
@@ -1274,13 +1276,78 @@ const BankApp: React.FC = () => {
         actionResult = await enrichResultWithAi(actionResult, 'shop', () => generateAiShopActionDraft(auxApi, cur.life!, { action: 'restock', product: product.name, cost, quantity: batch }));
         const nextLife = appendBankActionRecord({
             ...cur.life!,
-            shopProducts: (cur.life!.shopProducts || []).map(p => p.id === productId ? { ...p, stock: Math.min(STOCK_CAP, p.stock + batch) } : p),
+            shopProducts: (cur.life!.shopProducts || []).map(p => p.id === productId ? {
+                ...p,
+                stock: Math.min(STOCK_CAP, p.stock + batch),
+                needsRestock: false,
+                lastRestockedDateStr: cur.life!.dateStr,
+            } : p),
             shopEvents: [{ id: `shop-event-${Date.now()}`, dateStr: cur.life!.dateStr, title: '补了一批货', detail: `${product.name} 补货 +${batch}，货架又满起来了。`, tone: 'info' as const }, ...(cur.life!.shopEvents || [])].slice(0, 20),
         }, actionResult);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
         adjustUserBalance(-cost, { note: `${product.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: product.id });
         addToast(`${product.name} 进货 +${batch}`, 'success');
         showActionResult(actionResult);
+    };
+
+    const handlePlaceLifeProduct = async (productId: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const product = cur.life?.shopProducts?.find(p => p.id === productId);
+        if (!product) return;
+        if (product.shelfPlaced) {
+            addToast(`${product.name} 已经在货架上了`, 'info');
+            return;
+        }
+        const current = dollhouseRef.current;
+        const mainRoom = current.rooms.find(r => r.id === 'room-1f-left') || current.rooms[0];
+        if (!mainRoom) return;
+        const placedCount = mainRoom.stickers.filter(s => s.kind === 'shop-product').length;
+        const newSticker: DollhouseSticker = {
+            id: `stk-product-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            url: product.icon || `bank-pixel:product/${product.id}@64`,
+            x: 30 + (placedCount % 5) * 10,
+            y: 42 + Math.floor(placedCount / 5) * 8,
+            scale: 0.78,
+            rotation: 0,
+            zIndex: 18 + placedCount,
+            surface: 'leftWall',
+            kind: 'shop-product',
+            productId: product.id,
+        };
+        await persistDollhouseUpdate(prev => ({
+            ...prev,
+            rooms: prev.rooms.map(room => room.id === mainRoom.id ? {
+                ...room,
+                stickers: [...room.stickers, newSticker],
+            } : room),
+        }));
+        await persistStateUpdate(prev => {
+            const migrated = migrateBankLifeState(prev);
+            const life = migrated.life!;
+            return {
+                ...migrated,
+                life: {
+                    ...life,
+                    shopProducts: (life.shopProducts || []).map(p => p.id === productId ? { ...p, shelfPlaced: true, needsRestock: p.lastRestockedDateStr ? p.needsRestock : true } : p),
+                },
+            };
+        });
+        setShopView('game');
+        addToast(`${product.name} 已摆到货架，可在店铺现场拖动调整`, 'success');
+    };
+
+    const handleUnplaceLifeProduct = async (productId: string) => {
+        await persistStateUpdate(prev => {
+            const migrated = migrateBankLifeState(prev);
+            const life = migrated.life!;
+            return {
+                ...migrated,
+                life: {
+                    ...life,
+                    shopProducts: (life.shopProducts || []).map(p => p.id === productId ? { ...p, shelfPlaced: false } : p),
+                },
+            };
+        });
     };
 
     // --- 店铺升级：花钱包的钱提升等级（客流↑、档次溢价↑、过夜分红↑） ---
@@ -1380,7 +1447,10 @@ const BankApp: React.FC = () => {
                 pendingRevenue: idle.pendingRevenue,
                 lastAccrualAt: now,
             },
-            life: appendBankActionRecord(cur.life!, actionResult),
+            life: appendBankActionRecord({
+                ...cur.life!,
+                shopProducts: (cur.life?.shopProducts || []).map(p => p.shelfPlaced ? { ...p, needsRestock: true } : p),
+            }, actionResult),
         });
         addToast(pending > 0 ? `已打烊，待收 ${cur.config.currencySymbol}${pending}` : '店铺已打烊', 'success');
         showActionResult(actionResult);
@@ -2425,11 +2495,22 @@ ${JSON.stringify(list, null, 2)}
             addToast('先去「经营」雇个店员，才能开门营业', 'info');
             return;
         }
-        const lifeProducts = (lifeState.shopProducts || []).filter(p => p.stock > 0 || p.stock === 0);
-        const products = lifeProducts.length
-            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: '🛍️', price: p.price, appeal: p.appeal, stock: p.stock }))
+        const allLifeProducts = lifeState.shopProducts || [];
+        const placedLifeProducts = allLifeProducts.filter(p => p.shelfPlaced);
+        const restockBlockedProducts = placedLifeProducts.filter(p => p.needsRestock);
+        const lifeProducts = placedLifeProducts.filter(p => !p.needsRestock);
+        const usingLifeProducts = allLifeProducts.length > 0;
+        if (usingLifeProducts && placedLifeProducts.length === 0) {
+            addToast('先在「经营打理」把商品摆到货架上，才能开门营业', 'info');
+            return;
+        }
+        if (usingLifeProducts && restockBlockedProducts.length > 0) {
+            addToast(`还有 ${restockBlockedProducts.length} 个上架商品需要补货，再开门营业`, 'info');
+            return;
+        }
+        const products = usingLifeProducts
+            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: p.icon || `bank-pixel:product/${p.id}@64`, price: p.price, appeal: p.appeal, stock: p.stock }))
             : SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id)).map(r => ({ ...r, price: recipePrice(r), stock: cur.shop.stock?.[r.id] || 0 }));
-        const usingLifeProducts = lifeProducts.length > 0;
         if (products.length === 0) {
             addToast('菜单空空，先去「经营」解锁可卖的商品', 'info');
             return;
@@ -2493,11 +2574,12 @@ ${JSON.stringify(list, null, 2)}
             await closeShopWithoutBusinessSettlement(cur, now);
             return;
         }
-        const lifeProducts = (lifeState.shopProducts || []).filter(p => p.stock > 0 || p.stock === 0);
-        const products = lifeProducts.length
-            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: '🛍️', price: p.price, appeal: p.appeal, stock: p.stock }))
+        const allLifeProducts = lifeState.shopProducts || [];
+        const lifeProducts = allLifeProducts.filter(p => p.shelfPlaced && !p.needsRestock);
+        const usingLifeProducts = allLifeProducts.length > 0;
+        const products = usingLifeProducts
+            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: p.icon || `bank-pixel:product/${p.id}@64`, price: p.price, appeal: p.appeal, stock: p.stock }))
             : SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id)).map(r => ({ ...r, price: recipePrice(r), stock: cur.shop.stock?.[r.id] || 0 }));
-        const usingLifeProducts = lifeProducts.length > 0;
         if (products.length === 0) {
             await closeShopWithoutBusinessSettlement(cur, now);
             return;
@@ -2666,7 +2748,11 @@ ${JSON.stringify(list, null, 2)}
             life: appendBankActionRecord({
                 ...lifeState,
                 shopProducts: usingLifeProducts
-                    ? (lifeState.shopProducts || []).map(p => ({ ...p, stock: Math.max(0, lifeStockLeft[p.id] ?? p.stock) }))
+                    ? (lifeState.shopProducts || []).map(p => ({
+                        ...p,
+                        stock: Math.max(0, lifeStockLeft[p.id] ?? p.stock),
+                        needsRestock: p.shelfPlaced ? true : p.needsRestock,
+                    }))
                     : lifeState.shopProducts,
                 shopEvents: usingLifeProducts
                     ? [{ id: `shop-event-${Date.now()}`, dateStr: lifeState.dateStr, title: '打烊结算', detail: `${lifeState.shopBusinessName || cur.shop.shopName} 本轮接待 ${customerCount} 位客人，收入 ¥${total}。`, tone: 'good' as const }, ...(lifeState.shopEvents || [])].slice(0, 20)
@@ -2704,7 +2790,8 @@ ${JSON.stringify(list, null, 2)}
 
     // 库存告急：有在售商品快卖光（≤3 份）时，给「经营」书签贴个小红点，点进去就能进货
     const LOW_STOCK_THRESHOLD = 3;
-    const lowStockCount = state.shop.unlockedRecipes.reduce(
+    const lifeLowStockCount = (state.life?.shopProducts || []).filter(p => p.shelfPlaced && (p.needsRestock || p.stock <= LOW_STOCK_THRESHOLD)).length;
+    const lowStockCount = lifeLowStockCount + state.shop.unlockedRecipes.reduce(
         (n, id) => n + ((state.shop.stock?.[id] ?? 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
     const hasLowStock = lowStockCount > 0;
     const migratedViewState = migrateBankLifeState(state);
@@ -3418,7 +3505,9 @@ ${JSON.stringify(list, null, 2)}
             );
         }
 
-        const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
+        const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8, shelfPlaced: false, needsRestock: false }));
+        const placedProductCount = products.filter(p => p.shelfPlaced).length;
+        const restockProductCount = products.filter(p => p.shelfPlaced && p.needsRestock).length;
         const shopStatus = getBankShopRealtimeStatus(state.shop, shopClockNow);
         const statusTone: Record<typeof shopStatus.kind, { bg: string; fg: string; border: string }> = {
             readyToOpen: { bg: '#ecfdf5', fg: '#166534', border: '#bbf7d0' },
@@ -3530,6 +3619,8 @@ ${JSON.stringify(list, null, 2)}
                                 onStaffClick={handleOpenStaffEdit}
                                 onOpenGuestbook={() => setShowGuestbook(true)}
                                 onWipeCounter={handleWipeCounter}
+                                onRemoveShopProduct={handleUnplaceLifeProduct}
+                                shopProducts={state.life?.shopProducts || []}
                             />
                         ) : <div className="flex-1 flex items-center justify-center text-sm" style={{ color: INK_SOFT }}>加载店铺中...</div>}
                         {(() => {
@@ -3604,15 +3695,54 @@ ${JSON.stringify(list, null, 2)}
                             </div>
                         </PaperCard>
                         <PaperCard className="p-4">
-                            <SectionTag en="goods">今日货架</SectionTag>
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <SectionTag en="goods">今日货架</SectionTag>
+                                    <div className="mt-1 text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                        {placedProductCount}/{products.length} 已上架{restockProductCount > 0 ? ` · ${restockProductCount} 个待补货` : ''}
+                                    </div>
+                                </div>
+                                <CleanBadge tone={restockProductCount > 0 ? 'amber' : 'blue'}>{products.length} 件商品</CleanBadge>
+                            </div>
                             <div className="grid grid-cols-2 gap-2 mt-3">
                                 {products.map(p => (
                                     <div key={p.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#faf8f5' }}>
-                                        <div className="font-black truncate" style={{ color: INK }}>{p.name}</div>
-                                        <div className="mt-1 flex justify-between" style={{ color: INK_SOFT }}><span>售价 ¥{p.price}</span><span>库存 {p.stock}</span></div>
-                                        <button onClick={() => setBankModal({ kind: 'shopRestock', productId: p.id })} className="mt-2 w-full py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>
-                                            补货 · 约 ¥{Math.max(1, Math.round(p.cost * RESTOCK_BATCH))}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: '#fff', border: '1px solid rgba(43,41,51,0.06)' }}>
+                                                <BankAssetIcon
+                                                    value={p.icon || `bank-pixel:product/${p.id}@64`}
+                                                    alt={p.name}
+                                                    imgClassName="w-10 h-10 object-contain"
+                                                    textClassName="text-[34px] leading-none"
+                                                />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="font-black truncate" style={{ color: INK }}>{p.name}</div>
+                                                <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5" style={{ color: INK_SOFT }}>
+                                                    <span>售价 ¥{p.price}</span>
+                                                    <span>进货 ¥{p.cost}/件</span>
+                                                    <span>库存 {p.stock}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                            <CleanBadge tone={p.shelfPlaced ? 'blue' : 'default'}>{p.shelfPlaced ? '已上架' : '未上架'}</CleanBadge>
+                                            {p.needsRestock && <CleanBadge tone="amber">待补货</CleanBadge>}
+                                            {p.stock <= LOW_STOCK_THRESHOLD && <CleanBadge tone="amber">库存低</CleanBadge>}
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                            <button
+                                                onClick={() => { void handlePlaceLifeProduct(p.id); }}
+                                                disabled={!!p.shelfPlaced}
+                                                className="py-1.5 text-[11px] font-black active:scale-95 transition-transform disabled:opacity-50"
+                                                style={chipStyle(false)}
+                                            >
+                                                {p.shelfPlaced ? '已摆好' : '摆到货架'}
+                                            </button>
+                                            <button onClick={() => setBankModal({ kind: 'shopRestock', productId: p.id })} className="py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={chipStyle(!!p.needsRestock)}>
+                                                补货 · ¥{Math.max(1, Math.round(p.cost * RESTOCK_BATCH))}
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -3798,8 +3928,10 @@ ${JSON.stringify(list, null, 2)}
                 <BankModal open title="补货确认" sub="补货会立刻从钱包扣除虚拟成本" onClose={close} footer={confirmBtn(`确认补货 ${RESTOCK_BATCH} 份`, () => handleRestockLifeProduct(modal.productId), '#16a34a')}>
                     {product ? <BankMetricGrid items={[
                         { label: '商品', value: product.name },
+                        { label: '上架状态', value: product.shelfPlaced ? (product.needsRestock ? '已上架 · 待补货' : '已上架') : '未上架' },
                         { label: '当前库存', value: `${product.stock}` },
                         { label: '补货后', value: `${Math.min(STOCK_CAP, product.stock + RESTOCK_BATCH)}` },
+                        { label: '单件进货价', value: `${state.config.currencySymbol}${product.cost}` },
                         { label: '成本', value: `${state.config.currencySymbol}${cost}`, tone: 'warn' },
                     ]} /> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这个商品已经不在货架上。</div>}
                 </BankModal>

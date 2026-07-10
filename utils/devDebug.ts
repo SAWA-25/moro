@@ -4,8 +4,8 @@
 //   2. 在 DEV_DEBUG_CAPTURE_CATEGORIES 加一行（面板会自动多出一个开关）
 //   3. 写一个语义化的 appendDevDebugXxxLog 薄封装（见文件末尾 appendDevDebugApiLog / appendDevDebugInstantPushLog）
 // 其余存储 / 脱敏 / 限容 / 导出逻辑全部通用，不用改。
-// 分类按「来源通道」切：api = 普通聊天直发模型；instant-push = 经 worker 的通道事件。
-export type DevDebugCaptureCategory = 'api' | 'instant-push';
+// 分类按「来源通道」切：api = 普通聊天直发模型；instant-push = 经 worker 的通道事件；mcp = 外部 MCP 工具/资源/提示词通道。
+export type DevDebugCaptureCategory = 'api' | 'instant-push' | 'mcp';
 
 export interface DevDebugCaptureCategoryMeta {
     key: DevDebugCaptureCategory;
@@ -25,6 +25,11 @@ export const DEV_DEBUG_CAPTURE_CATEGORIES: DevDebugCaptureCategoryMeta[] = [
         key: 'instant-push',
         title: 'IP',
         detail: 'Instant Push 通道：经 worker 的 LLM 交换 + SSE 投递结果（超时 / 收到 / 失败）。',
+    },
+    {
+        key: 'mcp',
+        title: 'MCP',
+        detail: 'MCP 控制台：连接、握手、工具/资源/提示词调用与 stdio 网关事件。',
     },
 ];
 
@@ -478,6 +483,13 @@ export function appendDevDebugApiLog(input: DevDebugHttpLogInput): void {
 /** instant-push 类：经 worker 的通道事件（消费点 activeMsgRuntime / instantPushClient）。 */
 export function appendDevDebugInstantPushLog(input: DevDebugHttpLogInput): void {
     appendDevDebugHttpLog('instant-push', input);
+}
+
+export function appendDevDebugMcpLog(input: { label?: string; data: unknown }): void {
+    appendDevDebugLog('mcp', {
+        label: input.label ? `[mcp] ${input.label}` : '[mcp]',
+        data: input.data,
+    });
 }
 
 export interface DevDebugLogger {

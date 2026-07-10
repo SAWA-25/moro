@@ -363,6 +363,11 @@ export interface AutonomousProactiveHintParams {
     randomMode?: boolean;
     proactiveCallAllowed?: boolean;
     forceReplyAllowed?: boolean;
+    proactiveGomokuInviteAllowed?: boolean;
+    proactiveGoInviteAllowed?: boolean;
+    proactiveDoudizhuInviteAllowed?: boolean;
+    proactiveTurtleSoupInviteAllowed?: boolean;
+    proactiveMahjongInviteAllowed?: boolean;
     eventKind?: string;
     energy?: string;
     proactiveAngle?: string;
@@ -413,7 +418,7 @@ function proactiveFlavorGuidance(flavor?: string): string {
 const forceReplyInstruction = (userName: string) =>
     `强制回话：只有当你按人设真的产生强烈控制欲/占有欲、吃醋、担心、急事或关系拉扯，觉得${userName}现在必须回应你时，才可以在回复最后单独输出一行 [[FORCE_REPLY: 一句话写清你为什么不准TA装没看见]]。普通寒暄、轻微想念、无聊、刷存在感或为了用功能而用都禁止触发；低频、克制，但触发时要像你本人在逼 TA 回话。`;
 
-export function proactiveNaturalMessageRules(userName: string, opts?: { proactiveCallAllowed?: boolean; forceReplyAllowed?: boolean; includeOutputRules?: boolean }): string {
+export function proactiveNaturalMessageRules(userName: string, opts?: { proactiveCallAllowed?: boolean; forceReplyAllowed?: boolean; proactiveGomokuInviteAllowed?: boolean; proactiveGoInviteAllowed?: boolean; proactiveDoudizhuInviteAllowed?: boolean; proactiveTurtleSoupInviteAllowed?: boolean; proactiveMahjongInviteAllowed?: boolean; includeOutputRules?: boolean }): string {
     const outputRules = opts?.includeOutputRules === false
         ? ''
         : `\n输出只写真正要发给${userName}的消息正文；不要解释、不要分析、不要加引号、不要写名字前缀、时间戳或“系统提示”。`;
@@ -421,19 +426,38 @@ export function proactiveNaturalMessageRules(userName: string, opts?: { proactiv
         ? `\n如果此刻按你的人设更想直接听见${userName}的声音，或这件事打字说不清，可以在回复最末尾单独输出 [[CALL_USER]]；不要为了用功能而用。`
         : '';
     const forceRule = opts?.forceReplyAllowed ? `\n${forceReplyInstruction(userName)}` : '';
+    const gomokuRule = opts?.proactiveGomokuInviteAllowed
+        ? `\n如果此刻按你的人设真的想和${userName}轻松下一局五子棋（比如无聊、想试探、想转移情绪、想用一盘棋陪 TA 一会儿），可以在回复最末尾单独输出 [[GOMOKU_INVITE: 一句约棋文案]]；不要为了用功能而用，不要频繁触发。`
+        : '';
+    const goRule = opts?.proactiveGoInviteAllowed
+        ? `\n如果此刻按你的人设真的想和${userName}慢慢下一盘围棋/手谈一局（比如想安静陪伴、想认真对弈、想用棋局接住话题），可以在回复最末尾单独输出 [[GO_INVITE: 一句约棋文案]]；不要为了用功能而用，不要频繁触发，也不要和五子棋邀请同时输出。`
+        : '';
+    const doudizhuRule = opts?.proactiveDoudizhuInviteAllowed
+        ? `\n如果此刻按你的人设真的想和${userName}以及另一位熟人打一局斗地主（比如想热闹一点、试探牌风、用牌局把气氛带起来），可以在回复最末尾单独输出 [[DOUDIZHU_INVITE: 一句约牌文案]]；不要为了用功能而用，不要频繁触发。`
+        : '';
+    const turtleSoupRule = opts?.proactiveTurtleSoupInviteAllowed
+        ? `\n如果此刻按你的人设真的想和${userName}玩一局暗黑海龟汤（比如想一起推理、讲一个怪故事、用谜题把气氛压低一点），可以在回复最末尾单独输出 [[TURTLE_SOUP_INVITE: 一句约汤文案]]；不要为了用功能而用，不要频繁触发。`
+        : '';
+    const mahjongRule = opts?.proactiveMahjongInviteAllowed
+        ? `\n如果此刻按你的人设真的想和${userName}以及两位熟人打一桌麻将（比如想慢慢摸打、试探牌运、用牌桌留住一段热闹），可以在回复最末尾单独输出 [[MAHJONG_INVITE: 一句约牌文案]]；不要为了用功能而用，不要频繁触发。`
+        : '';
+    const boardGameCount = [opts?.proactiveGomokuInviteAllowed, opts?.proactiveGoInviteAllowed, opts?.proactiveDoudizhuInviteAllowed, opts?.proactiveTurtleSoupInviteAllowed, opts?.proactiveMahjongInviteAllowed].filter(Boolean).length;
+    const boardGameGuard = boardGameCount >= 2
+        ? `\n如果五子棋、围棋、斗地主、海龟汤、麻将都像是可选邀请，只选择更符合当前人设、关系和气氛的一种；同一条消息里最多输出一个游戏邀请指令。`
+        : '';
     return [
         '自然主动消息的三种气质要按场景混合，而不是固定套模板：',
         `- 生活切片：从你这边刚发生的一件具体小事切进去，允许半句话、一个吐槽、一个截图感念头，不要开场就问“在吗/你在干嘛”。`,
         `- 关系拉扯：如果你和${userName}足够熟，可以带一点想念、吃味、嘴硬、撒娇、试探或小抱怨；弱关系不要突然亲密。`,
         `- 克制陪伴：低冲动、深夜、忙碌或关系疏远时，消息可以更短、更轻，像顺手放下一句，不逼${userName}立刻回应。`,
         `禁止模板寒暄、禁止解释触发原因、禁止把主动消息写成任务汇报；不要输出“作为AI”“系统提示”“我被要求来发消息”等元话语。`,
-        `通常 1-2 句，最多 3 句；可以换行拆成几个短气泡，但每个气泡都要像真人手指敲出来的。${outputRules}${callRule}${forceRule}`,
+        `通常 1-2 句，最多 3 句；可以换行拆成几个短气泡，但每个气泡都要像真人手指敲出来的。${outputRules}${callRule}${forceRule}${gomokuRule}${goRule}${doudizhuRule}${turtleSoupRule}${mahjongRule}${boardGameGuard}`,
     ].join('\n');
 }
 
 /** 把刚发生的生活事件包成「分享自己生活」式的主动消息系统提示。 */
 export function autonomousProactiveHint(p: AutonomousProactiveHintParams): string {
-    const { userName, timeStr, activity, where, mood, gapNote, randomMode, proactiveCallAllowed, forceReplyAllowed, eventKind, energy, proactiveAngle, thread, messageFlavor, materialSources, score } = p;
+    const { userName, timeStr, activity, where, mood, gapNote, randomMode, proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed, eventKind, energy, proactiveAngle, thread, messageFlavor, materialSources, score } = p;
     const scoreLine = typeof score === 'number'
         ? score < 35
             ? `主动冲动分：${score}/100，偏低；如果要发，就更克制、更短，不要热情过头。`
@@ -456,7 +480,7 @@ export function autonomousProactiveHint(p: AutonomousProactiveHintParams): strin
         `${proactiveAngleGuidance(proactiveAngle)}${proactiveFlavorGuidance(messageFlavor)}` +
         `你现在产生了一个想给 ${userName} 发消息的念头。这不是客服回访，不是AI问候，也不是“用户太久没回”的催促；它必须像一个真实的人在自己生活里忽然摸出手机。` +
         `不要复述“我刚才在做什么/我今天经历了什么”的流水账；只把这件事压缩成一个真实的人会顺手发出的开场。` +
-        proactiveNaturalMessageRules(userName, { proactiveCallAllowed, forceReplyAllowed }) +
+        proactiveNaturalMessageRules(userName, { proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed }) +
         (randomMode ? `（顺从你的本性。如果你现在心情差，可以直接阴阳怪气或抱怨；如果心情好就发神经。不用迎合，也可以就只发一句没头没尾的。）` : '') +
         `]`
     );
@@ -1288,6 +1312,11 @@ export interface ProactiveFallbackHintParams {
     randomMode?: boolean;
     proactiveCallAllowed?: boolean;
     forceReplyAllowed?: boolean;
+    proactiveGomokuInviteAllowed?: boolean;
+    proactiveGoInviteAllowed?: boolean;
+    proactiveDoudizhuInviteAllowed?: boolean;
+    proactiveTurtleSoupInviteAllowed?: boolean;
+    proactiveMahjongInviteAllowed?: boolean;
 }
 
 export interface ProactivePendingReplyHintParams {
@@ -1299,6 +1328,11 @@ export interface ProactivePendingReplyHintParams {
     randomMode?: boolean;
     proactiveCallAllowed?: boolean;
     forceReplyAllowed?: boolean;
+    proactiveGomokuInviteAllowed?: boolean;
+    proactiveGoInviteAllowed?: boolean;
+    proactiveDoudizhuInviteAllowed?: boolean;
+    proactiveTurtleSoupInviteAllowed?: boolean;
+    proactiveMahjongInviteAllowed?: boolean;
 }
 
 export interface ActiveMsg2LegacyStyleHintParams {
@@ -1390,10 +1424,10 @@ export function swOfflineProactiveSystemPrompt(p: SwOfflineProactivePromptParams
 
 /** 主动消息的"旧版/兜底" hint（未开自主生活、或自主生活生成失败时用）。 */
 export function proactiveFallbackHint(p: ProactiveFallbackHintParams): string {
-    const { userName, timeStr, timeSinceUser, longGap, randomMode, proactiveCallAllowed, forceReplyAllowed } = p;
+    const { userName, timeStr, timeSinceUser, longGap, randomMode, proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed } = p;
     return `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。
 可选切口：刚看到的小东西、手边发生的具体小事、天气/食物/通勤/工作学习里的轻微情绪、最近聊天里没说完的一根线、突然冒出的关心或试探。
-${proactiveNaturalMessageRules(userName, { proactiveCallAllowed, forceReplyAllowed })}
+${proactiveNaturalMessageRules(userName, { proactiveCallAllowed, forceReplyAllowed, proactiveGomokuInviteAllowed, proactiveGoInviteAllowed, proactiveDoudizhuInviteAllowed, proactiveTurtleSoupInviteAllowed, proactiveMahjongInviteAllowed })}
 ${longGap ? `间隔较久时，可以有想念、好奇、嘴硬、担心或小小抱怨，但也要按关系分寸来；不要把“你怎么不理我”当成唯一反应。` : ''}
 ${randomMode ? `这是随机触发的一次机会：热络、高冷、犯欠、温柔或沉默感都按你的性格来，不用迎合。` : ''}]`;
 }
@@ -1427,10 +1461,29 @@ export function proactivePendingReplyHint(p: ProactivePendingReplyHintParams): s
     const forceRule = p.forceReplyAllowed
         ? `\n${forceReplyInstruction(userName)}`
         : '';
+    const gomokuRule = p.proactiveGomokuInviteAllowed
+        ? `\n如果在自然接住消息之后，按你的人设真的想用一局五子棋把话题轻轻接下去，可以在回复最末尾单独输出 [[GOMOKU_INVITE: 一句约棋文案]]；不要为了用功能而用。`
+        : '';
+    const goRule = p.proactiveGoInviteAllowed
+        ? `\n如果在自然接住消息之后，按你的人设真的想用一盘围棋/手谈把话题慢慢接下去，可以在回复最末尾单独输出 [[GO_INVITE: 一句约棋文案]]；不要为了用功能而用，也不要和五子棋邀请同时输出。`
+        : '';
+    const doudizhuRule = p.proactiveDoudizhuInviteAllowed
+        ? `\n如果在自然接住消息之后，按你的人设真的想用一局斗地主把气氛热起来，可以在回复最末尾单独输出 [[DOUDIZHU_INVITE: 一句约牌文案]]；不要为了用功能而用。`
+        : '';
+    const turtleSoupRule = p.proactiveTurtleSoupInviteAllowed
+        ? `\n如果在自然接住消息之后，按你的人设真的想用一局暗黑海龟汤把话题拐进推理和怪谈，可以在回复最末尾单独输出 [[TURTLE_SOUP_INVITE: 一句约汤文案]]；不要为了用功能而用。`
+        : '';
+    const mahjongRule = p.proactiveMahjongInviteAllowed
+        ? `\n如果在自然接住消息之后，按你的人设真的想用一桌麻将把气氛留住，可以在回复最末尾单独输出 [[MAHJONG_INVITE: 一句约牌文案]]；不要为了用功能而用。`
+        : '';
+    const boardGameCount = [p.proactiveGomokuInviteAllowed, p.proactiveGoInviteAllowed, p.proactiveDoudizhuInviteAllowed, p.proactiveTurtleSoupInviteAllowed, p.proactiveMahjongInviteAllowed].filter(Boolean).length;
+    const boardGameGuard = boardGameCount >= 2
+        ? `\n五子棋、围棋、斗地主、海龟汤、麻将邀请最多选一种，按当前气氛和人设判断。`
+        : '';
     return `[系统提示（非${userName}发言）：现在是 ${p.timeStr}。${userName}之前已经正式发来下面这些消息，但还没有被你可见地回复。你这次主动打开聊天框时，第一优先级是自然接住这些消息，而不是另起话题、催人回复或假装没看到。
 未回复消息：
 ${pendingLines}
-写法要求：像真人隔了一会儿才回消息，先回应${userName}真正说的内容；多条消息按顺序都要照顾到，但不要机械逐条编号。可以有歉意、解释、嘴硬、撒娇、转移或补充，完全按你的人设和关系来。通常 1-3 句，可以换行拆成短气泡；只输出真正要发出去的消息正文，不要写名字前缀、时间戳、系统提示或分析。${lifeLine}${p.randomMode ? `\n这是随机主动触发时顺手补接，不需要表现得像客服回访。` : ''}${callRule}${forceRule}]`;
+写法要求：像真人隔了一会儿才回消息，先回应${userName}真正说的内容；多条消息按顺序都要照顾到，但不要机械逐条编号。可以有歉意、解释、嘴硬、撒娇、转移或补充，完全按你的人设和关系来。通常 1-3 句，可以换行拆成短气泡；只输出真正要发出去的消息正文，不要写名字前缀、时间戳、系统提示或分析。${lifeLine}${p.randomMode ? `\n这是随机主动触发时顺手补接，不需要表现得像客服回访。` : ''}${callRule}${forceRule}${gomokuRule}${goRule}${doudizhuRule}${turtleSoupRule}${mahjongRule}${boardGameGuard}]`;
 }
 
 /** 用户拉黑角色后，点“看看 TA 在做什么”时的一次性隐藏任务提示。 */

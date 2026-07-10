@@ -33,6 +33,14 @@ export interface MusicActionHooks {
     getListeningSnapshot: () => MusicActionSnapshot | null;
     /** 将 charId 加入"一起听"名单（chatParser 不维护状态，只通知） */
     joinListeningTogether: (charId: string) => void;
+    /** 一起听期间的播放器控制：暂停、继续、上下首、拖动进度条。 */
+    controlPlayback?: (action:
+        | { kind: 'pause' }
+        | { kind: 'resume' }
+        | { kind: 'next' }
+        | { kind: 'previous' }
+        | { kind: 'seek'; seconds: number }
+    ) => void;
     /**
      * 把 song 加到 char 的歌单。
      * 返回 { playlistTitle, created } —— created=true 表示这次是新建了歌单。
@@ -44,7 +52,29 @@ export interface MusicActionHooks {
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
     /** char 主动分享歌曲：按关键词真实搜索（网易云），返回可播放的歌曲快照；找不到返回 null。 */
     searchSong?: (keyword: string) => Promise<MusicActionSnapshot | null>;
+    /** char 在一起听时点播歌曲：按关键词真实搜索并切换当前播放。 */
+    playSongByQuery?: (keyword: string) => Promise<MusicActionSnapshot | null>;
 }
+
+const parseMusicSeekSeconds = (raw: string): number | null => {
+    const text = raw.trim();
+    if (!text) return null;
+    const mmss = text.match(/(\d{1,2})\s*[:：]\s*(\d{1,2})/);
+    if (mmss) {
+        const minutes = Number(mmss[1]);
+        const seconds = Number(mmss[2]);
+        if (Number.isFinite(minutes) && Number.isFinite(seconds)) return Math.max(0, minutes * 60 + seconds);
+    }
+    const number = Number((text.match(/\d+(?:\.\d+)?/) || [])[0]);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+};
+
+const formatSeekToastTime = (seconds: number): string => {
+    const safe = Math.max(0, seconds);
+    const m = Math.floor(safe / 60);
+    const s = Math.floor(safe % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+};
 
 /**
  * 文字→表情识别：把文本里「明确指向某个表情名」的片段转成 emoji part。
@@ -132,7 +162,7 @@ export const ChatParser = {
             content = content.replace(rpPwMatch[0], '').trim();
         }
 
-        // MUSIC_ACTION — char 对 user 正在听的歌表态（只处理第一次出现，每条消息最多一次插卡）
+        // MUSIC_ACTION — char 对 user 正在听的歌表态 / 一起听控制（只处理第一次出现，每条消息最多一次）
         // 支持的格式（后两种是为了让 char 自己挑歌单 / 新建歌单）：
         //   [[MUSIC_ACTION:join]]
         //   [[MUSIC_ACTION:add]]                              → 默认放第一个歌单
@@ -140,14 +170,58 @@ export const ChatParser = {
         //   [[MUSIC_ACTION:add_new|新歌单标题|可选描述]]        → 新建歌单
         //   [[MUSIC_ACTION:join_and_add(|...)]]              → 同 add 一套
         //   [[MUSIC_ACTION:join_and_add_new|新歌单标题|描述]]  → 同 add_new
+        //   [[MUSIC_ACTION:pause/resume/previous/next]]
+        //   [[MUSIC_ACTION:seek|83]] 或 [[MUSIC_ACTION:seek|1:23]]
+        //   [[MUSIC_ACTION:play|歌名 艺人]]                    → 搜索并切到这首歌
         // 用 | 分隔参数，避免和 : 冲突（标题里很容易出现 :)
-        const MUSIC_TAG_RE = /\[\[MUSIC_ACTION:(join|add|add_new|join_and_add|join_and_add_new)(?:\|([^\]]*))?\]\]/;
-        const MUSIC_TAG_GLOBAL_RE = /\[\[MUSIC_ACTION:(?:join|add|add_new|join_and_add|join_and_add_new)(?:\|[^\]]*)?\]\]/g;
+        const MUSIC_TAG_RE = /\[\[MUSIC_ACTION:(join|add|add_new|join_and_add|join_and_add_new|pause|resume|previous|next|seek|play)(?:\|([^\]]*))?\]\]/;
+        const MUSIC_TAG_GLOBAL_RE = /\[\[MUSIC_ACTION:(?:join|add|add_new|join_and_add|join_and_add_new|pause|resume|previous|next|seek|play)(?:\|[^\]]*)?\]\]/g;
         const musicMatch = content.match(MUSIC_TAG_RE);
         if (musicMatch && musicHooks) {
-            const verb = musicMatch[1] as 'join' | 'add' | 'add_new' | 'join_and_add' | 'join_and_add_new';
+            const verb = musicMatch[1] as 'join' | 'add' | 'add_new' | 'join_and_add' | 'join_and_add_new' | 'pause' | 'resume' | 'previous' | 'next' | 'seek' | 'play';
             const argsRaw = (musicMatch[2] || '').trim();
             const args = argsRaw ? argsRaw.split('|').map(s => s.trim()).filter(Boolean) : [];
+            const isPlaybackControl = verb === 'pause' || verb === 'resume' || verb === 'previous' || verb === 'next' || verb === 'seek' || verb === 'play';
+
+            if (isPlaybackControl) {
+                if (verb === 'play') {
+                    const query = argsRaw.replace(/[|｜]/g, ' ').trim();
+                    if (query && musicHooks.playSongByQuery) {
+                        try {
+                            const song = await musicHooks.playSongByQuery(query);
+                            if (song) {
+                                await DB.saveMessage({
+                                    charId,
+                                    role: 'assistant',
+                                    type: 'music_card',
+                                    content: '[音乐卡片]',
+                                    metadata: { intent: 'share', song, musicAction: 'play' },
+                                });
+                                addToast(`${charName} 点播了《${song.name}》`, 'info');
+                            } else {
+                                addToast(`${charName} 想点播《${query}》，但没找到`, 'info');
+                            }
+                        } catch { /* 忽略点播失败 */ }
+                    }
+                } else if (verb === 'seek') {
+                    const seconds = parseMusicSeekSeconds(argsRaw);
+                    if (seconds != null && musicHooks.controlPlayback) {
+                        musicHooks.controlPlayback({ kind: 'seek', seconds });
+                        addToast(`${charName} 把进度拉到 ${formatSeekToastTime(seconds)}`, 'info');
+                    }
+                } else if (musicHooks.controlPlayback) {
+                    musicHooks.controlPlayback({ kind: verb });
+                    addToast(
+                        verb === 'pause' ? `${charName} 暂停了音乐`
+                        : verb === 'resume' ? `${charName} 继续播放`
+                        : verb === 'previous' ? `${charName} 切到上一首`
+                        : `${charName} 切到下一首`,
+                        'info',
+                    );
+                }
+                content = content.replace(musicMatch[0], '').trim();
+                content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
+            } else {
             // 卡片元数据里只用 join / add / join_and_add 三种意图，把 _new 折叠回 add 系
             const intent: 'join' | 'add' | 'join_and_add' =
                 verb === 'join' ? 'join'
@@ -218,6 +292,7 @@ export const ChatParser = {
             content = content.replace(musicMatch[0], '').trim();
             // 同类 tag 全清，防止 LLM 一条消息里插多次
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
+            }
         } else if (musicMatch) {
             // 没有 hooks（无音乐上下文）— 静默丢弃
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();

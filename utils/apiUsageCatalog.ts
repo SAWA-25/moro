@@ -140,6 +140,12 @@ export const API_USAGE_CATALOG = [
     feature('theater.reflection', AppID.Theater, '折子戏', '对影', '生成对影内容', ['折子戏', '对影'], 'aux', false),
     feature('theater.werewolf', AppID.Theater, '折子戏', '狼人杀', '生成对局行动', ['折子戏', '狼人杀'], 'aux', false),
     feature('theater.truthDare', AppID.Theater, '折子戏', '真心话大冒险', '生成题目与回答', ['折子戏', '真心话大冒险'], 'aux', false),
+    feature('theater.sleepTogether', AppID.Theater, '幕间集', '一起入眠', '生成睡前陪伴回复', ['幕间集', '一起入眠'], 'aux', false),
+    feature('theater.gomoku', AppID.Theater, '幕间集', '五子棋', '生成棋力与对白', ['幕间集', '五子棋'], 'aux', false),
+    feature('theater.go', AppID.Theater, '幕间集', '围棋', '生成棋力与对白', ['幕间集', '围棋'], 'aux', false),
+    feature('theater.doudizhu', AppID.Theater, '幕间集', '斗地主', '生成牌力与对白', ['幕间集', '斗地主'], 'aux', false),
+    feature('theater.turtleSoup', AppID.Theater, '幕间集', '海龟汤', '生成汤面、判定与对白', ['幕间集', '海龟汤'], 'aux', false),
+    feature('theater.mahjong', AppID.Theater, '幕间集', '麻将', '生成牌力与对白', ['幕间集', '麻将'], 'aux', false),
 
     feature('bank.lifeAi', AppID.Bank, '人生拟', '人生拟', '生成资产与经营文本', ['人生拟', '资产与经营'], 'aux'),
     feature('bank.jobSearch', AppID.Bank, '人生拟', '求职', 'AI 找岗位', ['人生拟', '求职', 'AI 找岗位'], 'aux'),

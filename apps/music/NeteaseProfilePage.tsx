@@ -6,10 +6,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { useMusic, musicApi, toHttps, Song } from '../../context/MusicContext';
+import { shareToExternalMusicApp, type MusicExternalShareItem } from '../../utils/musicExternalShare';
 import {
   C, Sparkle, MizuHeader, BokehBg, MiniPlayer, isMusicAvatarImage,
 } from './MusicUI';
-import { MagnifyingGlass, Gear, Heart, User as UserIcon, PaperPlaneRight } from '@phosphor-icons/react';
+import { MagnifyingGlass, Gear, Heart, User as UserIcon, PaperPlaneRight, ShareNetwork, X } from '@phosphor-icons/react';
 import NeteaseLoginPanel from './NeteaseLoginPanel';
 import QQMusicLoginPanel from './QQMusicLoginPanel';
 
@@ -37,6 +38,11 @@ interface Props {
   onVisitChar?: (charId: string) => void;
   onQQMusicConnected?: () => void;
   onShareSong?: (song: Song) => void;
+  onOpenArtist?: (artist: { id?: number | string; name: string; source?: 'netease' | 'qq' }) => void;
+  onSharePlaylist?: (playlist: Playlist) => void;
+  onShareExternal?: (item: MusicExternalShareItem) => void;
+  openUserProfile?: { userId: string | number; nickname?: string; avatarUrl?: string; source?: MusicSource } | null;
+  onConsumedOpenUserProfile?: () => void;
 }
 
 type MusicSource = 'netease' | 'qq';
@@ -52,6 +58,25 @@ interface ProfileView {
   followeds?: number;
   playlistCount?: number;
 }
+
+interface SocialUser {
+  userId: number | string;
+  nickname: string;
+  avatarUrl: string;
+  signature?: string;
+}
+
+const mapSocialUser = (u: any): SocialUser | null => {
+  const userId = u?.userId ?? u?.user_id ?? u?.id;
+  const nickname = u?.nickname || u?.userName || u?.name || '';
+  if (userId == null || !nickname) return null;
+  return {
+    userId,
+    nickname,
+    avatarUrl: toHttps(u?.avatarUrl || u?.avatar || ''),
+    signature: u?.signature || u?.description || '',
+  };
+};
 
 const playlistKey = (pl: Playlist) => `${pl.source || 'netease'}:${pl.id}`;
 
@@ -69,6 +94,11 @@ const mapQQSong = (s: any): Song => {
     id,
     name: s?.name || s?.songname || '',
     artists: s?.artists || s?.singername || '',
+    artistIds: Array.isArray(s?.singers)
+      ? s.singers
+        .map((a: any) => ({ id: a.mid || a.id || a.singer_mid, name: a.name || a.singer_name, source: 'qq' as const }))
+        .filter((a: any) => a.id && a.name)
+      : undefined,
     album: s?.album || s?.albumname || '',
     albumPic: toHttps(s?.albumPic || s?.albumurl || s?.pic || ''),
     duration: Number(s?.duration || s?.interval || 0) || 0,
@@ -231,7 +261,7 @@ const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExp
   </div>
 );
 
-const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onQQMusicConnected, onShareSong }) => {
+const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onQQMusicConnected, onShareSong, onOpenArtist, onSharePlaylist, onShareExternal, openUserProfile, onConsumedOpenUserProfile }) => {
   const { addToast, characters, userProfile } = useOS();
   const {
     cfg, setCfg, profile, refreshProfile, playSong,
@@ -263,10 +293,13 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   const [expandedPl, setExpandedPl] = useState<string | null>(null);
   const [plTracks, setPlTracks] = useState<Record<string, Song[]>>({});
   const [signedIn, setSignedIn] = useState(false);
+  const [remoteProfile, setRemoteProfile] = useState<ProfileView | null>(null);
+  const [socialPanel, setSocialPanel] = useState<{ kind: 'follows' | 'followeds'; owner: ProfileView; users: SocialUser[]; loading: boolean } | null>(null);
 
-  const hasNetease = !!cfg.cookie && !!profile;
+  const hasNetease = !!remoteProfile || (!!cfg.cookie && !!profile);
   const hasQQ = !!cfg.qqMusic;
   const uid = profile?.userId;
+  const activeUid = remoteProfile?.userId || uid;
   const qqAccount = cfg.qqMusic || null;
 
   // 把不稳定的引用（每秒重建的 addToast 和 cfg 对象）收到 ref 里，
@@ -280,6 +313,18 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     void toggleSongLike(song);
   }, [toggleSongLike]);
 
+  const openSongArtist = useCallback((song: Song) => {
+    const first = song.artistIds?.[0];
+    const fallbackName = song.artists.split(/\s*\/\s*/).find(Boolean)?.trim();
+    const name = first?.name || fallbackName;
+    if (!name) return;
+    onOpenArtist?.({
+      id: first?.id,
+      name,
+      source: first?.source || (song.source === 'qq' ? 'qq' : 'netease'),
+    });
+  }, [onOpenArtist]);
+
   useEffect(() => {
     if (activeSource === 'netease' && !hasNetease && hasQQ) {
       setActiveSource('qq');
@@ -290,6 +335,51 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     }
   }, [activeSource, hasNetease, hasQQ]);
 
+  const openNeteaseUser = useCallback(async (user: { userId: string | number; nickname?: string; avatarUrl?: string }) => {
+    const userId = Number(user.userId);
+    if (!Number.isFinite(userId)) return;
+    setActiveSource('netease');
+    setSocialPanel(null);
+    setRemoteProfile({
+      userId: String(userId),
+      nickname: user.nickname || '网易云用户',
+      avatarUrl: toHttps(user.avatarUrl || ''),
+      signature: '',
+      follows: 0,
+      followeds: 0,
+      playlistCount: 0,
+    });
+    setTab('playlist');
+    try {
+      const r = await musicApi.userDetail(cfgRef.current, userId);
+      const p = r?.profile || r?.data?.profile || {};
+      setRemoteProfile(prev => ({
+        userId: String(p.userId || userId),
+        nickname: p.nickname || prev?.nickname || user.nickname || '网易云用户',
+        avatarUrl: toHttps(p.avatarUrl || prev?.avatarUrl || user.avatarUrl || ''),
+        signature: p.signature || '',
+        backgroundUrl: toHttps(p.backgroundUrl || ''),
+        vipType: p.vipType || 0,
+        follows: p.follows || 0,
+        followeds: p.followeds || 0,
+        playlistCount: p.playlistCount || 0,
+      }));
+    } catch {
+      // 个人详情失败时保留传入的头像和昵称，歌单列表仍可继续尝试加载。
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!openUserProfile) return;
+    if (openUserProfile.source === 'qq') {
+      addToast('QQ 音乐用户主页会在外部打开', 'info');
+      onShareExternal?.({ kind: 'profile', title: openUserProfile.nickname || 'QQ 音乐主页', id: openUserProfile.userId, source: 'qq' });
+    } else {
+      void openNeteaseUser(openUserProfile);
+    }
+    onConsumedOpenUserProfile?.();
+  }, [addToast, onConsumedOpenUserProfile, onShareExternal, openNeteaseUser, openUserProfile]);
+
   useEffect(() => {
     setPlaylists([]);
     setRecords([]);
@@ -297,7 +387,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     setExpandedPl(null);
     setPlTracks({});
     setSignedIn(false);
-  }, [activeSource, uid, qqAccount?.uin]);
+  }, [activeSource, activeUid, qqAccount?.uin]);
 
   const neteaseProfileView = useMemo<ProfileView | null>(() => {
     if (!profile) return null;
@@ -329,24 +419,26 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     };
   }, [qqAccount, playlists.length]);
 
-  const viewProfile = activeSource === 'qq' ? (qqProfile || qqFallbackProfile) : neteaseProfileView;
+  const profileIsRemote = activeSource === 'netease' && !!remoteProfile;
+  const viewProfile = profileIsRemote ? remoteProfile : (activeSource === 'qq' ? (qqProfile || qqFallbackProfile) : neteaseProfileView);
   const sourceLabel = activeSource === 'qq' ? 'QQ 音乐' : '网易云';
 
   // VIP 标签 —— 无论登录与否都必须先算（hooks 必须恒定顺序，不能放到 early-return 后）
   const vipLabel = useMemo(() => {
     if (activeSource === 'qq') return 'QQ 音乐';
-    const v = profile?.vipType || 0;
+    const v = viewProfile?.vipType || 0;
     if (v >= 110) return '黑胶 SVIP';
     if (v >= 10) return '黑胶 VIP';
     if (v > 0) return 'VIP';
     return '普通用户';
-  }, [activeSource, profile]);
+  }, [activeSource, viewProfile?.vipType]);
 
   // 加载当前来源的歌单 / 播放记录 / 云盘
   // 重点：cfg / toast 通过 ref 读取，避免 OSContext 每秒 tick 触发循环刷新
   const reload = useCallback(async () => {
     const curCfg = cfgRef.current;
-    if (activeSource === 'netease' && (!uid || !curCfg.cookie)) return;
+    const targetUid = Number(activeUid || uid);
+    if (activeSource === 'netease' && !targetUid) return;
     if (activeSource === 'qq' && !curCfg.qqMusic) return;
     setLoading(true);
     try {
@@ -395,12 +487,12 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         setCloud([]);
         return;
       }
-      if (!uid) return;
+      if (!targetUid) return;
 
       const [plRes, recRes, clRes] = await Promise.allSettled([
-        musicApi.userPlaylist(curCfg, uid),
-        musicApi.userRecord(curCfg, uid, 1),
-        musicApi.userCloud(curCfg),
+        musicApi.userPlaylist(curCfg, targetUid),
+        musicApi.userRecord(curCfg, targetUid, 1),
+        targetUid === uid ? musicApi.userCloud(curCfg) : Promise.resolve(null),
       ]);
 
       if (plRes.status === 'fulfilled') {
@@ -425,6 +517,9 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             id: r.song?.id,
             name: r.song?.name || '',
             artists: (r.song?.ar || []).map((a: any) => a.name).join(' / '),
+            artistIds: (r.song?.ar || [])
+              .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+              .filter((a: any) => a.id && a.name),
             album: r.song?.al?.name || '',
             albumPic: toHttps(r.song?.al?.picUrl || ''),
             duration: (r.song?.dt || 0) / 1000,
@@ -434,12 +529,15 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         setRecords(mapped);
       }
 
-      if (clRes.status === 'fulfilled') {
+      if (clRes.status === 'fulfilled' && clRes.value) {
         const clData = clRes.value?.data || [];
         const mapped: Song[] = clData.map((c: any): Song => ({
           id: c.songId || c.simpleSong?.id,
           name: c.songName || c.simpleSong?.name || '',
           artists: c.artist || (c.simpleSong?.ar || []).map((a: any) => a.name).join(' / '),
+          artistIds: (c.simpleSong?.ar || [])
+            .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+            .filter((a: any) => a.id && a.name),
           album: c.album || c.simpleSong?.al?.name || '',
           albumPic: toHttps(c.simpleSong?.al?.picUrl || ''),
           duration: (c.simpleSong?.dt || 0) / 1000,
@@ -452,9 +550,34 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     } finally {
       setLoading(false);
     }
-  }, [activeSource, uid, qqAccount?.uin]);
+  }, [activeSource, activeUid, uid, qqAccount?.uin]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const openSocialList = useCallback(async (kind: 'follows' | 'followeds', owner: ProfileView) => {
+    const ownerUid = Number(owner.userId);
+    if (!Number.isFinite(ownerUid)) return;
+    if (activeSource !== 'netease') {
+      toastRef.current('QQ 音乐关注列表暂不支持在 Moro 内查看', 'info');
+      return;
+    }
+    setSocialPanel({ kind, owner, users: [], loading: true });
+    try {
+      const res = kind === 'follows'
+        ? await musicApi.userFollows(cfgRef.current, ownerUid, 60, 0)
+        : await musicApi.userFolloweds(cfgRef.current, ownerUid, 60, 0);
+      const raw = res?.follow || res?.followeds || res?.data?.follow || res?.data?.followeds || res?.data?.users || res?.users || [];
+      const users = (Array.isArray(raw) ? raw : [])
+        .map(mapSocialUser)
+        .filter((u): u is SocialUser => !!u);
+      setSocialPanel({ kind, owner, users, loading: false });
+    } catch (e: any) {
+      toastRef.current(`关注列表加载失败：${e?.message || '未知错误'}`, 'error');
+      setSocialPanel(prev => prev && prev.owner.userId === owner.userId && prev.kind === kind
+        ? { ...prev, loading: false }
+        : prev);
+    }
+  }, [activeSource]);
 
   // 展开歌单 — 同样用 ref 去稳定化 cfg / addToast
   const expandPlaylist = useCallback(async (pl: Playlist) => {
@@ -473,6 +596,9 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           id: s.id,
           name: s.name,
           artists: (s.ar || []).map((a: any) => a.name).join(' / '),
+          artistIds: (s.ar || [])
+            .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+            .filter((a: any) => a.id && a.name),
           album: s.al?.name || '',
           albumPic: toHttps(s.al?.picUrl || ''),
           duration: (s.dt || 0) / 1000,
@@ -485,6 +611,27 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
       toastRef.current(`加载歌单失败：${e.message}`, 'error');
     }
   }, [activeSource, expandedPl, plTracks]);
+
+  const sharePlaylistExternal = useCallback(async (pl: Playlist) => {
+    const item: MusicExternalShareItem = {
+      kind: 'playlist',
+      title: pl.name,
+      subtitle: `${pl.trackCount || 0} 首 · ${pl.creatorNickname || sourceLabel}`,
+      image: pl.coverImgUrl,
+      id: pl.id,
+      source: pl.source || activeSource,
+    };
+    try {
+      if (onShareExternal) {
+        await Promise.resolve(onShareExternal(item));
+      } else {
+        await shareToExternalMusicApp(item);
+        toastRef.current('已打开外部音乐分享', 'success');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') toastRef.current(`外部分享失败：${err?.message || err}`, 'error');
+    }
+  }, [activeSource, onShareExternal, sourceLabel]);
 
   // 签到
   const doSignIn = useCallback(async () => {
@@ -714,7 +861,22 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             </div>
           </div>
 
-          {(hasNetease || hasQQ) && (
+          {profileIsRemote && (
+            <button
+              type="button"
+              onClick={() => {
+                setRemoteProfile(null);
+                setSocialPanel(null);
+                setTab('playlist');
+              }}
+              className="w-full mt-3 py-1.5 rounded-full text-[10px] transition-all shizuku-glass"
+              style={{ color: C.primary, border: `1px solid ${C.accent}28` }}
+            >
+              返回我的网易云主页
+            </button>
+          )}
+
+          {!profileIsRemote && (hasNetease || hasQQ) && (
             <div className="mt-3 flex items-center gap-1 shizuku-glass rounded-full p-1">
               <button
                 onClick={() => hasNetease ? setActiveSource('netease') : setShowNeteaseLogin(true)}
@@ -742,13 +904,23 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           {/* 统计行 */}
           <div className="grid grid-cols-3 gap-2 mt-3 text-center">
             <StatCell label="歌单" value={playlists.length || viewProfile.playlistCount || 0} />
-            <StatCell label="关注" value={viewProfile.follows ?? 0} />
-            <StatCell label="粉丝" value={viewProfile.followeds ?? 0} />
+            <StatCell
+              label="关注"
+              value={viewProfile.follows ?? 0}
+              onClick={activeSource === 'netease' ? () => openSocialList('follows', viewProfile) : undefined}
+            />
+            <StatCell
+              label="粉丝"
+              value={viewProfile.followeds ?? 0}
+              onClick={activeSource === 'netease' ? () => openSocialList('followeds', viewProfile) : undefined}
+            />
           </div>
 
-          {/* 快捷按钮 */}
-          <div className="flex items-center gap-2 mt-3">
-            <button
+          {!profileIsRemote && (
+            <>
+              {/* 快捷按钮 */}
+              <div className="flex items-center gap-2 mt-3">
+                <button
               onClick={doSignIn}
               className="flex-1 py-2 rounded-xl text-[11px] transition-all shizuku-glass"
               style={{ color: signedIn ? C.muted : C.primary, border: `1px solid ${signedIn ? C.faint : C.primary}30` }}
@@ -766,6 +938,9 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                   const songs: Song[] = (r?.data?.dailySongs || r?.recommend || []).map((s: any): Song => ({
                     id: s.id, name: s.name,
                     artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
+                    artistIds: (s.ar || s.artists || [])
+                      .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+                      .filter((a: any) => a.id && a.name),
                     album: s.al?.name || s.album?.name || '',
                     albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || ''),
                     duration: (s.dt || s.duration || 0) / 1000,
@@ -792,6 +967,9 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                   const songs: Song[] = (r?.data || []).map((s: any): Song => ({
                     id: s.id, name: s.name,
                     artists: (s.artists || s.ar || []).map((a: any) => a.name).join(' / '),
+                    artistIds: (s.artists || s.ar || [])
+                      .map((a: any) => ({ id: a.id, name: a.name, source: 'netease' as const }))
+                      .filter((a: any) => a.id && a.name),
                     album: s.album?.name || s.al?.name || '',
                     albumPic: toHttps(s.album?.picUrl || s.al?.picUrl || ''),
                     duration: (s.duration || s.dt || 0) / 1000,
@@ -807,15 +985,17 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
             >
               私人 FM
             </button>
-          </div>
+              </div>
 
-          <button
-            onClick={doLogout}
-            className="w-full mt-2 py-1.5 rounded-xl text-[10px] transition-all"
-            style={{ color: C.faint }}
-          >
-            退出{sourceLabel}
-          </button>
+              <button
+                onClick={doLogout}
+                className="w-full mt-2 py-1.5 rounded-xl text-[10px] transition-all"
+                style={{ color: C.faint }}
+              >
+                退出{sourceLabel}
+              </button>
+            </>
+          )}
         </div>
 
         {/* 拜访 · 其他人的音乐角落 */}
@@ -916,7 +1096,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
 
         {tab === 'playlist' && (
           <div className="px-3 mt-3 space-y-2">
-            {localAlbumSongs.length > 0 && (
+            {!profileIsRemote && localAlbumSongs.length > 0 && (
               <LocalAlbumCard
                 songs={localAlbumSongs}
                 expanded={localAlbumExpanded}
@@ -928,7 +1108,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                 onShare={onShareSong}
               />
             )}
-            {playlists.length === 0 && !loading && localAlbumSongs.length === 0 && (
+            {playlists.length === 0 && !loading && (profileIsRemote || localAlbumSongs.length === 0) && (
               <div className="text-center text-[11px] py-10" style={{ color: C.faint }}>还没有歌单</div>
             )}
             {playlists.map(pl => (
@@ -938,24 +1118,55 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                   const tracks = plTracks[key] || [];
                   return (
                     <>
-                      <button
-                        onClick={() => expandPlaylist(pl)}
-                        className="w-full flex items-center gap-3 p-2.5 text-left"
-                      >
-                        <img src={pl.coverImgUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt=""
-                          className="w-12 h-12 rounded-xl object-cover"
-                          style={{ border: `1px solid ${C.faint}30` }} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm truncate" style={{ color: C.text }}>{pl.name}</div>
-                          <div className="text-[10px] truncate" style={{ color: C.muted }}>
-                            {pl.trackCount} 首 · {pl.subscribed ? '收藏' : '创建'}
-                            {pl.creatorNickname && ` · ${pl.creatorNickname}`}
+                      <div className="w-full flex items-center gap-2 p-2.5">
+                        <button
+                          onClick={() => expandPlaylist(pl)}
+                          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                        >
+                          <img src={pl.coverImgUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt=""
+                            className="w-12 h-12 rounded-xl object-cover"
+                            style={{ border: `1px solid ${C.faint}30` }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm truncate" style={{ color: C.text }}>{pl.name}</div>
+                            <div className="text-[10px] truncate" style={{ color: C.muted }}>
+                              {pl.trackCount} 首 · {pl.subscribed ? '收藏' : '创建'}
+                              {pl.creatorNickname && ` · ${pl.creatorNickname}`}
+                            </div>
                           </div>
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {onSharePlaylist && (
+                            <button
+                              type="button"
+                              onClick={() => onSharePlaylist(pl)}
+                              className="w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90"
+                              style={{ color: C.accent, background: `${C.glow}22`, border: `1px solid ${C.faint}30` }}
+                              title="分享给角色"
+                              aria-label="分享给角色"
+                            >
+                              <PaperPlaneRight size={13} weight="fill" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void sharePlaylistExternal(pl)}
+                            className="w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90"
+                            style={{ color: C.muted, background: 'rgba(255,255,255,0.22)', border: `1px solid ${C.faint}25` }}
+                            title="分享到外部音乐 App"
+                            aria-label="分享到外部音乐 App"
+                          >
+                            <ShareNetwork size={13} weight="bold" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => expandPlaylist(pl)}
+                            className="px-2 py-1 rounded-full text-[10px] transition-all"
+                            style={{ color: C.accent, border: `1px solid ${C.accent}25` }}
+                          >
+                            {expandedPl === key ? '收起' : '展开'}
+                          </button>
                         </div>
-                        <div className="text-[10px] shrink-0" style={{ color: C.accent }}>
-                          {expandedPl === key ? '收起' : '展开'}
-                        </div>
-                      </button>
+                      </div>
                       {expandedPl === key && (
                         <div className="border-t px-2 py-1" style={{ borderColor: `${C.faint}20` }}>
                           {tracks.slice(0, 30).map(s => {
@@ -973,7 +1184,13 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                                   <img src={s.albumPic || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
                                   <div className="flex-1 min-w-0">
                                     <div className="text-[11px] truncate" style={{ color: C.text }}>{s.name}</div>
-                                    <div className="text-[9px] truncate" style={{ color: C.muted }}>{s.artists}</div>
+                                    <div
+                                      className="text-[9px] truncate cursor-pointer"
+                                      style={{ color: C.muted }}
+                                      onClick={(e) => { e.stopPropagation(); openSongArtist(s); }}
+                                    >
+                                      {s.artists}
+                                    </div>
                                   </div>
                                 </button>
                                 {s.source === 'qq' && (
@@ -1033,7 +1250,13 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                   <img src={r.song.albumPic} alt="" className="w-10 h-10 rounded-lg object-cover" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate" style={{ color: C.text }}>{r.song.name}</div>
-                    <div className="text-[10px] truncate" style={{ color: C.muted }}>{r.song.artists}</div>
+                    <div
+                      className="text-[10px] truncate cursor-pointer"
+                      style={{ color: C.muted }}
+                      onClick={(e) => { e.stopPropagation(); openSongArtist(r.song); }}
+                    >
+                      {r.song.artists}
+                    </div>
                   </div>
                 </button>
                 <div className="text-[9px] shrink-0 text-right" style={{ color: C.accent }}>
@@ -1079,7 +1302,13 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
                     alt="" className="w-10 h-10 rounded-lg object-cover" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate" style={{ color: C.text }}>{s.name}</div>
-                    <div className="text-[10px] truncate" style={{ color: C.muted }}>{s.artists} · {s.album}</div>
+                    <div
+                      className="text-[10px] truncate cursor-pointer"
+                      style={{ color: C.muted }}
+                      onClick={(e) => { e.stopPropagation(); openSongArtist(s); }}
+                    >
+                      {s.artists} · {s.album}
+                    </div>
                   </div>
                 </button>
                 {onShareSong && (
@@ -1099,6 +1328,65 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
           </div>
         )}
       </div>
+
+      {socialPanel && (
+        <div className="absolute inset-0 z-40 flex items-end" style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(3px)' }}>
+          <button
+            type="button"
+            aria-label="关闭关注列表"
+            className="absolute inset-0"
+            onClick={() => setSocialPanel(null)}
+          />
+          <div className="relative z-10 mx-3 mb-3 w-[calc(100%-1.5rem)] max-h-[72%] rounded-3xl shizuku-glass-strong overflow-hidden"
+            style={{ border: `1px solid ${C.faint}28`, boxShadow: `0 16px 48px ${C.glow}28` }}>
+            <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${C.faint}18` }}>
+              <div className="min-w-0">
+                <div className="text-sm truncate" style={{ color: C.text }}>{socialPanel.owner.nickname}</div>
+                <div className="text-[10px]" style={{ color: C.muted }}>
+                  {socialPanel.kind === 'follows' ? '关注列表' : '粉丝列表'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSocialPanel(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                style={{ color: C.muted, background: 'rgba(255,255,255,0.22)' }}
+                aria-label="关闭"
+              >
+                <X size={15} weight="bold" />
+              </button>
+            </div>
+            <div className="max-h-[52vh] overflow-y-auto shizuku-scrollbar px-2 py-2">
+              {socialPanel.loading && (
+                <div className="text-center text-[11px] py-8" style={{ color: C.faint }}>加载中...</div>
+              )}
+              {!socialPanel.loading && socialPanel.users.length === 0 && (
+                <div className="text-center text-[11px] py-8" style={{ color: C.faint }}>暂时没有可查看的用户</div>
+              )}
+              {!socialPanel.loading && socialPanel.users.map(user => (
+                <button
+                  key={`${socialPanel.kind}-${user.userId}`}
+                  type="button"
+                  onClick={() => void openNeteaseUser(user)}
+                  className="w-full flex items-center gap-3 px-2 py-2 rounded-2xl text-left transition-all active:scale-[0.99]"
+                  style={{ background: 'rgba(255,255,255,0.08)' }}
+                >
+                  <img
+                    src={user.avatarUrl || 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg'}
+                    alt=""
+                    className="w-10 h-10 rounded-full object-cover shrink-0"
+                    style={{ border: `1px solid ${C.faint}35` }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] truncate" style={{ color: C.text }}>{user.nickname}</div>
+                    <div className="text-[10px] truncate mt-0.5" style={{ color: C.muted }}>{user.signature || `UID ${user.userId}`}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {current && (
         <MiniPlayer
@@ -1121,11 +1409,21 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   );
 };
 
-const StatCell: React.FC<{ label: string; value: number }> = ({ label, value }) => (
-  <div className="rounded-xl py-1.5 shizuku-glass">
-    <div className="text-base font-light" style={{ color: C.primary, fontFamily: `'Noto Serif', serif` }}>{value}</div>
-    <div className="text-[9px] tracking-wider" style={{ color: C.muted }}>{label}</div>
-  </div>
-);
+const StatCell: React.FC<{ label: string; value: number; onClick?: () => void }> = ({ label, value, onClick }) => {
+  const body = (
+    <>
+      <div className="text-base font-light" style={{ color: C.primary, fontFamily: `'Noto Serif', serif` }}>{value}</div>
+      <div className="text-[9px] tracking-wider" style={{ color: C.muted }}>{label}</div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="rounded-xl py-1.5 shizuku-glass transition-all active:scale-95">
+        {body}
+      </button>
+    );
+  }
+  return <div className="rounded-xl py-1.5 shizuku-glass">{body}</div>;
+};
 
 export default NeteaseProfilePage;

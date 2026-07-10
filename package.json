@@ -18,6 +18,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@algorithm.ts/gomoku": "^4.0.5",
     "@capacitor/android": "^6.0.0",
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",

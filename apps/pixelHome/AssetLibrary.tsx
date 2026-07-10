@@ -10,6 +10,7 @@ import type { PixelAsset } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { PixelAssetDB } from './pixelHomeDb';
 import PixelAssetGenerator from './PixelAssetGenerator';
+import { isBuiltinPixelAssetId } from './builtinFurnitureCatalog';
 
 interface Props {
   assets: PixelAsset[];
@@ -21,6 +22,7 @@ interface Props {
 // 预定义分类
 const CATEGORIES = [
   { id: 'all',       label: '全部' },
+  { id: 'builtin',   label: '内置' },
   { id: 'furniture', label: '家具' },
   { id: 'decor',     label: '装饰' },
   { id: 'plant',     label: '植物' },
@@ -29,6 +31,10 @@ const CATEGORIES = [
   { id: 'other',     label: '其他' },
   { id: 'imported',  label: '导入' },
 ];
+
+function isBuiltinAsset(asset: PixelAsset | null | undefined): boolean {
+  return !!asset && (asset.isBuiltin === true || isBuiltinPixelAssetId(asset.id));
+}
 
 // 房间筛选（只是一个分类 tag，资源在其他房间也能看到）
 const ROOM_OPTIONS: Array<{ id: MemoryRoom | 'all_rooms'; label: string; tag: string }> = [
@@ -55,6 +61,13 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
   const [editName, setEditName] = useState('');
   const [showTagInput, setShowTagInput] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const selectedUserIds = useMemo(
+    () => Array.from(selectedIds).filter(id => {
+      const asset = assets.find(a => a.id === id);
+      return asset && !isBuiltinAsset(asset);
+    }),
+    [assets, selectedIds],
+  );
 
   // 筛选 + 排序
   const filtered = useMemo(() => {
@@ -106,6 +119,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
 
   // 重命名
   const startRename = useCallback((asset: PixelAsset) => {
+    if (isBuiltinAsset(asset)) return;
     setEditingId(asset.id);
     setEditName(asset.name);
   }, []);
@@ -113,7 +127,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
   const saveRename = useCallback(async () => {
     if (!editingId || !editName.trim()) return;
     const asset = assets.find(a => a.id === editingId);
-    if (asset) {
+    if (asset && !isBuiltinAsset(asset)) {
       await PixelAssetDB.save({ ...asset, name: editName.trim() });
       onChanged();
     }
@@ -123,7 +137,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
   // 添加标签
   const addTag = useCallback(async (assetId: string, tag: string) => {
     const asset = assets.find(a => a.id === assetId);
-    if (!asset || !tag.trim()) return;
+    if (!asset || isBuiltinAsset(asset) || !tag.trim()) return;
     const t = tag.trim().toLowerCase();
     if (asset.tags.includes(t)) return;
     await PixelAssetDB.save({ ...asset, tags: [...asset.tags, t] });
@@ -134,7 +148,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
   // 移除标签
   const removeTag = useCallback(async (assetId: string, tag: string) => {
     const asset = assets.find(a => a.id === assetId);
-    if (!asset) return;
+    if (!asset || isBuiltinAsset(asset)) return;
     await PixelAssetDB.save({ ...asset, tags: asset.tags.filter(t => t !== tag) });
     onChanged();
   }, [assets, onChanged]);
@@ -143,22 +157,22 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
   const batchAddTag = useCallback(async (tag: string) => {
     if (!tag.trim()) return;
     const t = tag.trim().toLowerCase();
-    for (const id of selectedIds) {
+    for (const id of selectedUserIds) {
       const asset = assets.find(a => a.id === id);
       if (asset && !asset.tags.includes(t)) {
         await PixelAssetDB.save({ ...asset, tags: [...asset.tags, t] });
       }
     }
     onChanged();
-  }, [selectedIds, assets, onChanged]);
+  }, [selectedUserIds, assets, onChanged]);
 
   // 删除选中
   const handleDeleteSelected = useCallback(async () => {
-    for (const id of selectedIds) await PixelAssetDB.delete(id);
+    for (const id of selectedUserIds) await PixelAssetDB.delete(id);
     setSelectedIds(new Set());
     setSelectMode(false);
     onChanged();
-  }, [selectedIds, onChanged]);
+  }, [selectedUserIds, onChanged]);
 
   // 导出
   const handleExportZip = useCallback(async () => {
@@ -292,9 +306,11 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
         <div className="flex gap-1.5">
           {selectMode && selectedIds.size > 0 && (
             <>
-              <BatchTagBtn onAdd={batchAddTag} />
-              <button onClick={handleDeleteSelected}
-                className="px-2 py-1 rounded text-[10px] font-bold bg-red-700 text-white active:scale-95">删除</button>
+              {selectedUserIds.length > 0 && <BatchTagBtn onAdd={batchAddTag} />}
+              {selectedUserIds.length > 0 && (
+                <button onClick={handleDeleteSelected}
+                  className="px-2 py-1 rounded text-[10px] font-bold bg-red-700 text-white active:scale-95">删除</button>
+              )}
             </>
           )}
           <button onClick={handleExportZip}
@@ -314,6 +330,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
             const isSelected = selectedIds.has(asset.id);
             const isEditing = editingId === asset.id;
             const isTagging = showTagInput === asset.id;
+            const isBuiltin = isBuiltinAsset(asset);
             return (
               <div key={asset.id} className={`relative bg-slate-800 rounded-xl overflow-hidden border-2 transition-all ${
                 isSelected ? 'border-amber-500' : 'border-transparent'
@@ -330,6 +347,12 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
                 <span className="absolute top-1 right-1 text-[8px] bg-black/60 text-slate-300 px-1 rounded">
                   {asset.pixelSize}px
                 </span>
+
+                {isBuiltin && !selectMode && (
+                  <span className="absolute top-1 left-1 text-[8px] bg-amber-500/90 text-white px-1 rounded">
+                    内置
+                  </span>
+                )}
 
                 {/* 多选勾 */}
                 {selectMode && (
@@ -350,7 +373,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
                   ) : (
                     <div className="flex items-center gap-1">
                       <span className="text-[9px] text-slate-300 font-medium truncate flex-1">{asset.name}</span>
-                      {!selectMode && (
+                      {!selectMode && !isBuiltin && (
                         <button onClick={() => startRename(asset)}
                           className="text-[8px] text-slate-500 hover:text-slate-300 shrink-0">改名</button>
                       )}
@@ -362,13 +385,13 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
                     {asset.tags.map(t => (
                       <span key={t} className="inline-flex items-center gap-px text-[8px] bg-slate-700 text-slate-400 px-1 rounded group">
                         {t}
-                        {!selectMode && (
+                        {!selectMode && !isBuiltin && (
                           <button onClick={() => removeTag(asset.id, t)}
                             className="text-slate-600 hover:text-red-400 hidden group-hover:inline ml-0.5">x</button>
                         )}
                       </span>
                     ))}
-                    {!selectMode && !isTagging && (
+                    {!selectMode && !isBuiltin && !isTagging && (
                       <button onClick={() => { setShowTagInput(asset.id); setTagInput(''); }}
                         className="text-[8px] text-slate-600 hover:text-slate-300">+标签</button>
                     )}

@@ -49,10 +49,27 @@ describe('buildListenTogetherPrompt', () => {
 
     expect(prompt).toContain('你不是只看到歌名');
     expect(prompt).toContain('进度 1:03 / 3:18');
+    expect(prompt).toContain('实时进度');
     expect(prompt).toContain('当前歌词窗口');
     expect(prompt).toContain('.. 风慢下来');
     expect(prompt).toContain('>> 雨落在窗台');
     expect(prompt).toContain('.. 你没有回头');
+    expect(prompt).toContain('{"kind":"seek","seconds":83}');
+    expect(prompt).toContain('{"kind":"previous"}');
+  });
+
+  it('supports progress-check prompts for live lyric co-listening', () => {
+    const prompt = buildListenTogetherPrompt(baseInput({ trigger: 'progress_check' }));
+
+    expect(prompt).toContain('对方让你听听此刻播放到哪里');
+    expect(prompt).toContain('你能感知播放器给出的当前进度和歌词窗口');
+  });
+
+  it('nudges the character to answer user humming naturally', () => {
+    const prompt = buildListenTogetherPrompt(baseInput({ trigger: 'user', userMsg: '♪ 雨落在窗台' }));
+
+    expect(prompt).toContain('如果对方像在打字跟唱 / 哼唱歌词');
+    expect(prompt).toContain('小禾 刚说：♪ 雨落在窗台');
   });
 
   it('tells the character not to invent lyrics when none are available', () => {

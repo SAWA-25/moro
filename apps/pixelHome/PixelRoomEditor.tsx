@@ -29,7 +29,9 @@ interface Props {
   assets: PixelAsset[];
   onUpdate: () => void;
   onOpenLibrary: (slotId: string | null) => void;
+  onExportRoom?: () => void;
   onInspectFurniture?: (roomId: MemoryRoom, furniture: PlacedFurniture) => void;
+  onDecorationInteraction?: () => void;
 }
 
 const TILE = 28;
@@ -68,16 +70,82 @@ function isRugAsset(f: PlacedFurniture, assets: PixelAsset[]): boolean {
   return !!asset?.tags?.includes('rug');
 }
 
-const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary, onInspectFurniture }) => {
-  const [furniture, setFurniture] = useState<PlacedFurniture[]>(layout.furniture);
-  const [wallColor, setWallColor] = useState(layout.wallColor);
-  const [floorColor, setFloorColor] = useState(layout.floorColor);
+function isCarpetLayer(f: PlacedFurniture, assets: PixelAsset[]): boolean {
+  if (f.layer === 'furniture') return false;
+  if (f.layer === 'carpet') return true;
+  return isRugAsset(f, assets);
+}
+
+type RoomEditorSnapshot = {
+  furniture: PlacedFurniture[];
+  wallColor: string;
+  floorColor: string;
+  wallFillMode: 'tile' | 'stretch';
+  wallOffsetX: number;
+  wallOffsetY: number;
+  floorFillMode: 'tile' | 'stretch';
+  floorOffsetX: number;
+  floorOffsetY: number;
+};
+
+function cloneFurniture(furniture: PlacedFurniture[]): PlacedFurniture[] {
+  return furniture.map(f => ({ ...f }));
+}
+
+function snapshotFromLayout(layout: PixelRoomLayout): RoomEditorSnapshot {
+  return {
+    furniture: cloneFurniture(layout.furniture || []),
+    wallColor: layout.wallColor,
+    floorColor: layout.floorColor,
+    wallFillMode: layout.wallFillMode || 'tile',
+    wallOffsetX: layout.wallOffsetX ?? 50,
+    wallOffsetY: layout.wallOffsetY ?? 50,
+    floorFillMode: layout.floorFillMode || 'tile',
+    floorOffsetX: layout.floorOffsetX ?? 50,
+    floorOffsetY: layout.floorOffsetY ?? 50,
+  };
+}
+
+function clampFurniturePosition(x: number, y: number): { x: number; y: number } {
+  return {
+    x: Math.max(-30, Math.min(130, x)),
+    y: Math.max(-30, Math.min(130, y)),
+  };
+}
+
+function resolveFurniturePosition(cols: number, rows: number, x: number, y: number, snap: boolean): { x: number; y: number } {
+  return snap ? snapToGrid(cols, rows, x, y) : clampFurniturePosition(x, y);
+}
+
+function clampFurnitureScale(scale: number): number {
+  return Math.max(0.3, Math.min(10, scale));
+}
+
+function cloneSnapshot(snapshot: RoomEditorSnapshot): RoomEditorSnapshot {
+  return {
+    ...snapshot,
+    furniture: cloneFurniture(snapshot.furniture),
+  };
+}
+
+function snapshotEquals(a: RoomEditorSnapshot, b: RoomEditorSnapshot): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary, onExportRoom, onInspectFurniture, onDecorationInteraction }) => {
+  const initialSnapshot = snapshotFromLayout(layout);
+  const [furniture, setFurniture] = useState<PlacedFurniture[]>(initialSnapshot.furniture);
+  const [wallColor, setWallColor] = useState(initialSnapshot.wallColor);
+  const [floorColor, setFloorColor] = useState(initialSnapshot.floorColor);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [mode, setMode] = useState<'view' | 'edit'>('edit');
   const [zoom, setZoom] = useState(1);
+  const [snapFurnitureToGrid, setSnapFurnitureToGrid] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
   const [memories, setMemories] = useState<MemoryNode[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
+  const [history, setHistory] = useState<RoomEditorSnapshot[]>(() => [cloneSnapshot(initialSnapshot)]);
+  const [historyIndex, setHistoryIndex] = useState(0);
 
   // 自定义墙纸/地砖
   const [customWall, setCustomWall] = useState<string | null>(layout.wallColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.wallColor) ? layout.wallColor : null);
@@ -114,9 +182,16 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   const stageRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<string | null>(null);
+  const resizingRef = useRef<string | null>(null);
   const dragConfirmedRef = useRef(false); // 是否已超过拖拽阈值
+  const resizeConfirmedRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number; fx: number; fy: number }>({ x: 0, y: 0, fx: 0, fy: 0 });
+  const resizeStartRef = useRef<{ x: number; y: number; scale: number; baseSize: number }>({ x: 0, y: 0, scale: 1, baseSize: 1 });
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const historyRef = useRef<RoomEditorSnapshot[]>([cloneSnapshot(initialSnapshot)]);
+  const historyIndexRef = useRef(0);
+  const snapshotRef = useRef<RoomEditorSnapshot>(cloneSnapshot(initialSnapshot));
+  const layoutKeyRef = useRef(`${layout.charId}:${layout.roomId}`);
   const wallInputRef = useRef<HTMLInputElement>(null);
   const floorInputRef = useRef<HTMLInputElement>(null);
 
@@ -141,6 +216,58 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   const GRID_ROWS = roomSize.h;
   const GRID_STEP_X = 100 / GRID_COLS;
   const GRID_STEP_Y = 100 / GRID_ROWS;
+
+  const applySnapshotToState = useCallback((snapshot: RoomEditorSnapshot) => {
+    const next = cloneSnapshot(snapshot);
+    snapshotRef.current = next;
+    setFurniture(next.furniture);
+    setWallColor(next.wallColor);
+    setFloorColor(next.floorColor);
+    setCustomWall(next.wallColor.startsWith('data:') && !isLegacyDefaultPixelSurface(next.wallColor) ? next.wallColor : null);
+    setCustomFloor(next.floorColor.startsWith('data:') && !isLegacyDefaultPixelSurface(next.floorColor) ? next.floorColor : null);
+    setWallFillMode(next.wallFillMode);
+    setWallOffsetX(next.wallOffsetX);
+    setWallOffsetY(next.wallOffsetY);
+    setFloorFillMode(next.floorFillMode);
+    setFloorOffsetX(next.floorOffsetX);
+    setFloorOffsetY(next.floorOffsetY);
+  }, []);
+
+  const pushHistory = useCallback((snapshot: RoomEditorSnapshot) => {
+    const next = cloneSnapshot(snapshot);
+    const base = historyRef.current.slice(0, historyIndexRef.current + 1);
+    if (base.length > 0 && snapshotEquals(base[base.length - 1], next)) return;
+    const trimmed = [...base, next].slice(-40);
+    historyRef.current = trimmed;
+    historyIndexRef.current = trimmed.length - 1;
+    setHistory(trimmed);
+    setHistoryIndex(trimmed.length - 1);
+  }, []);
+
+  const persistSnapshot = useCallback((snapshot: RoomEditorSnapshot, immediate = false) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const next = cloneSnapshot(snapshot);
+    const save = async () => {
+      await PixelLayoutDB.save({
+        ...layout,
+        ...next,
+        lastUpdatedAt: Date.now(),
+        lastDecoratedBy: 'user',
+      });
+      onUpdate();
+    };
+    if (immediate) {
+      void save();
+      return;
+    }
+    saveTimer.current = setTimeout(() => { void save(); }, 500);
+  }, [layout, onUpdate]);
+
+  const commitSnapshot = useCallback((snapshot: RoomEditorSnapshot, options?: { pushHistory?: boolean; immediate?: boolean }) => {
+    applySnapshotToState(snapshot);
+    if (options?.pushHistory !== false) pushHistory(snapshot);
+    persistSnapshot(snapshot, options?.immediate);
+  }, [applySnapshotToState, persistSnapshot, pushHistory]);
 
   // 像素走路：每 600ms 走一格，走 2-3 步就停，停 4-8 秒再动
   useEffect(() => {
@@ -203,18 +330,24 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   }, []);
 
   useEffect(() => {
-    setFurniture(layout.furniture);
-    setWallColor(layout.wallColor);
-    setFloorColor(layout.floorColor);
-    setCustomWall(layout.wallColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.wallColor) ? layout.wallColor : null);
-    setCustomFloor(layout.floorColor.startsWith('data:') && !isLegacyDefaultPixelSurface(layout.floorColor) ? layout.floorColor : null);
-    setWallFillMode(layout.wallFillMode || 'tile');
-    setWallOffsetX(layout.wallOffsetX ?? 50);
-    setWallOffsetY(layout.wallOffsetY ?? 50);
-    setFloorFillMode(layout.floorFillMode || 'tile');
-    setFloorOffsetX(layout.floorOffsetX ?? 50);
-    setFloorOffsetY(layout.floorOffsetY ?? 50);
-  }, [layout]);
+    const next = snapshotFromLayout(layout);
+    const nextKey = `${layout.charId}:${layout.roomId}`;
+    const roomChanged = layoutKeyRef.current !== nextKey;
+    layoutKeyRef.current = nextKey;
+    if (!roomChanged && snapshotEquals(next, snapshotRef.current)) return;
+
+    applySnapshotToState(next);
+    const reset = [cloneSnapshot(next)];
+    historyRef.current = reset;
+    historyIndexRef.current = 0;
+    setHistory(reset);
+    setHistoryIndex(0);
+    setSelectedSlot(null);
+  }, [applySnapshotToState, layout]);
+
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
 
   // 碰撞地图构建：从家具像素的 alpha 通道判断哪些位置被遮挡
   useEffect(() => {
@@ -231,7 +364,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
         const imgSrc = asset?.pixelImage || (f.isDefault !== false ? defaultFurniturePixelSrc(roomId, f.slotId) : null);
         if (!imgSrc) continue;
         // 地毯不参与碰撞
-        if (isRugAsset(f, assets)) continue;
+        if (isCarpetLayer(f, assets)) continue;
 
         // 获取或缓存 ImageData
         const maskKey = asset?.id || `default:${roomId}:${f.slotId}`;
@@ -340,6 +473,10 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
           draggingRef.current = null;
           dragConfirmedRef.current = false;
         }
+        if (resizingRef.current) {
+          resizingRef.current = null;
+          resizeConfirmedRef.current = false;
+        }
         touchStateRef.current = {
           active: true,
           initialDist: getDist(e.touches),
@@ -369,41 +506,32 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     el.addEventListener('touchstart', onTouchStart, { passive: false });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
     return () => {
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
     };
   }, [zoom]);
 
-  const saveLayout = useCallback((updatedFurniture: PlacedFurniture[], overrides?: Partial<PixelRoomLayout>) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      await PixelLayoutDB.save({
-        ...layout,
-        furniture: updatedFurniture,
-        wallColor,
-        floorColor,
-        wallFillMode,
-        wallOffsetX,
-        wallOffsetY,
-        floorFillMode,
-        floorOffsetX,
-        floorOffsetY,
-        ...overrides,
-        lastUpdatedAt: Date.now(),
-        lastDecoratedBy: 'user',
-      });
-      onUpdate();
-    }, 500);
-  }, [layout, wallColor, floorColor, wallFillMode, wallOffsetX, wallOffsetY, floorFillMode, floorOffsetX, floorOffsetY, onUpdate]);
+  const commitPartialSnapshot = useCallback((partial: Partial<RoomEditorSnapshot>) => {
+    commitSnapshot({
+      ...snapshotRef.current,
+      ...partial,
+      furniture: partial.furniture ? cloneFurniture(partial.furniture) : cloneFurniture(snapshotRef.current.furniture),
+    });
+  }, [commitSnapshot]);
 
-  // 拖拽 → 格子吸附（带阈值防误触）
+  // 拖拽 → 自由移位 / 可选格子吸附（带阈值防误触）
   const handlePointerDown = useCallback((e: React.PointerEvent, slotId: string) => {
     if (mode !== 'edit') return;
     // 双指操作中忽略
     if (touchStateRef.current.active) return;
     e.preventDefault(); e.stopPropagation();
+    onDecorationInteraction?.();
+    resizingRef.current = null;
+    resizeConfirmedRef.current = false;
     draggingRef.current = slotId;
     dragConfirmedRef.current = false; // 还没超过阈值
     const f = furniture.find(f => f.slotId === slotId);
@@ -411,9 +539,45 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     dragStartRef.current = { x: e.clientX, y: e.clientY, fx: f.x, fy: f.y };
     setSelectedSlot(slotId);
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  }, [mode, furniture]);
+  }, [mode, furniture, onDecorationInteraction]);
+
+  const handleResizePointerDown = useCallback((e: React.PointerEvent, slotId: string, baseSize: number) => {
+    if (mode !== 'edit') return;
+    if (touchStateRef.current.active) return;
+    e.preventDefault(); e.stopPropagation();
+    onDecorationInteraction?.();
+    draggingRef.current = null;
+    dragConfirmedRef.current = false;
+    const f = furniture.find(f => f.slotId === slotId);
+    if (!f) return;
+    resizingRef.current = slotId;
+    resizeConfirmedRef.current = false;
+    resizeStartRef.current = { x: e.clientX, y: e.clientY, scale: f.scale, baseSize };
+    setSelectedSlot(slotId);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }, [furniture, mode, onDecorationInteraction]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (resizingRef.current) {
+      if (touchStateRef.current.active) {
+        resizingRef.current = null;
+        resizeConfirmedRef.current = false;
+        return;
+      }
+      if (!resizeConfirmedRef.current) {
+        const px = Math.abs(e.clientX - resizeStartRef.current.x);
+        const py = Math.abs(e.clientY - resizeStartRef.current.y);
+        if (px < DRAG_THRESHOLD && py < DRAG_THRESHOLD) return;
+        resizeConfirmedRef.current = true;
+      }
+      const deltaPx = ((e.clientX - resizeStartRef.current.x) + (e.clientY - resizeStartRef.current.y)) / zoom;
+      const nextScale = clampFurnitureScale(resizeStartRef.current.scale + deltaPx / Math.max(40, resizeStartRef.current.baseSize));
+      setFurniture(prev => prev.map(f =>
+        f.slotId === resizingRef.current ? { ...f, scale: nextScale, placedBy: 'user' as const } : f
+      ));
+      return;
+    }
+
     if (!draggingRef.current || !stageRef.current) return;
     // 双指操作中取消拖拽
     if (touchStateRef.current.active) {
@@ -433,46 +597,56 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     const dy = ((e.clientY - dragStartRef.current.y) / (rect.height / zoom)) * 100;
     const rawX = dragStartRef.current.fx + dx;
     const rawY = dragStartRef.current.fy + dy;
-    const snapped = snapToGrid(GRID_COLS, GRID_ROWS, rawX, rawY);
+    const nextPos = resolveFurniturePosition(GRID_COLS, GRID_ROWS, rawX, rawY, snapFurnitureToGrid);
     setFurniture(prev => prev.map(f =>
-      f.slotId === draggingRef.current ? { ...f, ...snapped } : f
+      f.slotId === draggingRef.current ? { ...f, ...nextPos, placedBy: 'user' as const } : f
     ));
-  }, [zoom]);
+  }, [GRID_COLS, GRID_ROWS, snapFurnitureToGrid, zoom]);
 
   const handlePointerUp = useCallback(() => {
+    if (resizingRef.current) {
+      if (resizeConfirmedRef.current) {
+        const next = furniture.map(f => {
+          if (f.slotId === resizingRef.current) {
+            return { ...f, scale: clampFurnitureScale(f.scale), placedBy: 'user' as const };
+          }
+          return f;
+        });
+        commitPartialSnapshot({ furniture: next });
+      }
+      resizingRef.current = null;
+      resizeConfirmedRef.current = false;
+      return;
+    }
+
     if (draggingRef.current) {
       if (dragConfirmedRef.current) {
-        // 真正拖拽过 → 吸附保存
-        setFurniture(prev => {
-          const next = prev.map(f => {
-            if (f.slotId === draggingRef.current) {
-              const s = snapToGrid(GRID_COLS, GRID_ROWS, f.x, f.y);
-              return { ...f, ...s };
-            }
-            return f;
-          });
-          saveLayout(next);
-          return next;
+        // 真正拖拽过 → 保存自由位置或吸附位置
+        const next = furniture.map(f => {
+          if (f.slotId === draggingRef.current) {
+            const p = resolveFurniturePosition(GRID_COLS, GRID_ROWS, f.x, f.y, snapFurnitureToGrid);
+            return { ...f, ...p, placedBy: 'user' as const };
+          }
+          return f;
         });
+        commitPartialSnapshot({ furniture: next });
       }
       // 没超过阈值 = 只是点击选中，不移动家具
       draggingRef.current = null;
       dragConfirmedRef.current = false;
     }
-  }, [saveLayout]);
+  }, [GRID_COLS, GRID_ROWS, commitPartialSnapshot, furniture, snapFurnitureToGrid]);
 
   const updateFurniture = useCallback((slotId: string, updates: Partial<PlacedFurniture>) => {
-    setFurniture(prev => {
-      const next = prev.map(f => f.slotId === slotId ? { ...f, ...updates, placedBy: 'user' as const } : f);
-      saveLayout(next);
-      return next;
-    });
-  }, [saveLayout]);
+    const next = furniture.map(f => f.slotId === slotId ? { ...f, ...updates, placedBy: 'user' as const } : f);
+    commitPartialSnapshot({ furniture: next });
+  }, [commitPartialSnapshot, furniture]);
 
   const deleteFurniture = useCallback((slotId: string) => {
-    setFurniture(prev => { const next = prev.filter(f => f.slotId !== slotId); saveLayout(next); return next; });
+    const next = furniture.filter(f => f.slotId !== slotId);
+    commitPartialSnapshot({ furniture: next });
     setSelectedSlot(null);
-  }, [saveLayout]);
+  }, [commitPartialSnapshot, furniture]);
 
   /** 一键清空：移除所有用户自由放置家具 + 把默认槽位的素材都清空 */
   const clearAllFurniture = useCallback(() => {
@@ -482,15 +656,12 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     if (total === 0) return;
     if (!window.confirm(`确定清空这个房间里的 ${total} 件家具吗？（自由放置的 ${userCount} 件会被删除，默认槽位的 ${filledDefaults} 件会恢复为空）`)) return;
 
-    setFurniture(prev => {
-      const next = prev
-        .filter(f => f.isDefault !== false)        // 扔掉用户自由放置的
-        .map(f => ({ ...f, assetId: null }));      // 默认槽位清空素材
-      saveLayout(next);
-      return next;
-    });
+    const next = furniture
+      .filter(f => f.isDefault !== false)        // 扔掉用户自由放置的
+      .map(f => ({ ...f, assetId: null }));      // 默认槽位清空素材
+    commitPartialSnapshot({ furniture: next });
     setSelectedSlot(null);
-  }, [furniture, saveLayout]);
+  }, [commitPartialSnapshot, furniture]);
 
   const getFurnitureImage = useCallback((f: PlacedFurniture): string | null => {
     if (f.assetId) {
@@ -544,23 +715,15 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     if (!texturePreview) return;
     const tileUri = textureUseOriginal ? texturePreview.originalUri : texturePreview.pixelizedUri;
     if (texturePreview.target === 'wall') {
-      setCustomWall(tileUri); setWallColor(tileUri);
-      setWallFillMode(texturePreview.fillMode);
-      setWallOffsetX(texturePreview.offsetX);
-      setWallOffsetY(texturePreview.offsetY);
-      saveLayout(furniture, {
+      commitPartialSnapshot({
         wallColor: tileUri,
         wallFillMode: texturePreview.fillMode,
         wallOffsetX: texturePreview.offsetX,
         wallOffsetY: texturePreview.offsetY,
       });
     } else {
-      setCustomFloor(tileUri); setFloorColor(tileUri);
       setFloorTileSize(texturePreview.tileSize);
-      setFloorFillMode(texturePreview.fillMode);
-      setFloorOffsetX(texturePreview.offsetX);
-      setFloorOffsetY(texturePreview.offsetY);
-      saveLayout(furniture, {
+      commitPartialSnapshot({
         floorColor: tileUri,
         floorFillMode: texturePreview.fillMode,
         floorOffsetX: texturePreview.offsetX,
@@ -568,20 +731,58 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
       });
     }
     setTexturePreview(null);
-  }, [texturePreview, textureUseOriginal, furniture, saveLayout]);
+  }, [commitPartialSnapshot, texturePreview, textureUseOriginal]);
 
   // 还原默认纹理
   const resetTexture = useCallback((target: 'wall' | 'floor') => {
     if (target === 'wall') {
-      setCustomWall(null); setWallColor('');
-      setWallFillMode('tile'); setWallOffsetX(50); setWallOffsetY(50);
-      saveLayout(furniture, { wallColor: '', wallFillMode: 'tile', wallOffsetX: 50, wallOffsetY: 50 });
+      commitPartialSnapshot({ wallColor: '', wallFillMode: 'tile', wallOffsetX: 50, wallOffsetY: 50 });
     } else {
-      setCustomFloor(null); setFloorColor('');
-      setFloorFillMode('tile'); setFloorOffsetX(50); setFloorOffsetY(50);
-      saveLayout(furniture, { floorColor: '', floorFillMode: 'tile', floorOffsetX: 50, floorOffsetY: 50 });
+      commitPartialSnapshot({ floorColor: '', floorFillMode: 'tile', floorOffsetX: 50, floorOffsetY: 50 });
     }
-  }, [furniture, saveLayout]);
+  }, [commitPartialSnapshot]);
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const applyHistoryIndex = useCallback((nextIndex: number) => {
+    const snapshot = historyRef.current[nextIndex];
+    if (!snapshot) return;
+    historyIndexRef.current = nextIndex;
+    setHistoryIndex(nextIndex);
+    applySnapshotToState(snapshot);
+    persistSnapshot(snapshot, true);
+  }, [applySnapshotToState, persistSnapshot]);
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    applyHistoryIndex(historyIndexRef.current - 1);
+  }, [applyHistoryIndex]);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    applyHistoryIndex(historyIndexRef.current + 1);
+  }, [applyHistoryIndex]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [redo, undo]);
 
   // 加载记忆
   const loadMemories = useCallback(async () => {
@@ -600,6 +801,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
 
   const selectedFurniture = selectedSlot ? furniture.find(f => f.slotId === selectedSlot) : null;
   const selectedSlotDef = selectedSlot ? slotDefs.find(s => s.id === selectedSlot) : null;
+  const selectedIsCarpetLayer = selectedFurniture ? isCarpetLayer(selectedFurniture, assets) : false;
   const roomPxW = GRID_COLS * TILE * EDITOR_SCALE;
   const roomPxH = GRID_ROWS * TILE * EDITOR_SCALE;
   const roomDisplayName = roomId === 'user_room' ? `${userName}的房` : meta.name;
@@ -608,7 +810,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: '#38302a' }}>
       <div ref={outerRef} className="flex-1 overflow-hidden flex items-center justify-center"
         style={{ touchAction: 'none' }}
-        onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+        onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} onPointerCancel={handlePointerUp}
         onClick={() => { if (!draggingRef.current) setSelectedSlot(null); }}>
         <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: touchStateRef.current.active ? 'none' : 'transform 0.1s ease-out' }}>
           <div ref={stageRef} className="relative select-none overflow-visible" style={{ width: roomPxW, height: roomPxH }}>
@@ -706,7 +908,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
             </div>
 
             {/* 格子网格：只有正在拖动 / 选中某件家具时才显示，避免平时看到满屏白十字 */}
-            {mode === 'edit' && (selectedSlot || draggingRef.current) && (
+            {mode === 'edit' && (selectedSlot || draggingRef.current || resizingRef.current) && (
               <>
                 <div className="absolute inset-0 pointer-events-none z-10" style={{
                   backgroundImage: `linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)`,
@@ -722,8 +924,8 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
             {/* 家具，自定义素材优先；默认槽位使用内置手绘像素家具 */}
             {[...furniture].sort((a, b) => {
               // 地毯类在最底层
-              const aRug = isRugAsset(a, assets);
-              const bRug = isRugAsset(b, assets);
+              const aRug = isCarpetLayer(a, assets);
+              const bRug = isCarpetLayer(b, assets);
               if (aRug !== bRug) return aRug ? -1 : 1;
               return a.y - b.y; // 同层按 y 排序
             }).map(f => {
@@ -731,7 +933,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
               if (!imgSrc) return null;
               const isSelected = selectedSlot === f.slotId;
               const furSize = Math.round(Math.min(roomPxW, roomPxH) * 0.22 * f.scale);
-              const isRug = isRugAsset(f, assets);
+              const isRug = isCarpetLayer(f, assets);
               // 居中放置，大家具允许超出房间（不钳制）
               const posX = Math.round((f.x / 100) * roomPxW - furSize / 2);
               const posY = Math.round((f.y / 100) * roomPxH - furSize / 2);
@@ -764,8 +966,9 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                   width: furSize,
                   zIndex: zIdx,
                   cursor: mode === 'edit' ? 'grab' : 'pointer',
-                  transition: draggingRef.current === f.slotId ? 'none' : 'left 0.15s, top 0.15s',
+                  transition: (draggingRef.current === f.slotId || resizingRef.current === f.slotId) ? 'none' : 'left 0.15s, top 0.15s, width 0.15s',
                   pointerEvents: mode === 'edit' || onInspectFurniture ? 'auto' : 'none',
+                  touchAction: 'none',
                 }}
                   onClick={e => {
                     e.stopPropagation();
@@ -783,6 +986,18 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                     imageRendering: 'pixelated',
                     transform: `rotate(${f.rotation}deg)`,
                   }} draggable={false} />
+                  {isSelected && mode === 'edit' && (
+                    <button
+                      type="button"
+                      title="拖动调整大小"
+                      aria-label="拖动调整家具大小"
+                      className="absolute -right-3 -bottom-3 z-20 h-7 w-7 cursor-nwse-resize border-2 bg-amber-500 shadow-[2px_2px_0_rgba(0,0,0,0.35)] active:scale-95"
+                      style={{ borderColor: '#3f3730' }}
+                      onPointerDown={e => handleResizePointerDown(e, f.slotId, Math.min(roomPxW, roomPxH) * 0.22)}
+                    >
+                      <span className="absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-white" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -831,11 +1046,16 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
         <div className="flex items-center justify-between mb-2">
           <div className="flex gap-1">
             <ModeBtn label="浏览" active={mode === 'view'} onClick={() => { setMode('view'); setSelectedSlot(null); }} />
-            <ModeBtn label="编辑" active={mode === 'edit'} onClick={() => setMode('edit')} />
+            <ModeBtn label="编辑" active={mode === 'edit'} onClick={() => { setMode('edit'); onDecorationInteraction?.(); }} />
             <ModeBtn label="记忆" active={showMemory} onClick={() => setShowMemory(!showMemory)} />
+            <HistoryBtn label="撤销" disabled={!canUndo} onClick={undo} />
+            <HistoryBtn label="重做" disabled={!canRedo} onClick={redo} />
           </div>
           <div className="flex gap-1 flex-wrap justify-end items-center">
-            <ToolBtn label="放家具" color="bg-green-700" onClick={() => onOpenLibrary('__add__')} />
+            <ToolBtn label={`${Math.round(zoom * 100)}%`} color="bg-slate-700" onClick={() => setZoom(1)} />
+            <ToolBtn label={snapFurnitureToGrid ? '吸附开' : '自由移'} color={snapFurnitureToGrid ? 'bg-cyan-700' : 'bg-teal-700'} onClick={() => setSnapFurnitureToGrid(v => !v)} />
+            <ToolBtn label="放家具" color="bg-green-700" onClick={() => { onDecorationInteraction?.(); onOpenLibrary('__add__'); }} />
+            {onExportRoom && <ToolBtn label="样板JSON" color="bg-indigo-700" onClick={onExportRoom} />}
             <ToolBtn label="墙纸" color="bg-violet-700" onClick={() => wallInputRef.current?.click()} />
             {/* 纯色墙：label 包 input[type=color] 做成按钮 */}
             {(() => {
@@ -848,9 +1068,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                   <input type="color" className="sr-only" value={curColor}
                     onChange={e => {
                       const v = e.target.value;
-                      setCustomWall(null);
-                      setWallColor(v);
-                      saveLayout(furniture, { wallColor: v });
+                      commitPartialSnapshot({ wallColor: v });
                     }} />
                 </label>
               );
@@ -867,9 +1085,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                   <input type="color" className="sr-only" value={curColor}
                     onChange={e => {
                       const v = e.target.value;
-                      setCustomFloor(null);
-                      setFloorColor(v);
-                      saveLayout(furniture, { floorColor: v });
+                      commitPartialSnapshot({ floorColor: v });
                     }} />
                 </label>
               );
@@ -969,20 +1185,41 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
             </div>
             <SliderRow label="大小" min={0.3} max={10} step={0.1} value={selectedFurniture.scale}
               onChange={v => updateFurniture(selectedSlot!, { scale: v })} display={selectedFurniture.scale.toFixed(1)} />
-            <SliderRow label="旋转" min={-180} max={180} step={15} value={selectedFurniture.rotation}
-              onChange={v => updateFurniture(selectedSlot!, { rotation: v })} display={`${selectedFurniture.rotation}°`} />
-            {/* 前后遮挡手动覆盖 */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400 w-8">遮挡</span>
+              <span className="text-[10px] text-slate-400 w-8">移动</span>
               <div className="flex-1 flex gap-1">
-                <ZOrderBtn label="置底" active={selectedFurniture.zOrder === 'back'}
-                  onClick={() => updateFurniture(selectedSlot!, { zOrder: selectedFurniture.zOrder === 'back' ? 'auto' : 'back' })} />
-                <ZOrderBtn label="自动" active={!selectedFurniture.zOrder || selectedFurniture.zOrder === 'auto'}
-                  onClick={() => updateFurniture(selectedSlot!, { zOrder: 'auto' })} />
-                <ZOrderBtn label="置顶" active={selectedFurniture.zOrder === 'front'}
-                  onClick={() => updateFurniture(selectedSlot!, { zOrder: selectedFurniture.zOrder === 'front' ? 'auto' : 'front' })} />
+                <ZOrderBtn label="自由" active={!snapFurnitureToGrid} onClick={() => setSnapFurnitureToGrid(false)} />
+                <ZOrderBtn label="吸附" active={snapFurnitureToGrid} onClick={() => setSnapFurnitureToGrid(true)} />
               </div>
             </div>
+            <SliderRow label="旋转" min={-180} max={180} step={15} value={selectedFurniture.rotation}
+              onChange={v => updateFurniture(selectedSlot!, { rotation: v })} display={`${selectedFurniture.rotation}°`} />
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 w-8">图层</span>
+              <div className="flex-1 flex gap-1">
+                <ZOrderBtn label="地毯层" active={selectedIsCarpetLayer}
+                  onClick={() => updateFurniture(selectedSlot!, { layer: 'carpet', zOrder: 'auto' })} />
+                <ZOrderBtn label="家具层" active={!selectedIsCarpetLayer}
+                  onClick={() => updateFurniture(selectedSlot!, { layer: 'furniture' })} />
+              </div>
+            </div>
+            {selectedIsCarpetLayer ? (
+              <p className="text-[9px] text-[#c8b7a4] leading-relaxed">
+                地毯层固定在家具下方，不挡住角色走路；想当普通家具遮挡时切回家具层。
+              </p>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 w-8">遮挡</span>
+                <div className="flex-1 flex gap-1">
+                  <ZOrderBtn label="置底" active={selectedFurniture.zOrder === 'back'}
+                    onClick={() => updateFurniture(selectedSlot!, { zOrder: selectedFurniture.zOrder === 'back' ? 'auto' : 'back' })} />
+                  <ZOrderBtn label="自动" active={!selectedFurniture.zOrder || selectedFurniture.zOrder === 'auto'}
+                    onClick={() => updateFurniture(selectedSlot!, { zOrder: 'auto' })} />
+                  <ZOrderBtn label="置顶" active={selectedFurniture.zOrder === 'front'}
+                    onClick={() => updateFurniture(selectedSlot!, { zOrder: selectedFurniture.zOrder === 'front' ? 'auto' : 'front' })} />
+                </div>
+              </div>
+            )}
             <div className="space-y-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] text-[#76685d]">互动说明</span>
@@ -1083,6 +1320,18 @@ const ModeBtn: React.FC<{ label: string; active: boolean; onClick: () => void }>
 
 const ToolBtn: React.FC<{ label: string; color: string; onClick: () => void }> = ({ label, color, onClick }) => (
   <button onClick={onClick} className={`px-2 py-1.5 rounded-lg text-[10px] font-bold text-white active:scale-95 transition-transform ${color}`}>{label}</button>
+);
+
+const HistoryBtn: React.FC<{ label: string; disabled: boolean; onClick: () => void }> = ({ label, disabled, onClick }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+      disabled ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:scale-95'
+    }`}
+  >
+    {label}
+  </button>
 );
 
 const ZOrderBtn: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (

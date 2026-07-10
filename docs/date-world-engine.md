@@ -14,7 +14,7 @@
 |------|------|
 | `DateScene` | 场景：内置（`BUILTIN_DATE_SCENES`）或自定义（`makeCustomScene`）。含 name/emoji/vibe/opening |
 | `DateMessage` | 一条消息：`role` = `user`(话+动作) / `char`(回应) / `world`(世界引擎旁白) |
-| `DateWorldline` | **一条世界线 = 一个剧情分支**。含 messages / vibe / turnCount / recap / parentId(分叉来源) / bgmAssetKey |
+| `DateWorldline` | **一条世界线 = 一个剧情分支**。含 messages / vibe / turnCount / recap / parentId(分叉来源) / bgmAssetKey / sideNarrationEnabled(侧幕描写) |
 
 多世界线 = 同一角色下多条 `DateWorldline`；从任一条消息处可 `forkWorldline` 分叉出新走向。
 
@@ -34,6 +34,7 @@
 ## 几个有意的设计点
 
 - **场景调度只在 `world` 字段**，且要求「克制、不喧宾夺主」——日常向，不强行制造大戏。
+- **侧幕描写**：世界线开启 `sideNarrationEnabled` 后，后续回合只推进用户单独行动、NPC、环境、线索等 `world` 旁白，不让当前角色在场、说话、行动或产生内心 OS；关闭后恢复正常约会回应。
 - **话/动作分输入**：两个输入框（💬说点什么 / 🤍做个动作），可只填其一；prompt 要求角色把两者都接住。
 - **分叉**：每条角色消息下有「⑂ 从这儿分叉」，复制到该点为止的消息另起一条世界线，BGM 不继承（氛围会变）。
 - **副 API 门控是软的**：没开副 API 也能用（回退主 API），列表页给一句提示引导去开副线盒。

@@ -12,6 +12,7 @@ export type HealthImportFieldKey =
   | 'endTime'
   | 'steps'
   | 'sleepMinutes'
+  | 'sleepSeconds'
   | 'sleepHours'
   | 'heartRate'
   | 'restingHeartRate'
@@ -19,6 +20,7 @@ export type HealthImportFieldKey =
   | 'spo2'
   | 'stress'
   | 'calories'
+  | 'distanceMeters'
   | 'distanceKm'
   | 'label';
 
@@ -50,6 +52,7 @@ export const HEALTH_IMPORT_FIELD_OPTIONS: Array<{ key: HealthImportFieldKey; lab
   { key: 'endTime', label: '结束时间' },
   { key: 'steps', label: '步数' },
   { key: 'sleepMinutes', label: '睡眠分钟' },
+  { key: 'sleepSeconds', label: '睡眠秒数' },
   { key: 'sleepHours', label: '睡眠小时' },
   { key: 'heartRate', label: '心率' },
   { key: 'restingHeartRate', label: '静息心率' },
@@ -57,6 +60,7 @@ export const HEALTH_IMPORT_FIELD_OPTIONS: Array<{ key: HealthImportFieldKey; lab
   { key: 'spo2', label: '血氧' },
   { key: 'stress', label: '压力' },
   { key: 'calories', label: '卡路里' },
+  { key: 'distanceMeters', label: '距离 m' },
   { key: 'distanceKm', label: '距离 km' },
   { key: 'label', label: '标签/备注' },
 ];
@@ -79,20 +83,22 @@ const MINUTE = 60_000;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const FIELD_ALIASES: Record<Exclude<HealthImportFieldKey, '' | 'ignore'>, string[]> = {
-  date: ['date', 'day', 'recorddate', '日期', '日期时间', '时间', '记录时间', '开始日期', 'startdate', 'startday'],
-  startTime: ['start', 'starttime', 'startedat', 'startdate', '开始', '开始时间', '入睡', '入睡时间'],
-  endTime: ['end', 'endtime', 'endedat', 'enddate', '结束', '结束时间', '醒来', '醒来时间'],
-  steps: ['steps', 'step', 'stepcount', 'count', '步数', '计步', '运动步数'],
-  sleepMinutes: ['sleepminutes', 'sleepminute', 'sleepdurationminutes', 'sleepduration', 'asleepminutes', '睡眠分钟', '睡眠时长分钟', '睡眠时长', '入睡分钟'],
+  date: ['date', 'day', 'recorddate', 'calendarDate', 'summaryDate', 'dateString', '日期', '日期时间', '时间', '记录时间', '开始日期', 'startdate', 'startday'],
+  startTime: ['start', 'starttime', 'startedat', 'startdate', 'startTimeInSeconds', 'startTimeGMT', 'startTimeLocal', '开始', '开始时间', '入睡', '入睡时间'],
+  endTime: ['end', 'endtime', 'endedat', 'enddate', 'endTimeInSeconds', 'endTimeGMT', 'endTimeLocal', '结束', '结束时间', '醒来', '醒来时间'],
+  steps: ['steps', 'step', 'stepcount', 'count', 'totalSteps', 'dailySteps', '步数', '计步', '运动步数'],
+  sleepMinutes: ['sleepminutes', 'sleepminute', 'sleepdurationminutes', 'sleepduration', 'asleepminutes', 'sleepDurationInMinutes', 'totalSleepDurationInMinutes', '睡眠分钟', '睡眠时长分钟', '睡眠时长', '入睡分钟'],
+  sleepSeconds: ['sleepseconds', 'sleepdurationseconds', 'sleepDurationInSeconds', 'totalSleepDurationInSeconds', 'asleepDurationInSeconds', 'sleepTimeSeconds', '睡眠秒数'],
   sleepHours: ['sleephours', 'sleephour', 'sleepdurationhours', '睡眠小时', '睡眠时长小时'],
-  heartRate: ['heartrate', 'heart_rate', 'bpm', 'avgheartrate', 'averageheartrate', '心率', '平均心率'],
-  restingHeartRate: ['restingheartrate', 'restingheart_rate', 'rhr', '静息心率', '安静心率'],
-  hrv: ['hrv', 'heartratevariability', 'sdnn', '心率变异', '心率变异性'],
-  spo2: ['spo2', 'oxygen', 'oxygensaturation', 'bloodoxygen', '血氧', '血氧饱和度'],
-  stress: ['stress', 'stresslevel', 'pressure', '压力', '压力值', '压力指数'],
-  calories: ['calories', 'calorie', 'kcal', 'energy', '卡路里', '热量', '千卡'],
-  distanceKm: ['distance', 'distancekm', 'km', '公里', '距离', '步行距离'],
-  label: ['label', 'type', 'name', 'note', '备注', '类型', '标签', '名称'],
+  heartRate: ['heartrate', 'heart_rate', 'bpm', 'avgheartrate', 'averageheartrate', 'averageHeartRateInBeatsPerMinute', 'avgHeartRate', 'avgHR', '心率', '平均心率'],
+  restingHeartRate: ['restingheartrate', 'restingheart_rate', 'rhr', 'restingHeartRateInBeatsPerMinute', 'restingHR', '静息心率', '安静心率'],
+  hrv: ['hrv', 'heartratevariability', 'sdnn', 'rmssd', 'lastNightAvgHRV', 'weeklyAvgHRV', 'hrvValue', '心率变异', '心率变异性'],
+  spo2: ['spo2', 'oxygen', 'oxygensaturation', 'bloodoxygen', 'averageSpo2', 'avgSpo2', 'pulseOx', '血氧', '血氧饱和度'],
+  stress: ['stress', 'stresslevel', 'pressure', 'averageStressLevel', 'avgStressLevel', 'maxStressLevel', '压力', '压力值', '压力指数'],
+  calories: ['calories', 'calorie', 'kcal', 'energy', 'activeKilocalories', 'totalKilocalories', 'activeCalories', '卡路里', '热量', '千卡'],
+  distanceMeters: ['distanceMeters', 'distanceInMeters', 'totalDistanceMeters', 'meters', '距离米'],
+  distanceKm: ['distance', 'distancekm', 'distanceInKilometers', 'km', '公里', '距离', '步行距离'],
+  label: ['label', 'type', 'name', 'note', 'activityName', 'sport', '备注', '类型', '标签', '名称'],
 };
 
 const normalizeHeader = (value: string) => value
@@ -127,6 +133,7 @@ const guessSource = (fileName: string, text = ''): HealthImportSource => {
   const head = text.slice(0, 2000).toLowerCase();
   if (lower.includes('apple') || lower.endsWith('export.xml') || head.includes('hkquantitytypeidentifier')) return 'apple_health';
   if (lower.includes('google') || lower.includes('fit') || head.includes('datasourcename') || head.includes('com.google')) return 'google_fit';
+  if (lower.includes('garmin') || head.includes('garmin') || head.includes('calendardate') || head.includes('restingheartrateinbeatsperminute')) return 'garmin';
   if (lower.includes('huawei') || lower.includes('华为')) return 'huawei';
   if (lower.includes('zepp') || lower.includes('amazfit')) return 'zepp';
   if (lower.includes('mi') || lower.includes('xiaomi') || lower.includes('小米')) return 'xiaomi';
@@ -160,6 +167,10 @@ const parseDateValue = (value: unknown, baseDate?: string): Date | null => {
   if (value === null || value === undefined) return null;
   const raw = String(value).trim();
   if (!raw) return null;
+  if (/^\d{10,13}$/.test(raw)) {
+    const n = Number(raw);
+    return new Date(raw.length <= 10 ? n * 1000 : n);
+  }
   if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(raw) && baseDate && DAY_RE.test(baseDate)) {
     const [y, m, d] = baseDate.split('-').map(Number);
     const [h, min, sec = 0] = raw.split(':').map(Number);
@@ -280,6 +291,10 @@ const samplesFromFieldValues = (fields: Partial<Record<HealthImportFieldKey, any
   };
   pushValue('steps', fields.steps, '步');
   pushValue('distanceKm', fields.distanceKm, 'km');
+  const distanceMeters = toNumber(fields.distanceMeters);
+  if (distanceMeters !== undefined) {
+    out.push({ metric: 'distanceKm', date: metricDate, value: Number((distanceMeters / 1000).toFixed(3)), unit: 'km', timestamp: end?.getTime() || start?.getTime(), startAt: start?.getTime(), endAt: end?.getTime(), label });
+  }
   pushValue('calories', fields.calories, 'kcal');
   pushValue('heartRate', fields.heartRate, 'bpm');
   pushValue('restingHeartRate', fields.restingHeartRate, 'bpm');
@@ -287,9 +302,10 @@ const samplesFromFieldValues = (fields: Partial<Record<HealthImportFieldKey, any
   pushValue('spo2', fields.spo2, '%');
   pushValue('stress', fields.stress, '分');
   const sleepMinutes = toNumber(fields.sleepMinutes);
+  const sleepSeconds = toNumber(fields.sleepSeconds);
   const sleepHours = toNumber(fields.sleepHours);
   const intervalMinutes = start && end && end.getTime() > start.getTime() ? Math.round((end.getTime() - start.getTime()) / MINUTE) : undefined;
-  const sleepValue = sleepMinutes ?? (sleepHours !== undefined ? sleepHours * 60 : intervalMinutes);
+  const sleepValue = sleepMinutes ?? (sleepSeconds !== undefined ? sleepSeconds / 60 : sleepHours !== undefined ? sleepHours * 60 : intervalMinutes);
   if (sleepValue !== undefined && sleepValue > 0) {
     out.push({
       metric: 'sleep',
@@ -313,16 +329,139 @@ const collectJsonObjects = (value: any, out: Record<string, any>[] = [], depth =
   }
   if (typeof value !== 'object') return out;
   const keys = Object.keys(value);
-  if (keys.some(key => inferField(key) || ['dataSourceName', 'dataTypeName', 'startTimeNanos', 'endTimeNanos', 'value'].includes(key))) {
+  if (keys.some(key => inferField(key) || ['dataSourceName', 'dataTypeName', 'startTimeNanos', 'endTimeNanos', 'value', 'calendarDate', 'summaryId', 'heartRateValues', 'stressValuesArray'].includes(key))) {
     out.push(value);
   }
   keys.forEach(key => {
     const child = value[key];
-    if (Array.isArray(child) || (child && typeof child === 'object' && ['records', 'data', 'items', 'activities', 'point', 'points'].includes(key))) {
+    if (Array.isArray(child) || (child && typeof child === 'object' && ['records', 'data', 'items', 'activities', 'point', 'points', 'dailies', 'dailySummaries', 'sleepSummaries', 'sleeps', 'heartRateSummaries', 'stressSummaries', 'spo2Summaries', 'hrvSummaries', 'wellnessData'].includes(key))) {
       collectJsonObjects(child, out, depth + 1);
     }
   });
   return out;
+};
+
+const garminDateFromObject = (obj: Record<string, any>, start?: Date | null, end?: Date | null): string => (
+  end ? toHealthDateKey(end) :
+  start ? toHealthDateKey(start) :
+  dateKeyFrom(obj.calendarDate ?? obj.summaryDate ?? obj.date ?? obj.dateString)
+);
+
+const pushGarminNumber = (
+  samples: MetricSample[],
+  metric: MetricKey,
+  value: unknown,
+  date: string,
+  unit: string,
+  startAt?: number,
+  endAt?: number,
+  metadata?: Record<string, any>,
+) => {
+  const n = toNumber(value);
+  if (n === undefined) return;
+  samples.push({
+    metric,
+    date,
+    value: n,
+    unit,
+    timestamp: endAt || startAt,
+    startAt,
+    endAt,
+    metadata,
+  });
+};
+
+const garminSamplesFromObject = (obj: Record<string, any>): MetricSample[] => {
+  const keys = Object.keys(obj);
+  const hasGarminShape = keys.some(key => [
+    'calendarDate',
+    'summaryId',
+    'distanceInMeters',
+    'activeKilocalories',
+    'restingHeartRateInBeatsPerMinute',
+    'averageHeartRateInBeatsPerMinute',
+    'averageStressLevel',
+    'averageSpo2',
+    'heartRateValues',
+    'stressValuesArray',
+    'sleepDurationInSeconds',
+    'deepSleepDurationInSeconds',
+  ].includes(key));
+  if (!hasGarminShape) return [];
+
+  const start = parseDateValue(obj.startTimeInSeconds ?? obj.startTimeGMT ?? obj.startTimeLocal ?? obj.startTime ?? obj.startDate);
+  const durationSeconds = toNumber(obj.durationInSeconds ?? obj.durationSeconds);
+  const explicitEnd = parseDateValue(obj.endTimeInSeconds ?? obj.endTimeGMT ?? obj.endTimeLocal ?? obj.endTime ?? obj.endDate);
+  const end = explicitEnd || (start && durationSeconds !== undefined ? new Date(start.getTime() + durationSeconds * 1000) : null);
+  const date = garminDateFromObject(obj, start, end);
+  const startAt = start?.getTime();
+  const endAt = end?.getTime();
+  const metadata = {
+    importSource: 'garmin',
+    garminSummaryId: obj.summaryId,
+    activityId: obj.activityId,
+  };
+  const samples: MetricSample[] = [];
+
+  pushGarminNumber(samples, 'steps', obj.steps ?? obj.totalSteps ?? obj.stepCount, date, '步', startAt, endAt, metadata);
+  const distanceMeters = toNumber(obj.distanceInMeters ?? obj.totalDistanceMeters ?? obj.distanceMeters);
+  if (distanceMeters !== undefined) {
+    samples.push({ metric: 'distanceKm', date, value: Number((distanceMeters / 1000).toFixed(3)), unit: 'km', timestamp: endAt || startAt, startAt, endAt, metadata });
+  }
+  pushGarminNumber(samples, 'calories', obj.activeKilocalories ?? obj.totalKilocalories ?? obj.activeCalories ?? obj.calories, date, 'kcal', startAt, endAt, metadata);
+  pushGarminNumber(samples, 'heartRate', obj.averageHeartRateInBeatsPerMinute ?? obj.averageHeartRate ?? obj.avgHeartRate ?? obj.avgHR, date, 'bpm', startAt, endAt, metadata);
+  pushGarminNumber(samples, 'restingHeartRate', obj.restingHeartRateInBeatsPerMinute ?? obj.restingHeartRate ?? obj.restingHR, date, 'bpm', startAt, endAt, metadata);
+  pushGarminNumber(samples, 'hrv', obj.lastNightAvgHRV ?? obj.weeklyAvgHRV ?? obj.hrvValue ?? obj.hrv, date, 'ms', startAt, endAt, metadata);
+  pushGarminNumber(samples, 'spo2', obj.averageSpo2 ?? obj.avgSpo2 ?? obj.pulseOx ?? obj.spo2, date, '%', startAt, endAt, metadata);
+  pushGarminNumber(samples, 'stress', obj.averageStressLevel ?? obj.avgStressLevel ?? obj.stressLevel ?? obj.stress, date, '分', startAt, endAt, metadata);
+
+  const sleepSeconds = toNumber(
+    obj.sleepDurationInSeconds ??
+    obj.totalSleepDurationInSeconds ??
+    obj.asleepDurationInSeconds ??
+    (durationSeconds !== undefined && (
+      obj.deepSleepDurationInSeconds !== undefined ||
+      obj.lightSleepDurationInSeconds !== undefined ||
+      obj.remSleepInSeconds !== undefined ||
+      obj.awakeDurationInSeconds !== undefined
+    )
+      ? Math.max(0, durationSeconds - (toNumber(obj.awakeDurationInSeconds) || 0) - (toNumber(obj.unmeasurableSleepInSeconds) || 0))
+      : undefined)
+  );
+  if (sleepSeconds !== undefined && sleepSeconds > 0) {
+    samples.push({
+      metric: 'sleep',
+      date,
+      value: sleepSeconds / 60,
+      unit: '分钟',
+      timestamp: endAt || startAt,
+      startAt,
+      endAt,
+      label: '睡眠',
+      metadata: {
+        ...metadata,
+        deepSleepSeconds: obj.deepSleepDurationInSeconds,
+        lightSleepSeconds: obj.lightSleepDurationInSeconds,
+        remSleepSeconds: obj.remSleepInSeconds,
+        awakeSeconds: obj.awakeDurationInSeconds,
+      },
+    });
+  }
+
+  const tupleSamples = (rows: any, metric: MetricKey, unit: string) => {
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row: any) => {
+      if (!Array.isArray(row) || row.length < 2) return;
+      const at = parseDateValue(row[0]);
+      const value = toNumber(row[1]);
+      if (!at || value === undefined) return;
+      samples.push({ metric, date: toHealthDateKey(at), value, unit, timestamp: at.getTime(), startAt: at.getTime(), endAt: at.getTime(), metadata });
+    });
+  };
+  tupleSamples(obj.heartRateValues, 'heartRate', 'bpm');
+  tupleSamples(obj.stressValuesArray, 'stress', '分');
+
+  return samples;
 };
 
 const googleFitSampleFromObject = (obj: Record<string, any>): MetricSample[] => {
@@ -351,9 +490,10 @@ const parseJsonSamples = (text: string, mapping?: HealthImportFieldMapping): { s
   const samples: MetricSample[] = [];
   let skipped = 0;
   objects.forEach(obj => {
+    const garmin = garminSamplesFromObject(obj);
     const google = googleFitSampleFromObject(obj);
-    const generic = samplesFromMappedObject(obj, mappedFields);
-    const next = [...google, ...generic];
+    const generic = garmin.length || google.length ? [] : samplesFromMappedObject(obj, mappedFields);
+    const next = [...garmin, ...google, ...generic];
     if (next.length) samples.push(...next);
     else skipped += 1;
   });
@@ -447,6 +587,10 @@ const aggregateSamples = (samples: MetricSample[], source: HealthImportSource, n
       const minutes = Math.round(sleep.reduce((sum, row) => sum + row.value, 0));
       const starts = sleep.map(row => row.startAt).filter((value): value is number => !!value);
       const ends = sleep.map(row => row.endAt).filter((value): value is number => !!value);
+      const sumMetaNumber = (key: string) => {
+        const total = sleep.reduce((sum, row) => sum + (toNumber(row.metadata?.[key]) || 0), 0);
+        return total || undefined;
+      };
       records.push(makeHealthRecord({
         id: stableRecordId(source, 'sleep', date),
         moduleId: 'sleep',
@@ -464,6 +608,10 @@ const aggregateSamples = (samples: MetricSample[], source: HealthImportSource, n
           asleepAt: starts.length ? Math.min(...starts) : undefined,
           awakeAt: ends.length ? Math.max(...ends) : undefined,
           stages: sleep.map(row => row.metadata?.sleepStage).filter(Boolean),
+          deepSleepSeconds: sumMetaNumber('deepSleepSeconds'),
+          lightSleepSeconds: sumMetaNumber('lightSleepSeconds'),
+          remSleepSeconds: sumMetaNumber('remSleepSeconds'),
+          awakeSeconds: sumMetaNumber('awakeSeconds'),
         },
         createdAt: now,
       }, now));
@@ -569,6 +717,16 @@ export async function parseHealthImportFile(file: File | Blob, options: HealthIm
   const fileName = fileNameOf(file);
   const lower = fileName.toLowerCase();
   const now = options.now ?? Date.now();
+  if (lower.endsWith('.fit')) {
+    return previewFromSamples({
+      fileName,
+      source: sourceFromPreset(options.preset) || 'garmin',
+      samples: [],
+      skipped: 1,
+      warnings: ['暂不支持 FIT 二进制文件；请从厂商 App 导出 CSV / JSON，或导入包含 CSV / JSON 的压缩包。'],
+      now,
+    });
+  }
   if (lower.endsWith('.zip') || (file as File).type === 'application/zip') {
     const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -578,6 +736,10 @@ export async function parseHealthImportFile(file: File | Blob, options: HealthIm
     for (const entry of entries) {
       const name = entry.name;
       const entryLower = name.toLowerCase();
+      if (entryLower.endsWith('.fit')) {
+        warnings.push(`已跳过 FIT 二进制文件：${name}；请导出 CSV / JSON 后再导入。`);
+        continue;
+      }
       if (!/\.(csv|json|xml|txt)$/.test(entryLower)) {
         warnings.push(`已跳过不支持的文件：${name}`);
         continue;
@@ -632,6 +794,10 @@ export function parseBleHeartRateMeasurement(value: DataView): number {
 export function makeRealtimeHeartRateRecord(params: {
   heartRate: number;
   deviceName?: string;
+  manufacturer?: string;
+  model?: string;
+  batteryLevel?: number | null;
+  devicePreset?: string;
   now?: number;
 }): HealthRecord {
   const now = params.now ?? Date.now();
@@ -652,6 +818,10 @@ export function makeRealtimeHeartRateRecord(params: {
       protocol: 'web_bluetooth',
       metric: 'heartRate',
       deviceName: params.deviceName,
+      manufacturer: params.manufacturer,
+      model: params.model,
+      batteryLevel: params.batteryLevel ?? undefined,
+      devicePreset: params.devicePreset,
       realtime: true,
     },
     createdAt: now,

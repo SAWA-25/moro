@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@algorithm.ts/gomoku':
+        specifier: ^4.0.5
+        version: 4.0.5
       '@capacitor/android':
         specifier: ^6.0.0
         version: 6.2.1(@capacitor/core@6.2.1)
@@ -147,6 +150,12 @@ importers:
         version: 3.114.17
 
 packages:
+
+  '@algorithm.ts/gomoku@4.0.5':
+    resolution: {integrity: sha512-vDQbSAgIr/+feyo9rnbqZjLjzpUg6Xzg0OfaF5pPU67KHRHxm8DPyUoA9Umx5A9sZ/55UXfTCRAeA+w1gb+LFg==}
+
+  '@algorithm.ts/queue@4.0.5':
+    resolution: {integrity: sha512-JaEG1YCe5CDqcSkQ0ddEoreyMIfxLmoov8l7m/iDY/dqzhRP0dFRcAbSOt1f8Z5usNr5TkRxurCMWIwmEwCJXQ==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -2894,6 +2903,12 @@ packages:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}
 
 snapshots:
+
+  '@algorithm.ts/gomoku@4.0.5':
+    dependencies:
+      '@algorithm.ts/queue': 4.0.5
+
+  '@algorithm.ts/queue@4.0.5': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:

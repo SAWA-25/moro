@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { CharacterProfile } from '../types';
+import type { CharacterProfile, Message } from '../types';
 import {
   DEFAULT_XUNJI_REPORT_RULES,
   XUNJI_REPORT_TYPES,
+  buildXunjiRecentChatContextBlock,
   buildXunjiLocationSourceForChar,
   createDefaultXunjiSettings,
   generateXunjiMonitorSnapshot,
@@ -26,6 +27,16 @@ const char: CharacterProfile = {
   socialProfile: { handle: 'trace_me', region: '上海' },
   cityConfig: { mode: 'real', realCity: '上海' },
 };
+
+const chatMsg = (id: number, role: Message['role'], content: string, metadata?: any): Message => ({
+  id,
+  charId: char.id,
+  role,
+  type: 'text',
+  content,
+  timestamp: Date.UTC(2026, 5, 29, 8, id),
+  metadata,
+});
 
 describe('xunji generators', () => {
   it('creates default settings with all report rules enabled', () => {
@@ -185,6 +196,43 @@ describe('xunji generators', () => {
     expect(detailed.chats.length).toBeGreaterThan(light.chats.length);
     expect(detailed.browsed.length).toBeGreaterThan(light.browsed.length);
     expect(detailed.writeBack).toBe(true);
+  });
+
+  it('builds recent Xuyu chat context for Xunji generation', () => {
+    const block = buildXunjiRecentChatContextBlock({
+      charName: char.name,
+      userName: '用户',
+      messages: [
+        chatMsg(1, 'assistant', '旧开场：我当然记得你。', { hidden: true }),
+        chatMsg(2, 'assistant', '新开场：我好像失忆了，不记得你是谁。'),
+        chatMsg(3, 'user', '没关系，我们重新认识一次。'),
+      ],
+    });
+
+    expect(block).toContain('絮语·最近聊天上下文');
+    expect(block).toContain('失忆了');
+    expect(block).toContain('重新认识');
+    expect(block).toContain('优先按最近絮语生成');
+    expect(block).not.toContain('旧开场');
+  });
+
+  it('uses recent amnesia context in local Screenlife fallback', async () => {
+    const run = await generateXunjiScreenlifeRun({
+      char,
+      rangeStart: Date.UTC(2026, 5, 29, 8),
+      rangeEnd: Date.UTC(2026, 5, 29, 22),
+      density: 'standard',
+      writeBack: false,
+      seed: 'amnesia-context',
+      recentMessages: [
+        chatMsg(1, 'assistant', '我好像失忆了，不记得你是谁。'),
+        chatMsg(2, 'user', '那我们从现在重新认识。'),
+      ],
+    });
+
+    expect(run.narrative).toContain('重新认识');
+    expect(run.socialInference?.relationshipPulse).toContain('重新认识');
+    expect(run.chats[0]?.summary).toContain('重新认识');
   });
 
   it('falls back when Screenlife API fails', async () => {

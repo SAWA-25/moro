@@ -15,12 +15,15 @@ import type {
   XunjiSettings,
   XunjiSocialInference,
   XunjiTransport,
+  Message,
 } from '../types';
 import { xunjiChatContextBlock } from './laiwangPrompts';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { extractContent } from './safeApi';
 import { buildFullCharacterSetting } from './characterPromptProfile';
+import { formatMessageWithTime } from './messageFormat';
+import { filterPrivateChatVisibleMessages } from './privateChatVisibility';
 
 export const XUNJI_REPORT_EVENT = 'moro-xunji-report';
 
@@ -187,6 +190,89 @@ const bool = (value: unknown, fallback: boolean) => typeof value === 'boolean' ?
 
 function id(prefix: string, seed: string, n: number): string {
   return `${prefix}_${hashSeed(`${seed}_${n}`).toString(36)}`;
+}
+
+const XUNJI_RECENT_CHAT_MAX_MESSAGES = 12;
+const XUNJI_RECENT_CHAT_MAX_CHARS = 2200;
+const XUNJI_RECENT_CHAT_LINE_CHARS = 260;
+
+const clipPromptLine = (value: string, max = XUNJI_RECENT_CHAT_LINE_CHARS) => {
+  const text = value.replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 3))}...` : text;
+};
+
+export function buildXunjiRecentChatContextBlock(args: {
+  messages?: Message[];
+  charName: string;
+  userName: string;
+  maxMessages?: number;
+  maxChars?: number;
+}): string {
+  const maxMessages = clamp(args.maxMessages ?? XUNJI_RECENT_CHAT_MAX_MESSAGES, 1, 30);
+  const maxChars = clamp(args.maxChars ?? XUNJI_RECENT_CHAT_MAX_CHARS, 400, 6000);
+  const visible = filterPrivateChatVisibleMessages(args.messages || [])
+    .filter(m => !m.metadata?.excludeFromContext)
+    .slice(-maxMessages);
+  if (!visible.length) return '';
+
+  let lines = visible
+    .map(m => clipPromptLine(formatMessageWithTime(m, args.charName, args.userName, fmtTime)))
+    .filter(Boolean);
+  while (lines.join('\n').length > maxChars && lines.length > 1) lines = lines.slice(1);
+  if (!lines.length) return '';
+
+  return [
+    '### 絮语·最近聊天上下文',
+    `以下是「${args.charName}」和「${args.userName}」在絮语里的最近可见聊天。循迹生成要把它当作当前世界线的近况，而不是普通参考。`,
+    '若这里出现新开场白、失忆、重新认识、关系状态变化、断联或重置等信号，优先按最近絮语生成；不要沿用角色卡或旧循迹里已经被聊天改写的旧记忆。',
+    '可以把这些状态体现在手机痕迹、随手记、搜索/聊天对象和关系温度里，但不要机械复述聊天原文。',
+    lines.map(line => `- ${line}`).join('\n'),
+  ].join('\n');
+}
+
+function resolveXunjiRecentChatContext(args: {
+  char: CharacterProfile;
+  userName?: string;
+  recentMessages?: Message[];
+  recentChatContext?: string;
+}): string {
+  const provided = args.recentChatContext?.trim();
+  if (provided) return provided;
+  return buildXunjiRecentChatContextBlock({
+    messages: args.recentMessages,
+    charName: args.char.name,
+    userName: args.userName || '用户',
+  });
+}
+
+function deriveXunjiRecentChatCue(context: string): string {
+  const text = context.replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (/失忆|记忆断片|不记得|记不得|忘了|忘记|想不起|想不起来|不认识|你是谁|重新认识|第一次见|陌生人/.test(text)) {
+    return '最近絮语正在走“记忆断片 / 重新认识”的当前状态，TA 不应默认旧记忆和旧默契。';
+  }
+  if (/冷战|分手|拉黑|别联系|不想理|断联|吵架|闹翻/.test(text)) {
+    return '最近絮语显示关系有摩擦或距离感，TA 的手机痕迹应更克制，不要默认甜蜜靠近。';
+  }
+  if (/刚认识|初次见|第一次聊天|新朋友|刚加好友/.test(text)) {
+    return '最近絮语更像刚认识或重新破冰，循迹应从当前关系起步。';
+  }
+  return '';
+}
+
+function buildXunjiRecentChatCueFromMessages(args: {
+  messages?: Message[];
+  charName: string;
+  userName: string;
+}): string {
+  const visible = filterPrivateChatVisibleMessages(args.messages || [])
+    .filter(m => !m.metadata?.excludeFromContext)
+    .slice(-XUNJI_RECENT_CHAT_MAX_MESSAGES);
+  if (!visible.length) return '';
+  const text = visible
+    .map(m => clipPromptLine(formatMessageWithTime(m, args.charName, args.userName, fmtTime), 500))
+    .join('\n');
+  return deriveXunjiRecentChatCue(text);
 }
 
 function clockOnDay(now: number, value: unknown, fallback: number): number {
@@ -740,10 +826,18 @@ export async function generateXunjiRealtimeSnapshot(args: {
   locationSource?: XunjiLocationSource;
   userSetting?: string;
   userName?: string;
+  recentMessages?: Message[];
+  recentChatContext?: string;
   now?: number;
   signal?: AbortSignal;
 }): Promise<XunjiMonitorSnapshot> {
   const now = args.now ?? Date.now();
+  const recentChatContext = resolveXunjiRecentChatContext(args);
+  const recentChatCue = buildXunjiRecentChatCueFromMessages({
+    messages: args.recentMessages,
+    charName: args.char.name,
+    userName: args.userName || '用户',
+  });
   const fallback = generateXunjiMonitorSnapshot({ char: args.char, previous: args.previous, now, seed: `${args.char.id}_${now}_realtime`, locationSource: args.locationSource });
   if (!args.api?.baseUrl || !args.api.model) return fallback;
   try {
@@ -756,9 +850,11 @@ export async function generateXunjiRealtimeSnapshot(args: {
     const prompt = [
       '请为“循迹”生成一份当前时刻的角色手机/生活实时快照。',
       '这不是读取真实设备，而是角色人格模拟；必须和角色在其它 App 中的人设、城市、生活侧写、备忘录保持一致。',
+      recentChatCue ? `当前聊天状态提示：${recentChatCue}` : '',
       `当前时间：${new Date(now).toLocaleString('zh-CN')}`,
       locationLine,
       buildXunjiPersonaBlock(args.char, args.userSetting),
+      recentChatContext,
       `上一份快照摘要：${latest}`,
       '只返回 JSON，字段如下：',
       '{',
@@ -850,11 +946,19 @@ function localScreenlifeRun(args: {
   density: XunjiDensity;
   writeBack: boolean;
   seed?: string;
+  recentMessages?: Message[];
+  recentChatContext?: string;
+  userName?: string;
 }): XunjiScreenlifeRun {
   const seed = args.seed || `${args.char.id}_${args.rangeStart}_${args.rangeEnd}_${args.density}`;
   const rng = rngFrom(`${seed}_screenlife`);
   const scale = args.density === 'light' ? 0 : args.density === 'detailed' ? 2 : 1;
   const span = Math.max(HOUR, args.rangeEnd - args.rangeStart);
+  const recentChatCue = buildXunjiRecentChatCueFromMessages({
+    messages: args.recentMessages,
+    charName: args.char.name,
+    userName: args.userName || '用户',
+  });
   const rawAppUsage = generateAppUsage(seed, args.rangeEnd, args.density)
     .map((s, i) => ({ ...s, id: id('xj_run_app', seed, i) }));
   const filteredAppUsage = rawAppUsage
@@ -875,9 +979,13 @@ function localScreenlifeRun(args: {
       id: id('xj_chat', seed, i),
       time: timeAt(i, chatCount),
       target,
-      summary: `和${target}聊了${pick(rng, ['今天的安排', '一件小烦恼', '路上看到的东西', '晚饭吃什么', '一个没说完的玩笑'])}`,
+      summary: recentChatCue && i === 0
+        ? recentChatCue
+        : `和${target}聊了${pick(rng, ['今天的安排', '一件小烦恼', '路上看到的东西', '晚饭吃什么', '一个没说完的玩笑'])}`,
       messages: [
-        `先是随口问了近况，语气像${args.char.name}平时会有的样子。`,
+        recentChatCue && i === 0
+          ? recentChatCue
+          : `先是随口问了近况，语气像${args.char.name}平时会有的样子。`,
         `后来话题拐到${pick(rng, ['天气', '工作', '歌单', '路边的小店', '今晚的计划'])}，停了几秒才继续回。`,
       ],
     };
@@ -894,7 +1002,7 @@ function localScreenlifeRun(args: {
     time: timeAt(i, noteCount),
     text: pick(rng, NOTE_LINES),
   }));
-  const socialInference: XunjiSocialInference = buildLocalSocialInference(args.char, rng, appUsage, chats, browsed, notes);
+  const socialInference: XunjiSocialInference = buildLocalSocialInference(args.char, rng, appUsage, chats, browsed, notes, recentChatCue);
   const moments: XunjiGeneratedMoment[] = buildLocalMoments(seed, args.char, rng, args.rangeStart, args.rangeEnd, socialInference, appUsage, chats, notes);
 
   return {
@@ -906,7 +1014,7 @@ function localScreenlifeRun(args: {
     density: args.density,
     writeBack: args.writeBack,
     title: `${args.char.name} 的屏幕亮起`,
-    narrative: `${args.char.name} 的这段 Screenlife 像一条不太用力的日常线：聊天、刷到的东西、随手记下的念头，都顺着 TA 的性格走。${args.writeBack ? '这次演出会被写回角色日常，之后 TA 可以把它当成自己经历过的痕迹。' : '这次只是观赏演出，看完即走，不影响 TA 的日常。'}`,
+    narrative: `${args.char.name} 的这段 Screenlife 像一条不太用力的日常线：聊天、刷到的东西、随手记下的念头，都顺着 TA 的性格走。${recentChatCue ? `最近絮语的当前状态也会跟着这条线一起校准：${recentChatCue}` : ''}${args.writeBack ? '这次演出会被写回角色日常，之后 TA 可以把它当成自己经历过的痕迹。' : '这次只是观赏演出，看完即走，不影响 TA 的日常。'}`,
     chats,
     browsed,
     notes,
@@ -923,46 +1031,52 @@ function buildLocalSocialInference(
   chats: XunjiScreenlifeRun['chats'],
   browsed: XunjiScreenlifeRun['browsed'],
   notes: XunjiScreenlifeRun['notes'],
+  recentChatCue = '',
 ): XunjiSocialInference {
   const chatApps = appUsage.filter(a => /微信|群|QQ|消息|絮语/.test(a.appName)).length;
   const lateUse = appUsage.some(a => new Date(a.startedAt).getHours() >= 22);
   const musicUse = appUsage.some(a => /音乐|歌/.test(a.appName));
   const mapUse = appUsage.some(a => /地图|外卖|日历/.test(a.appName));
   const score = clamp(58 + chatApps * 6 + (musicUse ? 7 : 0) + (mapUse ? 4 : 0) - (lateUse ? 8 : 0) + randInt(rng, -6, 8), 0, 100);
-  const mood = lateUse
-    ? pick(rng, ['有点疲惫但还在撑着', '心里挂着事，节奏偏晚'])
-    : musicUse
-      ? pick(rng, ['被一首歌带得心软', '情绪比上午松下来一点'])
-      : pick(rng, ['平稳地忙着自己的事', '有一点想被人惦记']);
-  const relationshipPulse = score >= 76
-    ? `对 ${char.name} 来说，今天的屏幕痕迹里有明显的靠近感。`
-    : score >= 55
-      ? '关系温度稳定，适合从一个小细节自然开口。'
-      : '今天更像各自忙着，最好先轻轻确认状态。';
+  const cue = recentChatCue.trim();
+  const mood = cue
+    ? cue
+    : lateUse
+      ? pick(rng, ['有点疲惫但还在撑着', '心里挂着事，节奏偏晚'])
+      : musicUse
+        ? pick(rng, ['被一首歌带得心软', '情绪比上午松下来一点'])
+        : pick(rng, ['平稳地忙着自己的事', '有一点想被人惦记']);
+  const relationshipPulse = cue
+    ? cue
+    : score >= 76
+      ? `对 ${char.name} 来说，今天的屏幕痕迹里有明显的靠近感。`
+      : score >= 55
+        ? '关系温度稳定，适合从一个小细节自然开口。'
+        : '今天更像各自忙着，最好先轻轻确认状态。';
   return {
     mood,
     relationshipPulse,
     screenlifeScore: score,
     intimacySignals: [
-      chats[0]?.summary || '有几段没明说但留了余温的聊天',
+      cue || chats[0]?.summary || '有几段没明说但留了余温的聊天',
       notes[0]?.text ? `备忘录里写着「${notes[0].text}」` : '随手记里留了一个小念头',
       musicUse ? '音乐 App 停留偏久，像是在找一句能代替自己说的话' : '常用 App 切换不急，今天的节奏比较生活化',
     ].slice(0, 3),
     frictionSignals: [
-      lateUse ? '夜里屏幕亮得偏晚，可能有点累' : '没有明显冲突，只是回复节奏有几处停顿',
+      cue ? '最近絮语状态变化明显，生成时不要默认旧关系或旧记忆。' : (lateUse ? '夜里屏幕亮得偏晚，可能有点累' : '没有明显冲突，只是回复节奏有几处停顿'),
       browsed[0]?.title ? `在「${browsed[0].title}」上停留，像是被某个话题绊住` : '有些内容只是刷过，没有真的分享出口',
     ].slice(0, 2),
     likelyNeeds: [
-      pick(rng, ['需要一句不追问的关心', '需要有人接住 TA 今天没讲完的半句话', '需要一点被允许慢下来的空间']),
+      cue ? '需要先按当前状态重新确认关系，再往下聊。' : pick(rng, ['需要一句不追问的关心', '需要有人接住 TA 今天没讲完的半句话', '需要一点被允许慢下来的空间']),
       mapUse ? '如果聊到出门、吃饭、路上见闻，会更容易接上' : '从音乐、旧照片或随手记切入会更自然',
     ],
     nextConversationSeeds: [
-      chats[0]?.summary || '问 TA 今天有没有哪一刻突然想起你',
+      cue || chats[0]?.summary || '问 TA 今天有没有哪一刻突然想起你',
       notes[0]?.text ? `接「${notes[0].text}」这句随手记往下聊` : '让 TA 讲一个今天屏幕里没发出去的念头',
       musicUse ? '问刚才那首歌哪一句最像今天' : '从今天刷到的一件小东西聊起',
     ],
     whisperHooks: [
-      pick(rng, ['你今天是不是有一句话没舍得发给我？', '我想看你手机里最想藏起来的那一秒。']),
+      cue ? '我们先按现在这一刻重新认识，好不好？' : pick(rng, ['你今天是不是有一句话没舍得发给我？', '我想看你手机里最想藏起来的那一秒。']),
       notes[0]?.text ? `「${notes[0].text}」这句，我替你记住了。` : '你不用马上说清楚，我先在这里陪你一会儿。',
     ],
   };
@@ -1074,6 +1188,8 @@ export async function generateXunjiScreenlifeRun(args: {
   writeBack: boolean;
   userSetting?: string;
   userName?: string;
+  recentMessages?: Message[];
+  recentChatContext?: string;
   seed?: string;
   signal?: AbortSignal;
 }): Promise<XunjiScreenlifeRun> {
@@ -1081,8 +1197,16 @@ export async function generateXunjiScreenlifeRun(args: {
   if (!args.api?.baseUrl || !args.api.model) return fallback;
 
   try {
+    const recentChatContext = resolveXunjiRecentChatContext(args);
+    const recentChatCue = buildXunjiRecentChatCueFromMessages({
+      messages: args.recentMessages,
+      charName: args.char.name,
+      userName: args.userName || '用户',
+    });
     const prompt = [
       buildXunjiPersonaBlock(args.char, args.userSetting),
+      recentChatCue ? `当前聊天状态提示：${recentChatCue}` : '',
+      recentChatContext,
       `时间范围：${new Date(args.rangeStart).toLocaleString()} - ${new Date(args.rangeEnd).toLocaleString()}`,
       `密度：${args.density}`,
       '返回 JSON 字段：title,narrative,chats[{target,summary,messages[]}],browsed[{appName,title,summary}],notes[{text}],moments[{time,title,body,tone,relatedApp}],socialInference{mood,relationshipPulse,screenlifeScore,intimacySignals[],frictionSignals[],likelyNeeds[],nextConversationSeeds[],whisperHooks[]}。',

@@ -19,6 +19,7 @@ import type { DiveResult } from './memoryDiveTypes';
 import PixelLifePanel from './PixelLifePanel';
 import { PixelBadge, PixelButton, PixelPanel, PixelShell } from './PixelUi';
 import { usePixelHomeLife } from './usePixelHomeLife';
+import { mergePixelAssets } from './builtinFurnitureCatalog';
 
 const DEFAULT_CHAR_SPRITES: Record<string, string> = {};
 
@@ -52,13 +53,14 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   const importInputRef = useRef<HTMLInputElement>(null);
   const addToastRef = useRef(addToast);
   const autoLifeKeyRef = useRef<string | null>(null);
+  const allAssets = useMemo(() => mergePixelAssets(assets), [assets]);
 
   const life = usePixelHomeLife({
     char,
     userProfile,
     auxApi,
     homeState,
-    assets,
+    assets: allAssets,
     updateCharacter,
     addToast,
   });
@@ -179,8 +181,9 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   const handleEnterRoom = useCallback((roomId: MemoryRoom) => {
     setSelectedRoom(roomId);
     setLifeOpen(false);
+    life.clearInspection();
     setViewMode('room');
-  }, []);
+  }, [life.clearInspection]);
 
   const handleRoomUpdate = useCallback(async () => {
     const state = await getOrCreateHomeState(charId);
@@ -193,21 +196,56 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
 
   const handleExport = useCallback(async () => {
     if (!homeState) return;
-    await downloadPreset(homeState, assets, `${charName}的家`, userName);
-    addToast?.('像素家园预设已导出', 'success');
-  }, [addToast, assets, charName, homeState, userName]);
+    await downloadPreset(homeState, allAssets, `${charName}的家`, userName, 'pixel_home');
+    addToast?.('小屋 JSON 已导出', 'success');
+  }, [addToast, allAssets, charName, homeState, userName]);
 
-  const handleImportFile = useCallback(async (file: File) => {
+  const handleExportRoom = useCallback(async () => {
+    if (!homeState) return;
+    const layout = homeState.rooms.find(r => r.roomId === selectedRoom);
+    if (!layout) return;
+    const roomName = selectedRoom === 'user_room' ? `${userName}的房` : ROOM_META[selectedRoom].name;
+    await downloadPreset(
+      { ...homeState, rooms: [layout] },
+      allAssets,
+      `${charName}-${roomName}样板房`,
+      userName,
+      'pixel_room',
+    );
+    addToast?.('样板房 JSON 已导出', 'success');
+  }, [addToast, allAssets, charName, homeState, selectedRoom, userName]);
+
+  const handleImportFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter(file => file.name.toLowerCase().endsWith('.json'));
+    if (files.length === 0) {
+      addToast?.('请选择 JSON 文件', 'error');
+      return;
+    }
+    if (files.length > 1 && !window.confirm(`确定批量导入 ${files.length} 个小屋 JSON 吗？相同房间会以后导入的文件为准。`)) {
+      return;
+    }
     try {
-      const json = await readFileAsText(file);
-      const result = await importPreset(json, charId);
-      if (!result.success) {
-        addToast?.(result.error || '导入失败', 'error');
+      let roomsImported = 0;
+      let assetsImported = 0;
+      const failed: string[] = [];
+      for (const file of files) {
+        const json = await readFileAsText(file);
+        const result = await importPreset(json, charId);
+        if (!result.success) {
+          failed.push(`${file.name}: ${result.error || '导入失败'}`);
+          continue;
+        }
+        roomsImported += result.roomsImported;
+        assetsImported += result.assetsImported;
+      }
+      if (roomsImported === 0 && failed.length > 0) {
+        addToast?.(`导入失败：${failed[0]}`, 'error');
         return;
       }
       await handleRoomUpdate();
       setAssets(await PixelAssetDB.getAll());
-      addToast?.(`导入成功：${result.roomsImported} 个房间，${result.assetsImported} 个新素材`, 'success');
+      const suffix = failed.length > 0 ? `，${failed.length} 个文件失败` : '';
+      addToast?.(`导入成功：${files.length - failed.length} 个文件，${roomsImported} 个房间，${assetsImported} 个新素材${suffix}`, failed.length ? 'info' : 'success');
     } catch (err: any) {
       addToast?.(`导入失败：${err.message}`, 'error');
     }
@@ -235,6 +273,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     }
 
     if (slotId === '__add__') {
+      const asset = allAssets.find(a => a.id === assetId);
       const newFurniture: PlacedFurniture = {
         slotId: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         assetId,
@@ -244,6 +283,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         rotation: 0,
         placedBy: 'user',
         isDefault: false,
+        layer: asset?.tags?.includes('rug') ? 'carpet' : undefined,
       };
       await PixelLayoutDB.save({
         ...roomLayout,
@@ -253,9 +293,10 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
       });
       addToast?.('家具已放进房间', 'success');
     } else if (slotId) {
+      const asset = allAssets.find(a => a.id === assetId);
       await PixelLayoutDB.save({
         ...roomLayout,
-        furniture: roomLayout.furniture.map(f => f.slotId === slotId ? { ...f, assetId, placedBy: 'user' as const } : f),
+        furniture: roomLayout.furniture.map(f => f.slotId === slotId ? { ...f, assetId, placedBy: 'user' as const, layer: asset?.tags?.includes('rug') ? 'carpet' : f.layer === 'carpet' ? undefined : f.layer } : f),
         lastUpdatedAt: Date.now(),
         lastDecoratedBy: 'user',
       });
@@ -265,7 +306,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     pendingSlotRef.current = null;
     await handleRoomUpdate();
     setViewMode('room');
-  }, [addToast, handleRoomUpdate, homeState, selectedRoom]);
+  }, [addToast, allAssets, handleRoomUpdate, homeState, selectedRoom]);
 
   const handleBack = useCallback(() => {
     if (viewMode === 'map') {
@@ -327,7 +368,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             <>
               <PixelHomeMap
                 homeState={homeState}
-                assets={assets}
+                assets={allAssets}
                 charSprite={pixelCharSprite || charAvatar}
                 userName={userName}
                 onEnterRoom={handleEnterRoom}
@@ -366,10 +407,12 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
               userName={userName}
               roomId={selectedRoom}
               layout={homeState.rooms.find(r => r.roomId === selectedRoom)!}
-              assets={assets}
+              assets={allAssets}
               onUpdate={handleRoomUpdate}
               onOpenLibrary={handleOpenLibrary}
+              onExportRoom={handleExportRoom}
               onInspectFurniture={(roomId, furniture) => life.inspectFurniture({ roomId, furniture })}
+              onDecorationInteraction={life.clearInspection}
             />
           )}
 
@@ -388,7 +431,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
 
           {viewMode === 'library' && (
             <AssetLibrary
-              assets={assets}
+              assets={allAssets}
               onChanged={handleAssetsChanged}
               onSelectAsset={handleSelectAsset}
               isSelecting={!!pendingSlotRef.current}
@@ -405,7 +448,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
               playerSprite={pixelUserSprite || undefined}
               userName={userName}
               homeState={homeState}
-              assets={assets}
+              assets={allAssets}
               apiConfig={auxApi}
               onExit={handleDiveExit}
             />
@@ -433,18 +476,19 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
               <PixelButton active={lifeOpen} onClick={() => setLifeOpen(v => !v)}>今日</PixelButton>
               <PixelButton onClick={handleEnterDive}>潜行</PixelButton>
               <PixelButton onClick={() => { pendingSlotRef.current = null; setViewMode('library'); }}>仓库</PixelButton>
-              <PixelButton onClick={handleExport}>导出</PixelButton>
+              <PixelButton onClick={handleExport}>导出小屋</PixelButton>
               <PixelButton onClick={() => { setEditorTarget('char'); setViewMode('charEditor'); }}>捏TA</PixelButton>
               <PixelButton onClick={() => { setEditorTarget('user'); setViewMode('charEditor'); }}>捏我</PixelButton>
-              <PixelButton onClick={() => importInputRef.current?.click()}>导入</PixelButton>
+              <PixelButton onClick={() => importInputRef.current?.click()}>导入小屋</PixelButton>
             </div>
             <input
               ref={importInputRef}
               type="file"
               accept=".json"
+              multiple
               className="hidden"
               onChange={e => {
-                if (e.target.files?.[0]) handleImportFile(e.target.files[0]);
+                if (e.target.files?.length) handleImportFiles(e.target.files);
                 e.currentTarget.value = '';
               }}
             />

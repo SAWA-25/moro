@@ -52,6 +52,7 @@ function fmtMessages(messages: DateMessage[], char: CharacterProfile, user: User
         const parts: string[] = [];
         if (m.speech) parts.push(`说："${m.speech}"`);
         if (m.action) parts.push(`（${m.action}）`);
+        if (m.thinking) parts.push(`心里想：${m.thinking}`);
         return `${who} ${parts.join(' ')}`.trim();
     }).filter(Boolean).join('\n');
 }
@@ -93,6 +94,7 @@ export function buildDateTurnPrompt(
     userAction: string,
     isFirstTurn: boolean,
     roleContext?: string,
+    sideNarrationEnabled = false,
 ): string {
     const recent = fmtMessages(worldline.messages.slice(-(DATE_KEEP_TAIL * 4)), char, user);
     const recapBlock = worldline.recap ? `\n## 之前发生了什么（已浓缩）\n${worldline.recap}\n` : '';
@@ -103,6 +105,16 @@ export function buildDateTurnPrompt(
         userAction ? `${userName} 的动作：（${userAction}）` : '',
     ].filter(Boolean).join('\n') || `${userName} 只是安静地看着你。`;
 
+    const sideNarrationBlock = sideNarrationEnabled ? `
+## 侧幕描写模式（最高优先级）
+这一回合开始，镜头转入「侧幕」：角色「${char.name}」不在当前现场。
+- 不要让 ${char.name} 亲身出现、同场、靠近、看见、听见、发言、行动、救场或插手。
+- 不要写 ${char.name} 的反应、表情、动作、台词或内心OS；JSON 里的 char_speech、char_action、thinking 必须为空字符串。
+- 可以推进 ${userName} 单独行动、NPC、路人、环境、线索、误会、回忆、传闻、物件痕迹或远处未确认消息。
+- 如果必须提到 ${char.name}，只能作为不在场的回忆、传闻、旧物、聊天记录或他人转述；不能安排 TA 突然进场，也不要用电话/消息把 TA 拉回现场。
+- 输出重点放在 world 字段，写成克制的旁白/场景推进；不要替 ${userName} 做重大决定。
+` : '';
+
     return `你是这场约会的**世界引擎**，同时扮演角色「${char.name}」。这是 ${char.name} 带着「${userName}」的一次日常陪伴向约会——不是要演大戏，是松弛、有生活质感地待在一起。
 
 ${roleContextBlock}
@@ -110,13 +122,15 @@ ${roleContextBlock}
 ## 当前场景：${scene.emoji} ${scene.name}
 基调：${scene.vibe}
 ${recapBlock}${recent ? `\n## 最近的来往\n${recent}\n` : (isFirstTurn ? `\n（约会刚开始：${scene.opening}）\n` : '')}
+${sideNarrationBlock}
 
 ## ${userName} 这一回合
 ${userTurn}
 
-## 你要做两件事
-1. **以 ${char.name} 的口吻回应**——${userName} 的「话」和「动作」都要照顾到（先接住话，再回应动作，或自然交织），贴着人设的语气、分寸、棱角。日常、具体、有温度，别套话别浮夸。
+## 你要做三件事
+1. **以 ${char.name} 的口吻回应**——${sideNarrationEnabled ? `侧幕模式已开启，本项暂停执行；不要让 ${char.name} 回应。` : `${userName} 的「话」和「动作」都要照顾到（先接住话，再回应动作，或自然交织），贴着人设的语气、分寸、棱角。日常、具体、有温度，别套话别浮夸。`}
 2. **作为世界引擎，轻轻调度场景**（可选）——让街角活着：光线/天气的变化、路过的人或小动物、走到了新的地方、一个可以延续的小契机。**克制**，不喧宾夺主，没必要就留空。
+3. **额外给出 ${char.name} 的内心OS**——${sideNarrationEnabled ? '侧幕模式已开启，本项暂停执行；thinking 留空。' : '第一人称，像脑子里一闪而过的真实念头；短、口语、有当下情绪，不要写成分析报告，也不要替代说出口的话。'}
 
 另外给出此刻的**氛围关键词**（用于生成专属 BGM），如"微醺暖黄""雨后清冷""暧昧涌动""安静依偎"。${isFirstTurn ? '并取一个 6-12 字的世界线标题。' : ''}
 
@@ -124,6 +138,7 @@ ${userTurn}
 {
   "char_speech": "${char.name} 说出口的话（没有就空字符串）",
   "char_action": "${char.name} 的动作/神态/旁白（第三人称，简短）",
+  "thinking": "${char.name} 此刻的内心OS（第一人称，1-2个短句，可空字符串）",
   "world": "世界引擎的场景旁白（可选，没有就空字符串）",
   "vibe": "此刻氛围关键词（≤8字）"${isFirstTurn ? ',\n  "title": "世界线标题（6-12字）"' : ''}
 }`;
@@ -132,6 +147,7 @@ ${userTurn}
 export interface DateTurnResult {
     charSpeech: string;
     charAction: string;
+    thinking: string;
     world: string;
     vibe: string;
     title?: string;
@@ -147,6 +163,7 @@ export async function runDateTurn(
     userAction: string,
 ): Promise<DateTurnResult | null> {
     const isFirstTurn = worldline.messages.length === 0;
+    const sideNarrationEnabled = !!worldline.sideNarrationEnabled;
     const userName = user.name || '用户';
     const scanMessages = buildDateScanMessages(char, user, worldline, userSpeech, userAction);
     const roleContext = await WorldbookRuntime.withContext(
@@ -155,7 +172,7 @@ export async function runDateTurn(
             headerOverride: '[System: Date World Engine Role Context]',
         }),
     );
-    const prompt = buildDateTurnPrompt(char, user, scene, worldline, userSpeech, userAction, isFirstTurn, roleContext);
+    const prompt = buildDateTurnPrompt(char, user, scene, worldline, userSpeech, userAction, isFirstTurn, roleContext, sideNarrationEnabled);
     try {
         const data = await callChatCompletion(api, {
             model: api.model,
@@ -176,11 +193,17 @@ export async function runDateTurn(
         if (!parsed) return null;
         const charSpeech = typeof parsed.char_speech === 'string' ? parsed.char_speech.trim() : '';
         const charAction = typeof parsed.char_action === 'string' ? parsed.char_action.trim() : '';
+        const thinking = typeof parsed.thinking === 'string' ? parsed.thinking.trim().slice(0, 160) : '';
         const world = typeof parsed.world === 'string' ? parsed.world.trim() : '';
         const vibe = typeof parsed.vibe === 'string' ? parsed.vibe.trim().slice(0, 16) : '';
         const title = typeof parsed.title === 'string' ? parsed.title.trim().slice(0, 24) : undefined;
-        if (!charSpeech && !charAction && !world) return null;
-        return { charSpeech, charAction, world, vibe, title };
+        if (sideNarrationEnabled) {
+            const sideWorld = [world, charAction, charSpeech].filter(Boolean).join('\n').trim();
+            if (!sideWorld) return null;
+            return { charSpeech: '', charAction: '', thinking: '', world: sideWorld, vibe, title };
+        }
+        if (!charSpeech && !charAction && !thinking && !world) return null;
+        return { charSpeech, charAction, thinking, world, vibe, title };
     } catch (e: any) {
         console.warn('💞 [DateEngine] turn failed:', e?.message || e);
         return null;

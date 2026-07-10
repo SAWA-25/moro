@@ -29,7 +29,7 @@ import {
     getCustomDishes, saveCustomDish, deleteCustomDish,
     getCustomStores, saveCustomStore, mergeCustomStores, cloneDishForStore,
     sanitizeTakeoutDish, sanitizeTakeoutStore, TAKEOUT_STORES_CACHE_KEY,
-    pickActiveOrders,
+    pickActiveOrders, takeoutChatForTarget, buildCharacterTakeoutReceipt,
     type TakeoutMainTab, type TakeoutOrderBucket, type TakeoutSavedCart,
     getTakeoutMemberState, addTakeoutMemberPoints, takeoutMemberLevel, takeoutDailyCheckin, canTakeoutDailyCheckin,
     getTakeoutFootprints, pushTakeoutFootprint, clearTakeoutFootprints,
@@ -333,6 +333,7 @@ const TakeoutApp: React.FC = () => {
     const [chatTarget, setChatTarget] = useState<ChatTarget>('rider');
     const [chatInput, setChatInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
+    const [unsealOrder, setUnsealOrder] = useState<TakeoutOrder | null>(null);
 
     // 食评
     const [reviewing, setReviewing] = useState(false);
@@ -413,6 +414,7 @@ const TakeoutApp: React.FC = () => {
         setView(tab);
         setSearchFocused(false);
         setCartOpen(false);
+        setUnsealOrder(null);
     }, []);
 
     const openOrderDetail = useCallback((orderId: string, source: TakeoutMainTab = 'orders') => {
@@ -420,6 +422,7 @@ const TakeoutApp: React.FC = () => {
         setActiveOrderId(orderId);
         const order = orders.find(o => o.id === orderId);
         setChatTarget(order?.chatTarget || 'rider');
+        setUnsealOrder(null);
         setView('detail');
     }, [orders]);
 
@@ -1053,26 +1056,56 @@ const TakeoutApp: React.FC = () => {
         const text = chatInput.trim();
         if (!text || !activeOrder || chatBusy) return;
         setChatInput('');
-        const withUser: TakeoutChatMsg[] = [...activeOrder.chat, { role: 'user', text, at: Date.now() }];
+        const withUser: TakeoutChatMsg[] = [...activeOrder.chat, { role: 'user', target: chatTarget, text, at: Date.now() }];
         const updated = { ...activeOrder, chat: withUser, chatTarget };
         await DB.saveTakeoutOrder(updated);
+        notifyTakeoutUpdated();
         await reloadOrders();
         setChatBusy(true);
         try {
-            const reply = await buildDeliveryReply(api, updated, chatTarget, withUser, text);
-            const next = { ...updated, chat: [...withUser, { role: chatTarget, text: reply, at: Date.now() } as TakeoutChatMsg] };
+            const reply = await buildDeliveryReply(api, updated, chatTarget, takeoutChatForTarget(withUser, chatTarget), text);
+            const next = { ...updated, chat: [...withUser, { role: chatTarget, target: chatTarget, text: reply, at: Date.now() } as TakeoutChatMsg] };
             await DB.saveTakeoutOrder(next);
+            notifyTakeoutUpdated();
             await reloadOrders();
         } finally { setChatBusy(false); }
     };
 
     const notifyDelivered = async (order: TakeoutOrder) => {
-        const done = { ...order, status: 'delivered' as const, deliveredAt: Date.now() };
+        const done = {
+            ...order,
+            status: 'delivered' as const,
+            deliveredAt: Date.now(),
+            characterReceipt: order.initiatedBy === 'char'
+                ? (order.characterReceipt || buildCharacterTakeoutReceipt(order, nameOf(order.payer), userProfile.name || '你'))
+                : order.characterReceipt,
+        };
         await DB.saveTakeoutOrder(done);
         if (order.charId) { try { await postTakeoutDeliveredToChat(done); } catch { /* ignore */ } }
         notifyTakeoutUpdated();
         await reloadOrders();
+        setUnsealOrder(done);
         addToast('签收章盖好啦，趁热吃～', 'success');
+    };
+
+    const closeUnseal = () => setUnsealOrder(null);
+
+    const chooseCharacterReceipt = async (keep: boolean) => {
+        if (!unsealOrder) return;
+        const receipt = unsealOrder.characterReceipt || buildCharacterTakeoutReceipt(unsealOrder, nameOf(unsealOrder.payer), userProfile.name || '你');
+        const next: TakeoutOrder = {
+            ...unsealOrder,
+            characterReceipt: {
+                ...receipt,
+                keptAt: keep ? Date.now() : undefined,
+                dismissedAt: keep ? undefined : Date.now(),
+            },
+        };
+        await DB.saveTakeoutOrder(next);
+        notifyTakeoutUpdated();
+        await reloadOrders();
+        setUnsealOrder(null);
+        addToast(keep ? '这张手写小票收进「我的」啦' : '小票没留，订单仍在票根夹里', keep ? 'success' : 'info');
     };
 
     const fileComplaint = async (order: TakeoutOrder) => {
@@ -1142,6 +1175,9 @@ const TakeoutApp: React.FC = () => {
     const activeTakeoutOrders = useMemo(() => pickActiveOrders(orders, now), [orders, now]);
     const bucketCounts = useMemo(() => takeoutOrderBucketCounts(orders, now), [orders, now]);
     const visibleOrders = useMemo(() => filterTakeoutOrdersByBucket(orders, orderBucket, now), [orders, orderBucket, now]);
+    const keptCharacterReceipts = useMemo(() => orders
+        .filter(o => o.initiatedBy === 'char' && o.recipient === 'me' && !!o.characterReceipt?.keptAt)
+        .sort((a, b) => (b.characterReceipt?.keptAt || 0) - (a.characterReceipt?.keptAt || 0)), [orders]);
     const memberLevel = useMemo(() => takeoutMemberLevel(member.points), [member.points]);
     const canCheckin = canTakeoutDailyCheckin(member, now);
     const navItems: { id: TakeoutMainTab; label: string; Icon: React.ElementType; badge?: number }[] = [
@@ -2106,6 +2142,7 @@ const TakeoutApp: React.FC = () => {
                         </ScrapButton>
                     </div>
                 </PaperSheet>
+
             </TakeoutShell>
         );
     }
@@ -2468,6 +2505,30 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     </PaperCard>
 
+                    {keptCharacterReceipts.length > 0 && (
+                        <PaperCard tilt={-0.2} tape="sage" className="px-4 py-3.5">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <SectionTag en="KEPT NOTES">TA写的小票</SectionTag>
+                                <span className="text-[10px] font-bold" style={{ color: INK_SOFT }}>{keptCharacterReceipts.length} 张</span>
+                            </div>
+                            <div className="space-y-2">
+                                {keptCharacterReceipts.slice(0, 6).map(o => {
+                                    const receipt = o.characterReceipt!;
+                                    return (
+                                        <button key={o.id} onClick={() => openOrderDetail(o.id, 'profile')} className="w-full text-left rounded-[10px] px-3 py-2.5 active:scale-[0.99] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px dashed rgba(150,144,132,0.7)' }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="min-w-0 text-[12.5px] font-black truncate" style={{ color: INK }}><Emo e={o.storeEmoji} size={14} /> {o.storeName}</span>
+                                                <span className="shrink-0 text-[10px]" style={{ color: INK_SOFT }}>{new Date(receipt.keptAt || receipt.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</span>
+                                            </div>
+                                            <div className="text-[10.5px] mt-1" style={{ color: INK_SOFT }}>{receipt.fromName || nameOf(o.payer) || 'TA'} 写给「{receipt.recipientNickname}」</div>
+                                            <div className="text-[11.5px] mt-1 leading-snug line-clamp-2" style={{ color: '#54504a' }}>{receipt.note}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </PaperCard>
+                    )}
+
                     <PaperCard tilt={-0.2} className="px-4 py-3.5">
                         <div className="flex items-center justify-between mb-2.5">
                             <SectionTag en="ADDRESS BOOK">地址卡</SectionTag>
@@ -2551,6 +2612,8 @@ const TakeoutApp: React.FC = () => {
             { id: 'support', label: '平台·说理', icon: <ShieldWarning size={13} weight="bold" /> },
         ];
         const targetZh = chatTarget === 'rider' ? '跑腿' : chatTarget === 'store' ? '铺子' : '平台';
+        const visibleChat = takeoutChatForTarget(o.chat || [], chatTarget);
+        const customerName = o.initiatedBy === 'char' && o.payer !== 'me' ? (nameOf(o.payer) || 'TA') : '你';
         return (
             <TakeoutShell key="detail">
                 <ScrapHeader title="这张饭票" en="THE TICKET" onBack={() => setView(mainTab)} backLabel="返回" right={walletChip} />
@@ -2618,12 +2681,15 @@ const TakeoutApp: React.FC = () => {
                             {targets.map(t => <ChoiceChip key={t.id} on={chatTarget === t.id} onClick={() => setChatTarget(t.id)} icon={t.icon}>{t.label}</ChoiceChip>)}
                         </div>
                         <div className="rounded-[10px] p-2.5 max-h-44 overflow-y-auto no-scrollbar space-y-2" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.5)' }}>
-                            {o.chat.filter(m => m.role === 'user' || m.role === chatTarget).length === 0 && (
+                            {visibleChat.length === 0 && (
                                 <div className="text-[11px] text-center py-3 flex items-center justify-center gap-1" style={{ color: INK_SOFT }}><ChatCircleDots size={14} />给{targetZh}捎句话试试</div>
                             )}
-                            {o.chat.filter(m => m.role === 'user' || m.role === chatTarget).map((m, i) => (
+                            {visibleChat.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <span className="max-w-[78%] px-3 py-1.5 rounded-[12px] text-[12.5px] leading-snug" style={m.role === 'user' ? { background: INK, color: PAPER } : { background: PAPER, color: '#36322b', border: '1px solid rgba(176,170,158,0.7)' }}>{m.text}</span>
+                                    <span className="max-w-[78%] px-3 py-1.5 rounded-[12px] text-[12.5px] leading-snug" style={m.role === 'user' ? { background: INK, color: PAPER } : { background: PAPER, color: '#36322b', border: '1px solid rgba(176,170,158,0.7)' }}>
+                                        <span className="block text-[9px] opacity-65 mb-0.5">{m.role === 'user' ? (m.actorName || customerName) : targetZh}</span>
+                                        {m.text}
+                                    </span>
                                 </div>
                             ))}
                             {chatBusy && <div className="text-[11px] pl-1" style={{ color: INK_SOFT }}>对方正在写…</div>}
@@ -2758,6 +2824,53 @@ const TakeoutApp: React.FC = () => {
                         <ScrapButton variant="ink" onClick={() => void submitReview()} className="flex-1 py-3 text-[14px]">贴上墙</ScrapButton>
                     </div>
                 </PaperSheet>
+
+                {unsealOrder && (() => {
+                    const isCharOrder = unsealOrder.initiatedBy === 'char' && unsealOrder.payer !== 'me';
+                    const receipt = unsealOrder.characterReceipt || buildCharacterTakeoutReceipt(unsealOrder, nameOf(unsealOrder.payer), userProfile.name || '你');
+                    return (
+                        <div className="absolute inset-0 z-[220] flex items-center justify-center bg-black/45 p-6" role="dialog" aria-modal="true">
+                            <style>{`
+                                @keyframes moroTakeoutUnsealLid { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 55% { transform: translateY(-18px) rotate(-4deg); opacity: 1; } 100% { transform: translateY(-42px) rotate(-10deg); opacity: 0; } }
+                                @keyframes moroTakeoutUnsealSlip { 0% { transform: translateY(24px) scale(.96); opacity: 0; } 70% { transform: translateY(-4px) scale(1.02); opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+                                @keyframes moroTakeoutUnsealSteam { 0% { transform: translateY(14px); opacity: 0; } 45% { opacity: .9; } 100% { transform: translateY(-22px); opacity: 0; } }
+                            `}</style>
+                            <div className="w-[min(86vw,350px)] rounded-[18px] px-5 py-5 text-center shadow-2xl" style={{ background: PAPER, border: `2px solid ${INK}`, boxShadow: '8px 8px 0 rgba(31,29,26,0.22)' }}>
+                                <div className="relative h-28 mb-3 overflow-hidden">
+                                    <div className="absolute left-1/2 top-4 -translate-x-1/2 w-44 h-20 rounded-[16px]" style={{ background: '#efeae0', border: `2px solid ${INK}` }} />
+                                    <div className="absolute left-1/2 top-0 -translate-x-1/2 w-44 h-12 rounded-t-[16px]" style={{ background: '#d8d0bf', border: `2px solid ${INK}`, animation: 'moroTakeoutUnsealLid 1.15s ease-out forwards' }} />
+                                    {[0, 1, 2].map(i => (
+                                        <span key={i} className="absolute top-6 text-[20px]" style={{ left: `${38 + i * 12}%`, animation: `moroTakeoutUnsealSteam 1.4s ease-out ${i * 0.16}s infinite` }}>〰</span>
+                                    ))}
+                                    <div className="absolute left-1/2 top-9 -translate-x-1/2 w-36 rounded-[10px] px-3 py-2" style={{ background: '#fffdf7', border: '1px dashed rgba(31,29,26,0.55)', animation: 'moroTakeoutUnsealSlip .78s ease-out .25s both' }}>
+                                        <div className="text-[11px] font-black" style={{ color: INK }}><Emo e={unsealOrder.storeEmoji} size={14} /> {unsealOrder.storeName}</div>
+                                        <div className="text-[9.5px] mt-0.5" style={{ color: INK_SOFT }}>{unsealOrder.items.slice(0, 2).map(i => i.name).join('、')}</div>
+                                    </div>
+                                </div>
+                                <div className="text-[17px] font-black" style={{ color: INK }}>拆开啦</div>
+                                <div className="text-[11.5px] mt-1 mb-3" style={{ color: INK_SOFT }}>热乎的饭票已经签收。</div>
+                                {isCharOrder && (
+                                    <div className="text-left rounded-[12px] px-3.5 py-3 mb-3" style={{ background: '#fffdf7', border: '1px dashed rgba(31,29,26,0.55)' }}>
+                                        <div className="flex justify-between gap-3 text-[11px] font-black" style={{ color: INK }}>
+                                            <span>收货昵称：{receipt.recipientNickname}</span>
+                                            <span>{receipt.fromName || nameOf(unsealOrder.payer) || 'TA'} 写</span>
+                                        </div>
+                                        <DashedRule className="my-2" />
+                                        <div className="text-[12.5px] leading-relaxed" style={{ color: '#54504a' }}>{receipt.note}</div>
+                                    </div>
+                                )}
+                                {isCharOrder ? (
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        <ScrapButton variant="ghost" onClick={() => void chooseCharacterReceipt(false)} className="py-2.5 text-[12.5px]">不留了</ScrapButton>
+                                        <ScrapButton variant="ink" onClick={() => void chooseCharacterReceipt(true)} className="py-2.5 text-[12.5px]" icon={<Receipt size={14} weight="bold" />}>保留小票</ScrapButton>
+                                    </div>
+                                ) : (
+                                    <ScrapButton variant="ink" onClick={closeUnseal} className="w-full py-2.5 text-[13px]" icon={<Package size={15} weight="fill" />}>收好</ScrapButton>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
             </TakeoutShell>
         );
     }

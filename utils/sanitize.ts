@@ -68,8 +68,9 @@ const stripBusinessTagsForBubble = (t: string): string =>
     .replace(/\[\[\s*PAT\s*\]\]/gi, '')
     // 强制回话：隐藏控制指令，只能触发 OS 弹窗，不能留在气泡或通知里。
     .replace(/\[\[\s*FORCE_REPLY\s*[:：]?\s*[\s\S]*?\]\]/gi, '')
-    // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
+    // 来往/求婚/外卖/游戏邀请/婚事 指令（OSContext 已据此落库，气泡里不应残留）
     .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
+    .replace(/\[\[(?:GOMOKU_INVITE|GO_INVITE|DOUDIZHU_INVITE|TURTLE_SOUP_INVITE|MAHJONG_INVITE)(?:[：:][\s\S]*?)?\]\]/gi, '')
     .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')
     .replace(/\[schedule_message[^\]]*\]/g, '');
 

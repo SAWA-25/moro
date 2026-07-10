@@ -34,6 +34,7 @@ import type {
   HealthModuleId,
   HealthModuleSettings,
   HealthImportBatch,
+  HealthImportSource,
   HealthPlan,
   HealthPrivacyMode,
   HealthRecord,
@@ -100,6 +101,50 @@ import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink
 type ViewId = 'today' | 'calendar' | 'trends' | 'reminders' | 'devices' | 'privacy';
 type PeriodNumberField = 'cycleLength' | 'periodLength';
 type HealthGoalDraft = { target: string; unit: string; enabled: boolean };
+type HealthLiveDevicePreset = 'standard' | 'garmin';
+type HealthLiveConnectionState = 'idle' | 'requesting' | 'connecting' | 'listening' | 'disconnected' | 'error';
+
+interface WebBluetoothNavigator extends Navigator {
+  bluetooth?: {
+    requestDevice(options: WebBluetoothRequestOptions): Promise<WebBluetoothDevice>;
+  };
+}
+
+interface WebBluetoothRequestOptions {
+  filters?: WebBluetoothRequestFilter[];
+  optionalServices?: string[];
+  acceptAllDevices?: boolean;
+}
+
+interface WebBluetoothRequestFilter {
+  services?: string[];
+  name?: string;
+  namePrefix?: string;
+}
+
+interface WebBluetoothDevice extends EventTarget {
+  name?: string;
+  gatt?: {
+    connected?: boolean;
+    connect(): Promise<WebBluetoothGATTServer>;
+    disconnect(): void;
+  };
+}
+
+interface WebBluetoothGATTServer {
+  getPrimaryService(service: string): Promise<WebBluetoothGATTService>;
+}
+
+interface WebBluetoothGATTService {
+  getCharacteristic(characteristic: string): Promise<BluetoothRemoteGATTCharacteristic>;
+}
+
+interface BluetoothRemoteGATTCharacteristic extends EventTarget {
+  value?: DataView;
+  startNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
+  stopNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
+  readValue(): Promise<DataView>;
+}
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const todayKey = () => toHealthDateKey(new Date());
@@ -246,6 +291,7 @@ const lastNDates = (count: number) => {
 };
 
 const moduleDefaultUnit = (moduleId: HealthModuleId) => (
+  moduleId === 'vitals' ? '条' :
   HEALTH_MODULES.find(item => item.id === moduleId)?.unit || '次'
 );
 
@@ -294,6 +340,103 @@ const makePlanForModule = (
   });
 };
 
+const IMPORT_SOURCE_LABEL: Record<HealthImportSource, string> = {
+  generic: '通用',
+  xiaomi: '小米',
+  zepp: 'Zepp',
+  huawei: '华为',
+  garmin: '常见手环',
+  apple_health: 'Apple Health',
+  google_fit: 'Google Fit',
+  web_bluetooth: '实时蓝牙',
+  unknown: '未知',
+};
+
+const IMPORT_PRESET_LABEL: Record<HealthImportPreset, string> = {
+  auto: '自动识别',
+  generic: '通用',
+  xiaomi: '小米',
+  zepp: 'Zepp',
+  huawei: '华为',
+  garmin: '常见手环',
+  apple_health: 'Apple Health',
+  google_fit: 'Google Fit',
+  web_bluetooth: '实时蓝牙',
+  unknown: '未知',
+};
+
+const IMPORT_PRESET_OPTIONS: HealthImportPreset[] = ['auto', 'generic', 'xiaomi', 'zepp', 'huawei', 'apple_health', 'google_fit'];
+
+const LIVE_DEVICE_PRESET_LABEL: Record<HealthLiveDevicePreset, { title: string; desc: string }> = {
+  standard: { title: '通用心率', desc: '筛选标准蓝牙心率服务' },
+  garmin: { title: '扩展兼容', desc: '兼容更多设备名' },
+};
+
+const LIVE_CONNECTION_STATE_LABEL: Record<HealthLiveConnectionState, string> = {
+  idle: '未连接',
+  requesting: '等待选择设备',
+  connecting: '连接中',
+  listening: '同步中',
+  disconnected: '已断开',
+  error: '连接失败',
+};
+
+const GARMIN_BLE_NAME_PREFIXES = ['Garmin', 'Forerunner', 'fenix', 'Fenix', 'Venu', 'vivo', 'Instinct', 'epix', 'Enduro', 'Lily'];
+
+const buildLiveBluetoothRequestOptions = (preset: HealthLiveDevicePreset): WebBluetoothRequestOptions => {
+  const optionalServices = ['heart_rate', 'battery_service', 'device_information'];
+  if (preset === 'garmin') {
+    return {
+      filters: [
+        { services: ['heart_rate'] },
+        ...GARMIN_BLE_NAME_PREFIXES.map(namePrefix => ({ namePrefix })),
+      ],
+      optionalServices,
+    };
+  }
+  return {
+    filters: [{ services: ['heart_rate'] }],
+    optionalServices: ['battery_service', 'device_information'],
+  };
+};
+
+const decodeGattString = (value: DataView): string => (
+  new TextDecoder('utf-8').decode(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)).trim()
+);
+
+const readOptionalGattString = async (service: WebBluetoothGATTService, characteristic: string): Promise<string | undefined> => {
+  try {
+    const value = await (await service.getCharacteristic(characteristic)).readValue();
+    return decodeGattString(value) || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const readLiveDeviceInformation = async (server: WebBluetoothGATTServer) => {
+  try {
+    const service = await server.getPrimaryService('device_information');
+    const [manufacturer, model] = await Promise.all([
+      readOptionalGattString(service, 'manufacturer_name_string'),
+      readOptionalGattString(service, 'model_number_string'),
+    ]);
+    return { manufacturer, model };
+  } catch {
+    return {};
+  }
+};
+
+const readLiveBatteryLevel = async (server: WebBluetoothGATTServer): Promise<number | null> => {
+  try {
+    const service = await server.getPrimaryService('battery_service');
+    const value = await (await service.getCharacteristic('battery_level')).readValue();
+    const battery = value.getUint8(0);
+    return Number.isFinite(battery) ? battery : null;
+  } catch {
+    return null;
+  }
+};
+
 const buildPlansFromStorage = (storedPlans: HealthPlan[], settings: HealthModuleSettings[]) => (
   GOAL_MODULE_IDS
     .map(moduleId => makePlanForModule(
@@ -305,6 +448,7 @@ const buildPlansFromStorage = (storedPlans: HealthPlan[], settings: HealthModule
 );
 
 const recordNumericValue = (record: HealthRecord) => (
+  record.moduleId === 'vitals' ? 1 :
   Number.isFinite(Number(record.value)) ? Number(record.value) : 1
 );
 
@@ -368,12 +512,26 @@ const HealthApp: React.FC = () => {
   const [importPreview, setImportPreview] = useState<HealthImportPreview | null>(null);
   const [importMapping, setImportMapping] = useState<HealthImportFieldMapping>({});
   const [importingWearable, setImportingWearable] = useState(false);
+  const [livePreset, setLivePreset] = useState<HealthLiveDevicePreset>('standard');
+  const [liveConnectionState, setLiveConnectionState] = useState<HealthLiveConnectionState>('idle');
   const [liveSyncing, setLiveSyncing] = useState(false);
   const [liveDeviceName, setLiveDeviceName] = useState('');
+  const [liveDeviceInfo, setLiveDeviceInfo] = useState<{ manufacturer?: string; model?: string }>({});
+  const [liveBatteryLevel, setLiveBatteryLevel] = useState<number | null>(null);
   const [liveHeartRate, setLiveHeartRate] = useState<number | null>(null);
+  const [liveLastSavedAt, setLiveLastSavedAt] = useState<number | null>(null);
   const [liveMessage, setLiveMessage] = useState('还未连接实时手环');
+  const recordsRef = useRef<HealthRecord[]>([]);
+  const livePresetRef = useRef<HealthLiveDevicePreset>('standard');
+  const liveDeviceNameRef = useRef('');
+  const liveDeviceInfoRef = useRef<{ manufacturer?: string; model?: string }>({});
+  const liveBatteryLevelRef = useRef<number | null>(null);
   const liveDeviceRef = useRef<any>(null);
+  const liveHeartRateCharacteristicRef = useRef<any>(null);
+  const liveLastSavedMinuteRef = useRef<number>(0);
+  const liveDisconnectingRef = useRef(false);
   const liveBatchRef = useRef<HealthImportBatch | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [reminderForm, setReminderForm] = useState({
     moduleId: 'hydration' as HealthModuleId,
     title: '喝水提醒',
@@ -438,6 +596,7 @@ const HealthApp: React.FC = () => {
         storedEvents,
         storedTrackers,
         storedPlans,
+        storedImportBatches,
       ] = await Promise.all([
         DB.getAllHealthModuleSettings().catch(() => []),
         DB.getAllHealthRecords().catch(() => []),
@@ -446,6 +605,7 @@ const HealthApp: React.FC = () => {
         DB.getAllPeriodCycleEvents().catch(() => []),
         DB.getAllTrackers().catch(() => []),
         DB.getAllHealthPlans().catch(() => []),
+        DB.getAllHealthImportBatches().catch(() => []),
       ]);
       const tracker = findPeriodTracker(storedTrackers);
       const trackerEntries = tracker ? await DB.getTrackerEntriesByTracker(tracker.id).catch(() => []) : [];
@@ -480,6 +640,7 @@ const HealthApp: React.FC = () => {
       setRecords([...storedRecords, ...migratedRecords].sort((a, b) => b.date.localeCompare(a.date)));
       setReminders(storedReminders);
       setPlans(normalizedPlans);
+      setImportBatches(storedImportBatches);
       setPeriodSettings(preparedPeriod);
       setPeriodEvents(storedEvents);
       setTrackers(storedTrackers);
@@ -493,8 +654,34 @@ const HealthApp: React.FC = () => {
   }, [load]);
 
   useEffect(() => {
+    recordsRef.current = records;
+  }, [records]);
+
+  useEffect(() => {
+    livePresetRef.current = livePreset;
+  }, [livePreset]);
+
+  useEffect(() => {
+    liveDeviceNameRef.current = liveDeviceName;
+  }, [liveDeviceName]);
+
+  useEffect(() => {
+    liveDeviceInfoRef.current = liveDeviceInfo;
+  }, [liveDeviceInfo]);
+
+  useEffect(() => {
+    liveBatteryLevelRef.current = liveBatteryLevel;
+  }, [liveBatteryLevel]);
+
+  useEffect(() => {
     setPeriodNumberDraft(periodNumberDraftFromSettings(periodSettings));
   }, [periodSettings.cycleLength, periodSettings.periodLength]);
+
+  useEffect(() => {
+    if (!importFile) return;
+    void parseSelectedImportFile(importFile, importPreset, importMapping);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importPreset]);
 
   useEffect(() => {
     const refresh = () => setNotifyPerm(getNotifyPermission());
@@ -507,10 +694,276 @@ const HealthApp: React.FC = () => {
   }, []);
 
   useManualDeepLink(AppID.Health, useCallback((target) => {
+    if (target.route === 'devices' || target.anchorId === 'manual-health-device-root') setActiveView('devices');
+    else if (target.route === 'privacy' || target.anchorId === 'manual-health-privacy') setActiveView('privacy');
+    else if (target.route === 'reminders' || target.anchorId === 'manual-health-period-root') setActiveView('reminders');
+    else setActiveView('today');
     window.setTimeout(() => {
       if (!scrollToManualAnchor(target.anchorId)) scrollToManualAnchor('manual-health-root');
     }, 120);
   }, []));
+
+  const refreshImportBatches = useCallback(async () => {
+    const batches = await DB.getAllHealthImportBatches().catch(() => []);
+    setImportBatches(batches);
+  }, []);
+
+  const parseSelectedImportFile = useCallback(async (file: File, preset = importPreset, mapping = importMapping) => {
+    setImportingWearable(true);
+    try {
+      const preview = await parseHealthImportFile(file, { preset, mapping, now: Date.now() });
+      const nextMapping = { ...preview.mappedFields };
+      setImportFile(file);
+      setImportPreview(preview);
+      setImportMapping(nextMapping);
+      if (preview.warnings.length) {
+        addToast(preview.warnings[0], 'info');
+      }
+    } catch (err: any) {
+      addToast(err?.message || '解析失败', 'error');
+    } finally {
+      setImportingWearable(false);
+    }
+  }, [addToast, importMapping, importPreset]);
+
+  const handlePickImportFile = useCallback((file?: File | null) => {
+    if (!file) return;
+    void parseSelectedImportFile(file);
+  }, [parseSelectedImportFile]);
+
+  const resetImportPreview = useCallback(() => {
+    setImportFile(null);
+    setImportPreview(null);
+    setImportMapping({});
+  }, []);
+
+  const reparseImportPreview = useCallback(() => {
+    if (!importFile) return;
+    void parseSelectedImportFile(importFile, importPreset, importMapping);
+  }, [importFile, importMapping, importPreset, parseSelectedImportFile]);
+
+  const persistImportedBatch = useCallback(async (batch: HealthImportBatch, nextRecords: HealthRecord[]) => {
+    await Promise.all(nextRecords.map(record => DB.saveHealthRecord(record).catch(() => {})));
+    await DB.saveHealthImportBatch(batch);
+    await refreshImportBatches();
+    const nextAll = [...nextRecords, ...records.filter(record => !nextRecords.some(next => next.id === record.id))];
+    const sorted = nextAll.sort((a, b) => b.date.localeCompare(a.date) || (a.timeHHmm || '').localeCompare(b.timeHHmm || ''));
+    setRecords(sorted);
+    const affectedDates = Array.from(new Set(nextRecords.map(record => record.date)));
+    await Promise.all(affectedDates.map(date => DB.saveHealthSummary(summarizeHealthDay(sorted.filter(record => record.date === date), date)).catch(() => {})));
+    notifyHealthUpdated();
+  }, [records, refreshImportBatches, today]);
+
+  const confirmImport = useCallback(async () => {
+    if (!importPreview || !importFile) {
+      addToast('先选一个健康导出文件', 'info');
+      return;
+    }
+    setImportingWearable(true);
+    try {
+      const nextRecords = importPreview.records;
+      const existingIds = new Set(records.map(record => record.id));
+      const importedCount = nextRecords.filter(record => !existingIds.has(record.id)).length;
+      const updatedCount = nextRecords.length - importedCount;
+      const batch = makeHealthImportBatch({
+        source: importPreview.source,
+        mode: 'file',
+        fileName: importPreview.fileName || importFile.name,
+        importedCount,
+        updatedCount,
+        skippedCount: importPreview.skippedCount,
+        warnings: importPreview.warnings,
+        recordIds: nextRecords.map(record => record.id),
+      }, Date.now());
+      await persistImportedBatch(batch, nextRecords);
+      addToast(`已导入 ${nextRecords.length} 条健康记录`, 'success');
+      resetImportPreview();
+    } catch (err: any) {
+      addToast(err?.message || '导入失败', 'error');
+    } finally {
+      setImportingWearable(false);
+    }
+  }, [addToast, importPreview, importFile, persistImportedBatch, records, resetImportPreview]);
+
+  const rollbackImportBatch = useCallback(async (batch: HealthImportBatch) => {
+    if (!window.confirm(`撤回这次 ${batch.fileName || '手环导入'}？`)) return;
+    const ids = new Set(batch.recordIds);
+    const nextRecords = records.filter(record => !ids.has(record.id));
+    await Promise.all(batch.recordIds.map(id => DB.deleteHealthRecord(id).catch(() => {})));
+    await DB.deleteHealthImportBatch(batch.id).catch(() => {});
+    setRecords(nextRecords);
+    await refreshImportBatches();
+    if (batch.recordIds.length) {
+      const affectedDates = Array.from(new Set(records.filter(record => ids.has(record.id)).map(record => record.date)));
+      await Promise.all(affectedDates.map(date => DB.saveHealthSummary(summarizeHealthDay(nextRecords.filter(record => record.date === date), date)).catch(() => {})));
+    }
+    notifyHealthUpdated();
+    addToast('已撤回这次导入', 'success');
+  }, [addToast, records, refreshImportBatches]);
+
+  const onHeartRateValueChanged = useCallback(async (event: Event) => {
+    const target = event.target as BluetoothRemoteGATTCharacteristic | null;
+    const value = target?.value;
+    if (!value) return;
+    const heartRate = parseBleHeartRateMeasurement(value);
+    const now = Date.now();
+    const deviceName = liveDeviceNameRef.current || '实时手环';
+    const deviceInfo = liveDeviceInfoRef.current;
+    const batteryLevel = liveBatteryLevelRef.current;
+    setLiveHeartRate(heartRate);
+    setLiveConnectionState('listening');
+    setLiveMessage(`实时心率 ${heartRate} bpm`);
+    const minuteBucket = Math.floor(now / 60_000);
+    if (minuteBucket === liveLastSavedMinuteRef.current) return;
+    liveLastSavedMinuteRef.current = minuteBucket;
+    const record = makeRealtimeHeartRateRecord({
+      heartRate,
+      deviceName,
+      manufacturer: deviceInfo.manufacturer,
+      model: deviceInfo.model,
+      batteryLevel,
+      devicePreset: livePresetRef.current,
+      now,
+    });
+    await DB.saveHealthRecord(record).catch(() => {});
+    const currentRecords = recordsRef.current;
+    const existing = currentRecords.some(item => item.id === record.id);
+    const batch = liveBatchRef.current || makeHealthImportBatch({
+      source: 'web_bluetooth',
+      mode: 'realtime',
+      deviceName,
+      importedCount: 0,
+      skippedCount: 0,
+      warnings: [],
+      recordIds: [],
+    }, now);
+    batch.importedCount += existing ? 0 : 1;
+    batch.recordIds = Array.from(new Set([...batch.recordIds, record.id]));
+    batch.updatedAt = now;
+    liveBatchRef.current = batch;
+    await DB.saveHealthImportBatch(batch).catch(() => {});
+    await refreshImportBatches();
+    const nextRecords = [record, ...currentRecords.filter(item => item.id !== record.id)];
+    recordsRef.current = nextRecords;
+    setRecords(nextRecords);
+    setLiveLastSavedAt(now);
+    await DB.saveHealthSummary(summarizeHealthDay(nextRecords, record.date)).catch(() => {});
+    notifyHealthUpdated();
+  }, [refreshImportBatches]);
+
+  const stopLiveWearable = useCallback(async (message = '实时同步已停止', nextState: HealthLiveConnectionState = 'idle') => {
+    liveDisconnectingRef.current = true;
+    try {
+      const characteristic = liveHeartRateCharacteristicRef.current;
+      if (characteristic) {
+        try { await characteristic.stopNotifications(); } catch { /* ignore */ }
+        characteristic.removeEventListener?.('characteristicvaluechanged', onHeartRateValueChanged);
+      }
+      const device = liveDeviceRef.current;
+      if (device?.gatt?.connected) {
+        try { device.gatt.disconnect(); } catch { /* ignore */ }
+      }
+    } finally {
+      liveDeviceRef.current = null;
+      liveHeartRateCharacteristicRef.current = null;
+      liveBatchRef.current = null;
+      liveLastSavedMinuteRef.current = 0;
+      liveDisconnectingRef.current = false;
+      liveDeviceInfoRef.current = {};
+      liveBatteryLevelRef.current = null;
+      setLiveSyncing(false);
+      setLiveConnectionState(nextState);
+      setLiveBatteryLevel(null);
+      setLiveDeviceInfo({});
+      setLiveHeartRate(null);
+      setLiveLastSavedAt(null);
+      setLiveMessage(message);
+    }
+  }, [onHeartRateValueChanged]);
+
+  const startLiveWearable = useCallback(async () => {
+    const bluetooth = (navigator as WebBluetoothNavigator).bluetooth;
+    if (!bluetooth) {
+      addToast('当前浏览器不支持 Web Bluetooth', 'error');
+      return;
+    }
+    try {
+      if (liveSyncing) {
+        await stopLiveWearable();
+      }
+      const preset = livePresetRef.current;
+      setLiveSyncing(true);
+      setLiveConnectionState('requesting');
+      setLiveBatteryLevel(null);
+      setLiveDeviceInfo({});
+      setLiveHeartRate(null);
+      setLiveLastSavedAt(null);
+      setLiveMessage(preset === 'garmin' ? '请在弹窗里选择设备；若看不到设备，请先开启心率广播或标准心率服务' : '请在弹窗里选择支持心率的蓝牙设备');
+      const device = await bluetooth.requestDevice(buildLiveBluetoothRequestOptions(preset));
+      liveDeviceRef.current = device;
+      const deviceName = device.name || (preset === 'garmin' ? '兼容设备' : '未知手环');
+      setLiveDeviceName(deviceName);
+      liveDeviceNameRef.current = deviceName;
+      setLiveConnectionState('connecting');
+      setLiveMessage(`正在连接 ${deviceName}`);
+      device.addEventListener('gattserverdisconnected', () => {
+        if (liveDeviceRef.current !== device) return;
+        if (liveDisconnectingRef.current) return;
+        void stopLiveWearable('设备已断开', 'disconnected');
+      });
+      const server = await device.gatt?.connect();
+      if (!server) throw new Error('无法连接手环');
+      const [deviceInfo, battery] = await Promise.all([
+        readLiveDeviceInformation(server),
+        readLiveBatteryLevel(server),
+      ]);
+      setLiveDeviceInfo(deviceInfo);
+      liveDeviceInfoRef.current = deviceInfo;
+      setLiveBatteryLevel(battery);
+      liveBatteryLevelRef.current = battery;
+      let heartRateService: WebBluetoothGATTService;
+      try {
+        heartRateService = await server.getPrimaryService('heart_rate');
+      } catch {
+        throw new Error(preset === 'garmin'
+          ? '没有读到标准蓝牙心率服务。请先在设备上开启心率广播或标准心率服务后再连接。'
+          : '没有读到标准蓝牙心率服务，暂时无法实时同步。');
+      }
+      const heartRateCharacteristic = await heartRateService.getCharacteristic('heart_rate_measurement');
+      liveHeartRateCharacteristicRef.current = heartRateCharacteristic;
+      heartRateCharacteristic.addEventListener('characteristicvaluechanged', onHeartRateValueChanged);
+      await heartRateCharacteristic.startNotifications();
+      const warning = preset === 'garmin'
+        ? '实时蓝牙连接仅读取标准心率服务；步数、睡眠、压力、血氧请继续用厂商 App 导出文件导入。'
+        : '';
+      liveBatchRef.current = makeHealthImportBatch({
+        source: 'web_bluetooth',
+        mode: 'realtime',
+        deviceName,
+        importedCount: 0,
+        skippedCount: 0,
+        warnings: warning ? [warning] : [],
+        recordIds: [],
+      });
+      await DB.saveHealthImportBatch(liveBatchRef.current).catch(() => {});
+      await refreshImportBatches();
+      setLiveConnectionState('listening');
+      setLiveMessage(`已连接 ${deviceName}${battery !== null ? ` · 电量 ${battery}%` : ''} · 等待心率数据`);
+      addToast('蓝牙实时连接已开启', 'success');
+    } catch (err: any) {
+      try { await stopLiveWearable(err?.message || '实时同步未连接', 'error'); } catch { /* ignore */ }
+      setLiveSyncing(false);
+      setLiveConnectionState('error');
+      setLiveMessage(err?.message || '实时同步未连接');
+      addToast(err?.message || '连接手环失败', 'error');
+    }
+  }, [addToast, liveSyncing, onHeartRateValueChanged, refreshImportBatches, stopLiveWearable]);
+
+  useEffect(() => {
+    return () => {
+      void stopLiveWearable();
+    };
+  }, [stopLiveWearable]);
 
   const patchPeriodSettings = (patch: Partial<PeriodReminderSettings>) => {
     setPeriodSettings(prev => preparePeriodReminderSettings({ ...prev, ...patch }, Date.now()));
@@ -974,13 +1427,15 @@ const HealthApp: React.FC = () => {
             const rows = todayRecords.filter(record => record.moduleId === module.id);
             const plan = plans.find(item => item.moduleId === module.id && item.enabled);
             const progress = plan ? computeHealthGoalProgress(plan, records, today) : null;
+            const displayTotal = module.id === 'vitals' ? rows.length : rows.reduce((sum, record) => sum + recordNumericValue(record), 0);
+            const displayUnit = module.id === 'vitals' ? '条' : rows[0]?.unit || plan?.unit || module.unit || '次';
             return (
               <ModuleStatusCard
                 key={module.id}
                 module={module}
                 count={rows.length}
-                total={rows.reduce((sum, record) => sum + recordNumericValue(record), 0)}
-                unit={rows[0]?.unit || plan?.unit || module.unit || '次'}
+                total={displayTotal}
+                unit={displayUnit}
                 progress={progress?.ratio}
                 onClick={() => {
                   setActiveModule(module.id);
@@ -1359,6 +1814,192 @@ const HealthApp: React.FC = () => {
     </div>
   );
 
+  const renderDevices = () => {
+    const preview = importPreview;
+    const headers = preview?.headers || [];
+    const liveConnecting = liveConnectionState === 'requesting' || liveConnectionState === 'connecting';
+    const liveInfoText = [
+      liveDeviceInfo.manufacturer,
+      liveDeviceInfo.model,
+      liveBatteryLevel !== null ? `电量 ${liveBatteryLevel}%` : '',
+      liveLastSavedAt ? `最近写入 ${new Date(liveLastSavedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '',
+    ].filter(Boolean).join(' · ');
+    return (
+      <div className="space-y-4" data-manual-anchor="manual-health-device-root">
+        <section className="rounded-[8px] bg-white border border-[#dfe9e3] p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-[12px] font-black text-[#4e8062]">
+                <Watch size={16} weight="bold" />
+                手环设备
+              </div>
+              <div className="mt-2 text-[22px] font-black leading-tight">导入历史 + 蓝牙实时连接</div>
+              <div className="mt-1 text-[12px] font-bold text-[#789085] leading-relaxed">
+                这里可以导入手环导出的 CSV / JSON / XML / ZIP，也可以通过蓝牙连接支持 Web Bluetooth 心率服务的设备做实时同步。
+              </div>
+            </div>
+            <button
+              onClick={() => void (liveSyncing ? stopLiveWearable() : startLiveWearable())}
+              disabled={liveConnecting}
+              className={`px-3 h-9 rounded-[8px] text-[12px] font-black border flex items-center gap-2 disabled:opacity-60 ${liveSyncing ? 'bg-[#f5ecef] border-[#ead6dc] text-[#9b5065]' : 'bg-[#e8f7ee] border-[#acd6bd] text-[#2d734a]'}`}
+            >
+              {liveSyncing ? <BluetoothSlash size={16} weight="bold" /> : <BluetoothConnected size={16} weight="bold" />}
+              {liveConnecting ? '连接中' : liveSyncing ? '断开蓝牙' : '蓝牙连接'}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.keys(LIVE_DEVICE_PRESET_LABEL) as HealthLiveDevicePreset[]).map(value => (
+              <button
+                key={value}
+                onClick={() => setLivePreset(value)}
+                disabled={liveSyncing}
+                className={`h-12 rounded-[8px] border px-3 text-left disabled:opacity-60 ${livePreset === value ? 'bg-[#edf8f1] border-[#abd9bd] text-[#2d734a]' : 'bg-[#fbfdfc] border-[#dfe9e3] text-[#5f7169]'}`}
+              >
+                <div className="text-[12px] font-black">{LIVE_DEVICE_PRESET_LABEL[value].title}</div>
+                <div className="mt-0.5 text-[10px] font-bold opacity-80">{LIVE_DEVICE_PRESET_LABEL[value].desc}</div>
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-black text-[#7d9489]">蓝牙状态</div>
+                <span className={`px-2 h-5 rounded-[8px] grid place-items-center text-[10px] font-black ${liveConnectionState === 'listening' ? 'bg-[#e8f7ee] text-[#327a4e]' : liveConnectionState === 'error' ? 'bg-[#f5ecef] text-[#9b5065]' : 'bg-white text-[#6d8379]'}`}>
+                  {LIVE_CONNECTION_STATE_LABEL[liveConnectionState]}
+                </span>
+              </div>
+              <div className="mt-1 text-[13px] font-black">{liveMessage}</div>
+              <div className="mt-1 text-[11px] font-bold text-[#789085]">{liveDeviceName || '未连接设备'}{liveHeartRate ? ` · ${liveHeartRate} bpm` : ''}</div>
+              {liveInfoText && <div className="mt-1 text-[10px] font-bold text-[#91a29a]">{liveInfoText}</div>}
+            </div>
+            <div className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] p-3">
+              <div className="text-[11px] font-black text-[#7d9489]">同步边界</div>
+              <div className="mt-1 text-[11px] font-bold text-[#789085] leading-relaxed">
+                实时蓝牙只读取标准心率服务、电量和设备信息。步数、睡眠、压力和血氧仍建议从厂商 App 导出文件再导入。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[8px] bg-white border border-[#dfe9e3] p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[15px] font-black">文件导入</div>
+            <span className="text-[11px] font-bold text-[#91a29a]">{importingWearable ? '处理中…' : '先预览再确认'}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <SelectField label="来源预设" value={importPreset} onChange={value => setImportPreset(value as HealthImportPreset)}>
+              {IMPORT_PRESET_OPTIONS.map(value => <option key={value} value={value}>{IMPORT_PRESET_LABEL[value]}</option>)}
+            </SelectField>
+            <div className="block">
+              <span className="text-[12px] font-bold text-[#6d8379]">文件</span>
+              <button
+                onClick={() => importFileInputRef.current?.click()}
+                className="mt-1 w-full h-11 rounded-[8px] border border-dashed border-[#cfe0d6] bg-[#fbfdfc] text-[13px] font-black text-[#4e8062] flex items-center justify-center gap-2"
+              >
+                <Plus size={16} weight="bold" />
+                选择 CSV / JSON / XML / ZIP
+              </button>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".csv,.json,.xml,.zip,.fit,text/csv,application/json,application/xml"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  e.currentTarget.value = '';
+                  if (file) handlePickImportFile(file);
+                }}
+              />
+            </div>
+          </div>
+          {importFile && (
+            <div className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] p-3 text-[12px] font-bold text-[#6d8379]">
+              当前文件：<span className="text-[#26332e]">{importFile.name}</span>
+            </div>
+          )}
+          {preview && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                <StatMini label="识别源" value={IMPORT_SOURCE_LABEL[preview.source] || preview.source} />
+                <StatMini label="可导入" value={preview.records.length} />
+                <StatMini label="跳过" value={preview.skippedCount} />
+                <StatMini label="字段" value={headers.length} />
+              </div>
+              {preview.warnings.length > 0 && (
+                <div className="rounded-[8px] bg-[#fff7f8] border border-[#f1d4dc] p-3 space-y-1">
+                  {preview.warnings.slice(0, 3).map((warning, index) => <div key={index} className="text-[11px] font-bold text-[#8e6873]">{warning}</div>)}
+                </div>
+              )}
+              {headers.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[12px] font-black text-[#6d8379]">字段映射</div>
+                  <div className="grid gap-2">
+                    {headers.map(header => (
+                      <label key={header} className="grid grid-cols-[1fr_132px] gap-2 items-center rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] px-3 py-2">
+                        <span className="text-[12px] font-black truncate">{header}</span>
+                        <select
+                          value={importMapping[header] || ''}
+                          onChange={e => setImportMapping(prev => ({ ...prev, [header]: e.target.value as HealthImportFieldKey }))}
+                          className="h-9 rounded-[8px] border border-[#d8e5de] bg-white px-2 text-[12px] font-black outline-none"
+                        >
+                          {HEALTH_IMPORT_FIELD_OPTIONS.map(option => <option key={option.key || 'auto'} value={option.key}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {preview.unmappedHeaders.length > 0 && (
+                <div className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] p-3 text-[11px] font-bold text-[#789085]">
+                  未映射字段：{preview.unmappedHeaders.slice(0, 8).join('、')}
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={reparseImportPreview} disabled={!importFile || importingWearable} className="h-10 rounded-[8px] bg-[#eef6f1] text-[#4e8062] text-[12px] font-black disabled:opacity-50">
+                  重新预览
+                </button>
+                <button onClick={() => void confirmImport()} disabled={!preview.records.length || importingWearable} className="h-10 rounded-[8px] bg-[#26332e] text-white text-[12px] font-black disabled:opacity-50">
+                  确认导入
+                </button>
+                <button onClick={resetImportPreview} className="h-10 rounded-[8px] bg-[#f5ecef] text-[#9b5065] text-[12px] font-black">
+                  清空
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[8px] bg-white border border-[#dfe9e3] p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[15px] font-black">导入历史</div>
+            <button onClick={() => void refreshImportBatches()} className="text-[12px] font-black text-[#4e8062]">刷新</button>
+          </div>
+          <div className="space-y-2">
+            {importBatches.length ? importBatches.map(batch => (
+              <div key={batch.id} className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate">{batch.mode === 'realtime' ? '实时同步' : '文件导入'} · {batch.fileName || batch.deviceName || IMPORT_SOURCE_LABEL[batch.source]}</div>
+                    <div className="text-[11px] font-bold text-[#789085] mt-1">
+                      {IMPORT_SOURCE_LABEL[batch.source]} · {new Date(batch.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · 导入 {batch.importedCount} · 跳过 {batch.skippedCount}
+                    </div>
+                    {batch.warnings.length > 0 && <div className="text-[11px] font-bold text-[#9b5065] mt-1 truncate">{batch.warnings[0]}</div>}
+                  </div>
+                  <button
+                    onClick={() => void rollbackImportBatch(batch)}
+                    className="px-2 h-8 rounded-[8px] bg-white border border-[#e6dfe2] text-[#9b5065] text-[11px] font-black"
+                  >
+                    撤回
+                  </button>
+                </div>
+              </div>
+            )) : <div className="text-[12px] font-bold text-[#7b8f86]">还没有导入记录。</div>}
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   const renderPrivacy = () => (
     <div className="space-y-4" data-manual-anchor="manual-health-privacy">
       <section className="rounded-[8px] bg-white border border-[#dfe9e3] p-4 shadow-sm">
@@ -1525,11 +2166,12 @@ const HealthApp: React.FC = () => {
         </header>
 
         <nav className="shrink-0 bg-white/90 border-b border-[#e2ebe5] px-3 py-2">
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-6 gap-1">
             <TabButton active={activeView === 'today'} label="总览" icon={<FirstAidKit size={16} weight="bold" />} onClick={() => setActiveView('today')} />
             <TabButton active={activeView === 'calendar'} label="手账" icon={<CalendarBlank size={16} weight="bold" />} onClick={() => setActiveView('calendar')} />
             <TabButton active={activeView === 'trends'} label="趋势" icon={<ChartLineUp size={16} weight="bold" />} onClick={() => setActiveView('trends')} />
             <TabButton active={activeView === 'reminders'} label="提醒" icon={<Bell size={16} weight="bold" />} onClick={() => setActiveView('reminders')} />
+            <TabButton active={activeView === 'devices'} label="设备" icon={<Bluetooth size={16} weight="bold" />} onClick={() => setActiveView('devices')} />
             <TabButton active={activeView === 'privacy'} label="授权" icon={<ShieldCheck size={16} weight="bold" />} onClick={() => setActiveView('privacy')} />
           </div>
         </nav>
@@ -1548,6 +2190,7 @@ const HealthApp: React.FC = () => {
                   <div className="mt-4">{renderPeriodSettings()}</div>
                 </>
               )}
+              {activeView === 'devices' && renderDevices()}
               {activeView === 'privacy' && renderPrivacy()}
               <div className="pb-6 flex items-center justify-center gap-1 text-[11px] font-bold text-[#91a29a]">
                 {periodTracker ? <Sparkle size={14} weight="bold" /> : <Plus size={14} weight="bold" />}
@@ -1678,7 +2321,14 @@ const GoalEditor: React.FC<{
 const RecordRow: React.FC<{ record: HealthRecord; onDelete?: () => void; onEdit?: () => void }> = ({ record, onDelete, onEdit }) => (
   <div className="rounded-[8px] bg-[#f8faf9] border border-[#e6eee9] px-3 py-2 flex items-center justify-between gap-2">
     <div className="min-w-0">
-      <div className="text-[13px] font-black truncate">{record.label || record.tags[0] || HEALTH_MODULE_LABEL[record.moduleId]}</div>
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="text-[13px] font-black truncate">{record.label || record.tags[0] || HEALTH_MODULE_LABEL[record.moduleId]}</div>
+        {record.source !== 'manual' && (
+          <span className={`shrink-0 px-2 h-5 rounded-[8px] grid place-items-center text-[10px] font-black ${record.source === 'wearable_import' ? 'bg-[#edf6ff] text-[#2563eb]' : 'bg-[#f5ecef] text-[#9b5065]'}`}>
+            {record.source === 'wearable_import' ? '手环导入' : '实时同步'}
+          </span>
+        )}
+      </div>
       <div className="text-[11px] font-bold text-[#789085] mt-0.5">
         {record.date} {record.timeHHmm || ''} · {HEALTH_MODULE_LABEL[record.moduleId]}{record.value !== undefined ? ` · ${record.value}${record.unit || ''}` : ''}
       </div>

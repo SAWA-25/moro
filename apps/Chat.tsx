@@ -4,7 +4,7 @@ import { useMusic } from '../context/MusicContext';
 import { useUserScreenWatch } from '../context/UserScreenWatchContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, UserProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState, ScreenPeekCard, ChatAlarm, ChatAlarmChannel, ChatAlarmKind, ChatParcelDirection, ChatParcelMeta, ChatParcelMode } from '../types';
-import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
+import { setTakeoutIntent, buildTakeoutCardMeta, takeoutChatForTarget } from '../utils/takeout';
 import { DAILY_PARCEL_ITEM_PRESETS, DAILY_PARCEL_METHODS, TRAVEL_FROG_PARCEL_ITEM_PRESETS, TRAVEL_FROG_PARCEL_METHODS, formatDailyParcelForPrompt, generateCharacterParcelDraft, makeDailyParcelMeta } from '../utils/dailyParcel';
 import { resolveUnblockAppealDecision, type UnblockAppealDecision } from '../utils/unblockAppealActions';
 import { unblockCharacterByUser } from '../utils/blockActions';
@@ -97,7 +97,8 @@ import { buildScreenPeekSnapshot } from '../utils/screenPeek';
 import { captureScreenPeekSnapshotImage } from '../components/chat/ScreenPeekPhoneSnapshot';
 import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage, sanitizeUserScreenWatchComment } from '../utils/userScreenWatch';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
-import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
+import { MUSIC_PENDING_CHAT_SHARE_KEY, MUSIC_PENDING_RICH_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, normalizeMusicRichSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
+import { cleanLyricText } from '../utils/musicLyricContext';
 import { SHOP_REPLY_REQUEST_EVENT, consumeShopReply, type ShopReplyRequest } from '../utils/shop';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { getNotifyPermission, requestNotifyPermission } from '../utils/browserNotify';
@@ -147,7 +148,7 @@ const SCHEDULE_MIDNIGHT_REFRESH_GRACE_MS = 1000;
 const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'forum_card', 'chat_forward',
     'screen_peek_card', 'screen_watch_card', 'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
-    'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
+    'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'gomoku_invite_card', 'go_invite_card', 'doudizhu_invite_card', 'turtle_soup_invite_card', 'mahjong_invite_card', 'poll_card',
     'relay_card', 'checkin_card', 'gift_card', 'parcel_card',
 ]);
 
@@ -507,7 +508,18 @@ const parsePrivateChatArchiveImport = (fileName: string, rawText: string, char: 
 
 const Chat: React.FC = () => {
     const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncScheduleMoodApisToAllCharacters, theme: osTheme, proactiveComposingChars, forceReplyRequest, clearForceReplyRequest, suspendedOfflineSession, suspendOfflineSession, clearSuspendedOfflineSession } = useOS();
-    const { cfg: musicCfg, current: musicCurrent, playing: musicPlaying, playSong: playMusicSong, togglePlay: toggleMusicPlay } = useMusic();
+    const {
+        cfg: musicCfg,
+        current: musicCurrent,
+        playing: musicPlaying,
+        progress: musicProgress,
+        duration: musicDuration,
+        lyric: musicLyric,
+        activeLyricIdx: musicActiveLyricIdx,
+        listeningTogetherWith: musicListeningTogetherWith,
+        playSong: playMusicSong,
+        togglePlay: toggleMusicPlay,
+    } = useMusic();
     const userScreenWatch = useUserScreenWatch();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
@@ -519,6 +531,7 @@ const Chat: React.FC = () => {
         } catch { return 0; }
     }, []);
     const [messages, setMessages] = useState<Message[]>([]);
+    const messagesRef = useRef<Message[]>([]);
     const [revealedAssistantIds, setRevealedAssistantIds] = useState<Set<number>>(() => new Set());
     const [poppingMessageIds, setPoppingMessageIds] = useState<Set<number>>(() => new Set());
     // 行动选择器：点最后一轮 user 头像后弹出（生成可编辑的「接下来说点啥」选项）。纯手动，无开关。
@@ -544,6 +557,10 @@ const Chat: React.FC = () => {
     const [categories, setCategories] = useState<EmojiCategory[]>([]);
     const [activeCategory, setActiveCategory] = useState<string>('default');
     const [newCategoryName, setNewCategoryName] = useState('');
+
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const lastMsgIdRef = useRef<number | null>(null);
@@ -2585,14 +2602,19 @@ ${parallelReplyPromptBody({
         if (type === 'image') {
             const recentChat = messages.slice(-10).map(m => {
                 const sender = m.role === 'user' ? userProfile.name : char.name;
-                return `${sender}: ${m.content.substring(0, 100)}`;
+                const content = m.type === 'image' ? '[图片]' : String(m.content || '').substring(0, 100);
+                return `${sender}: ${content}`;
             });
             await DB.saveGalleryImage({
                 id: `img-${Date.now()}-${Math.random()}`,
                 charId: char.id,
                 url: text,
                 timestamp: Date.now(),
-                title: rawMetadata.genPrompt ? String(rawMetadata.genPrompt).slice(0, 40) : undefined,
+                title: rawMetadata.genPrompt
+                    ? String(rawMetadata.genPrompt).slice(0, 40)
+                    : rawMetadata.aiGenerated
+                        ? '聊天配图'
+                        : '聊天保存的图片',
                 savedDate: new Date().toISOString().split('T')[0],
                 source: rawMetadata.aiGenerated ? 'generated' : 'chat',
                 chatContext: recentChat
@@ -3081,6 +3103,76 @@ ${recent || '（你们相处了很久）'}
     const handleOpenProposal = useCallback((m: Message) => {
         setProposalTarget(m);
     }, []);
+
+    const handleOpenGomokuInvite = useCallback((m: Message) => {
+        const invite = (m.metadata as any)?.gomokuInvite || {};
+        queueManualDeepLink({
+            appId: AppID.Theater,
+            anchorId: 'manual-theater-root',
+            payload: {
+                section: 'gomoku',
+                invitationId: invite.invitationId,
+                charId: invite.charId || char?.id,
+            },
+        });
+        openApp(AppID.Theater);
+    }, [char?.id, openApp]);
+
+    const handleOpenGoInvite = useCallback((m: Message) => {
+        const invite = (m.metadata as any)?.goInvite || {};
+        queueManualDeepLink({
+            appId: AppID.Theater,
+            anchorId: 'manual-theater-root',
+            payload: {
+                section: 'go',
+                invitationId: invite.invitationId,
+                charId: invite.charId || char?.id,
+            },
+        });
+        openApp(AppID.Theater);
+    }, [char?.id, openApp]);
+
+    const handleOpenDoudizhuInvite = useCallback((m: Message) => {
+        const invite = (m.metadata as any)?.doudizhuInvite || {};
+        queueManualDeepLink({
+            appId: AppID.Theater,
+            anchorId: 'manual-theater-root',
+            payload: {
+                section: 'doudizhu',
+                invitationId: invite.invitationId,
+                charId: invite.charId || char?.id,
+            },
+        });
+        openApp(AppID.Theater);
+    }, [char?.id, openApp]);
+
+    const handleOpenTurtleSoupInvite = useCallback((m: Message) => {
+        const invite = (m.metadata as any)?.turtleSoupInvite || {};
+        queueManualDeepLink({
+            appId: AppID.Theater,
+            anchorId: 'manual-theater-root',
+            payload: {
+                section: 'turtleSoup',
+                invitationId: invite.invitationId,
+                charId: invite.charId || char?.id,
+            },
+        });
+        openApp(AppID.Theater);
+    }, [char?.id, openApp]);
+
+    const handleOpenMahjongInvite = useCallback((m: Message) => {
+        const invite = (m.metadata as any)?.mahjongInvite || {};
+        queueManualDeepLink({
+            appId: AppID.Theater,
+            anchorId: 'manual-theater-root',
+            payload: {
+                section: 'mahjong',
+                invitationId: invite.invitationId,
+                charId: invite.charId || char?.id,
+            },
+        });
+        openApp(AppID.Theater);
+    }, [char?.id, openApp]);
 
     // 用户回应「角色的求婚」
     const respondToCharProposal = async (accept: boolean) => {
@@ -4219,6 +4311,7 @@ ${privateCallDecisionPromptBody({
                         writeBack: false,
                         userSetting: fullUserSetting,
                         userName: promptUserName,
+                        recentMessages: messages,
                         seed: `${char.id}_${now}_screen_peek`,
                     });
                     await DB.saveXunjiRun(run);
@@ -4523,6 +4616,70 @@ ${privateCallDecisionPromptBody({
         })();
         return () => { cancelled = true; };
     }, [activeCharacterId, char, characters, musicCfg, reloadMessages, triggerAI, addToast, userProfile?.name]);
+
+    useEffect(() => {
+        if (!activeCharacterId || !char) return;
+        let raw: string | null = null;
+        try { raw = localStorage.getItem(MUSIC_PENDING_RICH_SHARE_KEY); } catch { /* ignore */ }
+        if (!raw) return;
+
+        let parsed: any = null;
+        try { parsed = JSON.parse(raw); } catch {
+            try { localStorage.removeItem(MUSIC_PENDING_RICH_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+
+        const payload = normalizeMusicRichSharePayload(parsed, { validCharIds: characters.map(c => c.id) });
+        if (!payload) {
+            try { localStorage.removeItem(MUSIC_PENDING_RICH_SHARE_KEY); } catch { /* ignore */ }
+            return;
+        }
+        if (payload.targetId !== activeCharacterId) return;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                try { localStorage.removeItem(MUSIC_PENDING_RICH_SHARE_KEY); } catch { /* ignore */ }
+                const recent = await DB.getRecentMessagesByCharId(activeCharacterId, Math.max(char.contextLimit || 80, 120));
+                if (recent.some(m => m.metadata?.musicShareId === payload.id)) {
+                    if (!cancelled) await reloadMessages(visibleCountRef.current);
+                    return;
+                }
+                const kindName = payload.kind === 'playlist' ? '歌单'
+                    : payload.kind === 'artist' ? '歌手主页'
+                    : payload.kind === 'comment' ? '歌曲评论'
+                    : payload.kind === 'profile' ? '音乐主页'
+                    : '音乐';
+                const content = [
+                    `[音乐分享] 我把${kindName}「${payload.title}」分享给你。`,
+                    payload.subtitle,
+                    payload.text ? `“${payload.text}”` : '',
+                    payload.url ? `链接：${payload.url}` : '',
+                ].filter(Boolean).join('\n');
+                await DB.saveMessage({
+                    charId: activeCharacterId,
+                    role: 'user',
+                    type: 'text',
+                    content,
+                    metadata: {
+                        intent: 'share',
+                        musicShareId: payload.id,
+                        musicShareKind: payload.kind,
+                        musicShare: payload,
+                    },
+                } as any);
+                const fresh = await DB.getRecentMessagesByCharId(activeCharacterId, char.contextLimit || 80);
+                if (!cancelled) {
+                    await reloadMessages(visibleCountRef.current);
+                    triggerAI(fresh);
+                    addToast(`已把「${payload.title}」分享给 ${char.name}`, 'success');
+                }
+            } catch (err: any) {
+                if (!cancelled) addToast(`音乐分享失败：${err?.message || err}`, 'error');
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [activeCharacterId, char, characters, reloadMessages, triggerAI, addToast]);
 
     const handlePlayMusicCard = useCallback(async (message: Message) => {
         const song = songFromMusicShareSnapshot(message.metadata?.song);
@@ -5966,6 +6123,50 @@ ${privateCallDecisionPromptBody({
         setModalType('message-options');
     }, []);
 
+    const handleSaveMessageImageToGallery = useCallback(async (msg: Message) => {
+        if (!char || msg.type !== 'image' || !msg.content) return;
+        try {
+            const existingImages = await DB.getGalleryImages(char.id);
+            if (existingImages.some(img => img.url === msg.content)) {
+                addToast('这张图片已经在相册里了', 'info');
+                return;
+            }
+
+            const ordered = [...messagesRef.current].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || a.id - b.id);
+            const idx = ordered.findIndex(item => item.id === msg.id);
+            const nearby = idx >= 0 ? ordered.slice(Math.max(0, idx - 5), Math.min(ordered.length, idx + 6)) : ordered.slice(-10);
+            const recentChat = nearby.map(item => {
+                const sender = item.role === 'user' ? (userProfile?.name || '你') : char.name;
+                const content = item.id === msg.id
+                    ? '[这张图片]'
+                    : item.type === 'image'
+                        ? '[图片]'
+                        : String(item.content || '').substring(0, 100);
+                return `${sender}: ${content}`;
+            });
+
+            await DB.saveGalleryImage({
+                id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                charId: char.id,
+                url: msg.content,
+                timestamp: Date.now(),
+                title: msg.metadata?.genPrompt
+                    ? String(msg.metadata.genPrompt).slice(0, 40)
+                    : msg.metadata?.aiGenerated
+                        ? '聊天配图'
+                        : msg.role === 'assistant'
+                            ? `${char.name}发来的图片`
+                            : '聊天保存的图片',
+                savedDate: new Date().toISOString().split('T')[0],
+                source: msg.metadata?.aiGenerated ? 'generated' : 'chat',
+                chatContext: recentChat,
+            });
+            addToast('已保存至相册', 'success');
+        } catch (err: any) {
+            addToast(err?.message || '保存相册失败', 'error');
+        }
+    }, [addToast, char, userProfile?.name]);
+
     const handleBatchDelete = async () => {
         const msgIdsToDelete = new Set<number>(selectedMsgIds);
         // 思维链单独勾选、但宿主消息没选 -> 只清 metadata.thinkingChain，保留消息
@@ -6239,6 +6440,40 @@ ${privateCallDecisionPromptBody({
 
     // 全量可见表情（只排除隐藏分类，不按当前分类切）——表情面板搜索时跨分类匹配
     const allVisibleEmojis = useMemo(() => emojis.filter(e => !(e.categoryId && hiddenCategoryIds.has(e.categoryId))), [emojis, hiddenCategoryIds]);
+
+    const chatMusicHumming = useMemo(() => {
+        if (!char?.id || !musicCurrent || !musicPlaying || !musicListeningTogetherWith.includes(char.id)) return undefined;
+        const activeLine = musicActiveLyricIdx >= 0 ? musicLyric[musicActiveLyricIdx] : null;
+        const lyricLine = cleanLyricText(activeLine?.text || '', { maxLineChars: 100 });
+        const fmt = (value: number) => {
+            const safe = Number.isFinite(value) && value > 0 ? value : 0;
+            const m = Math.floor(safe / 60);
+            const s = Math.floor(safe % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
+        const total = musicDuration || musicCurrent.duration || 0;
+        return {
+            songName: musicCurrent.name,
+            lyricLine,
+            progressLabel: total > 0 ? `${fmt(musicProgress)} / ${fmt(total)}` : fmt(musicProgress),
+        };
+    }, [char?.id, musicCurrent, musicPlaying, musicListeningTogetherWith, musicActiveLyricIdx, musicLyric, musicDuration, musicProgress]);
+
+    const handleMusicHummingSend = useCallback((draft: string) => {
+        const raw = draft.trim();
+        if (!raw) return;
+        const text = raw.startsWith('♪') ? raw : `♪ ${raw}`;
+        void handleSendText(text, 'text', {
+            musicHumming: true,
+            musicSongId: musicCurrent?.id,
+            musicSongName: musicCurrent?.name,
+            musicProgress,
+        }).then(() => {
+            setInput('');
+            localStorage.removeItem(draftKey);
+            clearLiveDraftTimer();
+        });
+    }, [draftKey, clearLiveDraftTimer, musicCurrent?.id, musicCurrent?.name, musicProgress, handleSendText]);
 
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(
@@ -7460,14 +7695,22 @@ ${privateCallDecisionPromptBody({
              {takeoutCardTarget && (() => {
                  const t: any = takeoutCardTarget.metadata?.takeout || (takeoutCardOrder ? buildTakeoutCardMeta(takeoutCardOrder, (id) => characters.find(c => c.id === id)?.name || '') : {});
                  const items: { name: string; qty: number; emoji?: string }[] = (takeoutCardOrder?.items as any) || t.items || [];
+                 const customerName = takeoutCardOrder?.initiatedBy === 'char' && takeoutCardOrder.payer !== 'me'
+                     ? (characters.find(c => c.id === takeoutCardOrder.payer)?.name || displayCharName || 'TA')
+                     : '你';
+                 const chatBlocks = takeoutCardOrder ? ([
+                     { id: 'store' as const, label: '铺子' },
+                     { id: 'rider' as const, label: '跑腿' },
+                     { id: 'support' as const, label: '平台' },
+                 ]).map(ch => ({ ...ch, messages: takeoutChatForTarget(takeoutCardOrder.chat || [], ch.id) })).filter(ch => ch.messages.length > 0) : [];
                  return (
                      <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }}>
-                         <div className="w-[min(84vw,330px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                         <div className="w-[min(84vw,330px)] max-h-[84vh] bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
                              <div className="px-5 py-3 flex items-center justify-between" style={{ background: '#fff4f7', borderBottom: '1px solid #eed6df' }}>
                                   <span className="text-[13px] font-black" style={{ color: '#5a3140' }}>🛵 外卖订单详情</span>
                                   <span className="text-[11px]" style={{ color: '#a892a3' }}>{t.payLabel || ''}</span>
                              </div>
-                             <div className="px-5 pt-4 pb-2">
+                             <div className="px-5 pt-4 pb-2 overflow-y-auto no-scrollbar">
                                   <div className="text-[14px] font-black mb-2" style={{ color: '#5a3140' }}>{t.storeEmoji} {t.storeName}</div>
                                  <div className="space-y-1 mb-3">
                                      {items.map((it, i) => (
@@ -7482,8 +7725,33 @@ ${privateCallDecisionPromptBody({
                                      <div className="flex justify-between"><span>收货</span><span>{takeoutCardOrder?.address || t.recipientLabel}</span></div>
                                      {(takeoutCardOrder?.note || t.note) && <div className="flex justify-between"><span>备注</span><span className="text-right max-w-[60%] truncate">{takeoutCardOrder?.note || t.note}</span></div>}
                                  </div>
+                                 <div className="mt-3 rounded-2xl px-3 py-3" style={{ background: '#fff8fb', border: '1px solid #eed6df' }}>
+                                     <div className="text-[11px] font-black mb-2" style={{ color: '#5a3140' }}>沟通记录</div>
+                                     {chatBlocks.length === 0 ? (
+                                         <div className="text-[11.5px]" style={{ color: '#a892a3' }}>还没有和铺子或跑腿捎话；进饭票详情可以在线沟通。</div>
+                                     ) : (
+                                         <div className="space-y-2.5">
+                                             {chatBlocks.map(block => (
+                                                 <div key={block.id}>
+                                                     <div className="text-[10px] font-black mb-1" style={{ color: '#a892a3' }}>{block.label}</div>
+                                                     <div className="space-y-1.5">
+                                                         {block.messages.slice(0, 5).map((msg, i) => (
+                                                             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                                 <div className="max-w-[86%] rounded-2xl px-3 py-1.5 text-[11.5px] leading-snug" style={msg.role === 'user' ? { background: '#5a3140', color: '#fffdfa' } : { background: '#fffdfa', color: '#5f4b54', border: '1px solid #eed6df' }}>
+                                                                     <span className="block text-[9px] opacity-70 mb-0.5">{msg.role === 'user' ? (msg.actorName || customerName) : block.label}</span>
+                                                                     {msg.text}
+                                                                 </div>
+                                                             </div>
+                                                         ))}
+                                                         {block.messages.length > 5 && <div className="text-[10px] text-right" style={{ color: '#a892a3' }}>还有 {block.messages.length - 5} 条，进饭票查看</div>}
+                                                     </div>
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     )}
+                                 </div>
                              </div>
-                             <div className="flex border-t border-slate-100">
+                             <div className="flex border-t border-slate-100 shrink-0">
                                  <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }} className="flex-1 py-3.5 text-[14px] text-slate-500 font-medium active:bg-slate-50">合上</button>
                                   <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#5a3140' }}>查看进度</button>
                              </div>
@@ -8253,7 +8521,13 @@ ${privateCallDecisionPromptBody({
                             onClaimTransfer={handleClaimRequest}
                             onOpenTakeoutCard={handleOpenTakeoutCard}
                             onOpenProposal={handleOpenProposal}
+                            onOpenGomokuInvite={handleOpenGomokuInvite}
+                            onOpenGoInvite={handleOpenGoInvite}
+                            onOpenDoudizhuInvite={handleOpenDoudizhuInvite}
+                            onOpenTurtleSoupInvite={handleOpenTurtleSoupInvite}
+                            onOpenMahjongInvite={handleOpenMahjongInvite}
                             onPlayMusicCard={handlePlayMusicCard}
+                            onSaveImageToGallery={handleSaveMessageImageToGallery}
                             activeMusicSongId={musicCurrent?.id ?? null}
                             activeMusicSource={musicCurrent?.source || 'netease'}
                             musicPlaying={musicPlaying}
@@ -8487,6 +8761,8 @@ ${privateCallDecisionPromptBody({
                     chromeStyle={osTheme.chatChromeStyle}
                     inputPlaceholder={convo?.inputPlaceholderText}
                     inputAnimation={osTheme.chatInputAnimation}
+                    musicHumming={chatMusicHumming}
+                    onMusicHummingSend={handleMusicHummingSend}
                 />
             </div>
 

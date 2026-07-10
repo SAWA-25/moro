@@ -14,7 +14,7 @@ import {
     TakeoutStore, TakeoutDish, TakeoutOrder, TakeoutStatus, TakeoutOrderItem,
     TakeoutIncident, TakeoutIncidentKind, TakeoutChatMsg,
     TakeoutDishSpec, TakeoutDishAddon, TakeoutAddressCard, TakeoutAddressOwnerType,
-    CharacterProfile,
+    CharacterProfile, TakeoutChatTarget, TakeoutCharacterReceipt,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
@@ -1423,6 +1423,50 @@ function storeIsBad(order: TakeoutOrder): boolean {
     return !!order.cancelledByStore || (order.incidents || []).some(i => i.by === 'store');
 }
 
+const channelName = (target: TakeoutChatTarget) => target === 'rider' ? '跑腿' : target === 'store' ? '铺子' : '平台';
+
+/** 取某个通讯频道的消息。旧订单里的顾客消息没有 target，仍在所有频道可见。 */
+export function takeoutChatForTarget(chat: TakeoutChatMsg[] = [], target: TakeoutChatTarget): TakeoutChatMsg[] {
+    return chat.filter(m => {
+        if (m.role === 'user') return !m.target || m.target === target;
+        return m.role === target;
+    });
+}
+
+function shortAddressLine(address: string): string {
+    return String(address || '').replace(/^送给\s*[^·]+·\s*/, '').split(/[，,；;]/)[0]?.trim().slice(0, 32) || '收货点';
+}
+
+export function buildCharacterTakeoutReceipt(order: Pick<TakeoutOrder, 'items' | 'note' | 'placedAt'>, charName = 'TA', userName = '你'): TakeoutCharacterReceipt {
+    const recipientNickname = String(userName || '你').trim().slice(0, 24) || '你';
+    const items = order.items.map(i => i.name).filter(Boolean).slice(0, 3).join('、') || '这份饭';
+    const note = order.note
+        ? `${items}。备注我写了：${order.note}`
+        : `${items}，趁热吃。到门口记得拿，别又把自己饿过头。`;
+    return {
+        recipientNickname,
+        note,
+        fromName: String(charName || 'TA').trim().slice(0, 24) || 'TA',
+        createdAt: order.placedAt || Date.now(),
+    };
+}
+
+export function buildCharacterTakeoutChatSeed(order: Pick<TakeoutOrder, 'storeName' | 'items' | 'note' | 'address' | 'placedAt' | 'riderName' | 'tip'>, charName = 'TA', userName = '你'): TakeoutChatMsg[] {
+    const at = order.placedAt || Date.now();
+    const actorName = String(charName || 'TA').trim().slice(0, 24) || 'TA';
+    const recipient = String(userName || '你').trim().slice(0, 24) || '你';
+    const items = order.items.map(i => `${i.name}×${i.qty}`).join('、') || '一份热乎的';
+    const note = order.note ? `备注写「${order.note}」` : '口味按清爽稳妥来';
+    const address = shortAddressLine(order.address);
+    const tipLine = (order.tip ?? 0) > 0 ? `我留了小费，辛苦稳一点送。` : '麻烦稳一点送。';
+    return [
+        { role: 'user', target: 'store', actorName, text: `您好，这单是给${recipient}的，${note}。`, at },
+        { role: 'store', target: 'store', text: `收到，${items}现在安排，备注会贴在小票上。`, at: at + 1 },
+        { role: 'user', target: 'rider', actorName, text: `师傅辛苦，送到${address}就好，${tipLine}`, at: at + 2 },
+        { role: 'rider', target: 'rider', text: `好嘞，我取到「${order.storeName}」这单就往那边跑。`, at: at + 3 },
+    ];
+}
+
 export async function buildDeliveryReply(
     api: ResolvedApi, order: TakeoutOrder, target: 'rider' | 'store' | 'support', history: { role: string; text: string }[], userText: string,
 ): Promise<string> {
@@ -1447,7 +1491,7 @@ export async function buildDeliveryReply(
             : `你是「${order.storeName}」的铺子客服，热情、麻利，会聊现做/出餐/口味备注、招牌推荐之类。`;
     }
     const items = order.items.map(i => `${i.name}×${i.qty}`).join('、');
-    const roleZh = target === 'rider' ? '跑腿' : target === 'store' ? '铺子' : '客服';
+    const roleZh = channelName(target);
     const hist = history.slice(-6).map(h => `${h.role === 'user' ? '食客' : roleZh}：${h.text}`).join('\n');
     const prompt = `${persona}\n这张饭票点的是：${items}。\n${hist ? `之前的对话：\n${hist}\n` : ''}食客刚说：${userText}\n用一句话自然回复（不超过30字，口语，不要任何前缀）：`;
     try {
@@ -1553,6 +1597,10 @@ export interface TakeoutOrderDirectiveResult {
 }
 
 export interface TakeoutOrderSynthesisOptions {
+    /** 角色名：用于主动点单小票和通讯记录的显示。 */
+    characterName?: string;
+    /** 用户名：用于主动点单小票的收货昵称。 */
+    userName?: string;
     /** 完整用户设定：用于从用户资料/当前扮相里读取忌口与口味偏好。 */
     fullUserSetting?: string;
     /** 饭票里按收货对象保存的口味小纸条。 */
@@ -1925,7 +1973,7 @@ function buildSynthesizedOrder(
     const rider = newRider();
     const noteParts = [changedReason ? `按忌口改成更稳妥餐食：${changedReason}` : '', synthesizedOrderNote(options, pref)].filter(Boolean);
     const note = noteParts.join('；');
-    return {
+    const order: TakeoutOrder = {
         id: genId('order'),
         storeId: store.id, storeName: store.name, storeEmoji: store.emoji,
         items,
@@ -1941,6 +1989,9 @@ function buildSynthesizedOrder(
         chat: [], chatTarget: 'rider',
         initiatedBy: 'char',
     };
+    order.characterReceipt = buildCharacterTakeoutReceipt(order, options.characterName, options.userName);
+    order.chat = buildCharacterTakeoutChatSeed(order, options.characterName, options.userName);
+    return order;
 }
 
 /** 解析并剥离 [[TAKEOUT_ORDER: 菜品/店铺]]，供聊天与线下模式共用。 */
@@ -1993,7 +2044,7 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
     const etaAt = effectiveTakeoutEtaAt({ placedAt, etaAt: placedAt + store.deliveryMinutes * 60000 });
     const rider = newRider();
     const note = synthesizedOrderNote(options, pref);
-    return {
+    const order: TakeoutOrder = {
         id: genId('order'),
         storeId: store.id, storeName: store.name, storeEmoji: store.emoji,
         items,
@@ -2009,6 +2060,9 @@ export function synthesizeCharOrder(charId: string, desc: string, address: strin
         chat: [], chatTarget: 'rider',
         initiatedBy: 'char',
     };
+    order.characterReceipt = buildCharacterTakeoutReceipt(order, options.characterName, options.userName);
+    order.chat = buildCharacterTakeoutChatSeed(order, options.characterName, options.userName);
+    return order;
 }
 
 export async function synthesizeCharOrderSafely(

@@ -32,6 +32,7 @@ interface Props {
   onOpenPlayer: () => void;
   onVisitChar: (charId: string) => void;
   onShareSong: (song: Song) => void;
+  onOpenArtist?: (artist: { id?: number | string; name: string; source?: 'netease' | 'qq' }) => void;
   tabBar?: React.ReactNode;
 }
 
@@ -54,6 +55,7 @@ const MusicLibraryPage: React.FC<Props> = ({
   onOpenPlayer,
   onVisitChar,
   onShareSong,
+  onOpenArtist,
   tabBar,
 }) => {
   const { characters, addToast, userProfile } = useOS();
@@ -190,6 +192,7 @@ const MusicLibraryPage: React.FC<Props> = ({
           key={`${song.source || 'netease'}-${song.id}-${i}`}
           name={song.name}
           artists={song.artists}
+          artistIds={song.artistIds}
           album={song.album}
           albumPic={song.albumPic}
           duration={fmtTime(song.duration)}
@@ -197,6 +200,7 @@ const MusicLibraryPage: React.FC<Props> = ({
           isActive={current?.id === song.id}
           onClick={() => { playSong(song, { replaceQueue: songs, startIdx: i, playSource }); onOpenPlayer(); }}
           onShare={() => onShareSong(song)}
+          onArtistClick={onOpenArtist}
         />
       ))}
     </div>

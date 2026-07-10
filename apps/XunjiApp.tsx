@@ -20,6 +20,7 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import type {
   CharacterProfile,
+  Message,
   XunjiCharacterLocationSettings,
   XunjiDensity,
   XunjiGeneratedMoment,
@@ -347,6 +348,7 @@ const XunjiApp: React.FC = () => {
   );
   const promptUserName = userProfile?.name || '用户';
   const buildPromptUserSetting = () => buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` });
+  const loadRecentWhisperMessages = (charId: string) => DB.getRecentMessagesByCharId(charId, 20, true).catch(() => [] as Message[]);
 
   const persistSettings = (patch: Partial<XunjiSettings>) => {
     if (patch.activeCharId && patch.activeCharId !== settings.activeCharId) {
@@ -466,7 +468,14 @@ const XunjiApp: React.FC = () => {
     try {
       const api = resolveAuxApi(auxApiConfig, apiConfig);
       const hasApi = !!(api.baseUrl && api.model);
-      const userSetting = hasApi ? await buildPromptUserSetting() : undefined;
+      let userSetting: string | undefined;
+      let recentMessages: Message[] | undefined;
+      if (hasApi) {
+        [userSetting, recentMessages] = await Promise.all([
+          buildPromptUserSetting(),
+          loadRecentWhisperMessages(activeChar.id),
+        ]);
+      }
       const next = await generateXunjiRealtimeSnapshot({
         char: activeChar,
         previous: activeSnapshot,
@@ -474,6 +483,7 @@ const XunjiApp: React.FC = () => {
         locationSource: buildLocationSource(settings, activeChar),
         userSetting,
         userName: promptUserName,
+        recentMessages,
       });
       await DB.saveXunjiSnapshot(next);
       setSnapshot(next);
@@ -588,7 +598,10 @@ const XunjiApp: React.FC = () => {
       const rangeEnd = options?.rangeEnd ?? Math.max(range.end, range.start + 30 * 60 * 1000);
       const api = resolveAuxApi(auxApiConfig, apiConfig);
       const hasApi = !!(api.baseUrl && api.model);
-      const userSetting = hasApi ? await buildPromptUserSetting() : undefined;
+      const [userSetting, recentMessages] = await Promise.all([
+        hasApi ? buildPromptUserSetting() : Promise.resolve(undefined),
+        loadRecentWhisperMessages(activeChar.id),
+      ]);
       const run = await generateXunjiScreenlifeRun({
         char: activeChar,
         api: hasApi ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
@@ -598,6 +611,7 @@ const XunjiApp: React.FC = () => {
         writeBack: options?.auto ? false : settings.writeBackToCharacter,
         userSetting,
         userName: promptUserName,
+        recentMessages,
         seed: options?.auto ? `${activeChar.id}_${rangeStart}_${rangeEnd}_auto` : undefined,
       });
       await DB.saveXunjiRun(run);
@@ -611,6 +625,7 @@ const XunjiApp: React.FC = () => {
           locationSource: buildLocationSource(settings, activeChar),
           userSetting,
           userName: promptUserName,
+          recentMessages,
           now,
         });
         await DB.saveXunjiSnapshot(nextSnapshot);

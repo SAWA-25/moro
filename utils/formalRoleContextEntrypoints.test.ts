@@ -59,4 +59,62 @@ describe('formal role LLM entrypoints keep complete context', () => {
         expect(source).toContain("presetScope: 'chat.private'");
         expect(source).toContain('presetMacros: { charName: char.name, userName }');
     });
+
+    it('theater sleep together uses full core context and phone text preset macros', () => {
+        const source = read('utils/theaterSleep.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain("makeApiUsageMeta('theater.sleepTogether'");
+        expect(source).toContain("presetScope: 'chat.phoneText'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName }');
+    });
+
+    it('theater go uses full role context and role scene preset macros for difficulty and dialogue', () => {
+        const source = read('utils/theaterGo.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain("makeApiUsageMeta('theater.go'");
+        expect(source).toContain("presetScope: 'role.scene'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName }');
+    });
+
+    it('theater doudizhu uses full role context and role scene preset macros for difficulty and dialogue', () => {
+        const source = read('utils/theaterDoudizhu.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain("makeApiUsageMeta('theater.doudizhu'");
+        expect(source).toContain("presetScope: 'role.scene'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName }');
+    });
+
+    it('theater turtle soup uses full role context and role scene preset macros for host, difficulty, actions, and dialogue', () => {
+        const source = read('utils/theaterTurtleSoup.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain('buildFullActiveUserSetting(userProfile');
+        expect(source).toContain("makeApiUsageMeta('theater.turtleSoup'");
+        expect(source).toContain("runtime.presetScope = 'role.scene'");
+        expect(source).toContain('runtime.presetMacros = { charName: args.char.name, userName: args.userName }');
+    });
+
+    it('theater mahjong uses full role context and role scene preset macros for difficulty and dialogue', () => {
+        const source = read('utils/theaterMahjong.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(char, userProfile, true)');
+        expect(source).toContain("makeApiUsageMeta('theater.mahjong'");
+        expect(source).toContain("presetScope: 'role.scene'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName }');
+    });
+
+    it('gallery photo captions and essays keep full role context and creative preset scope', () => {
+        const source = read('apps/Gallery.tsx');
+        expect(source).toContain('buildFullCharacterSetting(char, { includeMemos: true })');
+        expect(source).toContain('buildFullActiveUserSetting(userProfile)');
+        expect(source).toContain("handleGenerateRoleText('charEssay')");
+        expect(source).toContain("presetScope: 'creative.text'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName: userProfile.name ||');
+    });
+
+    it('music listen together uses full role context and private chat preset macros', () => {
+        const source = read('utils/listenTogether.ts');
+        expect(source).toContain('ContextBuilder.buildFullCoreContext(input.char, input.user, true');
+        expect(source).toContain("makeApiUsageMeta('music.listenTogether'");
+        expect(source).toContain("presetScope: 'chat.private'");
+        expect(source).toContain('presetMacros: { charName: char.name, userName: input.user.name ||');
+    });
 });

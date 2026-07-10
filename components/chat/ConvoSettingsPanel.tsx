@@ -1093,6 +1093,41 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
                     />
 
+                    <Entry
+                        manualAnchor="manual-chat-gomoku-invite"
+                        mark="☘" title="TA 会主动约你下五子棋"
+                        note="开启后，TA 在无聊、试探、想陪你放松或想用一盘棋接住话题时，可以主动发来幕间集·五子棋邀请卡。关掉则只保留你手动开局。"
+                        side={<CandyToggle candy="#1f1d1a" on={!!cs.proactiveGomokuInvite} onToggle={() => updateConvo({ proactiveGomokuInvite: !cs.proactiveGomokuInvite })} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-go-invite"
+                        mark="○" title="TA 会主动约你下围棋"
+                        note="开启后，TA 在想安静陪伴、认真对弈或用一盘手谈接住话题时，可以主动发来幕间集·围棋邀请卡。关掉则只保留你手动开局。"
+                        side={<CandyToggle candy="#1f1d1a" on={!!cs.proactiveGoInvite} onToggle={() => updateConvo({ proactiveGoInvite: !cs.proactiveGoInvite })} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-doudizhu-invite"
+                        mark="♠" title="TA 会主动约你斗地主"
+                        note="开启后，TA 在想热闹一局、试试牌风或用牌桌接住话题时，可以主动发来幕间集·斗地主邀请卡。接受后再选第二位角色成桌。"
+                        side={<CandyToggle candy="#1f1d1a" on={!!cs.proactiveDoudizhuInvite} onToggle={() => updateConvo({ proactiveDoudizhuInvite: !cs.proactiveDoudizhuInvite })} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-turtle-soup-invite"
+                        mark="?" title="TA 会主动约你玩海龟汤"
+                        note="开启后，TA 在想讲一则怪故事、一起推理或把气氛压低一点时，可以主动发来幕间集·海龟汤邀请卡。接受后可让系统或角色当主持人。"
+                        side={<CandyToggle candy="#1f1d1a" on={!!cs.proactiveTurtleSoupInvite} onToggle={() => updateConvo({ proactiveTurtleSoupInvite: !cs.proactiveTurtleSoupInvite })} />}
+                    />
+
+                    <Entry
+                        manualAnchor="manual-chat-mahjong-invite"
+                        mark="麻" title="TA 会主动约你打麻将"
+                        note="开启后，TA 在想四人围桌、慢慢摸打或用牌桌接住话题时，可以主动发来幕间集·麻将邀请卡。接受后再选另外两位正式角色成桌。"
+                        side={<CandyToggle candy="#1f1d1a" on={!!cs.proactiveMahjongInvite} onToggle={() => updateConvo({ proactiveMahjongInvite: !cs.proactiveMahjongInvite })} />}
+                    />
+
                     <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」会低频判断，只有真有小事或表达欲时才发；TA 聊天时也会提起自己发过的动态。">
                         <div className="flex flex-wrap gap-2 items-center">
                             <StickerChip seed="mp-off" active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'off' })}>不发</StickerChip>

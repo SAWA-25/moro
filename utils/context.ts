@@ -693,6 +693,9 @@ export const ContextBuilder = {
             artists: string;
             lyricWindow: string[];      // 前2当前后2（共 ≤5 行）；可为空（没歌词）
             activeIdx: number;          // 在 lyricWindow 里的高亮位置，-1 表示没歌词
+            progress?: number;          // 当前播放秒数
+            duration?: number;          // 当前歌曲总秒数
+            playing?: boolean;
         } | null,
         charListening?: {
             songId?: number;            // 用来回查这首歌是不是从 user 收来的
@@ -710,6 +713,13 @@ export const ContextBuilder = {
         isListeningTogether?: boolean,
     ): string => {
         const lines: string[] = [];
+        const fmtMusicTime = (value: unknown): string | null => {
+            const seconds = Number(value);
+            if (!Number.isFinite(seconds) || seconds < 0) return null;
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
 
         // —— 块 1: user 正在听什么 ——
         const canRead = char.musicProfile?.canReadUserMusic ?? true;
@@ -720,6 +730,11 @@ export const ContextBuilder = {
                 lines.push(`你正在和 ${userName || '对方'} 一起听《${userListening.songName}》— ${userListening.artists}`);
             } else {
                 lines.push(`${userName || '对方'} 正在听《${userListening.songName}》— ${userListening.artists}`);
+            }
+            const progress = fmtMusicTime(userListening.progress);
+            const duration = fmtMusicTime(userListening.duration);
+            if (progress || duration) {
+                lines.push(`播放进度：${progress || '未知'}${duration ? ` / ${duration}` : ''}${userListening.playing === false ? '（已暂停）' : ''}`);
             }
             if (userListening.lyricWindow.length > 0) {
                 lines.push(`当前播放到（>> 标记正在播放这一行）:`);
@@ -822,6 +837,12 @@ export const ContextBuilder = {
   - \`[[MUSIC_ACTION:add_new|新歌单标题|描述]]\` — 现场新建一个歌单，把这首作为第一首（描述可省）
   请优先选**最贴合这首歌气质**的现有歌单；如果都不合适、又确实想收，再考虑新建。
   收进来的歌会被打上"从对方那里听到"的标签 —— 以后你单独听到这首时，会自然想起 ta。`;
+        const playbackUsage = `**一起听控歌语法**（只有已经一起听时才偶尔使用）：
+  - \`[[MUSIC_ACTION:pause]]\` / \`[[MUSIC_ACTION:resume]]\` — 暂停 / 继续
+  - \`[[MUSIC_ACTION:previous]]\` / \`[[MUSIC_ACTION:next]]\` — 上一首 / 下一首
+  - \`[[MUSIC_ACTION:seek|83]]\` 或 \`[[MUSIC_ACTION:seek|1:23]]\` — 把进度条拖到那一段
+  - \`[[MUSIC_ACTION:play|歌名 艺人]]\` — 真实搜索并点播这首
+  控歌要像两个人真的一起听歌时的自然动作：想回听一句、跳到副歌、换个氛围、或回应对方想听什么时再用；一条消息最多插一条音乐指令。`;
         // 一起听已关：只提供"收歌"，不提供 join / join_and_add（用户在音乐 App 里关掉了一起听）
         if (!listenTogetherEnabled) {
             return `### 【音乐互动工具】
@@ -839,7 +860,9 @@ ${addUsage}
 
 ${addUsage}
 
-不要频繁插卡；只有真的被这首歌打动、或和当前对话气氛契合时才用。
+${playbackUsage}
+
+不要频繁插卡或控歌；只有真的被这首歌打动、想接住正在唱到的某句、或和当前对话气氛契合时才用。
 `;
         }
         return `### 【音乐互动工具】

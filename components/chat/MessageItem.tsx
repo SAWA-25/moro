@@ -1,7 +1,9 @@
 
 
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowCounterClockwise, X } from '@phosphor-icons/react';
 import { Message, ChatTheme, TakeoutOrder, ChatParcelMeta } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { liveTakeoutStatus, STATUS_LABEL, etaText, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
@@ -18,6 +20,325 @@ import { formatReplyTimerTitle, formatReplyTimerValue, normalizeReplyTimerMetada
 
 const stripShopChatLineLabels = (text: string): string =>
     text.replace(/^\s*[\[【]\s*心意铺(?:陪逛)?\s*[\]】]\s*/gm, '');
+
+const IMAGE_VIEWER_MIN_SCALE = 1;
+const IMAGE_VIEWER_MAX_SCALE = 5;
+
+type ImageViewerPoint = { x: number; y: number };
+type ImageViewerSize = { width: number; height: number };
+type ImageViewerTransform = { scale: number; x: number; y: number };
+type ImageViewerGesture =
+    | { mode: 'pan'; startPoint: ImageViewerPoint; startTransform: ImageViewerTransform }
+    | { mode: 'pinch'; startDistance: number; startMidpoint: ImageViewerPoint; startTransform: ImageViewerTransform };
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const pointDistance = (a: ImageViewerPoint, b: ImageViewerPoint) => Math.hypot(a.x - b.x, a.y - b.y);
+const midpoint = (a: ImageViewerPoint, b: ImageViewerPoint): ImageViewerPoint => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+const clampImageViewerTransform = (
+    next: ImageViewerTransform,
+    baseSize: ImageViewerSize,
+    viewport: ImageViewerSize,
+): ImageViewerTransform => {
+    const scale = clampNumber(next.scale, IMAGE_VIEWER_MIN_SCALE, IMAGE_VIEWER_MAX_SCALE);
+    if (!baseSize.width || !baseSize.height || !viewport.width || !viewport.height || scale <= IMAGE_VIEWER_MIN_SCALE + 0.001) {
+        return { scale, x: 0, y: 0 };
+    }
+    const maxX = Math.max(0, (baseSize.width * scale - viewport.width) / 2);
+    const maxY = Math.max(0, (baseSize.height * scale - viewport.height) / 2);
+    return {
+        scale,
+        x: clampNumber(next.x, -maxX, maxX),
+        y: clampNumber(next.y, -maxY, maxY),
+    };
+};
+
+const zoomTransformAtPoint = (
+    start: ImageViewerTransform,
+    point: ImageViewerPoint,
+    nextScale: number,
+    viewport: ImageViewerSize,
+): ImageViewerTransform => {
+    const center = { x: viewport.width / 2, y: viewport.height / 2 };
+    const startScale = Math.max(start.scale, 0.001);
+    const anchor = {
+        x: (point.x - center.x - start.x) / startScale,
+        y: (point.y - center.y - start.y) / startScale,
+    };
+    return {
+        scale: nextScale,
+        x: point.x - center.x - anchor.x * nextScale,
+        y: point.y - center.y - anchor.y * nextScale,
+    };
+};
+
+const ChatImageViewer: React.FC<{ src: string; alt: string; onClose: () => void }> = ({ src, alt, onClose }) => {
+    const stageRef = useRef<HTMLDivElement | null>(null);
+    const pointersRef = useRef<Map<number, ImageViewerPoint>>(new Map());
+    const gestureRef = useRef<ImageViewerGesture | null>(null);
+    const transformRef = useRef<ImageViewerTransform>({ scale: 1, x: 0, y: 0 });
+    const viewportRef = useRef<ImageViewerSize>({ width: 0, height: 0 });
+    const baseSizeRef = useRef<ImageViewerSize>({ width: 0, height: 0 });
+    const [naturalSize, setNaturalSize] = useState<ImageViewerSize>({ width: 0, height: 0 });
+    const [viewport, setViewport] = useState<ImageViewerSize>({ width: 0, height: 0 });
+    const [transform, setTransform] = useState<ImageViewerTransform>({ scale: 1, x: 0, y: 0 });
+    const [isInteracting, setIsInteracting] = useState(false);
+
+    const baseSize = useMemo<ImageViewerSize>(() => {
+        if (!naturalSize.width || !naturalSize.height || !viewport.width || !viewport.height) return { width: 0, height: 0 };
+        const fit = Math.min(viewport.width / naturalSize.width, viewport.height / naturalSize.height);
+        if (!Number.isFinite(fit) || fit <= 0) return { width: 0, height: 0 };
+        return { width: naturalSize.width * fit, height: naturalSize.height * fit };
+    }, [naturalSize.height, naturalSize.width, viewport.height, viewport.width]);
+
+    const applyTransform = (next: ImageViewerTransform) => {
+        const clamped = clampImageViewerTransform(next, baseSizeRef.current, viewportRef.current);
+        transformRef.current = clamped;
+        setTransform(clamped);
+    };
+
+    const resetTransform = () => {
+        setIsInteracting(false);
+        applyTransform({ scale: 1, x: 0, y: 0 });
+    };
+
+    const stagePoint = (clientX: number, clientY: number): ImageViewerPoint => {
+        const rect = stageRef.current?.getBoundingClientRect();
+        return rect ? { x: clientX - rect.left, y: clientY - rect.top } : { x: clientX, y: clientY };
+    };
+
+    const startPinchGesture = () => {
+        const points = Array.from(pointersRef.current.values()).slice(0, 2);
+        if (points.length < 2) return;
+        gestureRef.current = {
+            mode: 'pinch',
+            startDistance: Math.max(1, pointDistance(points[0], points[1])),
+            startMidpoint: midpoint(points[0], points[1]),
+            startTransform: transformRef.current,
+        };
+    };
+
+    useEffect(() => {
+        transformRef.current = transform;
+    }, [transform]);
+
+    useEffect(() => {
+        viewportRef.current = viewport;
+        baseSizeRef.current = baseSize;
+        const clamped = clampImageViewerTransform(transformRef.current, baseSize, viewport);
+        transformRef.current = clamped;
+        setTransform(clamped);
+    }, [baseSize, viewport]);
+
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const oldOverflow = document.body.style.overflow;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onClose();
+        };
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.body.style.overflow = oldOverflow;
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [onClose]);
+
+    useEffect(() => {
+        const updateViewport = () => {
+            const rect = stageRef.current?.getBoundingClientRect();
+            if (rect) setViewport({ width: rect.width, height: rect.height });
+        };
+        updateViewport();
+        const raf = requestAnimationFrame(updateViewport);
+        let observer: ResizeObserver | null = null;
+        if (stageRef.current && typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver(updateViewport);
+            observer.observe(stageRef.current);
+        }
+        window.addEventListener('resize', updateViewport);
+        return () => {
+            cancelAnimationFrame(raf);
+            observer?.disconnect();
+            window.removeEventListener('resize', updateViewport);
+        };
+    }, []);
+
+    const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        setIsInteracting(true);
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+        const point = stagePoint(event.clientX, event.clientY);
+        pointersRef.current.set(event.pointerId, point);
+        if (pointersRef.current.size >= 2) {
+            startPinchGesture();
+            return;
+        }
+        gestureRef.current = { mode: 'pan', startPoint: point, startTransform: transformRef.current };
+    };
+
+    const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!pointersRef.current.has(event.pointerId)) return;
+        event.stopPropagation();
+        event.preventDefault();
+        const point = stagePoint(event.clientX, event.clientY);
+        pointersRef.current.set(event.pointerId, point);
+        const points = Array.from(pointersRef.current.values()).slice(0, 2);
+        const gesture = gestureRef.current;
+
+        if (points.length >= 2) {
+            if (!gesture || gesture.mode !== 'pinch') {
+                startPinchGesture();
+                return;
+            }
+            const nextDistance = Math.max(1, pointDistance(points[0], points[1]));
+            const nextScale = clampNumber(
+                gesture.startTransform.scale * (nextDistance / gesture.startDistance),
+                IMAGE_VIEWER_MIN_SCALE,
+                IMAGE_VIEWER_MAX_SCALE,
+            );
+            const next = zoomTransformAtPoint(gesture.startTransform, gesture.startMidpoint, nextScale, viewportRef.current);
+            const currentMidpoint = midpoint(points[0], points[1]);
+            const center = { x: viewportRef.current.width / 2, y: viewportRef.current.height / 2 };
+            const anchor = {
+                x: (gesture.startMidpoint.x - center.x - gesture.startTransform.x) / Math.max(gesture.startTransform.scale, 0.001),
+                y: (gesture.startMidpoint.y - center.y - gesture.startTransform.y) / Math.max(gesture.startTransform.scale, 0.001),
+            };
+            applyTransform({
+                ...next,
+                x: currentMidpoint.x - center.x - anchor.x * nextScale,
+                y: currentMidpoint.y - center.y - anchor.y * nextScale,
+            });
+            return;
+        }
+
+        if (points.length === 1 && gesture?.mode === 'pan' && gesture.startTransform.scale > IMAGE_VIEWER_MIN_SCALE + 0.001) {
+            applyTransform({
+                scale: gesture.startTransform.scale,
+                x: gesture.startTransform.x + point.x - gesture.startPoint.x,
+                y: gesture.startTransform.y + point.y - gesture.startPoint.y,
+            });
+        }
+    };
+
+    const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        pointersRef.current.delete(event.pointerId);
+        try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+        const remaining = Array.from(pointersRef.current.values());
+        if (remaining.length >= 2) {
+            startPinchGesture();
+            return;
+        }
+        if (remaining.length === 1) {
+            gestureRef.current = { mode: 'pan', startPoint: remaining[0], startTransform: transformRef.current };
+            return;
+        }
+        gestureRef.current = null;
+        setIsInteracting(false);
+    };
+
+    const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        const viewportSize = viewportRef.current;
+        if (!viewportSize.width || !viewportSize.height) return;
+        const factor = Math.exp(-event.deltaY * 0.002);
+        const nextScale = clampNumber(transformRef.current.scale * factor, IMAGE_VIEWER_MIN_SCALE, IMAGE_VIEWER_MAX_SCALE);
+        const next = zoomTransformAtPoint(transformRef.current, stagePoint(event.clientX, event.clientY), nextScale, viewportSize);
+        applyTransform(next);
+    };
+
+    const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        const nextScale = transformRef.current.scale > 1.2 ? 1 : 2.5;
+        const next = zoomTransformAtPoint(transformRef.current, stagePoint(event.clientX, event.clientY), nextScale, viewportRef.current);
+        applyTransform(next);
+    };
+
+    const canReset = transform.scale > 1.01 || Math.abs(transform.x) > 1 || Math.abs(transform.y) > 1;
+    const imageTransform = `translate3d(calc(-50% + ${transform.x}px), calc(-50% + ${transform.y}px), 0) scale(${transform.scale})`;
+
+    if (typeof document === 'undefined') return null;
+
+    return createPortal(
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="查看图片"
+            className="fixed inset-0 z-[9999] bg-black text-white animate-fade-in"
+            onClick={onClose}
+        >
+            <div
+                ref={stageRef}
+                className="absolute inset-0 overflow-hidden"
+                onWheel={handleWheel}
+                style={{ touchAction: 'none', overscrollBehavior: 'none' }}
+            >
+                <div
+                    className={`${isInteracting ? 'cursor-grabbing' : 'cursor-grab'} absolute select-none`}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerUp}
+                    onDoubleClick={handleDoubleClick}
+                    onClick={(event) => event.stopPropagation()}
+                    style={{
+                        left: '50%',
+                        top: '50%',
+                        width: baseSize.width || 'auto',
+                        height: baseSize.height || 'auto',
+                        transform: imageTransform,
+                        transformOrigin: 'center center',
+                        transition: isInteracting ? 'none' : 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+                        touchAction: 'none',
+                    }}
+                >
+                    <img
+                        src={src}
+                        alt={alt}
+                        className={baseSize.width ? 'block h-full w-full object-contain' : 'block max-h-[100dvh] max-w-[100vw] object-contain'}
+                        draggable={false}
+                        decoding="async"
+                        onLoad={(event) => {
+                            const img = event.currentTarget;
+                            setNaturalSize({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+                        }}
+                    />
+                </div>
+            </div>
+            <div
+                className="fixed right-4 z-[10000] flex gap-2"
+                style={{ top: 'calc(var(--safe-top, 0px) + 14px)' }}
+                onClick={(event) => event.stopPropagation()}
+            >
+                <button
+                    type="button"
+                    onClick={resetTransform}
+                    disabled={!canReset}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/95 text-slate-950 shadow-lg active:scale-95 transition ${canReset ? '' : 'opacity-45'}`}
+                    aria-label="复位图片"
+                    title="复位"
+                >
+                    <ArrowCounterClockwise size={18} weight="bold" />
+                </button>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/95 text-slate-950 shadow-lg active:scale-95 transition"
+                    aria-label="关闭图片"
+                    title="关闭"
+                >
+                    <X size={18} weight="bold" />
+                </button>
+            </div>
+        </div>,
+        document.body,
+    );
+};
 
 /** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
 const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
@@ -138,6 +459,291 @@ const TakeoutCardView: React.FC<{
                 </div>
             </div>
         </div>
+    );
+};
+
+const GomokuInviteCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const meta: any = m.metadata?.gomokuInvite || {};
+    const status = meta.status || 'pending';
+    const message = String(meta.message || '要不要来一局五子棋？').replace(/\s+/g, ' ').trim();
+    const statusLabel = status === 'accepted' ? '已接受' : status === 'declined' ? '已婉拒' : status === 'expired' ? '已过期' : '待回应';
+    const modeLabel = meta.difficultyMode === 'per_move' ? '每步评估' : meta.difficultyMode === 'opening' ? '开局定档' : '模型定档';
+    const stones = [
+        [1, 5, 'black'], [2, 6, 'white'], [3, 7, 'black'], [4, 8, 'white'], [5, 9, 'black'],
+        [5, 5, 'white'], [6, 5, 'black'], [7, 5, 'white'],
+    ] as const;
+    return commonLayout(
+        <button
+            type="button"
+            onClick={() => onOpen?.(m)}
+            className="w-64 overflow-hidden rounded-[16px] text-left transition-transform active:scale-[0.98]"
+            style={{ background: 'linear-gradient(180deg,#fbfaf6,#f0ede4)', border: '1px solid rgba(31,29,26,0.18)', boxShadow: '0 14px 26px -18px rgba(31,29,26,0.42)' }}
+        >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(31,29,26,0.12)', background: 'rgba(255,255,255,0.48)' }}>
+                <span className="text-[11px] font-black tracking-[0.12em]" style={{ color: '#28241e' }}>五子棋邀请</span>
+                <span className="rounded-full px-2 py-0.5 text-[9.5px] font-black" style={{ background: status === 'pending' ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: status === 'pending' ? '#f6f3ec' : '#6b6558' }}>{statusLabel}</span>
+            </div>
+            <div className="grid grid-cols-[82px_1fr] gap-3 px-4 py-3.5">
+                <div className="relative h-[82px] w-[82px] rounded-[10px]" style={{ background: '#d9c7a3', border: '1px solid rgba(31,29,26,0.22)' }}>
+                    <div className="absolute inset-[8px]" style={{
+                        backgroundImage: 'linear-gradient(rgba(31,29,26,0.34) 1px, transparent 1px), linear-gradient(90deg, rgba(31,29,26,0.34) 1px, transparent 1px)',
+                        backgroundSize: '8px 8px',
+                    }} />
+                    {stones.map(([row, col, stone], i) => (
+                        <span
+                            key={i}
+                            className="absolute h-[9px] w-[9px] rounded-full"
+                            style={{
+                                top: 8 + row * 8 - 4.5,
+                                left: 8 + col * 8 - 4.5,
+                                background: stone === 'black' ? '#1f1d1a' : '#fffaf1',
+                                border: stone === 'black' ? '1px solid #080706' : '1px solid rgba(31,29,26,0.3)',
+                                boxShadow: '0 1px 2px rgba(31,29,26,0.28)',
+                            }}
+                        />
+                    ))}
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate" style={{ color: '#28241e' }}>{charName} 约你下一局</div>
+                    <div className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed" style={{ color: '#5d574d' }}>{message}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="truncate text-[9.5px] font-bold" style={{ color: '#8a8172' }}>{modeLabel}</span>
+                        <span className="shrink-0 text-[10.5px] font-black" style={{ color: '#28241e' }}>{status === 'pending' ? '去应局' : '查看'}</span>
+                    </div>
+                </div>
+            </div>
+        </button>,
+    );
+};
+
+const GoInviteCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const meta: any = m.metadata?.goInvite || {};
+    const status = meta.status || 'pending';
+    const message = String(meta.message || '要不要手谈一局？').replace(/\s+/g, ' ').trim();
+    const statusLabel = status === 'accepted' ? '已接受' : status === 'declined' ? '已婉拒' : status === 'expired' ? '已过期' : '待回应';
+    const modeLabel = meta.difficultyMode === 'per_move' ? '每步评估' : meta.difficultyMode === 'opening' ? '开局定档' : '模型定档';
+    const stones = [
+        [1, 1, 'black'], [1, 2, 'white'], [2, 1, 'white'], [2, 2, 'black'],
+        [4, 5, 'black'], [5, 5, 'white'], [6, 5, 'black'], [5, 6, 'white'],
+        [7, 3, 'black'], [3, 7, 'white'],
+    ] as const;
+    return commonLayout(
+        <button
+            type="button"
+            onClick={() => onOpen?.(m)}
+            className="w-64 overflow-hidden rounded-[16px] text-left transition-transform active:scale-[0.98]"
+            style={{ background: 'linear-gradient(180deg,#fbfaf6,#f0ede4)', border: '1px solid rgba(31,29,26,0.18)', boxShadow: '0 14px 26px -18px rgba(31,29,26,0.42)' }}
+        >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(31,29,26,0.12)', background: 'rgba(255,255,255,0.48)' }}>
+                <span className="text-[11px] font-black tracking-[0.12em]" style={{ color: '#28241e' }}>围棋邀请</span>
+                <span className="rounded-full px-2 py-0.5 text-[9.5px] font-black" style={{ background: status === 'pending' ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: status === 'pending' ? '#f6f3ec' : '#6b6558' }}>{statusLabel}</span>
+            </div>
+            <div className="grid grid-cols-[82px_1fr] gap-3 px-4 py-3.5">
+                <div className="relative h-[82px] w-[82px] rounded-[10px]" style={{ background: '#d9c7a3', border: '1px solid rgba(31,29,26,0.22)' }}>
+                    <div className="absolute inset-[8px]" style={{
+                        backgroundImage: 'linear-gradient(rgba(31,29,26,0.34) 1px, transparent 1px), linear-gradient(90deg, rgba(31,29,26,0.34) 1px, transparent 1px)',
+                        backgroundSize: '8px 8px',
+                    }} />
+                    {[1, 4, 7].flatMap(row => [1, 4, 7].map(col => (
+                        <span key={`${row}-${col}`} className="absolute h-[4px] w-[4px] rounded-full" style={{ top: 8 + row * 8 - 2, left: 8 + col * 8 - 2, background: 'rgba(31,29,26,0.38)' }} />
+                    )))}
+                    {stones.map(([row, col, stone], i) => (
+                        <span
+                            key={i}
+                            className="absolute h-[9px] w-[9px] rounded-full"
+                            style={{
+                                top: 8 + row * 8 - 4.5,
+                                left: 8 + col * 8 - 4.5,
+                                background: stone === 'black' ? '#1f1d1a' : '#fffaf1',
+                                border: stone === 'black' ? '1px solid #080706' : '1px solid rgba(31,29,26,0.3)',
+                                boxShadow: '0 1px 2px rgba(31,29,26,0.28)',
+                            }}
+                        />
+                    ))}
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate" style={{ color: '#28241e' }}>{charName} 约你手谈</div>
+                    <div className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed" style={{ color: '#5d574d' }}>{message}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="truncate text-[9.5px] font-bold" style={{ color: '#8a8172' }}>{modeLabel}</span>
+                        <span className="shrink-0 text-[10.5px] font-black" style={{ color: '#28241e' }}>{status === 'pending' ? '去应局' : '查看'}</span>
+                    </div>
+                </div>
+            </div>
+        </button>,
+    );
+};
+
+const DoudizhuInviteCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const meta: any = m.metadata?.doudizhuInvite || {};
+    const status = meta.status || 'pending';
+    const message = String(meta.message || '来一局斗地主？').replace(/\s+/g, ' ').trim();
+    const statusLabel = status === 'accepted' ? '已接受' : status === 'declined' ? '已婉拒' : status === 'expired' ? '已过期' : '待回应';
+    const modeLabel = meta.difficultyMode === 'per_move' ? '每手评估' : meta.difficultyMode === 'opening' ? '开局定档' : '模型定档';
+    const miniCards = [
+        ['A', '#1f1d1a', -8],
+        ['K', '#b33a35', 2],
+        ['王', '#1f1d1a', 12],
+    ] as const;
+    return commonLayout(
+        <button
+            type="button"
+            onClick={() => onOpen?.(m)}
+            className="w-64 overflow-hidden rounded-[16px] text-left transition-transform active:scale-[0.98]"
+            style={{ background: 'linear-gradient(180deg,#fbfaf6,#f0ede4)', border: '1px solid rgba(31,29,26,0.18)', boxShadow: '0 14px 26px -18px rgba(31,29,26,0.42)' }}
+        >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(31,29,26,0.12)', background: 'rgba(255,255,255,0.48)' }}>
+                <span className="text-[11px] font-black tracking-[0.12em]" style={{ color: '#28241e' }}>斗地主邀请</span>
+                <span className="rounded-full px-2 py-0.5 text-[9.5px] font-black" style={{ background: status === 'pending' ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: status === 'pending' ? '#f6f3ec' : '#6b6558' }}>{statusLabel}</span>
+            </div>
+            <div className="grid grid-cols-[82px_1fr] gap-3 px-4 py-3.5">
+                <div className="relative h-[82px] w-[82px] rounded-[10px]" style={{ background: '#d9c7a3', border: '1px solid rgba(31,29,26,0.22)' }}>
+                    <div className="absolute inset-0 opacity-[0.18]" style={{ backgroundImage: 'repeating-linear-gradient(45deg,#1f1d1a 0 1px,transparent 1px 7px)' }} />
+                    {miniCards.map(([label, color, rotate], i) => (
+                        <span
+                            key={label}
+                            className="absolute top-[19px] h-[45px] w-[31px] rounded-[5px] bg-[#fffdfa] text-center text-[14px] font-black leading-[45px]"
+                            style={{
+                                left: 16 + i * 14,
+                                color,
+                                border: '1px solid rgba(31,29,26,0.22)',
+                                transform: `rotate(${rotate}deg)`,
+                                boxShadow: '0 5px 10px rgba(31,29,26,0.18)',
+                            }}
+                        >
+                            {label}
+                        </span>
+                    ))}
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate" style={{ color: '#28241e' }}>{charName} 约你开桌</div>
+                    <div className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed" style={{ color: '#5d574d' }}>{message}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="truncate text-[9.5px] font-bold" style={{ color: '#8a8172' }}>{modeLabel}</span>
+                        <span className="shrink-0 text-[10.5px] font-black" style={{ color: '#28241e' }}>{status === 'pending' ? '去应局' : '查看'}</span>
+                    </div>
+                </div>
+            </div>
+        </button>,
+    );
+};
+
+const TurtleSoupInviteCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const meta: any = m.metadata?.turtleSoupInvite || {};
+    const status = meta.status || 'pending';
+    const message = String(meta.message || '来一碗海龟汤？').replace(/\s+/g, ' ').trim();
+    const statusLabel = status === 'accepted' ? '已接受' : status === 'declined' ? '已婉拒' : status === 'expired' ? '已过期' : '待回应';
+    const modeLabel = meta.difficultyMode === 'per_move' ? '每轮评估' : meta.difficultyMode === 'opening' ? '开局定档' : '模型定档';
+    return commonLayout(
+        <button
+            type="button"
+            onClick={() => onOpen?.(m)}
+            className="w-64 overflow-hidden rounded-[16px] text-left transition-transform active:scale-[0.98]"
+            style={{ background: 'linear-gradient(180deg,#fbfaf6,#ede8dd)', border: '1px solid rgba(31,29,26,0.18)', boxShadow: '0 14px 26px -18px rgba(31,29,26,0.42)' }}
+        >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(31,29,26,0.12)', background: 'rgba(255,255,255,0.48)' }}>
+                <span className="text-[11px] font-black tracking-[0.12em]" style={{ color: '#28241e' }}>海龟汤邀请</span>
+                <span className="rounded-full px-2 py-0.5 text-[9.5px] font-black" style={{ background: status === 'pending' ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: status === 'pending' ? '#f6f3ec' : '#6b6558' }}>{statusLabel}</span>
+            </div>
+            <div className="grid grid-cols-[82px_1fr] gap-3 px-4 py-3.5">
+                <div className="relative h-[82px] w-[82px] rounded-[10px] overflow-hidden" style={{ background: '#d8d0bf', border: '1px solid rgba(31,29,26,0.22)' }}>
+                    <div className="absolute inset-0 opacity-[0.16]" style={{ backgroundImage: 'repeating-linear-gradient(0deg,#1f1d1a 0 1px,transparent 1px 8px), repeating-linear-gradient(90deg,#1f1d1a 0 1px,transparent 1px 8px)' }} />
+                    <div className="absolute left-5 right-5 bottom-5 h-7 rounded-b-full rounded-t-[8px]" style={{ background: '#1f1d1a', boxShadow: 'inset 0 -8px 0 rgba(255,255,255,0.08)' }} />
+                    <div className="absolute left-[27px] bottom-[42px] h-5 w-7 rounded-t-full" style={{ border: '2px solid #1f1d1a', borderBottom: '0' }} />
+                    <span className="absolute left-[26px] top-[16px] h-1.5 w-1.5 rounded-full" style={{ background: '#1f1d1a' }} />
+                    <span className="absolute right-[23px] top-[21px] h-1 w-1 rounded-full" style={{ background: '#1f1d1a' }} />
+                    <span className="absolute left-[37px] top-[27px] h-1 w-1 rounded-full" style={{ background: '#1f1d1a' }} />
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate" style={{ color: '#28241e' }}>{charName} 约你喝一碗</div>
+                    <div className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed" style={{ color: '#5d574d' }}>{message}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="truncate text-[9.5px] font-bold" style={{ color: '#8a8172' }}>{modeLabel}</span>
+                        <span className="shrink-0 text-[10.5px] font-black" style={{ color: '#28241e' }}>{status === 'pending' ? '去应局' : '查看'}</span>
+                    </div>
+                </div>
+            </div>
+        </button>,
+    );
+};
+
+const MahjongInviteCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const meta: any = m.metadata?.mahjongInvite || {};
+    const status = meta.status || 'pending';
+    const message = String(meta.message || '来打一桌麻将？').replace(/\s+/g, ' ').trim();
+    const statusLabel = status === 'accepted' ? '已接受' : status === 'declined' ? '已婉拒' : status === 'expired' ? '已过期' : '待回应';
+    const modeLabel = meta.difficultyMode === 'per_move' ? '每手评估' : meta.difficultyMode === 'opening' ? '开局定档' : '模型定档';
+    const tiles = [
+        ['一', '万', '#a7352f', -8],
+        ['五', '筒', '#255d9a', 0],
+        ['东', '', '#1f1d1a', 8],
+    ] as const;
+    return commonLayout(
+        <button
+            type="button"
+            onClick={() => onOpen?.(m)}
+            className="w-64 overflow-hidden rounded-[16px] text-left transition-transform active:scale-[0.98]"
+            style={{ background: 'linear-gradient(180deg,#fbfaf6,#f0ede4)', border: '1px solid rgba(31,29,26,0.18)', boxShadow: '0 14px 26px -18px rgba(31,29,26,0.42)' }}
+        >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(31,29,26,0.12)', background: 'rgba(255,255,255,0.48)' }}>
+                <span className="text-[11px] font-black tracking-[0.12em]" style={{ color: '#28241e' }}>麻将邀请</span>
+                <span className="rounded-full px-2 py-0.5 text-[9.5px] font-black" style={{ background: status === 'pending' ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: status === 'pending' ? '#f6f3ec' : '#6b6558' }}>{statusLabel}</span>
+            </div>
+            <div className="grid grid-cols-[82px_1fr] gap-3 px-4 py-3.5">
+                <div className="relative h-[82px] w-[82px] rounded-[10px]" style={{ background: '#d9c7a3', border: '1px solid rgba(31,29,26,0.22)' }}>
+                    <div className="absolute inset-0 opacity-[0.16]" style={{ backgroundImage: 'repeating-linear-gradient(135deg,#1f1d1a 0 1px,transparent 1px 7px)' }} />
+                    {tiles.map(([top, bottom, color, rotate], i) => (
+                        <span
+                            key={`${top}-${i}`}
+                            className="absolute top-[16px] h-[50px] w-[30px] rounded-[6px] bg-[#fffdfa] text-center font-black"
+                            style={{
+                                left: 12 + i * 17,
+                                color,
+                                border: '1px solid rgba(31,29,26,0.24)',
+                                boxShadow: 'inset 0 -5px 0 rgba(31,29,26,0.07), 0 5px 10px rgba(31,29,26,0.18)',
+                                transform: `rotate(${rotate}deg)`,
+                            }}
+                        >
+                            <span className="block pt-1 text-[15px] leading-[20px]">{top}</span>
+                            {bottom && <span className="block text-[9px] leading-[12px]">{bottom}</span>}
+                        </span>
+                    ))}
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-black truncate" style={{ color: '#28241e' }}>{charName} 约你开桌</div>
+                    <div className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed" style={{ color: '#5d574d' }}>{message}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="truncate text-[9.5px] font-bold" style={{ color: '#8a8172' }}>{modeLabel}</span>
+                        <span className="shrink-0 text-[10.5px] font-black" style={{ color: '#28241e' }}>{status === 'pending' ? '去应局' : '查看'}</span>
+                    </div>
+                </div>
+            </div>
+        </button>,
     );
 };
 
@@ -956,8 +1562,20 @@ interface MessageItemProps {
     onOpenTakeoutCard?: (m: Message) => void;
     /** 点开求婚小卡：进入浪漫的求婚界面（决定是否答应）。 */
     onOpenProposal?: (m: Message) => void;
+    /** 点开五子棋邀请卡：进入幕间集·五子棋。 */
+    onOpenGomokuInvite?: (m: Message) => void;
+    /** 点开围棋邀请卡：进入幕间集·围棋。 */
+    onOpenGoInvite?: (m: Message) => void;
+    /** 点开斗地主邀请卡：进入幕间集·斗地主。 */
+    onOpenDoudizhuInvite?: (m: Message) => void;
+    /** 点开海龟汤邀请卡：进入幕间集·海龟汤。 */
+    onOpenTurtleSoupInvite?: (m: Message) => void;
+    /** 点开麻将邀请卡：进入幕间集·麻将。 */
+    onOpenMahjongInvite?: (m: Message) => void;
     /** 点音乐卡封面播放 / 暂停全局音乐。 */
     onPlayMusicCard?: (m: Message) => void;
+    /** 长按聊天图片：保存到当前角色相册。 */
+    onSaveImageToGallery?: (m: Message) => void | Promise<void>;
     activeMusicSongId?: number | null;
     activeMusicSource?: string;
     musicPlaying?: boolean;
@@ -1013,7 +1631,13 @@ const MessageItem = React.memo(({
     onClaimTransfer,
     onOpenTakeoutCard,
     onOpenProposal,
+    onOpenGomokuInvite,
+    onOpenGoInvite,
+    onOpenDoudizhuInvite,
+    onOpenTurtleSoupInvite,
+    onOpenMahjongInvite,
     onPlayMusicCard,
+    onSaveImageToGallery,
     activeMusicSongId,
     activeMusicSource,
     musicPlaying = false,
@@ -1071,6 +1695,53 @@ const MessageItem = React.memo(({
     // 极简「此刻」皮肤：纯浅灰胶囊气泡、无描边无阴影；昵称标签 + 时间戳移到该组消息上方。
     const isPlainBubble = bubbleVariant === 'plain';
     const [showVoiceText, setShowVoiceText] = useState(false);
+    const [imageViewerSrc, setImageViewerSrc] = useState<string | null>(null);
+    const imageLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const imagePressStart = useRef<ImageViewerPoint>({ x: 0, y: 0 });
+    const imageLongPressFired = useRef(false);
+
+    const clearImageLongPressTimer = () => {
+        if (imageLongPressTimer.current) {
+            clearTimeout(imageLongPressTimer.current);
+            imageLongPressTimer.current = null;
+        }
+    };
+
+    useEffect(() => () => clearImageLongPressTimer(), []);
+
+    const handleImagePressStart = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!onSaveImageToGallery || !m.content || selectionMode) return;
+        event.stopPropagation();
+        imageLongPressFired.current = false;
+        imagePressStart.current = { x: event.clientX, y: event.clientY };
+        clearImageLongPressTimer();
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+        imageLongPressTimer.current = setTimeout(() => {
+            imageLongPressTimer.current = null;
+            imageLongPressFired.current = true;
+            try { navigator.vibrate?.(18); } catch {}
+            void onSaveImageToGallery(m);
+        }, 620);
+    };
+
+    const handleImagePressMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!onSaveImageToGallery || !m.content || selectionMode) return;
+        event.stopPropagation();
+        const dx = event.clientX - imagePressStart.current.x;
+        const dy = event.clientY - imagePressStart.current.y;
+        if (Math.hypot(dx, dy) > 10) clearImageLongPressTimer();
+    };
+
+    const handleImagePressEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!onSaveImageToGallery || !m.content || selectionMode) return;
+        event.stopPropagation();
+        clearImageLongPressTimer();
+        try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+    };
+
+    const stopImagePointerBubble = (event: React.SyntheticEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+    };
 
     const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
         // Record initial position
@@ -2670,6 +3341,26 @@ const MessageItem = React.memo(({
         return <TakeoutCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenTakeoutCard} />;
     }
 
+    if (m.type === 'gomoku_invite_card') {
+        return <GomokuInviteCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenGomokuInvite} />;
+    }
+
+    if (m.type === 'go_invite_card') {
+        return <GoInviteCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenGoInvite} />;
+    }
+
+    if (m.type === 'doudizhu_invite_card') {
+        return <DoudizhuInviteCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenDoudizhuInvite} />;
+    }
+
+    if (m.type === 'turtle_soup_invite_card') {
+        return <TurtleSoupInviteCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenTurtleSoupInvite} />;
+    }
+
+    if (m.type === 'mahjong_invite_card') {
+        return <MahjongInviteCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenMahjongInvite} />;
+    }
+
     if (m.type === 'gift_card') {
         // 购物商城礼物卡：user 送角色 / 角色回赠 user。展示礼物 + 赠言。
         const g: any = m.metadata?.gift || {};
@@ -2920,14 +3611,65 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'image') {
+        const imageAlt = isUser ? '你发送的图片' : `${displayCharName}发送的图片`;
         return commonLayout(
-            <div className="relative group">
-                {m.content ? (
-                    <img src={m.content} className="max-w-[200px] max-h-[300px] rounded-2xl shadow-sm border border-black/5" alt="Uploaded" loading="lazy" decoding="async" />
-                ) : (
-                    <div className="px-4 py-6 rounded-2xl bg-slate-100 text-slate-400 text-xs italic text-center min-w-[120px]">[图片已丢失]</div>
+            <>
+                <div className="relative group">
+                    {m.content ? (
+                        <button
+                            type="button"
+                            className="block rounded-2xl cursor-zoom-in active:scale-[0.98] transition-transform"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                if (imageLongPressFired.current) {
+                                    event.preventDefault();
+                                    imageLongPressFired.current = false;
+                                    return;
+                                }
+                                setImageViewerSrc(m.content);
+                            }}
+                            onPointerDown={handleImagePressStart}
+                            onPointerMove={handleImagePressMove}
+                            onPointerUp={handleImagePressEnd}
+                            onPointerCancel={handleImagePressEnd}
+                            onMouseDown={stopImagePointerBubble}
+                            onMouseMove={stopImagePointerBubble}
+                            onMouseUp={stopImagePointerBubble}
+                            onMouseLeave={stopImagePointerBubble}
+                            onTouchStart={stopImagePointerBubble}
+                            onTouchMove={stopImagePointerBubble}
+                            onTouchEnd={stopImagePointerBubble}
+                            onTouchCancel={stopImagePointerBubble}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                clearImageLongPressTimer();
+                            }}
+                            onDragStart={(event) => event.preventDefault()}
+                            style={{ touchAction: 'manipulation' }}
+                        >
+                            <img
+                                src={m.content}
+                                className="max-w-[200px] max-h-[300px] rounded-2xl shadow-sm border border-black/5"
+                                alt={imageAlt}
+                                loading="lazy"
+                                decoding="async"
+                                draggable={false}
+                                referrerPolicy="no-referrer"
+                            />
+                        </button>
+                    ) : (
+                        <div className="px-4 py-6 rounded-2xl bg-slate-100 text-slate-400 text-xs italic text-center min-w-[120px]">[图片已丢失]</div>
+                    )}
+                </div>
+                {imageViewerSrc && (
+                    <ChatImageViewer
+                        src={imageViewerSrc}
+                        alt={imageAlt}
+                        onClose={() => setImageViewerSrc(null)}
+                    />
                 )}
-            </div>
+            </>
         );
     }
 

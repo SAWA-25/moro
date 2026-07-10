@@ -4,9 +4,9 @@ import {
     Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle,
     PawPrint, BeerBottle, MoonStars, type Icon, ClockCounterClockwise, Compass,
     Archive, Play, BookmarkSimple, Ticket, UsersThree, NotePencil,
-    ArrowClockwise, WarningCircle,
+    ArrowClockwise, WarningCircle, Bed, Hash, Circle, Detective, SquaresFour,
 } from '@phosphor-icons/react';
-import { AppID, type GameSession, type GuidebookSession, type TalkSession, type TheaterCustomLibraryItem, type TheaterFauxPiece, type TheaterQuizSession, type TheaterReflectionSession, type TruthDareSession, type WerewolfGame } from '../types';
+import { AppID, type GameSession, type GuidebookSession, type TalkSession, type TheaterCustomLibraryItem, type TheaterDoudizhuGame, type TheaterDoudizhuInvitation, type TheaterFauxPiece, type TheaterGoGame, type TheaterGoInvitation, type TheaterGomokuGame, type TheaterGomokuInvitation, type TheaterMahjongGame, type TheaterMahjongInvitation, type TheaterQuizSession, type TheaterReflectionSession, type TheaterSleepSession, type TheaterTurtleSoupGame, type TheaterTurtleSoupInvitation, type TruthDareSession, type WerewolfGame } from '../types';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
@@ -16,17 +16,23 @@ import ExtraApp from './theater/ExtraApp';
 import DivinationApp from './theater/DivinationApp';
 import WerewolfApp from './theater/WerewolfApp';
 import TruthDareApp from './theater/TruthDareApp';
+import SleepTogetherApp from './theater/SleepTogetherApp';
+import GomokuApp, { type GomokuLaunchPayload } from './theater/GomokuApp';
+import GoApp, { type GoLaunchPayload } from './theater/GoApp';
+import DoudizhuApp, { type DoudizhuLaunchPayload } from './theater/DoudizhuApp';
+import TurtleSoupApp, { type TurtleSoupLaunchPayload } from './theater/TurtleSoupApp';
+import MahjongApp, { type MahjongLaunchPayload } from './theater/MahjongApp';
 import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './ui/insScrapKit';
 import { DB } from '../utils/db';
 import { loadTrajectory, type CharTrajectory } from '../utils/theaterTimeline';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
 /**
- * 幕间集：九折玩法的总控台。
+ * 幕间集：十五折玩法的总控台。
  * 首页只做导航、本地记录汇总和继续入口；各折玩法、存档与 LLM 调用仍由子 App 自己负责。
  */
 
-type Section = 'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination' | 'werewolf' | 'truthdare';
+type Section = 'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination' | 'werewolf' | 'truthdare' | 'sleep' | 'gomoku' | 'go' | 'doudizhu' | 'turtleSoup' | 'mahjong';
 type PlayableSection = Exclude<Section, 'home'>;
 type HomeTab = 'overview' | 'programme' | 'records';
 
@@ -60,7 +66,7 @@ interface TheaterSnapshot {
     customCount: number;
 }
 
-const PLAYABLE_SECTIONS: PlayableSection[] = ['guide', 'extra', 'divination', 'talk', 'trpg', 'trajectory', 'reflection', 'werewolf', 'truthdare'];
+const PLAYABLE_SECTIONS: PlayableSection[] = ['guide', 'extra', 'divination', 'talk', 'trpg', 'trajectory', 'reflection', 'werewolf', 'truthdare', 'sleep', 'gomoku', 'go', 'doudizhu', 'turtleSoup', 'mahjong'];
 
 const PROGRAMME: Zhe[] = [
     { section: 'guide',      no: '壹', name: '攻略本', en: 'THE COURTSHIP',  tagline: '择一言，赌一段心动',     desc: '和角色排一出恋爱戏：定场、择言、攒心动，落幕收一张攻略结算卡。', useCase: '想推进一段可复盘的关系小游戏', Icon: Path },
@@ -72,6 +78,12 @@ const PROGRAMME: Zhe[] = [
     { section: 'reflection', no: '柒', name: '对影',   en: 'BY MOONLIGHT',   tagline: '举杯邀明月，对影成三人', desc: '同一个人，在不同时间里重逢；让从前的 TA 与此刻的 TA 照一次面。', useCase: '想写一段有留档的小剧场', Icon: MoonStars },
     { section: 'werewolf',   no: '捌', name: '狼人杀', en: 'THE WOLF NIGHT', tagline: '天黑请闭眼，谁是狼',       desc: '拉一桌熟人开局，随机发牌，AI 玩家会夜行动、白天发言、投票推理。', useCase: '想玩一局带伪装和推理的桌游', Icon: PawPrint },
     { section: 'truthdare',  no: '玖', name: '真心话大冒险', en: 'TRUTH OR DARE', tagline: '瓶口指向谁，谁就摊牌', desc: '围一圈转瓶子：受题者挑真心话或大冒险，另一人出题，当场作答。', useCase: '想轻松破冰、暧昧或整活', Icon: BeerBottle },
+    { section: 'sleep',      no: '拾', name: '一起入眠', en: 'SLEEP TOGETHER', tagline: '把夜色接成一条线', desc: '睡前连一会儿：可文字，也可让角色回复自动朗读；只保存文字转写，轻轻收进本机记录。', useCase: '想在睡前被轻声陪一会儿', Icon: Bed },
+    { section: 'gomoku',     no: '拾壹', name: '五子棋', en: 'GOMOKU', tagline: '落一子，听 TA 怎么接', desc: '15x15 休闲五子棋：无禁手，五连或长连即胜。TA 的棋力由模型按人设判断，棋盘旁会有互动对白。', useCase: '想和某个角色下一局轻松又有来回的棋', Icon: Hash },
+    { section: 'go',         no: '拾贰', name: '围棋', en: 'GO', tagline: '一片棋盘，慢慢手谈', desc: '19 路休闲围棋：吃子、禁自杀、简单 ko、可停着，连续停着后用面积法估算胜负。TA 的棋力由模型按人设判断。', useCase: '想和某个角色下一盘更慢、更有空间感的棋', Icon: Circle },
+    { section: 'doudizhu',   no: '拾叁', name: '斗地主', en: 'DOU DIZHU', tagline: '三人开桌，抢一手底牌', desc: '经典三人斗地主：叫分抢地主、三张底牌、炸弹翻倍，结算春天与反春天。TA 的牌力由模型按人设判断。', useCase: '想和两位角色打一局热闹牌', Icon: Cards },
+    { section: 'turtleSoup', no: '拾肆', name: '海龟汤', en: 'TURTLE SOUP', tagline: '只答是、否、无关', desc: '暗黑海龟汤：系统或角色当主持人，你和角色们轮流提问、终猜。TA 的猜题实力和对白由模型按人设判断。', useCase: '想和角色一起拆一则诡异谜题', Icon: Detective },
+    { section: 'mahjong',    no: '拾伍', name: '麻将', en: 'MAHJONG', tagline: '四人围坐，摸打有声', desc: '大众简化麻将：用户和三位正式角色开桌，吃碰杠胡由本地规则兜底，TA 的牌力和对白由模型按人设判断。', useCase: '想和三位角色打一桌更有来回的牌局', Icon: SquaresFour },
 ];
 
 const HOME_TABS: { id: HomeTab; label: string; en: string; Icon: Icon }[] = [
@@ -90,6 +102,12 @@ const emptyCounts = (): Record<PlayableSection, number> => ({
     reflection: 0,
     werewolf: 0,
     truthdare: 0,
+    sleep: 0,
+    gomoku: 0,
+    go: 0,
+    doudizhu: 0,
+    turtleSoup: 0,
+    mahjong: 0,
 });
 
 const initialSnapshot: TheaterSnapshot = {
@@ -142,8 +160,63 @@ const TheaterApp: React.FC = () => {
     const [section, setSection] = useState<Section>('home');
     const [tab, setTab] = useState<HomeTab>('overview');
     const [snapshot, setSnapshot] = useState<TheaterSnapshot>(initialSnapshot);
+    const [gomokuLaunch, setGomokuLaunch] = useState<GomokuLaunchPayload | null>(null);
+    const [goLaunch, setGoLaunch] = useState<GoLaunchPayload | null>(null);
+    const [doudizhuLaunch, setDoudizhuLaunch] = useState<DoudizhuLaunchPayload | null>(null);
+    const [turtleSoupLaunch, setTurtleSoupLaunch] = useState<TurtleSoupLaunchPayload | null>(null);
+    const [mahjongLaunch, setMahjongLaunch] = useState<MahjongLaunchPayload | null>(null);
 
     const handleManualDeepLink = useCallback((target: { anchorId?: string; payload?: Record<string, unknown> }) => {
+        const payloadSection = target.payload?.section;
+        if (payloadSection === 'gomoku') {
+            setGomokuLaunch({
+                invitationId: typeof target.payload?.invitationId === 'string' ? target.payload.invitationId : undefined,
+                gameId: typeof target.payload?.gameId === 'string' ? target.payload.gameId : undefined,
+                charId: typeof target.payload?.charId === 'string' ? target.payload.charId : undefined,
+            });
+            setSection('gomoku');
+            return;
+        }
+        if (payloadSection === 'go') {
+            setGoLaunch({
+                invitationId: typeof target.payload?.invitationId === 'string' ? target.payload.invitationId : undefined,
+                gameId: typeof target.payload?.gameId === 'string' ? target.payload.gameId : undefined,
+                charId: typeof target.payload?.charId === 'string' ? target.payload.charId : undefined,
+            });
+            setSection('go');
+            return;
+        }
+        if (payloadSection === 'doudizhu') {
+            setDoudizhuLaunch({
+                invitationId: typeof target.payload?.invitationId === 'string' ? target.payload.invitationId : undefined,
+                gameId: typeof target.payload?.gameId === 'string' ? target.payload.gameId : undefined,
+                charId: typeof target.payload?.charId === 'string' ? target.payload.charId : undefined,
+            });
+            setSection('doudizhu');
+            return;
+        }
+        if (payloadSection === 'turtleSoup') {
+            setTurtleSoupLaunch({
+                invitationId: typeof target.payload?.invitationId === 'string' ? target.payload.invitationId : undefined,
+                gameId: typeof target.payload?.gameId === 'string' ? target.payload.gameId : undefined,
+                charId: typeof target.payload?.charId === 'string' ? target.payload.charId : undefined,
+            });
+            setSection('turtleSoup');
+            return;
+        }
+        if (payloadSection === 'mahjong') {
+            setMahjongLaunch({
+                invitationId: typeof target.payload?.invitationId === 'string' ? target.payload.invitationId : undefined,
+                gameId: typeof target.payload?.gameId === 'string' ? target.payload.gameId : undefined,
+                charId: typeof target.payload?.charId === 'string' ? target.payload.charId : undefined,
+            });
+            setSection('mahjong');
+            return;
+        }
+        if (PLAYABLE_SECTIONS.includes(payloadSection as PlayableSection)) {
+            setSection(payloadSection as PlayableSection);
+            return;
+        }
         setSection('home');
         const payloadTab = target.payload?.tab;
         if (payloadTab === 'overview' || payloadTab === 'programme' || payloadTab === 'records') setTab(payloadTab);
@@ -166,6 +239,17 @@ const TheaterApp: React.FC = () => {
                 reflections,
                 werewolves,
                 truthDares,
+                sleepSessions,
+                gomokuGames,
+                gomokuInvitations,
+                goGames,
+                goInvitations,
+                doudizhuGames,
+                doudizhuInvitations,
+                turtleSoupGames,
+                turtleSoupInvitations,
+                mahjongGames,
+                mahjongInvitations,
                 trajectories,
             ] = await Promise.all([
                 safeList<GuidebookSession>(DB.getAllGuidebookSessions()),
@@ -177,6 +261,17 @@ const TheaterApp: React.FC = () => {
                 safeList<TheaterReflectionSession>(DB.getAllTheaterReflectionSessions()),
                 safeList<WerewolfGame>(DB.getAllWerewolfGames()),
                 safeList<TruthDareSession>(DB.getAllTruthDareSessions()),
+                safeList<TheaterSleepSession>(DB.getAllTheaterSleepSessions()),
+                safeList<TheaterGomokuGame>(DB.getAllTheaterGomokuGames()),
+                safeList<TheaterGomokuInvitation>(DB.getAllTheaterGomokuInvitations()),
+                safeList<TheaterGoGame>(DB.getAllTheaterGoGames()),
+                safeList<TheaterGoInvitation>(DB.getAllTheaterGoInvitations()),
+                safeList<TheaterDoudizhuGame>(DB.getAllTheaterDoudizhuGames()),
+                safeList<TheaterDoudizhuInvitation>(DB.getAllTheaterDoudizhuInvitations()),
+                safeList<TheaterTurtleSoupGame>(DB.getAllTheaterTurtleSoupGames()),
+                safeList<TheaterTurtleSoupInvitation>(DB.getAllTheaterTurtleSoupInvitations()),
+                safeList<TheaterMahjongGame>(DB.getAllTheaterMahjongGames()),
+                safeList<TheaterMahjongInvitation>(DB.getAllTheaterMahjongInvitations()),
                 Promise.all(characters.map(c => loadTrajectory(c.id).catch(() => null))).then(list => list.filter(Boolean) as CharTrajectory[]).catch(() => []),
             ]);
 
@@ -189,10 +284,27 @@ const TheaterApp: React.FC = () => {
             counts.reflection = reflections.length;
             counts.werewolf = werewolves.length;
             counts.truthdare = truthDares.length;
+            counts.sleep = sleepSessions.length;
+            counts.gomoku = gomokuGames.length;
+            counts.go = goGames.length;
+            counts.doudizhu = doudizhuGames.length;
+            counts.turtleSoup = turtleSoupGames.length;
+            counts.mahjong = mahjongGames.length;
 
             const activeGuide = guidebook.filter(s => s.status !== 'ended');
             const activeQuiz = quizSessions.filter(s => s.status === 'active');
             const activeWerewolves = werewolves.filter(g => g.phase !== 'over' && !g.winner);
+            const activeSleep = sleepSessions.filter(s => s.status !== 'ended');
+            const activeGomoku = gomokuGames.filter(g => g.status !== 'ended');
+            const pendingGomokuInvitations = gomokuInvitations.filter(i => i.status === 'pending');
+            const activeGo = goGames.filter(g => g.status !== 'ended');
+            const pendingGoInvitations = goInvitations.filter(i => i.status === 'pending');
+            const activeDoudizhu = doudizhuGames.filter(g => g.status !== 'ended');
+            const pendingDoudizhuInvitations = doudizhuInvitations.filter(i => i.status === 'pending');
+            const activeTurtleSoup = turtleSoupGames.filter(g => g.status === 'playing');
+            const pendingTurtleSoupInvitations = turtleSoupInvitations.filter(i => i.status === 'pending');
+            const activeMahjong = mahjongGames.filter(g => g.status !== 'ended');
+            const pendingMahjongInvitations = mahjongInvitations.filter(i => i.status === 'pending');
 
             const recent: TheaterRecentItem[] = [
                 ...guidebook.map(s => ({
@@ -267,6 +379,94 @@ const TheaterApp: React.FC = () => {
                     at: s.lastActiveAt || s.createdAt,
                     badge: '转瓶子',
                 })),
+                ...sleepSessions.map(s => ({
+                    id: `sleep-${s.id}`,
+                    section: 'sleep' as const,
+                    title: charName(s.charId),
+                    subtitle: `${s.turns?.length || 0} 句 · ${s.channel === 'voice' ? '语音连线' : '文字连线'} · ${s.status === 'ended' ? '已入眠' : '可继续'}`,
+                    at: s.lastActiveAt || s.createdAt,
+                    badge: s.status === 'ended' ? '晚安' : '待续',
+                })),
+                ...gomokuGames.map(g => ({
+                    id: `gomoku-${g.id}`,
+                    section: 'gomoku' as const,
+                    title: g.charName || charName(g.charId),
+                    subtitle: `${g.moves?.length || 0} 手 · ${g.status === 'ended' ? (g.winner === 'draw' ? '平局' : '已终局') : '可续局'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: g.status === 'ended' ? '终局' : '棋局',
+                })),
+                ...pendingGomokuInvitations.map(inv => ({
+                    id: `gomoku-invite-${inv.id}`,
+                    section: 'gomoku' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '约你来一局五子棋',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '待应局',
+                })),
+                ...goGames.map(g => ({
+                    id: `go-${g.id}`,
+                    section: 'go' as const,
+                    title: g.charName || charName(g.charId),
+                    subtitle: `${g.moves?.length || 0} 手 · ${g.status === 'ended' ? (g.winner === 'draw' ? '平局' : '已终局') : '可续局'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: g.status === 'ended' ? '终局' : '棋局',
+                })),
+                ...pendingGoInvitations.map(inv => ({
+                    id: `go-invite-${inv.id}`,
+                    section: 'go' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '约你手谈一局',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '待应局',
+                })),
+                ...doudizhuGames.map(g => ({
+                    id: `doudizhu-${g.id}`,
+                    section: 'doudizhu' as const,
+                    title: g.players?.filter(p => p.role !== 'user').map(p => p.name).join('、') || '一局斗地主',
+                    subtitle: `${g.moves?.length || 0} 手 · ${g.status === 'ended' ? (g.winner === 'landlord' ? '地主胜' : '农民胜') : g.status === 'bidding' ? '叫分中' : '可续局'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: g.status === 'ended' ? '终局' : '牌局',
+                })),
+                ...pendingDoudizhuInvitations.map(inv => ({
+                    id: `doudizhu-invite-${inv.id}`,
+                    section: 'doudizhu' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '约你打一局斗地主',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '待应局',
+                })),
+                ...turtleSoupGames.map(g => ({
+                    id: `turtleSoup-${g.id}`,
+                    section: 'turtleSoup' as const,
+                    title: g.case?.title || g.title || '一碗海龟汤',
+                    subtitle: `${g.turns?.length || 0} 问 · ${g.status === 'playing' ? '可续局' : g.status === 'solved' ? '已解出' : '已揭晓'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: g.status === 'playing' ? '汤局' : '终局',
+                })),
+                ...pendingTurtleSoupInvitations.map(inv => ({
+                    id: `turtleSoup-invite-${inv.id}`,
+                    section: 'turtleSoup' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '约你喝一碗海龟汤',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '待应局',
+                })),
+                ...mahjongGames.map(g => ({
+                    id: `mahjong-${g.id}`,
+                    section: 'mahjong' as const,
+                    title: g.players?.filter(p => p.role !== 'user').map(p => p.name).join('、') || '一桌麻将',
+                    subtitle: `${g.moves?.length || 0} 手 · ${g.status === 'ended' ? (g.score?.draw ? '流局' : '已结算') : '可续局'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: g.status === 'ended' ? '终局' : '牌桌',
+                })),
+                ...pendingMahjongInvitations.map(inv => ({
+                    id: `mahjong-invite-${inv.id}`,
+                    section: 'mahjong' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '约你打一桌麻将',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '待应局',
+                })),
             ].sort((a, b) => b.at - a.at);
 
             const continueItems: TheaterRecentItem[] = [
@@ -310,6 +510,94 @@ const TheaterApp: React.FC = () => {
                     at: s.lastActiveAt || s.createdAt,
                     badge: '续玩',
                 })),
+                ...activeSleep.map(s => ({
+                    id: `continue-sleep-${s.id}`,
+                    section: 'sleep' as const,
+                    title: charName(s.charId),
+                    subtitle: `${s.channel === 'voice' ? '语音连线' : '文字连线'}还没结束`,
+                    at: s.lastActiveAt || s.createdAt,
+                    badge: '睡前待续',
+                })),
+                ...activeGomoku.map(g => ({
+                    id: `continue-gomoku-${g.id}`,
+                    section: 'gomoku' as const,
+                    title: g.charName || charName(g.charId),
+                    subtitle: `${g.moves?.length || 0} 手后，${g.currentTurn === 'user' ? '轮到你落子' : '轮到 TA 落子'}`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: '棋局待续',
+                })),
+                ...pendingGomokuInvitations.map(inv => ({
+                    id: `continue-gomoku-invite-${inv.id}`,
+                    section: 'gomoku' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '有一张五子棋邀请等你回应',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '约棋邀请',
+                })),
+                ...activeGo.map(g => ({
+                    id: `continue-go-${g.id}`,
+                    section: 'go' as const,
+                    title: g.charName || charName(g.charId),
+                    subtitle: `围棋停在第 ${g.moves?.length || 0} 手`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: '棋局待续',
+                })),
+                ...pendingGoInvitations.map(inv => ({
+                    id: `continue-go-invite-${inv.id}`,
+                    section: 'go' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '有一张围棋邀请等你回应',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '约棋邀请',
+                })),
+                ...activeDoudizhu.map(g => ({
+                    id: `continue-doudizhu-${g.id}`,
+                    section: 'doudizhu' as const,
+                    title: g.players?.filter(p => p.role !== 'user').map(p => p.name).join('、') || '一局斗地主',
+                    subtitle: g.status === 'bidding' ? '牌局停在叫分阶段' : `斗地主停在第 ${g.moves?.length || 0} 手`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: '牌局待续',
+                })),
+                ...pendingDoudizhuInvitations.map(inv => ({
+                    id: `continue-doudizhu-invite-${inv.id}`,
+                    section: 'doudizhu' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '有一张斗地主邀请等你回应',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '约牌邀请',
+                })),
+                ...activeTurtleSoup.map(g => ({
+                    id: `continue-turtleSoup-${g.id}`,
+                    section: 'turtleSoup' as const,
+                    title: g.case?.title || g.title || '一碗海龟汤',
+                    subtitle: `海龟汤停在第 ${g.turns?.length || 0} 问`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: '汤局待续',
+                })),
+                ...pendingTurtleSoupInvitations.map(inv => ({
+                    id: `continue-turtleSoup-invite-${inv.id}`,
+                    section: 'turtleSoup' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '有一张海龟汤邀请等你回应',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '约汤邀请',
+                })),
+                ...activeMahjong.map(g => ({
+                    id: `continue-mahjong-${g.id}`,
+                    section: 'mahjong' as const,
+                    title: g.players?.filter(p => p.role !== 'user').map(p => p.name).join('、') || '一桌麻将',
+                    subtitle: `麻将停在第 ${g.moves?.length || 0} 手，当前轮到 ${g.players?.find(p => p.role === g.currentTurn)?.name || '牌桌'}。`,
+                    at: g.lastActiveAt || g.createdAt,
+                    badge: '牌桌待续',
+                })),
+                ...pendingMahjongInvitations.map(inv => ({
+                    id: `continue-mahjong-invite-${inv.id}`,
+                    section: 'mahjong' as const,
+                    title: inv.charName || charName(inv.charId),
+                    subtitle: inv.message || '有一张麻将邀请等你回应',
+                    at: inv.updatedAt || inv.createdAt,
+                    badge: '约牌邀请',
+                })),
             ].sort((a, b) => b.at - a.at).slice(0, 5);
 
             if (!alive) return;
@@ -317,7 +605,7 @@ const TheaterApp: React.FC = () => {
                 loaded: true,
                 counts,
                 totalCount: PLAYABLE_SECTIONS.reduce((sum, key) => sum + counts[key], 0),
-                activeCount: activeGuide.length + games.length + activeQuiz.length + activeWerewolves.length + truthDares.length,
+                activeCount: activeGuide.length + games.length + activeQuiz.length + activeWerewolves.length + truthDares.length + activeSleep.length + activeGomoku.length + pendingGomokuInvitations.length + activeGo.length + pendingGoInvitations.length + activeDoudizhu.length + pendingDoudizhuInvitations.length + activeTurtleSoup.length + pendingTurtleSoupInvitations.length + activeMahjong.length + pendingMahjongInvitations.length,
                 recent: recent.slice(0, 24),
                 continueItems,
                 customCount: customLibrary.length,
@@ -333,7 +621,7 @@ const TheaterApp: React.FC = () => {
         const hour = new Date().getHours();
         const latestContinue = snapshot.continueItems[0]?.section;
         const timePicks: PlayableSection[] = hour >= 22
-            ? ['talk', 'divination', 'reflection']
+            ? ['sleep', 'talk', 'divination']
             : hour < 11
                 ? ['trajectory', 'guide', 'divination']
                 : characters.length >= 5
@@ -359,6 +647,12 @@ const TheaterApp: React.FC = () => {
     if (section === 'divination') return <DivinationApp onExit={() => setSection('home')} />;
     if (section === 'werewolf') return <WerewolfApp onExit={() => setSection('home')} />;
     if (section === 'truthdare') return <TruthDareApp onExit={() => setSection('home')} />;
+    if (section === 'sleep') return <SleepTogetherApp onExit={() => setSection('home')} />;
+    if (section === 'gomoku') return <GomokuApp launch={gomokuLaunch} onExit={() => { setGomokuLaunch(null); setSection('home'); }} />;
+    if (section === 'go') return <GoApp launch={goLaunch} onExit={() => { setGoLaunch(null); setSection('home'); }} />;
+    if (section === 'doudizhu') return <DoudizhuApp launch={doudizhuLaunch} onExit={() => { setDoudizhuLaunch(null); setSection('home'); }} />;
+    if (section === 'turtleSoup') return <TurtleSoupApp launch={turtleSoupLaunch} onExit={() => { setTurtleSoupLaunch(null); setSection('home'); }} />;
+    if (section === 'mahjong') return <MahjongApp launch={mahjongLaunch} onExit={() => { setMahjongLaunch(null); setSection('home'); }} />;
 
     return (
         <PaperShell>
@@ -420,10 +714,10 @@ const HeroCard: React.FC<{ snapshot: TheaterSnapshot; characterCount: number }> 
                 <span className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(140,132,118,0.6) 0 5px, transparent 5px 10px)' }} />
             </div>
             <div className="text-[12.5px] mt-2.5 leading-relaxed" style={{ color: '#54504a' }}>
-                九折都在一张戏单里：想续上回的局，看总览；想开新戏，翻戏单；想找旧记录，进记录。
+                十五折都在一张戏单里：想续上回的局，看总览；想开新戏，翻戏单；想找旧记录，进记录。
             </div>
             <div className="grid grid-cols-3 gap-2 mt-4">
-                <MiniStat icon={<Ticket size={14} weight="fill" />} value="九折" label="可开演" />
+                <MiniStat icon={<Ticket size={14} weight="fill" />} value="十五折" label="可开演" />
                 <MiniStat icon={<UsersThree size={14} weight="fill" />} value={`${characterCount}`} label="位登场" />
                 <MiniStat icon={<Archive size={14} weight="fill" />} value={snapshot.loaded ? `${snapshot.totalCount}` : '…'} label="份留档" />
             </div>
@@ -464,7 +758,7 @@ const ContinueBoard: React.FC<{ items: TheaterRecentItem[]; loading: boolean; on
         <div className="mt-3 space-y-3">
             {loading ? <LoadingCard text="正在翻本地戏票…" /> : items.length ? items.slice(0, 3).map((item, i) => (
                 <RecentCard key={item.id} item={item} tilt={i % 2 ? 0.45 : -0.45} onOpen={onOpen} compact />
-            )) : <EmptyCard icon={<Play size={18} weight="fill" />} title="没有悬着的场次" text="开一折新戏后，未完的攻略局、问卷、牌局和战役会出现在这里。" />}
+            )) : <EmptyCard icon={<Play size={18} weight="fill" />} title="没有悬着的场次" text="开一折新戏后，未完的攻略局、问卷、牌局、战役和睡前连线会出现在这里。" />}
         </div>
     </div>
 );
@@ -482,7 +776,7 @@ const RecentBoard: React.FC<{ items: TheaterRecentItem[]; loading: boolean; onOp
         <div className="mt-3 space-y-3">
             {loading ? <LoadingCard text="正在整理旧记录…" /> : items.length ? items.map((item, i) => (
                 <RecentCard key={item.id} item={item} tilt={i % 2 ? 0.4 : -0.4} onOpen={onOpen} />
-            )) : <EmptyCard icon={<Archive size={18} weight="fill" />} title="还没有幕间记录" text="生成过番外、谈心、对影或玩过牌局后，这里会按时间倒序收起来。" />}
+            )) : <EmptyCard icon={<Archive size={18} weight="fill" />} title="还没有幕间记录" text="生成过番外、谈心、对影、牌局或一起入眠后，这里会按时间倒序收起来。" />}
         </div>
     </div>
 );
@@ -495,7 +789,7 @@ const ProgrammeBoard: React.FC<{ snapshot: TheaterSnapshot; onOpen: (section: Pl
             <div className="text-[12px] mt-1.5 leading-relaxed" style={{ color: '#5b554a' }}>每一折都是独立玩法，存档彼此分开；退出子页会回到这张戏单。</div>
         </PaperCard>
 
-        <SectionTag en="ALL ACTS" className="mt-7 mb-3.5">九折入口</SectionTag>
+        <SectionTag en="ALL ACTS" className="mt-7 mb-3.5">十五折入口</SectionTag>
         <div className="space-y-4">
             {PROGRAMME.map((z, i) => <ProgrammeCard key={z.section} item={z} index={i} count={snapshot.counts[z.section]} onOpen={onOpen} />)}
         </div>

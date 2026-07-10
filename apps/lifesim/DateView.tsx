@@ -205,6 +205,12 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
 
     const persist = (wl: DateWorldline) => { saveWorldline(wl); setActive({ ...wl }); reload(); };
+    const toggleSideNarration = () => {
+        if (!active) return;
+        const next = { ...active, sideNarrationEnabled: !active.sideNarrationEnabled };
+        persist(next);
+        addToast(next.sideNarrationEnabled ? '侧幕描写已开启' : '侧幕描写已关闭', 'info');
+    };
 
     // ── 发一回合 ──
     const send = async () => {
@@ -222,12 +228,14 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         let wl: DateWorldline = { ...active, messages: [...active.messages, userMsg] };
         persist(wl);
         setSpeech(''); setAction('');
-        setSending(true); setBusyNote(`${char.name} 在回应…`);
+        setSending(true); setBusyNote(wl.sideNarrationEnabled ? '侧幕正在铺开…' : `${char.name} 在回应…`);
         try {
             const res = await runDateTurn(api, char, userProfile, scene, wl, sp, ac);
             if (!res) { addToast('世界引擎走神了，再试一次', 'error'); setSending(false); setBusyNote(''); return; }
-            const charMsg: DateMessage = { id: newDateMessageId(), role: 'char', speech: res.charSpeech || undefined, action: res.charAction || undefined, ts: Date.now() };
-            const msgs = [...wl.messages, charMsg];
+            const msgs = [...wl.messages];
+            if (res.charSpeech || res.charAction || res.thinking) {
+                msgs.push({ id: newDateMessageId(), role: 'char', speech: res.charSpeech || undefined, action: res.charAction || undefined, thinking: res.thinking || undefined, ts: Date.now() });
+            }
             if (res.world) msgs.push({ id: newDateMessageId(), role: 'world', action: res.world, ts: Date.now() });
             wl = {
                 ...wl, messages: msgs, turnCount: wl.turnCount + 1,
@@ -433,14 +441,15 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             title={`${active.sceneEmoji} ${active.title}`}
             onBack={() => { bgmAudioRef.current?.pause(); setBgmOn(false); setScreen('list'); }}
             right={
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, maxWidth: '64vw', overflowX: 'auto', scrollbarWidth: 'none' }}>
                     <Pill onClick={saveToCoupleSpace} title="收进情侣空间">收进空间</Pill>
+                    <Pill onClick={toggleSideNarration} active={!!active.sideNarrationEnabled} title="侧幕描写：后续只推进用户单独或 NPC 支线，不让当前角色在场">侧幕</Pill>
                     <Pill onClick={toggleBgm} active={bgmOn} disabled={bgmBusy} title="氛围 BGM（MiniMax 生成）">{bgmBusy ? '谱曲…' : (bgmOn ? '♪ 暂停' : '♪ BGM')}</Pill>
                     <Pill onClick={() => setVoiceOn(v => !v)} active={voiceOn} title="角色台词语音">{voiceOn ? '🔊 有声' : '🔈 静音'}</Pill>
                 </div>
             }>
             <div style={{ fontSize: 10.5, color: C.accent2, padding: '4px 16px', borderBottom: `1px solid ${C.line}` }}>
-                {active.vibe ? `氛围：${active.vibe} · ` : ''}{active.turnCount} 回合 · 再 {recapDue} 回合自动收一次前情
+                {active.vibe ? `氛围：${active.vibe} · ` : ''}{active.turnCount} 回合 · 再 {recapDue} 回合自动收一次前情{active.sideNarrationEnabled ? ' · 侧幕描写中' : ''}
             </div>
 
             {/* 消息流 */}
@@ -458,7 +467,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div style={{ borderTop: `1px solid ${C.line}`, padding: 12, background: 'rgba(255,255,255,0.94)' }}>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 16, alignSelf: 'center' }}>💬</span>
-                    <input value={speech} onChange={e => setSpeech(e.target.value)} placeholder={listening ? '在听你说…' : '说点什么…'}
+                    <input value={speech} onChange={e => setSpeech(e.target.value)} placeholder={listening ? '在听你说…' : (active.sideNarrationEnabled ? '写侧幕指令 / NPC台词…' : '说点什么…')}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
                         style={inputStyle()} disabled={sending} />
                     {sttSupported && (
@@ -473,12 +482,14 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 16, alignSelf: 'center' }}>🤍</span>
-                    <input value={action} onChange={e => setAction(e.target.value)} placeholder="做个动作（牵起 TA 的手 / 偷偷看 TA…）"
+                    <input value={action} onChange={e => setAction(e.target.value)} placeholder={active.sideNarrationEnabled ? '推进你的单独行动 / NPC剧情…' : '做个动作（牵起 TA 的手 / 偷偷看 TA…）'}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
                         style={inputStyle()} disabled={sending} />
                     <button onClick={send} disabled={sending} style={{ ...primaryBtn, width: 76, marginTop: 0, opacity: sending ? 0.5 : 1 }}>{sending ? '…' : '发送'}</button>
                 </div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>话和动作可以只填一个 · TA 会一一回应</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>
+                    {active.sideNarrationEnabled ? '侧幕开启中 · 后续不会让 TA 在场，适合推进 NPC 或你的单独剧情' : '话和动作可以只填一个 · TA 会一一回应'}
+                </div>
             </div>
         </Overlay>
     );
@@ -490,6 +501,7 @@ const MessageRow: React.FC<{ m: DateMessage; char: any; userName: string; onFork
         return <div style={{ textAlign: 'center', color: C.muted, fontSize: 12, fontStyle: 'italic', margin: '12px 0', lineHeight: 1.6 }}>— {m.action} —</div>;
     }
     const mine = m.role === 'user';
+    const hasVisibleBody = !!(m.speech || m.action);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start', marginBottom: 12 }}>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>{mine ? userName : char.name}</div>
@@ -503,6 +515,16 @@ const MessageRow: React.FC<{ m: DateMessage; char: any; userName: string; onFork
             )}
             {m.action && (
                 <div style={{ maxWidth: '82%', fontSize: 12, color: C.muted, fontStyle: 'italic', marginTop: m.speech ? 4 : 0, padding: '0 4px' }}>（{m.action}）</div>
+            )}
+            {!mine && m.thinking && (
+                <div style={{
+                    maxWidth: '82%', marginTop: hasVisibleBody ? 6 : 0, padding: '7px 10px',
+                    borderRadius: 12, border: '1px solid rgba(124,58,237,0.16)',
+                    background: 'rgba(124,58,237,0.06)', color: C.accent2,
+                    fontSize: 11.5, lineHeight: 1.55, fontStyle: 'italic', whiteSpace: 'pre-wrap',
+                }}>
+                    <span style={{ fontStyle: 'normal', fontWeight: 800, marginRight: 6 }}>内心OS</span>{m.thinking}
+                </div>
             )}
             {!mine && (
                 <button onClick={onFork} title="从这一刻另开一条世界线"

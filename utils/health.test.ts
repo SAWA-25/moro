@@ -14,6 +14,7 @@ import {
   normalizeHealthReminder,
   periodEventsToHealthRecords,
   shouldSkipStaleHealthReminder,
+  summarizeHealthDay,
 } from './health';
 import { HEALTH_REMINDER_GRACE_MS } from './health';
 import { preparePeriodReminderSettings } from './periodReminders';
@@ -24,9 +25,10 @@ const at = (year: number, month: number, day: number, hour = 0, minute = 0) =>
 describe('health center utilities', () => {
   it('fills default module settings with private privacy', () => {
     const settings = mergeHealthModuleSettings([]);
-    expect(settings).toHaveLength(7);
+    expect(settings).toHaveLength(8);
     expect(settings.every(item => item.privacy === 'private')).toBe(true);
     expect(settings.find(item => item.id === 'hydration')?.goals?.target).toBeGreaterThan(0);
+    expect(settings.find(item => item.id === 'vitals')?.goals).toBeUndefined();
   });
 
   it('normalizes records and computes daily goal progress', () => {
@@ -106,5 +108,15 @@ describe('health center utilities', () => {
     });
     expect(hint).toContain('不要诊断');
     expect(hint).toContain('饮水：500ml');
+  });
+
+  it('summarizes vitals as measurements instead of medical advice', () => {
+    const summary = summarizeHealthDay([
+      makeHealthRecord({ moduleId: 'vitals', date: '2026-07-01', label: '心率', value: 72, unit: 'bpm', tags: ['心率'], source: 'wearable_import' }),
+      makeHealthRecord({ moduleId: 'vitals', date: '2026-07-01', label: 'HRV', value: 48, unit: 'ms', tags: ['HRV'], source: 'wearable_import' }),
+    ], '2026-07-01');
+    expect(summary.text).toContain('体征');
+    expect(summary.text).toContain('心率 72bpm');
+    expect(summary.text).not.toContain('诊断');
   });
 });

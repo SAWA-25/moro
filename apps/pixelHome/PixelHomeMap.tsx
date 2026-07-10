@@ -74,6 +74,8 @@ function getMapFurniture(layoutFurniture: PlacedFurniture[] | undefined, roomId:
 }
 
 function isRugFurniture(f: PlacedFurniture, asset: PixelAsset | undefined): boolean {
+  if (f.layer === 'furniture') return false;
+  if (f.layer === 'carpet') return true;
   return !!asset?.tags?.includes('rug') || (!asset && f.isDefault !== false && (f.slotId === 'rug' || f.slotId === 'welcome_mat'));
 }
 

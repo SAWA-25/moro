@@ -1123,6 +1123,16 @@ function enrichJobPosting(job: BankJobPosting): BankJobPosting {
 
 export const JOB_POSTINGS: BankJobPosting[] = RAW_JOB_POSTINGS.map(enrichJobPosting);
 
+const bankShopProductPixelRef = (id: string): string => `bank-pixel:product/${id}@64`;
+const shopProduct = (id: string, name: string, price: number, cost: number, appeal: number) => ({
+    id,
+    name,
+    price,
+    cost,
+    appeal,
+    icon: bankShopProductPixelRef(id),
+});
+
 export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
     {
         id: 'drinks',
@@ -1134,9 +1144,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.58,
         risk: 2,
         products: [
-            { id: 'drink-americano', name: '冰美式', price: 18, cost: 7, appeal: 18 },
-            { id: 'drink-latte', name: '燕麦拿铁', price: 24, cost: 10, appeal: 24 },
-            { id: 'drink-fruit-tea', name: '满杯水果茶', price: 22, cost: 9, appeal: 22 },
+            shopProduct('drink-americano', '冰美式', 18, 7, 18),
+            shopProduct('drink-latte', '燕麦拿铁', 24, 10, 24),
+            shopProduct('drink-fruit-tea', '满杯水果茶', 22, 9, 22),
+            shopProduct('drink-sparkling-yuzu', '柚子气泡饮', 26, 13, 26),
         ],
         events: ['附近写字楼加班多，晚间订单变密。', '新品试饮被路过学生夸了几句。'],
     },
@@ -1150,9 +1161,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.62,
         risk: 3,
         products: [
-            { id: 'snack-skewer', name: '招牌烤串', price: 12, cost: 4, appeal: 18 },
-            { id: 'snack-noodle', name: '热拌小面', price: 16, cost: 6, appeal: 20 },
-            { id: 'snack-box', name: '夜宵拼盒', price: 29, cost: 12, appeal: 28 },
+            shopProduct('snack-skewer', '招牌烤串', 12, 4, 18),
+            shopProduct('snack-noodle', '热拌小面', 16, 6, 20),
+            shopProduct('snack-box', '夜宵拼盒', 29, 12, 28),
+            shopProduct('snack-rice-ball', '热乎饭团', 18, 8, 18),
         ],
         events: ['夜市人流忽然变大，备货压力上来。', '隔壁摊主推荐了一个便宜进货渠道。'],
     },
@@ -1166,9 +1178,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.35,
         risk: 2,
         products: [
-            { id: 'cv-bento', name: '热便当', price: 19, cost: 11, appeal: 20 },
-            { id: 'cv-drink', name: '冷柜饮料', price: 8, cost: 4, appeal: 10 },
-            { id: 'cv-bundle', name: '加班补给包', price: 32, cost: 18, appeal: 26 },
+            shopProduct('cv-bento', '热便当', 19, 11, 20),
+            shopProduct('cv-drink', '冷柜饮料', 8, 3, 10),
+            shopProduct('cv-bundle', '加班补给包', 32, 18, 26),
+            shopProduct('cv-battery', '应急电池', 15, 5, 14),
         ],
         events: ['社区团购临时缺货，店里的日用品被多买了几单。', '冷柜维护让今天成本高了一点。'],
     },
@@ -1182,9 +1195,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.55,
         risk: 3,
         products: [
-            { id: 'fl-bouquet', name: '晨雾花束', price: 88, cost: 38, appeal: 32 },
-            { id: 'fl-mini', name: '桌面小花', price: 36, cost: 16, appeal: 18 },
-            { id: 'fl-card', name: '手写花卡', price: 12, cost: 2, appeal: 10 },
+            shopProduct('fl-bouquet', '晨雾花束', 88, 38, 32),
+            shopProduct('fl-mini', '桌面小花', 36, 16, 18),
+            shopProduct('fl-card', '手写花卡', 12, 2, 10),
+            shopProduct('fl-dried', '干花小瓶', 48, 19, 22),
         ],
         events: ['有人订了临时花束，愿意加急。', '一批鲜花状态一般，需要快点卖掉。'],
     },
@@ -1198,9 +1212,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.5,
         risk: 3,
         products: [
-            { id: 'ds-roll', name: '奶油卷', price: 28, cost: 12, appeal: 26 },
-            { id: 'ds-pudding', name: '焦糖布丁', price: 18, cost: 7, appeal: 18 },
-            { id: 'ds-set', name: '下午茶双人组', price: 68, cost: 31, appeal: 36 },
+            shopProduct('ds-roll', '奶油卷', 28, 14, 26),
+            shopProduct('ds-pudding', '焦糖布丁', 18, 15, 18),
+            shopProduct('ds-set', '下午茶双人组', 68, 31, 36),
+            shopProduct('ds-macaron', '马卡龙盒', 36, 17, 24),
         ],
         events: ['打卡照片被转发，午后客流增加。', '奶油到货晚了，备货节奏被打乱。'],
     },
@@ -1214,9 +1229,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.42,
         risk: 2,
         products: [
-            { id: 'pet-food', name: '试吃粮包', price: 29, cost: 16, appeal: 18 },
-            { id: 'pet-toy', name: '逗猫小玩具', price: 22, cost: 9, appeal: 20 },
-            { id: 'pet-care', name: '清洁护理套装', price: 58, cost: 29, appeal: 28 },
+            shopProduct('pet-food', '试吃粮包', 29, 20, 18),
+            shopProduct('pet-toy', '逗猫小玩具', 32, 21, 20),
+            shopProduct('pet-care', '清洁护理套装', 58, 29, 28),
+            shopProduct('pet-treats', '冻干零食罐', 36, 22, 24),
         ],
         events: ['附近宠物群有人推荐了你的店。', '有顾客询问长期订购折扣。'],
     },
@@ -1230,9 +1246,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.48,
         risk: 2,
         products: [
-            { id: 'st-pen', name: '顺滑中性笔', price: 6, cost: 2, appeal: 8 },
-            { id: 'st-note', name: '方格本', price: 18, cost: 8, appeal: 18 },
-            { id: 'st-box', name: '开学文具包', price: 49, cost: 24, appeal: 30 },
+            shopProduct('st-pen', '顺滑中性笔', 6, 1, 8),
+            shopProduct('st-note', '方格本', 24, 23, 18),
+            shopProduct('st-box', '开学文具包', 49, 24, 30),
+            shopProduct('st-sticker', '和纸贴纸包', 36, 25, 22),
         ],
         events: ['开学季临近，文具套装被多看了几眼。', '有人想寄售自己的手写卡片。'],
     },
@@ -1246,9 +1263,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.64,
         risk: 4,
         products: [
-            { id: 'sh-book', name: '旧书盲盒', price: 25, cost: 8, appeal: 20 },
-            { id: 'sh-lamp', name: '复古台灯', price: 79, cost: 34, appeal: 30 },
-            { id: 'sh-cloth', name: '干净外套', price: 58, cost: 20, appeal: 24 },
+            shopProduct('sh-book', '旧书盲盒', 35, 26, 20),
+            shopProduct('sh-lamp', '复古台灯', 79, 34, 30),
+            shopProduct('sh-cloth', '干净外套', 58, 27, 24),
+            shopProduct('sh-camera', '胶片相机', 96, 35, 34),
         ],
         events: ['收到一批成色不错的小物件。', '有顾客压价很狠，需要判断要不要成交。'],
     },
@@ -1262,9 +1280,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.68,
         risk: 4,
         products: [
-            { id: 'hm-keychain', name: '毛线挂件', price: 36, cost: 10, appeal: 22 },
-            { id: 'hm-ring', name: '串珠戒指', price: 28, cost: 8, appeal: 18 },
-            { id: 'hm-custom', name: '定制礼物盒', price: 128, cost: 42, appeal: 40 },
+            shopProduct('hm-keychain', '毛线挂件', 36, 28, 22),
+            shopProduct('hm-ring', '串珠戒指', 42, 30, 18),
+            shopProduct('hm-custom', '定制礼物盒', 128, 42, 40),
+            shopProduct('hm-candle', '手浇香薰蜡烛', 52, 32, 28),
         ],
         events: ['有人想加急定制，愿意多付一点。', '手作材料缺了一个颜色。'],
     },
@@ -1278,9 +1297,10 @@ export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
         margin: 0.46,
         risk: 3,
         products: [
-            { id: 'on-case', name: '手机壳', price: 39, cost: 16, appeal: 18 },
-            { id: 'on-bag', name: '通勤帆布袋', price: 59, cost: 26, appeal: 24 },
-            { id: 'on-set', name: '主题小礼包', price: 99, cost: 45, appeal: 34 },
+            shopProduct('on-case', '手机壳', 39, 33, 18),
+            shopProduct('on-bag', '通勤帆布袋', 59, 36, 24),
+            shopProduct('on-set', '主题小礼包', 99, 45, 34),
+            shopProduct('on-poster', '小海报筒', 46, 37, 22),
         ],
         events: ['平台给了短暂曝光，咨询量上来了。', '物流慢了一点，售后消息变多。'],
     },
@@ -1378,7 +1398,7 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         shopUnlocked,
         shopBusinessType: shopUnlocked ? defaultBusiness.id : undefined,
         shopBusinessName: shopUnlocked ? defaultBusiness.name : undefined,
-        shopProducts: shopUnlocked ? defaultBusiness.products.map(p => ({ ...p, stock: 8 })) : [],
+        shopProducts: shopUnlocked ? buildShopProducts(defaultBusiness.id) : [],
         shopCustomers: shopUnlocked ? defaultBusiness.customerGroups : [],
         shopEvents: [],
         jobHistory: [],
@@ -1495,7 +1515,9 @@ export function createBankShopBranch(
         openedAt: overrides.openedAt || dateStr,
         shop,
         firedStaff: overrides.firedStaff || [],
-        shopProducts: overrides.shopProducts?.length ? overrides.shopProducts : buildShopProducts(tpl.id),
+        shopProducts: overrides.shopProducts?.length
+            ? normalizeShopProducts(overrides.shopProducts, tpl.id, !hasExplicitShopProductPlacement(overrides.shopProducts))
+            : buildShopProducts(tpl.id),
         shopCustomers: overrides.shopCustomers?.length ? overrides.shopCustomers : tpl.customerGroups,
         shopEvents: overrides.shopEvents || [],
     };
@@ -1589,7 +1611,7 @@ export function syncActiveShopMirror(state: BankFullState): BankFullState {
         shopUnlocked: true,
         shopBusinessType: active.businessTypeId,
         shopBusinessName: active.shop.shopName || active.businessName,
-        shopProducts: active.shopProducts,
+        shopProducts: normalizeShopProducts(active.shopProducts, active.businessTypeId, !hasExplicitShopProductPlacement(active.shopProducts)),
         shopCustomers: active.shopCustomers,
         shopEvents: active.shopEvents,
     };
@@ -1613,7 +1635,11 @@ export function syncActiveBranchFromMirror(state: BankFullState): BankFullState 
         ...branch,
         shop: normalizeBankShopState({ ...state.shop, shopName: activeShopName }, activeShopName),
         firedStaff: state.firedStaff || [],
-        shopProducts: life.shopProducts || branch.shopProducts,
+        shopProducts: normalizeShopProducts(
+            life.shopProducts?.length ? life.shopProducts : branch.shopProducts,
+            branch.businessTypeId,
+            !hasExplicitShopProductPlacement(life.shopProducts?.length ? life.shopProducts : branch.shopProducts)
+        ),
         shopCustomers: life.shopCustomers || branch.shopCustomers,
         shopEvents: life.shopEvents || branch.shopEvents,
     } : branch);
@@ -1673,7 +1699,9 @@ export function migrateBankShopPortfolioState(state: BankFullState): BankFullSta
         openedAt: state.lastLoginDate || dateStr,
         shop: state.shop,
         firedStaff: state.firedStaff || [],
-        shopProducts: state.life?.shopProducts?.length ? state.life.shopProducts : buildShopProducts(tpl.id),
+        shopProducts: state.life?.shopProducts?.length
+            ? normalizeShopProducts(state.life.shopProducts, tpl.id, !hasExplicitShopProductPlacement(state.life.shopProducts))
+            : buildShopProducts(tpl.id),
         shopCustomers: state.life?.shopCustomers?.length ? state.life.shopCustomers : tpl.customerGroups,
         shopEvents: state.life?.shopEvents || [],
     });
@@ -1727,7 +1755,7 @@ export function openBankShopBranch(
             category: 'shop',
             kind: 'shop-branch-open',
             title: portfolio.branches.length ? '新分店开张' : '开店确认',
-            summary: `${name} 已经完成开业准备，第一批货架会自动上架。`,
+            summary: `${name} 已经完成开业准备，商品目录已入库，请到经营打理页手动摆上货架并补货。`,
             tone: 'good',
             amount: -cost,
             metrics: [
@@ -1840,7 +1868,9 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             shopUnlocked: !!(state.life.shopUnlocked || hasOldShopProgress),
             shopBusinessType: state.life.shopBusinessType || ((state.life.shopUnlocked || hasOldShopProgress) ? 'drinks' : undefined),
             shopBusinessName: state.life.shopBusinessName || ((state.life.shopUnlocked || hasOldShopProgress) ? (state.shop?.shopName || '饮品店') : undefined),
-            shopProducts: state.life.shopProducts?.length ? state.life.shopProducts : ((state.life.shopUnlocked || hasOldShopProgress) ? buildShopProducts('drinks') : []),
+            shopProducts: state.life.shopProducts?.length
+                ? normalizeShopProducts(state.life.shopProducts, state.life.shopBusinessType || 'drinks', !hasExplicitShopProductPlacement(state.life.shopProducts))
+                : ((state.life.shopUnlocked || hasOldShopProgress) ? buildShopProducts('drinks') : []),
             shopCustomers: state.life.shopCustomers?.length ? state.life.shopCustomers : ((state.life.shopUnlocked || hasOldShopProgress) ? (BUSINESS_TEMPLATES.find(b => b.id === 'drinks')?.customerGroups || []) : []),
             dayIndex: state.life.dayIndex || 1,
             weekDay: typeof state.life.weekDay === 'number' ? state.life.weekDay : weekDayOf(state.life.dateStr || state.lastLoginDate || todayStr()),
@@ -1889,7 +1919,38 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
 
 function buildShopProducts(businessTypeId: string) {
     const tpl = BUSINESS_TEMPLATES.find(b => b.id === businessTypeId) || BUSINESS_TEMPLATES[0];
-    return tpl.products.map(p => ({ ...p, stock: 8 }));
+    return tpl.products.map(p => normalizeShopProduct({ ...p, stock: 0, shelfPlaced: false, needsRestock: true }, tpl.id, false));
+}
+
+function hasExplicitShopProductPlacement(products?: Partial<BankLifeShopProduct>[]): boolean {
+    return !!products?.some(p => Object.prototype.hasOwnProperty.call(p, 'shelfPlaced') || Object.prototype.hasOwnProperty.call(p, 'needsRestock'));
+}
+
+function normalizeShopProduct(product: Partial<BankLifeShopProduct> & { id: string; name?: string; price?: number; cost?: number; appeal?: number; icon?: string }, businessTypeId: string, legacyPlaced = false): BankLifeShopProduct {
+    const tpl = BUSINESS_TEMPLATES.find(b => b.id === businessTypeId) || BUSINESS_TEMPLATES[0];
+    const tplProduct = tpl.products.find(p => p.id === product.id);
+    const hasExplicitProductState = Object.prototype.hasOwnProperty.call(product, 'shelfPlaced') || Object.prototype.hasOwnProperty.call(product, 'needsRestock');
+    const shelfPlaced = product.shelfPlaced ?? legacyPlaced;
+    let needsRestock = product.needsRestock ?? !legacyPlaced;
+    if (hasExplicitProductState && shelfPlaced && !product.lastRestockedDateStr) {
+        needsRestock = true;
+    }
+    return {
+        id: product.id,
+        name: product.name || tplProduct?.name || product.id,
+        price: Math.max(1, Math.floor(product.price ?? tplProduct?.price ?? 1)),
+        cost: Math.max(1, Math.floor(product.cost ?? tplProduct?.cost ?? 1)),
+        stock: Math.max(0, Math.floor(product.stock ?? 0)),
+        appeal: Math.max(0, Math.floor(product.appeal ?? tplProduct?.appeal ?? 0)),
+        icon: product.icon || tplProduct?.icon || bankShopProductPixelRef(product.id),
+        shelfPlaced,
+        needsRestock,
+        lastRestockedDateStr: product.lastRestockedDateStr,
+    };
+}
+
+function normalizeShopProducts(products: Partial<BankLifeShopProduct>[] | undefined, businessTypeId: string, legacyPlaced = false): BankLifeShopProduct[] {
+    return (products || []).map(product => normalizeShopProduct(product as BankLifeShopProduct & { id: string }, businessTypeId, legacyPlaced));
 }
 
 export function openLifeShop(life: BankLifeState, businessTypeId: string, shopName: string): BankLifeState {
@@ -1901,7 +1962,7 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
             category: 'shop',
             kind: 'shop-open',
             title: '开店确认',
-            summary: `${name} 已经完成开业准备，第一批货架会自动上架。`,
+            summary: `${name} 已经完成开业准备，商品目录已入库，请到经营打理页手动摆上货架并补货。`,
             tone: 'good',
             amount: -startupCost,
             metrics: [
@@ -1923,7 +1984,7 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
         shopBusinessName: name,
         shopProducts: buildShopProducts(tpl.id),
         shopCustomers: tpl.customerGroups,
-        shopEvents: [{ id: genId('life'), dateStr: life.dateStr, title: '准备开张', detail: `${name} 的第一批货已经上架。`, tone: 'good' }],
+        shopEvents: [{ id: genId('life'), dateStr: life.dateStr, title: '准备开张', detail: `${name} 的商品目录已经入库，先把想卖的商品摆到货架上并完成补货。`, tone: 'good' }],
         events: pushEvent(life.events, { dateStr: life.dateStr, title: '小店开张', detail: `${name} 开始营业，主打${tpl.name}。`, tone: 'good', amount: -startupCost }),
     }, result);
 }

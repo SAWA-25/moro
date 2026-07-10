@@ -17,6 +17,7 @@ import {
     shouldAutoReactToCharTakeout,
     synthesizeCharOrder,
     synthesizeCharOrderSafely,
+    takeoutChatForTarget,
     TAKEOUT_STORES_CACHE_KEY,
 } from './takeout';
 import type { TakeoutOrder, TakeoutOrderItem } from '../types';
@@ -71,6 +72,21 @@ describe('角色主动点外卖指令解析', () => {
     });
 });
 
+describe('饭票通讯频道', () => {
+    it('按跑腿 / 铺子频道过滤，旧顾客消息仍兼容显示', () => {
+        const chat = [
+            { role: 'user' as const, text: '旧消息', at: 1 },
+            { role: 'user' as const, target: 'store' as const, text: '给铺子', at: 2 },
+            { role: 'store' as const, target: 'store' as const, text: '铺子回', at: 3 },
+            { role: 'user' as const, target: 'rider' as const, text: '给跑腿', at: 4 },
+            { role: 'rider' as const, target: 'rider' as const, text: '跑腿回', at: 5 },
+        ];
+
+        expect(takeoutChatForTarget(chat, 'store').map(m => m.text)).toEqual(['旧消息', '给铺子', '铺子回']);
+        expect(takeoutChatForTarget(chat, 'rider').map(m => m.text)).toEqual(['旧消息', '给跑腿', '跑腿回']);
+    });
+});
+
 describe('角色主动点外卖偏好兜底', () => {
     const sweetFood = /奶茶|奶绿|奶昔|奶盖|波波|阿华田|焦糖|甘露|甜品|烘焙|蛋糕|提拉米苏|布朗尼|甜筒|冰淇淋|双皮奶|芋圆|烧仙草|绵绵冰|芝士挞|苹果派|糖水|可乐|雪碧|汽水|果蔬汁|酸奶|酸梅汤|冰镇西瓜|草莓|葡萄|芒果|红豆|脏脏包/;
     const spicyFood = /辣|麻辣|麻婆|椒|川|湘|泡椒|剁椒|水煮|口水鸡|小龙虾|螺蛳粉|串串|麻辣烫|火锅|酸辣|麦辣|热辣|宫保|黑椒/;
@@ -98,10 +114,17 @@ describe('角色主动点外卖偏好兜底', () => {
     it('饭票口味小纸条写少糖时，会写入主动订单备注并避开过甜餐品', () => {
         const order = synthesizeCharOrder('char-a', '下午茶甜品', '测试地址', {
             tasteTags: ['少糖'],
+            characterName: '阿迟',
+            userName: '小夏',
         });
         const orderText = `${order.storeName} ${order.items.map(item => item.name).join(' ')}`;
         expect(order.note).toContain('少糖');
         expect(orderText).not.toMatch(sweetFood);
+        expect(order.characterReceipt?.recipientNickname).toBe('小夏');
+        expect(order.characterReceipt?.fromName).toBe('阿迟');
+        expect(order.chat.some(m => m.role === 'user' && m.actorName === '阿迟' && m.target === 'store')).toBe(true);
+        expect(takeoutChatForTarget(order.chat, 'store').every(m => m.role === 'user' ? !m.target || m.target === 'store' : m.role === 'store')).toBe(true);
+        expect(takeoutChatForTarget(order.chat, 'rider').some(m => m.role === 'rider')).toBe(true);
     });
 
     it('用户同时写多种忌口时，会一起识别而不是只看糖', () => {

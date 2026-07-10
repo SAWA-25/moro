@@ -48,6 +48,13 @@ interface ChatInputAreaProps {
     inputPlaceholder?: string;
     /** 输入动效：显示在输入栏上的装饰动画（上传图片或 AI 写的 SVG）。 */
     inputAnimation?: OSTheme['chatInputAnimation'];
+    /** 聊天页一起听：当前歌词跟唱入口。 */
+    musicHumming?: {
+        songName: string;
+        lyricLine?: string;
+        progressLabel?: string;
+    };
+    onMusicHummingSend?: (draft: string) => void;
     /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
 }
 
@@ -102,6 +109,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     chromeStyle = 'soft',
     inputPlaceholder,
     inputAnimation,
+    musicHumming,
+    onMusicHummingSend,
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -466,6 +475,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           : 'text-slate-400';
 
     const selectedEmojiUrls = emojiSelectionMode ? new Set(selectedEmojis.map(se => se.url)) : new Set();
+    const musicHumDraft = (input.trim() || musicHumming?.lyricLine || '').trim();
+    const canSendMusicHum = !!(musicHumming && onMusicHummingSend && musicHumDraft && !isTyping);
 
     return (
         <>
@@ -544,6 +555,40 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     </button>
                 </div>
             ) : (
+                <>
+                {musicHumming && (
+                    <div className={`mx-4 mt-3 mb-0 rounded-2xl border px-3 py-2 flex items-center gap-2 ${
+                        isPixelStyle
+                            ? 'bg-[#fff7ed] border-[#8f674a]/30 text-[#6a4c35]'
+                            : isDiscordStyle
+                              ? 'bg-slate-800/80 border-white/10 text-slate-200'
+                              : 'bg-white/80 border-rose-100 text-slate-700 shadow-sm'
+                    }`}>
+                        <CassetteTape className={`w-4 h-4 shrink-0 ${isDiscordStyle ? 'text-sky-300' : isPixelStyle ? 'text-[#8f674a]' : 'text-rose-400'}`} weight="fill" />
+                        <div className="flex-1 min-w-0">
+                            <div className={`text-[9px] font-bold truncate ${isDiscordStyle ? 'text-slate-400' : isPixelStyle ? 'text-[#9b8677]' : 'text-slate-400'}`}>
+                                一起听 · {musicHumming.songName}{musicHumming.progressLabel ? ` · ${musicHumming.progressLabel}` : ''}
+                            </div>
+                            <div className="text-[11px] leading-snug truncate">
+                                {input.trim() ? `你正在轻声哼：♪ ${input.trim()}` : (musicHumming.lyricLine || '当前暂无可跟唱歌词')}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => { if (canSendMusicHum) onMusicHummingSend?.(musicHumDraft); }}
+                            disabled={!canSendMusicHum}
+                            className={`h-8 px-3 rounded-full text-[11px] font-bold shrink-0 active:scale-95 transition-all disabled:opacity-40 ${
+                                isPixelStyle
+                                    ? 'bg-[#c99872] text-[#fff7ed] border border-[#8f674a]'
+                                    : isDiscordStyle
+                                      ? 'bg-sky-500 text-white'
+                                      : 'bg-rose-400 text-white shadow-sm'
+                            }`}
+                            title="把当前输入或歌词发成跟唱"
+                        >
+                            跟唱
+                        </button>
+                    </div>
+                )}
                 <div className="p-3 px-4 flex gap-3 items-end relative">
                     {/* 左外侧：表情面板入口。功能面板入口挪进输入框右内侧的回形针 */}
                     <button onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={actionButtonClass}>
@@ -600,6 +645,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         <div className={`absolute inset-0 z-10 ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />
                     )}
                 </div>
+                </>
             )}
 
             {/* Panels — always mounted, height transitions for smooth open/close */}

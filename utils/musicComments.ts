@@ -22,6 +22,7 @@ import { callChatCompletion } from './llmClient';
 /** 网易云一条评论（盖楼 beReplied 折叠成简短引用）。 */
 export interface NeteaseComment {
   id: number;
+  userId?: number | string;
   nickname: string;
   avatar: string;
   content: string;
@@ -60,6 +61,7 @@ const mapComment = (c: any): NeteaseComment => {
     : null;
   return {
     id: c?.commentId ?? c?.id ?? Math.floor(Math.random() * 1e9),
+    userId: c?.user?.userId ?? c?.user?.id,
     nickname: c?.user?.nickname || c?.user?.userName || '云村村民',
     avatar: toHttps(c?.user?.avatarUrl || ''),
     content: (c?.content || '').trim(),
