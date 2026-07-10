@@ -56,6 +56,18 @@ describe('health center utilities', () => {
     expect(fired.lastFiredKey).toBe(healthReminderFireKey(reminder, at(2026, 7, 1, 21, 30)));
   });
 
+  it('keeps weekday reminders on Monday to Friday by default', () => {
+    const reminder = normalizeHealthReminder({
+      moduleId: 'hydration',
+      title: '工作日喝水',
+      timeHHmm: '09:00',
+      frequency: 'weekdays',
+    }, at(2026, 7, 3, 10));
+
+    expect(reminder.weekdays).toEqual([1, 2, 3, 4, 5]);
+    expect(computeNextHealthReminderAt(reminder, at(2026, 7, 3, 10))).toBe(at(2026, 7, 6, 9));
+  });
+
   it('skips stale reminders and resolves privacy capabilities', () => {
     const now = at(2026, 7, 1, 12);
     const reminder = normalizeHealthReminder({ nextAt: now - HEALTH_REMINDER_GRACE_MS - 1 }, now);

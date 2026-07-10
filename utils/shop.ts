@@ -11,7 +11,7 @@
  * 不碰 DB / React，方便在 App、聊天上下文、副 API 流程里复用。
  */
 
-import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem, ShopCoupon, ShopFootprint, ShopUserReview } from '../types';
+import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem, ShopCoupon, ShopFootprint, ShopUserReview, ShopGiftOccasionKey, ShopReceiptSource, ShopWishSource } from '../types';
 
 /** 商城内容变动（买/送/角色逛完）后广播，相关页面据此刷新。 */
 export const SHOP_UPDATED_EVENT = 'moro-shop-updated';
@@ -242,6 +242,13 @@ export const makeOwnedItem = (item: ShopItem): ShopOwnedItem => ({
     boughtAt: Date.now(),
 });
 
+export interface ShopReceiptContext {
+    occasion?: ShopGiftOccasionKey;
+    wrapLabel?: string;
+    source?: ShopReceiptSource;
+    wishItemId?: string;
+}
+
 export const makeReceipt = (
     item: Pick<ShopItem, 'id' | 'name' | 'emoji' | 'price'>,
     by: ShopReceipt['by'],
@@ -249,6 +256,7 @@ export const makeReceipt = (
     counterpartId: string,
     counterpartName: string,
     note?: string,
+    context?: ShopReceiptContext,
 ): ShopReceipt => ({
     id: uid(),
     itemId: item.id,
@@ -260,6 +268,10 @@ export const makeReceipt = (
     counterpartId,
     counterpartName,
     note: note?.trim() || undefined,
+    occasion: context?.occasion,
+    wrapLabel: context?.wrapLabel?.trim() || undefined,
+    source: context?.source,
+    wishItemId: context?.wishItemId,
     at: Date.now(),
 });
 
@@ -271,12 +283,28 @@ export interface GiftCardMeta {
     price: number;
     note?: string;
     fromName: string;     // 送礼方展示名
+    occasion?: ShopGiftOccasionKey;
+    occasionLabel?: string;
+    wrapKey?: string;
+    wrapLabel?: string;
+    source?: ShopReceiptSource;
+    wishItemId?: string;
+    fromWishlist?: boolean;
+}
+
+export interface GiftRitualMeta {
+    occasion?: ShopGiftOccasionKey;
+    wrapKey?: string;
+    source?: ShopReceiptSource;
+    wishItemId?: string;
+    fromWishlist?: boolean;
 }
 
 export const buildGiftCardMeta = (
     item: Pick<ShopItem, 'id' | 'name' | 'emoji' | 'price'>,
     fromName: string,
     note?: string,
+    ritual?: GiftRitualMeta,
 ): GiftCardMeta => ({
     itemId: item.id,
     name: item.name,
@@ -284,6 +312,13 @@ export const buildGiftCardMeta = (
     price: item.price,
     note: note?.trim() || undefined,
     fromName,
+    occasion: ritual?.occasion,
+    occasionLabel: getGiftOccasionLabel(ritual?.occasion),
+    wrapKey: ritual?.wrapKey,
+    wrapLabel: ritual?.wrapKey ? getGiftWrapOption(ritual.wrapKey).label : undefined,
+    source: ritual?.source,
+    wishItemId: ritual?.wishItemId,
+    fromWishlist: ritual?.fromWishlist || undefined,
 });
 
 export interface ShopReplyRequest {
@@ -295,6 +330,12 @@ export interface ShopReplyRequest {
     note?: string;
     itemCount?: number;
     total?: number;
+    occasion?: ShopGiftOccasionKey;
+    occasionLabel?: string;
+    wrapLabel?: string;
+    source?: ShopReceiptSource;
+    wishItemId?: string;
+    fromWishlist?: boolean;
     at: number;
 }
 
@@ -317,6 +358,12 @@ const readPendingShopReplies = (): ShopReplyRequest[] => {
                 note: typeof it?.note === 'string' && it.note.trim() ? it.note.trim().slice(0, 120) : undefined,
                 itemCount: Number.isFinite(Number(it?.itemCount)) ? Math.max(1, Math.min(99, Math.round(Number(it.itemCount)))) : undefined,
                 total: Number.isFinite(Number(it?.total)) ? Math.max(0, Math.round(Number(it.total) * 100) / 100) : undefined,
+                occasion: isGiftOccasionKey(it?.occasion) ? it.occasion : undefined,
+                occasionLabel: typeof it?.occasionLabel === 'string' && it.occasionLabel.trim() ? it.occasionLabel.trim().slice(0, 20) : undefined,
+                wrapLabel: typeof it?.wrapLabel === 'string' && it.wrapLabel.trim() ? it.wrapLabel.trim().slice(0, 24) : undefined,
+                source: isShopReceiptSource(it?.source) ? it.source : undefined,
+                wishItemId: typeof it?.wishItemId === 'string' && it.wishItemId.trim() ? it.wishItemId.trim().slice(0, 80) : undefined,
+                fromWishlist: !!it?.fromWishlist || undefined,
                 at: Number(it?.at) || Date.now(),
             }))
             .filter(it => it.charId && Number.isFinite(it.messageId) && it.messageId > 0);
@@ -340,6 +387,12 @@ export const queueShopReply = (request: Omit<ShopReplyRequest, 'at'> & { at?: nu
         itemName: request.itemName || '礼物',
         itemEmoji: request.itemEmoji || '🎁',
         note: request.note?.trim() || undefined,
+        occasion: isGiftOccasionKey(request.occasion) ? request.occasion : undefined,
+        occasionLabel: request.occasionLabel?.trim() || getGiftOccasionLabel(request.occasion),
+        wrapLabel: request.wrapLabel?.trim() || undefined,
+        source: isShopReceiptSource(request.source) ? request.source : undefined,
+        wishItemId: request.wishItemId?.trim() || undefined,
+        fromWishlist: request.fromWishlist || undefined,
         at: request.at || Date.now(),
     };
     const next = readPendingShopReplies()
@@ -375,7 +428,12 @@ export const receiptLine = (r: ShopReceipt): string => {
     const who = r.by === 'user' ? '你' : 'TA';
     const verb = ACTION_LABEL[r.action];
     const target = r.action === 'buy' ? '' : `（${r.action === 'gift' ? '给' : '来自'} ${r.counterpartName}）`;
-    return `${who} ${verb} ${r.emoji}${r.name}${target}${r.note ? `：「${r.note}」` : ''}`;
+    const details = [
+        r.occasion ? getGiftOccasionLabel(r.occasion) : '',
+        r.wrapLabel,
+        r.wishItemId ? '来自愿望' : '',
+    ].filter(Boolean).join(' · ');
+    return `${who} ${verb} ${r.emoji}${r.name}${target}${details ? `（${details}）` : ''}${r.note ? `：「${r.note}」` : ''}`;
 };
 
 // ── 购物车（淘宝式）：纯函数，user 与 char 共用 ───────────────────────────────
@@ -388,6 +446,47 @@ export const addToCart = (cart: ShopCartLine[] | undefined, itemId: string, qty 
     else list.push({ itemId, qty: Math.max(1, qty) });
     return list;
 };
+
+export interface ShopWishlistMeta {
+    source?: ShopWishSource;
+    note?: string;
+    occasion?: ShopGiftOccasionKey;
+    at?: number;
+}
+
+/** 角色心愿板专用加入：复用 ShopCartLine，但保留来源、理由和送礼场景。 */
+export const addToWishlist = (
+    cart: ShopCartLine[] | undefined,
+    itemId: string,
+    meta: ShopWishlistMeta = {},
+    qty = 1,
+): ShopCartLine[] => {
+    const list = (cart || []).map(l => ({ ...l }));
+    const hit = list.find(l => l.itemId === itemId);
+    const patch: Partial<ShopCartLine> = {
+        wishSource: isShopWishSource(meta.source) ? meta.source : hit?.wishSource,
+        wishNote: meta.note?.trim() ? meta.note.trim().slice(0, 80) : hit?.wishNote,
+        wishOccasion: isGiftOccasionKey(meta.occasion) ? meta.occasion : hit?.wishOccasion,
+        addedAt: meta.at || hit?.addedAt || Date.now(),
+    };
+    if (hit) {
+        hit.qty = Math.min(99, hit.qty + qty);
+        Object.assign(hit, patch);
+    } else {
+        list.push({ itemId, qty: Math.max(1, qty), ...patch });
+    }
+    return list;
+};
+
+export const resolveWishlist = (cart: ShopCartLine[] | undefined): { item: ShopItem; qty: number; line: ShopCartLine; occasionLabel?: string; sourceLabel?: string }[] =>
+    (cart || [])
+        .map(line => ({ line, item: getShopItem(line.itemId), qty: Math.max(1, Math.round(line.qty || 1)) }))
+        .filter((x): x is { item: ShopItem; qty: number; line: ShopCartLine } => !!x.item)
+        .map(x => ({
+            ...x,
+            occasionLabel: getGiftOccasionLabel(x.line.wishOccasion),
+            sourceLabel: getWishSourceLabel(x.line.wishSource),
+        }));
 
 /** 设置某商品数量（<=0 则移除）。 */
 export const setCartQty = (cart: ShopCartLine[] | undefined, itemId: string, qty: number): ShopCartLine[] => {
@@ -672,10 +771,10 @@ export function orderReceivePayload(order: ShopOrder, userName: string): { owned
         for (let i = 0; i < it.qty; i++) {
             owned.push(makeOwnedItem(base as ShopItem));
             if (order.paidBy === 'char') {
-                userReceipts.push(makeReceipt(base, 'user', 'receive', 'char', order.payerName || 'TA', '代付'));
-                charReceipts.push(makeReceipt(base, 'char', 'gift', 'user', userName, '代付'));
+                userReceipts.push(makeReceipt(base, 'user', 'receive', 'char', order.payerName || 'TA', '代付', { source: 'order_receive' }));
+                charReceipts.push(makeReceipt(base, 'char', 'gift', 'user', userName, '代付', { source: 'order_receive' }));
             } else {
-                userReceipts.push(makeReceipt(base, 'user', 'buy', 'self', userName));
+                userReceipts.push(makeReceipt(base, 'user', 'buy', 'self', userName, undefined, { source: 'order_receive' }));
             }
         }
     }
@@ -742,7 +841,7 @@ export function recommendItems(catalog: ShopItem[], favorites: string[], count =
 }
 
 // ── 心意参谋：关系 / 场景 / 预算导购 ────────────────────────────────────────
-export type GiftOccasionKey = 'daily' | 'birthday' | 'date' | 'apology' | 'comfort' | 'celebrate' | 'practical' | 'tease';
+export type GiftOccasionKey = ShopGiftOccasionKey;
 
 export interface GiftOccasion {
     key: GiftOccasionKey;
@@ -760,6 +859,53 @@ export const SHOP_GIFT_OCCASIONS: GiftOccasion[] = [
     { key: 'practical', label: '实用补给', hint: '最好能进入 TA 的日常' },
     { key: 'tease', label: '整活逗笑', hint: '有趣但不要太冒犯' },
 ];
+
+export interface GiftWrapOption {
+    key: string;
+    label: string;
+    emoji: string;
+    hint: string;
+}
+
+export const SHOP_GIFT_WRAP_OPTIONS: GiftWrapOption[] = [
+    { key: 'paper', label: '米白信纸包', emoji: '✉️', hint: '轻轻包起来，像一封顺手递来的信' },
+    { key: 'ribbon', label: '黑缎带礼盒', emoji: '🎁', hint: '更郑重，适合纪念或生日' },
+    { key: 'warm', label: '暖绒小袋', emoji: '🧶', hint: '柔软一点，适合安慰和照顾' },
+    { key: 'joke', label: '整活封条', emoji: '🏷️', hint: '带一点玩笑感，适合逗 TA 笑' },
+];
+
+export const DEFAULT_SHOP_GIFT_WRAP_KEY = 'paper';
+
+const SHOP_RECEIPT_SOURCES = new Set<ShopReceiptSource>(['manual_gift', 'advisor', 'companion_pay', 'clear_cart', 'char_shop', 'order_receive', 'char_gift']);
+const SHOP_WISH_SOURCES = new Set<ShopWishSource>(['manual', 'advisor', 'companion', 'char_shop']);
+
+export function isGiftOccasionKey(value: unknown): value is ShopGiftOccasionKey {
+    return SHOP_GIFT_OCCASIONS.some(o => o.key === value);
+}
+
+export function isShopReceiptSource(value: unknown): value is ShopReceiptSource {
+    return SHOP_RECEIPT_SOURCES.has(value as ShopReceiptSource);
+}
+
+export function isShopWishSource(value: unknown): value is ShopWishSource {
+    return SHOP_WISH_SOURCES.has(value as ShopWishSource);
+}
+
+export function getGiftOccasionLabel(key?: ShopGiftOccasionKey): string | undefined {
+    return key ? SHOP_GIFT_OCCASIONS.find(o => o.key === key)?.label : undefined;
+}
+
+export function getGiftWrapOption(key?: string): GiftWrapOption {
+    return SHOP_GIFT_WRAP_OPTIONS.find(w => w.key === key) || SHOP_GIFT_WRAP_OPTIONS[0];
+}
+
+export function getWishSourceLabel(source?: ShopWishSource): string | undefined {
+    if (source === 'advisor') return '心意参谋';
+    if (source === 'companion') return '陪逛心动';
+    if (source === 'char_shop') return 'TA 自己挑的';
+    if (source === 'manual') return '手动夹入';
+    return undefined;
+}
 
 export interface RelationStage {
     key: 'careful' | 'familiar' | 'close' | 'intimate';

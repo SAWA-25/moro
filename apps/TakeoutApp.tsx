@@ -4,9 +4,10 @@ import {
     Warning, Sparkle, ShieldWarning, SealCheck, HandCoins, Coins, PushPin, Shuffle, CookingPot,
     PaperPlaneRight, Storefront, Repeat, NotePencil, Package, ChatCircleDots,
     Clock, House, Trash, CaretRight, ShoppingBag, Timer, CalendarCheck,
+    User, BookOpen, ListChecks, Fire, BookmarkSimple,
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview, TakeoutDish, TakeoutAddressCard } from '../types';
+import { AppID, TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview, TakeoutDish, TakeoutAddressCard } from '../types';
 import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
 import {
@@ -28,7 +29,14 @@ import {
     getCustomDishes, saveCustomDish, deleteCustomDish,
     getCustomStores, saveCustomStore, mergeCustomStores, cloneDishForStore,
     sanitizeTakeoutDish, sanitizeTakeoutStore, TAKEOUT_STORES_CACHE_KEY,
+    pickActiveOrders,
+    type TakeoutMainTab, type TakeoutOrderBucket, type TakeoutSavedCart,
+    getTakeoutMemberState, addTakeoutMemberPoints, takeoutMemberLevel, takeoutDailyCheckin, canTakeoutDailyCheckin,
+    getTakeoutFootprints, pushTakeoutFootprint, clearTakeoutFootprints,
+    getTakeoutSavedCarts, saveTakeoutSavedCart, deleteTakeoutSavedCart, clearTakeoutSavedCarts,
+    filterTakeoutOrdersByBucket, takeoutOrderBucketCounts,
 } from '../utils/takeout';
+import { manualAnchorProps, scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
     SectionTag, DashedRule, PaperSheet, Polaroid, HALFTONE, TAPE_STRIPES, WASHI, INK, INK_SOFT, PAPER,
@@ -54,6 +62,7 @@ const NOTE_CHIPS = ['少辣', '多放饭', '多给餐具', '不要香菜', '放�
 const TIP_CHOICES = [0, 2, 5, 8];
 const TABLEWARE_CHOICES = [0, 1, 2, 3, 4, 5];
 const STAR_WORDS = ['', '难吃', '一般', '还行', '满意', '绝了'];
+const SERVICE_TAGS = ['送得快', '态度好', '包装严实', '放门口', '准时达', '备注有看', '汤没撒', '平台处理快'];
 const displayDeliveryMinutes = (mins?: number) => Math.max(MIN_TAKEOUT_DELIVERY_MINUTES, Math.round(mins || 0));
 
 // 首页金刚区（美团式品类宫格）：一格直达一类铺子
@@ -70,9 +79,10 @@ const KINGKONG: { label: string; emoji: string; cat: string }[] = [
     { label: '买药', emoji: '💊', cat: '药品' },
 ];
 
-type View = 'home' | 'store' | 'checkout' | 'orders' | 'detail';
+type View = TakeoutMainTab | 'store' | 'checkout' | 'detail';
 type ChatTarget = 'rider' | 'store' | 'support';
 type StoreTab = 'menu' | 'reviews' | 'info';
+type PantryTab = 'dishes' | 'stores' | 'saved' | 'frequent';
 
 /** 购物车一行：同一道菜不同规格/加料各占一行。 */
 interface CartLine {
@@ -262,6 +272,10 @@ const TakeoutApp: React.FC = () => {
     const wallet = Math.round((userProfile.balance || 0) * 100) / 100;
 
     const [view, setView] = useState<View>('home');
+    const [mainTab, setMainTab] = useState<TakeoutMainTab>('home');
+    const [orderBucket, setOrderBucket] = useState<TakeoutOrderBucket>('all');
+    const [pantryTab, setPantryTab] = useState<PantryTab>('dishes');
+    const [menuGroup, setMenuGroup] = useState('全部');
     // 店铺缓存：进 App 先用上次实时生成的那条街（避免空白/本地占位闪一下），没有才本地占位
     const [stores, setStores] = useState<TakeoutStore[]>(() => {
         try {
@@ -283,6 +297,9 @@ const TakeoutApp: React.FC = () => {
     const [pinned, setPinned] = useState<string[]>(() => getPinnedStores());
     const [customDishes, setCustomDishes] = useState<TakeoutDish[]>(() => getCustomDishes());
     const [customStores, setCustomStores] = useState<TakeoutStore[]>(() => getCustomStores());
+    const [footprints, setFootprints] = useState(() => getTakeoutFootprints());
+    const [savedCarts, setSavedCarts] = useState<TakeoutSavedCart[]>(() => getTakeoutSavedCarts());
+    const [member, setMember] = useState(() => getTakeoutMemberState());
     const [dishDraft, setDishDraft] = useState<DishDraft | null>(null);
     const [dishLibraryOpen, setDishLibraryOpen] = useState(false);
     const [storeDraft, setStoreDraft] = useState<StoreDraft | null>(null);
@@ -320,7 +337,10 @@ const TakeoutApp: React.FC = () => {
     // 食评
     const [reviewing, setReviewing] = useState(false);
     const [reviewRating, setReviewRating] = useState(5);
+    const [reviewRiderRating, setReviewRiderRating] = useState(5);
+    const [reviewPackingRating, setReviewPackingRating] = useState(5);
     const [reviewTags, setReviewTags] = useState<string[]>([]);
+    const [reviewServiceTags, setReviewServiceTags] = useState<string[]>([]);
     const [reviewText, setReviewText] = useState('');
     // 食评：进店实时 AI 生成（仿真有好有坏，按店铺评分调好坏比例）；加载时先用算法版垫场，失败回退算法版
     const [storeReviews, setStoreReviews] = useState<StoreNpcReview[]>([]);
@@ -387,6 +407,42 @@ const TakeoutApp: React.FC = () => {
         setCustomDishes(getCustomDishes());
         setCustomStores(getCustomStores());
     };
+
+    const goMainTab = useCallback((tab: TakeoutMainTab) => {
+        setMainTab(tab);
+        setView(tab);
+        setSearchFocused(false);
+        setCartOpen(false);
+    }, []);
+
+    const openOrderDetail = useCallback((orderId: string, source: TakeoutMainTab = 'orders') => {
+        setMainTab(source);
+        setActiveOrderId(orderId);
+        const order = orders.find(o => o.id === orderId);
+        setChatTarget(order?.chatTarget || 'rider');
+        setView('detail');
+    }, [orders]);
+
+    useManualDeepLink(AppID.Takeout, useCallback((target) => {
+        const anchor = target.anchorId || 'manual-takeout-root';
+        if (anchor === 'manual-takeout-delivery') {
+            setOrderBucket('all');
+            goMainTab('orders');
+        } else if (anchor === 'manual-takeout-custom-menu') {
+            setPantryTab('dishes');
+            goMainTab('pantry');
+        } else if (anchor === 'manual-takeout-address-cards') {
+            setRecipient('me');
+            setAddressDraft(null);
+            goMainTab('profile');
+            window.setTimeout(() => setAddrSheetOpen(true), 220);
+        } else {
+            goMainTab('home');
+        }
+        window.setTimeout(() => {
+            if (!scrollToManualAnchor(anchor)) scrollToManualAnchor('manual-takeout-root');
+        }, 180);
+    }, [goMainTab]));
 
     const loadStoresAI = async (q?: string) => {
         if (!aiReady || aiLoading) return;
@@ -458,7 +514,14 @@ const TakeoutApp: React.FC = () => {
         if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
         else { const s = mergeCustomStores(generateStores(20)); writeStores(s); addToast('翻到另一条街啦～', 'info'); }
     };
-    const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setStoreTab('menu'); setView('store'); };
+    const openStore = (s: TakeoutStore) => {
+        setActiveStore(s);
+        setCart({});
+        setStoreTab('menu');
+        setMenuGroup('全部');
+        setFootprints(pushTakeoutFootprint(s));
+        setView('store');
+    };
 
     // 购物车：增 / 减一行
     const addLine = (line: Omit<CartLine, 'qty'>, delta = 1) => setCart(prev => {
@@ -600,7 +663,28 @@ const TakeoutApp: React.FC = () => {
     });
 
     const saveDishDraft = () => {
-        if (!activeStore || !dishDraft) return;
+        if (!dishDraft) return;
+        if (view === 'pantry' || !activeStore) {
+            const clean = sanitizeTakeoutDish({
+                id: dishDraft.id || genId('dish'),
+                name: dishDraft.name,
+                emoji: dishDraft.emoji,
+                desc: dishDraft.desc,
+                price: dishDraft.price,
+                popular: dishDraft.popular,
+                monthlySales: dishDraft.monthlySales,
+                specs: dishDraft.specs,
+                addons: dishDraft.addons,
+                userCustom: true,
+                userEdited: true,
+            });
+            if (!clean) { addToast('菜名不能为空', 'error'); return; }
+            saveCustomDish({ ...clean, libraryDishId: undefined });
+            setCustomDishes(getCustomDishes());
+            setDishDraft(null);
+            addToast('这道菜收进我的菜库啦', 'success');
+            return;
+        }
         const exists = !!(dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id));
         const clean = sanitizeTakeoutDish({
             id: dishDraft.id || genId('dish'),
@@ -794,6 +878,82 @@ const TakeoutApp: React.FC = () => {
         setView('checkout');
     };
 
+    const saveCartDraft = () => {
+        if (!activeStore || cartItems.length === 0) return;
+        const saved = saveTakeoutSavedCart({
+            storeId: activeStore.id,
+            storeName: activeStore.name,
+            storeEmoji: activeStore.emoji,
+            items: cartItems,
+            subtotal: cartSubtotal,
+            recipient,
+            payer,
+            note,
+        });
+        if (saved) {
+            setSavedCarts(getTakeoutSavedCarts());
+            setMember(addTakeoutMemberPoints(2));
+            addToast('饭篮草稿夹好了，下次能接着撕', 'success');
+        }
+    };
+
+    const resumeSavedCart = (draft: TakeoutSavedCart) => {
+        const source = stores.find(s => s.id === draft.storeId) || customStores.find(s => s.id === draft.storeId);
+        const pseudo: TakeoutStore = source || {
+            id: draft.storeId,
+            name: draft.storeName,
+            emoji: draft.storeEmoji || '🍱',
+            category: '中餐',
+            rating: 4.6,
+            monthlySales: 0,
+            deliveryMinutes: 30,
+            deliveryFee: 3,
+            minOrder: 0,
+            distanceKm: 1,
+            integrity: 0.85,
+            dishes: draft.items.map(i => ({ id: i.dishId, name: i.name, price: i.price, emoji: i.emoji })),
+        };
+        const lines: Record<string, CartLine> = {};
+        draft.items.forEach(i => {
+            const key = cartLineKey(i.dishId, i.spec, i.addons);
+            lines[key] = { key, dishId: i.dishId, name: i.name, emoji: i.emoji, basePrice: i.price, unitPrice: i.price, qty: (lines[key]?.qty || 0) + i.qty, spec: i.spec, addons: i.addons };
+        });
+        setActiveStore(pseudo);
+        setCart(lines);
+        setRecipient(draft.recipient || 'me');
+        setPayer(draft.payer || 'me');
+        setNote(draft.note || '');
+        setTip(0);
+        setSlot({ label: '尽快送达', at: null });
+        setTableware(1);
+        addToast('草稿饭篮拿出来了，核对后就能下单', 'info');
+        setView('checkout');
+    };
+
+    const saveOrderItemToLibrary = (item: TakeoutOrderItem) => {
+        const saved = saveCustomDish({
+            id: item.dishId,
+            name: item.name,
+            price: item.price,
+            emoji: item.emoji || '🍽️',
+            desc: [item.spec, ...(item.addons || [])].filter(Boolean).join(' · ') || '从旧票根存下',
+            userCustom: true,
+            userEdited: true,
+        });
+        if (saved) {
+            refreshCustomMenus();
+            setMember(addTakeoutMemberPoints(2));
+            addToast(`「${item.name}」收进我的菜库了`, 'success');
+        }
+    };
+
+    const startFeedChar = (charId: string) => {
+        setIntentCharId(charId);
+        setRecipient(charId);
+        addToast(`先挑一张送给 ${nameOf(charId)} 的饭票`, 'info');
+        randomPick();
+    };
+
     // 满减 + 平台红包 抵扣（按当前购物车小计）
     const promoDisc = activeStore ? storePromoDiscount(activeStore.promo, cartSubtotal) : 0;
     const bestRp = bestRedpacket(claimedRedpackets, cartSubtotal);
@@ -879,6 +1039,7 @@ const TakeoutApp: React.FC = () => {
         }
         notifyTakeoutUpdated();
         await reloadOrders();
+        setMember(addTakeoutMemberPoints(Math.max(8, Math.floor(total / 4))));
         setActiveOrderId(order.id);
         setChatTarget(order.cancelledByStore ? 'support' : 'rider');
         setIntentCharId(null);
@@ -940,7 +1101,10 @@ const TakeoutApp: React.FC = () => {
 
     const openReview = (order: TakeoutOrder) => {
         setReviewRating(order.review?.rating || 5);
+        setReviewRiderRating(order.review?.riderRating || 5);
+        setReviewPackingRating(order.review?.packingRating || 5);
         setReviewTags(order.review?.tags || []);
+        setReviewServiceTags(order.review?.serviceTags || []);
         setReviewText(order.review?.text || '');
         setReviewing(true);
     };
@@ -949,7 +1113,10 @@ const TakeoutApp: React.FC = () => {
         if (!activeOrder) return;
         const review: TakeoutReview = {
             rating: reviewRating,
+            riderRating: reviewRiderRating,
+            packingRating: reviewPackingRating,
             tags: reviewTags,
+            serviceTags: reviewServiceTags,
             text: reviewText.trim() || undefined,
             at: Date.now(),
             likes: Math.floor(Math.random() * 6),
@@ -958,19 +1125,54 @@ const TakeoutApp: React.FC = () => {
         await DB.saveTakeoutOrder({ ...activeOrder, review });
         notifyTakeoutUpdated();
         await reloadOrders();
+        setMember(addTakeoutMemberPoints(5));
         setReviewing(false);
         addToast('食评贴上墙啦，谢谢你的滋味～', 'success');
     };
 
     const toggleReviewTag = (t: string) => setReviewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+    const toggleReviewServiceTag = (t: string) => setReviewServiceTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+    const doDailyCheckin = () => {
+        const next = takeoutDailyCheckin();
+        setMember(next);
+        addToast(canTakeoutDailyCheckin(member) ? '今日饭票签到 +8' : '今天已经盖过签到章啦', canTakeoutDailyCheckin(member) ? 'success' : 'info');
+    };
 
     const recipientOptions = [{ id: 'me', label: '我自己', avatar: userProfile.avatar }, ...characters.map(c => ({ id: c.id, label: c.name, avatar: c.avatar }))];
+    const activeTakeoutOrders = useMemo(() => pickActiveOrders(orders, now), [orders, now]);
+    const bucketCounts = useMemo(() => takeoutOrderBucketCounts(orders, now), [orders, now]);
+    const visibleOrders = useMemo(() => filterTakeoutOrdersByBucket(orders, orderBucket, now), [orders, orderBucket, now]);
+    const memberLevel = useMemo(() => takeoutMemberLevel(member.points), [member.points]);
+    const canCheckin = canTakeoutDailyCheckin(member, now);
+    const navItems: { id: TakeoutMainTab; label: string; Icon: React.ElementType; badge?: number }[] = [
+        { id: 'home', label: '饭票簿', Icon: Storefront },
+        { id: 'orders', label: '票根', Icon: Receipt, badge: bucketCounts.active + bucketCounts.arrived },
+        { id: 'pantry', label: '菜库', Icon: BookOpen, badge: savedCarts.length },
+        { id: 'profile', label: '我的', Icon: User },
+    ];
 
     // ── 钱袋纸签 ──
     const walletChip = (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[12px] font-black" style={{ background: '#efeae0', color: INK, border: '1px solid rgba(176,170,158,0.7)' }} title="饭钱">
             <Coins size={13} weight="fill" />¥{wallet}
         </span>
+    );
+    const bottomNav = (
+        <div className="relative z-30 shrink-0 grid grid-cols-4" style={{ borderTop: '1px dashed rgba(150,144,132,0.58)', background: 'rgba(251,249,242,0.96)', paddingBottom: 'var(--safe-bottom)' }}>
+            {navItems.map(n => {
+                const active = mainTab === n.id && view === n.id;
+                return (
+                    <button key={n.id} onClick={() => goMainTab(n.id)} className="relative flex flex-col items-center justify-center gap-0.5 py-2 active:scale-95 transition-transform" style={{ color: active ? INK : INK_SOFT }}>
+                        <span className="relative">
+                            <n.Icon size={19} weight={active ? 'fill' : 'bold'} />
+                            {!!n.badge && <span className="absolute -top-2 -right-2 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-black flex items-center justify-center" style={{ background: INK, color: PAPER, border: `1.5px solid ${PAPER}` }}>{n.badge > 9 ? '9+' : n.badge}</span>}
+                        </span>
+                        <span className="text-[10px] font-black">{n.label}</span>
+                        {active && <span aria-hidden className="absolute bottom-1 w-5 h-[3px] rounded-full" style={{ background: INK }} />}
+                    </button>
+                );
+            })}
+        </div>
     );
     // 选人拍立得（送给谁 / 谁来付 共用）
     const personPolaroid = (o: { id: string; label: string; avatar?: string }, on: boolean, onClick: () => void) => (
@@ -1064,13 +1266,92 @@ const TakeoutApp: React.FC = () => {
         </PaperSheet>
     );
 
+    const dishEditorSheet = (
+        <PaperSheet open={!!dishDraft} onClose={() => setDishDraft(null)} title={dishDraft?.id ? '改这道菜' : '添自定义菜'} tape="butter">
+            {dishDraft && (
+                <div className="space-y-3 max-h-[70vh] overflow-y-auto no-scrollbar pr-1">
+                    <div className="grid grid-cols-[72px_1fr] gap-2">
+                        <input value={dishDraft.emoji} onChange={e => patchDishDraft({ emoji: e.target.value })} placeholder="🍽️" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none text-center" style={paperInput} />
+                        <input value={dishDraft.name} onChange={e => patchDishDraft({ name: e.target.value })} placeholder="菜名" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <input value={dishDraft.price} onChange={e => patchDishDraft({ price: e.target.value })} placeholder="基础价，可填 0" type="number" step="0.1" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                        <input value={dishDraft.monthlySales} onChange={e => patchDishDraft({ monthlySales: e.target.value })} placeholder="月售（可空）" type="number" className="rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    </div>
+                    <input value={dishDraft.desc} onChange={e => patchDishDraft({ desc: e.target.value })} placeholder="描述 / 卖点（可空）" className="w-full rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                    <div className="flex flex-wrap gap-2">
+                        <ChoiceChip on={dishDraft.popular} onClick={() => patchDishDraft({ popular: !dishDraft.popular })}>镇店招牌</ChoiceChip>
+                        <ChoiceChip on={dishDraft.saveToLibrary} onClick={() => patchDishDraft({ saveToLibrary: !dishDraft.saveToLibrary })}>保存进我的菜库</ChoiceChip>
+                    </div>
+
+                    <DashedRule className="my-2" />
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <SectionTag en="SPECS">规格</SectionTag>
+                            <button onClick={() => patchDishDraft({ specs: [...dishDraft.specs, { name: '规格', options: [{ label: '默认', priceDelta: '0' }] }] })} className="text-[11px] font-black px-2 py-1 rounded-[6px] active:scale-95" style={{ background: INK, color: PAPER }}>＋规格组</button>
+                        </div>
+                        <div className="space-y-2">
+                            {dishDraft.specs.map((g, gi) => (
+                                <div key={gi} className="rounded-[10px] px-2.5 py-2" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                    <div className="flex gap-2 mb-2">
+                                        <input value={g.name} onChange={e => patchSpec(gi, { name: e.target.value })} placeholder="规格名，如 辣度" className="flex-1 min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                        <button onClick={() => patchDishDraft({ specs: dishDraft.specs.filter((_, i) => i !== gi) })} className="active:scale-90" title="删规格组"><Trash size={15} color={INK_SOFT} /></button>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        {g.options.map((o, oi) => (
+                                            <div key={oi} className="grid grid-cols-[1fr_86px_24px] gap-1.5 items-center">
+                                                <input value={o.label} onChange={e => patchSpecOption(gi, oi, { label: e.target.value })} placeholder="选项名" className="min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                                <input value={o.priceDelta} onChange={e => patchSpecOption(gi, oi, { priceDelta: e.target.value })} placeholder="加价" type="number" step="0.1" className="rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                                <button onClick={() => patchSpec(gi, { options: g.options.filter((_, i) => i !== oi) })} className="active:scale-90" title="删选项"><Trash size={14} color={INK_SOFT} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => patchSpec(gi, { options: [...g.options, { label: '新选项', priceDelta: '0' }] })} className="mt-2 text-[10.5px] font-bold px-2 py-1 rounded-[6px] active:scale-95" style={{ color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.7)' }}>＋加选项</button>
+                                </div>
+                            ))}
+                            {dishDraft.specs.length === 0 && <div className="text-[11.5px] px-2 py-2 rounded-[8px]" style={{ color: INK_SOFT, background: '#efeae0' }}>不设规格时，点菜会直接按基础价加入饭篮。</div>}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <SectionTag en="ADDONS">加料</SectionTag>
+                            <button onClick={() => patchDishDraft({ addons: [...dishDraft.addons, { label: '加料', price: '0' }] })} className="text-[11px] font-black px-2 py-1 rounded-[6px] active:scale-95" style={{ background: INK, color: PAPER }}>＋加料</button>
+                        </div>
+                        <div className="space-y-1.5">
+                            {dishDraft.addons.map((a, i) => (
+                                <div key={i} className="grid grid-cols-[1fr_86px_24px] gap-1.5 items-center">
+                                    <input value={a.label} onChange={e => patchAddon(i, { label: e.target.value })} placeholder="加料名" className="min-w-0 rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                    <input value={a.price} onChange={e => patchAddon(i, { price: e.target.value })} placeholder="价格" type="number" step="0.1" className="rounded-[8px] px-2 py-1.5 text-[12px] outline-none" style={paperInput} />
+                                    <button onClick={() => patchDishDraft({ addons: dishDraft.addons.filter((_, x) => x !== i) })} className="active:scale-90" title="删加料"><Trash size={14} color={INK_SOFT} /></button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="text-[10.5px]" style={{ color: INK_SOFT }}>价格和加价可填 0，但不能为负数；下单后的小票会固定当时价格。</div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                        {view === 'store' && activeStore && dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id) ? <button onClick={() => {
+                            const target = activeStore.dishes.find(d => d.id === dishDraft.id);
+                            if (target) removeDishFromStore(target);
+                        }} className="inline-flex items-center gap-1 text-[11px] font-bold active:scale-95" style={{ color: '#d2452f' }}><Trash size={12} />从菜牌移除</button> : <span />}
+                        <div className="flex items-center gap-2">
+                            <ScrapButton variant="ghost" onClick={() => setDishDraft(null)} className="px-4 py-2 text-[12px]">取消</ScrapButton>
+                            <ScrapButton variant="ink" onClick={saveDishDraft} className="px-5 py-2.5 text-[13px]" icon={<SealCheck size={14} weight="fill" />}>保存菜品</ScrapButton>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </PaperSheet>
+    );
+
     // ════════════════════════ 首页·饭票簿 ════════════════════════
     if (view === 'home') {
         return (
-            <TakeoutShell key="home">
+            <TakeoutShell key="home" {...manualAnchorProps('manual-takeout-root')}>
                 <ScrapHeader
                     title="饭票" en="MEAL TICKET" onBack={closeApp} backLabel="回桌面"
-                    right={<button onClick={() => setView('orders')} className="relative inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }} title="票根夹">
+                    right={<button onClick={() => goMainTab('orders')} className="relative inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }} title="票根夹">
                         <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.amber.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(2deg)' }} />
                         <span className="relative z-10 flex items-center gap-1"><Receipt size={13} weight="bold" />票根夹</span>
                     </button>}
@@ -1167,6 +1448,51 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* 进行中订单 + 快速投喂 */}
+                {(activeTakeoutOrders.length > 0 || characters.length > 0) && (
+                    <div className="relative z-10 px-5 pt-3 space-y-3">
+                        {activeTakeoutOrders.length > 0 && (
+                            <PaperCard tilt={-0.3} className="px-3.5 py-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTag en="LIVE TICKETS">路上的饭票</SectionTag>
+                                    <button onClick={() => goMainTab('orders')} className="text-[11px] font-black inline-flex items-center gap-0.5" style={{ color: INK }}>全部<CaretRight size={12} weight="bold" /></button>
+                                </div>
+                                <div className="space-y-2">
+                                    {activeTakeoutOrders.slice(0, 2).map(o => (
+                                        <button key={o.id} onClick={() => openOrderDetail(o.id, 'home')} className="w-full flex items-center gap-2.5 text-left px-2.5 py-2 rounded-[10px] active:scale-[0.98] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                            <Stamp size={38} color="ink"><Emo e={o.storeEmoji} size={18} /></Stamp>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-[12.5px] font-black truncate" style={{ color: INK }}>{o.storeName}</span>
+                                                <span className="block text-[10.5px] truncate" style={{ color: INK_SOFT }}>{STATUS_LABEL[liveTakeoutStatus(o, now)]} · {etaText(o, now)}</span>
+                                            </span>
+                                            <CaretRight size={14} weight="bold" color={INK_SOFT} />
+                                        </button>
+                                    ))}
+                                </div>
+                            </PaperCard>
+                        )}
+                        {characters.length > 0 && (
+                            <PaperCard tilt={0.25} className="px-3.5 py-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTag en="FEED SOMEONE">给 TA 撕一张</SectionTag>
+                                    <span className="text-[10px]" style={{ color: INK_SOFT }}>会预设收货对象</span>
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                                    {characters.slice(0, 10).map(c => (
+                                        <button key={c.id} onClick={() => startFeedChar(c.id)} className="shrink-0 w-[84px] rounded-[10px] px-2 py-2 active:scale-[0.96] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                            <div className="mx-auto mb-1 w-8 h-8 rounded-full flex items-center justify-center overflow-hidden" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.6)' }}>
+                                                {isImg(c.avatar) ? <img src={c.avatar} alt="" className="w-full h-full object-cover" /> : <Emo e={c.avatar || '🙂'} size={17} />}
+                                            </div>
+                                            <div className="text-[10.5px] font-black truncate" style={{ color: INK }}>{c.name}</div>
+                                            <div className="text-[9px] mt-0.5" style={{ color: '#d2452f' }}>去挑菜</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </PaperCard>
+                        )}
+                    </div>
+                )}
 
                 {/* 本月饭票 + 常点票根 */}
                 {(historyStats.monthCount > 0 || quickReorders.length > 0) && (
@@ -1324,6 +1650,7 @@ const TakeoutApp: React.FC = () => {
                 </div>
                 </ScrapScroll>
 
+                {bottomNav}
                 {addressBookSheet}
             </TakeoutShell>
         );
@@ -1341,10 +1668,12 @@ const TakeoutApp: React.FC = () => {
         const storeTabs: { id: StoreTab; label: string }[] = [
             { id: 'menu', label: '点餐' }, { id: 'reviews', label: `评价 ${storeReviews.length || ''}`.trim() }, { id: 'info', label: '商家' },
         ];
+        const menuGroups = groupDishes(activeStore.dishes);
+        const displayedMenuGroups = menuGroup === '全部' ? menuGroups : menuGroups.filter(g => g.group === menuGroup);
         return (
             <TakeoutShell key="store">
                 <ScrapHeader
-                    title={activeStore.name} en="THE SHOP" onBack={() => setView('home')} backLabel="回街上"
+                    title={activeStore.name} en="THE SHOP" onBack={() => setView(mainTab)} backLabel="返回"
                     right={<div className="flex items-center gap-1.5">
                         <button onClick={openStoreEditor} className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b', background: 'transparent', borderRadius: 6, border: '1px dashed rgba(150,144,132,0.7)' }} title="编辑铺子">
                             <NotePencil size={13} weight="bold" />改铺子
@@ -1367,6 +1696,13 @@ const TakeoutApp: React.FC = () => {
                             <div className="text-[11px] mt-0.5 flex items-center gap-2" style={{ color: '#6b665c' }}>
                                 <span className="flex items-center gap-0.5"><Star size={11} weight="fill" color={INK} /><b style={{ color: INK }}>{activeStore.rating}</b></span>
                                 <span>卖出{activeStore.monthlySales} · {displayDeliveryMinutes(activeStore.deliveryMinutes)}分 · {activeStore.distanceKm}km</span>
+                            </div>
+                            <div className="text-[10px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: INK_SOFT }}>
+                                <span>营业中 10:00-23:30</span>
+                                <span>·</span>
+                                <span>平台虚拟备案</span>
+                                <span>·</span>
+                                <span>食安等级 {activeStore.rating >= 4.7 ? 'A' : activeStore.rating >= 4.3 ? 'B' : 'C'}</span>
                             </div>
                             {activeStore.blurb && <div className="text-[11px] mt-1 italic truncate" style={{ color: INK_SOFT }}>「{activeStore.blurb}」</div>}
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1398,6 +1734,14 @@ const TakeoutApp: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
+                            <ScrollRail className="mb-3">
+                                <div className="flex gap-2 min-w-max">
+                                    <ChoiceChip on={menuGroup === '全部'} onClick={() => setMenuGroup('全部')}>全部</ChoiceChip>
+                                    {menuGroups.map(g => (
+                                        <ChoiceChip key={g.group} on={menuGroup === g.group} onClick={() => setMenuGroup(g.group)}>{g.group} · {g.dishes.length}</ChoiceChip>
+                                    ))}
+                                </div>
+                            </ScrollRail>
                             {addOnSuggestions.length > 0 && (
                                 <PaperCard tilt={-0.2} className="px-3 py-2.5 mb-3">
                                     <div className="flex items-center justify-between mb-2">
@@ -1425,7 +1769,7 @@ const TakeoutApp: React.FC = () => {
                             )}
                             {/* 美团式菜单分组（招牌/主食/饮品/小食…） */}
                             <div className="space-y-3.5">
-                                {groupDishes(activeStore.dishes).map(({ group, dishes }) => (
+                                {displayedMenuGroups.map(({ group, dishes }) => (
                                     <div key={group}>
                                         <div className="text-[10px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: INK_SOFT, letterSpacing: '0.08em' }}>
                                             <span className="w-3 h-px" style={{ background: 'rgba(176,170,158,0.7)' }} />{group}<span className="opacity-50">· {dishes.length}</span>
@@ -1653,7 +1997,7 @@ const TakeoutApp: React.FC = () => {
 
                             <div className="text-[10.5px]" style={{ color: INK_SOFT }}>价格和加价可填 0，但不能为负数；下单后的小票会固定当时价格。</div>
                             <div className="flex items-center justify-between gap-2 pt-1">
-                                {dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id) ? <button onClick={() => {
+                                {view === 'store' && activeStore && dishDraft.id && activeStore.dishes.some(d => d.id === dishDraft.id) ? <button onClick={() => {
                                     const target = activeStore.dishes.find(d => d.id === dishDraft.id);
                                     if (target) removeDishFromStore(target);
                                 }} className="inline-flex items-center gap-1 text-[11px] font-bold active:scale-95" style={{ color: '#d2452f' }}><Trash size={12} />从菜牌移除</button> : <span />}
@@ -1895,11 +2239,14 @@ const TakeoutApp: React.FC = () => {
                         <div className="mt-3">
                             <input value={note} onChange={e => setNote(e.target.value)} placeholder="给铺子和跑腿留句话…" className="w-full rounded-[8px] px-2.5 py-2 text-[12px] outline-none" style={paperInput} />
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                                {NOTE_CHIPS.map(t => (
+                                {[...NOTE_CHIPS, ...(recipient !== 'me' ? ['这是给 TA 的小惊喜', '到门口先发消息', '别说是我点的'] : [])].map(t => (
                                     <button key={t} onClick={() => addNoteChip(t)} className="text-[10.5px] px-2 py-1 rounded-[6px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.7)' }}>＋{t}</button>
                                 ))}
                             </div>
                         </div>
+                        <button onClick={saveCartDraft} className="mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-[8px] text-[12px] font-black active:scale-[0.98] transition-transform" style={{ background: 'transparent', color: INK, border: '1px dashed rgba(150,144,132,0.8)' }}>
+                            <BookmarkSimple size={14} weight="bold" />先存成饭篮草稿
+                        </button>
                     </PaperCard>
                 </ScrapScroll>
 
@@ -1919,19 +2266,37 @@ const TakeoutApp: React.FC = () => {
 
     // ════════════════════════ 票根夹·订单列表 ════════════════════════
     if (view === 'orders') {
+        const bucketTabs: { id: TakeoutOrderBucket; label: string }[] = [
+            { id: 'all', label: '全部' },
+            { id: 'active', label: '进行中' },
+            { id: 'arrived', label: '待签收' },
+            { id: 'toReview', label: '待评价' },
+            { id: 'issue', label: '售后' },
+            { id: 'done', label: '已完成' },
+        ];
         return (
-            <TakeoutShell key="orders">
-                <ScrapHeader title="票根夹" en="TICKET STUBS" onBack={() => setView('home')} backLabel="回街上" right={walletChip} />
+            <TakeoutShell key="orders" {...manualAnchorProps('manual-takeout-delivery')}>
+                <ScrapHeader title="票根夹" en="ORDER CENTER" onBack={() => goMainTab('home')} backLabel="回街上" right={walletChip} />
+                <ScrollRail className="relative z-10 shrink-0 pt-1 pb-2">
+                    <div className="flex gap-2 px-5 min-w-max">
+                        {bucketTabs.map(b => (
+                            <ChoiceChip key={b.id} on={orderBucket === b.id} onClick={() => setOrderBucket(b.id)}>
+                                {b.label}{bucketCounts[b.id] ? ` ${bucketCounts[b.id]}` : ''}
+                            </ChoiceChip>
+                        ))}
+                    </div>
+                </ScrollRail>
                 <ScrapScroll className="px-5 pt-2 pb-10">
                     {orders.length === 0 && <div className="text-center text-[12px] py-16" style={{ color: INK_SOFT }}>票根夹还空着，去街上撕一张吧～</div>}
+                    {orders.length > 0 && visibleOrders.length === 0 && <div className="text-center text-[12px] py-16" style={{ color: INK_SOFT }}>这一栏暂时没有票根。</div>}
                     <div className="space-y-3.5">
-                        {orders.map((o, idx) => {
+                        {visibleOrders.map((o, idx) => {
                             const st = liveTakeoutStatus(o, now);
                             const issues = st === 'delivered' || st === 'arrived' || st === 'cancelled' ? incidentsSummary(o) : '';
                             const open = hasOpenIssues(o);
                             const isDone = st === 'delivered';
                             return (
-                                <PaperCard key={o.id} tilt={idx % 2 === 0 ? -0.5 : 0.5} pin onClick={() => { setActiveOrderId(o.id); setChatTarget(o.chatTarget || 'rider'); setView('detail'); }} className="px-4 py-3.5">
+                                <PaperCard key={o.id} tilt={idx % 2 === 0 ? -0.5 : 0.5} pin onClick={() => openOrderDetail(o.id, 'orders')} className="px-4 py-3.5">
                                     {/* 票根齿边 */}
                                     <div className="flex items-center justify-between">
                                         <span className="text-[13.5px] font-black truncate flex items-center gap-1" style={{ color: INK }}><Emo e={o.storeEmoji} size={15} /> {o.storeName}</span>
@@ -1955,6 +2320,212 @@ const TakeoutApp: React.FC = () => {
                         })}
                     </div>
                 </ScrapScroll>
+                {bottomNav}
+            </TakeoutShell>
+        );
+    }
+
+    // ════════════════════════ 菜库·长期管理 ════════════════════════
+    if (view === 'pantry') {
+        const pantryTabs: { id: PantryTab; label: string; count: number }[] = [
+            { id: 'dishes', label: '我的菜库', count: customDishes.length },
+            { id: 'stores', label: '我的铺子', count: customStores.length },
+            { id: 'saved', label: '饭篮草稿', count: savedCarts.length },
+            { id: 'frequent', label: '常点票根', count: quickReorders.length },
+        ];
+        return (
+            <TakeoutShell key="pantry" {...manualAnchorProps('manual-takeout-custom-menu')}>
+                <ScrapHeader title="菜库" en="PANTRY" onBack={() => goMainTab('home')} backLabel="回街上" right={walletChip} />
+                <ScrollRail className="relative z-10 shrink-0 pt-1 pb-2">
+                    <div className="flex gap-2 px-5 min-w-max">
+                        {pantryTabs.map(t => <ChoiceChip key={t.id} on={pantryTab === t.id} onClick={() => setPantryTab(t.id)}>{t.label}{t.count ? ` ${t.count}` : ''}</ChoiceChip>)}
+                    </div>
+                </ScrollRail>
+                <ScrapScroll className="px-5 pt-2 pb-10 space-y-4">
+                    {pantryTab === 'dishes' && (
+                        <section className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <SectionTag en="DISH LIBRARY">我的菜库</SectionTag>
+                                <ScrapButton variant="ink" onClick={() => openDishEditor()} className="px-3 py-1.5 text-[11px]" icon={<Plus size={13} weight="bold" />}>添菜</ScrapButton>
+                            </div>
+                            {customDishes.map(d => (
+                                <PaperCard key={d.id} tilt={-0.2} className="px-3.5 py-3 flex items-center gap-3">
+                                    <Shopfront e={d.emoji} size={24} box={44} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[13px] font-black truncate" style={{ color: INK }}>{d.name}</div>
+                                        <div className="text-[10.5px] truncate" style={{ color: INK_SOFT }}>¥{d.price}{d.specs?.length ? ` · ${d.specs.length} 组规格` : ''}{d.addons?.length ? ` · ${d.addons.length} 个加料` : ''}</div>
+                                    </div>
+                                    <button onClick={() => openDishEditor(d)} className="text-[11px] font-black px-2 py-1 rounded-[6px]" style={{ border: '1px dashed rgba(150,144,132,0.7)', color: INK }}>改</button>
+                                    <button onClick={() => { setCustomDishes(deleteCustomDish(d.id)); addToast('菜库里揭掉一张菜牌', 'info'); }} title="删除" className="active:scale-90"><Trash size={15} color={INK_SOFT} /></button>
+                                </PaperCard>
+                            ))}
+                            {customDishes.length === 0 && <PaperCard className="px-4 py-8 text-center text-[12px]" style={{ color: INK_SOFT }}>菜库还空着。可以从店铺“添菜”，也能在旧票根里把常点菜收进来。</PaperCard>}
+                        </section>
+                    )}
+
+                    {pantryTab === 'stores' && (
+                        <section className="space-y-3">
+                            <SectionTag en="MY SHOPS">我的铺子</SectionTag>
+                            {customStores.map(s => (
+                                <PaperCard key={s.id} tilt={0.2} onClick={() => openStore(s)} className="px-3.5 py-3 flex items-center gap-3">
+                                    <Shopfront e={s.emoji} size={26} box={46} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[13.5px] font-black truncate" style={{ color: INK }}>{s.name}</div>
+                                        <div className="text-[10.5px] truncate" style={{ color: INK_SOFT }}>{s.category} · {s.dishes.length} 道菜 · {s.deliveryFee === 0 ? '免跑腿费' : `跑腿¥${s.deliveryFee}`}</div>
+                                    </div>
+                                    <CaretRight size={14} weight="bold" color={INK_SOFT} />
+                                </PaperCard>
+                            ))}
+                            {customStores.length === 0 && <PaperCard className="px-4 py-8 text-center text-[12px]" style={{ color: INK_SOFT }}>还没有自己的铺子。进任意店点“改铺子”，保存后会出现在这里。</PaperCard>}
+                        </section>
+                    )}
+
+                    {pantryTab === 'saved' && (
+                        <section className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <SectionTag en="SAVED CARTS">饭篮草稿</SectionTag>
+                                {savedCarts.length > 0 && <button onClick={() => { clearTakeoutSavedCarts(); setSavedCarts([]); addToast('饭篮草稿清空了', 'info'); }} className="text-[11px] font-bold" style={{ color: INK_SOFT }}>清空</button>}
+                            </div>
+                            {savedCarts.map(d => (
+                                <PaperCard key={d.id} tilt={-0.3} className="px-3.5 py-3">
+                                    <div className="flex items-start gap-3">
+                                        <Shopfront e={d.storeEmoji} size={25} box={46} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[13.5px] font-black truncate" style={{ color: INK }}>{d.storeName}</div>
+                                            <div className="text-[10.5px] truncate" style={{ color: INK_SOFT }}>{d.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
+                                            <div className="text-[11px] font-black mt-1" style={{ color: INK }}>小计 ¥{d.subtotal}</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 mt-3">
+                                        <ScrapButton variant="ink" onClick={() => resumeSavedCart(d)} className="flex-1 py-2 text-[12px]" icon={<Receipt size={14} weight="bold" />}>继续结算</ScrapButton>
+                                        <ScrapButton variant="ghost" onClick={() => setSavedCarts(deleteTakeoutSavedCart(d.id))} className="px-3 py-2 text-[12px]">删掉</ScrapButton>
+                                    </div>
+                                </PaperCard>
+                            ))}
+                            {savedCarts.length === 0 && <PaperCard className="px-4 py-8 text-center text-[12px]" style={{ color: INK_SOFT }}>结算页点“先存成饭篮草稿”，未下单的饭篮会夹在这里。</PaperCard>}
+                        </section>
+                    )}
+
+                    {pantryTab === 'frequent' && (
+                        <section className="space-y-3">
+                            <SectionTag en="USUAL TICKETS">常点票根</SectionTag>
+                            {quickReorders.map(o => (
+                                <PaperCard key={o.id} tilt={0.25} className="px-3.5 py-3">
+                                    <div className="flex items-center gap-3">
+                                        <Shopfront e={o.storeEmoji} size={25} box={46} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[13.5px] font-black truncate" style={{ color: INK }}>{o.storeName}</div>
+                                            <div className="text-[10.5px] truncate" style={{ color: INK_SOFT }}>{o.items.map(i => i.name).join('、')}</div>
+                                        </div>
+                                        <div className="text-[13px] font-black" style={{ color: INK }}>¥{o.total}</div>
+                                    </div>
+                                    <div className="flex gap-2 mt-3">
+                                        <ScrapButton variant="ink" onClick={() => reorder(o)} className="flex-1 py-2 text-[12px]" icon={<Repeat size={14} weight="bold" />}>照着再撕</ScrapButton>
+                                        <ScrapButton variant="paper" onClick={() => o.items[0] && saveOrderItemToLibrary(o.items[0])} className="flex-1 py-2 text-[12px]" icon={<BookmarkSimple size={14} weight="bold" />}>首菜进库</ScrapButton>
+                                    </div>
+                                </PaperCard>
+                            ))}
+                            {quickReorders.length === 0 && <PaperCard className="px-4 py-8 text-center text-[12px]" style={{ color: INK_SOFT }}>点过几单后，常点票根会出现在这里。</PaperCard>}
+                        </section>
+                    )}
+                </ScrapScroll>
+                {dishEditorSheet}
+                {bottomNav}
+            </TakeoutShell>
+        );
+    }
+
+    // ════════════════════════ 我的·地址 / 口味 / 会员 ════════════════════════
+    if (view === 'profile') {
+        return (
+            <TakeoutShell key="profile" {...manualAnchorProps('manual-takeout-address-cards')}>
+                <ScrapHeader title="我的饭票" en="PROFILE" onBack={() => goMainTab('home')} backLabel="回街上" right={walletChip} />
+                <ScrapScroll className="px-5 pt-2 pb-10 space-y-4">
+                    <PaperCard tilt={-0.4} tape="amber" className="px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <div className="text-[8.5px] tracking-[0.3em] mb-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>MEMBER</div>
+                                <div className="text-[18px] font-black" style={{ color: INK }}>Lv.{memberLevel.level} · {memberLevel.title}</div>
+                                <div className="text-[11px] mt-0.5" style={{ color: INK_SOFT }}>{member.points} 点饭票积分{memberLevel.nextFloor ? ` · 距下级 ${memberLevel.nextFloor - member.points}` : ' · 已满级'}</div>
+                            </div>
+                            <Stamp size={54} color="ink"><Fire size={25} weight="fill" /></Stamp>
+                        </div>
+                        <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: '#e3ded2' }}>
+                            <div className="h-full rounded-full" style={{ width: `${memberLevel.progress * 100}%`, background: INK }} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                            <ScrapButton variant={canCheckin ? 'ink' : 'ghost'} onClick={doDailyCheckin} className="py-2 text-[12px]" icon={<SealCheck size={14} weight="fill" />}>{canCheckin ? '今日签到 +8' : '今日已签到'}</ScrapButton>
+                            <ScrapButton variant="paper" onClick={() => goMainTab('orders')} className="py-2 text-[12px]" icon={<ListChecks size={14} weight="bold" />}>看任务票根</ScrapButton>
+                        </div>
+                    </PaperCard>
+
+                    <PaperCard tilt={0.25} className="px-4 py-3.5">
+                        <SectionTag en="MONTHLY">本月小账</SectionTag>
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                            <div className="text-center rounded-[10px] py-2" style={{ background: '#efeae0' }}><div className="text-[16px] font-black" style={{ color: INK }}>{historyStats.monthCount}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>张饭票</div></div>
+                            <div className="text-center rounded-[10px] py-2" style={{ background: '#efeae0' }}><div className="text-[16px] font-black" style={{ color: INK }}>¥{historyStats.monthTotal}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>虚拟花费</div></div>
+                            <div className="text-center rounded-[10px] py-2" style={{ background: '#efeae0' }}><div className="text-[16px] font-black" style={{ color: INK }}>{pinned.length}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>钉住铺子</div></div>
+                        </div>
+                    </PaperCard>
+
+                    <PaperCard tilt={-0.2} className="px-4 py-3.5">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <SectionTag en="ADDRESS BOOK">地址卡</SectionTag>
+                            <button onClick={openMyAddressBook} className="text-[11px] font-black inline-flex items-center gap-1" style={{ color: INK }}><Plus size={12} weight="bold" />管理我的</button>
+                        </div>
+                        <div className="space-y-2">
+                            <button onClick={openMyAddressBook} className="w-full flex items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left active:scale-[0.99]" style={paperInput}>
+                                <span className="min-w-0"><span className="block text-[10px] font-black" style={{ color: INK_SOFT }}>我的默认地址</span><span className="block truncate text-[12px]">{homeAddressText}</span></span>
+                                <CaretRight size={13} weight="bold" color={INK_SOFT} />
+                            </button>
+                            {characters.slice(0, 6).map(c => {
+                                const card = getDefaultAddressCard('char', c.id);
+                                return (
+                                    <button key={c.id} onClick={() => { setRecipient(c.id); setAddressDraft(null); setAddrSheetOpen(true); }} className="w-full flex items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left active:scale-[0.99]" style={paperInput}>
+                                        <span className="min-w-0"><span className="block text-[10px] font-black" style={{ color: INK_SOFT }}>{c.name} 的收货点</span><span className="block truncate text-[12px]">{card ? formatAddressCard(card) : '还没保存'}</span></span>
+                                        <CaretRight size={13} weight="bold" color={INK_SOFT} />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </PaperCard>
+
+                    <PaperCard tilt={0.35} className="px-4 py-3.5">
+                        <SectionTag en="TASTE FILE">口味档案</SectionTag>
+                        <div className="text-[11px] mt-1 mb-2" style={{ color: INK_SOFT }}>当前查看：{recipient === 'me' ? '我' : nameOf(recipient) || 'TA'}</div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar mb-2">
+                            {recipientOptions.map(o => <button key={o.id} onClick={() => setRecipient(o.id)} className="shrink-0 text-[11px] font-black px-2.5 py-1 rounded-[7px]" style={recipient === o.id ? { background: INK, color: PAPER } : { background: '#efeae0', color: INK_SOFT }}>{o.label}</button>)}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {TAKEOUT_TASTE_TAGS.slice(0, 12).map(t => <button key={t} onClick={() => toggleTaste(t)} className="text-[10.5px] px-2 py-1 rounded-[6px] font-bold active:scale-95" style={tasteTags.includes(t) ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.7)' }}>{t}</button>)}
+                        </div>
+                        <textarea value={tasteNote} onChange={e => updateTasteNote(e.target.value)} rows={2} placeholder="其它忌口 / 过敏 / 最近想吃的…" className="mt-2.5 w-full rounded-[8px] px-2.5 py-2 text-[12px] outline-none resize-none" style={paperInput} />
+                    </PaperCard>
+
+                    <PaperCard tilt={-0.25} className="px-4 py-3.5">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <SectionTag en="COUPONS & FOOTPRINTS">红包和足迹</SectionTag>
+                            <span className="text-[11px] font-bold" style={{ color: INK_SOFT }}>已领 {claimedRedpackets.length}</span>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
+                            {TAKEOUT_REDPACKETS.map(r => <span key={r.id} className="shrink-0 px-2.5 py-1 rounded-[7px] text-[11px] font-black" style={claimedRedpackets.includes(r.id) ? { background: INK, color: PAPER } : { background: '#efeae0', color: INK_SOFT }}>¥{r.discount} 满{r.threshold}</span>)}
+                        </div>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-black" style={{ color: INK }}>最近看过</span>
+                            {footprints.length > 0 && <button onClick={() => { clearTakeoutFootprints(); setFootprints([]); addToast('饭票足迹清空了', 'info'); }} className="text-[10px] font-bold" style={{ color: INK_SOFT }}>清空</button>}
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                            {footprints.slice(0, 10).map(f => <button key={f.storeId} onClick={() => { const s = stores.find(x => x.id === f.storeId) || customStores.find(x => x.id === f.storeId); if (s) openStore(s); else { setQuery(f.storeName); goMainTab('home'); } }} className="shrink-0 w-[112px] text-left px-2.5 py-2 rounded-[9px]" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}><div className="text-[12px] font-black truncate" style={{ color: INK }}><Emo e={f.storeEmoji} size={14} /> {f.storeName}</div><div className="text-[9px]" style={{ color: INK_SOFT }}>{f.category || '铺子'}</div></button>)}
+                            {footprints.length === 0 && <div className="text-[12px] py-2" style={{ color: INK_SOFT }}>进过的铺子会留在这里。</div>}
+                        </div>
+                    </PaperCard>
+
+                    <StickyNote color="butter" rotate={-0.4} className="px-4 py-3 text-[11.5px] leading-relaxed" style={{ color: '#46423a' }}>
+                        饭票只生成 Moro 内的小票、配送记录和角色互动，不连接真实商家、骑手、支付、电话或地图。
+                    </StickyNote>
+                </ScrapScroll>
+                {bottomNav}
+                {addressBookSheet}
             </TakeoutShell>
         );
     }
@@ -1982,7 +2553,7 @@ const TakeoutApp: React.FC = () => {
         const targetZh = chatTarget === 'rider' ? '跑腿' : chatTarget === 'store' ? '铺子' : '平台';
         return (
             <TakeoutShell key="detail">
-                <ScrapHeader title="这张饭票" en="THE TICKET" onBack={() => setView('orders')} backLabel="票根夹" right={walletChip} />
+                <ScrapHeader title="这张饭票" en="THE TICKET" onBack={() => setView(mainTab)} backLabel="返回" right={walletChip} />
                 <ScrapScroll className="px-5 pt-2 pb-10 space-y-4">
                     {/* 进度 / 撂挑子 */}
                     {o.cancelledByStore ? (
@@ -2101,11 +2672,14 @@ const TakeoutApp: React.FC = () => {
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <Stars n={o.review.rating} size={14} />
+                                        {!!o.review.riderRating && <span className="text-[10.5px] font-bold" style={{ color: INK_SOFT }}>配送 {o.review.riderRating}星</span>}
+                                        {!!o.review.packingRating && <span className="text-[10.5px] font-bold" style={{ color: INK_SOFT }}>包装 {o.review.packingRating}星</span>}
                                         <button onClick={() => openReview(o)} className="ml-auto text-[11px] font-black inline-flex items-center gap-1" style={{ color: INK }}><NotePencil size={12} weight="bold" />改改</button>
                                     </div>
-                                    {o.review.tags && o.review.tags.length > 0 && (
+                                    {((o.review.tags && o.review.tags.length > 0) || (o.review.serviceTags && o.review.serviceTags.length > 0)) && (
                                         <div className="flex flex-wrap gap-1.5 mt-2">
-                                            {o.review.tags.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}>{t}</span>)}
+                                            {(o.review.tags || []).map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}>{t}</span>)}
+                                            {(o.review.serviceTags || []).map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-[4px]" style={{ background: INK, color: PAPER }}>{t}</span>)}
                                         </div>
                                     )}
                                     {o.review.text && <div className="text-[12.5px] mt-2 leading-snug" style={{ color: '#54504a' }}>{o.review.text}</div>}
@@ -2154,9 +2728,28 @@ const TakeoutApp: React.FC = () => {
                         ))}
                     </div>
                     <div className="text-center text-[12px] font-black mb-3" style={{ color: INK }}>{STAR_WORDS[reviewRating]}</div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="rounded-[10px] px-2.5 py-2 text-center" style={{ background: '#efeae0', border: '1px dashed rgba(150,144,132,0.55)' }}>
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK_SOFT }}>配送</div>
+                            <div className="flex justify-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map(i => <button key={i} onClick={() => setReviewRiderRating(i)} className="active:scale-90"><Star size={17} weight="fill" color={i <= reviewRiderRating ? INK : 'rgba(31,29,26,0.16)'} /></button>)}
+                            </div>
+                        </div>
+                        <div className="rounded-[10px] px-2.5 py-2 text-center" style={{ background: '#efeae0', border: '1px dashed rgba(150,144,132,0.55)' }}>
+                            <div className="text-[10px] font-black mb-1" style={{ color: INK_SOFT }}>包装</div>
+                            <div className="flex justify-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map(i => <button key={i} onClick={() => setReviewPackingRating(i)} className="active:scale-90"><Star size={17} weight="fill" color={i <= reviewPackingRating ? INK : 'rgba(31,29,26,0.16)'} /></button>)}
+                            </div>
+                        </div>
+                    </div>
                     <div className="flex flex-wrap gap-2 justify-center mb-3">
                         {reviewQuickTags(reviewRating).map(t => (
                             <ChoiceChip key={t} on={reviewTags.includes(t)} onClick={() => toggleReviewTag(t)}>{t}</ChoiceChip>
+                        ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-center mb-3">
+                        {SERVICE_TAGS.map(t => (
+                            <ChoiceChip key={t} on={reviewServiceTags.includes(t)} onClick={() => toggleReviewServiceTag(t)}>{t}</ChoiceChip>
                         ))}
                     </div>
                     <textarea value={reviewText} onChange={e => setReviewText(e.target.value)} rows={3} placeholder="说说这一口的滋味…（随手写写）" className="w-full rounded-[12px] px-3 py-2.5 text-[13px] outline-none resize-none mb-3" style={paperInput} />
@@ -2174,7 +2767,7 @@ const TakeoutApp: React.FC = () => {
         <TakeoutShell key="fallback">
             <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-3">
                 <Stamp size={56} color="ink"><Storefront size={28} weight="duotone" /></Stamp>
-                <ScrapButton variant="ink" onClick={() => setView('home')} icon={<Receipt size={15} weight="bold" />} className="px-4 py-2 text-[13px]">回饭票簿</ScrapButton>
+                <ScrapButton variant="ink" onClick={() => goMainTab('home')} icon={<Receipt size={15} weight="bold" />} className="px-4 py-2 text-[13px]">回饭票簿</ScrapButton>
             </div>
         </TakeoutShell>
     );

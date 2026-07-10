@@ -6,12 +6,12 @@ import { llmComplete } from '../utils/llmComplete';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { buildFullCharacterSetting } from '../utils/characterPromptProfile';
 import {
-    ForumState, ForumPost, ForumReply, ForumPoll, ForumDraft, ForumTopicEvent, ForumListFilter, ForumTrendPack, FORUM_BOARDS, boardOf, seedForum, fid,
+    ForumState, ForumPost, ForumReply, ForumSubReply, ForumPoll, ForumDraft, ForumTopicEvent, ForumListFilter, ForumTrendPack, FORUM_BOARDS, boardOf, seedForum, fid,
     npcEmoji, fallbackReplies, buildForumPrompt, parseForumReplies, materializeReplies,
     buildCharThreadPrompt, parseCharThread, buildCharReplyPrompt, parseCharReply, materializeCharReply,
     buildThreadsPrompt, parseThreads, materializeThreads, fallbackThreads, targetFloorCount,
     ForumUserMeta, defaultForumMeta, ForumNotif, ForumNotifKind, makeNotif, unreadCount,
-    levelInfo, isCheckedIn, checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp,
+    levelInfo, isCheckedIn, checkIn, maxStreak, toggleFollowBoard, toggleCollect, toggleMutePost, addExp,
     boardStat, hotRank, userLikesReceived, votePoll, pollTotal,
     normalizeForumState, normalizeForumMeta, ensureForumTopic, upsertForumDraft, removeForumDraft,
     touchRecentPost, filterForumPosts, withPostParticipants, loadForumTrendPack, defaultForumTrendPack,
@@ -60,7 +60,7 @@ import {
     ArrowsClockwise, MagnifyingGlass, Fire, CrownSimple, Spinner, House, BellSimple, User,
     Star, BookmarkSimple, ShareNetwork, ArrowsDownUp, Coffee,
     Plus, Check, CaretRight, Confetti, ChatCircleDots, Smiley, ChartBar, Heart, Medal,
-    Trash,
+    Trash, Eye, EyeSlash, Tag,
 } from '@phosphor-icons/react';
 
 const KEY = 'moro_forum_v1';
@@ -157,6 +157,7 @@ const ForumApp: React.FC = () => {
     const [openId, setOpenId] = useState<string | null>(null);
     const [compose, setCompose] = useState<ComposeState | null>(null);
     const [reply, setReply] = useState('');
+    const [replyTarget, setReplyTarget] = useState<{ replyId: string; authorName: string } | null>(null);
     const [kaoOpen, setKaoOpen] = useState(false);
     const [genBoard, setGenBoard] = useState<string | null>(null); // 正在生成帖子列表的板块
     const [floorBusy, setFloorBusy] = useState(false);             // 正在盖楼
@@ -166,8 +167,9 @@ const ForumApp: React.FC = () => {
     const [order, setOrder] = useState<'asc' | 'desc'>('asc');     // 楼层正序/倒序
     const [listFilter, setListFilter] = useState<ForumListFilter>('latest');
     const [query, setQuery] = useState('');
+    const [tagInput, setTagInput] = useState('');
     const [msgFilter, setMsgFilter] = useState<'all' | ForumNotifKind>('all');
-    const [meSub, setMeSub] = useState<'posts' | 'collect' | 'follow' | 'recent' | 'draft'>('posts');
+    const [meSub, setMeSub] = useState<'posts' | 'collect' | 'follow' | 'recent' | 'draft' | 'muted'>('posts');
     const [signCard, setSignCard] = useState<{ gained: number; streak: number; rank: number } | null>(null);
     const [trendPack, setTrendPack] = useState<ForumTrendPack>(() => defaultForumTrendPack());
     const [shareTarget, setShareTarget] = useState<ForumPost | null>(null);
@@ -238,6 +240,7 @@ const ForumApp: React.FC = () => {
     const myCollected = useMemo(() => meta.collectedPostIds.map(id => state.posts.find(p => p.id === id)).filter(Boolean) as ForumPost[], [meta.collectedPostIds, state.posts]);
     const myRecent = useMemo(() => filterForumPosts(state.posts, meta, userName, 'recent', 'all'), [state.posts, meta, userName]);
     const myDrafts = useMemo(() => [...(meta.drafts || [])].sort((a, b) => b.updatedAt - a.updatedAt), [meta.drafts]);
+    const myMuted = useMemo(() => (meta.mutedPostIds || []).map(id => state.posts.find(p => p.id === id)).filter(Boolean) as ForumPost[], [meta.mutedPostIds, state.posts]);
     const likesGot = useMemo(() => userLikesReceived(state.posts, userName), [state.posts, userName]);
 
     const patchPost = (id: string, fn: (p: ForumPost) => ForumPost) =>
@@ -247,6 +250,7 @@ const ForumApp: React.FC = () => {
 
     useEffect(() => {
         if (!openId) return;
+        setReplyTarget(null);
         setMeta(m => touchRecentPost(m, openId));
         patchPost(openId, p => ({ ...p, lastReaderAt: Date.now() }));
     }, [openId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -350,7 +354,7 @@ const ForumApp: React.FC = () => {
             id: fid(), boardId: compose.board, authorType: 'user', authorName: userName,
             avatar: userProfile.avatar, title: compose.title.trim(), body: compose.body.trim(),
             createdAt: now, lastActiveAt: now, likes: 0, replies: [], replyCount: targetFloorCount(), poll,
-            tags: [],
+            tags: (compose.tags || []).slice(0, 8),
         }, [{ authorType: 'user', authorName: userName, avatar: userProfile.avatar, createdAt: now }]);
         setState(s => ({ posts: [post, ...s.posts] }));
         setMeta(m => removeForumDraft(addExp(m, 5), compose.id));
@@ -360,10 +364,28 @@ const ForumApp: React.FC = () => {
 
     const addUserReply = () => {
         if (!open || !reply.trim()) return;
+        const body = reply.trim();
+        if (replyTarget) {
+            const now = Date.now();
+            const sub: ForumSubReply = {
+                id: fid(), authorType: 'user', authorName: userName,
+                avatar: userProfile.avatar, body, createdAt: now,
+            };
+            patchPost(open.id, p => withPostParticipants({
+                ...p,
+                replies: p.replies.map(r => r.id === replyTarget.replyId ? { ...r, subReplies: [...(r.subReplies || []), sub] } : r),
+                lastActiveAt: now,
+            }, [sub]));
+            setReply('');
+            setReplyTarget(null);
+            setKaoOpen(false);
+            gainExp(1);
+            return;
+        }
         const isOp = open.authorName === userName;
         const r: ForumReply = {
             id: fid(), floor: open.replies.length + 2, authorType: 'user', authorName: userName,
-            avatar: userProfile.avatar, body: reply.trim(), createdAt: Date.now(), likes: 0, isOp,
+            avatar: userProfile.avatar, body, createdAt: Date.now(), likes: 0, isOp,
         };
         patchPost(open.id, p => withPostParticipants({ ...p, replies: [...p.replies, r], lastActiveAt: Date.now(), replyCount: Math.max(p.replyCount || 0, p.replies.length + 2) }, [r]));
         setReply(''); setKaoOpen(false);
@@ -497,6 +519,7 @@ const ForumApp: React.FC = () => {
             setOnlyOp(false);
             setReply('');
             setKaoOpen(false);
+            setReplyTarget(null);
         }
         addToast('帖子已删除', 'success');
     };
@@ -504,6 +527,7 @@ const ForumApp: React.FC = () => {
     const deleteReply = (postId: string, replyId: string) => {
         if (!window.confirm('删除这条评论？')) return;
         patchPost(postId, p => removeForumReply(p, replyId));
+        if (replyTarget?.replyId === replyId) setReplyTarget(null);
         addToast('评论已删除', 'success');
     };
 
@@ -522,6 +546,29 @@ const ForumApp: React.FC = () => {
     };
     const followBoard = (boardId: string) => setMeta(m => toggleFollowBoard(m, boardId));
     const collectPost = (postId: string) => { setMeta(m => toggleCollect(m, postId)); };
+    const toggleMutedPost = (postId: string, closeAfterMute = false) => {
+        const wasMuted = (metaRef.current.mutedPostIds || []).includes(postId);
+        setMeta(m => toggleMutePost(m, postId));
+        if (!wasMuted && closeAfterMute && openId === postId) {
+            setOpenId(null);
+            setReplyTarget(null);
+            setReply('');
+        }
+        addToast(wasMuted ? '已恢复到帖子列表' : '已从列表淡出，可在「座位」恢复', 'success');
+    };
+    const cleanTag = (value: string) => value.replace(/^#+/, '').trim().slice(0, 16);
+    const addComposeTag = (value: string) => {
+        const tag = cleanTag(value);
+        if (!tag) return;
+        setCompose(c => {
+            if (!c) return c;
+            const tags = c.tags || [];
+            if (tags.includes(tag)) return c;
+            return { ...c, tags: [...tags, tag].slice(0, 8) };
+        });
+        setTagInput('');
+    };
+    const removeComposeTag = (tag: string) => setCompose(c => c ? { ...c, tags: (c.tags || []).filter(t => t !== tag) } : c);
     const openSharePanel = (p: ForumPost) => setShareTarget(p);
     const writeSharePayload = (payload: ReturnType<typeof buildForumSharePendingPayload>) => {
         try {
@@ -575,16 +622,18 @@ const ForumApp: React.FC = () => {
     const openCompose = (draft?: ForumDraft) => {
         const targetBoard = board === 'all' ? 'chat' : board;
         const picked = draft || myDrafts.find(d => d.board === targetBoard);
-        setCompose(picked ? { ...picked, pollOpts: picked.pollOpts.length >= 2 ? picked.pollOpts : ['', ''] } : {
+        setCompose(picked ? { ...picked, tags: picked.tags || [], pollOpts: picked.pollOpts.length >= 2 ? picked.pollOpts : ['', ''] } : {
             id: fid(),
             board: targetBoard,
             title: '',
             body: '',
+            tags: [],
             pollOn: false,
             pollQ: '',
             pollOpts: ['', ''],
             updatedAt: Date.now(),
         });
+        setTagInput('');
     };
 
     const openNotif = (n: ForumNotif) => {
@@ -592,6 +641,7 @@ const ForumApp: React.FC = () => {
         if (n.postId && state.posts.some(p => p.id === n.postId)) setOpenId(n.postId);
     };
     const readAll = () => setNotifs(s => s.map(x => ({ ...x, read: true })));
+    const clearRead = () => setNotifs(s => s.filter(x => !x.read));
 
     if (!loaded) return <div className="h-full w-full" style={{ background: PAGE_BG }} />;
 
@@ -601,8 +651,9 @@ const ForumApp: React.FC = () => {
     const PostRow: React.FC<{ p: ForumPost; showBoard?: boolean }> = ({ p, showBoard }) => {
         const b = boardOf(p.boardId);
         const charParts = (p.participants || []).filter(x => x.type === 'char').slice(0, 3);
+        const muted = (meta.mutedPostIds || []).includes(p.id);
         return (
-            <button onClick={() => setOpenId(p.id)} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform"
+            <div role="button" tabIndex={0} onClick={() => setOpenId(p.id)} onKeyDown={e => { if (e.key === 'Enter') setOpenId(p.id); }} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform"
                 style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                 <div className="flex items-center gap-2 mb-1">
                     <Avatar a={p.avatar} name={p.authorName} type={p.authorType} size={22} />
@@ -611,12 +662,20 @@ const ForumApp: React.FC = () => {
                     {p.authorType === 'char' && <span className="text-[9px]" style={{ color: INK_SOFT }}>角色</span>}
                     <span className="text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>· {timeAgo(p.lastActiveAt)}</span>
                     {showBoard && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(255,253,247,0.8)', color: INK_SOFT, border: '1px solid rgba(0,0,0,0.06)' }}>{b?.emoji}{b?.name}</span>}
+                    <button onClick={e => { e.stopPropagation(); toggleMutedPost(p.id); }} className={`${showBoard ? '' : 'ml-auto'} p-1 rounded-full active:scale-90 transition-transform shrink-0`} style={{ color: muted ? INK : INK_SOFT }} title={muted ? '恢复到列表' : '淡出帖子'}>
+                        {muted ? <Eye size={14} weight="bold" /> : <EyeSlash size={14} weight="bold" />}
+                    </button>
                 </div>
                 <div className="text-[14px] font-bold leading-snug flex items-center gap-1.5" style={{ color: INK }}>
                     <PostTags p={p} />
                     <span className="line-clamp-1">{p.title}</span>
                 </div>
                 {p.body && <div className="text-[12px] leading-snug line-clamp-2 mt-0.5" style={{ color: INK_SOFT }}>{p.body}</div>}
+                {!!p.tags?.length && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                        {p.tags.slice(0, 4).map(t => <span key={t} className="px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(232,228,217,0.55)', color: '#5b554b' }}>#{t}</span>)}
+                    </div>
+                )}
                 <div className="flex items-center gap-3 mt-1.5 text-[10px]" style={{ color: INK_SOFT }}>
                     <span className="flex items-center gap-1"><ArrowFatUp size={12} weight="bold" />{kFmt(p.likes)}</span>
                     <span className="flex items-center gap-1"><ChatCircleText size={12} weight="bold" />{kFmt(p.replyCount || p.replies.length)}</span>
@@ -627,7 +686,7 @@ const ForumApp: React.FC = () => {
                         </span>
                     )}
                 </div>
-            </button>
+            </div>
         );
     };
 
@@ -708,7 +767,7 @@ const ForumApp: React.FC = () => {
         return (
             <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
                 <PaperBackdrop corners={false} />
-                <Header title={`${b?.emoji || ''} ${b?.name || '帖子'}吧`} en="A TABLE BY THE WINDOW" onBack={() => { setOpenId(null); setOnlyOp(false); }} right={
+                <Header title={`${b?.emoji || ''} ${b?.name || '帖子'}吧`} en="A TABLE BY THE WINDOW" onBack={() => { setOpenId(null); setOnlyOp(false); setReplyTarget(null); }} right={
                     <div className="flex items-center gap-1.5">
                         <button onClick={charOneReply} disabled={charReplyBusy || characters.length === 0} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-50" style={chip(false)}>
                             {charReplyBusy ? '接话中' : '熟客'}
@@ -735,12 +794,18 @@ const ForumApp: React.FC = () => {
                         </div>
                         <h1 className="text-[16px] font-black leading-snug mb-1.5 flex items-start gap-1.5 flex-wrap" style={{ color: INK }}><PostTags p={open} /><span>{open.title}</span></h1>
                         {open.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: '#48443c' }}>{open.body}</p>}
+                        {!!open.tags?.length && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {open.tags.map(t => <span key={t} className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(232,228,217,0.62)', color: '#5b554b' }}>#{t}</span>)}
+                            </div>
+                        )}
                         {open.poll && <PollView poll={open.poll} onVote={i => onVote(open.id, i)} />}
-                        <div className="flex items-center gap-3 mt-3">
+                        <div className="flex items-center gap-3 mt-3 flex-wrap">
                             <button onClick={() => likePost(open.id)} className="flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatUp size={15} weight="bold" />{kFmt(open.likes)}</button>
                             <button onClick={() => dislikePost(open.id)} className="flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatDown size={15} weight="bold" />{open.dislikes || ''}</button>
                             <span className="flex items-center gap-1 text-[11px]" style={{ color: INK_SOFT }}><ChatCircleText size={15} weight="bold" />{kFmt(target)}</span>
-                            <button onClick={() => deletePost(open.id)} className="ml-auto flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除帖子"><Trash size={14} weight="bold" />删帖</button>
+                            <button onClick={() => toggleMutedPost(open.id, true)} className="ml-auto flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="淡出帖子"><EyeSlash size={14} weight="bold" />淡出</button>
+                            <button onClick={() => deletePost(open.id)} className="flex items-center gap-1 text-[11px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除帖子"><Trash size={14} weight="bold" />删帖</button>
                             <span className="text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>1 楼 · 楼主</span>
                         </div>
                     </div>
@@ -790,7 +855,7 @@ const ForumApp: React.FC = () => {
                                     <div className="flex items-center gap-4 mt-1">
                                         <button onClick={() => likeReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatUp size={12} weight="bold" />{r.likes || ''}</button>
                                         <button onClick={() => dislikeReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ArrowFatDown size={12} weight="bold" />{r.dislikes || ''}</button>
-                                        <button onClick={() => { setReply(`回复 ${r.authorName}：`); }} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }}><ChatCircleDots size={12} weight="bold" />接话</button>
+                                        <button onClick={() => { setReplyTarget({ replyId: r.id, authorName: r.authorName }); setReply(''); setKaoOpen(false); }} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: replyTarget?.replyId === r.id ? INK : INK_SOFT }}><ChatCircleDots size={12} weight="bold" />接话</button>
                                         <button onClick={() => deleteReply(open.id, r.id)} className="flex items-center gap-1 text-[10px] active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="删除评论"><Trash size={12} weight="bold" />删除</button>
                                     </div>
                                 </div>
@@ -815,11 +880,18 @@ const ForumApp: React.FC = () => {
                         ))}
                     </div>
                 )}
+                {replyTarget && (
+                    <div className="relative z-10 shrink-0 px-4 py-1.5 flex items-center gap-2" style={{ borderTop: '1px solid rgba(0,0,0,0.05)', background: 'rgba(251,249,242,0.96)' }}>
+                        <ChatCircleDots size={13} weight="bold" style={{ color: INK_SOFT }} />
+                        <span className="text-[11px] flex-1 truncate" style={{ color: INK_SOFT }}>正在回复 {replyTarget.authorName}</span>
+                        <button onClick={() => setReplyTarget(null)} className="p-1 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="取消回复目标"><X size={12} weight="bold" /></button>
+                    </div>
+                )}
                 {/* 回帖框 + 收藏/分享 */}
                 <div className="relative z-10 shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'max(var(--safe-bottom, 0px), 10px)' }}>
                     <button onClick={() => setKaoOpen(v => !v)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: kaoOpen ? INK : INK_SOFT }}><Smiley size={22} weight={kaoOpen ? 'fill' : 'regular'} /></button>
                     <input value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addUserReply(); }} onFocus={() => setKaoOpen(false)}
-                        placeholder="接句话，盖一层楼…" className="flex-1 px-3.5 py-2.5 rounded-full text-[13px] outline-none" style={paperInput} />
+                        placeholder={replyTarget ? `回复 ${replyTarget.authorName}…` : '接句话，盖一层楼…'} className="flex-1 px-3.5 py-2.5 rounded-full text-[13px] outline-none" style={paperInput} />
                     {reply.trim()
                         ? <ScrapButton variant="ink" onClick={addUserReply} className="px-4 py-2.5 text-[13px]">接话</ScrapButton>
                         : <>
@@ -878,6 +950,35 @@ const ForumApp: React.FC = () => {
                     </button>
                 ))}
             </div>
+            {board === 'all' && !query && (
+                <div className="relative z-10 shrink-0 mx-4 mb-3 px-4 py-3" style={PANEL}>
+                    <SectionTag en="BOARD MAP" className="mb-2.5">茶桌巡游</SectionTag>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {FORUM_BOARDS.map(bd => {
+                            const st = boardStat(bd.id);
+                            const followed = meta.followedBoards.includes(bd.id);
+                            const signed = isCheckedIn(meta, bd.id);
+                            const visibleCount = state.posts.filter(p => p.boardId === bd.id && !(meta.mutedPostIds || []).includes(p.id)).length;
+                            return (
+                                <button key={bd.id} onClick={() => setBoard(bd.id)} className="text-left p-3 rounded-2xl active:scale-[0.98] transition-transform" style={{ background: 'rgba(255,255,255,0.76)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-9 h-9 rounded-2xl flex items-center justify-center text-[21px] shrink-0" style={{ background: 'linear-gradient(180deg,#fffdf8,#ece8dd)', border: '1px solid rgba(176,170,158,0.7)' }}>{bd.emoji}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-[13px] font-black truncate flex items-center gap-1" style={{ color: INK }}>{bd.name}吧{followed && <Star size={11} weight="fill" />}</div>
+                                            <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>{bd.desc}</div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between text-[10px]" style={{ color: INK_SOFT }}>
+                                        <span>{kFmt(st.members)} 常客</span>
+                                        <span>{visibleCount || kFmt(st.posts)} 帖</span>
+                                        <span style={{ color: signed ? INK_SOFT : INK }}>{signed ? '已续' : '待续'}</span>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
             {/* 吧头招牌（纸卡 + 网点半调 + 胶带） */}
             {board !== 'all' && (() => {
                 const bd = boardOf(board)!; const st = boardStat(board);
@@ -972,7 +1073,12 @@ const ForumApp: React.FC = () => {
     const renderMsg = () => (
         <>
             <Header title="叩门" en="KNOCKS" onBack={closeApp}
-                right={unread > 0 ? <button onClick={readAll} className="text-[12px] font-bold active:scale-95 transition-transform px-2" style={{ color: INK }}>全部已读</button> : undefined} />
+                right={(unread > 0 || notifs.some(n => n.read)) ? (
+                    <div className="flex items-center gap-1.5">
+                        {notifs.some(n => n.read) && <button onClick={clearRead} className="text-[12px] font-bold active:scale-95 transition-transform px-2" style={{ color: INK_SOFT }}>清已读</button>}
+                        {unread > 0 && <button onClick={readAll} className="text-[12px] font-bold active:scale-95 transition-transform px-2" style={{ color: INK }}>全部已读</button>}
+                    </div>
+                ) : undefined} />
             <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar">
             <div className="relative z-10 shrink-0 flex gap-2 px-4 pb-2">
                 {([['all', '全部'], ['reply', '接话的'], ['like', '点赞的'], ['newpost', '常去更新']] as const).map(([k, label]) => (
@@ -1039,7 +1145,7 @@ const ForumApp: React.FC = () => {
                 </div>
                 {/* 数据条 */}
                 <div className="grid grid-cols-4 mb-3 py-3" style={PANEL}>
-                    {[['支话头', myPosts.length], ['得赞', likesGot], ['常去吧', meta.followedBoards.length], ['连续续茶', maxStreak(meta)]].map(([label, val]) => (
+                    {[['支话头', myPosts.length], ['得赞', likesGot], ['淡出帖', myMuted.length], ['连续续茶', maxStreak(meta)]].map(([label, val]) => (
                         <div key={label} className="flex flex-col items-center">
                             <span className="text-[17px] font-black tabular-nums" style={{ color: INK }}>{kFmt(Number(val))}</span>
                             <span className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>{label}</span>
@@ -1048,7 +1154,7 @@ const ForumApp: React.FC = () => {
                 </div>
                 {/* 子页切换 */}
                 <div className="flex gap-2 overflow-x-auto no-scrollbar mb-2">
-                    {([['posts', '我支的话头'], ['collect', '夹起的帖'], ['recent', '最近看过'], ['draft', '草稿箱'], ['follow', '常去的吧']] as const).map(([k, label]) => (
+                    {([['posts', '我支的话头'], ['collect', '夹起的帖'], ['recent', '最近看过'], ['draft', '草稿箱'], ['follow', '常去的吧'], ['muted', '淡出帖']] as const).map(([k, label]) => (
                         <button key={k} onClick={() => setMeSub(k)} className="shrink-0 px-3 py-2 rounded-full text-[12px] font-bold transition-colors" style={chip(meSub === k)}>
                             {label}
                         </button>
@@ -1057,6 +1163,7 @@ const ForumApp: React.FC = () => {
                 {meSub === 'posts' && (myPosts.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myPosts.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没在亭子里支过话头，去首页支一个吧～" />)}
                 {meSub === 'collect' && (myCollected.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myCollected.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没夹起想再看的帖子" />)}
                 {meSub === 'recent' && (myRecent.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myRecent.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没有最近看过的帖子" />)}
+                {meSub === 'muted' && (myMuted.length ? <div style={{ ...PANEL, overflow: 'hidden' }}>{myMuted.map(p => <PostRow key={p.id} p={p} showBoard />)}</div> : <Empty text="还没有淡出的帖子，列表里点小眼睛可以先收起来" />)}
                 {meSub === 'draft' && (myDrafts.length ? (
                     <div className="space-y-2">
                         {myDrafts.map(d => {
@@ -1101,6 +1208,15 @@ const ForumApp: React.FC = () => {
             </div>
         </>
     );
+
+    const composeTopic = compose ? ensureForumTopic(meta, compose.board).event : null;
+    const composeTagSuggestions = compose ? Array.from(new Set([
+        ...(composeTopic?.tags || []),
+        boardOf(compose.board)?.name || '',
+        '后续',
+        '求助',
+        '吐槽',
+    ].map(cleanTag).filter(Boolean))).filter(t => !(compose.tags || []).includes(t)).slice(0, 8) : [];
 
     return (
         <div className="relative h-full w-full flex flex-col overflow-hidden animate-fade-in" style={{ color: INK, background: PAGE_BG }}>
@@ -1167,6 +1283,30 @@ const ForumApp: React.FC = () => {
                             className="w-full px-3 py-2.5 rounded-xl text-[15px] font-bold outline-none" style={paperInput} />
                         <textarea value={compose.body} onChange={e => setCompose(c => c && { ...c, body: e.target.value })} placeholder="正文（想说的，随意展开）" rows={6}
                             className="w-full px-3 py-2.5 rounded-xl text-[14px] outline-none resize-none leading-relaxed" style={paperInput} />
+                        <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(232,228,217,0.34)', border: '1px solid rgba(0,0,0,0.05)' }}>
+                            <div className="flex items-center gap-1.5 text-[12px] font-black" style={{ color: INK }}><Tag size={15} weight="fill" />话题标签</div>
+                            {!!compose.tags?.length && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {compose.tags.map(t => (
+                                        <button key={t} onClick={() => removeComposeTag(t)} className="px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 active:scale-95 transition-transform" style={chip(true)}>
+                                            #{t}<X size={10} weight="bold" />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {!!composeTagSuggestions.length && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {composeTagSuggestions.map(t => (
+                                        <button key={t} onClick={() => addComposeTag(t)} className="px-2 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform" style={chip(false)}>#{t}</button>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addComposeTag(tagInput); } }} placeholder="自定义标签"
+                                    className="flex-1 px-3 py-2 rounded-lg text-[12px] outline-none" style={paperInput} />
+                                <ScrapButton variant="paper" onClick={() => addComposeTag(tagInput)} className="px-3 py-2 text-[12px]" icon={<Plus size={12} weight="bold" />}>加上</ScrapButton>
+                            </div>
+                        </div>
                         {/* 投票 */}
                         <button onClick={() => setCompose(c => c && { ...c, pollOn: !c.pollOn })} className="flex items-center gap-1.5 text-[12px] font-bold" style={{ color: compose.pollOn ? INK : INK_SOFT }}>
                             <ChartBar size={15} weight="bold" />{compose.pollOn ? '撤掉投票' : '＋ 摆个投票'}

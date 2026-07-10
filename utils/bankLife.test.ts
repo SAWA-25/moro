@@ -13,6 +13,8 @@ import {
     canSettleBankShopForDate,
     getBankShopCloseBlockReason,
     getBankShopRealtimeStatus,
+    getBankRecurringBillStatus,
+    forecastBankCashflow,
     canUnlockLifeShop,
     advanceBankLifeDay,
     advanceJobApplicationStage,
@@ -22,7 +24,11 @@ import {
     attachJobApplicationAiReview,
     appendJobChatMessage,
     appendBankActionRecord,
+    applySavingsGoalTransfer,
     borrowLoan,
+    buildBankLifeAchievements,
+    buildBankLifeQuests,
+    buildLocalBankWeeklyReview,
     buildLifeSuggestions,
     createBankActionResult,
     computeCreditProfile,
@@ -45,7 +51,9 @@ import {
     migrateBankLifeState,
     markBankShopBusinessOpened,
     openLifeShop,
+    payBankRecurringBill,
     repayLoan,
+    refreshBankLifeSystems,
     sellStock,
     startJobApplication,
     switchActiveBankShop,
@@ -286,6 +294,112 @@ describe('bankLife', () => {
         expect(migrated.life?.actionHistory).toEqual([]);
         expect(migrated.life?.resume?.skills).toEqual([]);
         expect(migrated.life?.creditProfile?.score).toBeGreaterThan(0);
+    });
+
+    it('migrates life-command-center fields with safe defaults', () => {
+        const migrated = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: 'old', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [], totalRevenue: 0 },
+            goals: [],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+        } as unknown as BankFullState);
+
+        expect(migrated.life?.version).toBeGreaterThanOrEqual(6);
+        expect(migrated.life?.profile?.mode).toBe('balanced');
+        expect(migrated.life?.quests?.length).toBeGreaterThan(0);
+        expect(migrated.life?.recurringBills?.length).toBeGreaterThan(0);
+        expect(migrated.life?.budgetEnvelopes?.length).toBeGreaterThan(0);
+        expect(migrated.life?.achievements?.length).toBeGreaterThan(0);
+        expect(migrated.life?.weeklyReviews).toEqual([]);
+    });
+
+    it('builds default quests and unlocks achievements idempotently', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const result = createBankActionResult({
+            category: 'ledger',
+            kind: 'ledger-add',
+            title: 'ledger',
+            summary: 'recorded',
+            amount: -20,
+        });
+        const life = refreshBankLifeSystems(appendBankActionRecord({ ...life0, shopUnlocked: true }, result), { walletBalance: 12000 });
+        const quests = buildBankLifeQuests(life, 12000);
+        const achievements1 = buildBankLifeAchievements(life, 12000);
+        const achievements2 = buildBankLifeAchievements({ ...life, achievements: achievements1 }, 12000);
+
+        expect(quests.some(q => q.scope === 'daily')).toBe(true);
+        expect(quests.find(q => q.id.startsWith('daily-ledger'))?.done).toBe(true);
+        expect(achievements1.find(a => a.id === 'first-ledger')?.unlockedAt).toBe('2026-06-01');
+        expect(achievements2.find(a => a.id === 'first-ledger')?.unlockedAt).toBe('2026-06-01');
+    });
+
+    it('tracks budgets from transactions and forecasts cashflow', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const life = refreshBankLifeSystems(life0, {
+            walletBalance: 500,
+            transactions: [
+                { id: 't1', amount: 1500, category: 'food', note: 'lunch', timestamp: Date.now(), dateStr: '2026-06-02', type: 'expense' },
+            ] as any,
+        });
+        const food = life.budgetEnvelopes?.find(b => b.category === 'food');
+        const forecast = forecastBankCashflow(life, 500, 7);
+
+        expect(food?.spent).toBe(1500);
+        expect(food?.tone).toBe('bad');
+        expect(forecast.days).toBe(7);
+        expect(forecast.expense).toBeGreaterThan(0);
+    });
+
+    it('marks recurring bills due or overdue and records manual payment', () => {
+        const life0 = {
+            ...createDefaultBankLifeState('2026-06-10'),
+            recurringBills: [{
+                id: 'rent',
+                name: 'Rent',
+                amount: 300,
+                category: 'general',
+                cycle: 'monthly' as const,
+                dueDay: 8,
+                nextDueDate: '2026-06-08',
+                paidDates: [],
+            }],
+        };
+        const life = refreshBankLifeSystems(life0);
+        expect(getBankRecurringBillStatus(life.recurringBills![0], life.dateStr)).toBe('overdue');
+        const paid = payBankRecurringBill(life, 'rent');
+
+        expect(paid.amount).toBe(300);
+        expect(paid.actionResult?.kind).toBe('recurring-bill-pay');
+        expect(paid.bill?.paidDates).toContain('2026-06-08');
+        expect(paid.bill?.nextDueDate).toBe('2026-07-08');
+    });
+
+    it('moves money into and out of savings goals with replayable action results', () => {
+        const base = migrateBankLifeState({
+            config: { dailyBudget: 100, currencySymbol: '¥' },
+            shop: { actionPoints: 1, shopName: 'old', shopLevel: 1, appeal: 100, background: '', staff: [], unlockedRecipes: [] },
+            goals: [{ id: 'g1', name: 'Trip', targetAmount: 500, currentAmount: 100, icon: 'T', isCompleted: false }],
+            todaySpent: 0,
+            lastLoginDate: '2026-06-01',
+            life: createDefaultBankLifeState('2026-06-01'),
+        } as unknown as BankFullState);
+        const deposited = applySavingsGoalTransfer(base, 'g1', 400, 'deposit');
+        const withdrawn = applySavingsGoalTransfer(deposited.state, 'g1', 120, 'withdraw');
+
+        expect(deposited.goal?.isCompleted).toBe(true);
+        expect(deposited.actionResult?.amount).toBe(-400);
+        expect(withdrawn.goal?.currentAmount).toBe(380);
+        expect(withdrawn.actionResult?.amount).toBe(120);
+    });
+
+    it('builds a local weekly review fallback', () => {
+        const life = refreshBankLifeSystems(createDefaultBankLifeState('2026-06-07'), { walletBalance: 1000 });
+        const review = buildLocalBankWeeklyReview(life, 1000);
+
+        expect(review.id).toBe('weekly-2026-06-01-2026-06-07');
+        expect(review.source).toBe('local');
+        expect(review.metrics?.length).toBeGreaterThan(0);
     });
 
     it('records generic bank action history for replayable modals', () => {

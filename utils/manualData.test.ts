@@ -274,6 +274,33 @@ describe('manual guide data', () => {
     expect(text).toContain('不会读取现实手机');
   });
 
+  it('documents richer check-phone density and chat snippets', () => {
+    const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-10-check-phone-density');
+    const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-check-phone-tool')?.setting;
+    const tools = MANUAL_ENTRIES.find(entry => entry.app === '絮语·单聊工具');
+    const destination = MANUAL_DESTINATIONS['絮语·单聊工具'];
+    const text = [
+      notice?.summary,
+      ...(notice?.items || []),
+      tools?.summary,
+      ...(tools?.features || []),
+      ...(tools?.keywords || []),
+      setting?.description,
+      setting?.defaultBehavior,
+      ...(setting?.options || []).map(option => `${option.label}${option.description}`),
+      ...(destination?.details || []),
+    ].join('\n');
+
+    expect(notice).toBeTruthy();
+    expect(setting).toBeTruthy();
+    expect(text).toContain('查岗');
+    expect(text).toContain('多联系人');
+    expect(text).toContain('群聊');
+    expect(text).toContain('多行对话');
+    expect(text).toContain('生活碎片');
+    expect(text).toContain('不会读取现实手机');
+  });
+
   it('documents private chat force reply setting', () => {
     const notice = MANUAL_UPDATE_NOTICES.find(item => item.id === '2026-07-04-chat-force-reply');
     const setting = flattenManualSettings().find(({ setting }) => setting.id === 'chat-force-reply')?.setting;

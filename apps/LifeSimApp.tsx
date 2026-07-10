@@ -33,7 +33,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import {
     Storefront, ArrowLeft, ArrowCounterClockwise, GearSix, Star,
-    MaskHappy, UserPlus, Eye, UsersThree, ChatsCircle, HeartHalf, MapTrifold,
+    MaskHappy, UserPlus, Eye, UsersThree, ChatsCircle, HeartHalf, MapTrifold, Footprints,
 } from '@phosphor-icons/react';
 
 // Twemoji helper: converts an emoji string to a Twemoji CDN <img> tag
@@ -208,6 +208,7 @@ const LifeSimApp: React.FC = () => {
     const [isResetting, setIsResetting] = useState(false);
     const [showRoam, setShowRoam] = useState(false);
     const [showDate, setShowDate] = useState(false);
+    const [view, setView] = useState<'home' | 'map'>('home');
     const [mapLayer, setMapLayer] = useState<MapLayerMode>('info');
     const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
 
@@ -1083,9 +1084,22 @@ const LifeSimApp: React.FC = () => {
     }) : [];
 
     const selectedAction = selectedMapNode ? latestActionForNode(gameState, selectedMapNode) : undefined;
+    const latestAction = gameState.actionLog[gameState.actionLog.length - 1] || null;
+    const latestActionTitle = latestAction?.headline || latestAction?.description || '这条街正在等下一页';
+    const mainPlotCount = gameState.actionLog.filter(action => action.storyKind === 'main_plot').length;
+    const relationshipSignals = gameState.npcs.reduce((sum, npc) => sum + (npc.crushes?.length || 0) + (npc.grudges?.length || 0), 0);
+    const readyApi = resolveLifeSimApiConfig(gameState);
+    const apiReady = !!(readyApi?.baseUrl && readyApi?.model);
+    const homeMapNodes = [...familyNodes.slice(0, 4), ...npcNodes.slice(0, 5), ...recentEventNodes.slice(0, 3), ...thinkingNodes];
+    const recentHomeActions = [...gameState.actionLog].slice(-4).reverse();
+    const homeStatusTitle = gameState.isProcessingCharTurn
+        ? (processingMsg || '街坊们正在行动')
+        : isUserTurn
+            ? '轮到你给这条街落笔'
+            : '街角正在更新';
 
     return (
-        <div className="sj-app sj-map-app h-full w-full max-w-full flex flex-col overflow-hidden select-none">
+        <div className={`sj-app sj-map-app ${view === 'home' ? 'sj-home-app' : ''} h-full w-full max-w-full flex flex-col overflow-hidden select-none`}>
 
             <SJStyles accent={scrap.accent} tape={scrap.tape} tape2={scrap.tape2} />
 
@@ -1100,7 +1114,10 @@ const LifeSimApp: React.FC = () => {
                     </div>
                 </div>
                 <div className="sj-nav-tools">
-                    <button onClick={() => setShowRoam(true)} title="出门逛逛" className="sj-icon-button"><MapTrifold size={18} weight="bold" /></button>
+                    <button onClick={() => setView(view === 'map' ? 'home' : 'map')} title={view === 'map' ? '街角首页' : '街区地图'} className="sj-icon-button">
+                        {view === 'map' ? <Storefront size={18} weight="bold" /> : <MapTrifold size={18} weight="bold" />}
+                    </button>
+                    <button onClick={() => setShowRoam(true)} title="出门逛逛" className="sj-icon-button"><Footprints size={18} weight="bold" /></button>
                     <button onClick={() => setShowDate(true)} title="带 TA 去约会" className="sj-icon-button"><HeartHalf size={18} weight="bold" /></button>
                     <button onClick={() => setShowSettings(true)} title="设定" className="sj-icon-button with-count">
                         <GearSix size={18} weight="bold" />
@@ -1116,6 +1133,150 @@ const LifeSimApp: React.FC = () => {
                 </div>
             )}
 
+            {view === 'home' ? (
+                <main className="sj-home-shell no-scrollbar">
+                    <section className="sj-home-status">
+                        <div className="sj-home-status-copy">
+                            <div className="sj-home-kicker">
+                                <span>{si.zh}</span><span>{ti.zh}</span><span>{wi.zh}</span>
+                            </div>
+                            <h2>{homeStatusTitle}</h2>
+                            <p>{latestActionTitle}</p>
+                        </div>
+                        <button
+                            className="sj-home-primary"
+                            onClick={() => {
+                                setView('map');
+                                setSelectedMapNodeId(null);
+                            }}
+                        >
+                            <MapTrifold size={18} weight="bold" />
+                            <span>街区地图</span>
+                        </button>
+                    </section>
+
+                    <div className="sj-home-actions">
+                        <button onClick={() => setView('map')} className="sj-action-tile is-primary">
+                            <MapTrifold size={20} weight="bold" />
+                            <b>街区</b>
+                            <small>{gameState.npcs.length} 位街坊</small>
+                        </button>
+                        <button onClick={() => setShowRoam(true)} className="sj-action-tile">
+                            <Footprints size={20} weight="bold" />
+                            <b>漫游</b>
+                            <small>足迹 {recentHomeActions.length}</small>
+                        </button>
+                        <button onClick={() => setShowDate(true)} className="sj-action-tile">
+                            <HeartHalf size={20} weight="bold" />
+                            <b>约会</b>
+                            <small>{participantChars[0]?.name || '选择角色'}</small>
+                        </button>
+                        <button onClick={() => setShowSettings(true)} className="sj-action-tile">
+                            <GearSix size={20} weight="bold" />
+                            <b>设定</b>
+                            <small>{participantChars.length} 位参与</small>
+                        </button>
+                    </div>
+
+                    {(!participantChars.length || !apiReady) && (
+                        <div className="sj-home-notice">
+                            <div>
+                                <b>{!participantChars.length ? '还没有参与角色' : '街角 API 未就绪'}</b>
+                                <span>{!participantChars.length ? '选择几位角色后，街坊回合和约会会更完整。' : '可继续浏览本地内容；生成剧情前建议配好副 API 或独立 API。'}</span>
+                            </div>
+                            <button onClick={() => setShowSettings(true)}>{!participantChars.length ? '选角色' : '去设定'}</button>
+                        </div>
+                    )}
+
+                    <section className="sj-home-section">
+                        <div className="sj-section-head">
+                            <span>街区脉搏</span>
+                            <button onClick={() => setShowResetDialog(true)}>翻篇</button>
+                        </div>
+                        <div className="sj-metric-grid">
+                            <div><b>{gameState.turnNumber}</b><span>页码</span></div>
+                            <div><b>{gameState.chaosLevel}°</b><span>{chaosLabel}</span></div>
+                            <div><b>{mainPlotCount}</b><span>主线</span></div>
+                            <div><b>{relationshipSignals}</b><span>牵连</span></div>
+                        </div>
+                    </section>
+
+                    <section className="sj-home-map-card">
+                        <StreetMap
+                            nodes={homeMapNodes}
+                            user={userNode}
+                            routes={relationRoutes.slice(0, 5)}
+                            layer={mapLayer}
+                            height={252}
+                            title={`${si.zh}日的街区`}
+                            subtitle={`${chaosLabel} · pg.${gameState.turnNumber}`}
+                            onCanvasClick={() => setView('map')}
+                            onNodeClick={(node, event) => {
+                                event.stopPropagation();
+                                setView('map');
+                                setSelectedMapNodeId(node.id);
+                                if (node.kind === 'event' || node.kind === 'worldline') setActiveTab('drama');
+                                if (node.kind === 'person' || node.kind === 'family') setActiveTab('npcs');
+                            }}
+                            bottomCenter={
+                                <button
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setView('map');
+                                    }}
+                                    className="sj-map-preview-button"
+                                >
+                                    进入地图
+                                </button>
+                            }
+                        />
+                    </section>
+
+                    <section className="sj-home-section">
+                        <div className="sj-section-head">
+                            <span>登场人物</span>
+                            <button onClick={() => setShowSettings(true)}>调整</button>
+                        </div>
+                        {participantChars.length ? (
+                            <div className="sj-avatar-strip">
+                                {participantChars.slice(0, 8).map(char => (
+                                    <button key={char.id} onClick={() => setShowDate(true)} title={`和 ${char.name} 约会`}>
+                                        <img src={char.avatar} alt="" />
+                                        <span>{char.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="sj-empty-copy">还没有角色加入本局。</p>
+                        )}
+                    </section>
+
+                    <section className="sj-home-section sj-home-feed">
+                        <div className="sj-section-head">
+                            <span>最近街谈</span>
+                            <button onClick={() => { setView('map'); setActiveTab('drama'); }}>查看</button>
+                        </div>
+                        {recentHomeActions.length ? recentHomeActions.map(action => (
+                            <button
+                                key={action.id}
+                                onClick={() => {
+                                    setView('map');
+                                    setActiveTab(action.storyKind === 'system' ? 'drama' : 'drama');
+                                    setSelectedMapNodeId(`event-${action.id}`);
+                                }}
+                                className="sj-feed-line"
+                            >
+                                <span>{action.actorAvatar || '•'}</span>
+                                <b>{action.headline || action.description}</b>
+                                <small>pg.{action.turnNumber}</small>
+                            </button>
+                        )) : (
+                            <p className="sj-empty-copy">还没有新街谈。</p>
+                        )}
+                    </section>
+                </main>
+            ) : (
+                <>
             <main className="sj-map-stage">
                 <StreetMap
                     nodes={mapNodes}
@@ -1206,6 +1367,8 @@ const LifeSimApp: React.FC = () => {
                     <button onClick={handleWatch} title="吃瓜"><Eye size={19} weight="bold" /><span>吃瓜</span></button>
                 </div>
             )}
+                </>
+            )}
 
             {/* ── 行动面板 ── */}
             {actionPanel !== 'none' && isUserTurn && (
@@ -1294,6 +1457,303 @@ const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ a
         }
         .sj-map-app .font-hand {
             font-family: inherit;
+        }
+        .sj-home-shell {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 12px 12px max(18px, env(safe-area-inset-bottom, 0px));
+        }
+        .sj-home-status {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: stretch;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 14px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            box-shadow: 0 18px 44px -34px rgba(15, 23, 42, 0.72);
+        }
+        .sj-home-status-copy {
+            min-width: 0;
+        }
+        .sj-home-kicker {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 900;
+        }
+        .sj-home-kicker span {
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: #f1f5f9;
+            border: 1px solid rgba(226, 232, 240, 0.96);
+        }
+        .sj-home-status h2 {
+            margin: 9px 0 0;
+            color: #0f172a;
+            font-size: 22px;
+            line-height: 1.18;
+            font-weight: 950;
+            overflow-wrap: anywhere;
+        }
+        .sj-home-status p {
+            margin: 7px 0 0;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .sj-home-primary {
+            min-width: 84px;
+            border: 0;
+            border-radius: 18px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            background: #172033;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 900;
+            box-shadow: 0 16px 28px -22px rgba(15, 23, 42, 0.9);
+        }
+        .sj-home-actions {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .sj-action-tile {
+            min-width: 0;
+            min-height: 82px;
+            padding: 10px 6px;
+            border-radius: 18px;
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            background: rgba(255, 255, 255, 0.94);
+            color: #172033;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            box-shadow: 0 14px 28px -26px rgba(15, 23, 42, 0.7);
+            touch-action: manipulation;
+        }
+        .sj-action-tile.is-primary {
+            background: rgba(255, 255, 255, 0.98);
+            border-color: var(--sj-accent);
+            color: var(--sj-accent);
+        }
+        .sj-action-tile b {
+            font-size: 13px;
+            line-height: 1.1;
+            font-weight: 950;
+        }
+        .sj-action-tile small {
+            max-width: 100%;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sj-home-notice {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            color: #334155;
+        }
+        .sj-home-notice div {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .sj-home-notice b {
+            color: #0f172a;
+            font-size: 13px;
+            font-weight: 950;
+        }
+        .sj-home-notice span {
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.45;
+        }
+        .sj-home-notice button,
+        .sj-section-head button,
+        .sj-map-preview-button {
+            flex: 0 0 auto;
+            border: 0;
+            border-radius: 999px;
+            padding: 7px 11px;
+            background: #172033;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 900;
+        }
+        .sj-home-section {
+            margin-bottom: 10px;
+            padding: 12px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            box-shadow: 0 14px 30px -28px rgba(15, 23, 42, 0.64);
+        }
+        .sj-section-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .sj-section-head span {
+            color: #0f172a;
+            font-size: 15px;
+            font-weight: 950;
+        }
+        .sj-section-head button {
+            background: #eef2f4;
+            color: #475569;
+        }
+        .sj-metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .sj-metric-grid div {
+            min-width: 0;
+            padding: 10px 7px;
+            border-radius: 16px;
+            background: #f8fafc;
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            text-align: center;
+        }
+        .sj-metric-grid b {
+            display: block;
+            color: var(--sj-accent);
+            font-size: 18px;
+            line-height: 1;
+            font-weight: 950;
+        }
+        .sj-metric-grid span {
+            display: block;
+            margin-top: 5px;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 900;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sj-home-map-card {
+            margin-bottom: 10px;
+        }
+        .sj-home-map-card .street-map {
+            border-radius: 20px;
+        }
+        .sj-map-preview-button {
+            padding: 8px 13px;
+            box-shadow: 0 12px 24px -20px rgba(15, 23, 42, 0.85);
+        }
+        .sj-avatar-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .sj-avatar-strip button {
+            min-width: 0;
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            border-radius: 16px;
+            padding: 8px 6px;
+            background: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+        .sj-avatar-strip img {
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            object-fit: cover;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.92);
+        }
+        .sj-avatar-strip span {
+            max-width: 100%;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 900;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sj-empty-copy {
+            margin: 0;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+        .sj-home-feed {
+            margin-bottom: 0;
+        }
+        .sj-feed-line {
+            width: 100%;
+            min-width: 0;
+            margin-top: 7px;
+            padding: 9px 10px;
+            border-radius: 15px;
+            border: 1px solid rgba(226, 232, 240, 0.96);
+            background: #f8fafc;
+            display: grid;
+            grid-template-columns: 24px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            text-align: left;
+        }
+        .sj-feed-line span {
+            width: 24px;
+            height: 24px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            color: #64748b;
+            font-size: 13px;
+            overflow: hidden;
+        }
+        .sj-feed-line b {
+            min-width: 0;
+            color: #334155;
+            font-size: 12px;
+            line-height: 1.35;
+            font-weight: 900;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sj-feed-line small {
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 900;
         }
         .sj-nav {
             display: flex;
@@ -1630,6 +2090,12 @@ const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ a
             .sj-nav-name { font-size: 21px; }
             .sj-nav-tools { gap: 4px; }
             .sj-icon-button { width: 34px; height: 34px; }
+            .sj-home-shell { padding-left: 9px; padding-right: 9px; }
+            .sj-home-status { grid-template-columns: minmax(0, 1fr); }
+            .sj-home-primary { min-height: 44px; flex-direction: row; }
+            .sj-home-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .sj-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .sj-avatar-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .sj-map-stage { padding-left: 9px; padding-right: 9px; }
             .sj-bottom-panel { margin-left: 9px; margin-right: 9px; flex-basis: min(44vh, 315px); }
         }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Message, ScreenPeekCard } from '../../types';
+import { screenPeekCardUsesScreenshot } from '../../utils/screenPeek';
 
 type Screen = NonNullable<ScreenPeekCard['screen']>;
 type Row = NonNullable<Screen['rows']>[number];
@@ -50,6 +51,47 @@ const ScreenPeekCardView: React.FC<{
 
   if (!card) {
     return commonLayout(<div className="text-xs text-slate-400">窥屏卡片无法解析</div>);
+  }
+
+  if (screenPeekCardUsesScreenshot(card)) {
+    const title = card.snapshotTitle || card.title || `${card.charName} 的手机屏幕`;
+    const appName = card.snapshotAppName || '手机';
+    const overlay = expanded && typeof document !== 'undefined'
+      ? createPortal(
+        <div className="fixed inset-0 z-[9998] bg-black text-white flex flex-col animate-fade-in" style={{ paddingTop: 'calc(var(--safe-top, 0px) + 14px)', paddingBottom: 'calc(var(--safe-bottom, 0px) + 14px)' }} onClick={() => setExpanded(false)}>
+          <button type="button" onClick={(event) => { event.stopPropagation(); setExpanded(false); }} className="fixed right-4 z-[10000] h-10 px-3 rounded-full bg-white active:scale-95 border border-slate-200 text-slate-950 text-[12px] font-bold flex items-center gap-1.5" style={{ top: 'calc(var(--safe-top, 0px) + 14px)' }} aria-label="关闭窥屏"><span className="text-lg leading-none">x</span><span>关闭</span></button>
+          <div className="shrink-0 px-5 pr-24 min-h-10 flex flex-col justify-center pointer-events-none">
+            <div className="text-[13px] font-bold truncate">{title}</div>
+            <div className="text-[10px] text-white/45 truncate">{card.charName} · {appName} · {new Date(card.generatedAt).toLocaleString()}</div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden px-4 pt-3 flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
+            <img
+              src={card.screenshotDataUrl}
+              alt={title}
+              className="block max-h-full max-w-full object-contain rounded-[30px] shadow-[0_30px_80px_-38px_rgba(255,255,255,.45)]"
+              draggable={false}
+            />
+          </div>
+          <div className="shrink-0 pt-3 text-center text-[10px] text-white/35 pointer-events-none">点空白处或按 Esc 退出</div>
+        </div>,
+        document.body,
+      )
+      : null;
+    return (
+      <>
+        {commonLayout(
+          <button type="button" onClick={(event) => { event.stopPropagation(); setExpanded(true); }} className="block text-left rounded-[30px] active:scale-[0.98] transition-transform">
+            <img
+              src={card.screenshotDataUrl}
+              alt={title}
+              className="block w-[258px] h-auto rounded-[32px] shadow-[0_24px_62px_-28px_rgba(0,0,0,.85)] bg-slate-950"
+              draggable={false}
+            />
+          </button>,
+        )}
+        {overlay}
+      </>
+    );
   }
 
   const fallbackScreen: Screen = {

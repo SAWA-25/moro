@@ -8,7 +8,7 @@ import WeatherDetail from './WeatherDetail';
 /**
  * 桌面天气小组件（参照手帐桌面设计稿：浅灰圆角卡 + 大号温度 + 灰色天气图标）。
  * 数据走 文具盒 → 风向标（实时感知）的天气配置：默认用已授权定位 / 缓存 / IP 兜底 +
- * Open-Meteo 免密钥取本地实时天气，也兼容旧版手填 OpenWeatherMap Key（RealtimeContextManager 内置缓存）。
+ * Open-Meteo 免密钥取本地实时天气；也支持手填城市锁定位置（RealtimeContextManager 内置缓存）。
  * 未开启时点击直达文具盒；已开启时点击展开「天气预报」详情页（未来七天）。
  */
 
@@ -19,9 +19,9 @@ const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentC
     const handleDetailWeatherUpdate = useCallback((nextWeather: WeatherData) => {
         setWeather(nextWeather);
     }, []);
-    // geo 模式免密钥；manual 模式仍需 Key
     const mode = realtimeConfig.weatherMode || 'geo';
-    const configured = !!(realtimeConfig.weatherEnabled && (mode !== 'manual' || realtimeConfig.weatherApiKey));
+    const manualCity = (realtimeConfig.weatherCity || '').trim();
+    const configured = !!(realtimeConfig.weatherEnabled && (mode !== 'manual' || manualCity));
 
     useEffect(() => {
         let alive = true;

@@ -513,10 +513,14 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         if (!targetChar) return;
         setIsRefreshingPhoneStatus(true);
         try {
+            const promptUserName = userProfile?.name || '用户';
+            const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` });
             const nextSnapshot = await generateXunjiRealtimeSnapshot({
                 char: targetChar,
                 previous: xunjiSnapshot,
                 api: auxApi.baseUrl && auxApi.model ? { baseUrl: auxApi.baseUrl, apiKey: auxApi.apiKey, model: auxApi.model } : null,
+                userSetting: fullUserSetting,
+                userName: promptUserName,
             });
             const nextReports = generateXunjiReports({
                 char: targetChar,
@@ -1172,13 +1176,23 @@ Format:
   const renderChatDetail = () => {
     if (!selectedChatRecord || !targetChar) return null;
 
-    // Parse logic: look for "Me:" or "我:" vs others
+    // Parse logic: look for "Me:" or "我:" vs named speakers in richer check-phone chat logs.
     const lines = selectedChatRecord.detail.split('\n').filter(l => l.trim());
     const parsedLines = lines.map(line => {
-        const isMe = line.startsWith('我') || line.startsWith('Me') || line.startsWith('Me:') || line.startsWith('我:');
-        const content = line.replace(/^(我|Me|对方|Them|[\w\u4e00-\u9fa5]+)[:：]\s*/, '');
-        return { isMe, content };
+        const match = /^\s*([^:：]{1,24})[:：]\s*([\s\S]*)$/.exec(line);
+        const rawSpeaker = (match?.[1] || '').trim();
+        const isMe = /^(我|Me)$/i.test(rawSpeaker);
+        const speakerName = isMe
+            ? targetChar.name
+            : (!rawSpeaker || /^(对方|Them|TA|他|她)$/i.test(rawSpeaker) ? selectedChatRecord.title : rawSpeaker);
+        return {
+            isMe,
+            speakerName,
+            content: (match ? match[2] : line).trim() || line.trim(),
+        };
     });
+    const visibleSpeakers = new Set(parsedLines.filter(line => !line.isMe).map(line => line.speakerName).filter(Boolean));
+    const showSpeakerLabels = visibleSpeakers.size > 1 || (selectedChatRecord.meta?.participants?.length || 0) > 1 || /群|组|group/i.test(selectedChatRecord.title);
 
     return (
         // 关键修复：添加不透明背景色，确保完全覆盖
@@ -1191,13 +1205,20 @@ Format:
                     <div key={idx} className={`flex ${msg.isMe ? 'justify-end' : 'justify-start'}`}>
                         {!msg.isMe && (
                             <div className="w-9 h-9 rounded-md bg-gray-300 flex items-center justify-center text-xs text-gray-500 mr-2 shrink-0">
-                                {selectedChatRecord.title[0]}
+                                {(msg.speakerName || selectedChatRecord.title)[0]}
                             </div>
                         )}
-                        <div className={`px-3 py-2 rounded-lg max-w-[75%] text-sm leading-relaxed shadow-sm break-words relative ${msg.isMe ? 'bg-[#95ec69] text-black' : 'bg-white text-black'}`}>
-                            {msg.isMe && <div className="absolute top-2 -right-1.5 w-3 h-3 bg-[#95ec69] rotate-45"></div>}
-                            {!msg.isMe && <div className="absolute top-3 -left-1 w-2.5 h-2.5 bg-white rotate-45"></div>}
-                            <span className="relative z-10">{msg.content}</span>
+                        <div className={`flex flex-col max-w-[75%] ${msg.isMe ? 'items-end' : 'items-start'}`}>
+                            {!msg.isMe && showSpeakerLabels && (
+                                <div className="text-[10px] text-gray-500 font-semibold mb-1 px-1 max-w-full truncate">
+                                    {msg.speakerName}
+                                </div>
+                            )}
+                            <div className={`px-3 py-2 rounded-lg max-w-full text-sm leading-relaxed shadow-sm break-words relative ${msg.isMe ? 'bg-[#95ec69] text-black' : 'bg-white text-black'}`}>
+                                {msg.isMe && <div className="absolute top-2 -right-1.5 w-3 h-3 bg-[#95ec69] rotate-45"></div>}
+                                {!msg.isMe && <div className="absolute top-3 -left-1 w-2.5 h-2.5 bg-white rotate-45"></div>}
+                                <span className="relative z-10">{msg.content}</span>
+                            </div>
                         </div>
                         {msg.isMe && (
                             <img src={targetChar.avatar} className="w-9 h-9 rounded-md object-cover ml-2 shrink-0 shadow-sm" />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addToCart, setCartQty, removeFromCart, cartCount, cartTotal, resolveCart, expandCart, getShopItem } from './shop';
+import { addToCart, setCartQty, removeFromCart, cartCount, cartTotal, resolveCart, expandCart, getShopItem, addToWishlist, resolveWishlist } from './shop';
 
 const rosePrice = getShopItem('rose')!.price;   // 9.9
 const cakePrice = getShopItem('cake')!.price;   // 45
@@ -45,5 +45,37 @@ describe('shop cart helpers', () => {
     it('cartCount/cartTotal 对空购物车安全', () => {
         expect(cartCount(undefined)).toBe(0);
         expect(cartTotal(undefined)).toBe(0);
+    });
+
+    it('addToWishlist 保留来源、理由、场景和加入时间', () => {
+        const first = addToWishlist([], 'rose', {
+            source: 'advisor',
+            note: '生日时会喜欢',
+            occasion: 'birthday',
+            at: 1700000000000,
+        });
+        expect(first[0]).toMatchObject({
+            itemId: 'rose',
+            qty: 1,
+            wishSource: 'advisor',
+            wishNote: '生日时会喜欢',
+            wishOccasion: 'birthday',
+            addedAt: 1700000000000,
+        });
+
+        const next = addToWishlist(first, 'rose', { source: 'companion', note: '陪逛时盯了很久' }, 2);
+        expect(next[0]).toMatchObject({
+            itemId: 'rose',
+            qty: 3,
+            wishSource: 'companion',
+            wishNote: '陪逛时盯了很久',
+            wishOccasion: 'birthday',
+            addedAt: 1700000000000,
+        });
+
+        const lines = resolveWishlist(next);
+        expect(lines[0].item.id).toBe('rose');
+        expect(lines[0].occasionLabel).toBe('生日纪念');
+        expect(lines[0].sourceLabel).toBe('陪逛心动');
     });
 });

@@ -21,12 +21,18 @@ import {
     BankLifeActionRecord,
     BankLifeActionResult,
     BankLifeActionTone,
+    BankBudgetEnvelope,
     BankInvestmentLedgerEvent,
     BankInvestmentOrder,
     BankInvestmentStrategy,
     BankInvestmentTickResult,
     BankMarketRuntime,
+    BankLifeAchievement,
     BankLifeShopProduct,
+    BankLifeProfile,
+    BankLifeQuest,
+    BankLifeWeeklyReview,
+    BankRecurringBill,
     BankShopActionResult,
     BankShopBranch,
     BankShopDailyRewards,
@@ -39,10 +45,12 @@ import {
     BankLoanCreditProfile,
     BankMarketPulse,
     BankResumeProfile,
+    SavingsGoal,
+    BankTransaction,
     ShopStaff,
 } from '../types';
 
-export const BANK_LIFE_VERSION = 5;
+export const BANK_LIFE_VERSION = 6;
 export const SHOP_UNLOCK_COST = 10000;
 export const BANK_OPEN_BRANCH_ENERGY_COST = 30;
 export const INITIAL_HEADQUARTERS_ENERGY = 80;
@@ -336,6 +344,497 @@ function defaultCreditProfile(dateStr = todayStr()): BankLoanCreditProfile {
         riskLevel: 'medium',
         reasons: ['暂无完整收入与还款记录，先按中等信用评估。'],
         updatedAt: dateStr,
+    };
+}
+
+const DEFAULT_BUDGETS: Array<Omit<BankBudgetEnvelope, 'spent' | 'period' | 'tone'>> = [
+    { id: 'budget-general', category: 'general', label: '日常生活', monthlyLimit: 1200 },
+    { id: 'budget-food', category: 'food', label: '吃喝外卖', monthlyLimit: 1500 },
+    { id: 'budget-gift', category: 'gift', label: '礼物心意', monthlyLimit: 800 },
+    { id: 'budget-shop', category: 'shop', label: '店铺经营', monthlyLimit: 1200 },
+    { id: 'budget-invest', category: 'invest', label: '投资试验', monthlyLimit: 1500 },
+    { id: 'budget-loan', category: 'loan', label: '借款还款', monthlyLimit: 1000 },
+];
+
+const ACHIEVEMENT_DEFS: Array<Omit<BankLifeAchievement, 'progress' | 'unlockedAt'>> = [
+    { id: 'first-ledger', title: '第一笔账', detail: '手动记下一笔收入或支出。', category: 'finance', target: 1, icon: '账' },
+    { id: 'first-goal', title: '许下心愿', detail: '建立第一个攒钱心愿。', category: 'life', target: 1, icon: '愿' },
+    { id: 'first-job', title: '现金流上线', detail: '拿到一份工作或进入试岗。', category: 'finance', target: 1, icon: '职' },
+    { id: 'first-shop', title: '第一家店', detail: '开出人生拟里的第一间店。', category: 'business', target: 1, icon: '店' },
+    { id: 'first-invest', title: '第一次持仓', detail: '完成一次虚拟投资或持有股票。', category: 'finance', target: 1, icon: '投' },
+    { id: 'first-company', title: '创业启动', detail: '创办第一家公司。', category: 'business', target: 1, icon: '司' },
+    { id: 'debt-clear', title: '债务清爽日', detail: '借过款后把所有贷款结清。', category: 'finance', target: 1, icon: '清' },
+    { id: 'steady-week', title: '稳稳一周', detail: '人生拟推进到第 7 天且疲劳保持可控。', category: 'life', target: 7, icon: '周' },
+    { id: 'net-worth-10k', title: '净资产破万', detail: '钱包、投资和公司现金扣除负债后达到 10000。', category: 'finance', target: 10000, icon: '万' },
+];
+
+export interface BankCashflowForecast {
+    days: 7 | 30;
+    income: number;
+    expense: number;
+    endingBalance: number;
+    warnings: string[];
+}
+
+const periodOf = (dateStr: string): string => (dateStr || todayStr()).slice(0, 7);
+
+const dateMs = (dateStr: string): number => {
+    const [y, m, d] = String(dateStr || todayStr()).slice(0, 10).split('-').map(Number);
+    return Date.UTC(y || 1970, (m || 1) - 1, d || 1);
+};
+
+const daysBetween = (from: string, to: string): number =>
+    Math.floor((dateMs(to) - dateMs(from)) / 86400000);
+
+const daysInMonth = (year: number, month: number): number =>
+    new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+function addMonths(dateStr: string, months: number): string {
+    const [y, m, d0] = dateStr.split('-').map(Number);
+    const target = new Date(Date.UTC(y || 1970, (m || 1) - 1 + months, 1));
+    const day = Math.min(d0 || 1, daysInMonth(target.getUTCFullYear(), target.getUTCMonth() + 1));
+    target.setUTCDate(day);
+    return target.toISOString().slice(0, 10);
+}
+
+function defaultLifeProfile(dateStr: string): BankLifeProfile {
+    return {
+        mode: 'balanced',
+        title: '均衡经营',
+        startedAt: dateStr,
+    };
+}
+
+function normalizeLifeProfile(profile: Partial<BankLifeProfile> | undefined, dateStr: string): BankLifeProfile {
+    const mode = profile?.mode === 'finance' || profile?.mode === 'tycoon' || profile?.mode === 'balanced'
+        ? profile.mode
+        : 'balanced';
+    const title = profile?.title || (mode === 'finance' ? '财务稳健' : mode === 'tycoon' ? '经营大亨' : '均衡经营');
+    return {
+        mode,
+        title,
+        startedAt: profile?.startedAt || dateStr,
+        onboardedAt: profile?.onboardedAt,
+    };
+}
+
+function monthlyDueDate(dateStr: string, dueDay: number): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const day = clamp(Math.floor(dueDay || 1), 1, 28);
+    const current = `${y}-${pad2(m)}-${pad2(Math.min(day, daysInMonth(y, m)))}`;
+    if ((d || 1) <= day) return current;
+    return addMonths(current, 1);
+}
+
+function weeklyDueDate(dateStr: string, dueDay: number): string {
+    const diff = (clamp(Math.floor(dueDay || 0), 0, 6) - weekDayOf(dateStr) + 7) % 7;
+    return addDays(dateStr, diff);
+}
+
+function nextRecurringDueDate(bill: Pick<BankRecurringBill, 'cycle' | 'dueDay'>, afterDate: string): string {
+    if (bill.cycle === 'weekly') {
+        const next = weeklyDueDate(addDays(afterDate, 1), bill.dueDay);
+        return next <= afterDate ? addDays(next, 7) : next;
+    }
+    const next = monthlyDueDate(addDays(afterDate, 1), bill.dueDay);
+    return next <= afterDate ? addMonths(next, 1) : next;
+}
+
+function createDefaultRecurringBills(dateStr: string): BankRecurringBill[] {
+    return [
+        {
+            id: 'bill-phone',
+            name: '手机与网络',
+            amount: 68,
+            category: 'general',
+            cycle: 'monthly',
+            dueDay: 6,
+            nextDueDate: monthlyDueDate(dateStr, 6),
+            autoPay: false,
+            paidDates: [],
+            note: 'Moro 内的生活账单，不连接真实运营商。',
+        },
+        {
+            id: 'bill-transport',
+            name: '通勤交通',
+            amount: 45,
+            category: 'food',
+            cycle: 'weekly',
+            dueDay: 1,
+            nextDueDate: weeklyDueDate(dateStr, 1),
+            autoPay: false,
+            paidDates: [],
+            note: '每周给生活流动性留一点位置。',
+        },
+    ];
+}
+
+function normalizeRecurringBills(bills: BankRecurringBill[] | undefined, dateStr: string): BankRecurringBill[] {
+    const defaults = createDefaultRecurringBills(dateStr);
+    const byId = new Map(defaults.map(b => [b.id, b]));
+    for (const bill of bills || []) {
+        if (!bill?.id) continue;
+        const base = byId.get(bill.id);
+        const cycle = bill.cycle === 'weekly' || bill.cycle === 'monthly' ? bill.cycle : (base?.cycle || 'monthly');
+        const dueDay = cycle === 'weekly'
+            ? clamp(Math.floor(bill.dueDay ?? base?.dueDay ?? 1), 0, 6)
+            : clamp(Math.floor(bill.dueDay ?? base?.dueDay ?? 1), 1, 28);
+        byId.set(bill.id, {
+            ...(base || {}),
+            ...bill,
+            name: String(bill.name || base?.name || '生活账单').trim(),
+            amount: Math.max(0, roundMoney(Number(bill.amount) || base?.amount || 0)),
+            category: String(bill.category || base?.category || 'general'),
+            cycle,
+            dueDay,
+            nextDueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(bill.nextDueDate || ''))
+                ? bill.nextDueDate
+                : (cycle === 'weekly' ? weeklyDueDate(dateStr, dueDay) : monthlyDueDate(dateStr, dueDay)),
+            autoPay: !!bill.autoPay,
+            paidDates: Array.from(new Set((bill.paidDates || []).filter(Boolean))).slice(-24),
+        });
+    }
+    return Array.from(byId.values()).sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
+}
+
+export function getBankRecurringBillStatus(bill: BankRecurringBill, dateStr = todayStr()): 'paid' | 'due' | 'overdue' | 'upcoming' {
+    if ((bill.paidDates || []).includes(bill.nextDueDate)) return 'paid';
+    if (bill.nextDueDate < dateStr) return 'overdue';
+    if (bill.nextDueDate === dateStr) return 'due';
+    return 'upcoming';
+}
+
+function normalizeBudgetEnvelopes(
+    envelopes: BankBudgetEnvelope[] | undefined,
+    dateStr: string,
+    transactions: BankTransaction[] = [],
+): BankBudgetEnvelope[] {
+    const period = periodOf(dateStr);
+    const source = envelopes?.length ? envelopes : DEFAULT_BUDGETS.map(b => ({ ...b, spent: 0, period }));
+    const defaultById = new Map(DEFAULT_BUDGETS.map(b => [b.id, b]));
+    return source.map(raw => {
+        const base = defaultById.get(raw.id);
+        const category = raw.category || base?.category || 'general';
+        const spent = transactions
+            .filter(tx => tx.type !== 'income' && tx.dateStr?.startsWith(period))
+            .filter(tx => {
+                const c = tx.category || 'general';
+                if (category === 'general') return c === 'general' || c === 'ledger-add' || c === 'expense';
+                if (category === 'food') return c === 'food' || c === 'takeout';
+                if (category === 'gift') return c === 'gift' || c === 'shop-gift';
+                return c === category;
+            })
+            .reduce((sum, tx) => sum + tx.amount, 0);
+        const monthlyLimit = Math.max(1, Math.round(Number(raw.monthlyLimit || base?.monthlyLimit || 1000)));
+        const ratio = spent / monthlyLimit;
+        return {
+            id: raw.id || `budget-${category}`,
+            category,
+            label: raw.label || base?.label || category,
+            monthlyLimit,
+            spent: roundMoney(spent),
+            period,
+            tone: ratio >= 1 ? 'bad' : ratio >= 0.8 ? 'warn' : 'good',
+        };
+    });
+}
+
+const actionCount = (life: BankLifeState, pred: (record: BankLifeActionRecord) => boolean): number =>
+    (life.actionHistory || []).filter(pred).length;
+
+function buildQuest(
+    input: Omit<BankLifeQuest, 'progress' | 'done' | 'updatedAt'> & { progress: number },
+    dateStr: string,
+): BankLifeQuest {
+    const progress = clamp(Math.round(input.progress), 0, Math.max(1, input.target));
+    return {
+        ...input,
+        progress,
+        done: progress >= input.target,
+        tone: progress >= input.target ? 'good' : input.tone,
+        updatedAt: dateStr,
+    };
+}
+
+export function buildBankLifeQuests(life: BankLifeState, walletBalance = 0): BankLifeQuest[] {
+    const todayActions = (life.actionHistory || []).filter(r => r.dateStr === life.dateStr);
+    const ledgerToday = todayActions.some(r => r.category === 'ledger' || r.category === 'goal');
+    const dashboardToday = todayActions.some(r => r.category === 'dashboard');
+    const dueBills = (life.recurringBills || []).filter(b => {
+        const status = getBankRecurringBillStatus(b, life.dateStr);
+        return status === 'due' || status === 'overdue';
+    });
+    const overdueLoans = (life.loans || []).filter(l => l.overdueDays > 0).length;
+    const budgetOk = (life.budgetEnvelopes || []).every(b => b.spent <= b.monthlyLimit);
+    const businessProgress = [
+        life.shopUnlocked,
+        !!life.company,
+        Object.keys(life.holdings || {}).length > 0,
+    ].filter(Boolean).length;
+    return [
+        buildQuest({
+            id: `daily-ledger-${life.dateStr}`,
+            scope: 'daily',
+            track: 'finance',
+            title: '记住今天的钱流',
+            detail: '记一笔账，或给心愿存入 / 取出一次。',
+            target: 1,
+            progress: ledgerToday ? 1 : 0,
+            linkedTab: 'report',
+            rewardLabel: '财务清晰度 +1',
+        }, life.dateStr),
+        buildQuest({
+            id: `daily-review-${life.dateStr}`,
+            scope: 'daily',
+            track: 'life',
+            title: '看一眼人生看板',
+            detail: '生成或打开首页复盘，把今天的下一步定下来。',
+            target: 1,
+            progress: dashboardToday ? 1 : 0,
+            linkedTab: 'life',
+            rewardLabel: '路线感 +1',
+        }, life.dateStr),
+        buildQuest({
+            id: `weekly-cashflow-${periodOf(life.dateStr)}`,
+            scope: 'weekly',
+            track: 'finance',
+            title: '守住现金流',
+            detail: dueBills.length ? `还有 ${dueBills.length} 个账单待处理。` : '本期账单和预算都在可控范围内。',
+            target: 3,
+            progress: [walletBalance >= 0, dueBills.length === 0, overdueLoans === 0 && budgetOk].filter(Boolean).length,
+            linkedTab: 'report',
+            rewardLabel: '财务稳定',
+            tone: dueBills.length || overdueLoans ? 'warn' : 'info',
+        }, life.dateStr),
+        buildQuest({
+            id: 'milestone-business-loop',
+            scope: 'milestone',
+            track: 'business',
+            title: '经营三件套',
+            detail: '开店、创办公司、尝试一次投资，形成完整经营循环。',
+            target: 3,
+            progress: businessProgress,
+            linkedTab: businessProgress <= 0 ? 'shop' : businessProgress === 1 ? 'company' : 'invest',
+            rewardLabel: '经营闭环',
+        }, life.dateStr),
+    ];
+}
+
+function achievementProgress(life: BankLifeState, id: string, walletBalance = 0): number {
+    if (id === 'first-ledger') return Math.min(1, actionCount(life, r => r.category === 'ledger'));
+    if (id === 'first-goal') return Math.min(1, actionCount(life, r => r.kind === 'goal-create' || r.category === 'goal'));
+    if (id === 'first-job') return life.currentJob || life.jobHistory.some(j => ['hired', 'trial'].includes(j.status)) ? 1 : 0;
+    if (id === 'first-shop') return life.shopUnlocked ? 1 : 0;
+    if (id === 'first-invest') return Object.keys(life.holdings || {}).length > 0 || (life.investOrders || []).some(o => o.status === 'filled') ? 1 : 0;
+    if (id === 'first-company') return life.company ? 1 : 0;
+    if (id === 'debt-clear') return actionCount(life, r => r.kind === 'loan-borrow') > 0 && loanTotal(life) <= 0 ? 1 : 0;
+    if (id === 'steady-week') return Math.min(7, life.fatigue <= 70 ? life.dayIndex || 1 : 0);
+    if (id === 'net-worth-10k') return Math.max(0, Math.round(walletBalance + stockMarketValue(life) + (life.company?.cash || 0) - loanTotal(life)));
+    return 0;
+}
+
+export function buildBankLifeAchievements(life: BankLifeState, walletBalance = 0): BankLifeAchievement[] {
+    const previous = new Map((life.achievements || []).map(a => [a.id, a]));
+    return ACHIEVEMENT_DEFS.map(def => {
+        const prev = previous.get(def.id);
+        const progress = clamp(achievementProgress(life, def.id, walletBalance), 0, def.target);
+        const unlockedAt = prev?.unlockedAt || (progress >= def.target ? life.dateStr : undefined);
+        return { ...def, progress, unlockedAt };
+    });
+}
+
+export function refreshBankLifeSystems(
+    life: BankLifeState,
+    options: { walletBalance?: number; transactions?: BankTransaction[] } = {},
+): BankLifeState {
+    const dateStr = life.dateStr || todayStr();
+    const profile = normalizeLifeProfile(life.profile, dateStr);
+    const recurringBills = normalizeRecurringBills(life.recurringBills, dateStr);
+    const budgetEnvelopes = normalizeBudgetEnvelopes(life.budgetEnvelopes, dateStr, options.transactions || []);
+    const base: BankLifeState = {
+        ...life,
+        profile,
+        recurringBills,
+        budgetEnvelopes,
+        weeklyReviews: life.weeklyReviews || [],
+        dailyPlan: buildDailyPlan(life),
+    };
+    return {
+        ...base,
+        quests: buildBankLifeQuests(base, options.walletBalance || 0),
+        achievements: buildBankLifeAchievements(base, options.walletBalance || 0),
+    };
+}
+
+export function forecastBankCashflow(life: BankLifeState, walletBalance: number, days: 7 | 30): BankCashflowForecast {
+    let income = 0;
+    let expense = 0;
+    const warnings: string[] = [];
+    for (let i = 1; i <= days; i++) {
+        const dateStr = addDays(life.dateStr, i);
+        const job = life.currentJob;
+        if (job) {
+            if (job.payCycle === 'daily') income += Math.round((job.salaryMin + job.salaryMax) / 2);
+            if (job.payCycle === 'monthly' && dayOfMonth(dateStr) === (job.payDay || 10)) {
+                income += Math.round((job.salaryMin + job.salaryMax) / 2);
+            }
+        }
+        for (const bill of life.recurringBills || []) {
+            if (bill.nextDueDate <= dateStr && !(bill.paidDates || []).includes(bill.nextDueDate)) {
+                expense += bill.amount;
+            }
+        }
+        for (const loan of life.loans || []) {
+            if (loan.dueDate <= dateStr) {
+                expense += Math.max(0, Math.round((loan.outstanding + loan.interestDue) / Math.max(1, days - i + 1)));
+                if (loan.overdueDays > 0) warnings.push(`${loan.note} 已逾期`);
+            }
+        }
+    }
+    const endingBalance = roundMoney(walletBalance + income - expense);
+    if (endingBalance < 0) warnings.push(`${days} 天预测现金流可能转负`);
+    if ((life.budgetEnvelopes || []).some(b => b.spent > b.monthlyLimit)) warnings.push('本月有预算袋已经超支');
+    return {
+        days,
+        income: roundMoney(income),
+        expense: roundMoney(expense),
+        endingBalance,
+        warnings: Array.from(new Set(warnings)).slice(0, 4),
+    };
+}
+
+export function buildLocalBankWeeklyReview(life: BankLifeState, walletBalance = 0): BankLifeWeeklyReview {
+    const end = life.dateStr;
+    const start = addDays(end, -6);
+    const records = (life.actionHistory || []).filter(r => r.dateStr >= start && r.dateStr <= end);
+    const debt = loanTotal(life);
+    const netWorth = Math.round(walletBalance + stockMarketValue(life) + (life.company?.cash || 0) - debt);
+    const doneQuests = (life.quests || []).filter(q => q.done).length;
+    const unlocked = (life.achievements || []).filter(a => a.unlockedAt && a.unlockedAt >= start && a.unlockedAt <= end);
+    const risks = [
+        ...(life.fatigue > 70 ? ['疲劳偏高'] : []),
+        ...(debt > 0 ? ['仍有负债'] : []),
+        ...((life.budgetEnvelopes || []).filter(b => b.spent > b.monthlyLimit).map(b => `${b.label}超支`)),
+    ].slice(0, 4);
+    const title = risks.length ? '这一周先稳住节奏' : '这一周经营得很稳';
+    return {
+        id: `weekly-${start}-${end}`,
+        weekStartDate: start,
+        weekEndDate: end,
+        generatedAt: new Date().toISOString(),
+        title,
+        summary: records.length
+            ? `本周完成了 ${records.length} 个关键动作，净资产约 ${netWorth}，已完成 ${doneQuests} 个路线任务。`
+            : `本周还没有太多记录，净资产约 ${netWorth}，可以从记账、求职或经营里选一件小事开始。`,
+        tone: risks.length ? 'warn' : 'good',
+        highlights: [
+            records[0]?.title || '人生拟已准备好继续推进',
+            unlocked[0]?.title ? `解锁：${unlocked[0].title}` : `路线任务完成 ${doneQuests} 个`,
+        ].filter(Boolean).slice(0, 4),
+        risks,
+        nextActions: buildLifeSuggestions(life, walletBalance).map(s => s.title).slice(0, 4),
+        metrics: [
+            { label: '关键动作', value: `${records.length}` },
+            { label: '净资产', value: `¥${netWorth}`, tone: netWorth >= 0 ? 'good' : 'warn' },
+            { label: '负债', value: `¥${Math.round(debt)}`, tone: debt > 0 ? 'warn' : 'good' },
+            { label: '疲劳', value: `${life.fatigue}/100`, tone: life.fatigue > 70 ? 'warn' : 'info' },
+        ],
+        source: 'local',
+    };
+}
+
+export function upsertBankWeeklyReview(life: BankLifeState, review: BankLifeWeeklyReview): BankLifeState {
+    const list = [review, ...(life.weeklyReviews || []).filter(r => r.id !== review.id)].slice(0, 16);
+    return refreshBankLifeSystems({ ...life, weeklyReviews: list });
+}
+
+export function payBankRecurringBill(life: BankLifeState, billId: string, dateStr = life.dateStr): { life: BankLifeState; bill?: BankRecurringBill; amount: number; actionResult?: BankLifeActionResult } {
+    const bills = normalizeRecurringBills(life.recurringBills, dateStr);
+    const bill = bills.find(b => b.id === billId);
+    if (!bill) return { life, amount: 0 };
+    if ((bill.paidDates || []).includes(bill.nextDueDate)) return { life, bill, amount: 0 };
+    const paidDate = bill.nextDueDate;
+    const nextBill: BankRecurringBill = {
+        ...bill,
+        paidDates: [...(bill.paidDates || []), paidDate].slice(-24),
+        lastPaidAt: dateStr,
+        nextDueDate: nextRecurringDueDate(bill, paidDate),
+    };
+    const actionResult = createBankActionResult({
+        category: 'ledger',
+        kind: 'recurring-bill-pay',
+        title: `${bill.name} 已支付`,
+        summary: `${bill.name} 支出 ¥${bill.amount}，下一次到期 ${nextBill.nextDueDate}。`,
+        tone: 'good',
+        amount: -bill.amount,
+        metrics: [
+            { label: '账单', value: bill.name },
+            { label: '金额', value: `¥${bill.amount}`, tone: 'warn' },
+            { label: '下次到期', value: nextBill.nextDueDate },
+        ],
+        payload: { billId, paidDate, nextDueDate: nextBill.nextDueDate },
+    });
+    const nextLife = appendBankActionRecord({
+        ...life,
+        recurringBills: bills.map(b => b.id === billId ? nextBill : b),
+        events: pushEvent(life.events, { dateStr, title: '账单已支付', detail: `${bill.name} 已从钱包支出 ¥${bill.amount}。`, tone: 'info', amount: -bill.amount }),
+    }, actionResult);
+    return { life: refreshBankLifeSystems(nextLife), bill: nextBill, amount: bill.amount, actionResult };
+}
+
+export function toggleBankRecurringBillAutoPay(life: BankLifeState, billId: string, enabled: boolean): BankLifeState {
+    const bills = normalizeRecurringBills(life.recurringBills, life.dateStr).map(b => b.id === billId ? { ...b, autoPay: enabled } : b);
+    return refreshBankLifeSystems({ ...life, recurringBills: bills });
+}
+
+export function applySavingsGoalTransfer(
+    state: BankFullState,
+    goalId: string,
+    amount: number,
+    direction: 'deposit' | 'withdraw',
+): { state: BankFullState; goal?: SavingsGoal; amount: number; actionResult?: BankLifeActionResult } {
+    const cur = migrateBankLifeState(state);
+    const goal = cur.goals.find(g => g.id === goalId);
+    const cleanAmount = Math.max(0, roundMoney(amount));
+    if (!goal || cleanAmount <= 0) return { state: cur, amount: 0 };
+    const actual = direction === 'withdraw' ? Math.min(goal.currentAmount || 0, cleanAmount) : cleanAmount;
+    if (actual <= 0) return { state: cur, goal, amount: 0 };
+    const currentAmount = direction === 'deposit'
+        ? Math.min(goal.targetAmount, roundMoney((goal.currentAmount || 0) + actual))
+        : Math.max(0, roundMoney((goal.currentAmount || 0) - actual));
+    const completed = currentAmount >= goal.targetAmount;
+    const nextGoal: SavingsGoal = {
+        ...goal,
+        currentAmount,
+        isCompleted: completed,
+        updatedAt: Date.now(),
+        completedAt: completed ? (goal.completedAt || Date.now()) : undefined,
+    };
+    const actionResult = createBankActionResult({
+        category: 'goal',
+        kind: direction === 'deposit' ? 'goal-deposit' : 'goal-withdraw',
+        title: direction === 'deposit' ? (completed ? '心愿攒满了' : '心愿已存入') : '心愿已取出',
+        summary: direction === 'deposit'
+            ? `${goal.name} 存入 ¥${actual}，当前进度 ${Math.round((currentAmount / goal.targetAmount) * 100)}%。`
+            : `${goal.name} 取出 ¥${actual}，当前还剩 ¥${currentAmount}。`,
+        tone: direction === 'deposit' ? 'good' : 'info',
+        amount: direction === 'deposit' ? -actual : actual,
+        metrics: [
+            { label: '心愿', value: goal.name },
+            { label: '本次金额', value: `¥${actual}`, tone: direction === 'deposit' ? 'warn' : 'good' },
+            { label: '当前进度', value: `${Math.round((currentAmount / goal.targetAmount) * 100)}%`, tone: completed ? 'good' : 'info' },
+        ],
+        payload: { goalId, direction, amount: actual, currentAmount, targetAmount: goal.targetAmount },
+    });
+    return {
+        state: {
+            ...cur,
+            goals: cur.goals.map(g => g.id === goalId ? nextGoal : g),
+            life: appendBankActionRecord(cur.life!, actionResult),
+        },
+        goal: nextGoal,
+        amount: actual,
+        actionResult,
     };
 }
 
@@ -866,10 +1365,16 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         dayIndex: 1,
         weekDay: weekDayOf(dateStr),
         season: seasonOf(dateStr),
+        profile: defaultLifeProfile(dateStr),
         mood: 62,
         energy: 70,
         health: 88,
         dailyPlan: [],
+        quests: [],
+        recurringBills: createDefaultRecurringBills(dateStr),
+        budgetEnvelopes: normalizeBudgetEnvelopes(undefined, dateStr),
+        achievements: [],
+        weeklyReviews: [],
         shopUnlocked,
         shopBusinessType: shopUnlocked ? defaultBusiness.id : undefined,
         shopBusinessName: shopUnlocked ? defaultBusiness.name : undefined,
@@ -902,7 +1407,7 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         creditProfile: defaultCreditProfile(dateStr),
         aiLastGeneratedAt: {},
     };
-    return { ...base, dailyPlan: buildDailyPlan(base) };
+    return refreshBankLifeSystems({ ...base, dailyPlan: buildDailyPlan(base) });
 }
 
 export type BankShopDailyRewardKind = 'headquartersPatrol' | 'shelf' | 'review' | 'idleBonus';
@@ -1074,7 +1579,7 @@ export function syncActiveShopMirror(state: BankFullState): BankFullState {
         } : state.life;
         return {
             ...state,
-            life: life ? { ...life, dailyPlan: buildDailyPlan(life) } : life,
+            life: life ? refreshBankLifeSystems({ ...life, dailyPlan: buildDailyPlan(life) }) : life,
             shopPortfolio: { ...portfolio, activeShopId: '' },
         };
     }
@@ -1092,7 +1597,7 @@ export function syncActiveShopMirror(state: BankFullState): BankFullState {
         ...state,
         shop: active.shop,
         firedStaff: active.firedStaff,
-        life: { ...syncedLife, dailyPlan: buildDailyPlan(syncedLife) },
+        life: refreshBankLifeSystems({ ...syncedLife, dailyPlan: buildDailyPlan(syncedLife) }),
         shopPortfolio: portfolio,
     };
 }
@@ -1340,9 +1845,15 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             dayIndex: state.life.dayIndex || 1,
             weekDay: typeof state.life.weekDay === 'number' ? state.life.weekDay : weekDayOf(state.life.dateStr || state.lastLoginDate || todayStr()),
             season: state.life.season || seasonOf(state.life.dateStr || state.lastLoginDate || todayStr()),
+            profile: normalizeLifeProfile(state.life.profile, state.life.dateStr || state.lastLoginDate || todayStr()),
             mood: state.life.mood ?? 62,
             energy: state.life.energy ?? 70,
             health: state.life.health ?? 88,
+            quests: state.life.quests || [],
+            recurringBills: normalizeRecurringBills(state.life.recurringBills, state.life.dateStr || state.lastLoginDate || todayStr()),
+            budgetEnvelopes: normalizeBudgetEnvelopes(state.life.budgetEnvelopes, state.life.dateStr || state.lastLoginDate || todayStr()),
+            achievements: state.life.achievements || [],
+            weeklyReviews: state.life.weeklyReviews || [],
             shopEvents: state.life.shopEvents || [],
             jobHistory: (state.life.jobHistory || []).map(app => normalizeJobApplication(app, state.life?.dateStr || state.lastLoginDate || todayStr())),
             pendingWages: state.life.pendingWages || [],
@@ -1372,7 +1883,8 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             aiLastGeneratedAt: state.life.aiLastGeneratedAt || {},
         }
         : createDefaultBankLifeState(state.lastLoginDate || todayStr(), hasOldShopProgress);
-    return migrateBankShopPortfolioState({ ...state, life: { ...life, dailyPlan: buildDailyPlan(life) }, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) });
+    const refreshed = refreshBankLifeSystems({ ...life, dailyPlan: buildDailyPlan(life) });
+    return migrateBankShopPortfolioState({ ...state, life: refreshed, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) });
 }
 
 function buildShopProducts(businessTypeId: string) {
@@ -2115,6 +2627,23 @@ export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
     next = { ...next, loans: loanResult.loans };
     if (loanResult.events.length) dayEvents.push(...loanResult.events);
 
+    const bills = normalizeRecurringBills(next.recurringBills, nextDate);
+    const dueBills = bills.filter(b => {
+        const status = getBankRecurringBillStatus(b, nextDate);
+        return status === 'due' || status === 'overdue';
+    });
+    next = { ...next, recurringBills: bills };
+    for (const bill of dueBills.slice(0, 3)) {
+        dayEvents.push({
+            id: genId('life'),
+            dateStr: nextDate,
+            title: getBankRecurringBillStatus(bill, nextDate) === 'overdue' ? '账单逾期提醒' : '账单到期提醒',
+            detail: `${bill.name} 需要支付 ¥${bill.amount}，到期日 ${bill.nextDueDate}。`,
+            tone: getBankRecurringBillStatus(bill, nextDate) === 'overdue' ? 'warn' : 'info',
+            amount: -bill.amount,
+        });
+    }
+
     if (next.company) {
         const companyResult = advanceCompany(next.company, nextDate);
         next = { ...next, company: companyResult.company };
@@ -2124,7 +2653,7 @@ export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
     if (dayEvents.length === 0) {
         dayEvents.push({ id: genId('life'), dateStr: nextDate, title: '平稳的一天', detail: '没有大事发生，生活继续往前滚动。', tone: 'info' });
     }
-    next = { ...next, dailyPlan: buildDailyPlan(next), events: [...dayEvents.reverse(), ...next.events].slice(0, 80) };
+    next = refreshBankLifeSystems({ ...next, dailyPlan: buildDailyPlan(next), events: [...dayEvents.reverse(), ...next.events].slice(0, 80) });
     return { life: next, balanceDelta: roundMoney(balanceDelta), ledgerEvents };
 }
 
@@ -3002,14 +3531,55 @@ export function computeCreditProfile(life: BankLifeState): BankLoanCreditProfile
     };
 }
 
-export function buildLifeSuggestions(life: BankLifeState, walletBalance: number): { id: string; title: string; detail: string; tab: 'jobs' | 'shop' | 'invest' | 'company' | 'loans'; tone: 'good' | 'warn' | 'info' | 'bad' }[] {
-    const items: { id: string; title: string; detail: string; tab: 'jobs' | 'shop' | 'invest' | 'company' | 'loans'; tone: 'good' | 'warn' | 'info' | 'bad' }[] = [];
+export type BankLifeSuggestion = {
+    id: string;
+    title: string;
+    detail: string;
+    tab: 'life' | 'jobs' | 'shop' | 'invest' | 'company' | 'loans' | 'report';
+    tone: 'good' | 'warn' | 'info' | 'bad';
+};
+
+export function buildLifeSuggestions(life: BankLifeState, walletBalance: number): BankLifeSuggestion[] {
+    const items: BankLifeSuggestion[] = [];
+    const dueBills = (life.recurringBills || []).filter(b => {
+        const status = getBankRecurringBillStatus(b, life.dateStr);
+        return status === 'due' || status === 'overdue';
+    });
+    const overBudget = (life.budgetEnvelopes || []).filter(b => b.spent > b.monthlyLimit);
+    const unfinishedQuest = (life.quests || []).find(q => !q.done);
+    if (dueBills.length) {
+        items.push({
+            id: 'pay-bills',
+            title: `处理 ${dueBills.length} 个到期账单`,
+            detail: '先把生活账单清掉，现金流预测会更准。',
+            tab: 'report',
+            tone: dueBills.some(b => getBankRecurringBillStatus(b, life.dateStr) === 'overdue') ? 'warn' : 'info',
+        });
+    }
+    if (overBudget.length) {
+        items.push({
+            id: 'budget-review',
+            title: `${overBudget[0].label} 已超预算`,
+            detail: '去预算袋看一下本月哪里花得太快。',
+            tab: 'report',
+            tone: 'warn',
+        });
+    }
+    if (unfinishedQuest) {
+        items.push({
+            id: `quest-${unfinishedQuest.id}`,
+            title: unfinishedQuest.title,
+            detail: unfinishedQuest.detail,
+            tab: unfinishedQuest.linkedTab || 'life',
+            tone: unfinishedQuest.tone || 'info',
+        });
+    }
     if (!life.currentJob) items.push({ id: 'find-job', title: '先找一份现金流', detail: '没有固定工作，求职能提供稳定工资。', tab: 'jobs', tone: 'info' });
     if (!life.shopUnlocked) items.push({ id: 'open-shop', title: `还差 ¥${Math.max(0, SHOP_UNLOCK_COST - walletBalance)} 可开店`, detail: '小店是人生拟里的经营赚钱模式。', tab: 'shop', tone: walletBalance >= SHOP_UNLOCK_COST ? 'good' : 'warn' });
     if (!life.company) items.push({ id: 'found-company', title: `公司启动金 ¥${COMPANY_FOUND_COST}`, detail: '资金充足后可选择方向创业。', tab: 'company', tone: walletBalance >= COMPANY_FOUND_COST ? 'good' : 'info' });
     if (loanTotal(life) > 0) items.push({ id: 'repay-loan', title: '关注借款还款', detail: '逾期会提高风险和利息。', tab: 'loans', tone: 'warn' });
     if (Object.keys(life.holdings).length > 0) items.push({ id: 'watch-market', title: '复盘持仓新闻', detail: '市场脉冲会影响虚拟个股情绪。', tab: 'invest', tone: 'info' });
-    return items.slice(0, 4);
+    return items.slice(0, 5);
 }
 
 function buildRepaymentPlan(amount: number, startDate: string, days: number) {

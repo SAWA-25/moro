@@ -648,10 +648,10 @@ export interface CharacterBuff {
 export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
-  /** 取数方式：'geo'（默认，已授权定位/缓存/IP + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
+  /** 取数方式：'geo'（默认，已授权定位/缓存/IP + Open-Meteo 免密钥）/ 'manual'（手填城市 + Open-Meteo 免密钥，旧版 Key 仅兜底） */
   weatherMode?: 'geo' | 'manual';
-  weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
-  weatherCity: string;    // 城市名（仅 manual 模式用）
+  weatherApiKey: string;  // OpenWeatherMap API Key（旧版兜底，可不填）
+  weatherCity: string;    // 城市名（manual 模式用，可写中文城市或省份 + 城市）
 
   // 新闻配置
   newsEnabled: boolean;
@@ -1748,6 +1748,10 @@ export interface SavingsGoal {
     currentAmount: number; 
     icon: string;
     isCompleted: boolean;
+    note?: string;
+    createdAt?: number;
+    updatedAt?: number;
+    completedAt?: number;
 }
 
 export interface ShopStaff {
@@ -2403,6 +2407,83 @@ export interface BankLifeAiEvent extends BankLifeEvent {
     choices?: { id: string; label: string; effectHint: string }[];
 }
 
+export type BankLifeProfileMode = 'balanced' | 'finance' | 'tycoon';
+export type BankLifeQuestScope = 'daily' | 'weekly' | 'milestone';
+export type BankLifeQuestTrack = 'life' | 'finance' | 'business';
+export type BankRecurringBillCycle = 'weekly' | 'monthly';
+
+export interface BankLifeProfile {
+    mode: BankLifeProfileMode;
+    title: string;
+    startedAt: string;
+    onboardedAt?: string;
+}
+
+export interface BankLifeQuest {
+    id: string;
+    scope: BankLifeQuestScope;
+    track: BankLifeQuestTrack;
+    title: string;
+    detail: string;
+    target: number;
+    progress: number;
+    done: boolean;
+    tone?: BankLifeActionTone;
+    linkedTab?: 'life' | 'jobs' | 'shop' | 'invest' | 'company' | 'loans' | 'report';
+    rewardLabel?: string;
+    updatedAt: string;
+}
+
+export interface BankRecurringBill {
+    id: string;
+    name: string;
+    amount: number;
+    category: string;
+    cycle: BankRecurringBillCycle;
+    dueDay: number;
+    nextDueDate: string;
+    autoPay?: boolean;
+    paidDates?: string[];
+    lastPaidAt?: string;
+    note?: string;
+}
+
+export interface BankBudgetEnvelope {
+    id: string;
+    category: string;
+    label: string;
+    monthlyLimit: number;
+    spent: number;
+    period: string;
+    tone?: BankLifeActionTone;
+}
+
+export interface BankLifeAchievement {
+    id: string;
+    title: string;
+    detail: string;
+    category: BankLifeQuestTrack;
+    target: number;
+    progress: number;
+    unlockedAt?: string;
+    icon?: string;
+}
+
+export interface BankLifeWeeklyReview {
+    id: string;
+    weekStartDate: string;
+    weekEndDate: string;
+    generatedAt: string;
+    title: string;
+    summary: string;
+    tone: BankLifeActionTone;
+    highlights: string[];
+    risks: string[];
+    nextActions: string[];
+    metrics?: BankLifeActionMetric[];
+    source: 'local' | 'ai';
+}
+
 export interface BankResumeProfile {
     name: string;
     headline: string;
@@ -2456,10 +2537,16 @@ export interface BankLifeState {
     dayIndex: number;
     weekDay: number;
     season: BankLifeSeason;
+    profile?: BankLifeProfile;
     mood: number;
     energy: number;
     health: number;
     dailyPlan: BankLifeDailyPlanItem[];
+    quests?: BankLifeQuest[];
+    recurringBills?: BankRecurringBill[];
+    budgetEnvelopes?: BankBudgetEnvelope[];
+    achievements?: BankLifeAchievement[];
+    weeklyReviews?: BankLifeWeeklyReview[];
     shopUnlocked: boolean;
     shopBusinessType?: string;
     shopBusinessName?: string;
@@ -3016,6 +3103,16 @@ export interface ScreenPeekCard {
   generatedAt: number;
   title: string;
   narrative: string;
+  /** 新版窥屏：真实渲染出的虚拟手机截图 data URL。存在时 UI 直接展示图片，不再套模板重造页面。 */
+  screenshotDataUrl?: string;
+  /** 本次截图停留的真实虚拟手机来源，用于说明和回溯。 */
+  screenshotSource?: 'phone_home' | 'phone_lock' | 'phone_record';
+  /** 本次截图对应的 App 名，不参与二次模板推断。 */
+  snapshotAppName?: string;
+  /** 本次截图对应的页面/记录标题。 */
+  snapshotTitle?: string;
+  /** 本次截图对应的只读快照结构，便于未来重新导出或调试。 */
+  snapshot?: unknown;
   screen?: {
     appKind: 'chat' | 'takeout' | 'browser' | 'notes' | 'gallery' | 'music' | 'map' | 'social' | 'calendar' | 'app' | 'home';
     appName: string;
@@ -5562,10 +5659,22 @@ export interface ShopOwnedItem {
     boughtAt: number;
 }
 
-/** 购物商城：购物车里的一行（某商品 + 数量）。user 与 char 各有一个购物车。 */
+export type ShopGiftOccasionKey = 'daily' | 'birthday' | 'date' | 'apology' | 'comfort' | 'celebrate' | 'practical' | 'tease';
+export type ShopWishSource = 'manual' | 'advisor' | 'companion' | 'char_shop';
+export type ShopReceiptSource = 'manual_gift' | 'advisor' | 'companion_pay' | 'clear_cart' | 'char_shop' | 'order_receive' | 'char_gift';
+
+/** 购物商城：购物车里的一行（某商品 + 数量）。user 与 char 各有一个购物车；角色购物车可作为心愿板。 */
 export interface ShopCartLine {
     itemId: string;
     qty: number;
+    /** 角色心愿板来源：手动夹入 / 心意参谋 / 陪逛 / 角色自己逛铺。普通用户购物车可为空。 */
+    wishSource?: ShopWishSource;
+    /** 角色为什么想要 / 用户夹心愿时的备注。 */
+    wishNote?: string;
+    /** 心愿关联的送礼场景。 */
+    wishOccasion?: ShopGiftOccasionKey;
+    /** 夹进心愿板的时间。 */
+    addedAt?: number;
 }
 
 /** 购物商城：订单里的一件商品（带数量快照）。 */
@@ -5623,6 +5732,10 @@ export interface ShopReceipt {
     counterpartId: string;
     counterpartName: string;
     note?: string;          // 赠言 / 角色买它的理由
+    occasion?: ShopGiftOccasionKey; // 送礼场景
+    wrapLabel?: string;     // 包装/仪式展示名
+    source?: ShopReceiptSource; // 来源：礼物柜送出 / 陪逛代付 / 清空心愿等
+    wishItemId?: string;    // 若来自角色心愿板，记录对应商品 id
     at: number;
 }
 
@@ -6923,8 +7036,14 @@ export interface TakeoutReviewReply { name: string; emoji: string; text: string;
 /** 用户对某单的评价 */
 export interface TakeoutReview {
   rating: number;       // 1~5 星
+  /** 可选：骑手/配送服务评分；旧评价没有也正常显示。 */
+  riderRating?: number;
+  /** 可选：包装完整度评分；旧评价没有也正常显示。 */
+  packingRating?: number;
   text?: string;
   tags?: string[];      // 快捷标签（如「分量足」「送得快」）
+  /** 配送、包装、售后等服务标签。 */
+  serviceTags?: string[];
   at: number;
   likes?: number;       // 其它食客点的「有用」数
   replies?: TakeoutReviewReply[];  // 商家 / 其它食客的评论

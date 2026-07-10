@@ -6,7 +6,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { DateScene, DateWorldline, DateMessage } from '../../types';
+import { CharacterProfile, DateScene, DateWorldline, DateMessage } from '../../types';
 import { resolveAuxApi, isAuxApiOn } from '../../utils/auxApi';
 import {
     BUILTIN_DATE_SCENES, makeCustomScene, runDateTurn, runDateRecap,
@@ -88,8 +88,9 @@ function worldlineNode(wl: DateWorldline, index: number): MapNode {
 }
 
 const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { characters, activeCharacterId, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
-    const char = useMemo(() => characters.find(c => c.id === activeCharacterId), [characters, activeCharacterId]);
+    const { characters, activeCharacterId, setActiveCharacterId, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
+    const [selectedCharId, setSelectedCharId] = useState(activeCharacterId || characters[0]?.id || '');
+    const char = useMemo(() => characters.find(c => c.id === selectedCharId), [characters, selectedCharId]);
 
     const [screen, setScreen] = useState<'list' | 'scene' | 'session'>('list');
     const [worldlines, setWorldlines] = useState<DateWorldline[]>([]);
@@ -150,6 +151,24 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const api = resolveAuxApi(auxApiConfig, apiConfig);
 
     const reload = () => { if (char) setWorldlines(listWorldlines(char.id)); };
+    const chooseChar = (id: string) => {
+        if (!id) return;
+        setSelectedCharId(id);
+        setActiveCharacterId(id);
+        const ls = listWorldlines(id);
+        setWorldlines(ls);
+        setActive(null);
+        setScreen(ls.length ? 'list' : 'scene');
+    };
+
+    useEffect(() => {
+        if (selectedCharId && characters.some(c => c.id === selectedCharId)) return;
+        const fallback = (activeCharacterId && characters.some(c => c.id === activeCharacterId))
+            ? activeCharacterId
+            : (characters[0]?.id || '');
+        if (fallback) chooseChar(fallback);
+    }, [activeCharacterId, characters, selectedCharId]);
+
     useEffect(() => { if (char) { const ls = listWorldlines(char.id); setWorldlines(ls); setScreen(ls.length ? 'list' : 'scene'); } }, [char?.id]);
 
     // 卸载时停掉 BGM / TTS / 麦克风
@@ -162,7 +181,14 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (!char) {
         return (
             <Overlay onClose={onClose}>
-                <div style={{ color: C.ink, textAlign: 'center', paddingTop: 80 }}>先在「剪影集」里选一位角色，再来约会。</div>
+                <div style={{ color: C.ink, textAlign: 'center', padding: '80px 18px 0' }}>
+                    {characters.length ? (
+                        <>
+                            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>选择一位约会对象</div>
+                            <DateCharacterRail characters={characters} selectedCharId={selectedCharId} onSelect={chooseChar} />
+                        </>
+                    ) : '先在「剪影集」里添加一位角色，再来约会。'}
+                </div>
             </Overlay>
         );
     }
@@ -311,6 +337,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         return (
             <Overlay onClose={onClose} title={`和 ${char.name} 去哪儿`} onBack={worldlines.length ? () => setScreen('list') : undefined}>
                 <div style={{ padding: 14, overflowY: 'auto', flex: 1 }}>
+                    <DateCharacterRail characters={characters} selectedCharId={char.id} onSelect={chooseChar} />
                     <StreetMap
                         nodes={sceneNodes}
                         height={330}
@@ -353,6 +380,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         return (
             <Overlay onClose={onClose} title={`和 ${char.name} 的约会`}>
                 <div style={{ padding: 14, overflowY: 'auto', flex: 1 }}>
+                    <DateCharacterRail characters={characters} selectedCharId={char.id} onSelect={chooseChar} />
                     {!auxOn && (
                         <div style={{ fontSize: 11, color: C.accent2, background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: '8px 12px', marginBottom: 12, lineHeight: 1.6 }}>
                             提示：约会的「世界引擎」建议用副 API。去「文具盒 → 副线盒」开启后，这边会自动走副线（现在先用主线也能玩）。
@@ -480,6 +508,53 @@ const MessageRow: React.FC<{ m: DateMessage; char: any; userName: string; onFork
                 <button onClick={onFork} title="从这一刻另开一条世界线"
                     style={{ fontSize: 10, color: C.accent2, background: 'none', border: 'none', cursor: 'pointer', marginTop: 3, padding: '2px 4px' }}>⑂ 从这儿分叉</button>
             )}
+        </div>
+    );
+};
+
+const DateCharacterRail: React.FC<{
+    characters: CharacterProfile[];
+    selectedCharId: string;
+    onSelect: (id: string) => void;
+}> = ({ characters, selectedCharId, onSelect }) => {
+    if (characters.length <= 1) return null;
+    return (
+        <div style={{
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            padding: '0 0 12px',
+            marginBottom: 2,
+            scrollbarWidth: 'none',
+        }}>
+            {characters.map(c => {
+                const active = c.id === selectedCharId;
+                return (
+                    <button
+                        key={c.id}
+                        onClick={() => onSelect(c.id)}
+                        title={c.name}
+                        style={{
+                            flex: '0 0 auto',
+                            minWidth: 74,
+                            maxWidth: 92,
+                            borderRadius: 16,
+                            border: `1px solid ${active ? C.accent : C.line}`,
+                            background: active ? 'rgba(219,39,119,0.1)' : C.card,
+                            color: C.ink,
+                            padding: '8px 8px 7px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 5,
+                            boxShadow: '0 12px 28px -24px rgba(15,23,42,0.58)',
+                        }}
+                    >
+                        <img src={c.avatar} alt="" style={{ width: 34, height: 34, borderRadius: 999, objectFit: 'cover', boxShadow: active ? `0 0 0 2px ${C.accent}` : `0 0 0 1px ${C.line}` }} />
+                        <span style={{ maxWidth: '100%', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 };

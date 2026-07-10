@@ -246,7 +246,7 @@ function normalizeCallStatus(value: unknown, fallback: XunjiCallRecord['status']
   return fallback;
 }
 
-function buildXunjiPersonaBlock(char: CharacterProfile): string {
+function buildXunjiPersonaBlock(char: CharacterProfile, userSetting?: string): string {
   const city = char.cityConfig?.mode === 'real'
     ? char.cityConfig.realCity
     : [char.cityConfig?.virtualName, char.cityConfig?.prototypeCity ? `原型 ${char.cityConfig.prototypeCity}` : '', char.cityConfig?.fictionLevel != null ? `虚拟程度 ${char.cityConfig.fictionLevel}%` : ''].filter(Boolean).join('，');
@@ -255,6 +255,7 @@ function buildXunjiPersonaBlock(char: CharacterProfile): string {
     city ? `所在城市：${city}` : '',
     char.description ? `展示简介：${char.description}` : '',
     buildFullCharacterSetting(char, { includeMemos: true }),
+    userSetting ? `\n${userSetting}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -575,7 +576,7 @@ export function generateXunjiMonitorSnapshot(args: {
   return applyLocationSource(snapshot, args.locationSource);
 }
 
-async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 1600, signal?: AbortSignal, char?: CharacterProfile): Promise<string> {
+async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 1600, signal?: AbortSignal, char?: CharacterProfile, userName = '用户'): Promise<string> {
   const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
   try {
@@ -596,6 +597,7 @@ async function callXunjiLLM(api: XunjiApiConfig, prompt: string, maxTokens = 160
         charId: char?.id,
         charName: char?.name,
       }),
+      presetMacros: { charName: char?.name || '角色', userName },
     });
     return extractContent(data) || '';
   } catch {
@@ -736,6 +738,8 @@ export async function generateXunjiRealtimeSnapshot(args: {
   api?: XunjiApiConfig | null;
   previous?: XunjiMonitorSnapshot | null;
   locationSource?: XunjiLocationSource;
+  userSetting?: string;
+  userName?: string;
   now?: number;
   signal?: AbortSignal;
 }): Promise<XunjiMonitorSnapshot> {
@@ -754,7 +758,7 @@ export async function generateXunjiRealtimeSnapshot(args: {
       '这不是读取真实设备，而是角色人格模拟；必须和角色在其它 App 中的人设、城市、生活侧写、备忘录保持一致。',
       `当前时间：${new Date(now).toLocaleString('zh-CN')}`,
       locationLine,
-      buildXunjiPersonaBlock(args.char),
+      buildXunjiPersonaBlock(args.char, args.userSetting),
       `上一份快照摘要：${latest}`,
       '只返回 JSON，字段如下：',
       '{',
@@ -768,7 +772,7 @@ export async function generateXunjiRealtimeSnapshot(args: {
       '}',
       '地点和 App 不要泛泛而谈；优先写 TA 所在城市里符合人设的日常地点、常用软件、通话对象和随手停留。不要写用户真实隐私。',
     ].join('\n');
-    const raw = await callXunjiLLM(args.api, prompt, 2200, args.signal, args.char);
+    const raw = await callXunjiLLM(args.api, prompt, 2200, args.signal, args.char, args.userName);
     const parsed = extractJson<any>(raw);
     return parsed ? applyLocationSource(mergeAiSnapshot(fallback, parsed), args.locationSource) : fallback;
   } catch {
@@ -1006,7 +1010,7 @@ function buildLocalMoments(
   ];
 }
 
-async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: AbortSignal, char?: CharacterProfile): Promise<string> {
+async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: AbortSignal, char?: CharacterProfile, userName = '用户'): Promise<string> {
   const baseUrl = (api.baseUrl || '').trim();
   if (!baseUrl || !api.model) return '';
   try {
@@ -1027,6 +1031,7 @@ async function callScreenlifeLLM(api: XunjiApiConfig, prompt: string, signal?: A
         charId: char?.id,
         charName: char?.name,
       }),
+      presetMacros: { charName: char?.name || '角色', userName },
     });
     return extractContent(data) || '';
   } catch {
@@ -1067,6 +1072,8 @@ export async function generateXunjiScreenlifeRun(args: {
   rangeEnd: number;
   density: XunjiDensity;
   writeBack: boolean;
+  userSetting?: string;
+  userName?: string;
   seed?: string;
   signal?: AbortSignal;
 }): Promise<XunjiScreenlifeRun> {
@@ -1075,14 +1082,14 @@ export async function generateXunjiScreenlifeRun(args: {
 
   try {
     const prompt = [
-      buildXunjiPersonaBlock(args.char),
+      buildXunjiPersonaBlock(args.char, args.userSetting),
       `时间范围：${new Date(args.rangeStart).toLocaleString()} - ${new Date(args.rangeEnd).toLocaleString()}`,
       `密度：${args.density}`,
       '返回 JSON 字段：title,narrative,chats[{target,summary,messages[]}],browsed[{appName,title,summary}],notes[{text}],moments[{time,title,body,tone,relatedApp}],socialInference{mood,relationshipPulse,screenlifeScore,intimacySignals[],frictionSignals[],likelyNeeds[],nextConversationSeeds[],whisperHooks[]}。',
       '内容要体现：聊了什么、刷了什么、记了什么、右下角动态会弹什么，以及这些痕迹折射出的关系温度。',
       'socialInference 是给“絮语”聊天联动用的：写成角色能自然感知的近期生活线索，不要写成分析报告口吻。',
     ].join('\n');
-    const raw = await callScreenlifeLLM(args.api, prompt, args.signal, args.char);
+    const raw = await callScreenlifeLLM(args.api, prompt, args.signal, args.char, args.userName);
     const parsed = extractJson<Partial<XunjiScreenlifeRun>>(raw);
     if (!parsed) return fallback;
     const stamp = `${args.seed || fallback.id}_ai`;

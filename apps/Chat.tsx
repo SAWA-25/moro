@@ -19,7 +19,7 @@ import { getCharacterModelId } from '../utils/characterIdentity';
 import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
 import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, type PrivateCallMode } from '../utils/laiwangPrompts';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, shopGiftReplyHint, type PrivateCallMode } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { cleanScheduleMoodApi, resolveScheduleApi } from '../utils/scheduleMoodApi';
 import { getLocalDateKey, getNextLocalMidnightDelay } from '../utils/dateKey';
@@ -83,6 +83,7 @@ import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
 import { ContextBuilder } from '../utils/context';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import { substituteMacros } from '../utils/macros';
 import { PersonaRuntime } from '../utils/personas';
 import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
@@ -91,6 +92,9 @@ import type { ParsedEmojiImport } from '../utils/emojiImport';
 import { InnerVoiceEntry } from '../types';
 import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 import { generateXunjiScreenlifeRun } from '../utils/xunji';
+import { mapXunjiToPhoneEvidence, mergePhoneEvidenceRecords } from '../utils/checkPhone';
+import { buildScreenPeekSnapshot } from '../utils/screenPeek';
+import { captureScreenPeekSnapshotImage } from '../components/chat/ScreenPeekPhoneSnapshot';
 import { DEFAULT_USER_SCREEN_WATCH_SETTINGS, formatMoroUsage, sanitizeUserScreenWatchComment } from '../utils/userScreenWatch';
 import { FORUM_PENDING_CHAT_SHARE_KEY, forumShareAutoReplyHint, normalizeForumSharePendingPayload } from '../utils/forum';
 import { MUSIC_PENDING_CHAT_SHARE_KEY, lyricPreviewFromMusicShareSong, normalizeMusicPendingChatSharePayload, songFromMusicShareSnapshot } from '../utils/musicShare';
@@ -189,302 +193,6 @@ const assistantRevealBetweenMs = () => randomBetween(
 const clipForPreview = (text: string, limit = 160) => {
     const clean = (text || '').replace(/\s+/g, ' ').trim();
     return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
-};
-
-const screenPeekHash = (value: string): number => {
-    let h = 2166136261;
-    for (let i = 0; i < value.length; i += 1) {
-        h ^= value.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-};
-
-const screenPeekClock = (ts: number) => {
-    const d = new Date(ts);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
-const buildScreenPeekPhoneScreen = (
-    run: Awaited<ReturnType<typeof generateXunjiScreenlifeRun>>,
-    char: CharacterProfile,
-    userProfile: UserProfile,
-    now: number,
-): NonNullable<ScreenPeekCard['screen']> => {
-    const seed = screenPeekHash(`${char.id}_${now}_${run.title}_${run.narrative}`);
-    const text = [
-        run.title,
-        run.narrative,
-        ...(run.appUsage || []).map(a => a.appName),
-        ...(run.browsed || []).map(b => `${b.appName} ${b.title} ${b.summary}`),
-        ...(run.notes || []).map(n => n.text),
-        ...(run.chats || []).map(c => `${c.target} ${c.summary}`),
-    ].join(' ');
-    const latestApp = [...(run.appUsage || [])].sort((a, b) => b.endedAt - a.endedAt)[0];
-    const latestBrowse = [...(run.browsed || [])].sort((a, b) => b.time - a.time)[0];
-    const chosenAppName = (latestApp?.appName || latestBrowse?.appName || '').trim();
-    const normalizeApp = (value?: string) => (value || '').trim().toLowerCase();
-    const sameApp = (appName?: string) => {
-        const a = normalizeApp(appName);
-        const b = normalizeApp(chosenAppName);
-        return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
-    };
-    const scopedBrowsed = chosenAppName
-        ? (run.browsed || []).filter(item => sameApp(item.appName))
-        : (run.browsed || []);
-    const activeBrowsed = scopedBrowsed;
-    const topBrowse = activeBrowsed[seed % Math.max(1, activeBrowsed.length)] || activeBrowsed[0];
-    const topChat = run.chats?.[seed % Math.max(1, run.chats.length)] || run.chats?.[0];
-    const topNote = run.notes?.[seed % Math.max(1, run.notes.length)] || run.notes?.[0];
-    const hasChosenSurface = !!chosenAppName || activeBrowsed.length > 0;
-    const scopedText = (hasChosenSurface ? [
-        chosenAppName,
-        latestApp?.appName,
-        latestApp?.category,
-        latestApp?.note,
-        ...activeBrowsed.map(b => `${b.appName} ${b.title} ${b.summary}`),
-        ...(chosenAppName && /备忘|便签|memo|note/i.test(chosenAppName) ? (run.notes || []).map(n => n.text) : []),
-        ...(chosenAppName && /微信|QQ|消息|聊天|私信|DM/i.test(chosenAppName) ? (run.chats || []).map(c => `${c.target} ${c.summary}`) : []),
-    ] : [
-        run.title,
-        run.narrative,
-        ...(run.appUsage || []).map(a => a.appName),
-        ...(run.browsed || []).map(b => `${b.appName} ${b.title} ${b.summary}`),
-        ...(run.notes || []).map(n => n.text),
-        ...(run.chats || []).map(c => `${c.target} ${c.summary}`),
-    ]).join(' ');
-    const batteryLevel = 18 + (seed % 76);
-    const base = {
-        timeText: screenPeekClock(now),
-        batteryLevel,
-        avatar: char.avatar,
-    };
-    const rowFromBrowse = (item: NonNullable<typeof topBrowse>, index: number) => ({
-        id: item.id || `peek-row-${index}`,
-        title: item.title || item.appName || '刚刚停留的页面',
-        subtitle: item.appName,
-        body: clipForPreview(item.summary || run.narrative, 90),
-        meta: screenPeekClock(item.time || now),
-        badge: index === 0 ? '正在看' : undefined,
-    });
-    const scopedRows = (fallback: any[] = []) => (activeBrowsed.length ? activeBrowsed : fallback)
-        .slice(0, 6)
-        .map((item, index) => rowFromBrowse(item, index));
-    const foodTabsForApp = (appName: string) => {
-        if (/下厨房|菜谱|厨房/.test(appName)) return ['菜谱', '菜单', '作品', '食材', '课堂'];
-        if (/大众点评|点评|探店/.test(appName)) return ['收藏', '店铺', '笔记', '榜单', '足迹'];
-        if (/美团|饿了么|外卖|点单/.test(appName)) return ['店铺', '商品', '红包', '订单', '评价'];
-        if (/小红书|红书/.test(appName)) return ['笔记', '收藏', '专辑', '关注', '附近'];
-        return ['收藏', '内容', '最近', '分类', '更多'];
-    };
-    const appOnlyText = `${chosenAppName} ${latestApp?.category || ''}`;
-    const currentAction = latestApp?.note || topBrowse?.summary || '';
-
-    if (/日历|日程|提醒|calendar/i.test(appOnlyText)) {
-        const focus = clipForPreview(currentAction || '正在查看今天接下来的安排。', 80);
-        return {
-            ...base,
-            appKind: 'calendar',
-            appName: chosenAppName || '日历',
-            title: '今天',
-            subtitle: undefined,
-            action: focus,
-            layout: 'day',
-            rows: [
-                { id: 'peek-calendar-now', title: focus, body: '当前停留在这条日程附近。', meta: screenPeekClock(now) },
-                { id: 'peek-calendar-next', title: '稍后', body: '还有一段空白时间，像是在犹豫要不要补上安排。', meta: screenPeekClock(now + 45 * 60 * 1000) },
-                { id: 'peek-calendar-night', title: '晚上', body: `${char.name} 把页面停在今天，没有切到其它软件。`, meta: screenPeekClock(now + 3 * 60 * 60 * 1000) },
-            ],
-        };
-    }
-
-    if (/浏览器|safari|chrome|edge|网页|资讯|browser/i.test(appOnlyText)) {
-        const rows = scopedRows();
-        const first = rows[0];
-        return {
-            ...base,
-            appKind: 'browser',
-            appName: chosenAppName || topBrowse?.appName || '浏览器',
-            title: first?.title || latestApp?.note || '新标签页',
-            subtitle: undefined,
-            action: currentAction || '浏览器停在当前页面。',
-            layout: first ? 'article' : 'search',
-            url: first ? `${(chosenAppName || 'moro').toLowerCase().replace(/\s+/g, '')}.local` : 'search',
-            rows: rows.length ? rows : [{ id: 'peek-browser-current', title: latestApp?.note || '新标签页', body: '页面没有露出其它 App 的内容。', meta: screenPeekClock(now) }],
-        };
-    }
-
-    if (/小红书|红书|微博|推特|朋友圈|动态|社交/.test(scopedText)) {
-        const rows = scopedRows([topBrowse].filter(Boolean) as any[]);
-        return {
-            ...base,
-            appKind: 'social',
-            appName: chosenAppName || topBrowse?.appName || latestApp?.appName || '动态',
-            title: topBrowse?.title || '正在浏览',
-            subtitle: chosenAppName || topBrowse?.appName || '刚刚停留的页面',
-            rows: rows.length ? rows : [{ id: 'peek-social-empty', title: run.title, body: run.narrative, meta: '刚刚' }],
-        };
-    }
-
-    if (/外卖|饭|菜|餐|店|菜单|美食|厨房|点评|探店|点单/.test(appOnlyText) || (/外卖|饭|菜|餐|店|菜单|美食|厨房|点评|探店|点单/.test(scopedText) && activeBrowsed.length > 0)) {
-        const appName = chosenAppName || topBrowse?.appName || latestApp?.appName || '收藏';
-        const tabs = foodTabsForApp(appName);
-        const rows = scopedRows([topBrowse].filter(Boolean) as any[])
-            .map((item, index) => ({
-                ...item,
-                subtitle: item.subtitle || appName,
-                badge: index === 0 ? '正在看' : item.badge,
-            }));
-        const isRecipeApp = /下厨房|菜谱|厨房/.test(appName);
-        const isReviewApp = /大众点评|点评|探店/.test(appName);
-        const fallbackRecipes = isRecipeApp ? [
-            { title: '红仁虾仁蒸蛋', subtitle: appName, body: topBrowse?.summary || run.narrative, meta: '刚刚' },
-            { title: '海鲜粥', subtitle: appName, body: '步骤页停在中段，像是刚刚对着食材又确认了一遍。', meta: '03:30' },
-            { title: '草莓塔', subtitle: appName, body: '成品图停在屏幕中间，页面还没划走。', meta: '03:45' },
-        ] : isReviewApp ? [
-            { title: '巷口小馆', subtitle: appName, body: topBrowse?.summary || run.narrative, meta: '刚刚' },
-            { title: '夜里还亮着的咖啡店', subtitle: appName, body: '店铺收藏页停在评分和评论摘要上。', meta: '03:30' },
-            { title: '周末想去的甜品店', subtitle: appName, body: '相册第一张图还露在页面上。', meta: '03:45' },
-        ] : [
-            { title: '常点的店铺', subtitle: appName, body: topBrowse?.summary || run.narrative, meta: '刚刚' },
-            { title: '热卖套餐', subtitle: appName, body: '商品卡停在加购按钮旁边。', meta: '03:30' },
-            { title: '收藏店铺', subtitle: appName, body: '配送时间和优惠券还显示在列表里。', meta: '03:45' },
-        ];
-        for (let i = rows.length; i < 4; i += 1) {
-            const fallback = fallbackRecipes[i % fallbackRecipes.length];
-            rows.push({
-                id: `peek-food-fallback-${i}`,
-                title: fallback.title,
-                subtitle: fallback.subtitle,
-                body: fallback.body,
-                meta: fallback.meta,
-                badge: i === 0 ? '正在看' : undefined,
-            });
-        }
-        return {
-            ...base,
-            appKind: 'takeout',
-            appName,
-            title: topBrowse?.title || (/美团|饿了么|外卖/.test(appName) ? '店铺' : /大众点评|点评|探店/.test(appName) ? '附近探店' : appName),
-            subtitle: undefined,
-            tabs,
-            activeTab: tabs[0],
-            action: currentAction || topBrowse?.summary || run.narrative,
-            layout: /收藏/.test(`${topBrowse?.title || ''} ${currentAction}`) ? 'favorite' : /美团|饿了么|外卖/.test(appName) ? 'store' : 'feed',
-            rows,
-        };
-    }
-
-    if (/备忘|便签|待办|记|memo|note/i.test(scopedText) || (!topBrowse && topNote)) {
-        const notes = (run.notes?.length ? run.notes : [topNote].filter(Boolean) as any[])
-            .slice(0, 6)
-            .map((note, index) => ({
-                id: note.id || `peek-note-${index}`,
-                text: note.text || '有一句没写完的备忘。',
-                meta: screenPeekClock(note.time || now),
-            }));
-        return {
-            ...base,
-            appKind: 'notes',
-            appName: latestApp?.appName || '备忘录',
-            title: '备忘录',
-            subtitle: '刚刚还停在这里',
-            notes,
-        };
-    }
-
-    if (/相册|照片|图片|图库|拍照/.test(scopedText)) {
-        const rows = (run.moments?.length ? run.moments : [])
-            .slice(0, 6)
-            .map((moment, index) => ({
-                id: moment.id || `peek-gallery-${index}`,
-                title: moment.title || '最近照片',
-                body: clipForPreview(moment.body || '', 70),
-                meta: screenPeekClock(moment.time || now),
-            }));
-        return {
-            ...base,
-            appKind: 'gallery',
-            appName: latestApp?.appName || '相册',
-            title: '最近项目',
-            subtitle: '照片和截图',
-            rows: rows.length ? rows : [{ id: 'peek-gallery-empty', title: '最近截图', body: run.narrative, meta: '刚刚' }],
-        };
-    }
-
-    if (/地图|导航|位置|路线|通勤|天气|附近|街区|地铁|公交|打车/.test(scopedText)) {
-        const rows = scopedRows([topBrowse].filter(Boolean) as any[]);
-        return {
-            ...base,
-            appKind: 'map',
-            appName: chosenAppName || latestApp?.appName || topBrowse?.appName || '地图',
-            title: topBrowse?.title || '附近',
-            subtitle: topBrowse?.summary || '刚刚停留在地图页面',
-            rows: rows.length ? rows : [{ id: 'peek-map-empty', title: '当前位置附近', body: run.narrative, meta: '刚刚' }],
-        };
-    }
-
-    if (/音乐|歌|播放|歌单/.test(scopedText)) {
-        return {
-            ...base,
-            appKind: 'music',
-            appName: chosenAppName || latestApp?.appName || '音乐',
-            title: '正在播放',
-            subtitle: topBrowse?.title || '循环到一半的歌',
-            hero: {
-                title: topBrowse?.title || '一首没舍得切走的歌',
-                subtitle: topBrowse?.summary || run.socialInference?.mood || run.narrative,
-            },
-        };
-    }
-
-    if (/微信|QQ|消息|聊天|私信|絮语|DM/i.test(scopedText) || (topChat && seed % 3 !== 1 && !chosenAppName)) {
-        const rawLines = [
-            topChat?.summary,
-            ...(topChat?.messages || []),
-        ].filter(Boolean) as string[];
-        const messages = rawLines.slice(0, 7).map((line, index) => ({
-            id: `peek-msg-${index}`,
-            side: (index === 0 ? 'center' : index % 3 === 0 ? 'right' : 'left') as 'left' | 'right' | 'center',
-            text: clipForPreview(line, 80),
-            senderName: index % 3 === 0 ? char.name : topChat?.target,
-        }));
-        return {
-            ...base,
-            appKind: 'chat',
-            appName: chosenAppName || latestApp?.appName || '聊天',
-            title: topChat?.target || userProfile.name || '聊天',
-            subtitle: '刚刚亮着的会话',
-            contactName: topChat?.target || userProfile.name,
-            contactAvatar: userProfile.avatar,
-            messages: messages.length ? messages : [{ id: 'peek-msg-empty', side: 'left', text: run.narrative, senderName: topChat?.target }],
-        };
-    }
-
-    const rows = scopedRows();
-    if (chosenAppName) {
-        return {
-            ...base,
-            appKind: 'app',
-            appName: chosenAppName,
-            title: latestApp?.note || topBrowse?.title || chosenAppName,
-            subtitle: undefined,
-            action: currentAction || run.narrative,
-            layout: 'generic',
-            rows: rows.length ? rows : [{ id: 'peek-app-current', title: latestApp?.note || chosenAppName, body: run.narrative, meta: screenPeekClock(now) }],
-        };
-    }
-
-    return {
-        ...base,
-        appKind: /小红书|微博|推特|朋友圈|动态|社交/.test(scopedText) ? 'social' : 'app',
-        appName: chosenAppName || topBrowse?.appName || latestApp?.appName || '浏览器',
-        title: topBrowse?.title || '正在浏览',
-        subtitle: chosenAppName || topBrowse?.appName || '刚刚停留的页面',
-        action: currentAction || run.narrative,
-        layout: 'generic',
-        rows: rows.length ? rows : [{ id: 'peek-row-empty', title: run.title, body: run.narrative, meta: '刚刚' }],
-    };
 };
 
 const makePhoneLockCode = () => '';
@@ -1777,14 +1485,18 @@ ${parallelReplyPromptBody({
         );
         if (!target) return false;
 
-        const totalLine = typeof pending.total === 'number' && pending.total > 0 ? `，金额约 ¥${pending.total}` : '';
-        const countLine = pending.itemCount && pending.itemCount > 1 ? `，共 ${pending.itemCount} 件` : '';
-        const noteLine = pending.note ? `，备注/清单是「${pending.note}」` : '';
-        const ephemeralSystemPrompt = pending.kind === 'clear_cart'
-            ? `用户刚刚在「心意铺」帮你清空了心愿购物车${countLine}${totalLine}${noteLine}。本轮请直接、自然地回应这件事；可以感谢、惊喜、害羞、吐槽被看穿心愿、说会珍惜或顺势聊其中想要的东西，但不要说没收到。`
-            : pending.kind === 'companion_pay'
-                ? `用户刚刚在「心意铺」替你代付了 ${pending.itemEmoji}${pending.itemName}${totalLine}${noteLine}。本轮请直接、自然地回应这次代付；可以感谢、惊喜、害羞、嘴硬、吐槽或表达会记得这份心意，但不要说没收到。`
-                : `用户刚刚从「心意铺」送给你 ${pending.itemEmoji}${pending.itemName}${noteLine}。本轮请直接、自然地回应这份礼物；可以感谢、惊喜、害羞、吐槽、珍惜或追问，但不要说没收到。`;
+        const ephemeralSystemPrompt = shopGiftReplyHint({
+            userName: userProfile.name || '对方',
+            kind: pending.kind,
+            itemEmoji: pending.itemEmoji,
+            itemName: pending.itemName,
+            note: pending.note,
+            itemCount: pending.itemCount,
+            total: pending.total,
+            occasionLabel: pending.occasionLabel,
+            wrapLabel: pending.wrapLabel,
+            fromWishlist: pending.fromWishlist,
+        });
         if (isInstantConfigReady()) setInstantSendingActive(true);
         const ok = await triggerAI(recent, undefined, () => setInstantSendingActive(false), {
             targetUserMessage: target,
@@ -4483,34 +4195,86 @@ ${privateCallDecisionPromptBody({
         if (!char) return;
         if (isTyping) { addToast('等 TA 这句说完再窥屏吧', 'info'); return; }
         setShowPanel('none');
-        addToast('正在生成 TA 此刻的手机屏幕…', 'info');
+        addToast('正在截取 TA 此刻的虚拟手机屏幕…', 'info');
         try {
             const now = Date.now();
             const displayName = char.convoSettings?.remarkName?.trim() || char.name;
-            const run = await generateXunjiScreenlifeRun({
-                char,
-                api: resolveAuxApi(auxApiConfig, apiConfig),
-                rangeStart: now - 30 * 60 * 1000,
-                rangeEnd: now,
-                density: 'light',
-                writeBack: false,
-                seed: `${char.id}_${now}_screen_peek`,
+            const promptUserName = userProfile?.name || '用户';
+            const auxApi = resolveAuxApi(auxApiConfig, apiConfig);
+            const [latestSnapshot, latestRuns, latestReports] = await Promise.all([
+                DB.getLatestXunjiSnapshot(char.id).catch(() => null),
+                DB.getXunjiRuns(char.id, 1).catch(() => []),
+                DB.getXunjiReports(char.id, 8).catch(() => []),
+            ]);
+            let run = latestRuns[0] || null;
+            if (auxApi.baseUrl && auxApi.model) {
+                try {
+                    const fullUserSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` });
+                    run = await generateXunjiScreenlifeRun({
+                        char,
+                        api: auxApi,
+                        rangeStart: now - 30 * 60 * 1000,
+                        rangeEnd: now,
+                        density: 'light',
+                        writeBack: false,
+                        userSetting: fullUserSetting,
+                        userName: promptUserName,
+                        seed: `${char.id}_${now}_screen_peek`,
+                    });
+                    await DB.saveXunjiRun(run);
+                } catch (error) {
+                    console.warn('[Chat] screen peek screenlife refresh failed, using existing phone state:', error);
+                }
+            }
+            const xunjiRecords = mapXunjiToPhoneEvidence({
+                run,
+                snapshot: latestSnapshot,
+                reports: latestReports,
+                now,
             });
-            await DB.saveXunjiRun(run);
-            const screen = buildScreenPeekPhoneScreen(run, char, userProfile, now);
+            const phoneRecords = mergePhoneEvidenceRecords(char.phoneState?.records || [], xunjiRecords);
+            let snapshot = buildScreenPeekSnapshot({
+                char,
+                userProfile,
+                records: phoneRecords,
+                xunjiSnapshot: latestSnapshot,
+                generatedAt: now,
+                fallbackWallpaper: osTheme.wallpaper,
+            });
+            let screenshotDataUrl = '';
+            try {
+                screenshotDataUrl = await captureScreenPeekSnapshotImage(snapshot);
+            } catch (captureError) {
+                console.warn('[Chat] screen peek capture failed, retrying home snapshot:', captureError);
+                if (snapshot.appKind === 'home' || snapshot.appKind === 'lock') throw captureError;
+                snapshot = buildScreenPeekSnapshot({
+                    char,
+                    userProfile,
+                    records: phoneRecords,
+                    xunjiSnapshot: latestSnapshot,
+                    generatedAt: now,
+                    fallbackWallpaper: osTheme.wallpaper,
+                    forceHome: true,
+                });
+                screenshotDataUrl = await captureScreenPeekSnapshotImage(snapshot);
+            }
             const card: ScreenPeekCard = {
-                id: `screen-peek-${run.id}`,
+                id: `screen-peek-${char.id}-${now}`,
                 charId: char.id,
                 charName: displayName,
                 generatedAt: now,
-                title: run.title || `${displayName} 的手机屏幕`,
-                narrative: run.narrative,
-                screen,
-                chats: run.chats || [],
-                browsed: run.browsed || [],
-                notes: run.notes || [],
-                moments: run.moments,
-                sourceRunId: run.id,
+                title: `${displayName} 的手机屏幕`,
+                narrative: snapshot.summary,
+                screenshotDataUrl,
+                screenshotSource: snapshot.source,
+                snapshotAppName: snapshot.appName,
+                snapshotTitle: snapshot.title,
+                snapshot,
+                chats: run?.chats || [],
+                browsed: run?.browsed || [],
+                notes: run?.notes || [],
+                moments: run?.moments,
+                sourceRunId: run?.id,
             };
             await DB.saveMessage({
                 charId: char.id,
@@ -4520,9 +4284,9 @@ ${privateCallDecisionPromptBody({
                 metadata: { screenPeek: card, excludeFromContext: true },
             } as any);
             await reloadMessages(visibleCountRef.current);
-            addToast('窥屏截图已生成', 'success');
+            addToast('窥屏截图已截取', 'success');
         } catch (err: any) {
-            showError('窥屏生成失败', err?.message || String(err));
+            showError('窥屏截图失败', err?.message || String(err));
         }
     };
 

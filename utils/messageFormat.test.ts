@@ -107,3 +107,33 @@ describe('normalizeMessageContent parcel cards', () => {
         );
     });
 });
+
+describe('normalizeMessageContent shop gift cards', () => {
+    it('keeps gift ritual context in archives', () => {
+        const msg: Message = {
+            id: 3,
+            charId: 'char-a',
+            role: 'user',
+            type: 'gift_card',
+            content: '[礼物]',
+            timestamp: 0,
+            metadata: {
+                gift: {
+                    itemId: 'rose',
+                    name: '玫瑰花束',
+                    emoji: '🌹',
+                    price: 9.9,
+                    note: '给你',
+                    fromName: '用户',
+                    occasionLabel: '约会见面',
+                    wrapLabel: '黑缎带礼盒',
+                    fromWishlist: true,
+                },
+            },
+        };
+
+        expect(normalizeMessageContent(msg, '小莫', '用户')).toBe(
+            '[心意铺礼物] 用户送了小莫 🌹玫瑰花束，赠言「给你」，场景「约会见面」，包装「黑缎带礼盒」，来自愿望板',
+        );
+    });
+});

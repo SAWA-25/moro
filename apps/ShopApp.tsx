@@ -18,7 +18,9 @@ import {
     isItemReviewed, makeUserReview, userReviewsForItem, goodRate,
     coinsToYuan, yuanToCoins, checkinAvailable, dailyCheckinReward,
     pushFootprint, resolveFootprints, itemSpecs,
-    SHOP_GIFT_OCCASIONS, recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
+    SHOP_GIFT_OCCASIONS, SHOP_GIFT_WRAP_OPTIONS, DEFAULT_SHOP_GIFT_WRAP_KEY,
+    addToWishlist, resolveWishlist, getGiftOccasionLabel, getGiftWrapOption,
+    recommendGiftsForCharacter, itemGiftSignals, relationStageFromAffection,
     buildShopCompanionPrompt, buildShopCompanionSpeechPrompt, parseShopCompanionReaction, parseShopCompanionScript, parseShopCompanionSpeech, pickShopCompanionFallbackItem, resolveShopCompanionVisibleItems,
     buildShopCoPresenceLogEntry, buildShopCoPresencePaymentNotice, getShopCoPresenceCue,
     normalizeShopImageUrl,
@@ -175,6 +177,7 @@ const ShopApp: React.FC = () => {
     const counts = orderStatusCounts(orders, myReviews);
     const checkinDone = !checkinAvailable(userProfile.shopCheckinAt);
     const wishCount = characters.reduce((sum, c) => sum + cartCount(c.shopCart), 0);
+    const [advisorSeed, setAdvisorSeed] = useState<{ charId?: string; occasion?: GiftOccasionKey; nonce: number } | null>(null);
     const [companionId, setCompanionId] = useState('');
     const [companionPicker, setCompanionPicker] = useState(false);
     const [companionSearch, setCompanionSearch] = useState('');
@@ -583,13 +586,13 @@ const ShopApp: React.FC = () => {
             !o.refundedAt && !o.receivedAt && o.items.some(it => it.itemId === item.id),
         );
         if (alreadyPending) {
-            updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
             const line = await companionSpeech(char, 'already_pending', {
                 surface: 'order',
                 item,
                 cart,
                 userAction: `${item.name} 已经有未签收订单，改记心愿`,
             });
+            updateCharacter(char.id, { shopCart: addToWishlist(char.shopCart, item.id, { source: 'companion', note: line || '陪逛时看中的礼物' }) });
             if (line) pushCompanionLine(line, 'want', item.id);
             emitShopUpdated();
             return;
@@ -614,7 +617,10 @@ const ShopApp: React.FC = () => {
             relatedEntityId: char.id,
         });
         const order = makeOrder([{ item, qty: 1 }], 'self');
-        const userReceipt = makeReceipt(item, 'user', 'gift', char.id, char.name, '陪逛自动买下');
+        const userReceipt = makeReceipt(item, 'user', 'gift', char.id, char.name, '陪逛自动买下', {
+            source: 'companion_pay',
+            wishItemId: item.id,
+        });
         updateUserProfile({
             shopOrders: [order, ...(userProfile.shopOrders || [])],
             shopReceipts: [userReceipt, ...(userProfile.shopReceipts || [])],
@@ -635,6 +641,9 @@ const ShopApp: React.FC = () => {
                 note: '陪逛时你替 TA 买下',
                 itemCount: 1,
                 total: item.price,
+                source: 'companion_pay',
+                wishItemId: item.id,
+                fromWishlist: true,
             });
         } catch { /* ignore */ }
         addToast(`${char.name} 带你买下了 ${item.emoji}${item.name}`, 'success');
@@ -930,15 +939,15 @@ const ShopApp: React.FC = () => {
         const req = companionRequest;
         const char = req ? characters.find(c => c.id === req.charId) : null;
         if (!req || !char) return;
-        updateCharacter(char.id, { shopCart: addToCart(char.shopCart, req.item.id) });
+        updateCharacter(char.id, { shopCart: addToWishlist(char.shopCart, req.item.id, { source: 'companion', note: req.speech || '陪逛时看中的礼物' }) });
         const line = await companionSpeech(char, 'wishlist_saved', {
             surface: 'item',
             item: req.item,
             cart,
-            userAction: `用户没有立刻付款，把 ${req.item.name} 先记进心愿单`,
+            userAction: `用户没有立刻付款，把 ${req.item.name} 先记进愿望板`,
         });
         if (line) pushCompanionLine(line, 'want', req.item.id);
-        addToast(`${char.name} 的心愿单夹进 ${req.item.emoji}${req.item.name}`, 'success');
+        addToast(`${char.name} 的愿望板夹进 ${req.item.emoji}${req.item.name}`, 'success');
         emitShopUpdated();
         resetCompanionPayPressure();
         setCompanionRequest(null);
@@ -966,8 +975,14 @@ const ShopApp: React.FC = () => {
             sourceId: req.item.id,
             relatedEntityId: char.id,
         });
-        const charReceipt = makeReceipt(req.item, 'char', 'buy', 'self', char.name, `${userProfile.name || '我'}陪逛代付`);
-        const userReceipt = makeReceipt(req.item, 'user', 'gift', char.id, char.name, '陪逛代付');
+        const charReceipt = makeReceipt(req.item, 'char', 'buy', 'self', char.name, `${userProfile.name || '我'}陪逛代付`, {
+            source: 'companion_pay',
+            wishItemId: req.item.id,
+        });
+        const userReceipt = makeReceipt(req.item, 'user', 'gift', char.id, char.name, '陪逛代付', {
+            source: 'companion_pay',
+            wishItemId: req.item.id,
+        });
         updateCharacter(char.id, {
             shopCart: removeFromCart(char.shopCart, req.item.id),
             shopReceipts: [charReceipt, ...(char.shopReceipts || [])],
@@ -987,6 +1002,9 @@ const ShopApp: React.FC = () => {
                 note: '你答应了 TA 的陪逛代付请求',
                 itemCount: 1,
                 total: req.item.price,
+                source: 'companion_pay',
+                wishItemId: req.item.id,
+                fromWishlist: true,
             });
         } catch { /* ignore */ }
         const line = await companionSpeech(char, 'payment_received', {
@@ -1210,6 +1228,8 @@ const ShopApp: React.FC = () => {
             const raw = await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: usr }], {
                 temperature: 0.8,
                 maxTokens: 200,
+                presetScope: 'role.scene',
+                presetMacros: { charName: char.name, userName: userProfile.name || '你' },
                 meta: makeApiUsageMeta('shop.generate', {
                     apiRole: api.apiRole || 'aux',
                     apiBinding: api.apiBinding || '代付回应',
@@ -1244,10 +1264,11 @@ const ShopApp: React.FC = () => {
         setPayPicker(false);
     };
 
-    // 帮 TA 清空购物车（用户为角色心愿清单买单）
+    // 帮 TA 清空购物车（用户为角色愿望板买单）
     const clearCharCart = async (char: CharacterProfile) => {
-        const items = expandCart(char.shopCart);
-        if (items.length === 0) return;
+        const wishLines = resolveWishlist(char.shopCart);
+        const itemCount = wishLines.reduce((sum, line) => sum + line.qty, 0);
+        if (itemCount === 0) return;
         const total = cartTotal(char.shopCart);
         if (balance < total) { addToast('钱包不够替 TA 付呢', 'error'); return; }
         adjustUserBalance(-total, {
@@ -1258,56 +1279,86 @@ const ShopApp: React.FC = () => {
             sourceId: char.id,
             relatedEntityId: char.id,
         });
-        const charReceipts = items.map(it => makeReceipt(it, 'char', 'buy', 'self', char.name, `${userProfile.name || '我'}代付`));
-        const userReceipts = items.map(it => makeReceipt(it, 'user', 'gift', char.id, char.name, '代付'));
+        const charReceipts = wishLines.flatMap(({ item, qty, line }) =>
+            Array.from({ length: qty }, () => makeReceipt(item, 'char', 'buy', 'self', char.name, line.wishNote || `${userProfile.name || '我'}代付`, {
+                source: 'clear_cart',
+                occasion: line.wishOccasion,
+                wishItemId: item.id,
+            })),
+        );
+        const userReceipts = wishLines.flatMap(({ item, qty, line }) =>
+            Array.from({ length: qty }, () => makeReceipt(item, 'user', 'gift', char.id, char.name, '代付', {
+                source: 'clear_cart',
+                occasion: line.wishOccasion,
+                wishItemId: item.id,
+            })),
+        );
         updateCharacter(char.id, { shopCart: [], shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });
         updateUserProfile({ shopReceipts: [...userReceipts, ...(userProfile.shopReceipts || [])] });
-        const cartBrief = resolveCart(char.shopCart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、');
+        const cartBrief = wishLines.map(({ item, qty, line, occasionLabel, sourceLabel }) => {
+            const extra = [occasionLabel, sourceLabel, line.wishNote].filter(Boolean).join(' · ');
+            return `${item.emoji}${item.name}×${qty}${extra ? `（${extra}）` : ''}`;
+        }).join('、');
         try {
             const messageId = await DB.saveMessage({
                 charId: char.id, role: 'system', type: 'text',
-                content: `${userProfile.name || '你'} 帮 ${char.name} 清空了心愿购物车（${items.length}件，¥${formatPrice(total)}）`,
+                content: `${userProfile.name || '你'} 帮 ${char.name} 清空了愿望板（${itemCount}件，¥${formatPrice(total)}）`,
             } as any);
             queueShopReply({
                 charId: char.id,
                 messageId,
                 kind: 'clear_cart',
-                itemName: '心愿购物车',
+                itemName: '愿望板',
                 itemEmoji: '🛒',
                 note: cartBrief,
-                itemCount: items.length,
+                itemCount,
                 total,
+                source: 'clear_cart',
+                fromWishlist: true,
             });
         } catch { /* ignore */ }
         addToast(`替 ${char.name} 付了 ¥${formatPrice(total)}`, 'success');
         emitShopUpdated();
     };
 
-    const addItemToCharWishlist = (item: ShopItem, char: CharacterProfile) => {
-        updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
-        addToast(`${char.name} 的心愿单夹进 ${item.emoji}${item.name}`, 'success');
+    const addItemToCharWishlist = (item: ShopItem, char: CharacterProfile, occasion?: GiftOccasionKey, source: 'manual' | 'advisor' = 'manual', note?: string) => {
+        updateCharacter(char.id, { shopCart: addToWishlist(char.shopCart, item.id, { source, occasion, note }) });
+        addToast(`${char.name} 的愿望板夹进 ${item.emoji}${item.name}`, 'success');
         emitShopUpdated();
     };
 
     // ── 送礼给角色 ──
     const [giftTarget, setGiftTarget] = useState<ShopOwnedItem | null>(null);
     const [giftNote, setGiftNote] = useState('');
+    const [giftOccasion, setGiftOccasion] = useState<GiftOccasionKey>('daily');
+    const [giftWrapKey, setGiftWrapKey] = useState(DEFAULT_SHOP_GIFT_WRAP_KEY);
     const [wishItem, setWishItem] = useState<ShopItem | null>(null);
+    const [wishOccasion, setWishOccasion] = useState<GiftOccasionKey>('daily');
     const confirmGift = async (char: CharacterProfile) => {
         const owned = giftTarget;
         if (!owned) return;
         const base = getShopItem(owned.itemId) || { id: owned.itemId, name: owned.name, emoji: owned.emoji, price: owned.price };
         const note = giftNote.trim();
+        const wrap = getGiftWrapOption(giftWrapKey);
+        const occasionLabel = getGiftOccasionLabel(giftOccasion);
         let giftMessageId: number | null = null;
         try {
             giftMessageId = await DB.saveMessage({
                 charId: char.id, role: 'user', type: 'gift_card',
                 content: `🎁 我送了你 ${owned.emoji}${owned.name}${note ? ` —— ${note}` : ''}`,
-                metadata: { gift: buildGiftCardMeta(base, userProfile.name || '我', note), msgStatus: 'sent' },
+                metadata: {
+                    gift: buildGiftCardMeta(base, userProfile.name || '我', note, {
+                        occasion: giftOccasion,
+                        wrapKey: wrap.key,
+                        source: 'manual_gift',
+                    }),
+                    msgStatus: 'sent',
+                },
             } as any);
         } catch { /* 落卡失败不阻塞送礼 */ }
-        const userReceipt = makeReceipt(base, 'user', 'gift', char.id, char.name, note);
-        const charReceipt = makeReceipt(base, 'char', 'receive', 'user', userProfile.name || '我', note);
+        const receiptContext = { source: 'manual_gift' as const, occasion: giftOccasion, wrapLabel: wrap.label };
+        const userReceipt = makeReceipt(base, 'user', 'gift', char.id, char.name, note, receiptContext);
+        const charReceipt = makeReceipt(base, 'char', 'receive', 'user', userProfile.name || '我', note, receiptContext);
         updateCharacter(char.id, { shopReceipts: [charReceipt, ...(char.shopReceipts || [])] });
         updateUserProfile({
             shopInventory: (userProfile.shopInventory || []).filter(o => o.uid !== owned.uid),
@@ -1321,6 +1372,10 @@ const ShopApp: React.FC = () => {
                 itemName: owned.name,
                 itemEmoji: owned.emoji,
                 note,
+                occasion: giftOccasion,
+                occasionLabel,
+                wrapLabel: wrap.label,
+                source: 'manual_gift',
             });
         }
         addToast(`把 ${owned.emoji}${owned.name} 寄给了 ${char.name}`, 'success');
@@ -1346,6 +1401,8 @@ const ShopApp: React.FC = () => {
             ], {
                 temperature: 0.9,
                 maxTokens: 300,
+                presetScope: 'role.scene',
+                presetMacros: { charName: char.name, userName: userProfile.name || '你' },
                 meta: makeApiUsageMeta('shop.generate', {
                     apiRole: api.apiRole || 'aux',
                     apiBinding: api.apiBinding || '角色逛心意铺',
@@ -1363,14 +1420,14 @@ const ShopApp: React.FC = () => {
         }
         const item = getShopItem(decision.itemId)!;
         if (decision.action === 'want') {
-            updateCharacter(char.id, { shopCart: addToCart(char.shopCart, item.id) });
-            addToast(`${char.name} 把 ${item.emoji}${item.name} 记进了心愿单`, 'success');
+            updateCharacter(char.id, { shopCart: addToWishlist(char.shopCart, item.id, { source: 'char_shop', note: decision.note }) });
+            addToast(`${char.name} 把 ${item.emoji}${item.name} 记进了愿望板`, 'success');
             emitShopUpdated();
             return;
         }
         if (decision.action === 'gift') {
-            const charReceipt = makeReceipt(item, 'char', 'gift', 'user', userProfile.name || '我', decision.note);
-            const userReceipt = makeReceipt(item, 'user', 'receive', char.id, char.name, decision.note);
+            const charReceipt = makeReceipt(item, 'char', 'gift', 'user', userProfile.name || '我', decision.note, { source: 'char_gift' });
+            const userReceipt = makeReceipt(item, 'user', 'receive', char.id, char.name, decision.note, { source: 'char_gift' });
             updateCharacter(char.id, { shopReceipts: [charReceipt, ...(char.shopReceipts || [])] });
             updateUserProfile({
                 shopInventory: [makeOwnedItem(item), ...(userProfile.shopInventory || [])],
@@ -1380,12 +1437,12 @@ const ShopApp: React.FC = () => {
                 await DB.saveMessage({
                     charId: char.id, role: 'assistant', type: 'gift_card',
                     content: `🎁 ${char.name} 送了你 ${item.emoji}${item.name}${decision.note ? ` —— ${decision.note}` : ''}`,
-                    metadata: { gift: buildGiftCardMeta(item, char.name, decision.note) },
+                    metadata: { gift: buildGiftCardMeta(item, char.name, decision.note, { source: 'char_gift' }) },
                 } as any);
             } catch { /* ignore */ }
             addToast(`${char.name} 回赠了你 ${item.emoji}${item.name}`, 'success');
         } else {
-            const charReceipt = makeReceipt(item, 'char', 'buy', 'self', char.name, decision.note);
+            const charReceipt = makeReceipt(item, 'char', 'buy', 'self', char.name, decision.note, { source: 'char_shop' });
             updateCharacter(char.id, { shopReceipts: [charReceipt, ...(char.shopReceipts || [])] });
             addToast(`${char.name} 给自己挑了 ${item.emoji}${item.name}`, 'success');
         }
@@ -1408,6 +1465,10 @@ const ShopApp: React.FC = () => {
     const [orderFilter, setOrderFilter] = useState<'all' | OrderStatusKey>('all');
 
     const openSubFromMy = (s: SubView) => { setSub(s); };
+    const openAdvisor = (charId?: string, occasion?: GiftOccasionKey) => {
+        setAdvisorSeed({ charId, occasion, nonce: Date.now() });
+        setSub('advisor');
+    };
     const goOrders = (f: 'all' | OrderStatusKey) => { setTab('my'); setSub('orders'); setOrderFilter(f); };
 
     // 切换底栏主 tab 时清掉子页
@@ -1549,6 +1610,7 @@ const ShopApp: React.FC = () => {
                     <GiftAdvisorView
                         catalog={catalog.length ? catalog : SHOP_ITEMS}
                         characters={characters}
+                        initialSeed={advisorSeed || undefined}
                         balance={balance}
                         favorites={favorites}
                         onOpen={openDetail}
@@ -1564,7 +1626,7 @@ const ShopApp: React.FC = () => {
                         onLogistics={setLogisticsOrder} onRefund={requestRefund}
                         onReview={(o, it) => setReviewTarget({ order: o, item: it })} />
                 ) : sub === 'bag' ? (
-                    <BagView inventory={inventory} onGift={(o) => { setGiftTarget(o); setGiftNote(''); }} />
+                    <BagView inventory={inventory} onGift={(o) => { setGiftTarget(o); setGiftNote(''); setGiftOccasion('daily'); setGiftWrapKey(DEFAULT_SHOP_GIFT_WRAP_KEY); }} />
                 ) : sub === 'receipts' ? (
                     <ReceiptsView myReceipts={myReceipts} characters={characters} balance={balance}
                         onClearCharCart={clearCharCart} onCharShop={onCharShop} />
@@ -1581,7 +1643,7 @@ const ShopApp: React.FC = () => {
                         catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()} onSearchGen={searchGen}
                         cat={cat} setCat={setHomeCategory} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
-                        charactersCount={characters.length} wishCount={wishCount} onOpenAdvisor={() => setSub('advisor')}
+                        characters={characters} charactersCount={characters.length} wishCount={wishCount} onOpenAdvisor={openAdvisor}
                         claimedCoupons={claimedCoupons} onClaimCoupon={claimCoupon} onBuyFlash={(it, p) => buyItem(it, 1, p)}
                         onCreateItem={() => setEditorTarget({})}
                         onBuy={(i) => openSku(i, 'buy')} onAddCart={addItemToCart}
@@ -1677,7 +1739,7 @@ const ShopApp: React.FC = () => {
                     onClose={() => setDetailItem(null)} onToggleFav={toggleFav}
                     onEdit={(i) => setEditorTarget({ item: i })}
                     onAddCart={(i) => openSku(i, 'cart')} onBuy={(i) => openSku(i, 'buy')}
-                    onAddWish={(i) => setWishItem(i)}
+                    onAddWish={(i) => { setWishItem(i); setWishOccasion('daily'); }}
                     companionCue={activeCompanionCue?.itemId === detailItem.id ? activeCompanionCue : null}
                     companionAvatar={activeCompanionAvatar}
                 />
@@ -1708,8 +1770,41 @@ const ShopApp: React.FC = () => {
             <PaperDialog open={!!giftTarget} title={giftTarget ? `把 ${giftTarget.emoji}${giftTarget.name} 寄给…` : ''} en="SEND A GIFT" tape="rose"
                 onClose={() => { setGiftTarget(null); setGiftNote(''); }}>
                 <div className="space-y-3">
+                    <div>
+                        <div className="text-[11px] font-black mb-1.5" style={{ color: INK }}>这次为什么送</div>
+                        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                            {SHOP_GIFT_OCCASIONS.map(o => (
+                                <button key={o.key} onClick={() => setGiftOccasion(o.key)}
+                                    className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
+                                    style={chipStyle(giftOccasion === o.key)}>
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-black mb-1.5" style={{ color: INK }}>怎么包起来</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                            {SHOP_GIFT_WRAP_OPTIONS.map(w => {
+                                const on = giftWrapKey === w.key;
+                                return (
+                                    <button key={w.key} onClick={() => setGiftWrapKey(w.key)}
+                                        className="rounded-xl px-2.5 py-2 text-left active:scale-[0.98] transition-transform"
+                                        style={on ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.78)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>
+                                        <div className="text-[12px] font-black">{w.emoji} {w.label}</div>
+                                        <div className="text-[9.5px] mt-0.5" style={{ opacity: on ? 0.72 : 0.62 }}>{w.hint}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                     <textarea value={giftNote} onChange={e => setGiftNote(e.target.value)} placeholder="夹一句赠言（可选）" rows={2}
                         className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none" style={paperInput} />
+                    {giftTarget && (
+                        <div className="rounded-xl px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(31,29,26,0.08)', color: INK_SOFT }}>
+                            送达卡会写：{getGiftWrapOption(giftWrapKey).label} · {getGiftOccasionLabel(giftOccasion)} · {giftTarget.emoji}{giftTarget.name}
+                        </div>
+                    )}
                     {characters.length === 0 ? (
                         <div className="text-center text-xs py-6" style={{ color: INK_SOFT }}>还没有角色，先去添加好友吧</div>
                     ) : (
@@ -1729,7 +1824,16 @@ const ShopApp: React.FC = () => {
                 onClose={() => setWishItem(null)}>
                 <div className="space-y-3">
                     <div className="text-[12px] leading-relaxed" style={{ color: INK_SOFT }}>
-                        心愿单不会立刻扣款，只是帮 TA 把想要的东西记下来；以后可在心意参谋里代付或清空。
+                        愿望板不会立刻扣款，只是帮 TA 把想要的东西记下来；以后可在心意参谋里代付或清空。
+                    </div>
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        {SHOP_GIFT_OCCASIONS.map(o => (
+                            <button key={o.key} onClick={() => setWishOccasion(o.key)}
+                                className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
+                                style={chipStyle(wishOccasion === o.key)}>
+                                {o.label}
+                            </button>
+                        ))}
                     </div>
                     {characters.length === 0 ? (
                         <div className="text-center text-xs py-6" style={{ color: INK_SOFT }}>还没有角色</div>
@@ -1738,7 +1842,7 @@ const ShopApp: React.FC = () => {
                             {characters.map((c, i) => (
                                 <Polaroid key={c.id} src={c.convoSettings?.charAvatarOverride || c.avatar}
                                     caption={c.convoSettings?.remarkName?.trim() || c.name} size={52} rotate={i % 2 ? -2 : 2}
-                                    onClick={() => { if (wishItem) addItemToCharWishlist(wishItem, c); setWishItem(null); }} />
+                                    onClick={() => { if (wishItem) addItemToCharWishlist(wishItem, c, wishOccasion, 'manual'); setWishItem(null); }} />
                             ))}
                         </div>
                     )}
@@ -2324,14 +2428,15 @@ const ShopCatalog: React.FC<{
     cat: string; setCat: (c: string) => void;
     search: string; setSearch: (s: string) => void;
     balance: number; favorites: string[];
-    charactersCount: number; wishCount: number; onOpenAdvisor: () => void;
+    characters: CharacterProfile[];
+    charactersCount: number; wishCount: number; onOpenAdvisor: (charId?: string, occasion?: GiftOccasionKey) => void;
     claimedCoupons: string[]; onClaimCoupon: (id: string) => void; onBuyFlash: (item: ShopItem, price: number) => void;
     onCreateItem: () => void;
     onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     onOpenDetail: (i: ShopItem) => void; onToggleFav: (id: string) => void;
     companionCue?: CompanionCue | null; companionAvatar?: string;
     registerItemRef?: (itemId: string, el: HTMLDivElement | null) => void;
-}> = ({ catalog, genBusy, onRefresh, onSearchGen, cat, setCat, search, setSearch, balance, favorites, charactersCount, wishCount, onOpenAdvisor, claimedCoupons, onClaimCoupon, onBuyFlash, onCreateItem, onBuy, onAddCart, onOpenDetail, onToggleFav, companionCue, companionAvatar, registerItemRef }) => {
+}> = ({ catalog, genBusy, onRefresh, onSearchGen, cat, setCat, search, setSearch, balance, favorites, characters, charactersCount, wishCount, onOpenAdvisor, claimedCoupons, onClaimCoupon, onBuyFlash, onCreateItem, onBuy, onAddCart, onOpenDetail, onToggleFav, companionCue, companionAvatar, registerItemRef }) => {
     const home = cat === 'all' && !search.trim();
     const items = useMemo(() => {
         if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x);
@@ -2369,6 +2474,7 @@ const ShopCatalog: React.FC<{
             )}
             {home && (
                 <>
+                    <ShopGiftGateway characters={characters} wishCount={wishCount} onOpenAdvisor={onOpenAdvisor} />
                     <ShopBanner />
                     <GiftAdvisorCallout charactersCount={charactersCount} wishCount={wishCount} onOpen={onOpenAdvisor} />
                     <CouponStrip claimed={claimedCoupons} onClaim={onClaimCoupon} />
@@ -2471,6 +2577,63 @@ const ShopBanner: React.FC = () => {
             </div>
             <div className="absolute bottom-2 right-3 flex gap-1">
                 {BANNERS.map((_, k) => <span key={k} className="w-1.5 h-1.5 rounded-full transition-all" style={{ background: PAPER, opacity: k === i ? 1 : 0.35 }} />)}
+            </div>
+        </div>
+    );
+};
+
+const ShopGiftGateway: React.FC<{
+    characters: CharacterProfile[];
+    wishCount: number;
+    onOpenAdvisor: (charId?: string, occasion?: GiftOccasionKey) => void;
+}> = ({ characters, wishCount, onOpenAdvisor }) => {
+    const quickOccasions = SHOP_GIFT_OCCASIONS.filter(o => ['daily', 'birthday', 'comfort', 'date'].includes(o.key));
+    return (
+        <div className="mb-3 rounded-2xl p-3.5 relative overflow-hidden" style={PANEL}>
+            <div aria-hidden className="absolute -right-8 -top-8 w-28 h-28 rotate-12" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px', opacity: 0.16 }} />
+            <div className="relative flex items-start justify-between gap-3 mb-3">
+                <div>
+                    <SectionTag en="GIFT ROUTE" className="mb-1">给 TA 挑礼</SectionTag>
+                    <div className="text-[12px] leading-relaxed" style={{ color: INK_SOFT }}>
+                        先定人和场景，再看愿望板、参谋推荐和适合关系的尺度。
+                    </div>
+                </div>
+                <button onClick={() => onOpenAdvisor()}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 transition-transform"
+                    style={{ background: INK, color: PAPER }}>
+                    进参谋{wishCount ? ` · ${wishCount}` : ''}
+                </button>
+            </div>
+            <div className="relative flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                {characters.slice(0, 8).map(c => {
+                    const count = cartCount(c.shopCart);
+                    return (
+                        <button key={c.id} onClick={() => onOpenAdvisor(c.id)}
+                            className="shrink-0 flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full active:scale-95 transition-transform"
+                            style={{ background: 'rgba(255,253,247,0.78)', color: INK, border: '1px dashed rgba(150,144,132,0.6)' }}>
+                            <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-7 h-7 rounded-full object-cover" alt="" />
+                            <span className="text-[12px] font-black max-w-[78px] truncate">{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                            {count > 0 && <InkBadge n={count} />}
+                        </button>
+                    );
+                })}
+                {characters.length === 0 && (
+                    <button onClick={() => onOpenAdvisor()} className="text-[12px] font-black rounded-full px-3 py-1.5" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>
+                        先看看送礼流程
+                    </button>
+                )}
+            </div>
+            <div className="relative flex gap-1.5 overflow-x-auto no-scrollbar">
+                {quickOccasions.map(o => (
+                    <button key={o.key} onClick={() => onOpenAdvisor(undefined, o.key)}
+                        className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
+                        style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>
+                        {o.label}
+                    </button>
+                ))}
+                <span className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: 'rgba(255,253,247,0.78)', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.5)' }}>
+                    随便逛逛就在下方货架
+                </span>
             </div>
         </div>
     );
@@ -3009,15 +3172,16 @@ const EmptyState: React.FC<{ Icon: React.ElementType; title: string; hint?: stri
 const GiftAdvisorView: React.FC<{
     catalog: ShopItem[];
     characters: CharacterProfile[];
+    initialSeed?: { charId?: string; occasion?: GiftOccasionKey; nonce: number };
     balance: number;
     favorites: string[];
     onOpen: (i: ShopItem) => void;
     onAddCart: (i: ShopItem) => void;
     onBuy: (i: ShopItem) => void;
-    onAddWish: (item: ShopItem, char: CharacterProfile) => void;
+    onAddWish: (item: ShopItem, char: CharacterProfile, occasion?: GiftOccasionKey, source?: 'manual' | 'advisor', note?: string) => void;
     onCharShop: (char: CharacterProfile) => Promise<void>;
     onClearCharCart: (char: CharacterProfile) => Promise<void>;
-}> = ({ catalog, characters, balance, favorites, onOpen, onAddCart, onBuy, onAddWish, onCharShop, onClearCharCart }) => {
+}> = ({ catalog, characters, initialSeed, balance, favorites, onOpen, onAddCart, onBuy, onAddWish, onCharShop, onClearCharCart }) => {
     const [charId, setCharId] = useState<string>(characters[0]?.id || '');
     const [occasion, setOccasion] = useState<GiftOccasionKey>('daily');
     const [budget, setBudget] = useState(199);
@@ -3027,6 +3191,12 @@ const GiftAdvisorView: React.FC<{
         if (!characters.length) return;
         if (!characters.some(c => c.id === charId)) setCharId(characters[0].id);
     }, [characters, charId]);
+
+    useEffect(() => {
+        if (!initialSeed) return;
+        if (initialSeed.charId && characters.some(c => c.id === initialSeed.charId)) setCharId(initialSeed.charId);
+        if (initialSeed.occasion) setOccasion(initialSeed.occasion);
+    }, [initialSeed?.nonce]);
 
     const char = characters.find(c => c.id === charId) || characters[0] || null;
     const stage = relationStageFromAffection(char?.affection);
@@ -3052,7 +3222,7 @@ const GiftAdvisorView: React.FC<{
     if (!char) return null;
 
     const charName = char.convoSettings?.remarkName?.trim() || char.name;
-    const wishLines = resolveCart(char.shopCart);
+    const wishLines = resolveWishlist(char.shopCart);
     const wishTotal = cartTotal(char.shopCart);
 
     return (
@@ -3112,16 +3282,19 @@ const GiftAdvisorView: React.FC<{
             {wishLines.length > 0 && (
                 <div className="rounded-2xl p-3.5" style={PANEL}>
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[13px] font-black" style={{ color: INK }}>{charName} 的心愿单</span>
+                        <span className="text-[13px] font-black" style={{ color: INK }}>{charName} 的愿望板</span>
                         <span className="text-[12px] font-black" style={{ color: INK }}>¥{formatPrice(wishTotal)}</span>
                     </div>
                     <div className="space-y-1.5 mb-2.5">
-                        {wishLines.slice(0, 4).map(({ item, qty }) => (
+                        {wishLines.slice(0, 4).map(({ item, qty, line, occasionLabel, sourceLabel }) => (
                             <button key={item.id} onClick={() => onOpen(item)}
                                 className="w-full flex items-center gap-2 text-left rounded-xl px-2 py-1.5 active:opacity-70"
                                 style={{ background: 'rgba(255,253,247,0.64)' }}>
                                 <span className="text-[18px]">{item.emoji}</span>
-                                <span className="flex-1 min-w-0 truncate text-[12px] font-bold" style={{ color: INK }}>{item.name} ×{qty}</span>
+                                <span className="flex-1 min-w-0">
+                                    <span className="block truncate text-[12px] font-bold" style={{ color: INK }}>{item.name} ×{qty}</span>
+                                    <span className="block truncate text-[9.5px]" style={{ color: INK_SOFT }}>{[occasionLabel, sourceLabel, line.wishNote].filter(Boolean).join(' · ') || '还没写理由'}</span>
+                                </span>
                                 <span className="text-[11px]" style={{ color: INK_SOFT }}>¥{formatPrice(item.price * qty)}</span>
                             </button>
                         ))}
@@ -3129,7 +3302,7 @@ const GiftAdvisorView: React.FC<{
                     <ScrapButton variant={balance >= wishTotal ? 'ink' : 'ghost'} disabled={busy || balance < wishTotal}
                         onClick={async () => { setBusy(true); try { await onClearCharCart(char); } finally { setBusy(false); } }}
                         className="w-full py-2 text-[12px]">
-                        {balance >= wishTotal ? `替 TA 清空心愿单` : '钱包不足以代付'}
+                        {balance >= wishTotal ? `替 TA 清空愿望板` : '钱包不足以代付'}
                     </ScrapButton>
                 </div>
             )}
@@ -3139,6 +3312,7 @@ const GiftAdvisorView: React.FC<{
                 <div className="space-y-2.5">
                     {advice.map(a => (
                         <GiftAdviceCard key={a.item.id} advice={a} balance={balance} char={char}
+                            occasion={occasion}
                             onOpen={onOpen} onAddCart={onAddCart} onBuy={onBuy} onAddWish={onAddWish} />
                     ))}
                 </div>
@@ -3151,11 +3325,12 @@ const GiftAdviceCard: React.FC<{
     advice: GiftAdvice;
     balance: number;
     char: CharacterProfile;
+    occasion: GiftOccasionKey;
     onOpen: (i: ShopItem) => void;
     onAddCart: (i: ShopItem) => void;
     onBuy: (i: ShopItem) => void;
-    onAddWish: (item: ShopItem, char: CharacterProfile) => void;
-}> = ({ advice, balance, char, onOpen, onAddCart, onBuy, onAddWish }) => {
+    onAddWish: (item: ShopItem, char: CharacterProfile, occasion?: GiftOccasionKey, source?: 'manual' | 'advisor', note?: string) => void;
+}> = ({ advice, balance, char, occasion, onOpen, onAddCart, onBuy, onAddWish }) => {
     const item = advice.item;
     const afford = balance >= item.price;
     return (
@@ -3184,7 +3359,7 @@ const GiftAdviceCard: React.FC<{
                     <button onClick={() => onAddCart(item)} className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ background: 'rgba(255,253,247,0.95)', color: INK, border: '1px dashed rgba(150,144,132,0.7)' }}>
                         <ShoppingCart size={15} weight="bold" />
                     </button>
-                    <ScrapButton variant="paper" onClick={() => onAddWish(item, char)} className="px-3 py-1.5 text-[11px]">夹心愿</ScrapButton>
+                    <ScrapButton variant="paper" onClick={() => onAddWish(item, char, occasion, 'advisor', advice.reason)} className="px-3 py-1.5 text-[11px]">夹心愿</ScrapButton>
                     <ScrapButton variant={afford ? 'ink' : 'ghost'} onClick={() => afford && onBuy(item)} disabled={!afford} className="px-3 py-1.5 text-[11px]">
                         {afford ? '买下' : '差点'}
                     </ScrapButton>
@@ -3485,17 +3660,20 @@ const ReceiptsView: React.FC<{
                                     {busy ? `${char.name} 正在逛…` : `请 ${char.name} 逛逛铺子`}
                                 </ScrapButton>
                             )}
-                            {char && resolveCart(char.shopCart).length > 0 && (
+                            {char && resolveWishlist(char.shopCart).length > 0 && (
                                 <div className="mb-3 rounded-2xl p-3" style={PANEL}>
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[12px] font-bold" style={{ color: INK }}>🛒 {char.name} 的心愿单</span>
+                                        <span className="text-[12px] font-bold" style={{ color: INK }}>🛒 {char.name} 的愿望板</span>
                                         <span className="text-[12px] font-black" style={{ color: INK }}>¥{formatPrice(cartTotal(char.shopCart))}</span>
                                     </div>
                                     <div className="space-y-1 mb-2.5">
-                                        {resolveCart(char.shopCart).map(({ item, qty }) => (
+                                        {resolveWishlist(char.shopCart).map(({ item, qty, line, occasionLabel, sourceLabel }) => (
                                             <div key={item.id} className="flex items-center gap-2 text-[12px]" style={{ color: INK }}>
                                                 <span className="text-[16px]">{item.emoji}</span>
-                                                <span className="flex-1 truncate">{item.name} ×{qty}</span>
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="block truncate">{item.name} ×{qty}</span>
+                                                    <span className="block truncate text-[9.5px]" style={{ color: INK_SOFT }}>{[occasionLabel, sourceLabel, line.wishNote].filter(Boolean).join(' · ') || '愿望板'}</span>
+                                                </span>
                                                 <span style={{ color: INK_SOFT }}>¥{formatPrice(item.price * qty)}</span>
                                             </div>
                                         ))}
@@ -3503,7 +3681,7 @@ const ReceiptsView: React.FC<{
                                     <ScrapButton variant={balance >= cartTotal(char.shopCart) ? 'ink' : 'ghost'} disabled={busy || balance < cartTotal(char.shopCart)}
                                         onClick={async () => { setBusy(true); try { await onClearCharCart(char); } finally { setBusy(false); } }}
                                         className="w-full py-2 text-[12px]">
-                                        {balance >= cartTotal(char.shopCart) ? `替 TA 清空心愿单（付 ¥${formatPrice(cartTotal(char.shopCart))}）` : '钱包不足以代付'}
+                                        {balance >= cartTotal(char.shopCart) ? `替 TA 清空愿望板（付 ¥${formatPrice(cartTotal(char.shopCart))}）` : '钱包不足以代付'}
                                     </ScrapButton>
                                 </div>
                             )}

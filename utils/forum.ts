@@ -110,6 +110,7 @@ export interface ForumDraft {
     board: string;
     title: string;
     body: string;
+    tags?: string[];
     pollOn: boolean;
     pollQ: string;
     pollOpts: string[];
@@ -133,6 +134,12 @@ export interface ForumTrendPack {
 let _seq = 0;
 export const fid = (): string => `${Date.now().toString(36)}${(_seq++).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+export const normalizeForumTags = (input: unknown, limit = 8): string[] =>
+    Array.from(new Set(safeArr<string>(input)
+        .map(t => String(t).replace(/^#+/, '').trim())
+        .filter(Boolean)
+        .map(t => t.slice(0, 16))))
+        .slice(0, limit);
 
 export const FORUM_TRENDS_KEY = 'moro_forum_trends_v1';
 export const FORUM_TRENDS_ENDPOINT = 'https://noir2.cc.cd/forum/trends';
@@ -567,7 +574,7 @@ export function normalizeForumState(input: unknown): ForumState {
                 likes: Math.max(0, Math.floor(Number(p.likes) || 0)),
                 replies,
                 replyCount: Math.max(replies.length + 1, Math.floor(Number(p.replyCount) || replies.length + 1)),
-                tags: safeArr<string>(p.tags).map(t => String(t).trim()).filter(Boolean).slice(0, 8),
+                tags: normalizeForumTags(p.tags, 8),
                 mood: typeof p.mood === 'string' ? p.mood : undefined,
                 lastReaderAt: Number.isFinite(Number(p.lastReaderAt)) ? Number(p.lastReaderAt) : undefined,
                 participants: safeArr<ForumParticipant>(p.participants).map(normalizeParticipant).filter(Boolean) as ForumParticipant[],
@@ -1495,6 +1502,7 @@ export function normalizeForumMeta(input: unknown): ForumUserMeta {
             board: boardOf(String(x?.board || '')) ? String(x.board) : 'chat',
             title: String(x?.title || ''),
             body: String(x?.body || ''),
+            tags: normalizeForumTags(x?.tags, 8),
             pollOn: !!x?.pollOn,
             pollQ: String(x?.pollQ || ''),
             pollOpts: safeArr<string>(x?.pollOpts).map(String).slice(0, 5).length >= 2 ? safeArr<string>(x?.pollOpts).map(String).slice(0, 5) : ['', ''],
@@ -1574,7 +1582,7 @@ export function upsertForumDraft(meta: ForumUserMeta, draft: ForumDraft): ForumU
     const normalized = normalizeForumMeta(meta);
     const rest = (normalized.drafts || []).filter(d => d.id !== draft.id);
     if (isForumDraftEmpty(draft)) return { ...normalized, drafts: rest };
-    return { ...normalized, drafts: [{ ...draft, updatedAt: draft.updatedAt || Date.now() }, ...rest].slice(0, 30) };
+    return { ...normalized, drafts: [{ ...draft, tags: normalizeForumTags(draft.tags, 8), updatedAt: draft.updatedAt || Date.now() }, ...rest].slice(0, 30) };
 }
 
 export function removeForumDraft(meta: ForumUserMeta, draftId: string): ForumUserMeta {
@@ -1622,6 +1630,15 @@ export function toggleCollect(meta: ForumUserMeta, postId: string): ForumUserMet
     const has = meta.collectedPostIds.includes(postId);
     return { ...meta, collectedPostIds: has ? meta.collectedPostIds.filter(p => p !== postId) : [postId, ...meta.collectedPostIds] };
 }
+
+export function toggleMutePost(meta: ForumUserMeta, postId: string): ForumUserMeta {
+    const normalized = normalizeForumMeta(meta);
+    const muted = new Set(normalized.mutedPostIds || []);
+    if (muted.has(postId)) muted.delete(postId);
+    else muted.add(postId);
+    return { ...normalized, mutedPostIds: [...muted].slice(0, 500) };
+}
+
 export function addExp(meta: ForumUserMeta, n: number): ForumUserMeta {
     return { ...meta, exp: Math.max(0, meta.exp + n) };
 }

@@ -29,25 +29,74 @@ interface WeatherDetailProps {
 }
 
 const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose, onWeatherUpdate }) => {
-    const { realtimeConfig, openApp } = useOS();
+    const { realtimeConfig, updateRealtimeConfig, openApp, addToast } = useOS();
     const [forecast, setForecast] = useState<WeatherForecast | null>(null);
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [cityInput, setCityInput] = useState(realtimeConfig.weatherMode === 'manual' ? realtimeConfig.weatherCity || '' : '');
+    const [cityBusy, setCityBusy] = useState(false);
 
-    const load = React.useCallback((force = false) => {
+    const load = React.useCallback(async (force = false, configOverride = realtimeConfig): Promise<WeatherForecast | null> => {
         setStatus('loading');
         if (force) RealtimeContextManager.clearWeatherCache();
-        RealtimeContextManager.fetchWeatherForecast(
-            realtimeConfig,
-            force ? { requestLocationPermission: true } : undefined,
-        )
-            .then(f => {
-                if (f) { setForecast(f); setStatus('ready'); onWeatherUpdate?.(f.current); }
-                else setStatus('error');
-            })
-            .catch(() => setStatus('error'));
+        try {
+            const f = await RealtimeContextManager.fetchWeatherForecast(
+                configOverride,
+                force ? { requestLocationPermission: true } : undefined,
+            );
+            if (f) {
+                setForecast(f);
+                setStatus('ready');
+                onWeatherUpdate?.(f.current);
+                return f;
+            }
+            setStatus('error');
+        } catch {
+            setStatus('error');
+        }
+        return null;
     }, [realtimeConfig, onWeatherUpdate]);
 
     useEffect(() => { load(); }, [load]);
+
+    useEffect(() => {
+        setCityInput(realtimeConfig.weatherMode === 'manual' ? realtimeConfig.weatherCity || '' : '');
+    }, [realtimeConfig.weatherMode, realtimeConfig.weatherCity]);
+
+    const saveManualCity = React.useCallback(async () => {
+        const city = cityInput.trim();
+        if (!city) {
+            addToast('先写一个城市名', 'info');
+            return;
+        }
+        const nextConfig = {
+            ...realtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'manual' as const,
+            weatherCity: city,
+        };
+        setCityBusy(true);
+        updateRealtimeConfig({
+            weatherEnabled: true,
+            weatherMode: 'manual',
+            weatherCity: city,
+        });
+        const f = await load(true, nextConfig);
+        setCityBusy(false);
+        addToast(f ? `天气城市已切到 ${f.city || city}` : `没找到 ${city} 的天气`, f ? 'success' : 'error');
+    }, [addToast, cityInput, load, realtimeConfig, updateRealtimeConfig]);
+
+    const useGeoWeather = React.useCallback(async () => {
+        const nextConfig = {
+            ...realtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'geo' as const,
+        };
+        setCityBusy(true);
+        updateRealtimeConfig({ weatherEnabled: true, weatherMode: 'geo' });
+        const f = await load(true, nextConfig);
+        setCityBusy(false);
+        addToast(f ? '天气已改回定位模式' : '定位天气暂时取不到', f ? 'success' : 'error');
+    }, [addToast, load, realtimeConfig, updateRealtimeConfig]);
 
     const advice = forecast ? RealtimeContextManager.generateWeatherAdvice(forecast.current) : '';
 
@@ -80,6 +129,36 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose, onWeatherUpdate 
                     aria-label="关闭">✕</button>
             </div>
 
+            <div className="shrink-0 px-5 pb-2">
+                <div className="rounded-2xl bg-white/15 backdrop-blur px-3 py-3">
+                    <div className="flex items-center gap-2">
+                        <input
+                            value={cityInput}
+                            onChange={e => setCityInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') void saveManualCity(); }}
+                            placeholder="自定义城市"
+                            className="min-w-0 flex-1 h-9 rounded-full bg-white/20 px-3 text-[12px] font-medium text-white placeholder:text-white/55 outline-none border border-white/20 focus:border-white/55"
+                            disabled={cityBusy}
+                        />
+                        <button
+                            onClick={() => void saveManualCity()}
+                            disabled={cityBusy || !cityInput.trim()}
+                            className="shrink-0 h-9 px-4 rounded-full bg-white/25 text-[12px] font-bold active:scale-95 transition-transform disabled:opacity-45"
+                        >
+                            {cityBusy ? '...' : '保存'}
+                        </button>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-white/70">
+                        <span className="truncate">{realtimeConfig.weatherMode === 'manual' ? '当前：自定义城市' : '当前：定位 / IP 自动'}</span>
+                        {realtimeConfig.weatherMode === 'manual' && (
+                            <button onClick={() => void useGeoWeather()} disabled={cityBusy} className="shrink-0 underline underline-offset-2 active:opacity-70 disabled:opacity-45">
+                                改回定位
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {status === 'loading' && (
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 opacity-90">
                     <div className="w-9 h-9 border-4 border-white/30 border-t-white rounded-full animate-spin" />
@@ -92,7 +171,7 @@ const WeatherDetail: React.FC<WeatherDetailProps> = ({ onClose, onWeatherUpdate 
                     <WeatherGlyph icon="03d" className="w-14 h-14 opacity-70" />
                     <div className="text-sm opacity-90">暂时取不到天气预报</div>
                     <div className="text-[11px] opacity-60 leading-relaxed">
-                        可能是定位被拒绝或网络问题。可在「设置 → 风向标」里改用手填城市，或检查网络后重试。
+                        可能是定位被拒绝或网络问题。可在上方填写自定义城市，或去「文具盒 → 实时感知」检查配置。
                     </div>
                     <div className="flex gap-2 mt-1">
                         <button onClick={() => load()} className="px-4 py-2 rounded-full bg-white/25 backdrop-blur text-xs font-bold active:scale-95 transition-transform">重试</button>

@@ -55,9 +55,14 @@ export function normalizeMessageContent(
     if (type === 'gift_card') {
         const g = msg.metadata?.gift || {};
         const note = typeof g.note === 'string' && g.note.trim() ? `，赠言「${g.note.trim()}」` : '';
+        const ritual = [
+            typeof g.occasionLabel === 'string' && g.occasionLabel.trim() ? `场景「${g.occasionLabel.trim()}」` : '',
+            typeof g.wrapLabel === 'string' && g.wrapLabel.trim() ? `包装「${g.wrapLabel.trim()}」` : '',
+            g.fromWishlist ? '来自愿望板' : '',
+        ].filter(Boolean).join('，');
         const giver = msg.role === 'user' ? userName : charName;
         const receiver = msg.role === 'user' ? charName : userName;
-        return `[心意铺礼物] ${giver}送了${receiver} ${g.emoji || ''}${g.name || '一份礼物'}${note}`;
+        return `[心意铺礼物] ${giver}送了${receiver} ${g.emoji || ''}${g.name || '一份礼物'}${note}${ritual ? `，${ritual}` : ''}`;
     }
 
     // 日常寄物：回形针里的轻量互寄，不走心意铺订单/背包/余额。

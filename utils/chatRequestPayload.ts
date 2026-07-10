@@ -340,6 +340,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                     rangeEnd: auto.rangeEnd,
                     density: settings.defaultDensity || 'standard',
                     writeBack: false,
+                    userSetting: fullUserSetting,
+                    userName: userProfile.name || '用户',
                     seed: `${char.id}_${auto.rangeStart}_${auto.rangeEnd}_chat_auto`,
                 });
                 const nextSnapshot = generateXunjiMonitorSnapshot({

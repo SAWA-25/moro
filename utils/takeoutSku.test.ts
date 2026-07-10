@@ -10,8 +10,11 @@ import {
     recommendAddOnDishes, takeoutHistoryStats,
     sanitizeTakeoutDish, saveCustomDish, getCustomDishes, deleteCustomDish,
     saveCustomStore, getCustomStores, deleteCustomStore, mergeCustomStores, cloneDishForStore,
+    getTakeoutMemberState, addTakeoutMemberPoints, takeoutMemberLevel, takeoutDailyCheckin, canTakeoutDailyCheckin,
+    getTakeoutFootprints, pushTakeoutFootprint, clearTakeoutFootprints,
+    getTakeoutSavedCarts, saveTakeoutSavedCart, deleteTakeoutSavedCart, clearTakeoutSavedCarts,
 } from './takeout';
-import type { CharacterProfile, TakeoutDish, TakeoutOrder, TakeoutStore } from '../types';
+import type { CharacterProfile, TakeoutDish, TakeoutOrder, TakeoutReview, TakeoutStore } from '../types';
 
 describe('菜品规格 / 加料（选规格）', () => {
     it('饮品给甜度/冰量；奶茶额外有加料', () => {
@@ -285,5 +288,78 @@ describe('凑单小帮手 / 饭票统计', () => {
         expect(stats.monthTotal).toBe(64);
         expect(stats.topStore).toEqual({ name: '面馆', count: 2 });
         expect(stats.topDish).toEqual({ name: '牛肉面', count: 3 });
+    });
+});
+
+describe('会员积分 / 足迹 / 饭篮草稿', () => {
+    beforeEach(() => {
+        localStorage.removeItem('moro_takeout_member_v1');
+        clearTakeoutFootprints();
+        clearTakeoutSavedCarts();
+    });
+
+    it('会员积分清洗、升级，并且每日签到一天只领一次', () => {
+        expect(getTakeoutMemberState()).toEqual({ points: 0 });
+        expect(takeoutMemberLevel(181).title).toBe('饭票熟客');
+        expect(addTakeoutMemberPoints(75).points).toBe(75);
+
+        const now = new Date('2026-07-10T09:00:00').getTime();
+        expect(canTakeoutDailyCheckin(getTakeoutMemberState(), now)).toBe(true);
+        expect(takeoutDailyCheckin(now, 8).points).toBe(83);
+        expect(canTakeoutDailyCheckin(getTakeoutMemberState(), now + 60_000)).toBe(false);
+        expect(takeoutDailyCheckin(now + 60_000, 8).points).toBe(83);
+        expect(canTakeoutDailyCheckin(getTakeoutMemberState(), new Date('2026-07-11T09:00:00').getTime())).toBe(true);
+    });
+
+    it('足迹按店铺去重置顶，并限制坏数据', () => {
+        pushTakeoutFootprint({ id: 's1', name: '面馆', emoji: '🍜', category: '中餐' }, 100);
+        pushTakeoutFootprint({ id: 's2', name: '茶铺', emoji: '🧋', category: '饮品' }, 200);
+        pushTakeoutFootprint({ id: 's1', name: '面馆新名', emoji: '🍜', category: '中餐' }, 300);
+
+        expect(getTakeoutFootprints().map(f => [f.storeId, f.storeName, f.at])).toEqual([
+            ['s1', '面馆新名', 300],
+            ['s2', '茶铺', 200],
+        ]);
+        localStorage.setItem('moro_takeout_footprints_v1', JSON.stringify([{ storeId: '', storeName: '坏', at: 1 }, { storeId: 'ok', storeName: '好店', at: 2 }]));
+        expect(getTakeoutFootprints()).toHaveLength(1);
+    });
+
+    it('饭篮草稿会清洗条目、可覆盖保存和删除', () => {
+        const saved = saveTakeoutSavedCart({
+            id: 'cart-1',
+            storeId: 's1',
+            storeName: '面馆',
+            storeEmoji: '🍜',
+            recipient: '我',
+            payer: 'me',
+            note: '少辣',
+            items: [
+                { dishId: 'n', name: '牛肉面', price: 18, qty: 2, emoji: '🍜', spec: '大份', addons: ['加蛋'] },
+                { dishId: '', name: '坏条目', price: 1, qty: 1 },
+            ],
+        });
+        expect(saved?.subtotal).toBe(36);
+        expect(saved?.items).toHaveLength(1);
+        saveTakeoutSavedCart({ ...saved!, items: [{ dishId: 'n', name: '牛肉面', price: 20, qty: 1 }] });
+        expect(getTakeoutSavedCarts()).toHaveLength(1);
+        expect(getTakeoutSavedCarts()[0].subtotal).toBe(20);
+        expect(deleteTakeoutSavedCart('cart-1')).toEqual([]);
+    });
+});
+
+describe('评价扩展兼容', () => {
+    it('旧评价不需要配送/包装字段，新评价可带服务标签', () => {
+        const oldReview: TakeoutReview = { rating: 5, text: '好吃', at: 100 };
+        const newReview: TakeoutReview = {
+            rating: 4,
+            riderRating: 5,
+            packingRating: 3,
+            text: '送得快，汤稍微洒了',
+            tags: ['送得快'],
+            serviceTags: ['准时达', '包装严实'],
+            at: 200,
+        };
+        expect(oldReview.riderRating).toBeUndefined();
+        expect(newReview.serviceTags).toEqual(['准时达', '包装严实']);
     });
 });

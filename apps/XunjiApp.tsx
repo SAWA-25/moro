@@ -17,6 +17,7 @@ import {
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
+import { buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 import type {
   CharacterProfile,
   XunjiCharacterLocationSettings,
@@ -60,6 +61,7 @@ type XunjiWindowId =
   | 'screenlife'
   | 'social'
   | 'moments'
+  | 'timeline'
   | 'monitor'
   | 'phone'
   | 'network'
@@ -75,6 +77,7 @@ const WINDOW_META: Record<XunjiWindowId, { label: string; sub: string; icon: Rea
   screenlife: { label: '屏幕记录', sub: '生成指定时间段的手机使用记录', icon: <Sparkle size={18} weight="fill" />, tone: 'from-cyan-50 to-white' },
   social: { label: '关系线索', sub: '整理情绪、亲近信号和迟疑点', icon: <Heartbeat size={18} weight="fill" />, tone: 'from-rose-50 to-white' },
   moments: { label: '浮窗动态', sub: '查看短事件卡和边角提醒', icon: <Bell size={18} weight="fill" />, tone: 'from-amber-50 to-white' },
+  timeline: { label: '时间线', sub: '把屏幕、位置、报备和设备事件排成一条线', icon: <Compass size={18} weight="fill" />, tone: 'from-indigo-50 to-white' },
   monitor: { label: '实时概览', sub: '刷新位置、设备和健康概况', icon: <Eye size={18} weight="fill" />, tone: 'from-slate-50 to-white' },
   phone: { label: '使用统计', sub: 'App 使用、解锁、锁屏和排行', icon: <Eye size={18} weight="bold" />, tone: 'from-cyan-50 to-white' },
   network: { label: '网络切换', sub: 'WiFi / 移动数据记录', icon: <Compass size={18} weight="bold" />, tone: 'from-emerald-50 to-white' },
@@ -88,6 +91,17 @@ const WINDOW_META: Record<XunjiWindowId, { label: string; sub: string; icon: Rea
 };
 
 const DENSITY_LABEL: Record<XunjiDensity, string> = { light: '轻量', standard: '标准', detailed: '详细' };
+type XunjiTimelineKind = 'screenlife' | 'report' | 'phone' | 'location' | 'network' | 'call' | 'battery' | 'health';
+type XunjiTimelineFilter = 'all' | XunjiTimelineKind;
+type XunjiTimelineItem = {
+  id: string;
+  at: number;
+  kind: XunjiTimelineKind;
+  title: string;
+  body: string;
+  source: string;
+  accent: string;
+};
 const REPORT_GROUPS: { title: string; types: XunjiReportType[] }[] = [
   { title: '手机解锁次数', types: ['unlock_count'] },
   { title: '网络切换', types: ['network_switch'] },
@@ -302,10 +316,11 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
 );
 
 const XunjiApp: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, auxApiConfig, updateCharacter, addToast } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, auxApiConfig, userProfile, updateCharacter, addToast } = useOS();
   const defaultCharId = activeCharacterId || characters[0]?.id;
   const [settings, setSettings] = useState<XunjiSettings>(() => createDefaultXunjiSettings(defaultCharId));
   const [snapshot, setSnapshot] = useState<XunjiMonitorSnapshot | null>(null);
+  const [snapshots, setSnapshots] = useState<XunjiMonitorSnapshot[]>([]);
   const [reports, setReports] = useState<XunjiReportItem[]>([]);
   const [runs, setRuns] = useState<XunjiScreenlifeRun[]>([]);
   const [activeWindow, setActiveWindow] = useState<XunjiWindowId | null>(null);
@@ -330,6 +345,8 @@ const XunjiApp: React.FC = () => {
   const buildLocationSource = (s: XunjiSettings = settings, char: CharacterProfile | undefined = activeChar) => (
     buildXunjiLocationSourceForChar(s, char?.id)
   );
+  const promptUserName = userProfile?.name || '用户';
+  const buildPromptUserSetting = () => buildFullActiveUserSetting(userProfile, { fallback: `用户名：${promptUserName}` });
 
   const persistSettings = (patch: Partial<XunjiSettings>) => {
     if (patch.activeCharId && patch.activeCharId !== settings.activeCharId) {
@@ -375,6 +392,7 @@ const XunjiApp: React.FC = () => {
       });
       void DB.saveXunjiSnapshot(nextSnapshot);
       setSnapshot(nextSnapshot);
+      setSnapshots(prev => [nextSnapshot, ...prev.filter(item => item.id !== nextSnapshot.id && item.charId === activeChar.id)].slice(0, 12));
     }
   };
 
@@ -398,24 +416,30 @@ const XunjiApp: React.FC = () => {
     if (!activeChar) return;
     let alive = true;
     setSnapshot(null);
+    setSnapshots([]);
     setReports([]);
     setRuns([]);
     (async () => {
-      const [latest, savedReports, savedRuns] = await Promise.all([
-        DB.getLatestXunjiSnapshot(activeChar.id),
+      const [savedSnapshots, savedReports, savedRuns] = await Promise.all([
+        DB.getXunjiSnapshots(activeChar.id, 12),
         DB.getXunjiReports(activeChar.id, 80),
         DB.getXunjiRuns(activeChar.id, 10),
       ]);
       if (!alive) return;
+      const latest = savedSnapshots[0];
       if (latest) {
         setSnapshot(latest);
+        setSnapshots(savedSnapshots.filter(item => item.charId === activeChar.id));
       } else {
         const generated = generateXunjiMonitorSnapshot({
           char: activeChar,
           locationSource: buildLocationSource(settings, activeChar),
         });
         await DB.saveXunjiSnapshot(generated);
-        if (alive) setSnapshot(generated);
+        if (alive) {
+          setSnapshot(generated);
+          setSnapshots([generated]);
+        }
       }
       setReports(savedReports.filter(r => r.charId === activeChar.id));
       setRuns(savedRuns.filter(run => run.charId === activeChar.id));
@@ -442,14 +466,18 @@ const XunjiApp: React.FC = () => {
     try {
       const api = resolveAuxApi(auxApiConfig, apiConfig);
       const hasApi = !!(api.baseUrl && api.model);
+      const userSetting = hasApi ? await buildPromptUserSetting() : undefined;
       const next = await generateXunjiRealtimeSnapshot({
         char: activeChar,
         previous: activeSnapshot,
         api: hasApi ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
         locationSource: buildLocationSource(settings, activeChar),
+        userSetting,
+        userName: promptUserName,
       });
       await DB.saveXunjiSnapshot(next);
       setSnapshot(next);
+      setSnapshots(prev => [next, ...prev.filter(item => item.id !== next.id && item.charId === activeChar.id)].slice(0, 12));
       const items = preserveReportState(generateXunjiReports({ char: activeChar, snapshot: next, rules: settings.reportRules }).slice(0, 6), activeReports);
       if (items.length) {
         await DB.saveXunjiReports(items);
@@ -496,6 +524,10 @@ const XunjiApp: React.FC = () => {
   const writeReportsBack = async () => {
     if (!activeChar || activeReports.length === 0) return;
     const chosen = activeReports.filter(r => !r.writtenBack).slice(0, 8);
+    if (chosen.length === 0) {
+      addToast('没有新的报备需要写入', 'info');
+      return;
+    }
     const memo = {
       id: `memo_xunji_reports_${Date.now()}`,
       by: 'char' as const,
@@ -506,6 +538,22 @@ const XunjiApp: React.FC = () => {
     await Promise.all(chosen.map(r => DB.updateXunjiReport(r.id, { writtenBack: true })));
     setReports(prev => prev.map(r => chosen.some(c => c.id === r.id) ? { ...r, writtenBack: true } : r));
     addToast('事件提醒已写入角色日常', 'success');
+  };
+
+  const writeSingleReportBack = async (id: string) => {
+    if (!activeChar) return;
+    const item = activeReports.find(r => r.id === id);
+    if (!item) return;
+    const memo = {
+      id: `memo_xunji_report_${item.id}_${Date.now()}`,
+      by: 'char' as const,
+      createdAt: Date.now(),
+      text: `【循迹报备写回】${XUNJI_REPORT_LABELS[item.type]}：${item.title}。${item.body}`,
+    };
+    await updateCharacter(activeChar.id, { memos: [memo, ...(activeChar.memos || [])].slice(0, 80) });
+    await DB.updateXunjiReport(item.id, { writtenBack: true, acknowledged: true });
+    setReports(prev => prev.map(r => r.id === item.id ? { ...r, writtenBack: true, acknowledged: true } : r));
+    addToast('这条报备已写入角色日常', 'success');
   };
 
   const writeLatestTraceBack = async () => {
@@ -539,13 +587,17 @@ const XunjiApp: React.FC = () => {
       const rangeStart = options?.rangeStart ?? Math.min(range.start, range.end - 30 * 60 * 1000);
       const rangeEnd = options?.rangeEnd ?? Math.max(range.end, range.start + 30 * 60 * 1000);
       const api = resolveAuxApi(auxApiConfig, apiConfig);
+      const hasApi = !!(api.baseUrl && api.model);
+      const userSetting = hasApi ? await buildPromptUserSetting() : undefined;
       const run = await generateXunjiScreenlifeRun({
         char: activeChar,
-        api: api.baseUrl && api.model ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
+        api: hasApi ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
         rangeStart,
         rangeEnd,
         density: options?.auto ? settings.defaultDensity || density : density,
         writeBack: options?.auto ? false : settings.writeBackToCharacter,
+        userSetting,
+        userName: promptUserName,
         seed: options?.auto ? `${activeChar.id}_${rangeStart}_${rangeEnd}_auto` : undefined,
       });
       await DB.saveXunjiRun(run);
@@ -555,12 +607,15 @@ const XunjiApp: React.FC = () => {
         nextSnapshot = await generateXunjiRealtimeSnapshot({
           char: activeChar,
           previous: activeSnapshot,
-          api: api.baseUrl && api.model ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
+          api: hasApi ? { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : null,
           locationSource: buildLocationSource(settings, activeChar),
+          userSetting,
+          userName: promptUserName,
           now,
         });
         await DB.saveXunjiSnapshot(nextSnapshot);
         setSnapshot(nextSnapshot);
+        setSnapshots(prev => nextSnapshot ? [nextSnapshot, ...prev.filter(item => item.id !== nextSnapshot?.id && item.charId === activeChar.id)].slice(0, 12) : prev);
       }
 
       let linkedReports: XunjiReportItem[] = [];
@@ -617,6 +672,15 @@ const XunjiApp: React.FC = () => {
 
   const runScreenlife = () => runScreenlifeForRange();
 
+  const deleteRun = async (runId: string) => {
+    const run = activeRuns.find(item => item.id === runId);
+    if (!run) return;
+    if (!window.confirm(`删除这条屏幕记录「${run.title}」？`)) return;
+    await DB.deleteXunjiRun(runId);
+    setRuns(prev => prev.filter(item => item.id !== runId));
+    addToast('屏幕记录已删除', 'success');
+  };
+
   useEffect(() => {
     if (!activeChar) return;
     const tick = () => {
@@ -657,6 +721,7 @@ const XunjiApp: React.FC = () => {
     if (!window.confirm(`清空 ${activeChar.name} 的循迹数据？`)) return;
     const count = await DB.clearXunjiForChar(activeChar.id);
     setSnapshot(null);
+    setSnapshots([]);
     setReports([]);
     setRuns([]);
     setSettings(prev => {
@@ -694,6 +759,7 @@ const XunjiApp: React.FC = () => {
           snapshot={activeSnapshot}
           reports={activeReports}
           runs={activeRuns}
+          snapshots={snapshots}
           settings={settings}
           syncing={syncing}
           loading={loading}
@@ -722,6 +788,7 @@ const XunjiApp: React.FC = () => {
             snapshot={activeSnapshot}
             reports={activeReports}
             runs={activeRuns}
+            snapshots={snapshots}
             rangePreset={rangePreset}
             setRangePreset={setRangePreset}
             customStart={customStart}
@@ -741,7 +808,9 @@ const XunjiApp: React.FC = () => {
             onGenerateReports={generateReportsNow}
             onMarkAllRead={markAllRead}
             onMarkReport={markReport}
+            onWriteReportBack={writeSingleReportBack}
             onWriteReportsBack={writeReportsBack}
+            onDeleteRun={deleteRun}
             onOpenChat={openWhisperChat}
             onWriteLatestBack={writeLatestTraceBack}
           />
@@ -803,6 +872,7 @@ const TinyMetric: React.FC<{ label: string; value: React.ReactNode }> = ({ label
 
 const WorkbenchHome: React.FC<{
   snapshot: XunjiMonitorSnapshot | null;
+  snapshots: XunjiMonitorSnapshot[];
   reports: XunjiReportItem[];
   runs: XunjiScreenlifeRun[];
   settings: XunjiSettings;
@@ -814,7 +884,7 @@ const WorkbenchHome: React.FC<{
   onOpenChat: () => void;
   onWriteBack: () => void;
   onToggleChatContext: (next: boolean) => void;
-}> = ({ snapshot, reports, runs, settings, syncing, loading, onOpen, onRefresh, onRun, onOpenChat, onWriteBack, onToggleChatContext }) => {
+}> = ({ snapshot, snapshots, reports, runs, settings, syncing, loading, onOpen, onRefresh, onRun, onOpenChat, onWriteBack, onToggleChatContext }) => {
   const [section, setSection] = useState<XunjiHomeSection>('overview');
   const latestRun = runs[0];
   const social = latestRun?.socialInference;
@@ -870,6 +940,7 @@ const WorkbenchHome: React.FC<{
           </section>
           <div className="grid grid-cols-2 gap-2">
             <CompactTile id="social" onOpen={onOpen} metric={social ? `${social.screenlifeScore}/100` : '--'} />
+            <CompactTile id="timeline" onOpen={onOpen} metric={`${runs.length + snapshots.length + reports.length} 条`} />
             <CompactTile id="report" onOpen={onOpen} metric={unread ? `${unread} 未读` : `${reports.length}`} />
           </div>
         </div>
@@ -894,6 +965,7 @@ const WorkbenchHome: React.FC<{
             <WindowTile id="screenlife" onOpen={onOpen} />
             <WindowTile id="social" onOpen={onOpen} badge={social ? `${social.screenlifeScore}/100` : undefined} />
             <WindowTile id="moments" onOpen={onOpen} badge={`${latestRun?.moments?.length || 0}`} />
+            <WindowTile id="timeline" onOpen={onOpen} badge={`${runs.length + reports.length}`} />
             <WindowTile id="report" onOpen={onOpen} badge={unread ? `${unread} 未读` : undefined} />
           </div>
         </div>
@@ -1006,6 +1078,7 @@ const WindowContent: React.FC<{
   characters: CharacterProfile[];
   settings: XunjiSettings;
   snapshot: XunjiMonitorSnapshot | null;
+  snapshots: XunjiMonitorSnapshot[];
   reports: XunjiReportItem[];
   runs: XunjiScreenlifeRun[];
   rangePreset: RangePreset;
@@ -1027,7 +1100,9 @@ const WindowContent: React.FC<{
   onGenerateReports: () => void;
   onMarkAllRead: () => void;
   onMarkReport: (id: string, patch: Partial<XunjiReportItem>) => void;
+  onWriteReportBack: (id: string) => void;
   onWriteReportsBack: () => void;
+  onDeleteRun: (id: string) => void;
   onOpenChat: () => void;
   onWriteLatestBack: () => void;
 }> = (props) => {
@@ -1046,11 +1121,13 @@ const WindowContent: React.FC<{
       setDensity={props.setDensity}
       loading={props.loading}
       onRun={props.onRun}
+      onDeleteRun={props.onDeleteRun}
     />
   );
   if (id === 'social') return <SocialInferencePanel run={props.runs[0]} onOpenChat={props.onOpenChat} onWriteBack={props.onWriteLatestBack} />;
   if (id === 'moments') return <MomentsPanel moments={props.runs[0]?.moments || []} run={props.runs[0]} onRun={props.onRun} loading={props.loading} />;
-  if (id === 'monitor') return snapshot ? <MonitorTab snapshot={snapshot} syncing={props.syncing} routeExpanded={props.routeExpanded} setRouteExpanded={props.setRouteExpanded} onRefresh={props.onRefresh} /> : <EmptyState text="还没有实时数据。" />;
+  if (id === 'timeline') return <TimelinePanel runs={props.runs} snapshots={props.snapshots} reports={props.reports} onOpenChat={props.onOpenChat} onWriteBack={props.onWriteLatestBack} />;
+  if (id === 'monitor') return snapshot ? <MonitorTab snapshot={snapshot} snapshots={props.snapshots} syncing={props.syncing} routeExpanded={props.routeExpanded} setRouteExpanded={props.setRouteExpanded} onRefresh={props.onRefresh} /> : <EmptyState text="还没有实时数据。" />;
   if (!snapshot && ['phone', 'network', 'device', 'location', 'health', 'calls', 'battery'].includes(id)) return <EmptyState text="还没有实时数据，请先刷新。" />;
   if (id === 'phone' && snapshot) return <PhoneUsagePanel snapshot={snapshot} appRanks={appRanks} />;
   if (id === 'network' && snapshot) return <NetworkPanel snapshot={snapshot} />;
@@ -1068,6 +1145,7 @@ const WindowContent: React.FC<{
       onGenerate={props.onGenerateReports}
       onMarkAllRead={props.onMarkAllRead}
       onMarkReport={props.onMarkReport}
+      onWriteReportBack={props.onWriteReportBack}
       onWriteBack={props.onWriteReportsBack}
     />
   );
@@ -1207,6 +1285,222 @@ const MomentCard: React.FC<{ moment: XunjiGeneratedMoment }> = ({ moment }) => {
   );
 };
 
+const TIMELINE_FILTERS: { id: XunjiTimelineFilter; label: string }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'screenlife', label: '屏幕' },
+  { id: 'report', label: '报备' },
+  { id: 'location', label: '位置' },
+  { id: 'phone', label: 'App' },
+  { id: 'health', label: '健康' },
+];
+
+const timelineKindLabel: Record<XunjiTimelineKind, string> = {
+  screenlife: '屏幕',
+  report: '报备',
+  phone: 'App',
+  location: '位置',
+  network: '网络',
+  call: '通话',
+  battery: '电量',
+  health: '健康',
+};
+
+const timelineAccent: Record<XunjiTimelineKind, string> = {
+  screenlife: 'bg-cyan-950 text-white',
+  report: 'bg-orange-100 text-orange-700',
+  phone: 'bg-cyan-100 text-cyan-800',
+  location: 'bg-lime-100 text-lime-700',
+  network: 'bg-emerald-100 text-emerald-700',
+  call: 'bg-violet-100 text-violet-700',
+  battery: 'bg-amber-100 text-amber-700',
+  health: 'bg-rose-100 text-rose-700',
+};
+
+function buildTimelineItems(runs: XunjiScreenlifeRun[], snapshots: XunjiMonitorSnapshot[], reports: XunjiReportItem[]): XunjiTimelineItem[] {
+  const items: XunjiTimelineItem[] = [];
+  const push = (item: Omit<XunjiTimelineItem, 'accent'>) => items.push({ ...item, accent: timelineAccent[item.kind] });
+
+  runs.forEach(run => {
+    push({
+      id: `run-${run.id}`,
+      at: run.createdAt,
+      kind: 'screenlife',
+      title: run.title,
+      body: run.narrative,
+      source: `${DENSITY_LABEL[run.density]} · ${run.writeBack ? '已写入日常' : '本地保存'}`,
+    });
+    run.chats.slice(0, 3).forEach(chat => push({
+      id: `run-${run.id}-chat-${chat.id}`,
+      at: chat.time,
+      kind: 'screenlife',
+      title: `和 ${chat.target} 的聊天痕迹`,
+      body: chat.summary || chat.messages.join(' / '),
+      source: '聊天',
+    }));
+    run.browsed.slice(0, 3).forEach(item => push({
+      id: `run-${run.id}-browse-${item.id}`,
+      at: item.time,
+      kind: 'phone',
+      title: `${item.appName} · ${item.title}`,
+      body: item.summary,
+      source: '浏览',
+    }));
+    run.notes.slice(0, 3).forEach(note => push({
+      id: `run-${run.id}-note-${note.id}`,
+      at: note.time,
+      kind: 'screenlife',
+      title: '随手记',
+      body: note.text,
+      source: '备忘录',
+    }));
+    (run.moments || []).slice(0, 4).forEach(moment => push({
+      id: `run-${run.id}-moment-${moment.id}`,
+      at: moment.time,
+      kind: moment.tone === 'alert' ? 'report' : 'screenlife',
+      title: moment.title,
+      body: moment.body,
+      source: moment.relatedApp || '浮窗动态',
+    }));
+  });
+
+  snapshots.forEach(snap => {
+    push({
+      id: `snap-${snap.id}`,
+      at: snap.generatedAt,
+      kind: 'health',
+      title: '实时概览快照',
+      body: `${snap.phoneModel}，电量 ${snap.batteryLevel}%，解锁 ${snap.unlockCount} 次，屏幕 ${fmtMinutes(snap.screenTimeMinutes)}。`,
+      source: snap.isCharging ? '充电中' : '使用中',
+    });
+    snap.appUsage.slice(0, 5).forEach(app => push({
+      id: `snap-${snap.id}-app-${app.id}`,
+      at: app.startedAt,
+      kind: 'phone',
+      title: app.appName,
+      body: app.note || `使用 ${xunjiDurationMinutes(app)} 分钟`,
+      source: app.category || 'App 使用',
+    }));
+    snap.locations.slice(0, 5).forEach(loc => push({
+      id: `snap-${snap.id}-loc-${loc.id}`,
+      at: loc.arrivedAt,
+      kind: 'location',
+      title: loc.label,
+      body: `${loc.address} · 停留 ${loc.stayMinutes || 0} 分钟`,
+      source: xunjiLocationTransportLabel(loc),
+    }));
+    snap.networks.slice(0, 4).forEach(net => push({
+      id: `snap-${snap.id}-net-${net.id}`,
+      at: net.timestamp,
+      kind: 'network',
+      title: net.type === 'wifi' ? '切到 WiFi' : '切到移动数据',
+      body: net.name,
+      source: '网络',
+    }));
+    snap.calls.slice(0, 3).forEach(call => push({
+      id: `snap-${snap.id}-call-${call.id}`,
+      at: call.startedAt,
+      kind: 'call',
+      title: `通话 · ${call.target}`,
+      body: `通话 ${call.durationMinutes} 分钟 · ${call.status}`,
+      source: '电话',
+    }));
+    snap.batteryEvents.slice(0, 3).forEach(event => push({
+      id: `snap-${snap.id}-bat-${event.id}`,
+      at: event.timestamp,
+      kind: 'battery',
+      title: xunjiBatteryEventLabel(event),
+      body: `电量 ${event.level}%`,
+      source: '电池',
+    }));
+  });
+
+  reports.forEach(report => push({
+    id: `report-${report.id}`,
+    at: report.timestamp,
+    kind: 'report',
+    title: report.title,
+    body: report.body,
+    source: `${XUNJI_REPORT_LABELS[report.type]}${report.writtenBack ? ' · 已写入' : ''}`,
+  }));
+
+  const unique = new Map<string, XunjiTimelineItem>();
+  items.forEach(item => unique.set(item.id, item));
+  return Array.from(unique.values()).sort((a, b) => b.at - a.at).slice(0, 180);
+}
+
+const TimelinePanel: React.FC<{
+  runs: XunjiScreenlifeRun[];
+  snapshots: XunjiMonitorSnapshot[];
+  reports: XunjiReportItem[];
+  onOpenChat: () => void;
+  onWriteBack: () => void;
+}> = ({ runs, snapshots, reports, onOpenChat, onWriteBack }) => {
+  const [filter, setFilter] = useState<XunjiTimelineFilter>('all');
+  const [query, setQuery] = useState('');
+  const items = useMemo(() => buildTimelineItems(runs, snapshots, reports), [runs, snapshots, reports]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter(item => {
+      if (filter !== 'all' && item.kind !== filter) return false;
+      if (!q) return true;
+      return `${item.title}\n${item.body}\n${item.source}`.toLowerCase().includes(q);
+    });
+  }, [filter, items, query]);
+
+  return (
+    <div className="space-y-3">
+      <section className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="时间点" value={items.length} />
+          <Stat label="屏幕记录" value={runs.length} />
+          <Stat label="快照" value={snapshots.length} />
+        </div>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="搜索时间线"
+          className="w-full rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold outline-none focus:border-cyan-800"
+        />
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {TIMELINE_FILTERS.map(item => <PillButton key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}</PillButton>)}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={onOpenChat} className="h-10 rounded-[8px] bg-emerald-700 text-white text-[12px] font-black">带去絮语聊</button>
+          <button onClick={onWriteBack} className="h-10 rounded-[8px] bg-slate-100 text-slate-800 text-[12px] font-black">收进记忆</button>
+        </div>
+      </section>
+
+      {visible.length === 0 ? <EmptyState text="这条时间线暂时没有内容。" /> : (
+        <section className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm">
+          <div className="space-y-3">
+            {visible.map(item => (
+              <div key={item.id} className="grid grid-cols-[58px_1fr] gap-2">
+                <div className="pt-1 text-right">
+                  <div className="text-[11px] font-black text-slate-700">{xunjiFormatClock(item.at)}</div>
+                  <div className="mt-0.5 text-[9px] font-bold text-slate-400">{fmtReportStamp(item.at).slice(0, 5)}</div>
+                </div>
+                <div className="relative border-l border-slate-200 pl-3 pb-3">
+                  <span className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white ${item.accent}`} />
+                  <div className="rounded-[8px] bg-slate-50 border border-slate-100 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-black text-[13px] text-slate-950 leading-snug">{item.title}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-500 font-bold">{item.source}</div>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black ${item.accent}`}>{timelineKindLabel[item.kind]}</span>
+                    </div>
+                    <p className="mt-2 text-[12px] leading-relaxed text-slate-700 whitespace-pre-wrap">{item.body}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+};
+
 const ScreenlifeTab: React.FC<{
   runs: XunjiScreenlifeRun[];
   rangePreset: RangePreset;
@@ -1219,52 +1513,105 @@ const ScreenlifeTab: React.FC<{
   setDensity: (d: XunjiDensity) => void;
   loading: boolean;
   onRun: () => void;
-}> = ({ runs, rangePreset, setRangePreset, customStart, customEnd, setCustomStart, setCustomEnd, density, setDensity, loading, onRun }) => (
-  <div className="space-y-3">
-    <section className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
-      <div>
-        <div className="text-[12px] font-black mb-2">时间范围</div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {[
-            ['today', '今天'],
-            ['yesterday', '昨天'],
-            ['last2h', '近 2 小时'],
-            ['custom', '自定义'],
-          ].map(([id, label]) => <PillButton key={id} active={rangePreset === id} onClick={() => setRangePreset(id as RangePreset)}>{label}</PillButton>)}
-        </div>
-        {rangePreset === 'custom' && (
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <input value={customStart} onChange={e => setCustomStart(e.target.value)} type="datetime-local" className="min-w-0 rounded-[8px] border border-slate-200 px-2 py-2 text-[11px] font-bold" />
-            <input value={customEnd} onChange={e => setCustomEnd(e.target.value)} type="datetime-local" className="min-w-0 rounded-[8px] border border-slate-200 px-2 py-2 text-[11px] font-bold" />
-          </div>
-        )}
-      </div>
-      <div>
-        <div className="text-[12px] font-black mb-2">记录密度</div>
-        <div className="grid grid-cols-3 gap-2">
-          {(['light', 'standard', 'detailed'] as XunjiDensity[]).map(d => <PillButton key={d} active={density === d} onClick={() => setDensity(d)}>{DENSITY_LABEL[d]}</PillButton>)}
-        </div>
-      </div>
-      <button onClick={onRun} disabled={loading} className="w-full h-12 rounded-[8px] bg-cyan-950 text-white font-black flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-60">
-        {loading ? <ArrowsClockwise size={17} weight="bold" className="animate-spin" /> : <Play size={17} weight="fill" />}
-        {loading ? '正在生成屏幕记录...' : '生成屏幕记录'}
-      </button>
-    </section>
+  onDeleteRun: (id: string) => void;
+}> = ({ runs, rangePreset, setRangePreset, customStart, customEnd, setCustomStart, setCustomEnd, density, setDensity, loading, onRun, onDeleteRun }) => {
+  const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<'all' | 'written' | 'local'>('all');
+  const [openRunId, setOpenRunId] = useState<string | null>(runs[0]?.id || null);
+  useEffect(() => {
+    setOpenRunId(prev => prev && runs.some(run => run.id === prev) ? prev : runs[0]?.id || null);
+  }, [runs]);
+  const filteredRuns = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return runs.filter(run => {
+      if (mode === 'written' && !run.writeBack) return false;
+      if (mode === 'local' && run.writeBack) return false;
+      if (!q) return true;
+      const haystack = [
+        run.title,
+        run.narrative,
+        ...run.chats.map(c => `${c.target} ${c.summary} ${c.messages.join(' ')}`),
+        ...run.browsed.map(b => `${b.appName} ${b.title} ${b.summary}`),
+        ...run.notes.map(n => n.text),
+        ...(run.moments || []).map(m => `${m.title} ${m.body} ${m.relatedApp || ''}`),
+      ].join('\n').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [mode, query, runs]);
 
-    {runs.length === 0 ? <EmptyState text="还没有屏幕记录。" /> : runs.map(run => (
-      <section key={run.id} className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
-        <div className="flex items-start gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="font-black text-[15px]">{run.title}</div>
-            <div className="text-[10px] text-slate-500 font-bold">{fmtDateTime(run.createdAt)} · {DENSITY_LABEL[run.density]}</div>
+  return (
+    <div className="space-y-3">
+      <section className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
+        <div>
+          <div className="text-[12px] font-black mb-2">时间范围</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              ['today', '今天'],
+              ['yesterday', '昨天'],
+              ['last2h', '近 2 小时'],
+              ['custom', '自定义'],
+            ].map(([id, label]) => <PillButton key={id} active={rangePreset === id} onClick={() => setRangePreset(id as RangePreset)}>{label}</PillButton>)}
           </div>
-          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${run.writeBack ? 'bg-cyan-950 text-white' : 'bg-slate-100 text-slate-500'}`}>{run.writeBack ? '已写入' : '本地保存'}</span>
+          {rangePreset === 'custom' && (
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <input value={customStart} onChange={e => setCustomStart(e.target.value)} type="datetime-local" className="min-w-0 rounded-[8px] border border-slate-200 px-2 py-2 text-[11px] font-bold" />
+              <input value={customEnd} onChange={e => setCustomEnd(e.target.value)} type="datetime-local" className="min-w-0 rounded-[8px] border border-slate-200 px-2 py-2 text-[11px] font-bold" />
+            </div>
+          )}
         </div>
-        <RunSections run={run} />
+        <div>
+          <div className="text-[12px] font-black mb-2">记录密度</div>
+          <div className="grid grid-cols-3 gap-2">
+            {(['light', 'standard', 'detailed'] as XunjiDensity[]).map(d => <PillButton key={d} active={density === d} onClick={() => setDensity(d)}>{DENSITY_LABEL[d]}</PillButton>)}
+          </div>
+        </div>
+        <button onClick={onRun} disabled={loading} className="w-full h-12 rounded-[8px] bg-cyan-950 text-white font-black flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-60">
+          {loading ? <ArrowsClockwise size={17} weight="bold" className="animate-spin" /> : <Play size={17} weight="fill" />}
+          {loading ? '正在生成屏幕记录...' : '生成屏幕记录'}
+        </button>
       </section>
-    ))}
-  </div>
-);
+
+      <section className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="记录数" value={runs.length} />
+          <Stat label="已写入" value={runs.filter(run => run.writeBack).length} />
+          <Stat label="最新" value={<span className="text-[13px]">{runs[0] ? fmtDateTime(runs[0].createdAt) : '--'}</span>} />
+        </div>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="搜索标题、App、聊天摘要或随手记"
+          className="w-full rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold outline-none focus:border-cyan-800"
+        />
+        <div className="grid grid-cols-3 gap-2">
+          <PillButton active={mode === 'all'} onClick={() => setMode('all')}>全部</PillButton>
+          <PillButton active={mode === 'written'} onClick={() => setMode('written')}>已写入</PillButton>
+          <PillButton active={mode === 'local'} onClick={() => setMode('local')}>仅本地</PillButton>
+        </div>
+      </section>
+
+      {runs.length === 0 ? <EmptyState text="还没有屏幕记录。" /> : filteredRuns.length === 0 ? <EmptyState text="没有符合筛选的屏幕记录。" /> : filteredRuns.map(run => {
+        const open = openRunId === run.id;
+        return (
+          <section key={run.id} className="rounded-[8px] bg-white border border-slate-200 p-3 shadow-sm space-y-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="font-black text-[15px] leading-snug">{run.title}</div>
+                <div className="text-[10px] text-slate-500 font-bold">{fmtDateTime(run.createdAt)} · {DENSITY_LABEL[run.density]} · {fmtDateTime(run.rangeStart)} - {fmtDateTime(run.rangeEnd)}</div>
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${run.writeBack ? 'bg-cyan-950 text-white' : 'bg-slate-100 text-slate-500'}`}>{run.writeBack ? '已写入' : '本地保存'}</span>
+            </div>
+            {open ? <RunSections run={run} /> : <p className="rounded-[8px] bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700 line-clamp-3">{run.narrative}</p>}
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setOpenRunId(open ? null : run.id)} className="h-9 rounded-[8px] bg-slate-100 text-slate-800 text-[12px] font-black">{open ? '收起详情' : '展开详情'}</button>
+              <button onClick={() => onDeleteRun(run.id)} className="h-9 rounded-[8px] bg-rose-50 text-rose-700 text-[12px] font-black flex items-center justify-center gap-1.5"><Trash size={14} weight="bold" />删除</button>
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+};
 
 const RunSections: React.FC<{ run: XunjiScreenlifeRun }> = ({ run }) => (
   <div className="space-y-3">
@@ -1302,7 +1649,7 @@ const buildAppRanks = (snapshot: XunjiMonitorSnapshot) => {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, value]) => ({ label, value, sub: `${value}分` }));
 };
 
-const MonitorTab: React.FC<{ snapshot: XunjiMonitorSnapshot; syncing: boolean; routeExpanded: boolean; setRouteExpanded: (v: boolean) => void; onRefresh: () => void }> = ({ snapshot, syncing, routeExpanded, setRouteExpanded, onRefresh }) => {
+const MonitorTab: React.FC<{ snapshot: XunjiMonitorSnapshot; snapshots: XunjiMonitorSnapshot[]; syncing: boolean; routeExpanded: boolean; setRouteExpanded: (v: boolean) => void; onRefresh: () => void }> = ({ snapshot, snapshots, syncing, routeExpanded, setRouteExpanded, onRefresh }) => {
   const appRanks = useMemo(() => buildAppRanks(snapshot), [snapshot]);
   const currentNetwork = snapshot.networks[snapshot.networks.length - 1];
   const currentLoc = snapshot.locations[snapshot.locations.length - 1];
@@ -1341,6 +1688,7 @@ const MonitorTab: React.FC<{ snapshot: XunjiMonitorSnapshot; syncing: boolean; r
       </section>
 
       <PhoneUsagePanel snapshot={snapshot} appRanks={appRanks} />
+      <SnapshotHistoryPanel snapshots={snapshots} />
       <NetworkPanel snapshot={snapshot} />
       <DevicePanel snapshot={snapshot} />
       <LocationPanel snapshot={snapshot} routeExpanded={routeExpanded} setRouteExpanded={setRouteExpanded} />
@@ -1350,6 +1698,35 @@ const MonitorTab: React.FC<{ snapshot: XunjiMonitorSnapshot; syncing: boolean; r
     </div>
   );
 };
+
+const SnapshotHistoryPanel: React.FC<{ snapshots: XunjiMonitorSnapshot[] }> = ({ snapshots }) => (
+  <Panel title="概览历史" icon={<ArrowsClockwise size={17} weight="bold" />} defaultOpen={false}>
+    {snapshots.length <= 1 ? <EmptyState text="刷新几次后，这里会保留最近的实时概览。" /> : (
+      <div className="space-y-2">
+        {snapshots.slice(0, 8).map(item => {
+          const topApp = [...item.appUsage].sort((a, b) => xunjiDurationMinutes(b) - xunjiDurationMinutes(a))[0];
+          const loc = item.locations[item.locations.length - 1];
+          return (
+            <div key={item.id} className="rounded-[8px] bg-slate-50 border border-slate-100 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-black text-[13px] text-slate-900">{fmtDateTime(item.generatedAt)}</div>
+                  <div className="mt-0.5 text-[10px] font-bold text-slate-500 truncate">{loc?.label || '未知位置'} · {topApp?.appName || '无 App'}</div>
+                </div>
+                <span className="shrink-0 rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-700">{item.batteryLevel}%</span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <TinyMetric label="解锁" value={item.unlockCount} />
+                <TinyMetric label="屏幕" value={fmtMinutes(item.screenTimeMinutes)} />
+                <TinyMetric label="步数" value={item.health.steps} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </Panel>
+);
 
 const PhoneUsagePanel: React.FC<{ snapshot: XunjiMonitorSnapshot; appRanks: { label: string; value: number; sub?: string }[] }> = ({ snapshot, appRanks }) => (
   <Panel title="手机使用记录" icon={<Eye size={17} weight="bold" />}>
@@ -1487,8 +1864,9 @@ const ReportTab: React.FC<{
   onGenerate: () => void;
   onMarkAllRead: () => void;
   onMarkReport: (id: string, patch: Partial<XunjiReportItem>) => void;
+  onWriteReportBack: (id: string) => void;
   onWriteBack: () => void;
-}> = ({ char, reports, rules, onToggleRule, onGenerate, onMarkAllRead, onMarkReport, onWriteBack }) => {
+}> = ({ char, reports, rules, onToggleRule, onGenerate, onMarkAllRead, onMarkReport, onWriteReportBack, onWriteBack }) => {
   const unread = reports.filter(r => !r.acknowledged).length;
   const [mode, setMode] = useState<'feed' | 'rules'>('feed');
   const [openId, setOpenId] = useState<string | null>(reports[0]?.id || null);
@@ -1573,7 +1951,7 @@ const ReportTab: React.FC<{
                         <p className="mt-2 text-[12px] leading-relaxed text-slate-700">{item.body}</p>
                         <div className="mt-3 flex justify-end gap-2">
                           {!item.acknowledged && <button onClick={() => onMarkReport(item.id, { acknowledged: true })} className="rounded-full bg-white border border-slate-200 px-2 py-1 text-[11px] font-black">标记已读</button>}
-                          {!item.writtenBack && <button onClick={() => onMarkReport(item.id, { writtenBack: true })} className="rounded-full bg-slate-950 text-white px-2 py-1 text-[11px] font-black">写回标记</button>}
+                          {!item.writtenBack && <button onClick={() => onWriteReportBack(item.id)} className="rounded-full bg-slate-950 text-white px-2 py-1 text-[11px] font-black">写入日常</button>}
                         </div>
                       </div>
                     )}

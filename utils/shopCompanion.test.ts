@@ -292,4 +292,31 @@ describe('shop companion helpers', () => {
         expect(block).toContain('await companionAutoUserPay(char, item, speech)');
         expect(block).not.toContain('waitForCompanionHijack');
     });
+
+    it('ShopApp keeps formal role shop LLM calls on the role.scene preset scope', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        const requestStart = source.indexOf('const requestCharPay = async');
+        const requestEnd = source.indexOf('const clearCharCart = async');
+        const charShopStart = source.indexOf('const onCharShop = async');
+        const charShopEnd = source.indexOf('// ── 选规格/数量 sheet');
+        expect(requestStart).toBeGreaterThan(-1);
+        expect(requestEnd).toBeGreaterThan(requestStart);
+        expect(charShopStart).toBeGreaterThan(-1);
+        expect(charShopEnd).toBeGreaterThan(charShopStart);
+        const requestBlock = source.slice(requestStart, requestEnd);
+        const charShopBlock = source.slice(charShopStart, charShopEnd);
+
+        expect(requestBlock).toContain("presetScope: 'role.scene'");
+        expect(requestBlock).toContain('presetMacros: { charName: char.name');
+        expect(charShopBlock).toContain("presetScope: 'role.scene'");
+        expect(charShopBlock).toContain('presetMacros: { charName: char.name');
+    });
+
+    it('ShopApp writes role wishes through wishlist metadata helpers', () => {
+        const source = readFileSync('apps/ShopApp.tsx', 'utf8');
+        expect(source).toContain('addToWishlist(char.shopCart, item.id, { source, occasion, note })');
+        expect(source).toContain("addToWishlist(char.shopCart, item.id, { source: 'char_shop', note: decision.note })");
+        expect(source).toContain("addToWishlist(char.shopCart, req.item.id, { source: 'companion'");
+        expect(source).toContain('resolveWishlist(char.shopCart)');
+    });
 });

@@ -1,5 +1,5 @@
 import type { ResolvedApi } from './auxApi';
-import { JOB_CATEGORIES, JOB_POSTINGS, LOAN_PRODUCTS } from './bankLife';
+import { buildLocalBankWeeklyReview, JOB_CATEGORIES, JOB_POSTINGS, LOAN_PRODUCTS } from './bankLife';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import type {
@@ -13,6 +13,7 @@ import type {
     BankLifeActionTone,
     BankLifeAiEvent,
     BankLifeState,
+    BankLifeWeeklyReview,
     BankLoanChannel,
     BankMarketPulse,
     BankStockQuote,
@@ -196,6 +197,36 @@ export function generateLocalDashboardInsight(life: BankLifeState): BankLifeActi
 
 export async function generateAiDashboardInsight(api: ResolvedApi, life: BankLifeState) {
     return generateAiBankActionDraft(api, life, 'dashboard', 'dashboard-insight', {}, 'bank.dashboardInsight', generateLocalDashboardInsight(life).summary);
+}
+
+export function sanitizeBankWeeklyReview(input: any, fallback: BankLifeWeeklyReview): BankLifeWeeklyReview {
+    const rawMetrics = Array.isArray(input?.metrics) ? input.metrics : [];
+    const metrics = rawMetrics.slice(0, 6).map((m: any) => ({
+        label: clampText(m?.label, '指标', 18),
+        value: clampText(m?.value, '已更新', 32),
+        tone: toneSet.has(m?.tone) ? m.tone : undefined,
+    })).filter((m: BankLifeActionMetric) => m.label && m.value);
+    return {
+        ...fallback,
+        title: clampText(input?.title, fallback.title, 42),
+        summary: clampText(input?.summary, fallback.summary, 260),
+        tone: toneSet.has(input?.tone) ? input.tone : fallback.tone,
+        highlights: asList(input?.highlights, 4).length ? asList(input.highlights, 4) : fallback.highlights,
+        risks: asList(input?.risks, 4).length ? asList(input.risks, 4) : fallback.risks,
+        nextActions: asList(input?.nextActions, 4).length ? asList(input.nextActions, 4) : fallback.nextActions,
+        metrics: metrics.length ? metrics : fallback.metrics,
+        source: 'ai',
+        generatedAt: new Date().toISOString(),
+    };
+}
+
+export async function generateAiBankWeeklyReview(api: ResolvedApi, life: BankLifeState, walletBalance = 0): Promise<BankLifeWeeklyReview> {
+    const fallback = buildLocalBankWeeklyReview(life, walletBalance);
+    const data = await callBankLifeAiJson(api, [
+        { role: 'system', content: '你是人生拟的生活经营周报整理器。只输出 JSON：{"title":"","summary":"","tone":"good|warn|bad|info","highlights":[],"risks":[],"nextActions":[],"metrics":[{"label":"","value":"","tone":"good|warn|bad|info"}]}。只整理 Moro 内的虚拟生活、预算、经营、求职、投资和借款记录，不提供真实金融建议。' },
+        { role: 'user', content: JSON.stringify({ dateStr: life.dateStr, profile: life.profile, quests: life.quests, budgetEnvelopes: life.budgetEnvelopes, bills: life.recurringBills, achievements: life.achievements, recentActions: (life.actionHistory || []).slice(0, 12), walletBalance }) },
+    ], fallback, 'bank.dashboardInsight');
+    return sanitizeBankWeeklyReview(data, fallback);
 }
 
 export async function generateAiShopActionDraft(api: ResolvedApi, life: BankLifeState, context: Record<string, unknown>) {

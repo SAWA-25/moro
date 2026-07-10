@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeOrder, makeReceipt, orderProgress, orderReceivePayload, getShopItem, recommendGiftsForCharacter, itemGiftSignals } from './shop';
+import { makeOrder, makeReceipt, orderProgress, orderReceivePayload, getShopItem, recommendGiftsForCharacter, itemGiftSignals, buildGiftCardMeta, receiptLine } from './shop';
 
 const rose = getShopItem('rose')!;
 const cake = getShopItem('cake')!;
@@ -64,6 +64,47 @@ describe('orderReceivePayload', () => {
         expect(r.by).toBe('user');
         expect(r.action).toBe('gift');
         expect(r.note).toBe('陪逛自动买下');
+    });
+
+    it('确认收货小票记录订单来源', () => {
+        const o = makeOrder([{ item: rose, qty: 1 }], 'self');
+        const r = orderReceivePayload(o, '我');
+        expect(r.userReceipts[0].source).toBe('order_receive');
+    });
+});
+
+describe('gift ritual metadata', () => {
+    it('礼物卡 metadata 保留场景、包装和心愿来源', () => {
+        const meta = buildGiftCardMeta(rose, '我', '给你', {
+            occasion: 'comfort',
+            wrapKey: 'warm',
+            source: 'manual_gift',
+            wishItemId: 'rose',
+            fromWishlist: true,
+        });
+        expect(meta).toMatchObject({
+            itemId: 'rose',
+            occasion: 'comfort',
+            occasionLabel: '安慰陪伴',
+            wrapKey: 'warm',
+            wrapLabel: '暖绒小袋',
+            source: 'manual_gift',
+            wishItemId: 'rose',
+            fromWishlist: true,
+        });
+    });
+
+    it('小票行展示场景、包装和来自愿望', () => {
+        const receipt = makeReceipt(rose, 'user', 'gift', 'char-1', '阿白', '给你', {
+            occasion: 'date',
+            wrapLabel: '黑缎带礼盒',
+            source: 'manual_gift',
+            wishItemId: 'rose',
+        });
+        const line = receiptLine(receipt);
+        expect(line).toContain('约会见面');
+        expect(line).toContain('黑缎带礼盒');
+        expect(line).toContain('来自愿望');
     });
 });
 

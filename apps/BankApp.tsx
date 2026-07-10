@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone, BankInvestmentOrder, BankInvestmentStrategy } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankDollhousesByShopId, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile, BankLifeActionRecord, BankLifeActionResult, BankLifeActionTone, BankInvestmentOrder, BankInvestmentStrategy, BankLifeProfileMode } from '../types';
 import { extractContent } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
-import { validateManualIncomeBasis } from '../utils/bankLedger';
+import { balanceRestoreDeltaForDeletedTransaction, validateManualIncomeBasis } from '../utils/bankLedger';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
@@ -54,6 +54,8 @@ import {
     applyCompanyIssueWithResult,
     borrowLoan,
     buildLifeSuggestions,
+    applySavingsGoalTransfer,
+    buildLocalBankWeeklyReview,
     getBankShopCloseBlockReason,
     getBankShopRealtimeStatus,
     canOpenBankShopForDate,
@@ -66,7 +68,9 @@ import {
     channelLabel,
     declineJobApplication,
     executeBankInvestmentOrders,
+    forecastBankCashflow,
     foundCompany,
+    getBankRecurringBillStatus,
     leaveJob,
     loanTotal,
     mergeAiJobPostings,
@@ -77,9 +81,11 @@ import {
     getDefaultBankBranchName,
     openBankShopBranch,
     openLifeShop,
+    payBankRecurringBill,
     placeBankInvestmentOrder,
     prepareBankStateForSave,
     repayLoan,
+    refreshBankLifeSystems,
     sellStock,
     SHOP_UNLOCK_COST,
     startJobApplication,
@@ -88,12 +94,15 @@ import {
     syncActiveBranchFromMirror,
     syncActiveShopMirror,
     tickBankInvestmentMarket,
+    toggleBankRecurringBillAutoPay,
     updateResumeProfile,
+    upsertBankWeeklyReview,
     upsertBankInvestmentStrategy,
     withdrawCompanyDividend,
 } from '../utils/bankLife';
 import {
     generateAiBankActionDraft,
+    generateAiBankWeeklyReview,
     generateAiCompanyActionDraft,
     generateAiDashboardInsight,
     generateAiInvestAdvice,
@@ -388,9 +397,10 @@ const BankApp: React.FC = () => {
     const [txType, setTxType] = useState<'income' | 'pastIncome' | 'expense'>('expense');
     const [txIncomeBasis, setTxIncomeBasis] = useState('');
     // 账本子视图：分析 / 互评账本
-    const [reportView, setReportView] = useState<'analytics' | 'ledger'>('analytics');
+    const [reportView, setReportView] = useState<'analytics' | 'ledger' | 'budget'>('analytics');
     const [goalName, setGoalName] = useState('');
     const [goalTarget, setGoalTarget] = useState('');
+    const [goalTransferAmount, setGoalTransferAmount] = useState<Record<string, string>>({});
     const [jobCategory, setJobCategory] = useState('全部');
     const [stockBudget, setStockBudget] = useState<Record<string, string>>({});
     const [stockSellShares, setStockSellShares] = useState<Record<string, string>>({});
@@ -424,8 +434,12 @@ const BankApp: React.FC = () => {
     // Guestbook Processing
     const [isRefreshingGuestbook, setIsRefreshingGuestbook] = useState(false);
 
-    const normalizeBankStateForSave = (next: BankFullState): BankFullState =>
-        prepareBankStateForSave(next);
+    const normalizeBankStateForSave = (next: BankFullState): BankFullState => {
+        const prepared = prepareBankStateForSave(next);
+        return prepared.life
+            ? { ...prepared, life: refreshBankLifeSystems(prepared.life, { walletBalance: userProfile.balance || 0, transactions }) }
+            : prepared;
+    };
 
     const commitBankStateSync = (next: BankFullState): BankFullState => {
         const normalized = normalizeBankStateForSave(next);
@@ -1066,11 +1080,10 @@ const BankApp: React.FC = () => {
 
         const newState = { ...cur, todaySpent: newSpent };
         await commitBankState(newState);
-        if (tx.createdBy === 'user' && !tx.auto) {
-            adjustUserBalance(tx.type === 'income' ? -tx.amount : tx.amount, { ledger: false });
-        }
+        const restoreDelta = balanceRestoreDeltaForDeletedTransaction(tx);
+        if (restoreDelta !== 0) adjustUserBalance(restoreDelta, { ledger: false });
         setTransactions(prev => prev.filter(t => t.id !== id));
-        addToast(tx.createdBy === 'user' && !tx.auto ? '记录已删除，余额已同步恢复' : '记录已删除', 'success');
+        addToast(restoreDelta !== 0 ? '记录已删除，余额已同步恢复' : '记录已删除', 'success');
     };
 
     // --- Game Logic ---
@@ -2209,6 +2222,127 @@ ${previousGuestbook}
         showActionResult(actionResult);
     };
 
+    const handleSetLifeMode = async (mode: BankLifeProfileMode) => {
+        const title = mode === 'finance' ? '财务稳健' : mode === 'tycoon' ? '经营大亨' : '均衡经营';
+        const cur = migrateBankLifeState(stateRef.current);
+        await commitBankState({
+            ...cur,
+            life: refreshBankLifeSystems({
+                ...cur.life!,
+                profile: {
+                    ...(cur.life!.profile || { startedAt: cur.life!.dateStr }),
+                    mode,
+                    title,
+                    onboardedAt: new Date().toISOString(),
+                },
+            }, { walletBalance: userProfile.balance || 0, transactions }),
+        });
+        addToast(`人生拟路线已设为：${title}`, 'success');
+    };
+
+    const handleGoalTransfer = async (goalId: string, direction: 'deposit' | 'withdraw') => {
+        const amount = Math.round((parseFloat(goalTransferAmount[goalId] || '0') || 0) * 100) / 100;
+        if (!Number.isFinite(amount) || amount <= 0) {
+            addToast('请输入有效金额', 'error');
+            return;
+        }
+        if (direction === 'deposit' && (userProfile.balance || 0) < amount) {
+            addToast('钱包余额不足，先记一笔收入再存入心愿', 'error');
+            return;
+        }
+        const result = applySavingsGoalTransfer(stateRef.current, goalId, amount, direction);
+        if (!result.actionResult || result.amount <= 0) {
+            addToast(direction === 'withdraw' ? '这个心愿暂时没有可取出的金额' : '没有找到这个心愿', 'error');
+            return;
+        }
+        await commitBankState(result.state);
+        adjustUserBalance(direction === 'deposit' ? -result.amount : result.amount, {
+            note: `${result.goal?.name || '攒钱心愿'}${direction === 'deposit' ? '存入' : '取出'}`,
+            category: 'goal',
+            kind: direction === 'deposit' ? 'goal-deposit' : 'goal-withdraw',
+            sourceApp: '人生拟',
+            sourceId: goalId,
+        });
+        setGoalTransferAmount(prev => ({ ...prev, [goalId]: '' }));
+        addToast(direction === 'deposit' ? '已存入心愿' : '已从心愿取出', 'success');
+        showActionResult(result.actionResult);
+    };
+
+    const handlePayRecurringBill = async (billId: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const bill = cur.life?.recurringBills?.find(b => b.id === billId);
+        if (!bill) return;
+        if ((userProfile.balance || 0) < bill.amount) {
+            addToast(`钱包余额不足，${bill.name} 需要 ${state.config.currencySymbol}${bill.amount}`, 'error');
+            return;
+        }
+        const result = payBankRecurringBill(cur.life!, billId);
+        if (!result.actionResult || result.amount <= 0) {
+            addToast('这张账单已经处理过了', 'info');
+            return;
+        }
+        await commitBankState({ ...cur, life: result.life });
+        adjustUserBalance(-result.amount, {
+            note: result.bill?.name || '生活账单',
+            category: result.bill?.category || 'general',
+            kind: 'recurring-bill',
+            sourceApp: '人生拟',
+            sourceId: billId,
+        });
+        addToast('账单已支付', 'success');
+        showActionResult(result.actionResult);
+    };
+
+    const handleToggleBillAutoPay = async (billId: string, enabled: boolean) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        await commitBankState({ ...cur, life: toggleBankRecurringBillAutoPay(cur.life!, billId, enabled) });
+        addToast(enabled ? '已标记为自动提醒' : '已取消自动提醒', 'success');
+    };
+
+    const handleGenerateWeeklyReview = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        setAiBusy('dashboard');
+        try {
+            const baseLife = refreshBankLifeSystems(cur.life!, { walletBalance: userProfile.balance || 0, transactions });
+            const review = auxApi.baseUrl && auxApi.model
+                ? await generateAiBankWeeklyReview(auxApi, baseLife, userProfile.balance || 0)
+                : buildLocalBankWeeklyReview(baseLife, userProfile.balance || 0);
+            const nextLife = upsertBankWeeklyReview(baseLife, review);
+            const actionResult = createBankActionResult({
+                category: 'dashboard',
+                kind: 'weekly-review',
+                title: review.title,
+                summary: review.summary,
+                tone: review.tone,
+                metrics: review.metrics,
+                riskTags: review.risks,
+                nextActions: review.nextActions,
+                payload: { reviewId: review.id, source: review.source },
+            });
+            await commitBankState({ ...cur, life: appendBankActionRecord(nextLife, actionResult) });
+            addToast(review.source === 'ai' ? 'AI 周报已生成' : '本地周报已生成', 'success');
+            showActionResult(actionResult);
+        } catch (error) {
+            console.warn('[BankWeeklyReview] failed', error);
+            const fallback = buildLocalBankWeeklyReview(cur.life!, userProfile.balance || 0);
+            const actionResult = createBankActionResult({
+                category: 'dashboard',
+                kind: 'weekly-review',
+                title: fallback.title,
+                summary: fallback.summary,
+                tone: fallback.tone,
+                metrics: fallback.metrics,
+                riskTags: fallback.risks,
+                nextActions: fallback.nextActions,
+                payload: { reviewId: fallback.id, source: 'local' },
+            });
+            await commitBankState({ ...cur, life: appendBankActionRecord(upsertBankWeeklyReview(cur.life!, fallback), actionResult) });
+            showActionResult(actionResult);
+        } finally {
+            setAiBusy(null);
+        }
+    };
+
     // --- AI 后台润色评价：把模板评价改写得更多样、有个性，并据点评情绪微调星级（影响口碑）。
     //     非阻塞、失败时沿用本地点评。营业时若配了 AI 服务才调用。 ---
     const enrichReviewsWithAI = async (batch: ShopReview[], soldProductNames: string[], shopLevel: number) => {
@@ -2574,7 +2708,7 @@ ${JSON.stringify(list, null, 2)}
         (n, id) => n + ((state.shop.stock?.[id] ?? 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
     const hasLowStock = lowStockCount > 0;
     const migratedViewState = migrateBankLifeState(state);
-    const life = migratedViewState.life!;
+    const life = refreshBankLifeSystems(migratedViewState.life!, { walletBalance: userProfile.balance || 0, transactions });
     const shopPortfolio = migratedViewState.shopPortfolio;
     const shopBranches = shopPortfolio?.branches || [];
     const activeShopId = shopPortfolio?.activeShopId || '';
@@ -2603,6 +2737,12 @@ ${JSON.stringify(list, null, 2)}
     const selectedBusiness = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
     const allJobPostings = [...(life.aiJobPostings || []), ...JOB_POSTINGS];
     const lifeSuggestions = buildLifeSuggestions(life, userProfile.balance || 0);
+    const cashflow7 = forecastBankCashflow(life, userProfile.balance || 0, 7);
+    const cashflow30 = forecastBankCashflow(life, userProfile.balance || 0, 30);
+    const unlockedAchievements = (life.achievements || []).filter(a => a.unlockedAt);
+    const nextAchievements = (life.achievements || []).filter(a => !a.unlockedAt).slice(0, 3);
+    const latestWeeklyReview = life.weeklyReviews?.[0];
+    const dueBills = (life.recurringBills || []).filter(b => ['due', 'overdue'].includes(getBankRecurringBillStatus(b, life.dateStr)));
     const selectedStock = life.stockMarket.find(s => s.symbol === selectedStockSymbol) || life.stockMarket[0];
     const selectedLoan = selectedLoanId ? life.loans.find(l => l.id === selectedLoanId) : life.loans[0];
 
@@ -2667,6 +2807,46 @@ ${JSON.stringify(list, null, 2)}
                 </div>
             </PaperCard>
 
+            {!life.profile?.onboardedAt && (
+                <PaperCard className="p-4">
+                    <SectionTag en="start">选择人生拟路线</SectionTag>
+                    <div className="mt-2 text-[12px] leading-relaxed" style={{ color: '#4a4750' }}>先选一个默认节奏，之后也能随时切换。规则都在本地运行，AI 只负责可选复盘。</div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                        {([
+                            ['balanced', '均衡', '生活、财务和经营都推进一点'],
+                            ['finance', '稳健', '优先预算、账单和现金流'],
+                            ['tycoon', '大亨', '优先店铺、公司和投资']
+                        ] as const).map(([mode, label, detail]) => (
+                            <button key={mode} onClick={() => { void handleSetLifeMode(mode); }} className="p-3 text-left press-soft" style={cleanCardStyle}>
+                                <div className="text-[13px] font-black" style={{ color: INK }}>{label}</div>
+                                <div className="mt-1 text-[10px] leading-relaxed" style={{ color: INK_SOFT }}>{detail}</div>
+                            </button>
+                        ))}
+                    </div>
+                </PaperCard>
+            )}
+
+            <PaperCard className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <SectionTag en="route">{life.profile?.title || '均衡经营'}</SectionTag>
+                        <div className="mt-2 text-[12px]" style={{ color: INK_SOFT }}>今日主线 · {life.quests?.filter(q => q.done).length || 0}/{life.quests?.length || 0} 已完成</div>
+                    </div>
+                    <button onClick={handleGenerateWeeklyReview} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>{aiBusy === 'dashboard' ? '生成中…' : '周报'}</button>
+                </div>
+                <div className="mt-3 grid gap-2">
+                    {(life.quests || []).slice(0, 4).map(q => (
+                        <button key={q.id} onClick={() => q.linkedTab && setActiveTab(q.linkedTab)} className="rounded-2xl px-3 py-2 text-left press-soft" style={{ background: q.done ? '#f0fdf4' : '#faf8f5', color: '#4a4750' }}>
+                            <div className="flex items-center justify-between gap-2">
+                                <b style={{ color: q.done ? '#15803d' : INK }}>{q.done ? '✓ ' : ''}{q.title}</b>
+                                <span className="text-[10px] font-black" style={{ color: q.done ? '#15803d' : INK_SOFT }}>{q.progress}/{q.target}</span>
+                            </div>
+                            <div className="text-[11px] mt-0.5">{q.detail}</div>
+                        </button>
+                    ))}
+                </div>
+            </PaperCard>
+
             <div className="grid grid-cols-2 gap-2.5">
                 {statTiles.map(s => (
                     <button key={s.label} onClick={() => setBankModal({ kind: 'dashboardInsight' })} className="text-left active:scale-[0.99] transition-transform">
@@ -2694,6 +2874,28 @@ ${JSON.stringify(list, null, 2)}
                 </div>
             </PaperCard>
 
+            <PaperCard className="p-4">
+                <SectionTag en="cashflow">预算 / 账单</SectionTag>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    {[cashflow7, cashflow30].map(f => (
+                        <div key={f.days} className="rounded-2xl px-3 py-2" style={{ background: f.endingBalance < 0 ? '#fff1f2' : '#faf8f5' }}>
+                            <div className="text-[10px] font-bold" style={{ color: INK_SOFT }}>{f.days} 天后预测</div>
+                            <div className="text-[18px] font-black" style={{ color: f.endingBalance < 0 ? '#e11d48' : INK, fontFamily: HAND_FONT }}>¥{Math.round(f.endingBalance)}</div>
+                            <div className="text-[10px]" style={{ color: INK_SOFT }}>入 ¥{Math.round(f.income)} · 出 ¥{Math.round(f.expense)}</div>
+                        </div>
+                    ))}
+                </div>
+                {dueBills.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        {dueBills.slice(0, 2).map(bill => (
+                            <button key={bill.id} onClick={() => setActiveTab('report')} className="w-full rounded-2xl px-3 py-2 text-left text-[12px]" style={{ background: '#fef3c7', color: '#92400e' }}>
+                                <b>{bill.name}</b> 到期 · {state.config.currencySymbol}{bill.amount}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </PaperCard>
+
             {lifeSuggestions.length > 0 && (
                 <PaperCard className="p-4">
                     <SectionTag en="coach">首页建议</SectionTag>
@@ -2707,6 +2909,30 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                 </PaperCard>
             )}
+
+            <PaperCard className="p-4">
+                <SectionTag en="badges">成就 / 周报</SectionTag>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                    {unlockedAchievements.slice(0, 3).map(a => (
+                        <div key={a.id} className="rounded-2xl px-2 py-2 text-center" style={{ background: '#f0fdf4', color: '#15803d' }}>
+                            <div className="text-[18px] font-black">{a.icon || '★'}</div>
+                            <div className="text-[10px] font-black truncate">{a.title}</div>
+                        </div>
+                    ))}
+                    {!unlockedAchievements.length && nextAchievements.map(a => (
+                        <div key={a.id} className="rounded-2xl px-2 py-2 text-center" style={{ background: '#faf8f5', color: INK_SOFT }}>
+                            <div className="text-[18px] font-black">{a.icon || '·'}</div>
+                            <div className="text-[10px] font-black truncate">{a.progress}/{a.target}</div>
+                        </div>
+                    ))}
+                </div>
+                {latestWeeklyReview && (
+                    <button onClick={() => setBankModal({ kind: 'dashboardInsight' })} className="mt-3 w-full rounded-2xl px-3 py-2 text-left text-[12px]" style={{ background: '#f5f3ff', color: '#4c1d95' }}>
+                        <b>{latestWeeklyReview.title}</b>
+                        <div className="mt-0.5 line-clamp-2">{latestWeeklyReview.summary}</div>
+                    </button>
+                )}
+            </PaperCard>
 
             <PaperCard className="p-4">
                 <SectionTag en="today">今日事件</SectionTag>
@@ -3075,6 +3301,73 @@ ${JSON.stringify(list, null, 2)}
         );
     };
 
+    const renderBudgetReport = () => (
+        <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+            <PaperCard className="p-4">
+                <SectionTag en="forecast">现金流预测</SectionTag>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    {[cashflow7, cashflow30].map(f => (
+                        <div key={f.days} className="rounded-2xl px-3 py-2" style={{ background: f.endingBalance < 0 ? '#fff1f2' : '#faf8f5' }}>
+                            <div className="text-[10px] font-bold" style={{ color: INK_SOFT }}>{f.days} 天后</div>
+                            <div className="text-[20px] font-black" style={{ color: f.endingBalance < 0 ? '#e11d48' : INK, fontFamily: HAND_FONT }}>¥{Math.round(f.endingBalance)}</div>
+                            <div className="text-[10px]" style={{ color: INK_SOFT }}>预计收入 ¥{Math.round(f.income)} · 支出 ¥{Math.round(f.expense)}</div>
+                        </div>
+                    ))}
+                </div>
+                {(cashflow7.warnings.length > 0 || cashflow30.warnings.length > 0) && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                        {Array.from(new Set([...cashflow7.warnings, ...cashflow30.warnings])).map(w => <CleanBadge key={w} tone="amber">{w}</CleanBadge>)}
+                    </div>
+                )}
+            </PaperCard>
+
+            <PaperCard className="p-4">
+                <SectionTag en="budget">预算袋</SectionTag>
+                <div className="mt-3 space-y-2">
+                    {(life.budgetEnvelopes || []).map(b => {
+                        const pct = Math.min(120, Math.round((b.spent / Math.max(1, b.monthlyLimit)) * 100));
+                        return (
+                            <div key={b.id} className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>
+                                <div className="flex items-center justify-between gap-2 text-[12px]">
+                                    <b style={{ color: INK }}>{b.label}</b>
+                                    <span style={{ color: b.tone === 'bad' ? '#e11d48' : b.tone === 'warn' ? '#92400e' : '#15803d' }}>¥{Math.round(b.spent)} / ¥{b.monthlyLimit}</span>
+                                </div>
+                                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: '#efece7' }}>
+                                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: b.tone === 'bad' ? '#e11d48' : b.tone === 'warn' ? '#f59e0b' : '#22c55e' }} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </PaperCard>
+
+            <PaperCard className="p-4">
+                <SectionTag en="bills">周期账单</SectionTag>
+                <div className="mt-3 space-y-2">
+                    {(life.recurringBills || []).map(bill => {
+                        const status = getBankRecurringBillStatus(bill, life.dateStr);
+                        const urgent = status === 'due' || status === 'overdue';
+                        return (
+                            <div key={bill.id} className="rounded-2xl px-3 py-2" style={{ background: urgent ? '#fef3c7' : '#faf8f5' }}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="font-black truncate" style={{ color: INK }}>{bill.name}</div>
+                                        <div className="text-[11px]" style={{ color: INK_SOFT }}>{bill.cycle === 'weekly' ? '每周' : '每月'} · 下次 {bill.nextDueDate} · {status === 'overdue' ? '已逾期' : status === 'due' ? '今天到期' : '待到期'}</div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <div className="font-black" style={{ color: urgent ? '#92400e' : INK }}>¥{bill.amount}</div>
+                                        <button onClick={() => { void handleToggleBillAutoPay(bill.id, !bill.autoPay); }} className="mt-1 text-[10px] font-bold px-2 py-1 rounded-full" style={chipStyle(!!bill.autoPay)}>{bill.autoPay ? '自动提醒' : '手动'}</button>
+                                    </div>
+                                </div>
+                                <button onClick={() => { void handlePayRecurringBill(bill.id); }} disabled={status === 'paid'} className="mt-2 w-full py-2 text-[12px] font-black active:scale-95 transition-transform disabled:opacity-50" style={smallBtn(urgent ? '#f43f5e' : '#16a34a')}>{status === 'paid' ? '已支付' : '支付账单'}</button>
+                            </div>
+                        );
+                    })}
+                </div>
+            </PaperCard>
+        </div>
+    );
+
     const renderShop = () => {
         const tpl = BUSINESS_TEMPLATES.find(b => b.id === life.shopBusinessType) || selectedBusiness || BUSINESS_TEMPLATES[0];
         if (!life.shopUnlocked) {
@@ -3361,6 +3654,7 @@ ${JSON.stringify(list, null, 2)}
                             onDeleteFiredStaff={handleDeleteFiredStaff}
                             onUpdateConfig={handleConfigUpdate}
                             onAddGoal={() => setShowGoalModal(true)}
+                            onSelectGoal={(id) => setBankModal({ kind: 'goalDetail', goalId: id })}
                             onDeleteGoal={async (id) => { await persistStateUpdate(prev => ({ ...prev, goals: prev.goals.filter(g => g.id !== id) })); }}
                             onEditStaff={handleOpenStaffEdit}
                         />
@@ -3445,6 +3739,15 @@ ${JSON.stringify(list, null, 2)}
                             { label: '状态', value: goal.isCompleted ? '已完成' : '进行中', tone: goal.isCompleted ? 'good' : 'info' },
                         ]} />
                         <div className="h-2 rounded-full overflow-hidden" style={{ background: '#efece7' }}><div className="h-full" style={{ width: `${pct}%`, background: '#16a34a' }} /></div>
+                        <div className="rounded-2xl p-3 space-y-2" style={{ background: '#faf8f5' }}>
+                            <FieldLabel>存取金额</FieldLabel>
+                            <div className="flex gap-2">
+                                <input type="number" value={goalTransferAmount[goal.id] || ''} onChange={e => setGoalTransferAmount(prev => ({ ...prev, [goal.id]: e.target.value }))} placeholder="输入金额" className="min-w-0 flex-1 px-3 py-2 outline-none" style={bankModalInputStyle} />
+                                <button onClick={() => handleGoalTransfer(goal.id, 'deposit')} className="px-3 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>存入</button>
+                                <button onClick={() => handleGoalTransfer(goal.id, 'withdraw')} className="px-3 text-[12px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>取出</button>
+                            </div>
+                            <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>存入会从钱包扣除，取出会回到钱包，并自动写入人生拟流水。</div>
+                        </div>
                     </div> : <div className="text-[12px]" style={{ color: INK_SOFT }}>这个心愿已经不在列表里。</div>}
                 </BankModal>
             );
@@ -3718,7 +4021,7 @@ ${JSON.stringify(list, null, 2)}
                 {activeTab === 'report' && (
                     <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
                         <div className="flex gap-2 px-3.5 pt-3 shrink-0">
-                            {([['analytics', '账目分析'], ['ledger', '互评账本']] as const).map(([k, label]) => (
+                            {([['analytics', '账目分析'], ['ledger', '互评账本'], ['budget', '预算账单']] as const).map(([k, label]) => (
                                 <button key={k} onClick={() => setReportView(k)} className="flex-1 py-2 text-[13px] font-black active:scale-95 transition-transform"
                                     style={chipStyle(reportView === k)}>
                                     {label}
@@ -3734,7 +4037,7 @@ ${JSON.stringify(list, null, 2)}
                                 apiConfig={auxApi}
                                 dailyBudget={state.config.dailyBudget}
                             />
-                        ) : (
+                        ) : reportView === 'ledger' ? (
                             <BankLedger
                                 transactions={transactions}
                                 onTxUpdated={handleTxUpdated}
@@ -3744,6 +4047,8 @@ ${JSON.stringify(list, null, 2)}
                                 addToast={addToast}
                                 currency={state.config.currencySymbol}
                             />
+                        ) : (
+                            renderBudgetReport()
                         )}
                     </div>
                 )}

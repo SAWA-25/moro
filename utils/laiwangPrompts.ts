@@ -1450,6 +1450,42 @@ export function takeoutReceivedHint(userName: string, storeName: string, items: 
     return `[系统提示（非${userName}发言）：${userName}之前在「${storeName}」给你点的那张饭票（${items}）刚刚送到你门口，你签收了。这是 ${userName} 特意惦记着你、隔着屏幕投喂的一份心意。请像真人收到对方专门点来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、拆开保温袋边吃边报实况说味道（"还冒热气""这家的料是真给得足""你怎么知道我就馋这口"）、或嗔怪 TA 又乱花钱。带上你自己的性格（嘴硬的就口是心非、心里却甜一下），一两句话就好，别像在汇报。]`;
 }
 
+export interface ShopGiftReplyHintParams {
+    userName: string;
+    kind?: 'gift' | 'companion_pay' | 'clear_cart';
+    itemEmoji?: string;
+    itemName?: string;
+    note?: string;
+    itemCount?: number;
+    total?: number;
+    occasionLabel?: string;
+    wrapLabel?: string;
+    fromWishlist?: boolean;
+}
+
+/** 角色收到心意铺送礼 / 代付 / 清空愿望板后的即时反应 hint。 */
+export function shopGiftReplyHint(p: ShopGiftReplyHintParams): string {
+    const userName = p.userName || '对方';
+    const item = `${p.itemEmoji || '🎁'}${p.itemName || '礼物'}`;
+    const countLine = p.itemCount && p.itemCount > 1 ? `，共 ${p.itemCount} 件` : '';
+    const totalLine = typeof p.total === 'number' && p.total > 0 ? `，金额约 ¥${p.total}` : '';
+    const noteLine = p.note ? `，备注/清单是「${p.note}」` : '';
+    const ritualBits = [
+        p.occasionLabel ? `场景「${p.occasionLabel}」` : '',
+        p.wrapLabel ? `包装「${p.wrapLabel}」` : '',
+        p.fromWishlist ? '来自你的愿望板' : '',
+    ].filter(Boolean).join('，');
+    const ritualLine = ritualBits ? `这次礼物语境是：${ritualBits}。` : '';
+
+    if (p.kind === 'clear_cart') {
+        return `[系统提示（非${userName}发言）：${userName}刚刚在「心意铺」帮你清空了愿望板${countLine}${totalLine}${noteLine}。${ritualLine}本轮请直接、自然地回应这件事；可以感谢、惊喜、害羞、吐槽被看穿愿望、说会珍惜或顺势聊其中想要的东西，但不要说没收到。]`;
+    }
+    if (p.kind === 'companion_pay') {
+        return `[系统提示（非${userName}发言）：${userName}刚刚在「心意铺」替你代付了 ${item}${totalLine}${noteLine}。${ritualLine}本轮请直接、自然地回应这次代付；可以感谢、惊喜、害羞、嘴硬、吐槽或表达会记得这份心意，但不要说没收到。]`;
+    }
+    return `[系统提示（非${userName}发言）：${userName}刚刚从「心意铺」送给你 ${item}${noteLine}。${ritualLine}本轮请直接、自然地回应这份礼物；可以感谢、惊喜、害羞、吐槽、珍惜或追问，也可以自然提到包装、场景或赠言，但不要说没收到。]`;
+}
+
 /** 聊天闹钟到点：睡觉督促 / 起床叫醒 / 自定义提醒。 */
 export function chatAlarmHint(p: {
     userName: string;

@@ -3,13 +3,13 @@ import {
     targetFloorCount, parseThreads, materializeThreads, fallbackThreads, fallbackReplies,
     parseForumReplies, materializeReplies, buildForumPrompt, buildThreadsPrompt, FORUM_BOARDS,
     levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, isCheckedIn,
-    checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp, boardStat,
+    checkIn, maxStreak, toggleFollowBoard, toggleCollect, toggleMutePost, addExp, boardStat,
     makeNotif, unreadCount, hotRank, userLikesReceived, votePoll, pollTotal,
     normalizeForumState, normalizeForumMeta, fallbackTopicEvent, ensureForumTopic,
     materializeCharReply, filterForumPosts, upsertForumDraft, removeForumDraft, touchRecentPost,
     loadForumTrendPack, normalizeForumTrendItems, defaultForumTrendPack, FORUM_TRENDS_KEY, FORUM_TRENDS_COOLDOWN_MS,
     buildForumPostShareSnapshot, buildForumSharePendingPayload, normalizeForumSharePendingPayload,
-    removeForumPost, removeForumReply, removeForumSubReply,
+    removeForumPost, removeForumReply, removeForumSubReply, normalizeForumTags,
     buildCharThreadPrompt, dedupeForumPosts, fallbackCharThread, isDuplicateForumThreadDraft, isGenericCharThreadDraft,
     type ForumTrendPack,
     type RawReply, type ForumReply, type ForumPost, type ForumPoll, type CharBrief,
@@ -662,11 +662,13 @@ describe('forum meta helpers', () => {
 
     it('草稿保存、覆盖、删除', () => {
         let m = defaultForumMeta();
-        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '标题', body: '', pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 1 });
+        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '标题', body: '', tags: ['#求助', '求助', '12345678901234567890'], pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 1 });
         expect(m.drafts?.[0].title).toBe('标题');
-        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '新标题', body: '正文', pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 2 });
+        expect(m.drafts?.[0].tags).toEqual(['求助', '1234567890123456']);
+        m = upsertForumDraft(m, { id: 'd1', board: 'chat', title: '新标题', body: '正文', tags: ['后续'], pollOn: false, pollQ: '', pollOpts: ['', ''], updatedAt: 2 });
         expect(m.drafts).toHaveLength(1);
         expect(m.drafts?.[0].title).toBe('新标题');
+        expect(m.drafts?.[0].tags).toEqual(['后续']);
         m = removeForumDraft(m, 'd1');
         expect(m.drafts).toEqual([]);
     });
@@ -677,6 +679,10 @@ describe('forum meta helpers', () => {
         m = touchRecentPost(m, 'p2');
         m = touchRecentPost(m, 'p1');
         expect(m.recentPostIds).toEqual(['p1', 'p2']);
+    });
+
+    it('标签清洗会去掉 #、去重和截断', () => {
+        expect(normalizeForumTags(['#求助', '求助', '  后续  ', '', '12345678901234567890'])).toEqual(['求助', '后续', '1234567890123456']);
     });
 });
 
@@ -690,6 +696,15 @@ describe('filterForumPosts', () => {
         expect(filterForumPosts([mine, char, plain], meta, '我', 'char').map(p => p.id)).toEqual(['char']);
         expect(filterForumPosts([mine, char, plain], meta, '我', 'collect').map(p => p.id)).toEqual(['plain']);
         expect(filterForumPosts([mine, char, plain], meta, '我', 'recent').map(p => p.id)).toEqual(['char', 'mine']);
+    });
+
+    it('淡出帖子后列表不再显示，恢复后重新出现', () => {
+        const hidden = mkPost({ id: 'hidden' });
+        const visible = mkPost({ id: 'visible' });
+        const muted = toggleMutePost(defaultForumMeta(), 'hidden');
+        expect(filterForumPosts([hidden, visible], muted, '我').map(p => p.id)).toEqual(['visible']);
+        const restored = toggleMutePost(muted, 'hidden');
+        expect(filterForumPosts([hidden, visible], restored, '我').map(p => p.id)).toEqual(['hidden', 'visible']);
     });
 });
 

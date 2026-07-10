@@ -313,6 +313,233 @@ export function cartLineKey(dishId: string, spec?: string, addons?: string[]): s
     return [dishId, spec || '', (addons || []).slice().sort().join(',')].join('|');
 }
 
+// ── 完整 App 外壳：主导航 / 订单中心 / 会员 / 足迹 / 饭篮草稿 ─────────────
+export type TakeoutMainTab = 'home' | 'orders' | 'pantry' | 'profile';
+export type TakeoutSubView = 'store' | 'checkout' | 'detail' | 'addressBook' | 'memberCenter' | 'dishEditor' | 'storeEditor' | null;
+export type TakeoutOrderBucket = 'all' | 'active' | 'arrived' | 'toReview' | 'issue' | 'done';
+
+export interface TakeoutMemberState {
+    points: number;
+    checkinAt?: number;
+    updatedAt?: number;
+}
+
+export interface TakeoutMemberLevel {
+    level: number;
+    title: string;
+    currentFloor: number;
+    nextFloor?: number;
+    progress: number;
+}
+
+export interface TakeoutFootprint {
+    storeId: string;
+    storeName: string;
+    storeEmoji?: string;
+    category?: string;
+    at: number;
+}
+
+export interface TakeoutSavedCart {
+    id: string;
+    storeId: string;
+    storeName: string;
+    storeEmoji?: string;
+    items: TakeoutOrderItem[];
+    subtotal: number;
+    recipient?: string;
+    payer?: string;
+    note?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export const TAKEOUT_MEMBER_KEY = 'moro_takeout_member_v1';
+export const TAKEOUT_FOOTPRINTS_KEY = 'moro_takeout_footprints_v1';
+export const TAKEOUT_SAVED_CARTS_KEY = 'moro_takeout_saved_carts_v1';
+
+const clampPoints = (n: unknown) => Math.max(0, Math.min(999999, Math.floor(Number(n) || 0)));
+
+function readJsonObject<T>(key: string, fallback: T): T {
+    try {
+        const raw = JSON.parse(localStorage.getItem(key) || 'null');
+        return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as T : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function normalizeMemberState(raw: unknown): TakeoutMemberState {
+    const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+    const checkinAt = Number(obj.checkinAt);
+    const updatedAt = Number(obj.updatedAt);
+    return {
+        points: clampPoints(obj.points),
+        checkinAt: Number.isFinite(checkinAt) && checkinAt > 0 ? checkinAt : undefined,
+        updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : undefined,
+    };
+}
+
+export function getTakeoutMemberState(): TakeoutMemberState {
+    return normalizeMemberState(readJsonObject<TakeoutMemberState>(TAKEOUT_MEMBER_KEY, { points: 0 }));
+}
+
+export function saveTakeoutMemberState(input: Partial<TakeoutMemberState>): TakeoutMemberState {
+    const current = getTakeoutMemberState();
+    const next = normalizeMemberState({ ...current, ...input, updatedAt: Date.now() });
+    try { localStorage.setItem(TAKEOUT_MEMBER_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+}
+
+export function addTakeoutMemberPoints(delta: number): TakeoutMemberState {
+    const current = getTakeoutMemberState();
+    return saveTakeoutMemberState({ ...current, points: clampPoints(current.points + delta) });
+}
+
+export function takeoutMemberLevel(points: number): TakeoutMemberLevel {
+    const floors = [0, 60, 180, 360, 720, 1200];
+    const titles = ['新手食客', '街角常客', '饭票熟客', '挑嘴行家', '票根收藏家', '外卖街传说'];
+    const safe = clampPoints(points);
+    let level = 1;
+    for (let i = 0; i < floors.length; i++) if (safe >= floors[i]) level = i + 1;
+    const currentFloor = floors[level - 1] || 0;
+    const nextFloor = floors[level];
+    const progress = nextFloor ? Math.max(0, Math.min(1, (safe - currentFloor) / (nextFloor - currentFloor))) : 1;
+    return { level, title: titles[level - 1] || titles[titles.length - 1], currentFloor, nextFloor, progress: round2(progress) };
+}
+
+export function canTakeoutDailyCheckin(state: TakeoutMemberState = getTakeoutMemberState(), now = Date.now()): boolean {
+    if (!state.checkinAt) return true;
+    const a = new Date(state.checkinAt);
+    const b = new Date(now);
+    return a.getFullYear() !== b.getFullYear() || a.getMonth() !== b.getMonth() || a.getDate() !== b.getDate();
+}
+
+export function takeoutDailyCheckin(now = Date.now(), reward = 8): TakeoutMemberState {
+    const current = getTakeoutMemberState();
+    if (!canTakeoutDailyCheckin(current, now)) return current;
+    return saveTakeoutMemberState({ points: clampPoints(current.points + reward), checkinAt: now });
+}
+
+function normalizeFootprint(raw: any): TakeoutFootprint | null {
+    const storeId = String(raw?.storeId || '').trim();
+    const storeName = String(raw?.storeName || '').trim();
+    const at = Number(raw?.at);
+    if (!storeId || !storeName || !Number.isFinite(at)) return null;
+    return {
+        storeId,
+        storeName: storeName.slice(0, 40),
+        storeEmoji: String(raw?.storeEmoji || '').trim().slice(0, 4) || undefined,
+        category: String(raw?.category || '').trim().slice(0, 16) || undefined,
+        at,
+    };
+}
+
+export function getTakeoutFootprints(): TakeoutFootprint[] {
+    return readArray<any>(TAKEOUT_FOOTPRINTS_KEY)
+        .map(normalizeFootprint)
+        .filter((x): x is TakeoutFootprint => !!x)
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 40);
+}
+
+export function pushTakeoutFootprint(store: Pick<TakeoutStore, 'id' | 'name' | 'emoji' | 'category'>, now = Date.now()): TakeoutFootprint[] {
+    const next: TakeoutFootprint = { storeId: store.id, storeName: store.name, storeEmoji: store.emoji, category: store.category, at: now };
+    const out = [next, ...getTakeoutFootprints().filter(f => f.storeId !== store.id)].slice(0, 40);
+    writeArray(TAKEOUT_FOOTPRINTS_KEY, out);
+    return out;
+}
+
+export function clearTakeoutFootprints(): void {
+    try { localStorage.removeItem(TAKEOUT_FOOTPRINTS_KEY); } catch { /* ignore */ }
+}
+
+function normalizeSavedCart(raw: any): TakeoutSavedCart | null {
+    const storeId = String(raw?.storeId || '').trim();
+    const storeName = String(raw?.storeName || '').trim();
+    const items = Array.isArray(raw?.items)
+        ? raw.items.map((i: any) => ({
+            dishId: String(i?.dishId || '').trim(),
+            name: String(i?.name || '').trim().slice(0, 40),
+            price: asMoney(i?.price, 0, 9999),
+            qty: asIntRange(i?.qty, 1, 1, 99),
+            emoji: String(i?.emoji || '').trim().slice(0, 4) || undefined,
+            spec: String(i?.spec || '').trim().slice(0, 40) || undefined,
+            addons: Array.isArray(i?.addons) ? i.addons.map((x: unknown) => String(x || '').trim().slice(0, 24)).filter(Boolean).slice(0, 12) : undefined,
+        })).filter((i: TakeoutOrderItem) => i.dishId && i.name && i.qty > 0)
+        : [];
+    if (!storeId || !storeName || items.length === 0) return null;
+    const now = Date.now();
+    const createdAt = Number(raw?.createdAt) || now;
+    const updatedAt = Number(raw?.updatedAt) || createdAt;
+    return {
+        id: String(raw?.id || genId('cart')),
+        storeId,
+        storeName: storeName.slice(0, 40),
+        storeEmoji: String(raw?.storeEmoji || '').trim().slice(0, 4) || undefined,
+        items,
+        subtotal: asMoney(items.reduce((sum: number, i: TakeoutOrderItem) => sum + i.price * i.qty, 0), 0, 999999),
+        recipient: String(raw?.recipient || '').trim().slice(0, 80) || undefined,
+        payer: String(raw?.payer || '').trim().slice(0, 80) || undefined,
+        note: String(raw?.note || '').trim().slice(0, 160) || undefined,
+        createdAt,
+        updatedAt,
+    };
+}
+
+export function getTakeoutSavedCarts(): TakeoutSavedCart[] {
+    return readArray<any>(TAKEOUT_SAVED_CARTS_KEY)
+        .map(normalizeSavedCart)
+        .filter((x): x is TakeoutSavedCart => !!x)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 30);
+}
+
+export function saveTakeoutSavedCart(input: Partial<TakeoutSavedCart> & Pick<TakeoutSavedCart, 'storeId' | 'storeName' | 'items'>): TakeoutSavedCart | null {
+    const now = Date.now();
+    const saved = normalizeSavedCart({
+        ...input,
+        id: input.id || genId('cart'),
+        createdAt: input.createdAt || now,
+        updatedAt: now,
+    });
+    if (!saved) return null;
+    const next = [saved, ...getTakeoutSavedCarts().filter(c => c.id !== saved.id)].slice(0, 30);
+    writeArray(TAKEOUT_SAVED_CARTS_KEY, next);
+    return saved;
+}
+
+export function deleteTakeoutSavedCart(id: string): TakeoutSavedCart[] {
+    const next = getTakeoutSavedCarts().filter(c => c.id !== id);
+    writeArray(TAKEOUT_SAVED_CARTS_KEY, next);
+    return next;
+}
+
+export function clearTakeoutSavedCarts(): void {
+    try { localStorage.removeItem(TAKEOUT_SAVED_CARTS_KEY); } catch { /* ignore */ }
+}
+
+export function takeoutOrderBucket(order: TakeoutOrder, now = Date.now()): Exclude<TakeoutOrderBucket, 'all'> {
+    const st = liveTakeoutStatus(order, now);
+    if (st === 'cancelled') return 'issue';
+    if (st === 'arrived') return 'arrived';
+    if (st === 'preparing' || st === 'delivering') return 'active';
+    if (hasOpenIssues(order) || (order.complaint?.filed && !order.complaint.resolved)) return 'issue';
+    if (st === 'delivered' && order.recipient === 'me' && !order.review) return 'toReview';
+    return 'done';
+}
+
+export function filterTakeoutOrdersByBucket(orders: TakeoutOrder[], bucket: TakeoutOrderBucket, now = Date.now()): TakeoutOrder[] {
+    if (bucket === 'all') return orders;
+    return orders.filter(o => takeoutOrderBucket(o, now) === bucket);
+}
+
+export function takeoutOrderBucketCounts(orders: TakeoutOrder[], now = Date.now()): Record<TakeoutOrderBucket, number> {
+    const counts: Record<TakeoutOrderBucket, number> = { all: orders.length, active: 0, arrived: 0, toReview: 0, issue: 0, done: 0 };
+    for (const order of orders) counts[takeoutOrderBucket(order, now)] += 1;
+    return counts;
+}
+
 // ── 自定义菜库 / 铺子（local-first，保存在当前浏览器）──────────────────
 const CUSTOM_DISHES_KEY = 'moro_takeout_custom_dishes_v1';
 const CUSTOM_STORES_KEY = 'moro_takeout_custom_stores_v1';

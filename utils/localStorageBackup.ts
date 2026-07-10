@@ -20,6 +20,9 @@ const EXACT_BACKUP_KEYS = new Set([
   'moro_takeout_taste_profiles_v1',
   'moro_takeout_pinned_v1',
   'moro_takeout_stores_v1',
+  'moro_takeout_member_v1',
+  'moro_takeout_footprints_v1',
+  'moro_takeout_saved_carts_v1',
   'moro_shop_dynamic_items_v1',
   'moro_shop_catalog_v1',
   'study_api_config',
@@ -53,6 +56,9 @@ const BACKUP_PREFIXES = [
   'moro_takeout_taste_',
   'moro_takeout_pinned_',
   'moro_takeout_stores_',
+  'moro_takeout_member_',
+  'moro_takeout_footprints_',
+  'moro_takeout_saved_carts_',
   'moro_shop_',
 ];
 

@@ -219,6 +219,86 @@ describe('fetchWeather geolocation permission', () => {
         expect(getCurrentPosition).toHaveBeenCalledTimes(1);
         expect(weather?.city).toBe('上海');
     });
+
+    it('自定义城市免密钥取当前天气，不再回落到 IP 或定位城市', async () => {
+        const getCurrentPosition = vi.fn();
+        const requestedUrls: string[] = [];
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'granted' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            requestedUrls.push(url);
+            if (url.includes('geocoding-api.open-meteo.com')) {
+                return jsonResponse({
+                    results: [
+                        { name: '盘锦市', admin1: '辽宁省', country_code: 'CN', latitude: 41.12, longitude: 122.07, population: 1_390_000 },
+                        { name: '阜新市', admin1: '辽宁省', country_code: 'CN', latitude: 42.02, longitude: 121.67, population: 1_640_000 },
+                    ],
+                });
+            }
+            if (url.includes('wttr.in')) {
+                expect(url).toContain('42.0200,121.6700');
+                return jsonResponse({
+                    current_condition: [{
+                        temp_C: '19',
+                        FeelsLikeC: '18',
+                        humidity: '62',
+                        weatherCode: '116',
+                        weatherDesc: [{ value: 'Partly cloudy' }],
+                    }],
+                });
+            }
+            return jsonResponse({}, 404);
+        }));
+
+        const weather = await RealtimeContextManager.fetchWeather({
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'manual',
+            weatherCity: '辽宁 阜新',
+            weatherApiKey: '',
+        });
+
+        expect(getCurrentPosition).not.toHaveBeenCalled();
+        expect(requestedUrls.some(url => url.includes('get.geojs.io'))).toBe(false);
+        expect(requestedUrls.some(url => url.includes('bigdatacloud.net'))).toBe(false);
+        expect(weather).toMatchObject({
+            city: '阜新市 · 辽宁省',
+            temp: 19,
+            feelsLike: 18,
+            humidity: 62,
+            description: '多云',
+            source: 'wttr.in',
+        });
+    });
+
+    it('自定义城市查不到时不会偷偷改用定位预报', async () => {
+        const getCurrentPosition = vi.fn();
+        const requestedUrls: string[] = [];
+        vi.stubGlobal('navigator', {
+            permissions: { query: vi.fn().mockResolvedValue({ state: 'granted' }) },
+            geolocation: { getCurrentPosition },
+        });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            requestedUrls.push(url);
+            if (url.includes('geocoding-api.open-meteo.com')) return jsonResponse({ results: [] });
+            return jsonResponse({}, 404);
+        }));
+
+        const forecast = await RealtimeContextManager.fetchWeatherForecast({
+            ...defaultRealtimeConfig,
+            weatherEnabled: true,
+            weatherMode: 'manual',
+            weatherCity: '不存在的城市',
+            weatherApiKey: '',
+        }, { requestLocationPermission: true });
+
+        expect(forecast).toBeNull();
+        expect(getCurrentPosition).not.toHaveBeenCalled();
+        expect(requestedUrls.some(url => url.includes('get.geojs.io'))).toBe(false);
+        expect(requestedUrls.some(url => url.includes('api.open-meteo.com/v1/forecast'))).toBe(false);
+    });
 });
 
 describe('forecastDayLabel', () => {

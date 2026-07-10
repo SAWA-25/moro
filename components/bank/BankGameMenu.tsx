@@ -21,13 +21,14 @@ interface Props {
     onDeleteFiredStaff: (id: string) => void;
     onUpdateConfig: (cfg: any) => void;
     onAddGoal: () => void;
+    onSelectGoal?: (id: string) => void;
     onDeleteGoal: (id: string) => void;
     onEditStaff: (staff: ShopStaff) => void;
 }
 
 const BankGameMenu: React.FC<Props> = ({
     state, characters = [], onHireStaff, onStaffRest, onFireStaff, onRehireStaff, onDeleteFiredStaff,
-    onAddGoal, onDeleteGoal, onEditStaff
+    onAddGoal, onSelectGoal, onDeleteGoal, onEditStaff
 }) => {
     const [tab, setTab] = useState<'staff' | 'goals'>('staff');
     const [showCustomHire, setShowCustomHire] = useState(false);
@@ -475,7 +476,7 @@ const BankGameMenu: React.FC<Props> = ({
                         state.goals.map(g => {
                             const progress = Math.min(100, (g.currentAmount / g.targetAmount) * 100);
                             return (
-                                <div key={g.id} className="bg-white p-5 rounded-2xl border border-[#E8DCC8] shadow-sm relative group overflow-hidden">
+                                <div key={g.id} role="button" tabIndex={0} onClick={() => onSelectGoal?.(g.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onSelectGoal?.(g.id); }} className="bg-white p-5 rounded-2xl border border-[#E8DCC8] shadow-sm relative group overflow-hidden cursor-pointer active:scale-[0.99] transition-transform">
                                     {/* Background progress */}
                                     <div
                                         className="absolute inset-0 bg-gradient-to-r from-[#C8E6C9] to-[#A5D6A7] opacity-20 transition-all duration-700"
@@ -518,7 +519,7 @@ const BankGameMenu: React.FC<Props> = ({
 
                                     {/* Delete button */}
                                     <button
-                                        onClick={() => onDeleteGoal(g.id)}
+                                        onClick={(e) => { e.stopPropagation(); onDeleteGoal(g.id); }}
                                         className="absolute top-3 right-3 w-6 h-6 rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
                                     >
                                         ×

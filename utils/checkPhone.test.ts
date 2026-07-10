@@ -138,6 +138,46 @@ describe('check phone utilities', () => {
     expect(prompt?.prompt).toContain('Screenlife');
   });
 
+  it('asks chat checks for richer multi-thread phone logs', () => {
+    const prompt = buildCheckPhoneRecordPrompt({
+      char,
+      userName: '用户',
+      type: 'chat',
+      mode: 'relationship',
+      context: '角色核心上下文',
+      recentMessages: '用户: 今天你手机好安静',
+      timeGap: '你们刚刚还在聊天。',
+    });
+
+    expect(prompt?.prompt).toContain('5-6 个');
+    expect(prompt?.prompt).toContain('6-10 行');
+    expect(prompt?.prompt).toContain('联系人或群聊片段');
+    expect(prompt?.prompt).toContain('普通寒暄');
+    expect(prompt?.prompt).toContain('半句草稿');
+    expect(prompt?.prompt).toContain('不要声称读取真实手机');
+  });
+
+  it('normalizes longer multi-speaker chat details and participants', () => {
+    const longTail = '晚点把那份表再发我一次。'.repeat(120);
+    const record = normalizePhoneEvidence({
+      type: 'chat',
+      title: '项目小群',
+      messages: [
+        '我: 刚从咖啡店出来。',
+        '小林: 你那边雨停了吗？',
+        '阿真: 我把会议改到八点半了。',
+        `老板: ${longTail}`,
+        '我: 看到了，我先把手头这段收尾。',
+        '小林: 那我先占位置。',
+      ],
+    }, { type: 'chat', appName: '信息', now: 100 });
+
+    expect(record.detail.length).toBeGreaterThan(1200);
+    expect(record.detail).toContain('阿真: 我把会议改到八点半了。');
+    expect(record.meta?.participants).toEqual(expect.arrayContaining(['项目小群', '小林', '阿真', '老板']));
+    expect(record.meta?.participants).not.toContain('我');
+  });
+
   it('defaults ordinary secret-space records to private instead of suspicious', () => {
     const privateRecord = normalizePhoneEvidence({
       type: 'secret_space',
@@ -172,6 +212,29 @@ describe('check phone utilities', () => {
     expect(records[0].type).toBe('secret_space');
     expect(records[0].meta?.appName).toBe('秘密空间');
     expect(records[0].meta?.risk).toBe('private');
+  });
+
+  it('expands sparse xunji chat traces into readable check-phone snippets', () => {
+    const records = mapXunjiToPhoneEvidence({
+      run: {
+        id: 'run-chat-sparse',
+        chats: [
+          { id: 'chat-1', time: 100, target: '小林', summary: '问她晚上还来不来，像还有后半句没说。', messages: ['晚上还来吗？'] },
+        ],
+        browsed: [],
+        notes: [],
+        moments: [],
+      } as any,
+      now: 100,
+    });
+    const chatRecord = records.find(record => record.type === 'chat');
+    const lines = chatRecord?.detail.split('\n').filter(Boolean) || [];
+
+    expect(chatRecord).toBeTruthy();
+    expect(lines.length).toBeGreaterThanOrEqual(6);
+    expect(chatRecord?.detail).toContain('小林:');
+    expect(chatRecord?.detail).toContain('我:');
+    expect(chatRecord?.meta?.participants).toContain('小林');
   });
 
   it('normalizes and summarizes phone check sessions', () => {

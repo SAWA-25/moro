@@ -184,7 +184,7 @@ export function normalizeHealthReminder(input: Partial<HealthReminder>, now = Da
     enabled: input.enabled !== false,
     timeHHmm,
     frequency,
-    weekdays: normalizeWeekdays(input.weekdays),
+    weekdays: normalizeWeekdays(input.weekdays, frequency === 'weekdays' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 0]),
     date,
     privacy: normalizeHealthPrivacy(input.privacy),
     channel: normalizeHealthChannel(input.channel),
@@ -197,8 +197,8 @@ export function normalizeHealthReminder(input: Partial<HealthReminder>, now = Da
   return { ...reminder, nextAt: computeNextHealthReminderAt(reminder, now) };
 }
 
-function normalizeWeekdays(value?: number[]): number[] {
-  const source = value && value.length ? value : [1, 2, 3, 4, 5, 6, 0];
+function normalizeWeekdays(value?: number[], fallback: number[] = [1, 2, 3, 4, 5, 6, 0]): number[] {
+  const source = value && value.length ? value : fallback;
   const set = new Set<number>();
   source.forEach(day => {
     const n = Number(day);
@@ -219,7 +219,7 @@ export function computeNextHealthReminderAt(reminder: Pick<HealthReminder, 'enab
 
   const cursor = new Date(fromMs);
   cursor.setSeconds(0, 0);
-  const weekdays = normalizeWeekdays(reminder.weekdays);
+  const weekdays = normalizeWeekdays(reminder.weekdays, reminder.frequency === 'weekdays' ? [1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 0]);
   for (let i = 0; i < 370; i += 1) {
     const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
     if ((reminder.frequency === 'weekdays' || reminder.frequency === 'custom') && !weekdays.includes(day.getDay())) continue;

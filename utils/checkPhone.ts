@@ -65,6 +65,7 @@ export interface CheckPhonePromptResult {
 }
 
 const MAX_DETAIL = 1200;
+const MAX_CHAT_DETAIL = 4200;
 const RISK_VALUES: PhoneEvidenceRisk[] = ['normal', 'private', 'suspicious'];
 const cleanRoleplayText = (value: unknown, maxLen: number): string =>
   sanitizeAssistantVisibleText(asText(value)).slice(0, maxLen).trim();
@@ -91,6 +92,44 @@ export const normalizePhoneCheckMode = (value: unknown): PhoneCheckMode => {
   if (raw === 'deep' || /深挖|全部|完整/.test(raw)) return 'deep';
   return 'life';
 };
+
+interface CheckPhoneDensityRule {
+  recordRange: string;
+  chatThreadRange: string;
+  chatLineRange: string;
+  emphasis: string;
+}
+
+const CHECK_PHONE_DENSITY_RULES: Record<PhoneCheckMode, CheckPhoneDensityRule> = {
+  quick: {
+    recordRange: '2-3',
+    chatThreadRange: '3-4',
+    chatLineRange: '4-6',
+    emphasis: '只抓最近和最明显的痕迹，少量但要具体。',
+  },
+  life: {
+    recordRange: '4-6',
+    chatThreadRange: '4-6',
+    chatLineRange: '6-10',
+    emphasis: '写实中高密度 + 生活碎片感：让作息、地点、消费、日程、备忘录和普通聊天自然交织。',
+  },
+  relationship: {
+    recordRange: '4-6',
+    chatThreadRange: '5-6',
+    chatLineRange: '6-10',
+    emphasis: '以聊天、联系人和社交动态为主，但仍要混入生活安排、普通寒暄和未说完的半句话，不要全写成强冲突。',
+  },
+  deep: {
+    recordRange: '6-8',
+    chatThreadRange: '5-7',
+    chatLineRange: '6-10',
+    emphasis: '信息量更高，生活、关系、位置、消费、健康和浏览痕迹要互相照应，形成可翻看的线索网。',
+  },
+};
+
+function getCheckPhoneDensityRule(mode?: PhoneCheckMode): CheckPhoneDensityRule {
+  return CHECK_PHONE_DENSITY_RULES[normalizePhoneCheckMode(mode)] || CHECK_PHONE_DENSITY_RULES.life;
+}
 
 const riskWeight = (risk?: PhoneEvidenceRisk): number => {
   if (risk === 'suspicious') return 0.16;
@@ -199,6 +238,39 @@ const asText = (value: unknown, fallback = ''): string => {
   return fallback;
 };
 
+const uniquePhoneTexts = (values: string[], max = 12): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  values.forEach(value => {
+    const text = value.trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    out.push(text);
+  });
+  return out.slice(0, max);
+};
+
+function normalizePhoneChatSpeaker(raw: string, fallbackContact = ''): string {
+  const speaker = raw
+    .replace(/[「」"']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!speaker) return '';
+  if (/^(我|me|self|自己)$/i.test(speaker)) return '';
+  if (/^(对方|them|ta|他|她)$/i.test(speaker)) return fallbackContact.trim();
+  if (/^(系统|旁白|时间|备注|通知)$/i.test(speaker)) return '';
+  return speaker;
+}
+
+function extractChatParticipantsFromDetail(detail: string, fallbackContact = ''): string[] {
+  const fromLines = detail
+    .split(/\n+/)
+    .map(line => /^\s*([^:：]{1,24})[:：]\s*/.exec(line)?.[1] || '')
+    .map(name => normalizePhoneChatSpeaker(name, fallbackContact))
+    .filter(Boolean);
+  return uniquePhoneTexts([fallbackContact, ...fromLines].filter(Boolean), 8);
+}
+
 const normalizeTags = (value: unknown): string[] | undefined => {
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[，,、\s]+/) : [];
   const tags = raw.map(item => asText(item).replace(/^#/, '')).filter(Boolean).slice(0, 6);
@@ -267,25 +339,28 @@ export function normalizePhoneEvidence(item: unknown, opts: {
 }): PhoneEvidence {
   const obj = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
   const metaObj = (obj.meta && typeof obj.meta === 'object' ? obj.meta : {}) as Record<string, unknown>;
+  const normalizedType = asText(obj.type, opts.type) || opts.type;
   const title = asText(obj.title, asText(obj.name, asText(obj.target, 'Unknown'))).slice(0, 80) || 'Unknown';
   const detail = asText(
     obj.detail,
-    asText(obj.summary, asText(obj.content, asText(obj.body, asText(obj.note, asText(obj.description, '...'))))),
-  ).slice(0, MAX_DETAIL) || '...';
+    asText(obj.messages, asText(obj.summary, asText(obj.content, asText(obj.body, asText(obj.note, asText(obj.description, '...')))))),
+  ).slice(0, normalizedType === 'chat' ? MAX_CHAT_DETAIL : MAX_DETAIL) || '...';
   const value = asText(obj.value, asText(obj.status, asText(obj.amount, asText(obj.time, '')))).slice(0, 80) || undefined;
   const textForRisk = `${title}\n${detail}\n${value || ''}`;
-  const participants = [
+  const participants = uniquePhoneTexts([
     ...((Array.isArray(obj.participants) ? obj.participants : []) as unknown[]),
+    ...((Array.isArray(metaObj.participants) ? metaObj.participants : []) as unknown[]),
     obj.contact,
     obj.target,
-  ].map(v => asText(v)).filter(Boolean).slice(0, 8);
+    ...(normalizedType === 'chat' ? extractChatParticipantsFromDetail(detail, title) : []),
+  ].map(v => asText(v)).filter(Boolean), 8);
   const meta: PhoneEvidenceMeta = {
     ...metaObj,
     source: normalizeSource(metaObj.source ?? obj.source, opts.source || 'generated'),
-    appName: asText(metaObj.appName, opts.appName || getCheckPhoneAppDefinition(opts.type)?.name || opts.type),
+    appName: asText(metaObj.appName, opts.appName || getCheckPhoneAppDefinition(normalizedType)?.name || normalizedType),
     tags: normalizeTags(metaObj.tags ?? obj.tags),
-    risk: normalizeRisk(metaObj.risk ?? obj.risk, textForRisk, opts.type === 'secret_space' ? 'private' : 'normal'),
-    participants: participants.length ? participants : Array.isArray(metaObj.participants) ? (metaObj.participants as unknown[]).map(v => asText(v)).filter(Boolean) : undefined,
+    risk: normalizeRisk(metaObj.risk ?? obj.risk, textForRisk, normalizedType === 'secret_space' ? 'private' : 'normal'),
+    participants: participants.length ? participants : undefined,
     locationLabel: asText(metaObj.locationLabel, asText(obj.location, asText(obj.address, ''))) || undefined,
     amount: asText(metaObj.amount, asText(obj.amount, '')) || undefined,
     status: asText(metaObj.status, asText(obj.status, '')) || undefined,
@@ -293,7 +368,7 @@ export function normalizePhoneEvidence(item: unknown, opts: {
 
   return {
     id: asText(obj.id) || `rec-${opts.now || Date.now()}-${opts.index || 0}-${Math.random().toString(36).slice(2, 8)}`,
-    type: asText(obj.type, opts.type) || opts.type,
+    type: normalizedType,
     title,
     detail,
     value,
@@ -567,13 +642,28 @@ export function formatCheckPhoneStatusForPrompt(status?: CheckPhoneStatusSummary
   ].filter(Boolean).join('\n');
 }
 
-function baseInstruction(type: string, char: CharacterProfile): string {
+function buildCheckPhoneDensityInstruction(type: string, mode: PhoneCheckMode): string {
+  const rule = getCheckPhoneDensityRule(mode);
+  const countLine = type === 'chat'
+    ? `聊天软件请生成 ${rule.chatThreadRange} 个联系人或群聊片段；每个片段 detail 写 ${rule.chatLineRange} 行即时消息。`
+    : `本 App 请生成 ${rule.recordRange} 条可翻看的记录；每条都要有具体时间感、对象或场景。`;
+  return [
+    countLine,
+    rule.emphasis,
+    '优先写像手机里真实留下的碎片：普通寒暄、日程、位置、消费、收藏、草稿、未读、停顿、半句没发出的话都可以出现。',
+    '不要把所有记录都写成暧昧、背叛或强冲突；可疑线索只占少数，更多内容应服务于角色生活质感。',
+  ].join('\n');
+}
+
+function baseInstruction(type: string, char: CharacterProfile, mode: PhoneCheckMode): string {
+  const rule = getCheckPhoneDensityRule(mode);
   if (type === 'chat') {
     return [
-      '生成 3 个该角色手机聊天软件中的对话片段。',
-      '联系人要贴合人设，不要使用“User”作为联系人。',
-      '内容必须是有来有回的对话脚本（3-4句），体现关系和近期状态。',
-      'detail 必须严格使用“我: ...”“对方: ...”或“联系人名: ...”分行。',
+      `生成 ${rule.chatThreadRange} 个该角色手机聊天软件中的对话片段，允许单聊、群聊、家人/同事/朋友/店铺客服/熟人等不同联系人混合。`,
+      `每个片段必须是有来有回的对话脚本，detail 写 ${rule.chatLineRange} 行，不要只写两三句摘要。`,
+      '联系人要贴合人设，不要使用“User”作为联系人；群聊可以有 3 位以上发言人。',
+      '内容要混合普通寒暄、生活安排、未读/撤回/半句草稿、轻微关系线索和近期状态，不要全部写成狗血冲突。',
+      'detail 必须严格使用“我: ...”“对方: ...”或“联系人名: ...”分行；群聊用真实发言人名字分行。',
     ].join('\n');
   }
   if (type === 'call') return '生成 3 条该角色的近期通话记录，value 写“呼入/呼出/未接 + 时长”，detail 写通话缘由。';
@@ -603,13 +693,15 @@ export function buildCheckPhoneRecordPrompt(args: CheckPhonePromptArgs): CheckPh
   const def = getCheckPhoneAppDefinition(args.type);
   const appName = args.appName || def?.name || args.type;
   const mode = normalizePhoneCheckMode(args.mode);
+  const densityInstruction = buildCheckPhoneDensityInstruction(args.type, mode);
+  const densityRule = getCheckPhoneDensityRule(mode);
   const instruction = custom
     ? [
       `用户正在查看你的手机 App：“${appName}”。`,
       `该 App 的功能/用户想看的内容是：“${custom}”。`,
-      '请生成 2-4 条符合该 App 功能的记录，必须符合你的人设。',
+      `请生成 ${densityRule.recordRange} 条符合该 App 功能的记录，必须符合你的人设。`,
     ].join('\n')
-    : baseInstruction(args.type, args.char);
+    : baseInstruction(args.type, args.char, mode);
   if (!instruction) return null;
   const outputShape = [
     '只输出 JSON 数组，不要 markdown，不要解释。',
@@ -622,6 +714,7 @@ export function buildCheckPhoneRecordPrompt(args: CheckPhonePromptArgs): CheckPh
     buildXunjiPromptBlock(args.snapshot, args.run, args.reports || []),
     `### [Recent Chat Context]\n${args.recentMessages || '暂无最近聊天。'}`,
     `### [Check Mode]\n${CHECK_PHONE_MODE_LABELS[mode]}：${CHECK_PHONE_MODE_NOTES[mode]}`,
+    `### [Check Density]\n${densityInstruction}\n如果 [Task] 里的数量和本段冲突，以本段为准。`,
     `### [Task]\n${instruction}`,
     '请让记录和上面的手机状态、近期 Screenlife、最近聊天彼此一致，不要各编各的。',
     '这是虚拟手机剧情生成，不要声称读取真实手机、真实联系人或真实 App。',
@@ -644,6 +737,31 @@ function inferRecordType(appName = ''): string {
   return 'browser';
 }
 
+function normalizeXunjiChatLine(line: string, index: number, target: string): string {
+  const text = line.trim();
+  if (!text) return '';
+  if (/^\s*[^:：]{1,24}[:：]\s*/.test(text)) return text;
+  return `${index % 2 === 0 ? target : '我'}: ${text}`;
+}
+
+function buildExpandedXunjiChatDetail(chat: XunjiScreenlifeRun['chats'][number]): string {
+  const target = chat.target || '联系人';
+  const summary = (chat.summary || '今天的安排还有半句没说完。').replace(/\s+/g, ' ').trim();
+  const existing = (chat.messages || [])
+    .map((line, index) => normalizeXunjiChatLine(line, index, target))
+    .filter(Boolean);
+  const fallback = [
+    `${target}: ${summary}`,
+    '我: 我看到了，刚才没来得及细回。',
+    `${target}: 你每次说没来得及，都像还有半句没发出来。`,
+    '我: 不是躲，只是今天手机一直在切 App。',
+    `${target}: 那等你空下来，把后面的安排也说一声。`,
+    '我: 好，等我处理完手头这点事再回你。',
+  ];
+  const lines = uniquePhoneTexts([...existing, ...fallback], 10);
+  return lines.slice(0, Math.max(6, Math.min(10, lines.length))).join('\n');
+}
+
 export function mapXunjiToPhoneEvidence(args: {
   run?: XunjiScreenlifeRun | null;
   snapshot?: XunjiMonitorSnapshot | null;
@@ -656,15 +774,23 @@ export function mapXunjiToPhoneEvidence(args: {
     records.push({ ...record, timestamp: record.timestamp ?? now, meta: { source: 'xunji', ...(record.meta || {}) } });
   };
 
-  args.run?.chats.slice(0, 6).forEach(chat => push({
-    id: `xunji-${args.run!.id}-chat-${chat.id}`,
-    type: 'chat',
-    title: chat.target,
-    detail: chat.messages?.length ? chat.messages.join('\n') : `对方: ${chat.summary}\n我: 嗯，我知道。`,
-    value: xunjiFormatClock(chat.time),
-    timestamp: chat.time,
-    meta: { appName: '信息', relatedXunjiRunId: args.run!.id, participants: [chat.target], risk: normalizeRisk(undefined, chat.summary) },
-  }));
+  args.run?.chats.slice(0, 6).forEach(chat => {
+    const detail = buildExpandedXunjiChatDetail(chat);
+    push({
+      id: `xunji-${args.run!.id}-chat-${chat.id}`,
+      type: 'chat',
+      title: chat.target,
+      detail,
+      value: xunjiFormatClock(chat.time),
+      timestamp: chat.time,
+      meta: {
+        appName: '信息',
+        relatedXunjiRunId: args.run!.id,
+        participants: extractChatParticipantsFromDetail(detail, chat.target),
+        risk: normalizeRisk(undefined, `${chat.summary}\n${detail}`),
+      },
+    });
+  });
   args.run?.browsed.slice(0, 8).forEach(item => {
     const type = inferRecordType(item.appName);
     push({

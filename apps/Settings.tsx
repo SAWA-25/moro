@@ -1237,13 +1237,13 @@ const Settings: React.FC = () => {
       setShowRealtimeModal(false);
   };
 
-  // 测试天气：走真实取数路径（geo=定位+Open-Meteo 免密钥；manual=OpenWeatherMap）
+  // 测试天气：走真实取数路径（geo=定位+Open-Meteo 免密钥；manual=手填城市+Open-Meteo 免密钥）
   const testWeatherApi = async () => {
-      if (rtWeatherMode === 'manual' && !rtWeatherKey) {
-          setRtTestStatus('手填模式请先填写 API Key');
+      if (rtWeatherMode === 'manual' && !rtWeatherCity.trim()) {
+          setRtTestStatus('自定义城市模式请先填写城市名');
           return;
       }
-      setRtTestStatus(rtWeatherMode === 'geo' ? '正在获取天气…（如需更准，首次会请求定位；拒绝也会按 IP 估算）' : '正在测试…');
+      setRtTestStatus(rtWeatherMode === 'geo' ? '正在获取天气…（如需更准，首次会请求定位；拒绝也会按 IP 估算）' : '正在查询自定义城市…');
       try {
           RealtimeContextManager.clearCache(); // 强制重新取，别命中缓存
           const weather = await RealtimeContextManager.fetchWeather({
@@ -1257,8 +1257,8 @@ const Settings: React.FC = () => {
               setRtTestStatus(`看到了！${weather.city}: ${weather.description}, ${weather.temp}°C（体感 ${weather.feelsLike}°C）`);
           } else {
               setRtTestStatus(rtWeatherMode === 'geo'
-                  ? '没取到天气：可能拒绝了定位授权，或网络不通。可改用手填模式。'
-                  : '没取到天气：检查 API Key 与城市名（英文）是否正确。');
+                  ? '没取到天气：可能拒绝了定位授权，或网络不通。可改用自定义城市。'
+                  : '没取到天气：检查城市名是否正确，城市重名或查不到时可加上省份。');
           }
       } catch (e: any) {
           setRtTestStatus(`出错了: ${e?.message || e}`);
@@ -2887,7 +2887,7 @@ const Settings: React.FC = () => {
                   </div>
                   {rtWeatherEnabled && (
                       <div className="space-y-2">
-                          {/* 取数方式：定位（免密钥）/ 手填 */}
+                          {/* 取数方式：定位（免密钥）/ 自定义城市（免密钥） */}
                           <div className="grid grid-cols-2 gap-2">
                               <button
                                   onClick={() => setRtWeatherMode('geo')}
@@ -2896,21 +2896,24 @@ const Settings: React.FC = () => {
                               <button
                                   onClick={() => setRtWeatherMode('manual')}
                                   className={`py-2 text-xs font-black border-2 ${rtWeatherMode === 'manual' ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/30 text-[#26242a]/50'}`}
-                              >🔑 手填 Key</button>
+                              >🏙️ 自定义城市</button>
                           </div>
                           {rtWeatherMode === 'geo' ? (
                               <p className="text-xs text-[#26242a]/60 leading-relaxed">
-                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。日常自动刷新不会主动弹定位授权；已授权时优先用{nativeRuntime ? '手机系统定位' : '浏览器定位'}，未授权时会用本地缓存或按 IP 取城市级的本地实时天气。只有点「测试天气连接」或天气详情页「刷新」这类主动操作时，才可能请求定位。「手填 Key」仅作老用户兼容保留。
+                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。日常自动刷新不会主动弹定位授权；已授权时优先用{nativeRuntime ? '手机系统定位' : '浏览器定位'}，未授权时会用本地缓存或按 IP 取城市级的本地实时天气。只有点「测试天气连接」或天气详情页「刷新」这类主动操作时，才可能请求定位；定位偏到邻城时可切到「自定义城市」。
                               </p>
                           ) : (
                               <>
                                   <div>
-                                      <label className={LABEL}>OPENWEATHERMAP API KEY</label>
-                                      <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className={`${FIELD} font-mono`} placeholder="获取: openweathermap.org" />
+                                      <label className={LABEL}>CITY · 自定义城市</label>
+                                      <input type="text" value={rtWeatherCity} onChange={e => setRtWeatherCity(e.target.value)} className={FIELD} placeholder="城市名 / 省份 城市 / City name" />
+                                      <p className="mt-1 text-[11px] leading-relaxed text-[#26242a]/55">
+                                          手填城市同样走免密钥天气；定位偏到邻城时写这里即可。城市重名或查不到时，可加省份。
+                                      </p>
                                   </div>
                                   <div>
-                                      <label className={LABEL}>CITY · 城市（英文）</label>
-                                      <input type="text" value={rtWeatherCity} onChange={e => setRtWeatherCity(e.target.value)} className={FIELD} placeholder="Beijing, Shanghai, etc." />
+                                      <label className={LABEL}>OPENWEATHERMAP API KEY · 旧版兜底，可不填</label>
+                                      <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className={`${FIELD} font-mono`} placeholder="留空即可" />
                                   </div>
                               </>
                           )}

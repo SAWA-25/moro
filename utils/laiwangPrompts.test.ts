@@ -25,6 +25,7 @@ import {
   livePrivateDraftPromptBody,
   proactiveFallbackHint,
   proactivePendingReplyHint,
+  shopGiftReplyHint,
   swOfflineProactiveSystemPrompt,
   userScreenWatchCommentSystemPrompt,
   userScreenWatchCommentUserPrompt,
@@ -379,5 +380,44 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('不要默认去朋友圈');
     expect(text).toContain('不要把查岗目标写成发动态');
     expect(text).toContain('极少数情况下');
+  });
+
+  it('includes shop gift ritual and wishlist context for shop replies', () => {
+    const prompt = shopGiftReplyHint({
+      userName: '小雨',
+      kind: 'gift',
+      itemEmoji: '🌹',
+      itemName: '玫瑰花束',
+      note: '给你',
+      occasionLabel: '约会见面',
+      wrapLabel: '黑缎带礼盒',
+      fromWishlist: true,
+    });
+
+    expect(prompt).toContain('小雨刚刚从「心意铺」送给你 🌹玫瑰花束');
+    expect(prompt).toContain('备注/清单是「给你」');
+    expect(prompt).toContain('场景「约会见面」');
+    expect(prompt).toContain('包装「黑缎带礼盒」');
+    expect(prompt).toContain('来自你的愿望板');
+    expect(prompt).toContain('不要说没收到');
+  });
+
+  it('distinguishes shop companion pay and clear wishlist replies', () => {
+    expect(shopGiftReplyHint({
+      userName: '小雨',
+      kind: 'companion_pay',
+      itemName: '草莓蛋糕',
+      itemEmoji: '🍰',
+      total: 45,
+    })).toContain('替你代付了 🍰草莓蛋糕');
+
+    expect(shopGiftReplyHint({
+      userName: '小雨',
+      kind: 'clear_cart',
+      itemName: '愿望板',
+      itemEmoji: '🛒',
+      itemCount: 3,
+      total: 88,
+    })).toContain('帮你清空了愿望板，共 3 件，金额约 ¥88');
   });
 });

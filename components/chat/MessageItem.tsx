@@ -2674,6 +2674,11 @@ const MessageItem = React.memo(({
         // 购物商城礼物卡：user 送角色 / 角色回赠 user。展示礼物 + 赠言。
         const g: any = m.metadata?.gift || {};
         const fromName = g.fromName || (isUser ? '你' : charName);
+        const ritualBits = [
+            typeof g.wrapLabel === 'string' && g.wrapLabel.trim() ? g.wrapLabel.trim() : '',
+            typeof g.occasionLabel === 'string' && g.occasionLabel.trim() ? g.occasionLabel.trim() : '',
+            g.fromWishlist ? '来自愿望' : '',
+        ].filter(Boolean);
         return commonLayout(
             <div
                 className="w-60 rounded-[1.5rem] overflow-hidden relative border border-rose-200"
@@ -2689,6 +2694,15 @@ const MessageItem = React.memo(({
                             <div className="text-[11px] font-bold" style={{ color: '#c2755a' }}>{fromName} 送的</div>
                         </div>
                     </div>
+                    {ritualBits.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                            {ritualBits.map(bit => (
+                                <span key={bit} className="px-2 py-0.5 rounded-full text-[9.5px] font-bold" style={{ background: 'rgba(255,255,255,0.58)', color: '#a8503a', border: '1px solid rgba(194,117,90,0.18)' }}>
+                                    {bit}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     {g.note && <div className="mt-2.5 text-[12px] leading-relaxed line-clamp-3" style={{ color: '#8a5345' }}>「{String(g.note).slice(0, 60)}」</div>}
                 </div>
             </div>

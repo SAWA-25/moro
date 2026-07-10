@@ -55,3 +55,8 @@ export const createAutoBankTransaction = (
         relatedEntityId: meta.relatedEntityId,
     };
 };
+
+export const balanceRestoreDeltaForDeletedTransaction = (tx: BankTransaction): number => {
+    if (tx.createdBy !== 'user' || tx.auto) return 0;
+    return tx.type === 'income' ? -tx.amount : tx.amount;
+};

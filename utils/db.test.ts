@@ -871,6 +871,9 @@ describe('complete backup restore coverage', () => {
     localStorage.setItem('os_default_persona_id', 'persona-default');
     localStorage.setItem('moro_takeout_custom_stores_v1', '[{"id":"store"}]');
     localStorage.setItem('moro_takeout_custom_dishes_v1', '[{"id":"dish"}]');
+    localStorage.setItem('moro_takeout_member_v1', '{"points":88}');
+    localStorage.setItem('moro_takeout_footprints_v1', '[{"storeId":"s1","storeName":"面馆","at":1}]');
+    localStorage.setItem('moro_takeout_saved_carts_v1', '[{"id":"cart","storeId":"s1","storeName":"面馆","items":[{"dishId":"d","name":"饭","price":18,"qty":1}]}]');
     localStorage.setItem('moro_shop_dynamic_items_v1', '[{"id":"gift"}]');
     localStorage.setItem('moro_shop_catalog_v1', '[{"id":"catalog"}]');
     localStorage.setItem('moro_import_in_progress_v1', '{"phase":"database"}');
@@ -883,6 +886,9 @@ describe('complete backup restore coverage', () => {
       os_default_persona_id: 'persona-default',
       moro_takeout_custom_stores_v1: '[{"id":"store"}]',
       moro_takeout_custom_dishes_v1: '[{"id":"dish"}]',
+      moro_takeout_member_v1: '{"points":88}',
+      moro_takeout_footprints_v1: '[{"storeId":"s1","storeName":"面馆","at":1}]',
+      moro_takeout_saved_carts_v1: '[{"id":"cart","storeId":"s1","storeName":"面馆","items":[{"dishId":"d","name":"饭","price":18,"qty":1}]}]',
       moro_shop_dynamic_items_v1: '[{"id":"gift"}]',
       moro_shop_catalog_v1: '[{"id":"catalog"}]',
     });
@@ -898,6 +904,9 @@ describe('complete backup restore coverage', () => {
     restoreLocalStorageSnapshot({
       os_active_persona_id: 'persona-a',
       moro_takeout_custom_stores_v1: '[{"id":"store"}]',
+      moro_takeout_member_v1: '{"points":88}',
+      moro_takeout_footprints_v1: '[{"storeId":"s1","storeName":"面馆","at":1}]',
+      moro_takeout_saved_carts_v1: '[{"id":"cart","storeId":"s1","storeName":"面馆","items":[{"dishId":"d","name":"饭","price":18,"qty":1}]}]',
       moro_shop_dynamic_items_v1: '[{"id":"gift"}]',
       moro_import_in_progress_v1: '{"phase":"assets"}',
       moro_takeout_intent_v1: '{"recipientCharId":"c1"}',
@@ -906,6 +915,9 @@ describe('complete backup restore coverage', () => {
 
     expect(localStorage.getItem('os_active_persona_id')).toBe('persona-a');
     expect(localStorage.getItem('moro_takeout_custom_stores_v1')).toBe('[{"id":"store"}]');
+    expect(localStorage.getItem('moro_takeout_member_v1')).toBe('{"points":88}');
+    expect(localStorage.getItem('moro_takeout_footprints_v1')).toBe('[{"storeId":"s1","storeName":"面馆","at":1}]');
+    expect(localStorage.getItem('moro_takeout_saved_carts_v1')).toBe('[{"id":"cart","storeId":"s1","storeName":"面馆","items":[{"dishId":"d","name":"饭","price":18,"qty":1}]}]');
     expect(localStorage.getItem('moro_shop_dynamic_items_v1')).toBe('[{"id":"gift"}]');
     expect(localStorage.getItem('moro_import_in_progress_v1')).toBeNull();
     expect(localStorage.getItem('moro_takeout_intent_v1')).toBeNull();

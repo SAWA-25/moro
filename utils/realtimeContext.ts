@@ -56,11 +56,11 @@ export interface RealtimeConfig {
     /**
      * 取数方式：
      * - 'geo'（默认）：已授权定位 / 缓存 / IP + Open-Meteo（免密钥、实时取本地天气）
-     * - 'manual'：旧版手填 OpenWeatherMap Key + 城市名
+     * - 'manual'：手填城市名（免密钥 Open-Meteo 地理编码；旧版 OpenWeatherMap Key 只作兜底）
      */
     weatherMode?: 'geo' | 'manual';
-    weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
-    weatherCity: string;    // 城市名 (如 "Beijing" 或 "Shanghai")，仅 manual 模式用
+    weatherApiKey: string;  // OpenWeatherMap API Key（旧版兼容兜底，可不填）
+    weatherCity: string;    // 城市名（manual 模式用，可写中文城市或省份 + 城市）
 
     // 新闻配置
     newsEnabled: boolean;
@@ -406,25 +406,60 @@ export const forecastDayLabel = (dateStr: string, idx: number): string => {
     return Number.isNaN(d.getTime()) ? dateStr.slice(5) : (WEEKDAY_CN[d.getDay()] || dateStr.slice(5));
 };
 
+const normalizeCityCandidate = (value: unknown): string => (
+    String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[,\s，、·\-_/]+/g, '')
+        .replace(/[省市县区盟旗州]$/g, '')
+);
+
+const formatGeocodedCityName = (hit: any, fallback: string): string => {
+    const name = String(hit?.name || fallback).trim() || fallback;
+    const admin1 = String(hit?.admin1 || '').trim();
+    if (!admin1) return name;
+    const compactName = normalizeCityCandidate(name);
+    const compactAdmin = normalizeCityCandidate(admin1);
+    return compactAdmin && !compactName.includes(compactAdmin) ? `${name} · ${admin1}` : name;
+};
+
+const scoreGeocodingHit = (hit: any, query: string): number => {
+    const tokens = query.split(/[\s,，、/]+/).map(normalizeCityCandidate).filter(Boolean);
+    const name = normalizeCityCandidate(hit?.name);
+    const fields = [hit?.name, hit?.admin1, hit?.admin2, hit?.country, hit?.country_code].map(normalizeCityCandidate).filter(Boolean);
+    const joined = fields.join('');
+    let score = 0;
+    if (tokens[0] && name === tokens[0]) score += 80;
+    if (tokens.length > 0 && tokens.every(token => fields.some(field => field.includes(token)))) score += 45;
+    if (tokens.length > 0 && tokens.every(token => joined.includes(token))) score += 20;
+    if (/[\u3400-\u9fff]/.test(query) && String(hit?.country_code || '').toUpperCase() === 'CN') score += 30;
+    const population = Number(hit?.population);
+    if (isFinite(population) && population > 0) score += Math.min(12, Math.log10(population));
+    return score;
+};
+
 /** 免密钥地名 → 坐标（Open-Meteo Geocoding）；manual 模式手填城市名时用。 */
 const geocodeCity = async (city: string): Promise<{ lat: number; lon: number; name: string } | null> => {
     const q = (city || '').trim();
     if (!q) return null;
     try {
-        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=zh&format=json`;
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=zh&format=json`;
         const r = await fetch(url);
         if (!r.ok) return null;
         const d = await safeResponseJson(r);
-        const hit = d?.results?.[0];
+        const results = Array.isArray(d?.results) ? d.results : [];
+        const hit = results
+            .filter((item: any) => isFinite(Number(item?.latitude)) && isFinite(Number(item?.longitude)))
+            .sort((a: any, b: any) => scoreGeocodingHit(b, q) - scoreGeocodingHit(a, q))[0];
         if (hit && isFinite(Number(hit.latitude)) && isFinite(Number(hit.longitude))) {
-            return { lat: Number(hit.latitude), lon: Number(hit.longitude), name: String(hit.name || q) };
+            return { lat: Number(hit.latitude), lon: Number(hit.longitude), name: formatGeocodedCityName(hit, q) };
         }
     } catch { /* ignore */ }
     return null;
 };
 
 type CurrentWeatherTarget =
-    | { kind: 'coords'; lat: number; lon: number; key: string }
+    | { kind: 'coords'; lat: number; lon: number; cityName?: string; key: string }
     | { kind: 'openweathermap'; key: string };
 
 type ForecastWeatherTarget = { lat: number; lon: number; cityName: string; key: string };
@@ -439,8 +474,26 @@ const resolveCurrentWeatherTarget = async (
     options?: FetchWeatherOptions,
 ): Promise<CurrentWeatherTarget | null> => {
     const mode = config.weatherMode || 'geo';
-    if (mode === 'manual' && config.weatherApiKey) {
-        return { kind: 'openweathermap', key: `owm:${weatherCityKey(config.weatherCity)}` };
+    const manualCity = (config.weatherCity || '').trim();
+    if (mode === 'manual' && manualCity) {
+        const geo = await geocodeCity(manualCity);
+        if (geo) {
+            return {
+                kind: 'coords',
+                lat: geo.lat,
+                lon: geo.lon,
+                cityName: geo.name,
+                key: `manual:${weatherCityKey(manualCity)}:${coordCacheKey(geo.lat, geo.lon)}`,
+            };
+        }
+        if (config.weatherApiKey) {
+            return { kind: 'openweathermap', key: `owm:${weatherCityKey(manualCity)}` };
+        }
+        return null;
+    }
+
+    if (mode === 'manual' && config.weatherApiKey && manualCity) {
+        return { kind: 'openweathermap', key: `owm:${weatherCityKey(manualCity)}` };
     }
 
     const coords = await getGeoPosition(cacheMs, options);
@@ -460,16 +513,19 @@ const resolveForecastWeatherTarget = async (
     options?: FetchWeatherOptions,
 ): Promise<ForecastWeatherTarget | null> => {
     const mode = config.weatherMode || 'geo';
-    if (mode === 'manual' && config.weatherCity) {
-        const geo = await geocodeCity(config.weatherCity);
+    const manualCity = (config.weatherCity || '').trim();
+    if (mode === 'manual') {
+        if (!manualCity) return null;
+        const geo = await geocodeCity(manualCity);
         if (geo) {
             return {
                 lat: geo.lat,
                 lon: geo.lon,
                 cityName: geo.name,
-                key: `manual:${weatherCityKey(config.weatherCity)}:${coordCacheKey(geo.lat, geo.lon)}`,
+                key: `manual:${weatherCityKey(manualCity)}:${coordCacheKey(geo.lat, geo.lon)}`,
             };
         }
+        return null;
     }
 
     const coords = await getGeoPosition(cacheMs, options);
@@ -542,7 +598,7 @@ export const RealtimeContextManager = {
     /**
      * 获取天气信息。
      * 默认走「已授权定位 / 缓存 / IP 兜底 + Open-Meteo」（免密钥，实时取本地天气）；
-     * weatherMode==='manual' 时回退到旧版 OpenWeatherMap（手填 Key + 城市）。
+     * weatherMode==='manual' 时按手填城市名取天气（免密钥），旧版 OpenWeatherMap Key 仅作兜底。
      */
     fetchWeather: async (config: RealtimeConfig, options?: FetchWeatherOptions): Promise<WeatherData | null> => {
         if (!config.weatherEnabled) return null;
@@ -564,7 +620,7 @@ export const RealtimeContextManager = {
                 weather = await fetchWeatherOpenWeatherMap(config);
             } else {
                 // 坐标天气：优先 wttr.in 实况观测，失败再回退 Open-Meteo 当前格点预报。
-                weather = await fetchWeatherByCoords(target.lat, target.lon);
+                weather = await fetchWeatherByCoords(target.lat, target.lon, target.cityName);
                 if (!weather && config.weatherApiKey) {
                     weather = await fetchWeatherOpenWeatherMap(config);
                     if (weather) cacheKey = `owm:${weatherCityKey(config.weatherCity)}`;

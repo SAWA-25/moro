@@ -60,7 +60,14 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'news_card': return '[新闻卡片]';
         case 'trpg_card': return `[TRPG游戏片段${meta.trpg?.gameTitle ? '：《' + meta.trpg.gameTitle + '》' : ''}]`;
         case 'call_log': return meta.callMode === 'video' ? '[视频聊天记录]' : '[语音通话记录]';
-        case 'gift_card': return `[礼物：${meta.gift?.emoji || ''}${meta.gift?.name || ''}${meta.gift?.note ? '，赠言「' + String(meta.gift.note).slice(0, 30) + '」' : ''}]`;
+        case 'gift_card': {
+            const ritual = [
+                meta.gift?.occasionLabel ? '，场景「' + String(meta.gift.occasionLabel).slice(0, 20) + '」' : '',
+                meta.gift?.wrapLabel ? '，包装「' + String(meta.gift.wrapLabel).slice(0, 20) + '」' : '',
+                meta.gift?.fromWishlist ? '，来自愿望板' : '',
+            ].join('');
+            return `[礼物：${meta.gift?.emoji || ''}${meta.gift?.name || ''}${meta.gift?.note ? '，赠言「' + String(meta.gift.note).slice(0, 30) + '」' : ''}${ritual}]`;
+        }
         case 'parcel_card': return `[${meta.parcel?.mode === 'travel_frog' ? '蛙游收件' : meta.parcel?.mode === 'proactive' ? '主动寄来' : '日常寄物'}：${meta.parcel?.emoji || ''}${meta.parcel?.itemName || '小包裹'}${meta.parcel?.originLabel ? '，来自' + String(meta.parcel.originLabel).slice(0, 20) : ''}${meta.parcel?.note ? '，附言「' + String(meta.parcel.note).slice(0, 30) + '」' : ''}]`;
         default: {
             const c = typeof m.content === 'string' ? m.content : '';
@@ -950,9 +957,15 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                 else if (m.type === 'gift_card') {
                     const g = m.metadata?.gift || {};
                     const note = typeof g.note === 'string' && g.note.trim() ? `，赠言「${g.note.trim()}」` : '';
+                    const ritual = [
+                        typeof g.occasionLabel === 'string' && g.occasionLabel.trim() ? `场景「${g.occasionLabel.trim()}」` : '',
+                        typeof g.wrapLabel === 'string' && g.wrapLabel.trim() ? `包装「${g.wrapLabel.trim()}」` : '',
+                        g.fromWishlist ? '来自愿望板' : '',
+                    ].filter(Boolean).join('，');
+                    const ritualText = ritual ? `，${ritual}` : '';
                     content = m.role === 'user'
-                        ? `${timeStr} [系统: 用户从「心意铺」送了你一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}。请按你的性格自然地表达感谢 / 惊喜 / 在意，可以写一封简短的感谢信]`
-                        : `${timeStr} [系统: 你从「心意铺」送了用户一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}]`;
+                        ? `${timeStr} [系统: 用户从「心意铺」送了你一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}${ritualText}。请按你的性格自然地表达感谢 / 惊喜 / 在意，可以写一封简短的感谢信]`
+                        : `${timeStr} [系统: 你从「心意铺」送了用户一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}${ritualText}]`;
                 }
                 else if (m.type === 'parcel_card') {
                     const p = m.metadata?.parcel || {};

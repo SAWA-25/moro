@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     parseAiJsonObject,
+    generateAiBankWeeklyReview,
     sanitizeBankActionAiDraft,
+    sanitizeBankWeeklyReview,
     sanitizeAiEvent,
     sanitizeAiJobs,
     sanitizeAiJobStageDraft,
@@ -9,6 +11,7 @@ import {
     sanitizeMarketPulses,
     sanitizeResumeReview,
 } from './bankLifeAi';
+import { buildLocalBankWeeklyReview, createDefaultBankLifeState } from './bankLife';
 
 vi.mock('./safeApi', () => ({
     safeResponseJson: vi.fn(),
@@ -51,6 +54,33 @@ describe('bankLifeAi', () => {
         const review = sanitizeResumeReview({ score: 999, strengths: ['会 React'], weaknesses: ['经验少'], suggestion: '补项目' });
         expect(review.score).toBe(100);
         expect(review.strengths).toEqual(['会 React']);
+    });
+
+    it('sanitizes weekly review drafts and clamps long text', () => {
+        const fallback = buildLocalBankWeeklyReview(createDefaultBankLifeState('2026-06-07'), 1000);
+        const review = sanitizeBankWeeklyReview({
+            title: 'x'.repeat(120),
+            summary: 'y'.repeat(600),
+            tone: 'weird',
+            highlights: ['one', 'two'],
+            risks: ['risk'],
+            nextActions: ['next'],
+            metrics: [{ label: 'cashflow', value: 'ok', tone: 'good' }],
+        }, fallback);
+
+        expect(review.title.length).toBeLessThanOrEqual(42);
+        expect(review.summary.length).toBeLessThanOrEqual(260);
+        expect(review.tone).toBe(fallback.tone);
+        expect(review.highlights).toEqual(['one', 'two']);
+        expect(review.metrics?.[0]).toMatchObject({ label: 'cashflow', value: 'ok', tone: 'good' });
+    });
+
+    it('falls back to local weekly review without an API binding', async () => {
+        const life = createDefaultBankLifeState('2026-06-07');
+        const review = await generateAiBankWeeklyReview({ baseUrl: '', apiKey: '', model: '' } as any, life, 1000);
+
+        expect(review.weekStartDate).toBe('2026-06-01');
+        expect(review.summary.length).toBeGreaterThan(0);
     });
 
     it('sanitizes AI jobs and marks risky postings', () => {
