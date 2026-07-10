@@ -5536,14 +5536,15 @@ export interface PeriodCycleEvent {
     updatedAt: number;
 }
 
-export type HealthModuleId = 'period' | 'sleep' | 'hydration' | 'medication' | 'symptom' | 'mood' | 'movement';
+export type HealthModuleId = 'period' | 'sleep' | 'hydration' | 'medication' | 'symptom' | 'mood' | 'movement' | 'vitals';
 export type HealthPrivacyMode = 'private' | 'summary' | 'reminder' | 'summary_reminder';
 export type HealthReminderChannel = 'system' | 'character' | 'both';
 export type HealthReminderFrequency = 'once' | 'daily' | 'weekdays' | 'custom';
-export type HealthRecordSource = 'manual' | 'period_migration' | 'tracker_sync' | 'reminder';
-export type HealthReminderKind = 'period' | 'hydration' | 'medication' | 'sleep' | 'symptom' | 'mood' | 'movement' | 'summary';
+export type HealthRecordSource = 'manual' | 'period_migration' | 'tracker_sync' | 'reminder' | 'wearable_import' | 'wearable_realtime';
+export type HealthReminderKind = 'period' | 'hydration' | 'medication' | 'sleep' | 'symptom' | 'mood' | 'movement' | 'vitals' | 'summary';
 export type HealthPlanCadence = 'daily' | 'weekly';
 export type HealthSummaryRange = 'day' | 'week';
+export type HealthImportSource = 'generic' | 'xiaomi' | 'zepp' | 'huawei' | 'apple_health' | 'google_fit' | 'web_bluetooth' | 'unknown';
 
 export interface HealthGoalSettings {
     target?: number;
@@ -5622,6 +5623,21 @@ export interface HealthSummary {
     metrics: Record<string, any>;
     privacy: HealthPrivacyMode;
     charIds: string[];
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface HealthImportBatch {
+    id: string;
+    source: HealthImportSource;
+    mode: 'file' | 'realtime';
+    fileName?: string;
+    deviceName?: string;
+    importedCount: number;
+    updatedCount?: number;
+    skippedCount: number;
+    warnings: string[];
+    recordIds: string[];
     createdAt: number;
     updatedAt: number;
 }
@@ -5979,6 +5995,7 @@ export interface FullBackupData {
     healthReminders?: HealthReminder[];
     healthPlans?: HealthPlan[];
     healthSummaries?: HealthSummary[];
+    healthImportBatches?: HealthImportBatch[];
     customThemes?: ChatTheme[];
     savedEmojis?: Emoji[]; 
     emojiCategories?: EmojiCategory[]; 

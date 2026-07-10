@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, MagnifyingGlass, MusicNotes, UserCircle, UsersThree } from '@phosphor-icons/react';
+import { Compass, MagnifyingGlass, MusicNotes, Play, UserCircle, UsersThree } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { musicApi, Song, toHttps, useMusic } from '../../context/MusicContext';
 import type { CharPlaylistSong } from '../../types';
@@ -15,6 +15,8 @@ const fmtTime = (s: number) => {
   const ss = Math.floor(s % 60);
   return `${m}:${ss.toString().padStart(2, '0')}`;
 };
+
+const FALLBACK_COVER = 'https://p1.music.126.net/y19E5SadGUmSR8SZxkrNtw==/109951163965029180.jpg';
 
 interface Props {
   onClose: () => void;
@@ -32,7 +34,7 @@ const songFromNetease = (s: any): Song => ({
   name: s.name,
   artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
   album: s.al?.name || s.album?.name || '',
-  albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || ''),
+  albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || '') || FALLBACK_COVER,
   duration: (s.dt || s.duration || 0) / 1000,
   fee: s.fee ?? 0,
 });
@@ -42,7 +44,7 @@ const songFromCharSong = (s: CharPlaylistSong): Song => ({
   name: s.name,
   artists: s.artists,
   album: s.album,
-  albumPic: s.albumPic,
+  albumPic: s.albumPic || FALLBACK_COVER,
   duration: s.duration,
   fee: s.fee,
   source: s.source || 'discovered',
@@ -79,6 +81,14 @@ const MusicDiscoveryPage: React.FC<Props> = ({
   const [dailySongs, setDailySongs] = useState<Song[]>([]);
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [loadingDaily, setLoadingDaily] = useState(false);
+  const [loadingChartId, setLoadingChartId] = useState<string | number | null>(null);
+  const [toplists, setToplists] = useState<Array<{
+    id: string | number;
+    name: string;
+    coverImgUrl?: string;
+    updateFrequency?: string;
+    description?: string;
+  }>>([]);
   const [charNow, setCharNow] = useState<Array<{ charId: string; name: string; avatar?: string; song: Song; vibe?: string }>>([]);
 
   useEffect(() => {
@@ -93,6 +103,28 @@ const MusicDiscoveryPage: React.FC<Props> = ({
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [libraryVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    musicApi.toplist(cfg)
+      .then(r => {
+        if (cancelled) return;
+        const list = (r?.list || [])
+          .filter((item: any) => item?.id && item?.name)
+          .map((item: any) => ({
+            id: item.id,
+            name: String(item.name || ''),
+            coverImgUrl: toHttps(String(item.coverImgUrl || '')) || FALLBACK_COVER,
+            updateFrequency: item.updateFrequency,
+            description: item.description,
+          }));
+        setToplists(list);
+      })
+      .catch(() => {
+        if (!cancelled) setToplists([]);
+      });
+    return () => { cancelled = true; };
+  }, [cfg.workerUrl, cfg.cookie]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +184,31 @@ const MusicDiscoveryPage: React.FC<Props> = ({
     }).slice(0, 6);
   }, [characters, localAlbumSongs, recentSongs]);
 
+  const featuredToplists = useMemo(() => {
+    const priority = ['飙升', '热歌', '新歌', '原创', '云音乐', '欧美', 'ACG'];
+    return [...toplists]
+      .sort((a, b) => {
+        const ai = priority.findIndex(word => a.name.includes(word));
+        const bi = priority.findIndex(word => b.name.includes(word));
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      })
+      .slice(0, 6);
+  }, [toplists]);
+
+  const mixSongs = useMemo(() => {
+    const seen = new Set<string>();
+    return [...momentSongs.map(item => item.song), ...recentSongs, ...localAlbumSongs]
+      .filter(song => {
+        const key = `${song.source || 'netease'}:${song.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 30);
+  }, [localAlbumSongs, momentSongs, recentSongs]);
+
+  const continueSong = current || recentSongs[0] || localAlbumSongs[0] || momentSongs[0]?.song || null;
+
   const playDaily = useCallback(async () => {
     setLoadingDaily(true);
     try {
@@ -189,6 +246,33 @@ const MusicDiscoveryPage: React.FC<Props> = ({
     }
   }, [addToast, cfg, onOpenPlayer, playSong]);
 
+  const playMix = useCallback(async () => {
+    if (!mixSongs.length) {
+      onOpenSearch();
+      return;
+    }
+    await playSong(mixSongs[0], { replaceQueue: mixSongs, startIdx: 0, playSource: 'discover' });
+    onOpenPlayer();
+  }, [mixSongs, onOpenPlayer, onOpenSearch, playSong]);
+
+  const playToplist = useCallback(async (chart: { id: string | number; name: string }) => {
+    setLoadingChartId(chart.id);
+    try {
+      const id = Number(chart.id);
+      if (!Number.isFinite(id)) throw new Error('榜单编号不可用');
+      const r = await musicApi.playlistTrackAll(cfg, id, 60, 0);
+      const songs: Song[] = (r?.songs || []).map(songFromNetease);
+      if (!songs.length) throw new Error('榜单里暂时没有可播放歌曲');
+      await Promise.all(songs.slice(0, 30).map(s => upsertMusicTrack(s).catch(() => null)));
+      await playSong(songs[0], { replaceQueue: songs, startIdx: 0, playSource: 'discover' });
+      onOpenPlayer();
+    } catch (e: any) {
+      addToast(`榜单加载失败：${e?.message || '未知错误'}`, 'error');
+    } finally {
+      setLoadingChartId(null);
+    }
+  }, [addToast, cfg, onOpenPlayer, playSong]);
+
   const songCards = dailySongs.length ? dailySongs : recentSongs;
 
   return (
@@ -200,6 +284,42 @@ const MusicDiscoveryPage: React.FC<Props> = ({
         right={<button onClick={onOpenProfile} className="p-1.5 rounded-full" style={{ color: C.primary }} title="我的"><UserCircle size={18} weight="bold" /></button>}
       />
       <div className="flex-1 overflow-y-auto px-4 pt-4 pb-36 relative z-10 shizuku-scrollbar">
+        <div className="rounded-3xl p-4 mb-3 shizuku-glass-strong overflow-hidden relative"
+          style={{ boxShadow: `0 8px 30px ${C.glow}18` }}>
+          <div className="absolute inset-y-0 right-0 w-32 opacity-20 pointer-events-none"
+            style={{ background: `linear-gradient(135deg, transparent, ${C.primary}33)` }} />
+          <div className="relative flex items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0"
+              style={{ border: `1.5px solid ${C.glow}70`, background: C.soft }}>
+              {continueSong ? (
+                <img src={continueSong.albumPic || FALLBACK_COVER} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <MusicNotes size={24} weight="fill" color={C.primary} />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] tracking-[0.18em] uppercase" style={{ color: C.muted }}>Today Mix</div>
+              <div className="text-base truncate mt-0.5" style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>
+                {continueSong ? continueSong.name : '从第一首歌开始'}
+              </div>
+              <div className="text-[10px] truncate mt-0.5" style={{ color: C.muted }}>
+                {continueSong ? continueSong.artists : '搜索、账号歌单和角色推荐会一起汇入这里'}
+              </div>
+            </div>
+            <button
+              onClick={() => void (continueSong ? playSong(continueSong, { replaceQueue: mixSongs.length ? mixSongs : [continueSong], startIdx: Math.max(0, mixSongs.findIndex(s => s.id === continueSong.id)), playSource: 'discover' }).then(onOpenPlayer) : playMix())}
+              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+              style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, color: 'white', boxShadow: `0 4px 18px ${C.primary}25` }}
+              title="继续播放"
+              aria-label="继续播放"
+            >
+              <Play size={18} weight="fill" />
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           <button onClick={playDaily} disabled={loadingDaily} className="rounded-2xl p-4 text-left shizuku-glass-strong active:scale-[0.98] transition-transform">
             <Compass size={22} weight="fill" color={C.primary} />
@@ -212,6 +332,58 @@ const MusicDiscoveryPage: React.FC<Props> = ({
             <div className="text-[10px] mt-1" style={{ color: C.muted }}>随机开一段今天的流</div>
           </button>
         </div>
+
+        {mixSongs.length > 0 && (
+          <div className="mt-5">
+            <SectionTitle action={<button onClick={() => void playMix()} className="text-[10px]" style={{ color: C.accent }}>播放全部</button>}>
+              今日混合
+            </SectionTitle>
+            <button onClick={() => void playMix()} className="w-full rounded-2xl p-3 text-left shizuku-glass active:scale-[0.99] transition-transform">
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-3 shrink-0">
+                  {mixSongs.slice(0, 4).map((song, i) => (
+                    <img key={`${song.id}-${i}`} src={song.albumPic || FALLBACK_COVER} alt="" className="w-10 h-10 rounded-xl object-cover"
+                      style={{ border: `2px solid ${C.bg}`, boxShadow: `0 2px 10px ${C.glow}25` }} />
+                  ))}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate" style={{ color: C.text }}>本地记录 × 角色口味 × 创作社</div>
+                  <div className="text-[10px] truncate mt-0.5" style={{ color: C.muted }}>{mixSongs.length} 首 · 适合直接续上</div>
+                </div>
+                <Play size={18} weight="fill" color={C.primary} />
+              </div>
+            </button>
+          </div>
+        )}
+
+        {featuredToplists.length > 0 && (
+          <div className="mt-5">
+            <SectionTitle>榜单速听</SectionTitle>
+            <div className="grid grid-cols-3 gap-2">
+              {featuredToplists.map(chart => (
+                <button
+                  key={chart.id}
+                  onClick={() => void playToplist(chart)}
+                  className="rounded-2xl overflow-hidden text-left shizuku-glass active:scale-[0.98] transition-transform"
+                  style={{ minHeight: 116 }}
+                >
+                  <div className="aspect-square overflow-hidden relative" style={{ background: C.soft }}>
+                    <img src={chart.coverImgUrl || FALLBACK_COVER} alt="" className="w-full h-full object-cover" />
+                    {loadingChartId === chart.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+                        <span className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <div className="text-[10px] truncate" style={{ color: C.text }}>{chart.name}</div>
+                    <div className="text-[8px] truncate mt-0.5" style={{ color: C.faint }}>{chart.updateFrequency || '榜单'}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {searchTerms.length > 0 && (
           <div className="mt-5">

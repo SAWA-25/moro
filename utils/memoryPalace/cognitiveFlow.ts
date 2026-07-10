@@ -30,6 +30,12 @@ export function isCognitiveFlowMode(
     return isMemoryFeatureEnabled(char) && resolveCharacterMemoryMode(char) !== 'classic';
 }
 
+export function buildMemoryFeatureToggleUpdate(enabled: boolean): Pick<CharacterProfile, 'memoryMode' | 'memoryPalaceEnabled'> {
+    return enabled
+        ? { memoryMode: DEFAULT_MEMORY_MODE, memoryPalaceEnabled: true }
+        : { memoryMode: 'off', memoryPalaceEnabled: false };
+}
+
 export function normalizeMemoryModeDefaults<T extends Pick<CharacterProfile, 'memoryMode' | 'memoryPalaceEnabled'>>(char: T): T {
     if (char.memoryPalaceEnabled === false || char.memoryMode === 'off') {
         return { ...char, memoryMode: 'off', memoryPalaceEnabled: false };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    buildMemoryFeatureToggleUpdate,
     classifyCognitiveQueryIntent,
     filterCognitiveFlowResults,
     getCognitiveMemoryLayer,
@@ -56,6 +57,27 @@ describe('cognitiveFlow memory mode defaults', () => {
         expect(isMemoryFeatureEnabled({ memoryMode: 'off', memoryPalaceEnabled: true } as any)).toBe(false);
         expect(isCognitiveFlowMode({ memoryMode: 'classic', memoryPalaceEnabled: true } as any)).toBe(false);
         expect(isMemoryFeatureEnabled({ memoryMode: 'classic', memoryPalaceEnabled: true } as any)).toBe(true);
+    });
+
+    it('builds coherent updates when toggling memory back on from off', () => {
+        const off = normalizeMemoryModeDefaults({
+            id: 'char-toggle',
+            ...buildMemoryFeatureToggleUpdate(false),
+        } as any);
+        expect(off).toMatchObject({
+            memoryMode: 'off',
+            memoryPalaceEnabled: false,
+        });
+
+        const on = normalizeMemoryModeDefaults({
+            ...off,
+            ...buildMemoryFeatureToggleUpdate(true),
+        } as any);
+        expect(on).toMatchObject({
+            memoryMode: 'cognitive_flow',
+            memoryPalaceEnabled: true,
+        });
+        expect(isMemoryFeatureEnabled(on)).toBe(true);
     });
 });
 

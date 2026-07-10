@@ -6,7 +6,26 @@ import { INSTALLED_APPS, Icons } from '../../constants';
 import { processImage } from '../../utils/file';
 import { DB } from '../../utils/db';
 import { toWallpaperBackground } from '../../utils/defaultWallpapers';
-import { Sparkle } from '@phosphor-icons/react';
+import {
+    AppWindow,
+    Archive,
+    ArrowRight,
+    ChatCircleText,
+    Code,
+    CopySimple,
+    Eye,
+    FloppyDisk,
+    ImageSquare,
+    Lifebuoy,
+    MagicWand,
+    Palette,
+    PaintBrush,
+    ShieldCheck,
+    SlidersHorizontal,
+    Sparkle,
+    Stack,
+    Trash,
+} from '@phosphor-icons/react';
 import { ChatAppearanceEditor as ModularChatAppearanceEditor } from '../../components/appearance/ChatAppearanceEditor';
 import ThemeMaker from '../ThemeMaker';
 import ChromeCssEditor from '../../components/chat/ChromeCssEditor';
@@ -2174,62 +2193,147 @@ const TarotSkinEditor: React.FC<{
 };
 
 const WorkbenchCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <section className={`bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)] ${className}`}>
+    <section className={`bg-[#fbfaf7] p-5 border border-[#2b2933]/10 rounded-[26px] shadow-[0_18px_45px_-32px_rgba(43,41,51,0.38)] ${className}`}>
         {children}
     </section>
 );
 
-const metricTone = (count: number) => count > 0 ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#f4f2ed] text-[#2b2933]';
-
 const OverviewPanel: React.FC<{
+    theme: OSTheme;
     warningsCount: number;
     presetCount: number;
     decorationCount: number;
     appCssCount: number;
+    widgetCssCount: number;
+    systemCssCount: number;
+    onSaveSnapshot: () => void;
     onOpen: (tab: AppearanceTabId) => void;
-}> = ({ warningsCount, presetCount, decorationCount, appCssCount, onOpen }) => (
-    <div className="space-y-5" data-manual-anchor="manual-appearance-overview">
-        <WorkbenchCard>
-            <div className="flex items-start justify-between gap-4">
-                <div>
-                    <h2 className="text-lg font-bold font-display-italic text-[#2b2933]">拼贴册工作台</h2>
-                    <p className="mt-1 text-[11px] leading-relaxed text-[#6b6b6b]">
-                        主题套装、素材拼贴、CSS 工坊和急救都在这里。旧页签还在下面，原来的入口和深链继续可用。
-                    </p>
+}> = ({ theme, warningsCount, presetCount, decorationCount, appCssCount, widgetCssCount, systemCssCount, onSaveSnapshot, onOpen }) => {
+    const hasGlobalCss = !!theme.globalCustomCss?.trim();
+    const hasChatCss = !!theme.chatChromeCustomCss?.trim();
+    const handwrittenCount = [hasGlobalCss, hasChatCss].filter(Boolean).length + appCssCount + widgetCssCount + systemCssCount;
+    const hiddenWidgetCount = Object.values(theme.desktopWidgetPrefs || {}).filter(pref => pref.hidden).length;
+    const health = warningsCount > 0
+        ? { label: `${warningsCount} 个风险`, cls: 'bg-[#2b2933] text-[#fbfaf7]', hint: '先处理 CSS 急救' }
+        : { label: '外观健康', cls: 'bg-[#e8f7ef] text-[#166534]', hint: '没有扫到高风险 CSS' };
+    const workflowCards: Array<{ title: string; desc: string; tab: AppearanceTabId; icon: React.ReactNode }> = [
+        { title: '一键换套装', desc: '从完整皮肤开始，再做细节微调。', tab: 'packs', icon: <MagicWand size={18} weight="bold" /> },
+        { title: '贴素材', desc: '上传贴纸、调图层，整理桌面那一页。', tab: 'materials', icon: <ImageSquare size={18} weight="bold" /> },
+        { title: '改桌面', desc: '壁纸、图标、Dock、小组件和锁屏。', tab: 'desktop', icon: <Palette size={18} weight="bold" /> },
+        { title: '改对话', desc: '聊天气泡、顶栏、输入栏和白框 CSS。', tab: 'chat', icon: <ChatCircleText size={18} weight="bold" /> },
+        { title: '改单个 App', desc: '给某个软件写专属皮肤，范围更稳。', tab: 'apps', icon: <AppWindow size={18} weight="bold" /> },
+        { title: '写整机 CSS', desc: '提示词、示例和全局手写码集中在这里。', tab: 'css', icon: <Code size={18} weight="bold" /> },
+        { title: '存档 / 导入', desc: '大改前存一页，也能导入分享方案。', tab: 'presets', icon: <Archive size={18} weight="bold" /> },
+        { title: '急救恢复', desc: '按钮消失、页面乱了，从这里按范围清。', tab: 'rescue', icon: <Lifebuoy size={18} weight="bold" /> },
+    ];
+    const metrics: Array<{ label: string; value: string | number; tab: AppearanceTabId; active?: boolean }> = [
+        { label: 'CSS 风险', value: warningsCount, tab: 'rescue', active: warningsCount > 0 },
+        { label: '外观存档', value: presetCount, tab: 'presets', active: presetCount > 0 },
+        { label: '桌面贴纸', value: decorationCount, tab: 'materials', active: decorationCount > 0 },
+        { label: 'App 写码', value: appCssCount, tab: 'apps', active: appCssCount > 0 },
+        { label: '零件 CSS', value: widgetCssCount, tab: 'desktop', active: widgetCssCount > 0 },
+        { label: '系统层 CSS', value: systemCssCount, tab: 'desktop', active: systemCssCount > 0 },
+        { label: '整机码', value: hasGlobalCss ? '已写' : '空', tab: 'css', active: hasGlobalCss },
+        { label: '白框码', value: hasChatCss ? '已写' : '空', tab: 'chat', active: hasChatCss },
+    ];
+    const suggestions = [
+        warningsCount > 0 ? { title: '先去急救页清风险 CSS', tab: 'rescue' as AppearanceTabId } : null,
+        presetCount === 0 ? { title: '保存一个当前外观快照', action: onSaveSnapshot } : null,
+        decorationCount === 0 ? { title: '去素材页贴第一张桌面贴纸', tab: 'materials' as AppearanceTabId } : null,
+        handwrittenCount === 0 ? { title: '从套装页贴一套完整皮肤', tab: 'packs' as AppearanceTabId } : null,
+        appCssCount === 0 ? { title: '给常用 App 试一段专属 CSS', tab: 'apps' as AppearanceTabId } : null,
+    ].filter(Boolean).slice(0, 4) as Array<{ title: string; tab?: AppearanceTabId; action?: () => void }>;
+
+    return (
+        <div className="space-y-5" data-manual-anchor="manual-appearance-overview">
+            <WorkbenchCard className="overflow-hidden">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#fff1e6] text-[#9a3d05] text-[9px] font-black label-mono mb-2">
+                            <PaintBrush size={12} weight="bold" /> APPEARANCE STUDIO
+                        </div>
+                        <h2 className="text-2xl font-black tracking-tight text-[#2b2933]">拼贴册</h2>
+                        <p className="mt-1 text-[11px] leading-relaxed text-[#6b6b6b]">
+                            换主题、贴素材、改桌面、改聊天、写 CSS、存档和急救都从这里走。先看预览和健康状态，再挑一条工作流。
+                        </p>
+                    </div>
+                    <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold label-mono ${health.cls}`}>
+                        <ShieldCheck size={13} weight="bold" /> {health.label}
+                    </span>
                 </div>
-                <span className={`shrink-0 px-2.5 py-1 text-[10px] font-bold label-mono border-2 border-[#2b2933] ${warningsCount ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
-                    {warningsCount ? `${warningsCount} WARN` : 'SAFE'}
-                </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-                {[
-                    ['CSS 风险', warningsCount, 'rescue'],
-                    ['外观存档', presetCount, 'presets'],
-                    ['桌面贴纸', decorationCount, 'materials'],
-                    ['App 写码', appCssCount, 'apps'],
-                ].map(([label, value, tab]) => (
-                    <button key={label} onClick={() => onOpen(tab as AppearanceTabId)} className="text-left border-2 border-[#2b2933]/25 bg-[#f4f2ed] p-3 active:translate-x-[1px] active:translate-y-[1px]">
-                        <div className="text-[10px] label-mono text-[#8b8996]">{label}</div>
-                        <div className={`mt-1 inline-flex px-2 py-0.5 text-[13px] font-black border-2 border-[#2b2933] ${metricTone(Number(value))}`}>{value}</div>
+                <div className="mt-4 overflow-hidden rounded-[22px] border border-[#2b2933]/10 bg-white">
+                    <DesktopMiniPreview theme={theme} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button onClick={onSaveSnapshot} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#2b2933] px-3 py-2 text-[11px] font-bold text-[#fbfaf7] press-soft">
+                        <FloppyDisk size={15} weight="bold" /> 保存快照
                     </button>
-                ))}
-            </div>
-        </WorkbenchCard>
-        <div className="grid gap-3">
-            {[
-                ['主题套装', '六套内置皮肤，一键应用且保留用户手写码。', 'packs'],
-                ['素材拼贴', '桌面贴纸、贴图槽、壁纸上传集中整理。', 'materials'],
-                ['CSS 急救', '扫描危险写法，清空指定范围或一键恢复入口。', 'rescue'],
-                ['App 分区', '给单个软件写 CSS，范围更小更稳。', 'apps'],
-            ].map(([title, desc, tab]) => (
-                <button key={title} onClick={() => onOpen(tab as AppearanceTabId)} className="bg-[#fbfaf7] p-4 border-2 border-[#2b2933] text-left shadow-[2px_2px_0_rgba(43,41,51,0.18)] active:translate-x-[1px] active:translate-y-[1px]">
-                    <div className="text-[14px] font-bold text-[#2b2933]">{title}</div>
-                    <div className="text-[10px] text-[#6b6b6b] mt-1 leading-relaxed">{desc}</div>
-                </button>
-            ))}
+                    <button onClick={() => onOpen(warningsCount ? 'rescue' : 'packs')} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-white px-3 py-2 text-[11px] font-bold text-[#2b2933] border border-[#2b2933]/10 press-soft">
+                        {warningsCount ? <Lifebuoy size={15} weight="bold" /> : <MagicWand size={15} weight="bold" />}
+                        {warningsCount ? '去急救' : '挑套装'}
+                    </button>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-2xl bg-[#f7f5f2] px-3 py-2 text-[10px] text-[#6b6b6b]">
+                    <span>{health.hint}</span>
+                    <span className="font-mono">手写区 {handwrittenCount} · 隐藏零件 {hiddenWidgetCount}</span>
+                </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard>
+                <div className="flex items-center gap-2 mb-3">
+                    <SlidersHorizontal size={16} weight="bold" className="text-[#f97316]" />
+                    <h3 className="text-[15px] font-black text-[#2b2933]">当前状态</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    {metrics.map(metric => (
+                        <button
+                            key={metric.label}
+                            onClick={() => onOpen(metric.tab)}
+                            className={`rounded-[18px] p-3 text-left border transition-all active:scale-[0.98] ${metric.active ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#f7f5f2] text-[#2b2933] border-[#2b2933]/10'}`}
+                        >
+                            <div className={`text-[9px] label-mono ${metric.active ? 'text-[#fbfaf7]/65' : 'text-[#8b8996]'}`}>{metric.label}</div>
+                            <div className="mt-1 text-[17px] font-black leading-none">{metric.value}</div>
+                        </button>
+                    ))}
+                </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard>
+                <div className="flex items-center gap-2 mb-3">
+                    <Sparkle size={16} weight="fill" className="text-[#f97316]" />
+                    <h3 className="text-[15px] font-black text-[#2b2933]">快速工作流</h3>
+                </div>
+                <div className="grid gap-2">
+                    {workflowCards.map(card => (
+                        <button key={card.title} onClick={() => onOpen(card.tab)} className="group flex items-center gap-3 rounded-[20px] bg-white border border-[#2b2933]/10 px-3.5 py-3 text-left shadow-[0_12px_28px_-24px_rgba(43,41,51,0.38)] press-soft">
+                            <span className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#fff1e6] text-[#f97316]">{card.icon}</span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] font-black text-[#2b2933]">{card.title}</span>
+                                <span className="block text-[10px] leading-snug text-[#6b6b6b] mt-0.5">{card.desc}</span>
+                            </span>
+                            <ArrowRight size={15} weight="bold" className="text-[#8b8996] group-active:translate-x-0.5 transition-transform" />
+                        </button>
+                    ))}
+                </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard>
+                <div className="flex items-center gap-2 mb-3">
+                    <ShieldCheck size={16} weight="bold" className="text-[#16a34a]" />
+                    <h3 className="text-[15px] font-black text-[#2b2933]">下一步建议</h3>
+                </div>
+                <div className="space-y-2">
+                    {(suggestions.length ? suggestions : [{ title: '已经很完整了，可以继续微调对话页或图标贴。', tab: 'chat' as AppearanceTabId }]).map(item => (
+                        <button key={item.title} onClick={() => item.action ? item.action() : item.tab && onOpen(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-[#f7f5f2] px-3 py-2.5 text-left text-[11px] font-bold text-[#2b2933] press-soft">
+                            <span>{item.title}</span>
+                            <ArrowRight size={14} weight="bold" className="text-[#8b8996]" />
+                        </button>
+                    ))}
+                </div>
+            </WorkbenchCard>
         </div>
-    </div>
-);
+    );
+};
 
 const ThemePackPanel: React.FC<{
     theme: OSTheme;
@@ -2328,31 +2432,159 @@ const RescuePanel: React.FC<{
 );
 
 const MaterialCollagePanel: React.FC<{
+    theme: OSTheme;
     decorations: DesktopDecoration[];
     presetDecos: { name: string; content: string; category: string }[];
+    selectedId: string | null;
     onAdd: (content: string, type: 'image' | 'preset') => void;
     onUpload: (file: File) => void;
     onClearAll: () => void;
+    onSelect: (id: string | null) => void;
+    onUpdate: (id: string, updates: Partial<DesktopDecoration>) => void;
     onDuplicate: (id: string) => void;
     onBringFront: (id: string) => void;
     onSendBack: (id: string) => void;
     onRemove: (id: string) => void;
-}> = ({ decorations, presetDecos, onAdd, onUpload, onClearAll, onDuplicate, onBringFront, onSendBack, onRemove }) => {
+}> = ({ theme, decorations, presetDecos, selectedId, onAdd, onUpload, onClearAll, onSelect, onUpdate, onDuplicate, onBringFront, onSendBack, onRemove }) => {
     const fileRef = useRef<HTMLInputElement>(null);
     const categories = Array.from(new Set(presetDecos.map(d => d.category)));
     const [category, setCategory] = useState(categories[0] || 'stars');
     const visible = presetDecos.filter(d => d.category === category);
+    const selected = selectedId ? decorations.find(d => d.id === selectedId) || null : null;
+    const previewBackground = theme.wallpaper
+        ? toWallpaperBackground(theme.wallpaper)
+        : `linear-gradient(135deg, hsl(${theme.hue}, ${theme.saturation}%, ${theme.lightness}%), hsl(${theme.hue + 30}, ${theme.saturation}%, ${Math.max(theme.lightness - 15, 10)}%))`;
+    const slider = (
+        label: string,
+        value: number,
+        min: number,
+        max: number,
+        step: number,
+        onChange: (value: number) => void,
+        suffix = '',
+    ) => (
+        <div>
+            <div className="flex justify-between mb-1.5">
+                <label className="text-[10px] font-bold text-[#8b8996] label-mono">{label}</label>
+                <span className="text-[10px] text-[#6b6b6b] font-mono">{Number.isInteger(value) ? value : value.toFixed(2)}{suffix}</span>
+            </div>
+            <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                onChange={e => onChange(parseFloat(e.target.value))}
+                className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
+            />
+        </div>
+    );
     return (
         <div className="space-y-5" data-manual-anchor="manual-appearance-materials">
             <WorkbenchCard>
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">素材拼贴</h2>
-                <p className="text-[10px] text-[#6b6b6b] leading-relaxed">桌面贴纸集中管理：贴预设、上传图片、复制图层、调整层级或批量清空。</p>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed">桌面贴纸集中管理：贴预设、上传图片、选中图层后调整位置、缩放、旋转、透明度和层级。</p>
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f); e.currentTarget.value = ''; }} />
                 <div className="flex gap-2 mt-3">
-                    <button onClick={() => fileRef.current?.click()} className="flex-1 py-2 bg-[#2b2933] text-[#fbfaf7] border-2 border-[#2b2933] text-[11px] font-bold">上传贴纸</button>
-                    <button onClick={onClearAll} className="flex-1 py-2 bg-[#fbfaf7] text-[#2b2933] border-2 border-dashed border-[#2b2933]/50 text-[11px] font-bold">全撕光</button>
+                    <button onClick={() => fileRef.current?.click()} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full py-2 bg-[#2b2933] text-[#fbfaf7] text-[11px] font-bold press-soft"><ImageSquare size={15} weight="bold" /> 上传贴纸</button>
+                    <button onClick={onClearAll} disabled={decorations.length === 0} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full py-2 bg-[#fbfaf7] text-[#2b2933] border border-[#2b2933]/10 text-[11px] font-bold disabled:opacity-40 press-soft"><Trash size={15} weight="bold" /> 全撕光</button>
                 </div>
             </WorkbenchCard>
+
+            <WorkbenchCard className="overflow-hidden">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                        <h3 className="text-sm font-black text-[#2b2933]">桌面预览</h3>
+                        <p className="text-[10px] text-[#8b8996] mt-0.5">点贴纸选中，下面可以精修。</p>
+                    </div>
+                    <span className="px-2 py-1 rounded-full bg-[#f7f5f2] text-[9px] font-black label-mono text-[#8b8996]">{decorations.length} LAYERS</span>
+                </div>
+                <div
+                    className="relative mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-[28px] border border-[#2b2933]/10 bg-[#f4f2ed] shadow-[0_22px_52px_-34px_rgba(43,41,51,0.5)]"
+                    style={{ background: previewBackground, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                >
+                    <div className="absolute inset-0 bg-black/10" />
+                    <div className="absolute left-4 right-4 top-5 flex items-center justify-between text-white/75 text-[8px] font-bold label-mono pointer-events-none">
+                        <span>MORO</span><span>PREVIEW</span>
+                    </div>
+                    <div className="absolute left-4 right-4 top-[18%] grid grid-cols-4 gap-1.5 opacity-55 pointer-events-none">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                            <span key={i} className="aspect-square rounded-xl bg-white/55 backdrop-blur-sm" />
+                        ))}
+                    </div>
+                    {decorations.map(deco => (
+                        <button
+                            key={deco.id}
+                            type="button"
+                            onClick={() => onSelect(selectedId === deco.id ? null : deco.id)}
+                            className={`absolute rounded-xl transition-all ${selectedId === deco.id ? 'ring-2 ring-white ring-offset-2 ring-offset-[#2b2933]' : ''}`}
+                            style={{
+                                left: `${deco.x}%`,
+                                top: `${deco.y}%`,
+                                transform: `translate(-50%, -50%) scale(${deco.scale * 0.48}) rotate(${deco.rotation}deg) ${deco.flip ? 'scaleX(-1)' : ''}`,
+                                opacity: deco.opacity,
+                                zIndex: deco.zIndex,
+                            }}
+                        >
+                            <img src={deco.content} alt="" className="w-20 h-20 object-contain pointer-events-none select-none" draggable={false} />
+                        </button>
+                    ))}
+                    {decorations.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center text-center text-white/65">
+                            <div>
+                                <Sparkle size={42} weight="fill" className="mx-auto mb-2" />
+                                <div className="text-[10px] font-black label-mono">贴第一张素材</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard>
+                <div className="flex items-center gap-2 mb-3">
+                    <Stack size={16} weight="bold" className="text-[#f97316]" />
+                    <h3 className="text-sm font-black text-[#2b2933]">图层编辑</h3>
+                </div>
+                {!selected ? (
+                    <div className="rounded-[20px] bg-[#f7f5f2] px-4 py-5 text-center text-[11px] text-[#6b6b6b]">
+                        {decorations.length ? '从预览或图层列表点一张贴纸开始编辑。' : '还没有贴纸。先从下方预设或本地图片贴一张。'}
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 rounded-[20px] bg-[#f7f5f2] p-3">
+                            <div className="w-14 h-14 rounded-2xl bg-white border border-[#2b2933]/10 flex items-center justify-center overflow-hidden shrink-0">
+                                <img src={selected.content} alt="" className="w-full h-full object-contain" style={{ transform: selected.flip ? 'scaleX(-1)' : undefined }} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[12px] font-black text-[#2b2933] truncate">图层 {decorations.findIndex(d => d.id === selected.id) + 1}</div>
+                                <div className="text-[9px] text-[#8b8996] label-mono mt-0.5">z {selected.zIndex} · {Math.round(selected.x)}%, {Math.round(selected.y)}%</div>
+                            </div>
+                            <button onClick={() => onSelect(null)} className="rounded-full bg-white border border-[#2b2933]/10 px-2.5 py-1 text-[10px] font-bold text-[#6b6b6b] press-soft">收起</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            {slider('左右', Math.round(selected.x), 0, 100, 1, value => onUpdate(selected.id, { x: value }), '%')}
+                            {slider('上下', Math.round(selected.y), 0, 100, 1, value => onUpdate(selected.id, { y: value }), '%')}
+                            {slider('缩放', selected.scale, 0.2, 3, 0.1, value => onUpdate(selected.id, { scale: value }), 'x')}
+                            {slider('旋转', selected.rotation, -180, 180, 1, value => onUpdate(selected.id, { rotation: value }), '°')}
+                        </div>
+                        {slider('透明度', selected.opacity, 0.1, 1, 0.05, value => onUpdate(selected.id, { opacity: value }), '')}
+                        <div className="grid grid-cols-3 gap-2">
+                            <button onClick={() => onUpdate(selected.id, { flip: !selected.flip })} className={`inline-flex items-center justify-center gap-1 rounded-full px-2 py-2 text-[10px] font-bold press-soft ${selected.flip ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#f7f5f2] text-[#2b2933]'}`}>
+                                <Eye size={13} weight="bold" /> 翻面
+                            </button>
+                            <button onClick={() => onUpdate(selected.id, { x: 50, y: 50 })} className="rounded-full bg-[#f7f5f2] px-2 py-2 text-[10px] font-bold text-[#2b2933] press-soft">居中</button>
+                            <button onClick={() => onUpdate(selected.id, { scale: 1, rotation: 0, opacity: 1, flip: false })} className="rounded-full bg-[#f7f5f2] px-2 py-2 text-[10px] font-bold text-[#2b2933] press-soft">复位</button>
+                            <button onClick={() => onDuplicate(selected.id)} className="inline-flex items-center justify-center gap-1 rounded-full bg-[#f7f5f2] px-2 py-2 text-[10px] font-bold text-[#2b2933] press-soft"><CopySimple size={13} weight="bold" /> 复制</button>
+                            <button onClick={() => onBringFront(selected.id)} className="rounded-full bg-[#f7f5f2] px-2 py-2 text-[10px] font-bold text-[#2b2933] press-soft">压最上</button>
+                            <button onClick={() => onSendBack(selected.id)} className="rounded-full bg-[#f7f5f2] px-2 py-2 text-[10px] font-bold text-[#2b2933] press-soft">塞最下</button>
+                        </div>
+                        <button onClick={() => onRemove(selected.id)} className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-[#2b2933]/10 bg-white px-3 py-2 text-[11px] font-bold text-[#2b2933] press-soft">
+                            <Trash size={14} weight="bold" /> 撕掉这张
+                        </button>
+                    </div>
+                )}
+            </WorkbenchCard>
+
             <WorkbenchCard>
                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2">
                     {categories.map(c => <SmallChip key={c} active={category === c} onClick={() => setCategory(c)}>{CATEGORY_LABELS[c]?.label || c}</SmallChip>)}
@@ -2372,17 +2604,29 @@ const MaterialCollagePanel: React.FC<{
                 ) : (
                     <div className="space-y-2">
                         {decorations.map(deco => (
-                            <div key={deco.id} className="flex items-center gap-3 border-2 border-[#2b2933]/20 bg-[#f4f2ed] p-2.5">
+                            <div
+                                key={deco.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => onSelect(selectedId === deco.id ? null : deco.id)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        onSelect(selectedId === deco.id ? null : deco.id);
+                                    }
+                                }}
+                                className={`w-full flex items-center gap-3 rounded-[20px] border p-2.5 text-left transition-all cursor-pointer ${selectedId === deco.id ? 'border-[#2b2933] bg-[#2b2933] text-[#fbfaf7]' : 'border-[#2b2933]/10 bg-[#f7f5f2] text-[#2b2933]'}`}
+                            >
                                 <div className="w-12 h-12 bg-[#fbfaf7] border border-[#2b2933]/20 flex items-center justify-center overflow-hidden shrink-0">
                                     <img src={deco.content} alt="" className="w-full h-full object-contain" />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-[10px] font-bold label-mono text-[#2b2933] truncate">z {deco.zIndex} · {Math.round(deco.x)}%, {Math.round(deco.y)}%</div>
+                                    <div className={`text-[10px] font-bold label-mono truncate ${selectedId === deco.id ? 'text-[#fbfaf7]' : 'text-[#2b2933]'}`}>z {deco.zIndex} · {Math.round(deco.x)}%, {Math.round(deco.y)}%</div>
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                        <button onClick={() => onDuplicate(deco.id)} className="text-[10px] underline">复制</button>
-                                        <button onClick={() => onBringFront(deco.id)} className="text-[10px] underline">压最上</button>
-                                        <button onClick={() => onSendBack(deco.id)} className="text-[10px] underline">塞最下</button>
-                                        <button onClick={() => onRemove(deco.id)} className="text-[10px] underline">撕掉</button>
+                                        <button onClick={(e) => { e.stopPropagation(); onDuplicate(deco.id); }} className="text-[10px] underline">复制</button>
+                                        <button onClick={(e) => { e.stopPropagation(); onBringFront(deco.id); }} className="text-[10px] underline">压最上</button>
+                                        <button onClick={(e) => { e.stopPropagation(); onSendBack(deco.id); }} className="text-[10px] underline">塞最下</button>
+                                        <button onClick={(e) => { e.stopPropagation(); onRemove(deco.id); }} className="text-[10px] underline">撕掉</button>
                                     </div>
                                 </div>
                             </div>
@@ -2685,6 +2929,18 @@ const Appearance: React.FC = () => {
       tabScrollerRef.current?.scrollBy({ left: direction * 180, behavior: 'smooth' });
   };
 
+  const saveQuickAppearanceSnapshot = useCallback(() => {
+      const stamp = new Date().toLocaleString('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+      }).replace(/\//g, '-');
+      saveAppearancePreset(`拼贴册快照 ${stamp}`);
+      addToast('当前外观已收进存档册', 'success');
+  }, [saveAppearancePreset, addToast]);
+
   useEffect(() => {
       const scroller = tabScrollerRef.current;
       const target = scroller?.querySelector<HTMLButtonElement>(`[data-appearance-tab="${activeTab}"]`);
@@ -2713,6 +2969,15 @@ const Appearance: React.FC = () => {
       { id: 'presets', label: '存档册' },
   ];
 
+  const activeAppCssCount = Object.values(theme.appCustomCss || {}).filter(v => typeof v === 'string' && v.trim()).length;
+  const activeWidgetCssCount = Object.values(theme.desktopWidgetPrefs || {}).filter(pref => !!pref.customCss?.trim()).length;
+  const activeSystemCssCount = [
+      theme.dynamicIslandStyle?.customCss,
+      theme.lockScreenStyle?.customCss,
+      theme.floatingQuickMenuStyle?.customCss,
+      theme.offlineModeStyle?.customCss,
+  ].filter(css => !!css?.trim()).length;
+
   return (
     <div className="h-full w-full max-w-full overflow-x-hidden bg-[#f4f2ed] flex flex-col font-light" data-manual-anchor="manual-appearance-root">
       <div className="h-20 max-w-full overflow-x-hidden bg-[#fbfaf7] flex items-end pb-3 px-4 border-b-2 border-[#2b2933] shrink-0 z-10 sticky top-0">
@@ -2721,8 +2986,8 @@ const Appearance: React.FC = () => {
                 <span className="text-[#2b2933] text-lg leading-none -mt-0.5">‹</span>
             </button>
             <div className="flex flex-col">
-                <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">外观设置</h1>
-                <span className="text-[8px] label-mono text-[#8b8996] mt-1">STYLE · 拍立得相册</span>
+                <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">拼贴册</h1>
+                <span className="text-[8px] label-mono text-[#8b8996] mt-1">APPEARANCE · STUDIO</span>
             </div>
         </div>
       </div>
@@ -2764,21 +3029,29 @@ const Appearance: React.FC = () => {
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-5 space-y-6 no-scrollbar">
         {activeTab === 'overview' ? (
             <OverviewPanel
+                theme={theme}
                 warningsCount={cssWarnings.length}
                 presetCount={appearancePresets.length}
                 decorationCount={decorations.length}
-                appCssCount={Object.values(theme.appCustomCss || {}).filter(v => typeof v === 'string' && v.trim()).length}
+                appCssCount={activeAppCssCount}
+                widgetCssCount={activeWidgetCssCount}
+                systemCssCount={activeSystemCssCount}
+                onSaveSnapshot={saveQuickAppearanceSnapshot}
                 onOpen={setActiveTab}
             />
         ) : activeTab === 'packs' ? (
             <ThemePackPanel theme={theme} onApply={applyPack} />
         ) : activeTab === 'materials' ? (
             <MaterialCollagePanel
+                theme={theme}
                 decorations={decorations}
                 presetDecos={PRESET_DECOS}
+                selectedId={editingDecoId}
                 onAdd={addDecoration}
                 onUpload={(file) => void handleDecoUpload(file)}
                 onClearAll={() => { updateTheme({ desktopDecorations: [] }); setEditingDecoId(null); addToast('桌面贴纸全撕光了', 'success'); }}
+                onSelect={setEditingDecoId}
+                onUpdate={updateDecoration}
                 onDuplicate={duplicateDecoration}
                 onBringFront={bringDecorationFront}
                 onSendBack={sendDecorationBack}

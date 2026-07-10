@@ -34,7 +34,7 @@ import { ChatCircleText } from '@phosphor-icons/react';
 import MusicDiscoveryPage from './music/MusicDiscoveryPage';
 import MusicLibraryPage from './music/MusicLibraryPage';
 import { Books, Compass, MagnifyingGlass, UserCircle } from '@phosphor-icons/react';
-import { addSongToMusicPlaylist, createMusicPlaylist, saveMusicSearch } from '../utils/musicLibrary';
+import { addSongToMusicPlaylist, createMusicPlaylist, listMusicSearchHistory, listRecentMusicSongs, saveMusicSearch } from '../utils/musicLibrary';
 import type { MusicLibraryPlaylist } from '../types';
 
 // ------------------------- 工具 -------------------------
@@ -64,6 +64,7 @@ const MusicApp: React.FC = () => {
     addLocalSong, removeLocalSong, localAlbumSongs,
     playMode, setPlayMode,
     regeneratingId, regeneratingStatus,
+    libraryVersion,
     refreshLibrary,
   } = useMusic();
   const isCurrentRegenerating = !!current && current.id === regeneratingId;
@@ -139,18 +140,22 @@ const MusicApp: React.FC = () => {
   useEffect(() => { setToastHandler(addToast); }, [addToast, setToastHandler]);
 
   const [view, setView] = useState<View>('discover');
+  const [playerBackView, setPlayerBackView] = useState<View>('discover');
   // ── 手动对轴 modal state ──
   const [showLyricSync, setShowLyricSync] = useState(false);
   const [syncDraft, setSyncDraft] = useState<number[]>([]);
   const [visitCharId, setVisitCharId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState<Song[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchRecent, setSearchRecent] = useState<Song[]>([]);
   const [searching, setSearching] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [dragQueueIdx, setDragQueueIdx] = useState<number | null>(null);
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
   const [libraryPlaylists, setLibraryPlaylists] = useState<MusicLibraryPlaylist[]>([]);
   const lyricBoxRef = useRef<HTMLDivElement | null>(null);
+  const pendingAutoSearchRef = useRef(false);
 
   useEffect(() => {
     if (!showAddToPlaylist) return;
@@ -158,6 +163,20 @@ const MusicApp: React.FC = () => {
       .then(list => setLibraryPlaylists(list.filter(pl => pl.kind === 'user').sort((a, b) => b.updatedAt - a.updatedAt)))
       .catch(() => setLibraryPlaylists([]));
   }, [showAddToPlaylist]);
+
+  useEffect(() => {
+    if (view !== 'search') return;
+    let cancelled = false;
+    Promise.all([
+      listMusicSearchHistory(10),
+      listRecentMusicSongs(8),
+    ]).then(([history, recent]) => {
+      if (cancelled) return;
+      setSearchHistory(history.map(item => item.keyword));
+      setSearchRecent(recent);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [libraryVersion, view]);
 
   const addCurrentToPlaylist = useCallback(async (playlistId: string) => {
     if (!current) return;
@@ -181,9 +200,21 @@ const MusicApp: React.FC = () => {
   }, [addToast, current, refreshLibrary]);
 
   const openSearchView = useCallback((kw?: string) => {
-    if (kw) setKeyword(kw);
+    if (kw) {
+      pendingAutoSearchRef.current = true;
+      setKeyword(kw);
+      setResults([]);
+    }
     setView('search');
   }, []);
+
+  const openPlayerFrom = useCallback((backView?: View) => {
+    const nextBack = backView && backView !== 'player' ? backView : view;
+    if (nextBack !== 'player' && nextBack !== 'listen_together' && nextBack !== 'comments') {
+      setPlayerBackView(nextBack);
+    }
+    setView('player');
+  }, [view]);
 
   const renderTabBar = useCallback(() => {
     const tabs: Array<{ id: View; label: string; icon: React.ReactNode }> = [
@@ -533,7 +564,13 @@ const MusicApp: React.FC = () => {
         fee: s.fee ?? 0,
       }));
       setResults(songs);
-      void saveMusicSearch(kw, songs.length).then(() => refreshLibrary()).catch(() => {});
+      void saveMusicSearch(kw, songs.length)
+        .then(() => listMusicSearchHistory(10))
+        .then(history => {
+          setSearchHistory(history.map(item => item.keyword));
+          refreshLibrary();
+        })
+        .catch(() => {});
       if (!songs.length) {
         const hint = r?.msg || r?.message || (r?.code != null ? `code=${r.code}` : '') || '无数据';
         addToast(`没找到: ${hint}`, 'info');
@@ -544,6 +581,31 @@ const MusicApp: React.FC = () => {
       setSearching(false);
     }
   }, [keyword, cfg, addToast, refreshLibrary]);
+
+  useEffect(() => {
+    if (view !== 'search' || !pendingAutoSearchRef.current) return;
+    pendingAutoSearchRef.current = false;
+    if (keyword.trim()) void doSearch();
+  }, [doSearch, keyword, view]);
+
+  const searchTerm = useCallback((term: string) => {
+    const next = term.trim();
+    if (!next) return;
+    if (view === 'search' && next === keyword.trim()) {
+      setResults([]);
+      void doSearch();
+      return;
+    }
+    pendingAutoSearchRef.current = true;
+    setKeyword(next);
+    setResults([]);
+    setView('search');
+  }, [doSearch, keyword, view]);
+
+  const playSearchResults = useCallback(() => {
+    if (!results.length) return;
+    void playSong(results[0], { replaceQueue: results, startIdx: 0, playSource: 'search' }).then(() => openPlayerFrom('search'));
+  }, [openPlayerFrom, playSong, results]);
 
   // ════════════════ 搜索页 ════════════════
   const renderSearch = () => (
@@ -604,16 +666,68 @@ const MusicApp: React.FC = () => {
 
       {/* 歌曲列表 */}
       <div className="flex-1 overflow-y-auto px-2 pb-24 relative z-10 shizuku-scrollbar">
+        {results.length > 0 && (
+          <div className="px-3 py-2 flex items-center justify-between">
+            <div className="text-[10px]" style={{ color: C.muted }}>{results.length} 首 · {keyword.trim()}</div>
+            <button onClick={playSearchResults} className="text-[10px] px-3 py-1.5 rounded-full shizuku-glass" style={{ color: C.primary }}>
+              播放结果
+            </button>
+          </div>
+        )}
         {results.length === 0 && !searching && (
-          <div className="text-center mt-16 space-y-4">
-            <div className="relative inline-block">
-              <Sparkle size={24} className="mx-auto" color={C.glow} delay={0} />
-              <Sparkle size={12} className="absolute -top-1 -right-3" color={C.sakura} delay={0.8} />
-              <Sparkle size={8} className="absolute -bottom-2 -left-2" color={C.lavender} delay={1.5} />
+          <div className="px-3 pt-4 space-y-5">
+            {searchHistory.length > 0 && (
+              <div>
+                <div className="text-[10px] tracking-wider mb-2" style={{ color: C.muted }}>最近搜索</div>
+                <div className="flex flex-wrap gap-2">
+                  {searchHistory.map(term => (
+                    <button key={term} onClick={() => searchTerm(term)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] shizuku-glass" style={{ color: C.primary }}>
+                      <MagnifyingGlass size={11} weight="bold" />
+                      {term}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] tracking-wider mb-2" style={{ color: C.muted }}>快速开始</div>
+              <div className="flex flex-wrap gap-2">
+                {['雨天', '夜跑', '睡前', 'Live', '纯音乐', '周杰伦'].map(term => (
+                  <button key={term} onClick={() => searchTerm(term)} className="px-3 py-1.5 rounded-full text-[11px] shizuku-glass" style={{ color: C.primary }}>
+                    {term}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="text-xs italic" style={{ color: C.faint, fontFamily: `'Georgia', serif` }}>
-              搜一首想听的歌吧
-            </div>
+            {searchRecent.length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <div className="text-[10px] tracking-wider" style={{ color: C.muted }}>最近播放</div>
+                  <button onClick={() => { void playSong(searchRecent[0], { replaceQueue: searchRecent, startIdx: 0, playSource: 'library' }).then(() => openPlayerFrom('search')); }} className="text-[10px]" style={{ color: C.accent }}>继续听</button>
+                </div>
+                {searchRecent.slice(0, 5).map((song, i) => (
+                  <SongRow
+                    key={`${song.source || 'netease'}-${song.id}-${i}`}
+                    name={song.name}
+                    artists={song.artists}
+                    album={song.album}
+                    albumPic={song.albumPic}
+                    duration={fmtTime(song.duration)}
+                    isVip={song.fee === 1}
+                    isActive={current?.id === song.id}
+                    onClick={() => { void playSong(song, { replaceQueue: searchRecent, startIdx: i, playSource: 'library' }).then(() => openPlayerFrom('search')); }}
+                    onShare={() => openChatShare(song)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center mt-12 space-y-3">
+                <Sparkle size={24} className="mx-auto" color={C.glow} delay={0} />
+                <div className="text-xs italic" style={{ color: C.faint, fontFamily: `'Georgia', serif` }}>
+                  搜一首想听的歌吧
+                </div>
+              </div>
+            )}
           </div>
         )}
         {results.map(s => (
@@ -626,7 +740,7 @@ const MusicApp: React.FC = () => {
             duration={fmtTime(s.duration)}
             isVip={s.fee === 1}
             isActive={current?.id === s.id}
-            onClick={() => playSong(s, { replaceQueue: results, startIdx: results.findIndex(x => x.id === s.id), playSource: 'search' })}
+            onClick={() => { void playSong(s, { replaceQueue: results, startIdx: results.findIndex(x => x.id === s.id), playSource: 'search' }).then(() => openPlayerFrom('search')); }}
             onShare={() => openChatShare(s)}
           />
         ))}
@@ -639,7 +753,7 @@ const MusicApp: React.FC = () => {
           artists={current.artists}
           albumPic={current.albumPic}
           playing={playing}
-          onTap={() => setView('player')}
+          onTap={() => openPlayerFrom('search')}
           onPrev={prevSong}
           onToggle={togglePlay}
           onNext={nextSong}
@@ -671,7 +785,7 @@ const MusicApp: React.FC = () => {
         <BokehBg />
         <MizuHeader
           title="Now Playing"
-          onBack={() => setView('search')}
+          onBack={() => setView(playerBackView)}
           right={
             <button
               onClick={openListenTogether}
@@ -1178,7 +1292,7 @@ const MusicApp: React.FC = () => {
           onOpenSearch={openSearchView}
           onOpenLibrary={() => setView('library')}
           onOpenProfile={() => setView('profile')}
-          onOpenPlayer={() => setView('player')}
+          onOpenPlayer={() => openPlayerFrom('discover')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
           onShareSong={openChatShare}
           tabBar={renderTabBar()}
@@ -1189,7 +1303,7 @@ const MusicApp: React.FC = () => {
           onClose={closeApp}
           onOpenDiscover={() => setView('discover')}
           onOpenProfile={() => setView('profile')}
-          onOpenPlayer={() => setView('player')}
+          onOpenPlayer={() => openPlayerFrom('library')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
           onShareSong={openChatShare}
           tabBar={renderTabBar()}
@@ -1204,7 +1318,7 @@ const MusicApp: React.FC = () => {
         <>
           <NeteaseProfilePage
             onBack={closeApp}
-            onOpenPlayer={() => setView('player')}
+            onOpenPlayer={() => openPlayerFrom('profile')}
             onOpenSearch={() => setView('search')}
             onOpenSettings={() => setView('settings')}
             onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
@@ -1380,7 +1494,7 @@ const MusicApp: React.FC = () => {
         <CharVisitPage
           charId={visitCharId}
           onBack={() => { setView('profile'); setVisitCharId(null); }}
-          onOpenPlayer={() => setView('player')}
+          onOpenPlayer={() => openPlayerFrom('visit_char')}
           onShareSong={openChatShare}
         />
       )}

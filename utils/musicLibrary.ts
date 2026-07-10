@@ -368,6 +368,14 @@ export async function listLikedMusicSongs(limit = 100): Promise<Song[]> {
     .map(songFromTrack);
 }
 
+export async function listAllMusicSongs(limit = 200): Promise<Song[]> {
+  const tracks = await DB.getAllMusicTracks();
+  return tracks
+    .sort((a, b) => (b.lastPlayedAt || b.updatedAt || 0) - (a.lastPlayedAt || a.updatedAt || 0))
+    .slice(0, limit)
+    .map(songFromTrack);
+}
+
 export async function setMusicTrackLiked(song: Song, liked: boolean, now = Date.now()): Promise<MusicLibraryTrack> {
   const track = await upsertMusicTrack(song, now);
   const next = { ...track, liked, updatedAt: now };

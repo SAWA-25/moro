@@ -18,7 +18,7 @@ import {
 import type { Anticipation, MigrationProgress, EventBox, MemoryPalaceInspection } from '../utils/memoryPalace';
 import MindMap, { type MindMapEdge } from '../components/memoryPalace/MindMap';
 import { resolveMemoryPalaceAuxConfigs } from '../utils/memoryPalace/auxConfig';
-import { getCognitiveMemoryLayer, type CognitiveMemoryLayer } from '../utils/memoryPalace/cognitiveFlow';
+import { buildMemoryFeatureToggleUpdate, getCognitiveMemoryLayer, isMemoryFeatureEnabled, type CognitiveMemoryLayer } from '../utils/memoryPalace/cognitiveFlow';
 import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
@@ -1236,11 +1236,15 @@ export default function MemoryPalaceApp() {
     // 切换"回忆标本馆"总开关（picker 卡片上）
     const handleTogglePalaceFromPicker = (charId: string, on: boolean) => {
         if (on) {
-            updateCharacter(charId, { memoryPalaceEnabled: true } as any);
+            updateCharacter(charId, buildMemoryFeatureToggleUpdate(true) as any);
         } else {
             // 关闭 palace 必然连带关闭全自动记忆；同时清空残留的记忆召回注入，
             // 否则旧的 memoryPalaceInjection 会被 saveCharacter 持久化并继续注入 prompt。
-            updateCharacter(charId, { memoryPalaceEnabled: false, autoArchiveEnabled: false, memoryPalaceInjection: undefined } as any);
+            updateCharacter(charId, {
+                ...buildMemoryFeatureToggleUpdate(false),
+                autoArchiveEnabled: false,
+                memoryPalaceInjection: undefined,
+            } as any);
         }
     };
 
@@ -1255,7 +1259,7 @@ export default function MemoryPalaceApp() {
             return;
         }
 
-        if (!(target as any).memoryPalaceEnabled) {
+        if (!isMemoryFeatureEnabled(target as any)) {
             addToast('请先启用回忆标本馆再打开全自动记忆', 'error');
             return;
         }
@@ -1746,8 +1750,8 @@ export default function MemoryPalaceApp() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative', zIndex: 1 }}>
                         {characters.map(c => {
                             const isActive = c.id === activeCharacterId;
-                            const palaceOn = !!(c as any).memoryPalaceEnabled;
-                            const autoOn = !!(c as any).autoArchiveEnabled;
+                            const palaceOn = isMemoryFeatureEnabled(c as any);
+                            const autoOn = palaceOn && !!(c as any).autoArchiveEnabled;
                             const syncing = autoArchiveSyncingId === c.id;
 
                             return (
@@ -2170,7 +2174,7 @@ export default function MemoryPalaceApp() {
 
     // ─── 未启用回忆标本馆 ─────────────────────────────────
 
-    if (view !== 'globalSettings' && !char!.memoryPalaceEnabled) {
+    if (view !== 'globalSettings' && !isMemoryFeatureEnabled(char as any)) {
         return (
             <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
                 <div
@@ -2208,7 +2212,7 @@ export default function MemoryPalaceApp() {
                             <div>
                                 <div style={{ fontSize: 12, fontWeight: 600 }}>{c.name}</div>
                                 <div style={{ fontSize: 10, color: '#626262', display: 'inline-flex' }}>
-                                    {(c as any).memoryPalaceEnabled ? <Icon name="palace" size={12} /> : null}
+                                    {isMemoryFeatureEnabled(c as any) ? <Icon name="palace" size={12} /> : null}
                                 </div>
                             </div>
                         </div>
@@ -2897,7 +2901,7 @@ export default function MemoryPalaceApp() {
                                     <div>
                                         <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
                                         <div style={{ fontSize: 10, color: '#a2a2a2' }}>
-                                            {(c as any).memoryPalaceEnabled ? '已启用' : '未启用'}
+                                            {isMemoryFeatureEnabled(c as any) ? '已启用' : '未启用'}
                                         </div>
                                     </div>
                                     {c.id === activeCharacterId && (

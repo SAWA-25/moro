@@ -83,6 +83,30 @@ export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> 
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-10-memory-palace-toggle-reopen',
+    date: '2026-07-10',
+    title: '回忆标本馆开关可以正常重新开启了',
+    kind: 'fix',
+    summary: '修复在角色名册里关闭回忆标本馆后，再次打开开关仍进不去、或后台仍按关闭处理的问题。',
+    items: [
+      '关闭后再打开会同时恢复标本馆模式和入口状态，不会只亮开关却打不开。',
+      '关闭时仍会同步停掉全自动记忆，避免后台继续整理。',
+    ],
+  },
+  {
+    id: '2026-07-10-appearance-complete-studio',
+    date: '2026-07-10',
+    title: '拼贴册变成完整外观工作台了',
+    kind: 'improvement',
+    summary: '拼贴册首页现在会集中展示桌面预览、外观健康、快速工作流和下一步建议，素材拼贴也能在同一页完成贴纸精修。',
+    items: [
+      '打开拼贴册会先进入总览，可直接看到当前桌面预览、CSS 风险、外观存档、桌面贴纸、App 写码和系统层 CSS 状态。',
+      '总览新增“保存快照”和快速工作流入口，可一键跳到套装、素材、桌面、对话页、App 分区、手写码、存档册或急救页。',
+      '素材拼贴页新增桌面预览和图层编辑，选中贴纸后可调位置、缩放、旋转、透明度、翻面、居中、复位、复制和层级。',
+      '拼贴册标题和说明书入口也改为以总览为起点，换外观前更容易先判断当前状态。'
+    ],
+  },
+  {
     id: '2026-07-10-bank-life-command-center',
     date: '2026-07-10',
     title: '人生拟补上完整生活经营闭环了',
@@ -6915,11 +6939,11 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
     app: '拼贴册',
     en: 'Appearance',
     category: 'system',
-    summary: '整机外观工作台，管理主题套装、素材拼贴、壁纸、图标、桌面、小组件、聊天气泡、每个 App 的自定义 CSS 和急救恢复。',
+    summary: '整机外观总控台，管理主题套装、素材拼贴、壁纸、图标、桌面、小组件、聊天气泡、每个 App 的自定义 CSS、外观存档和急救恢复。',
     features: [
-      '总览页集中显示外观存档、桌面贴纸、App 写码和 CSS 风险数量。',
+      '总览页集中显示桌面预览、外观健康、外观存档、桌面贴纸、App 写码、系统层 CSS 和下一步建议。',
       '套装页可一键应用奶白手账、黑白杂志、玻璃控制台、像素掌机、胶片剧场和清爽 Ins 等内置皮肤。',
-      '素材页集中管理桌面贴纸：贴预设、上传图片、复制、调层级和批量清空。',
+      '素材页集中管理桌面贴纸：贴预设、上传图片、看桌面预览，并直接调整位置、缩放、旋转、透明度、翻面和层级。',
       '急救页扫描隐藏入口、禁用点击、层级过高等危险 CSS，并支持按范围清空。',
       '调色页更换整机色调、深浅色和内容文字颜色。',
       '桌面页配置壁纸、图标形状、图标材质、图标大小、Dock、编辑效果和小组件，并提供桌面、小组件、锁屏、灵动岛、悬浮菜单等 CSS 提示词。',
@@ -6955,13 +6979,16 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'appearance-overview',
             title: '总览',
-            description: '查看当前外观状态、CSS 风险数量、外观存档数量、桌面贴纸数量和 App 写码数量，并快速跳到常用入口。',
+            description: '查看当前桌面预览、CSS 风险、外观存档、桌面贴纸、App 写码、零件 CSS 和系统层 CSS 状态，并快速跳到常用入口。',
             defaultBehavior: '总览只负责导航和状态提示，不会自动修改任何外观。',
             options: [
+              { label: '桌面预览', description: '不用回桌面，也能先看当前壁纸、主色和桌面整体观感。' },
+              { label: '保存快照', description: '把当前整套外观收进存档册，适合大改前先留一页。' },
               { label: 'CSS 风险', description: '显示急救页扫描出的危险写法数量。' },
               { label: '外观存档', description: '显示存档册里已有的外观方案数量。' },
               { label: '桌面贴纸', description: '显示素材拼贴里当前贴到桌面的素材数量。' },
               { label: 'App 写码', description: '显示已有专属 CSS 的 App 数量。' },
+              { label: '快速工作流', description: '一键跳到套装、素材、桌面、对话页、App 分区、手写码、存档册或急救页。' },
             ],
             path: ['拼贴册', '总览'],
             deepLink: appearanceLink('manual-appearance-overview', 'overview'),
@@ -6985,11 +7012,13 @@ const BASE_MANUAL_ENTRIES: ManualEntry[] = [
           {
             id: 'appearance-materials',
             title: '素材拼贴',
-            description: '集中管理桌面贴纸和上传素材，可以贴预设、上传图片、复制、压到最上、塞到最下或批量清空。',
-            defaultBehavior: '素材拼贴只影响桌面装饰，不会改变 App 数据；贴纸位置仍在桌面长按拖动调整。',
+            description: '集中管理桌面贴纸和上传素材，可以在同页预览桌面、选中图层、复制、压到最上、塞到最下或批量清空。',
+            defaultBehavior: '素材拼贴只影响桌面装饰，不会改变 App 数据；贴纸既可以在素材页精修，也可以回桌面长按拖动。',
             options: [
               { label: '预设贴纸', description: '按星星、爱心、花朵、丝带、形状等分类快速贴到桌面。' },
               { label: '上传贴纸', description: '把本地图片压缩后作为桌面装饰。' },
+              { label: '桌面预览', description: '显示当前壁纸和贴纸图层，点任意贴纸即可选中编辑。' },
+              { label: '图层编辑', description: '可调左右、上下、缩放、旋转、透明度、翻面、居中、复位和删除。' },
               { label: '层级', description: '控制贴纸在桌面上的上下叠放顺序。' },
               { label: '批量清空', description: '只清桌面贴纸，不会清壁纸、图标或外观存档。' },
             ],
@@ -12530,8 +12559,8 @@ export const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
   '拼贴册': {
     appId: AppID.Appearance,
     path: ['桌面', '拼贴册'],
-    details: ['编辑整机外观、桌面、图标、聊天皮肤、CSS、牌面和外观存档。'],
-    deepLink: appearanceLink('manual-appearance-root', 'theme'),
+    details: ['从总览查看桌面预览和外观健康，再编辑主题套装、素材、桌面、图标、聊天皮肤、CSS、牌面和外观存档。'],
+    deepLink: appearanceLink('manual-appearance-root', 'overview'),
   },
   '相册': { appId: AppID.Gallery, path: ['桌面', '相册'], details: ['按角色查看、导入、搜索、筛选和整理聊天、相机与生图留下的照片。'], deepLink: link(AppID.Gallery, 'manual-gallery-root') },
   '相册·导入照片': { appId: AppID.Gallery, path: ['桌面', '相册', '选择角色', '右上角导入'], details: ['把本地图片压缩后存入当前角色相册，不会自动发进聊天或上传云端。'], deepLink: link(AppID.Gallery, 'manual-gallery-root') },

@@ -3,7 +3,7 @@
 
 import {
     CharacterProfile, ChatTheme, Message, PrivateChatArchive, ChatAlarm, PeriodReminderSettings, PeriodCycleEvent, UserProfile,
-    HealthModuleSettings, HealthRecord, HealthReminder, HealthPlan, HealthSummary, HealthModuleId,
+    HealthModuleSettings, HealthRecord, HealthReminder, HealthPlan, HealthSummary, HealthImportBatch, HealthModuleId,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, CoViewBook, CoViewMedia, CoViewMessage, CoViewSession, Emoji, EmojiCategory,
     BankTransaction, BankFullState, DollhouseState, BankDollhousesByShopId, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
@@ -26,7 +26,7 @@ import { sanitizeAssistantVisibleText } from './promptPrivacy';
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 94; // Bumped: v94 CoView media/book/session stores
+const DB_VERSION = 95; // Bumped: v95 health wearable import batches
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -163,6 +163,7 @@ const STORE_HEALTH_RECORDS = 'health_records';
 const STORE_HEALTH_REMINDERS = 'health_reminders';
 const STORE_HEALTH_PLANS = 'health_plans';
 const STORE_HEALTH_SUMMARIES = 'health_summaries';
+const STORE_HEALTH_IMPORT_BATCHES = 'health_import_batches';
 const STORE_EMOJIS = 'emojis';
 const STORE_EMOJI_CATEGORIES = 'emoji_categories'; 
 const STORE_THEMES = 'themes';
@@ -712,6 +713,19 @@ export const openDB = (): Promise<IDBDatabase> => {
           }
           if (summaryStore && !summaryStore.indexNames.contains('startDate')) {
               try { summaryStore.createIndex('startDate', 'startDate', { unique: false }); } catch { /* ignore */ }
+          }
+      }
+      if (!db.objectStoreNames.contains(STORE_HEALTH_IMPORT_BATCHES)) {
+          const batchStore = db.createObjectStore(STORE_HEALTH_IMPORT_BATCHES, { keyPath: 'id' });
+          batchStore.createIndex('source', 'source', { unique: false });
+          batchStore.createIndex('createdAt', 'createdAt', { unique: false });
+      } else {
+          const batchStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_HEALTH_IMPORT_BATCHES);
+          if (batchStore && !batchStore.indexNames.contains('source')) {
+              try { batchStore.createIndex('source', 'source', { unique: false }); } catch { /* ignore */ }
+          }
+          if (batchStore && !batchStore.indexNames.contains('createdAt')) {
+              try { batchStore.createIndex('createdAt', 'createdAt', { unique: false }); } catch { /* ignore */ }
           }
       }
 
@@ -4084,6 +4098,41 @@ export const DB = {
       });
   },
 
+  getAllHealthImportBatches: async (): Promise<HealthImportBatch[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_HEALTH_IMPORT_BATCHES)) return [];
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_HEALTH_IMPORT_BATCHES, 'readonly');
+          const req = tx.objectStore(STORE_HEALTH_IMPORT_BATCHES).getAll();
+          req.onsuccess = () => resolve(((req.result || []) as HealthImportBatch[]).sort((a, b) => b.createdAt - a.createdAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveHealthImportBatch: async (batch: HealthImportBatch): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_HEALTH_IMPORT_BATCHES)) return;
+      const tx = db.transaction(STORE_HEALTH_IMPORT_BATCHES, 'readwrite');
+      tx.objectStore(STORE_HEALTH_IMPORT_BATCHES).put(batch);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('saveHealthImportBatch aborted'));
+      });
+  },
+
+  deleteHealthImportBatch: async (id: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_HEALTH_IMPORT_BATCHES)) return;
+      const tx = db.transaction(STORE_HEALTH_IMPORT_BATCHES, 'readwrite');
+      tx.objectStore(STORE_HEALTH_IMPORT_BATCHES).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('deleteHealthImportBatch aborted'));
+      });
+  },
+
   saveUserProfile: async (profile: UserProfile): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_USER, 'readwrite');
@@ -5719,7 +5768,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMediaRaw, coviewBooks, coviewSessions, coviewMessages, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterCustomLibrary, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords, takeoutOrders] = await Promise.all([
+      const [characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, healthImportBatches, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMediaRaw, coviewBooks, coviewSessions, coviewMessages, bankTx, bankData, xhsActivities, xhsStockImages, xhsFeedPosts, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, musicTracks, musicPlaylists, musicPlaylistItems, musicPlayEvents, musicSearchHistory, musicRecommendCache, quizzes, guidebookSessions, theaterQuizSessions, theaterFauxPieces, theaterCustomLibrary, theaterReflectionSessions, collectionItems, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, phoneCheckSessions, userScreenWatchSessions, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords, takeoutOrders] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -5733,6 +5782,7 @@ export const DB = {
           getAllFromStore(STORE_HEALTH_REMINDERS),
           getAllFromStore(STORE_HEALTH_PLANS),
           getAllFromStore(STORE_HEALTH_SUMMARIES),
+          getAllFromStore(STORE_HEALTH_IMPORT_BATCHES),
           getAllFromStore(STORE_THEMES),
           getAllFromStore(STORE_EMOJIS),
           getAllFromStore(STORE_EMOJI_CATEGORIES),
@@ -5817,7 +5867,7 @@ export const DB = {
           STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES,
           STORE_CHAT_ALARMS, STORE_CHAT_FOLLOWUPS, STORE_CHAT_HUB_DIGESTS,
           STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
-          STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES,
+          STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES, STORE_HEALTH_IMPORT_BATCHES,
           STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES, STORE_ASSETS, STORE_GALLERY, STORE_USER,
           STORE_DIARIES, STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES, STORE_GROUPS,
           STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS,
@@ -5855,7 +5905,7 @@ export const DB = {
       const coviewMedia = (coviewMediaRaw as CoViewMedia[]).map(({ blob: _blob, ...media }) => media as CoViewMedia);
 
       return {
-          characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMedia, coviewBooks, coviewSessions, coviewMessages,
+          characters, messages, privateChatArchives, chatAlarms, chatFollowups, chatHubDigests, periodReminderSettings, periodCycleEvents, healthModuleSettings, healthRecords, healthReminders, healthPlans, healthSummaries, healthImportBatches, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels, coviewMedia, coviewBooks, coviewSessions, coviewMessages,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
           bankDollhouses: dollhousesRecord?.data || undefined,
@@ -5935,7 +5985,7 @@ export const DB = {
       const knownImportStores = [
           STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
           STORE_CHAT_ALARMS, STORE_CHAT_FOLLOWUPS, STORE_CHAT_HUB_DIGESTS, STORE_PERIOD_REMINDER_SETTINGS, STORE_PERIOD_CYCLE_EVENTS,
-          STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES,
+          STORE_HEALTH_MODULE_SETTINGS, STORE_HEALTH_RECORDS, STORE_HEALTH_REMINDERS, STORE_HEALTH_PLANS, STORE_HEALTH_SUMMARIES, STORE_HEALTH_IMPORT_BATCHES,
           STORE_ASSETS, STORE_GALLERY, STORE_USER, STORE_DIARIES,
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
           STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS,
@@ -6015,6 +6065,7 @@ export const DB = {
           data.healthReminders !== undefined,
           data.healthPlans !== undefined,
           data.healthSummaries !== undefined,
+          data.healthImportBatches !== undefined,
           data.customThemes !== undefined,
           data.savedEmojis !== undefined,
           data.emojiCategories !== undefined,
@@ -6329,6 +6380,11 @@ export const DB = {
           await clearAndAdd(STORE_HEALTH_SUMMARIES, data.healthSummaries || [], '健康摘要', false);
           data.healthSummaries = undefined as any;
       }, data.healthSummaries?.length || 0);
+
+      await runSection('健康导入批次', data.healthImportBatches !== undefined, async () => {
+          await clearAndAdd(STORE_HEALTH_IMPORT_BATCHES, data.healthImportBatches || [], '健康导入批次', false);
+          data.healthImportBatches = undefined as any;
+      }, data.healthImportBatches?.length || 0);
 
       await runSection('聊天主题', data.customThemes !== undefined, async () => {
           await mergeStore(STORE_THEMES, data.customThemes, '聊天主题', true);

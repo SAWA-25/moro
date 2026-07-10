@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Heart, MusicNotes, Plus, Trash, UserCircle } from '@phosphor-icons/react';
+import { Heart, MusicNotes, PencilSimple, Play, Plus, PushPin, Trash, UserCircle } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { Song, useMusic } from '../../context/MusicContext';
 import type { MusicLibraryPlaylist } from '../../types';
@@ -10,9 +10,11 @@ import {
   deleteMusicPlaylist,
   getMusicPlaylistSongs,
   getSongLibraryTrackId,
+  listAllMusicSongs,
   listLikedMusicSongs,
   listRecentMusicSongs,
   removeSongFromMusicPlaylist,
+  updateMusicPlaylist,
 } from '../../utils/musicLibrary';
 import { BokehBg, C, MiniPlayer, MizuHeader, SongRow, isMusicAvatarImage } from './MusicUI';
 
@@ -59,6 +61,7 @@ const MusicLibraryPage: React.FC<Props> = ({
     current, playing, togglePlay, nextSong, prevSong, playSong,
     localAlbumSongs, libraryVersion, refreshLibrary, listeningTogetherWith, removeListeningPartner,
   } = useMusic();
+  const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [recent, setRecent] = useState<Song[]>([]);
   const [liked, setLiked] = useState<Song[]>([]);
   const [playlists, setPlaylists] = useState<MusicLibraryPlaylist[]>([]);
@@ -67,11 +70,13 @@ const MusicLibraryPage: React.FC<Props> = ({
   const [creating, setCreating] = useState(false);
 
   const reload = useCallback(async () => {
-    const [recentSongs, likedSongs, allPlaylists] = await Promise.all([
+    const [allLibrarySongs, recentSongs, likedSongs, allPlaylists] = await Promise.all([
+      listAllMusicSongs(200),
       listRecentMusicSongs(40),
       listLikedMusicSongs(80),
       DB.getAllMusicPlaylists(),
     ]);
+    setAllSongs(allLibrarySongs);
     setRecent(recentSongs);
     setLiked(likedSongs);
     setPlaylists(allPlaylists.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt));
@@ -142,10 +147,45 @@ const MusicLibraryPage: React.FC<Props> = ({
   }, [refreshLibrary]);
 
   const characterSongCount = characters.reduce((sum, char) => sum + (char.musicProfile?.playlists || []).reduce((n, pl) => n + pl.songs.length, 0), 0);
+  const totalMinutes = Math.round(allSongs.reduce((sum, song) => sum + (song.duration || 0), 0) / 60);
+  const sourceCount = new Set(allSongs.map(song => song.source || (song.local ? 'local' : 'netease'))).size;
 
-  const renderSongList = (songs: Song[], playSource: 'library' | 'local' | 'character') => (
+  const playCollection = useCallback(async (songs: Song[], playSource: 'library' | 'local' | 'character' = 'library') => {
+    if (!songs.length) {
+      addToast('这里还没有歌曲', 'info');
+      return;
+    }
+    await playSong(songs[0], { replaceQueue: songs, startIdx: 0, playSource });
+    onOpenPlayer();
+  }, [addToast, onOpenPlayer, playSong]);
+
+  const playPlaylist = useCallback(async (playlist: MusicLibraryPlaylist) => {
+    const songs = playlistSongs[playlist.id] || await getMusicPlaylistSongs(playlist.id);
+    setPlaylistSongs(prev => ({ ...prev, [playlist.id]: songs }));
+    await playCollection(songs, 'library');
+  }, [playCollection, playlistSongs]);
+
+  const renamePlaylist = useCallback(async (playlist: MusicLibraryPlaylist) => {
+    const title = typeof window !== 'undefined' ? window.prompt('歌单名', playlist.title) : playlist.title;
+    if (!title?.trim() || title.trim() === playlist.title) return;
+    const next = await updateMusicPlaylist(playlist.id, { title });
+    if (!next) return;
+    setPlaylists(prev => prev.map(item => item.id === next.id ? next : item));
+    refreshLibrary();
+    addToast('歌单已重命名', 'success');
+  }, [addToast, refreshLibrary]);
+
+  const togglePlaylistPinned = useCallback(async (playlist: MusicLibraryPlaylist) => {
+    const next = await updateMusicPlaylist(playlist.id, { pinned: !playlist.pinned });
+    if (!next) return;
+    setPlaylists(prev => prev.map(item => item.id === next.id ? next : item)
+      .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt));
+    refreshLibrary();
+  }, [refreshLibrary]);
+
+  const renderSongList = (songs: Song[], playSource: 'library' | 'local' | 'character', limit = 20) => (
     <div className="space-y-1">
-      {songs.slice(0, 20).map((song, i) => (
+      {songs.slice(0, limit).map((song, i) => (
         <SongRow
           key={`${song.source || 'netease'}-${song.id}-${i}`}
           name={song.name}
@@ -171,8 +211,34 @@ const MusicLibraryPage: React.FC<Props> = ({
         right={<button onClick={onOpenProfile} className="p-1.5 rounded-full" style={{ color: C.primary }} title="我的"><UserCircle size={18} weight="bold" /></button>}
       />
       <div className="flex-1 overflow-y-auto px-4 pt-4 pb-36 relative z-10 shizuku-scrollbar">
-        <div className="grid grid-cols-3 gap-2">
-          <button className="rounded-2xl p-3 text-left shizuku-glass-strong" onClick={() => setExpanded(expanded === 'recent' ? null : 'recent')}>
+        <div className="rounded-3xl p-4 mb-3 shizuku-glass-strong">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] tracking-[0.18em] uppercase" style={{ color: C.muted }}>Local Library</div>
+              <div className="text-lg mt-0.5" style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>{allSongs.length} 首歌</div>
+              <div className="text-[10px] truncate" style={{ color: C.muted }}>
+                {sourceCount} 个来源 · 约 {totalMinutes || 0} 分钟 · {playlists.length} 张自建歌单
+              </div>
+            </div>
+            <button
+              onClick={() => void playCollection(allSongs, 'library')}
+              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+              style={{ background: `linear-gradient(135deg, ${C.primary}, ${C.accent})`, color: 'white', boxShadow: `0 4px 18px ${C.primary}25` }}
+              title="播放资料库"
+              aria-label="播放资料库"
+            >
+              <Play size={18} weight="fill" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          <button className="rounded-2xl p-3 text-left shizuku-glass-strong" onClick={() => setExpanded(expanded === 'all' ? null : 'all')}>
+            <MusicNotes size={18} weight="fill" color={C.primary} />
+            <div className="text-sm mt-1" style={{ color: C.text }}>{allSongs.length}</div>
+            <div className="text-[9px]" style={{ color: C.muted }}>全部</div>
+          </button>
+          <button className="rounded-2xl p-3 text-left shizuku-glass" onClick={() => setExpanded(expanded === 'recent' ? null : 'recent')}>
             <MusicNotes size={18} weight="fill" color={C.primary} />
             <div className="text-sm mt-1" style={{ color: C.text }}>{recent.length}</div>
             <div className="text-[9px]" style={{ color: C.muted }}>最近播放</div>
@@ -189,12 +255,21 @@ const MusicLibraryPage: React.FC<Props> = ({
           </button>
         </div>
 
+        {expanded === 'all' && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <span className="text-[10px]" style={{ color: C.muted }}>本机保存的播放快照</span>
+              <button onClick={() => void playCollection(allSongs, 'library')} className="text-[10px]" style={{ color: C.accent }}>播放全部</button>
+            </div>
+            {renderSongList(allSongs, 'library', 60)}
+          </div>
+        )}
         {expanded === 'recent' && <div className="mt-4">{renderSongList(recent, 'library')}</div>}
         {expanded === 'liked' && <div className="mt-4">{renderSongList(liked, 'library')}</div>}
 
         {localAlbumSongs.length > 0 && (
           <div className="mt-5">
-            <SectionTitle>一起写的歌</SectionTitle>
+            <SectionTitle action={<button onClick={() => void playCollection(localAlbumSongs, 'local')} className="text-[10px]" style={{ color: C.accent }}>播放全部</button>}>一起写的歌</SectionTitle>
             {renderSongList(localAlbumSongs, 'local')}
           </div>
         )}
@@ -216,20 +291,38 @@ const MusicLibraryPage: React.FC<Props> = ({
                 const isOpen = expanded === playlist.id;
                 return (
                   <div key={playlist.id} className="rounded-2xl overflow-hidden shizuku-glass">
-                    <button onClick={() => expandPlaylist(playlist)} className="w-full flex items-center gap-3 p-3 text-left">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: playlist.coverUrl ? undefined : `linear-gradient(135deg, ${C.primary}, ${C.accent})` }}>
-                        {playlist.coverUrl ? <img src={playlist.coverUrl} alt="" className="w-full h-full object-cover" /> : <MusicNotes size={20} weight="fill" color="white" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm truncate" style={{ color: C.text }}>{playlist.title}</div>
-                        <div className="text-[10px] truncate" style={{ color: C.muted }}>{playlist.trackCount || 0} 首 · {playlist.description || '本地歌单'}</div>
-                      </div>
-                    </button>
+                    <div className="w-full flex items-center gap-3 p-3">
+                      <button onClick={() => expandPlaylist(playlist)} className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0" style={{ background: playlist.coverUrl ? undefined : `linear-gradient(135deg, ${C.primary}, ${C.accent})` }}>
+                          {playlist.coverUrl ? <img src={playlist.coverUrl} alt="" className="w-full h-full object-cover" /> : <MusicNotes size={20} weight="fill" color="white" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {playlist.pinned && <PushPin size={11} weight="fill" color={C.accent} className="shrink-0" />}
+                            <div className="text-sm truncate" style={{ color: C.text }}>{playlist.title}</div>
+                          </div>
+                          <div className="text-[10px] truncate" style={{ color: C.muted }}>{playlist.trackCount || 0} 首 · {playlist.description || '本地歌单'}</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void playPlaylist(playlist)}
+                        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 shizuku-glass"
+                        style={{ color: C.primary }}
+                        title="播放歌单"
+                        aria-label="播放歌单"
+                      >
+                        <Play size={13} weight="fill" />
+                      </button>
+                    </div>
                     {isOpen && (
                       <div className="border-t px-2 pb-2" style={{ borderColor: `${C.faint}25` }}>
-                        <div className="flex gap-2 py-2">
-                          <button onClick={() => addCurrentToPlaylist(playlist)} className="flex-1 py-1.5 rounded-full text-[10px] shizuku-glass" style={{ color: C.primary }}>加入当前播放</button>
-                          <button onClick={() => deletePlaylist(playlist)} className="w-9 rounded-full flex items-center justify-center shizuku-glass" style={{ color: C.danger }}><Trash size={12} /></button>
+                        <div className="grid grid-cols-5 gap-1.5 py-2">
+                          <button onClick={() => void playPlaylist(playlist)} className="py-1.5 rounded-full text-[10px] shizuku-glass" style={{ color: C.primary }}>播放</button>
+                          <button onClick={() => addCurrentToPlaylist(playlist)} className="py-1.5 rounded-full text-[10px] shizuku-glass" style={{ color: C.primary }}>加入</button>
+                          <button onClick={() => void renamePlaylist(playlist)} className="py-1.5 rounded-full flex items-center justify-center shizuku-glass" style={{ color: C.muted }} title="重命名"><PencilSimple size={12} /></button>
+                          <button onClick={() => void togglePlaylistPinned(playlist)} className="py-1.5 rounded-full flex items-center justify-center shizuku-glass" style={{ color: playlist.pinned ? C.accent : C.faint }} title={playlist.pinned ? '取消置顶' : '置顶'}><PushPin size={12} weight={playlist.pinned ? 'fill' : 'regular'} /></button>
+                          <button onClick={() => deletePlaylist(playlist)} className="py-1.5 rounded-full flex items-center justify-center shizuku-glass" style={{ color: C.danger }} title="删除"><Trash size={12} /></button>
                         </div>
                         {songs.length === 0 ? (
                           <div className="text-center text-[10px] py-4" style={{ color: C.faint }}>这张歌单还空着</div>

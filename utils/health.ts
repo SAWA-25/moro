@@ -56,6 +56,7 @@ export const HEALTH_MODULES: Array<{
   { id: 'symptom', label: '症状 / 疼痛', shortLabel: '症状', accent: '#e36b4f' },
   { id: 'mood', label: '心情 / 精力', shortLabel: '心情', accent: '#d99b2b', defaultGoal: { target: 1, unit: '次' } },
   { id: 'movement', label: '运动 / 步数', shortLabel: '运动', unit: '步', accent: '#3c9a62', defaultGoal: { target: 6000, unit: '步' } },
+  { id: 'vitals', label: '体征', shortLabel: '体征', unit: '次', accent: '#d9487c' },
 ];
 
 export const HEALTH_MODULE_LABEL: Record<HealthModuleId, string> = HEALTH_MODULES.reduce((acc, item) => {
@@ -352,6 +353,12 @@ export function summarizeHealthDay(records: HealthRecord[], date = toHealthDateK
     if (module.id === 'hydration' || module.id === 'movement' || module.id === 'sleep') {
       const total = rows.reduce((sum, row) => sum + (Number(row.value) || 0), 0);
       return `${module.shortLabel} ${Math.round(total * 10) / 10}${rows[0]?.unit || module.unit || ''}`;
+    }
+    if (module.id === 'vitals') {
+      return `${module.shortLabel} ${rows.map(row => {
+        const valueText = row.value !== undefined ? `${Math.round(Number(row.value) * 10) / 10}${row.unit || ''}` : '';
+        return [row.label || row.tags[0] || '已记录', valueText].filter(Boolean).join(' ');
+      }).slice(0, 3).join('、')}`;
     }
     return `${module.shortLabel} ${rows.map(row => row.label || row.tags[0] || row.note || '已记录').slice(0, 2).join('、')}`;
   }).filter(Boolean);

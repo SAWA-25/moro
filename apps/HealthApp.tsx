@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
+  Bluetooth,
+  BluetoothConnected,
+  BluetoothSlash,
   CalendarBlank,
   ChartLineUp,
   Check,
@@ -15,11 +18,13 @@ import {
   PencilSimple,
   Pill,
   Plus,
+  Pulse,
   ShieldCheck,
   Smiley,
   Sparkle,
   ThermometerSimple,
   Trash,
+  Watch,
   X,
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
@@ -28,6 +33,7 @@ import { AppID } from '../types';
 import type {
   HealthModuleId,
   HealthModuleSettings,
+  HealthImportBatch,
   HealthPlan,
   HealthPrivacyMode,
   HealthRecord,
@@ -60,6 +66,17 @@ import {
   toHealthDateKey,
 } from '../utils/health';
 import {
+  HEALTH_IMPORT_FIELD_OPTIONS,
+  makeHealthImportBatch,
+  makeRealtimeHeartRateRecord,
+  parseBleHeartRateMeasurement,
+  parseHealthImportFile,
+  type HealthImportFieldKey,
+  type HealthImportFieldMapping,
+  type HealthImportPreset,
+  type HealthImportPreview,
+} from '../utils/healthImport';
+import {
   PERIOD_CYCLE_LENGTH_DEFAULT,
   PERIOD_CYCLE_LENGTH_MAX,
   PERIOD_CYCLE_LENGTH_MIN,
@@ -80,7 +97,7 @@ import {
 import { getNotifyPermission, requestNotifyPermission, showLocalNotification, type NotifyPermission } from '../utils/browserNotify';
 import { scrollToManualAnchor, useManualDeepLink } from '../utils/manualDeepLink';
 
-type ViewId = 'today' | 'calendar' | 'trends' | 'reminders' | 'privacy';
+type ViewId = 'today' | 'calendar' | 'trends' | 'reminders' | 'devices' | 'privacy';
 type PeriodNumberField = 'cycleLength' | 'periodLength';
 type HealthGoalDraft = { target: string; unit: string; enabled: boolean };
 
@@ -161,6 +178,7 @@ const moduleIcon: Record<HealthModuleId, React.ReactNode> = {
   symptom: <ThermometerSimple size={18} weight="fill" />,
   mood: <Smiley size={18} weight="fill" />,
   movement: <PersonSimpleWalk size={18} weight="fill" />,
+  vitals: <Pulse size={18} weight="fill" />,
 };
 
 const findPeriodTracker = (trackers: Tracker[]) => (
@@ -327,6 +345,7 @@ const HealthApp: React.FC = () => {
   const [activeModule, setActiveModule] = useState<HealthModuleId>('hydration');
   const [moduleSettings, setModuleSettings] = useState<HealthModuleSettings[]>(() => mergeHealthModuleSettings([]));
   const [records, setRecords] = useState<HealthRecord[]>([]);
+  const [importBatches, setImportBatches] = useState<HealthImportBatch[]>([]);
   const [reminders, setReminders] = useState<HealthReminder[]>([]);
   const [plans, setPlans] = useState<HealthPlan[]>([]);
   const [periodSettings, setPeriodSettings] = useState<PeriodReminderSettings>(() => makeDefaultPeriodReminderSettings());
@@ -344,6 +363,17 @@ const HealthApp: React.FC = () => {
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordForm, setRecordForm] = useState(emptyForm);
   const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
+  const [importPreset, setImportPreset] = useState<HealthImportPreset>('auto');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<HealthImportPreview | null>(null);
+  const [importMapping, setImportMapping] = useState<HealthImportFieldMapping>({});
+  const [importingWearable, setImportingWearable] = useState(false);
+  const [liveSyncing, setLiveSyncing] = useState(false);
+  const [liveDeviceName, setLiveDeviceName] = useState('');
+  const [liveHeartRate, setLiveHeartRate] = useState<number | null>(null);
+  const [liveMessage, setLiveMessage] = useState('还未连接实时手环');
+  const liveDeviceRef = useRef<any>(null);
+  const liveBatchRef = useRef<HealthImportBatch | null>(null);
   const [reminderForm, setReminderForm] = useState({
     moduleId: 'hydration' as HealthModuleId,
     title: '喝水提醒',
