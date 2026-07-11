@@ -60,7 +60,7 @@ export default defineConfig({
     {
       name: 'moro-worker-dev-routes',
       configureServer(server) {
-        server.middlewares.use('/qqmusic', async (req, res) => {
+        const forwardToWorker = async (mountPath: string, req: any, res: any) => {
           try {
             const chunks: Buffer[] = [];
             for await (const chunk of req) {
@@ -68,7 +68,7 @@ export default defineConfig({
             }
             const body = Buffer.concat(chunks);
             const origin = `http://${req.headers.host || '127.0.0.1'}`;
-            const request = new Request(`${origin}/qqmusic${req.url || ''}`, {
+            const request = new Request(`${origin}${mountPath}${req.url || ''}`, {
               method: req.method || 'GET',
               headers: new Headers(req.headers as Record<string, string>),
               body: body.length ? body : undefined,
@@ -82,7 +82,9 @@ export default defineConfig({
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify({ status: 'error', message: e?.message || String(e) }));
           }
-        });
+        };
+        server.middlewares.use('/qqmusic', (req, res) => forwardToWorker('/qqmusic', req, res));
+        server.middlewares.use('/yinghua', (req, res) => forwardToWorker('/yinghua', req, res));
       },
     },
   ],

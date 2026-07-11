@@ -77,11 +77,34 @@ export interface ManualUpdateNoticeDateGroup {
 export const CATEGORY_ORDER: Array<'all' | ManualCategory> = ['all', 'daily', 'social', 'creation', 'roleplay', 'system'];
 
 export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> = {
+  '2026-07-12': 'App 自己拉取更新，目前最新版本 v2.0.2，新增云端更新，具体可查看 App',
   '2026-07-08': 'App 自己拉取更新，最新版本 1.0.8.4',
   '2026-07-06': '预设不要开文风，不要开字数',
 };
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
+  {
+    id: '2026-07-12-chat-new-private-context-reset',
+    date: '2026-07-12',
+    title: '絮语新聊天会清掉上一页的心情和心声',
+    kind: 'fix',
+    summary: '絮语单聊里点“新聊天”后，新一页会像清空絮语上下文一样从干净状态开始，不再沿用上一页的心情、心声和软件痕迹。',
+    items: [
+      '旧聊天仍会先收进私聊档案，可以之后再切回或导出。',
+      '新聊天会重置心声记录、当前心情、心情 buff、今日作息和角色在各软件里的生成内容，只保留角色设定与外观配置。',
+    ],
+  },
+  {
+    id: '2026-07-12-coview-cinema-ad-popups',
+    date: '2026-07-12',
+    title: '共览影院减少樱花页面的小广告打扰',
+    kind: 'improvement',
+    summary: '共览里的樱花影院保留原入口，并在外层遮住网页右下角的浮层小广告，减少看剧时被打断。',
+    items: [
+      '樱花影院入口、本地视频导入、视觉共览和共览讨论都保留不变。',
+      '这次只处理外站网页浮在右下角的遮挡控件；页面主体仍按原网站方式加载。',
+    ],
+  },
   {
     id: '2026-07-11-theater-mahjong',
     date: '2026-07-11',

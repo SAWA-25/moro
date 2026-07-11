@@ -26,8 +26,13 @@ afterEach(() => {
 describe('coview parsing', () => {
   it('uses Yinghua Anime as the built-in cinema site', () => {
     const url = buildCoViewBuiltinVideoSiteUrl();
-    expect(url).toBe('https://www.yinghuaanime.com/index.php');
-    expect(getCoViewVideoEmbed(url)).toMatchObject({ provider: 'yinghua', embedUrl: url });
+    expect(url).toContain('/yinghua?');
+    expect(new URL(url).searchParams.get('url')).toBe('https://www.yinghuaanime.com/index.php');
+    expect(getCoViewVideoEmbed(url)).toMatchObject({
+      provider: 'yinghua',
+      embedUrl: url,
+      sourceUrl: 'https://www.yinghuaanime.com/index.php',
+    });
   });
 
   it('splits TXT/MD style headings into chapters', () => {

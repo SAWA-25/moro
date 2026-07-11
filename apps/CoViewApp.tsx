@@ -23,6 +23,7 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { captureVideoFrame } from '../utils/userScreenWatch';
 import {
   buildCoViewBuiltinVideoSiteUrl,
+  COVIEW_BUILTIN_VIDEO_SITE_SOURCE_URL,
   parseCoViewBookFile,
   paginateText,
   discussCoView,
@@ -709,9 +710,14 @@ const CoViewApp: React.FC<CoViewAppProps> = ({ initialMode = 'cinema' }) => {
               <div className="text-[14px] font-extrabold" style={{ color: INK }}>樱花动漫</div>
               <div className="text-[10px]" style={{ color: INK_SOFT }}>已直接内嵌网站，打开影院即可在这里选片播放。</div>
             </div>
-            <span className="rounded-full px-2 py-1 text-[9px] font-bold" style={{ background: A.soft, color: A.ink }}>WEB</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <InsButton variant="soft" accent={AC} onClick={() => window.open(COVIEW_BUILTIN_VIDEO_SITE_SOURCE_URL, '_blank', 'noopener,noreferrer')} className="px-2 py-1 text-[9px]" icon={<ArrowSquareOut size={11} weight="bold" />}>
+                原站
+              </InsButton>
+              <span className="rounded-full px-2 py-1 text-[9px] font-bold" style={{ background: A.soft, color: A.ink }}>WEB</span>
+            </div>
           </div>
-          <div className="overflow-hidden rounded-[18px]" style={{ background: '#111217' }}>
+          <div className="relative overflow-hidden rounded-[18px]" style={{ background: '#111217' }}>
             <iframe
               key={builtinVideoEmbedUrl}
               src={builtinVideoEmbedUrl}

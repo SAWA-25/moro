@@ -21,10 +21,28 @@ export interface CoViewVideoEmbed {
   sourceUrl: string;
 }
 
-export const COVIEW_BUILTIN_VIDEO_SITE_URL = 'https://www.yinghuaanime.com/index.php';
+export const COVIEW_BUILTIN_VIDEO_SITE_SOURCE_URL = 'https://www.yinghuaanime.com/index.php';
+export const COVIEW_BUILTIN_VIDEO_SITE_URL = COVIEW_BUILTIN_VIDEO_SITE_SOURCE_URL;
+export const COVIEW_YINGHUA_PROXY_WORKER_ORIGIN = 'https://sullymeow.ccwu.cc';
+
+const isYinghuaHost = (host: string): boolean => {
+  const normalized = host.replace(/^www\./, '').toLowerCase();
+  return normalized === 'yinghuaanime.com' || normalized.endsWith('.yinghuaanime.com');
+};
+
+const resolveCoViewYinghuaProxyOrigin = (): string => {
+  if (typeof window === 'undefined') return COVIEW_YINGHUA_PROXY_WORKER_ORIGIN;
+  const host = window.location.hostname.toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === 'sullymeow.ccwu.cc') {
+    return window.location.origin;
+  }
+  return COVIEW_YINGHUA_PROXY_WORKER_ORIGIN;
+};
 
 export function buildCoViewBuiltinVideoSiteUrl(): string {
-  return COVIEW_BUILTIN_VIDEO_SITE_URL;
+  const proxy = new URL('/yinghua', resolveCoViewYinghuaProxyOrigin());
+  proxy.searchParams.set('url', COVIEW_BUILTIN_VIDEO_SITE_SOURCE_URL);
+  return proxy.toString();
 }
 
 export interface CoViewDiscussInput {
@@ -61,8 +79,20 @@ export function getCoViewVideoEmbed(url: string): CoViewVideoEmbed | null {
   const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
   const path = parsed.pathname;
 
-  if (host.endsWith('yinghuaanime.com')) {
+  if (isYinghuaHost(parsed.hostname)) {
     return { provider: 'yinghua', embedUrl: raw, sourceUrl: raw };
+  }
+
+  if (parsed.pathname.replace(/\/+$/, '') === '/yinghua') {
+    const source = parsed.searchParams.get('url') || '';
+    try {
+      const sourceUrl = new URL(source);
+      if (isYinghuaHost(sourceUrl.hostname)) {
+        return { provider: 'yinghua', embedUrl: raw, sourceUrl: sourceUrl.toString() };
+      }
+    } catch {
+      // Not a Yinghua proxy URL.
+    }
   }
 
   if (host === 'player.bilibili.com') {

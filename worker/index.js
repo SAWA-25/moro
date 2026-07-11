@@ -37,6 +37,345 @@ function jsonResponse(obj, { status = 200, origin } = {}) {
   });
 }
 
+const YINGHUA_UPSTREAM_ORIGIN = "https://www.yinghuaanime.com";
+const YINGHUA_DEFAULT_URL = `${YINGHUA_UPSTREAM_ORIGIN}/index.php`;
+
+function isYinghuaHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "yinghuaanime.com" || host.endsWith(".yinghuaanime.com");
+}
+
+function normalizeYinghuaMediaHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  if (host === "w.jisuzyv.com") return "vv.jisuzyv.com";
+  return host;
+}
+
+function isYinghuaMediaHost(hostname) {
+  const host = normalizeYinghuaMediaHost(hostname);
+  return host === "vv.jisuzyv.com" || host === "p.jisuts.com";
+}
+
+function isYinghuaProxyAllowedHost(hostname) {
+  return isYinghuaHost(hostname) || isYinghuaMediaHost(hostname);
+}
+
+function escapeHtmlAttr(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function resolveYinghuaTarget(raw) {
+  const target = new URL(raw || YINGHUA_DEFAULT_URL, YINGHUA_DEFAULT_URL);
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    throw new Error("Only HTTP(S) URLs are allowed");
+  }
+  target.hostname = normalizeYinghuaMediaHost(target.hostname);
+  if (!isYinghuaProxyAllowedHost(target.hostname)) {
+    throw new Error("Host not allowed");
+  }
+  target.protocol = "https:";
+  target.hash = "";
+  return target;
+}
+
+function toYinghuaProxyUrl(raw, baseHref, proxyBaseHref) {
+  try {
+    const target = new URL(String(raw || "").trim(), baseHref || YINGHUA_DEFAULT_URL);
+    if (target.protocol !== "http:" && target.protocol !== "https:") return "";
+    target.hostname = normalizeYinghuaMediaHost(target.hostname);
+    if (!isYinghuaProxyAllowedHost(target.hostname)) return "";
+    target.protocol = "https:";
+    target.hash = "";
+    const proxy = new URL(proxyBaseHref);
+    proxy.searchParams.set("url", target.href);
+    return proxy.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+function patchYinghuaEmbeddedUrls(text, targetHref, proxyBaseHref) {
+  return String(text || "").replace(
+    /https?:\/\/(?:vv|w)\.jisuzyv\.com\/[^\s"'<>\\)]+|https?:\/\/p\.jisuts\.com(?::\d+)?\/[^\s"'<>\\)]+/gi,
+    match => toYinghuaProxyUrl(match, targetHref, proxyBaseHref) || match
+  );
+}
+
+function patchYinghuaM3u8(text, targetHref, proxyBaseHref) {
+  return String(text || "").split(/\r?\n/).map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+    if (trimmed.startsWith("#")) {
+      return line.replace(/URI=(["']?)([^"',\s]+)\1/gi, (match, quote, uri) => {
+        const next = toYinghuaProxyUrl(uri, targetHref, proxyBaseHref);
+        if (!next) return match;
+        const q = quote || '"';
+        return `URI=${q}${next}${q}`;
+      });
+    }
+    return toYinghuaProxyUrl(trimmed, targetHref, proxyBaseHref) || line;
+  }).join("\n");
+}
+
+function yinghuaFallbackContentType(target) {
+  const path = String(target && target.pathname || "").toLowerCase();
+  if (path.endsWith(".m3u8")) return "application/vnd.apple.mpegurl; charset=utf-8";
+  if (path.endsWith(".ts")) return "video/mp2t";
+  if (path.endsWith(".key")) return "application/octet-stream";
+  if (isYinghuaHost(target && target.hostname)) return "text/html; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function relaxLocalNodeTlsForYinghuaMedia(target) {
+  try {
+    if (!isYinghuaMediaHost(target && target.hostname)) return;
+    if (typeof process === "undefined" || !process.versions || !process.versions.node) return;
+    if (process.env.NODE_TLS_REJECT_UNAUTHORIZED) return;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  } catch (_) {}
+}
+
+function yinghuaCoverFixScript(targetHref, proxyBaseHref) {
+  return `<script>
+(function () {
+  var upstreamBase = ${JSON.stringify(targetHref)};
+  var proxyBase = ${JSON.stringify(proxyBaseHref)};
+  var yinghuaHost = /(^|\\.)yinghuaanime\\.com$/i;
+  var jisuzyvHost = /(^|\\.)jisuzyv\\.com$/i;
+  var jisutsHost = /(^|\\.)jisuts\\.com$/i;
+  var scheduled = false;
+
+  function absoluteUrl(raw) {
+    if (!raw) return "";
+    try {
+      var url = new URL(String(raw).trim(), upstreamBase);
+      if (url.protocol === "http:") url.protocol = "https:";
+      return url.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function cssImage(url) {
+    return 'url("' + String(url).replace(/[\\\\"]/g, "\\\\$&") + '")';
+  }
+
+  function hydrateCovers(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var nodes = scope.querySelectorAll(".lazyload[data-original], [data-original].stui-vodlist__thumb, img[data-original]");
+    for (var i = 0; i < nodes.length; i += 1) {
+      var el = nodes[i];
+      var raw = el.getAttribute("data-original") || el.getAttribute("data-src") || "";
+      var src = absoluteUrl(raw);
+      if (!src) continue;
+      if (el.tagName && el.tagName.toLowerCase() === "img") {
+        if (el.getAttribute("src") !== src) el.setAttribute("src", src);
+      } else {
+        if (el.style.backgroundImage.indexOf(src) === -1) el.style.backgroundImage = cssImage(src);
+      }
+      el.setAttribute("data-moro-cover-fixed", "1");
+    }
+  }
+
+  function scheduleHydrate(root) {
+    if (scheduled) return;
+    scheduled = true;
+    var run = function () {
+      scheduled = false;
+      normalizePlayerGlobals();
+      hydrateCovers(root);
+      rewritePlayerIframes(root);
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }
+
+  function normalizeProxyTarget(target) {
+    if (String(target.hostname || "").toLowerCase() === "w.jisuzyv.com") target.hostname = "vv.jisuzyv.com";
+    if (target.protocol === "http:") target.protocol = "https:";
+    return target;
+  }
+
+  function isProxyableHost(hostname) {
+    return yinghuaHost.test(hostname) || jisuzyvHost.test(hostname) || jisutsHost.test(hostname);
+  }
+
+  function proxiedUrl(raw, options) {
+    try {
+      var target = new URL(String(raw || ""), upstreamBase);
+      normalizeProxyTarget(target);
+      if (!isProxyableHost(target.hostname)) return "";
+      if (!(options && options.media) && !yinghuaHost.test(target.hostname)) return "";
+      if (target.protocol !== "http:" && target.protocol !== "https:") return "";
+      target.protocol = "https:";
+      var proxy = new URL(proxyBase);
+      proxy.searchParams.set("url", target.href);
+      return proxy.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function rewritePlayerIframes(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var frames = scope.querySelectorAll("iframe[src]");
+    for (var i = 0; i < frames.length; i += 1) {
+      var frame = frames[i];
+      var raw = frame.getAttribute("src") || "";
+      if (!raw) continue;
+      try {
+        var target = new URL(raw, upstreamBase);
+        normalizeProxyTarget(target);
+        var isYinghuaPlayer = yinghuaHost.test(target.hostname) && target.pathname.indexOf("/js/player/") === 0;
+        var isMediaPlayer = jisuzyvHost.test(target.hostname) || jisutsHost.test(target.hostname);
+        if (!isYinghuaPlayer && !isMediaPlayer) continue;
+        var next = proxiedUrl(target.href, { media: true });
+        if (!next) continue;
+        frame.setAttribute("allow", "autoplay; fullscreen; encrypted-media; picture-in-picture");
+        frame.setAttribute("allowfullscreen", "allowfullscreen");
+        if (frame.src !== next) frame.src = next;
+      } catch (_) {}
+    }
+  }
+
+  function normalizePlayerGlobals() {
+    var names = ["now", "next"];
+    for (var i = 0; i < names.length; i += 1) {
+      var key = names[i];
+      try {
+        if (typeof window[key] !== "string") continue;
+        var next = proxiedUrl(window[key], { media: true });
+        if (next) window[key] = next;
+      } catch (_) {}
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    var node = event.target;
+    var anchor = node && node.closest ? node.closest("a[href]") : null;
+    if (!anchor) return;
+    var href = anchor.getAttribute("href") || "";
+    if (!href || href.charAt(0) === "#" || /^javascript:/i.test(href)) return;
+    if (anchor.target && anchor.target !== "_self") return;
+    var next = proxiedUrl(href);
+    if (!next) return;
+    event.preventDefault();
+    window.location.href = next;
+  }, true);
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form || !form.tagName || form.tagName.toLowerCase() !== "form") return;
+    var method = String(form.getAttribute("method") || "get").toLowerCase();
+    if (method !== "get") return;
+    var action = form.getAttribute("action") || upstreamBase;
+    var next = proxiedUrl(action);
+    if (!next) return;
+    try {
+      var proxy = new URL(next);
+      var target = new URL(proxy.searchParams.get("url") || upstreamBase);
+      var data = new FormData(form);
+      data.forEach(function (value, key) {
+        target.searchParams.set(key, String(value));
+      });
+      proxy.searchParams.set("url", target.href);
+      event.preventDefault();
+      window.location.href = proxy.href;
+    } catch (_) {}
+  }, true);
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { scheduleHydrate(document); });
+  } else {
+    scheduleHydrate(document);
+  }
+  window.addEventListener("load", function () { scheduleHydrate(document); });
+  if (window.MutationObserver) {
+    new MutationObserver(function () { scheduleHydrate(document); }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
+  }
+})();
+</script>`;
+}
+
+function patchYinghuaHtml(html, targetHref, proxyBaseHref) {
+  const rewritten = patchYinghuaEmbeddedUrls(html, targetHref, proxyBaseHref);
+  const inject = `<base href="${escapeHtmlAttr(targetHref)}">\n${yinghuaCoverFixScript(targetHref, proxyBaseHref)}`;
+  if (/<head\b[^>]*>/i.test(rewritten)) {
+    return rewritten.replace(/<head\b[^>]*>/i, match => `${match}\n${inject}`);
+  }
+  return `${inject}\n${rewritten}`;
+}
+
+async function handleYinghuaProxy(request, url, origin) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonResponse({ error: "Method not allowed" }, { status: 405, origin });
+  }
+  let target;
+  try {
+    target = resolveYinghuaTarget(url.searchParams.get("url") || YINGHUA_DEFAULT_URL);
+  } catch (e) {
+    return jsonResponse({ error: String(e && e.message || e) }, { status: 400, origin });
+  }
+
+  try {
+    relaxLocalNodeTlsForYinghuaMedia(target);
+    const upstreamHeaders = {
+      "Accept": request.headers.get("Accept") || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": request.headers.get("Accept-Language") || "zh-CN,zh;q=0.9,en;q=0.8",
+      "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Referer": isYinghuaHost(target.hostname) ? YINGHUA_UPSTREAM_ORIGIN + "/" : target.origin + "/",
+    };
+    const range = request.headers.get("Range");
+    if (range) upstreamHeaders.Range = range;
+    const upstream = await fetch(target.href, {
+      method: request.method,
+      headers: upstreamHeaders,
+    });
+    const contentType = upstream.headers.get("Content-Type") || "";
+    const isHtml = contentType.includes("text/html");
+    const isM3u8 = contentType.includes("mpegurl") || /\.m3u8(?:$|[?#])/i.test(target.pathname);
+    const headers = new Headers({
+      "Content-Type": contentType || yinghuaFallbackContentType(target),
+      "Cache-Control": isHtml ? "no-store" : "public, max-age=600",
+      "X-Upstream-Status": String(upstream.status),
+      "X-Upstream-Host": target.host,
+      ...corsHeaders(origin),
+    });
+    for (const name of ["Accept-Ranges", "Content-Range", "Content-Length"]) {
+      const value = upstream.headers.get(name);
+      if (value && !isHtml && !isM3u8) headers.set(name, value);
+    }
+    headers.set("Access-Control-Expose-Headers", "X-Upstream-Status, X-Upstream-Host, Accept-Ranges, Content-Range, Content-Length");
+
+    if (request.method === "HEAD") {
+      return new Response(null, { status: upstream.status, headers });
+    }
+    const proxyBase = `${url.origin}/yinghua`;
+    if (isHtml) {
+      const text = await upstream.text();
+      return new Response(patchYinghuaHtml(text, target.href, proxyBase), {
+        status: upstream.status,
+        headers,
+      });
+    }
+    if (isM3u8) {
+      const text = await upstream.text();
+      return new Response(patchYinghuaM3u8(text, target.href, proxyBase), {
+        status: upstream.status,
+        headers,
+      });
+    }
+    return new Response(upstream.body, { status: upstream.status, headers });
+  } catch (e) {
+    return jsonResponse({ error: "Yinghua proxy fetch failed", detail: String(e && e.message || e) }, { status: 502, origin });
+  }
+}
+
 function route(url) {
   const p = url.pathname.replace(/\/+$/, "");
   if (p === "" || p === "/") return { kind: "web" };
@@ -2341,6 +2680,10 @@ export default {
 
     // ========== 小红书 Lite 桥接 (/api/<command>) ==========
     // 与 scripts/xhs-bridge.mjs 契约一致，前端 bridge 模式直接复用。
+    if (url.pathname.replace(/\/+$/, '') === '/yinghua') {
+      return handleYinghuaProxy(request, url, origin);
+    }
+
     const apiMatch = url.pathname.match(/^\/api\/(.+)$/);
     if (apiMatch) {
       const command = apiMatch[1].replace(/\/+$/, '');
