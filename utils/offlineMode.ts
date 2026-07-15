@@ -7,7 +7,14 @@ import { makeApiUsageMeta } from './apiUsageCatalog';
 import { extractTakeoutOrderDirective } from './takeout';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { isMessageSemanticallyRelevant, normalizeMessageContent } from './messageFormat';
-import { offlineTemporalBoundaryPrompt } from './laiwangPrompts';
+import {
+    offlineDirectOutputUserPrompt,
+    offlineModeBasePrompt,
+    offlineOpeningTaskPrompt,
+    offlineRecallQueryHint,
+    offlineTemporalBoundaryPrompt,
+    offlineTurnTaskPrompt,
+} from './laiwangPrompts';
 import type { PresetMacroCtx } from './presets';
 
 /**
@@ -651,7 +658,7 @@ interface OfflineApi {
     apiBinding?: string;
 }
 
-const OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮线下现场正文，不要前缀或解释。';
+const OFFLINE_DIRECT_OUTPUT_USER = offlineDirectOutputUserPrompt;
 const OFFLINE_LLM_CONTINUE_ROUNDS = 2;
 const OFFLINE_LLM_CONTINUE_TIMEOUT_MS = 45_000;
 const OFFLINE_RECENT_MESSAGE_LIMIT = 30;
@@ -763,11 +770,7 @@ const buildOfflineRecallQueryHint = (recentContext: OfflineRecentChatContext, sc
         .filter(Boolean)
         .slice(-8)
         .join('\n');
-    return [
-        '线下模式：当前要从线上聊天切换到面对面现场。检索与最新聊天、见面约定、已完成/未完成状态相关的记忆；旧食物、旧台词和旧外卖只作为背景，不要当成当前仍在发生。',
-        scenario?.trim() ? `这场见面方式：${scenario.trim().slice(0, 600)}` : '',
-        recentTail ? `带时间戳的线上聊天片段：\n${recentTail}` : '',
-    ].filter(Boolean).join('\n\n');
+    return offlineRecallQueryHint(recentTail, scenario);
 };
 
 const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile): Promise<string> => {
@@ -792,24 +795,12 @@ const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile
         userName: userProfile.name,
         latestMessageAge: recentContext.latestMessageAge,
     });
-    return `${core}
-
-### [最近的线上聊天]
-${recentContext.text}
-
-${temporalBoundary}
-
-### [线下模式]
-你们此前在线上聊天（见上面[最近的线上聊天]），现在对话发展到了见面情境，切换成线下面对面模式。
-**这场见面是上面那段线上聊天的直接延续**，请把它当成同一段关系、同一条时间线上的事：
-- 承接线上聊到的话题、约定、心情和未说完的话，自然延续，而不是另起一段毫无关联的剧情；
-- 记得你们线上是什么关系、聊到哪儿了，见面时的熟悉度、语气、称呼都要和线上一致；
-- 严格按[时间线与记忆边界]判断哪些内容是刚发生、哪些只是旧背景；不要把昨天或几天前已经吃过、说过、送过、结束过的东西重新写成当前现场正在发生；
-- 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开；
-- 现场反应要像真人刚碰面：先看见对方、听见周围声音、注意到衣着/气味/天气/手里的东西，再决定怎么开口或靠近，不要直接跳成总结、告白或大段独白；
-- 关系没到的地方不要硬亲密，性格克制的人可以尴尬、嘴硬、岔开，熟悉的人也可以用玩笑、沉默或顺手的小动作表达。
-- 如果确实需要使用系统指令（例如主动点饭票的 [[TAKEOUT_ORDER: ...]]），必须放在整段输出最后单独一行，不要写进角色台词或场景旁白里，也不要解释指令本身。
-接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。文字要自然、具体、有生活气，避免舞台剧报幕、小说腔排比和过度煽情。${clockBlock}`;
+    return offlineModeBasePrompt({
+        core,
+        recentContextText: recentContext.text,
+        temporalBoundary,
+        clockBlock,
+    });
 };
 
 // ── 线下开场白方式（见面是怎么开始的）──────────────────────────────
@@ -868,19 +859,16 @@ export const generateOfflineOpening = async (
     const rerollBlock = rerollPrevious?.trim()
         ? `\n### [这次是重写]\n上一版开场已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请保留同一场见面的基本关系和时间线，但换一种角度、动作和措辞重新写，不要照抄上一版，也不要故意反着写成突兀剧情。\n`
         : '';
-    return callLLM(api, `${base}
-
-${povText}
-${sceneFrame}
-${rerollBlock}
-### [任务]
-写出见面那一刻的开场（${lengthRange}）：
-${lengthRule}
-- 交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，但只写会被当场注意到的细节；
-- 承接最近线上聊天里的约定、情绪或未说完的话，让这场见面像顺着上一句聊天自然发生；
-- 写「${char.name}」见到 ${userProfile.name} 的第一反应：一个具体动作/神态 + 一句贴合人设的开口，可以短、可以别扭、可以有停顿；
-- 不要替 ${userProfile.name} 说话或行动，不要把双方关系突然推进到人设不支持的亲密程度。
-按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
+    return callLLM(api, offlineOpeningTaskPrompt({
+        base,
+        povText,
+        sceneFrame,
+        rerollBlock,
+        lengthRange,
+        lengthRule,
+        charName: char.name,
+        userName: userProfile.name,
+    }), 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
 };
 
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
@@ -900,24 +888,17 @@ export const generateOfflineTurn = async (
     const rerollBlock = rerollPrevious?.trim()
         ? `\n### [这次是重写]\n上一版续写已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请基于同一个现场重新接这一拍，保留前文事实和用户刚刚的行动/发言，但换一种更自然的反应、动作和措辞，不要照抄上一版。\n`
         : '';
-    return callLLM(api, `${base}
-
-${povText}
-
-### [线下现场已发生的情景]
-${transcript || '（刚见面）'}
-
-${tail}
-${rerollBlock}
-
-### [任务]
-以「${char.name}」的身份续写现场接下来的一小段（${lengthRange}）：
-${lengthRule}
-- 先回应 ${userProfile.name} 刚刚的行动/发言，再用一个很小的动作、神态或环境细节把现场往前推；
-- 台词像真人面对面说话，可以短句、停顿、没说完、临时改口，不要每次都工整抒情；
-- 可以让「${char.name}」主动做点符合人设的事（递东西、让路、靠近/退开、转移话题、带着走），但不要替 ${userProfile.name} 说话或行动；
-- 保持当前关系的边界和熟悉度，不要硬转暧昧、硬制造冲突，也不要把现场写成剧情总结。
-按上面 [叙述人称] 的要求叙述，直接输出正文，不要任何前缀或解释。`, 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
+    return callLLM(api, offlineTurnTaskPrompt({
+        base,
+        povText,
+        transcript,
+        tail,
+        rerollBlock,
+        lengthRange,
+        lengthRule,
+        charName: char.name,
+        userName: userProfile.name,
+    }), 0.9, { charName: char.name, userName: userProfile.name || '你' }, char, outputBudget);
 };
 
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */

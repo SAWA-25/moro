@@ -15,6 +15,12 @@ import { completeText } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import type { PresetMacroCtx } from './presets';
 import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
+import {
+  groupOfflineBasePrompt,
+  groupOfflineDirectOutputUserPrompt,
+  groupOfflineOpeningTaskPrompt,
+  groupOfflineTurnTaskPrompt,
+} from './laiwangPrompts';
 
 export interface GroupOfflineSceneEntry {
   role: 'scene';
@@ -138,7 +144,7 @@ interface GroupOfflineApi {
 }
 
 // 群聊线下赴约默认走文具盒主 API / 主模型，让群体现场和主聊天保持同一套角色声音。
-const GROUP_OFFLINE_DIRECT_OUTPUT_USER = '请根据上面的全部规则，直接输出本轮群体线下现场正文，不要前缀或解释。';
+const GROUP_OFFLINE_DIRECT_OUTPUT_USER = groupOfflineDirectOutputUserPrompt;
 const GROUP_OFFLINE_LLM_CONTINUE_ROUNDS = 2;
 const GROUP_OFFLINE_LLM_CONTINUE_TIMEOUT_MS = 45_000;
 
@@ -226,22 +232,13 @@ const buildGroupOfflineBase = async (
   const recent = await DB.getGroupMessages(group.id).catch(() => [] as Message[]);
   const userName = userProfile.name || '你';
   const userSetting = await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` });
-  return `### [群聊线下面对面模式]
-群聊：${group.name}
-${userSetting}
-
-### [群成员]
-${formatRoster(group, members)}
-
-### [最近的线上群聊]
-${formatRecentGroupMessages(recent, group, members, userName)}
-
-### [线下模式规则]
-这场群体见面是上面线上群聊的直接延续，不是独立番外。请延续最近聊到的话题、玩笑、约定、情绪和未说完的 tension，让大家像真的从群聊走到现场。
-- 谁接话由性格、关系和刚才的话题决定；不需要每位成员轮流发言，也不要强行全员有戏；
-- 群聊现场要有生活感：到场顺序、座位/站位、身边声音、尴尬停顿、有人插话、有人只做小动作，都可以自然出现；
-- 不要把线下聚会写成会议纪要、剧情总结或整齐的舞台调度；
-- 不要替 ${userName} 说话或行动，除非已有记录里明确写过。`;
+  return groupOfflineBasePrompt({
+    groupName: group.name,
+    userName,
+    userSetting,
+    roster: formatRoster(group, members),
+    recentMessages: formatRecentGroupMessages(recent, group, members, userName),
+  });
 };
 
 export const generateGroupOfflineOpening = async (
@@ -264,20 +261,16 @@ export const generateGroupOfflineOpening = async (
   const rerollBlock = rerollPrevious?.trim()
     ? `\n### [这次是重写]\n上一版群体开场已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请保留同一场赴约的基本关系和时间线，但换一种现场切入、成员反应和措辞重新写，不要照抄上一版，也不要故意反着写成突兀剧情。`
     : '';
-  return callGroupOfflineLLM(api, `${base}
-
-${buildGroupPovInstruction(pov, userProfile.name || '你')}
-${scenarioBlock}
-${rerollBlock}
-
-### [任务]
-写出群体线下面对面见面的开场（${lengthRange}）：
-${lengthRule}
-- 交代地点、氛围、谁已经到了/谁刚到，但只写现场会注意到的具体细节；
-- 至少让一位最适合接这个场的人有反应，可以是台词、小动作、插科打诨或沉默；
-- 承接最近群聊里的话题或约定，让这场见面像自然落地；
-- 不要替 ${userProfile.name || '你'} 说话或行动，不要让所有成员机械轮流亮相。
-只输出现场正文，不要前缀或解释。`, 0.9, { charName: group.name, userName: userProfile.name || '你' }, outputBudget);
+  const userName = userProfile.name || '你';
+  return callGroupOfflineLLM(api, groupOfflineOpeningTaskPrompt({
+    base,
+    povText: buildGroupPovInstruction(pov, userName),
+    scenarioBlock,
+    rerollBlock,
+    lengthRange,
+    lengthRule,
+    userName,
+  }), 0.9, { charName: group.name, userName }, outputBudget);
 };
 
 export const generateGroupOfflineTurn = async (
@@ -303,25 +296,16 @@ export const generateGroupOfflineTurn = async (
   const rerollBlock = rerollPrevious?.trim()
     ? `\n### [这次是重写]\n上一版续写已经被用户撤回：\n${rerollPrevious.trim().slice(0, 1200)}\n请基于同一个现场重新接这一拍，保留前文事实和用户刚刚的行动/发言，但换一种更自然的成员反应、动作和措辞，不要照抄上一版。`
     : '';
-  return callGroupOfflineLLM(api, `${base}
-
-${buildGroupPovInstruction(pov, userName)}
-
-### [线下现场已发生]
-${transcript || '（大家刚刚见面）'}
-
-### [用户刚刚的行动]
-${action}
-${rerollBlock}
-
-### [任务]
-续写接下来的一小段群体现场互动（${lengthRange}）：
-${lengthRule}
-- 先回应 ${userName} 刚刚的行动/发言，没人需要回应时就让现场自然流动；
-- 让一位或几位最适合的人接话，不要强行全员轮流，不要写成主持人总结；
-- 可以穿插小动作、视线、停顿、身边环境和成员之间的打岔，但要短、具体、像真人聚在一起；
-- 不要替 ${userName} 说话或行动，不要突然推进不符合关系的亲密或冲突。
-只输出续写正文，不要前缀或解释。`, 0.9, { charName: group.name, userName }, outputBudget);
+  return callGroupOfflineLLM(api, groupOfflineTurnTaskPrompt({
+    base,
+    povText: buildGroupPovInstruction(pov, userName),
+    transcript,
+    action,
+    rerollBlock,
+    lengthRange,
+    lengthRule,
+    userName,
+  }), 0.9, { charName: group.name, userName }, outputBudget);
 };
 
 export const commitGroupOfflineSessionToContext = async (

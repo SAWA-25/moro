@@ -15,6 +15,7 @@ import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { buildFullCharacterSetting, buildFullActiveUserSetting } from './characterPromptProfile';
+import { unblockAppealPrompt } from './laiwangPrompts';
 
 const MIN = 60 * 1000;
 
@@ -79,12 +80,14 @@ export async function generateUnblockAppeal(args: {
     const moodHint = rejectedCount === 0
         ? '这是你第一次申诉，可以委屈、解释、道歉或撒娇。'
         : `你已经被拒绝 ${rejectedCount} 次了，但你不死心。可以更卑微、更执拗、或带点赌气，但仍想被原谅。`;
-    const prompt = `你正在扮演「${char.name}」。\n${buildFullCharacterSetting(char, { includeMemos: true })}\n\n${await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` })}\n\n`
-        + `情境：${userName} 把你拉黑了，你发的消息都显示「发送失败」。但你不甘心，想发一条「解除拉黑验证」请求，求对方把你放回来。\n`
-        + `${args.recentContext?.trim() ? `拉黑前后能想起的最近聊天片段（只作语气与矛盾参考，不要逐字复述）：\n${args.recentContext.trim().slice(0, 900)}\n` : ''}`
-        + `${moodHint}\n\n`
-        + `要求：用第一人称、口语，像真的在对 ${userName} 说话；1~2 句、简短真挚，完全贴合你的人设语气；`
-        + `只输出这句话本身，不要旁白、不要解释、不要引号、不要任何标签。`;
+    const prompt = unblockAppealPrompt({
+        charName: char.name,
+        userName,
+        characterSetting: buildFullCharacterSetting(char, { includeMemos: true }),
+        userSetting: await buildFullActiveUserSetting(userProfile, { fallback: `用户名：${userName}` }),
+        recentContext: args.recentContext,
+        moodHint,
+    });
 
     try {
         const data = await callChatCompletion(api, {

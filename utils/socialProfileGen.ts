@@ -3,6 +3,7 @@ import { extractContent } from './safeApi';
 import { callChatCompletion } from './llmClient';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { buildFullCharacterSetting } from './characterPromptProfile';
+import { characterSocialProfilePrompt } from './laiwangPrompts';
 
 /**
  * 角色主页「微信号 / 地区 / 个性签名」AI 生成。
@@ -42,20 +43,7 @@ export const generateSocialProfile = async (
         char.socialProfile?.bio ? `已有签名(供参考语气): ${char.socialProfile.bio}` : '',
     ].filter(Boolean).join('\n');
 
-    const prompt = `### 任务
-为下面这个角色生成 ta 的微信个人资料，要贴合人设、像真人随手设置的，不要太刻意。
-
-### 角色档案
-${persona}
-
-### 要求
-- handle: 微信号。字母开头，6~20 位，只能用字母/数字/下划线/减号。常见套路：名字拼音/英文名 + 随手数字、生日、谐音梗等
-- region: 地区。格式「省份 城市」（中间一个空格），如「安徽 亳州」「广东 深圳」；若角色明显是海外背景可用「国家 城市」。架空/异世界角色就挑一个气质最接近的现实地区
-- bio: 个性签名。一句话（30 字以内），贴合角色性格与说话风格，可以有点小情绪或小心思，别写成自我介绍
-
-### 输出
-只输出一个 JSON 对象，不要任何其它文字：
-{"handle": "...", "region": "...", "bio": "..."}`;
+    const prompt = characterSocialProfilePrompt(persona);
 
     const data = await callChatCompletion(apiConfig, {
         model: apiConfig.model,

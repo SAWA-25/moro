@@ -11,6 +11,7 @@ import { CharacterProfile } from '../types';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { buildFullCharacterSetting } from './characterPromptProfile';
+import { characterAppearanceTagsPrompt } from './laiwangPrompts';
 
 export interface AppearanceApiConfig {
     baseUrl: string;
@@ -54,16 +55,7 @@ export async function generateAppearanceTags(
 ): Promise<string | null> {
     const source = buildAppearanceSourceText(char);
 
-    const prompt = `你是文生图标签（booru / danbooru 风格）提炼助手。下面是角色「${char.name}」的人设与绑定世界书，请据此提炼 TA 的**外貌**标签。
-
-${source || '（资料不多，凭名字与常识给出合理且中性的外貌标签。）'}
-
-要求：
-1. 只输出**外貌相关**的标签：性别、发色发型、瞳色、肤色、体型身高气质、显著面部特征、惯常服饰与配饰、表情气场等。不要剧情、性格、能力、场景标签。
-2. 全部用**英文小写**，booru 习惯（用下划线或空格都行），如 long_hair, silver eyes, black coat。
-3. 用**英文逗号**分隔，一行输出，12-25 个标签为宜。
-4. 只从资料中**有依据**地提取；资料没提到的别硬编，可给中性合理项，不要互相矛盾。
-5. 直接输出标签本身，不要前言、不要解释、不要代码块、不要编号。`;
+    const prompt = characterAppearanceTagsPrompt(char.name, source);
 
     try {
         const data = await callChatCompletion(api, {

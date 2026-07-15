@@ -3,6 +3,7 @@ import { ContextBuilder } from './context';
 import { callChatCompletion } from './llmClient';
 import { extractContent } from './safeApi';
 import { makeApiUsageMeta } from './apiUsageCatalog';
+import { dailyParcelDraftPrompt, dailyParcelRoleSystemPrompt } from './laiwangPrompts';
 
 export interface DailyParcelPreset {
     name: string;
@@ -194,38 +195,19 @@ export async function generateCharacterParcelDraft(input: {
 
     try {
         const coreContext = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
-        const requestHint = sanitizeParcelNote(input.requestHint);
-        const task = mode === 'travel_frog'
-            ? `你是「${char.name}」。现在采用「蛙游收件」模式：像《旅行青蛙》那样，你在自己的日常外出、短途游走、工作/修行/散步/旅途中，顺手给 ${userName} 寄回一件小东西。
-这不是用户下单、不是心意铺、不是电商购物、不是虚拟余额消费，也不要写价格、订单号或平台术语。重点是“TA 不一定一直在线陪用户，但会从自己的生活路上寄回一点痕迹”：可以是明信片、票根、当地点心、贝壳、照片、小徽章、便签、路边小花等，也可以按角色时代/世界观换成合理物件。
-${requestHint ? `用户给了一个出门/收件提示：「${requestHint}」。你可以顺着它，也可以按你的人设和旅途见闻稍微偏一点。` : '请按你的完整角色设定、生活半径、世界观、你和用户的关系、最近聊天氛围自己决定去了哪里、寄回什么。'}`
-            : mode === 'proactive'
-                ? `你是「${char.name}」。现在采用「主动寄来」模式：不是 ${userName} 开口索要，也不是用户下单，而是你在自己的日常里突然想到 ${userName}，主动给对方寄一件很像你会送出的小东西。
-这不是心意铺、不是电商购物、不是虚拟余额消费，也不要写价格、订单号或平台术语。重点是“你主动想起对方”：可以是你顺手留的、刚好多出来的、觉得对方会用上的、想安慰/逗一下/照顾一下对方的小物件。要按完整角色设定、关系和最近聊天氛围决定，不要写成用户要求你寄。
-${requestHint ? `这里有一个氛围或偏好提示：「${requestHint}」。它只是参考，不代表用户点名索要。` : '请自己决定寄什么和为什么寄。'}`
-            : `你是「${char.name}」。现在你想通过絮语回形针里的「寄东西」给 ${userName} 寄一件很日常、很像你会想到的小东西。
-这不是心意铺、不是电商购物、不是虚拟余额消费，也不要写价格、订单号或平台术语。它可以是顺手带的、家里多出来的、你特地留的、托人带来的、快递寄来的小物件。
-${requestHint ? `用户给了一个提示或愿望：「${requestHint}」。你可以顺着它，也可以按你的人设稍微偏一点。` : '请按你的完整角色设定、你和用户的关系、最近聊天氛围自己挑。'}`;
-
-        const outputSchema = mode === 'travel_frog'
-            ? '{"itemName":"物件名，2-16字","emoji":"一个合适 emoji","method":"寄法或交付方式，8字内","originLabel":"从哪里寄来，4-18字","travelSnippet":"路上见闻或为什么寄它，12-36字","note":"你写给对方的一句附言，第一人称，8-40字"}'
-            : '{"itemName":"物件名，2-16字","emoji":"一个合适 emoji","method":"寄法或交付方式，8字内","note":"你写给对方的一句附言，第一人称，8-40字"}';
-
-        const prompt = `${coreContext}
-
-### 最近聊天片段
-${input.recentSummary?.trim() || '（最近没有更多聊天片段。）'}
-
-### 任务：${mode === 'travel_frog' ? '蛙游收件' : mode === 'proactive' ? '主动寄来' : '日常寄物'}
-${task}
-
-只输出 JSON，不要 markdown，不要解释：
-${outputSchema}`;
+        const prompt = dailyParcelDraftPrompt({
+            coreContext,
+            charName: char.name,
+            userName,
+            mode,
+            requestHint: sanitizeParcelNote(input.requestHint),
+            recentSummary: input.recentSummary,
+        });
 
         const data = await callChatCompletion(api, {
             model: api.model,
             messages: [
-                { role: 'system', content: `你正在扮演「${char.name}」，必须保持角色口吻与关系自洽。` },
+                { role: 'system', content: dailyParcelRoleSystemPrompt(char.name) },
                 { role: 'user', content: prompt },
             ],
             temperature: 0.85,

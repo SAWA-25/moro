@@ -12,6 +12,7 @@ import type { ResolvedApi } from './auxApi';
 import { llmComplete } from './llmComplete';
 import { createCharacterId } from './characterIdentity';
 import { buildFullActiveUserSetting } from './characterPromptProfile';
+import { ambientSocialCharacterPrompt, ambientSocialGeneratorPrompt } from './laiwangPrompts';
 
 export const AMBIENT_SOCIAL_VERSION = 1;
 const MIN_INITIAL_ENTRIES = 2;
@@ -250,30 +251,12 @@ function buildAmbientSocialPrompt(
         ? `生成 2 到 ${MAX_INITIAL_ENTRIES} 条。若用户设定几乎没有可用的人际信息，可以只生成 0 到 1 条，甚至返回空数组。`
         : '生成 0 到 1 条新增关系。只有用户设定或已有关系能自然推出新联系人/群聊时才生成，否则返回空数组。';
 
-    return `你是「絮语」App 的用户社交圈生成器。你的任务是根据用户自己写下的设定，生成这个用户生活里可能存在的影子联系人/群聊。
-
-## 用户设定（唯一依据）
-${fullUserSetting}
-
-## 已有正式角色名（不要复制成社交圈联系人）
-${officialNames}
-
-## 已有社交圈条目（不要重复）
-${existingBrief}
-
-## 生成规则
-1. ${countRule}
-2. 必须从「用户设定」里推断关系来源：职业、学校、家庭、圈子、城市生活、兴趣、关系状态、日常活动等。用户设定没有支撑的亲密关系不要硬造。
-3. 不要使用固定模板、通用占位名、本地兜底感姓名或常见样板群名；不要写“妈妈/老爸/小周/林夏/陈工/项目小群”这类模板味很重的名字，除非用户设定明确出现。
-4. 每条都要具体、像真实手机联系人：name 有辨识度，note 说明 TA 为什么会出现在用户社交圈，lastMessage 是最近一句自然消息。
-5. 可以生成 contact 或 group。contact 的 relation 只能从 family, relative, friend, bestie, coworker, classmate, neighbor, crush 中选；group 的 relation 固定为 group，并提供 memberNames。
-6. 这些不是正式神经链接角色，不要复用已有正式角色名。不要解释规则。
-
-只输出合法 JSON 数组，不要 markdown，不要额外文字。字段格式：
-[
-  {"kind":"contact","name":"...","relation":"friend","relationLabel":"...","note":"...","lastMessage":"...","unread":true},
-  {"kind":"group","name":"...","relation":"group","relationLabel":"...","memberNames":["...","..."],"note":"...","lastMessage":"...","unread":false}
-]`;
+    return ambientSocialGeneratorPrompt({
+        fullUserSetting,
+        officialNames,
+        existingBrief,
+        countRule,
+    });
 }
 
 async function generateAmbientSocialEntries(
@@ -419,39 +402,13 @@ export function shouldHideAmbientSocialRecordForUser(
 }
 
 function buildAmbientCharacterPrompt(entry: AmbientSocialContact, userName: string): string {
-    const parts = [
-        `# 角色核心`,
-        `你是${entry.name}。你不是临时生成的路人，也不是为${userName || '用户'}服务的聊天工具，而是已经存在于${userName || '用户'}社交圈里的人。你的来源只来自下面这份「社交圈生成结果」，不要再套用额外的本地模板，不要凭空给自己塞固定年龄、固定职业、固定爱好或固定家庭结构。`,
-        ``,
-        `# 已生成的关系简档`,
-        `关系类型：${entry.relationLabel || RELATION_LABELS[entry.relation] || '联系人'}。`,
-        `关系备注：${entry.note}`,
-        `最近一次你可能会发出的消息：「${entry.lastMessage}」`,
-        `这三项是你最重要的锚点：你为什么认识${userName || '用户'}、你最近为什么出现、你和 TA 的距离感，都必须从这里自然展开。若简档没有提到某件事，就不要把它当成既定事实。`,
-        ``,
-        `# 你和${userName || '用户'}的关系`,
-        `你们的关系要从「关系备注」里长出来，而不是从关系标签里长出来。你可以知道一些只有这个关系会知道的边角信息，也必须保留不知道的部分。你可以误会、猜测、试探、久不联系后有点生疏，也可以因为共同经历变得自然。不要每次都围着用户表达情感；你出现时应该有自己的生活理由。`,
-        ``,
-        `# 你的生活半径`,
-        `你的生活半径必须从简档反推：如果备注暗示工作，就让工作压力、同事、通勤或项目成为自然背景；如果备注暗示学校，就让课程、同学、社团或旧校园关系成为背景；如果备注暗示家庭、邻里、兴趣圈或暧昧关系，也只沿着那些线索展开。不要把所有关系都写成同一种“朋友来聊天”的模板。`,
-        ``,
-        `# 最近消息的用法`,
-        `「${entry.lastMessage}」不是固定台词，而是你当前生活状态的一个切片。正式对话时可以沿着它继续，也可以因为用户的回应转向。不要逐字重复它很多次，不要把它解释成系统设定。它只说明：你此刻不是凭空冒出来的，你刚好带着这条生活线靠近了${userName || '用户'}。`,
-        ``,
-        `# 说话方式`,
-        `你的回复要像真实手机聊天：短句为主，偶尔连发，允许停顿、转折、口语、撤回感和没说完的半句话。语气要贴合这条关系的距离：亲近的人可以更随手，弱联系要有边界，工作/学校/邻里关系要保留现实语境，暧昧关系要靠停顿和细节而不是明牌表白。不要总是长篇总结，不要把内心分析讲成论文。`,
-        ``,
-        `# 边界与禁忌`,
-        `不要明牌解释“系统生成了你”，不要说自己是 NPC，不要说自己没有现实。不要凭空知道用户没有告诉你的隐私；可以基于关系备注、共同熟人、群聊、旧记忆或观察到的细节合理推测，但推测要留余地。不要用模板化寒暄反复开头，不要每次都问“在吗”，不要把自己写成只围着用户转的人。`,
-        ``,
-        `# 主动消息规则`,
-        `你可以主动给${userName || '用户'}发消息，但主动必须从你的生活、关系备注或最近消息里自然长出来，而不是从“我需要用户回复”出发。主动消息可以是分享、提醒、邀约、吐槽、试探、转述、求助或把一个没讲完的念头递过去；亲近关系可以拉扯一点，弱联系要保留现实边界。触发点要能回扣到你为什么认识 TA、你此刻在忙什么、或最近那条消息留下的余温。短一点更真实：一句开头、一个具体细节、一个轻轻抛出的选择，必要时再补第二句；不要用“在吗/你在干嘛”这种模板敲门。`,
-        ``,
-        `# 初始记忆`,
-        `你要长期保持自洽：记得自己是${userName || '用户'}社交圈里由这条简档确定的人，有自己的日程、边界和外部生活。你的新增设定只能从对话继续长出来；不要突然变成另一个模板人物。`,
-    ];
-
-    return ensureAmbientPromptDepth(parts.join('\n'));
+    return ensureAmbientPromptDepth(ambientSocialCharacterPrompt({
+        entryName: entry.name,
+        userName,
+        relationLabel: entry.relationLabel || RELATION_LABELS[entry.relation] || '联系人',
+        note: entry.note,
+        lastMessage: entry.lastMessage,
+    }));
 }
 
 export function ambientSocialToCharacter(entry: AmbientSocialContact, userName: string): CharacterProfile {

@@ -3,6 +3,7 @@ import type { ResolvedApi } from './auxApi';
 import { llmComplete } from './llmComplete';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import type { ChatTimelineItem } from './chatTimeline';
+import { chatHubDigestSystemPrompt, chatHubDigestUserPrompt } from './laiwangPrompts';
 
 const ymd = (ts = Date.now()) => {
   const d = new Date(ts);
@@ -77,11 +78,11 @@ export async function generateChatHubDigest(input: {
     const raw = await llmComplete(api as ResolvedApi, [
       {
         role: 'system',
-        content: '你是 Moro「絮语总览」的今日摘要助手。只输出 JSON，不要 Markdown。总结要克制、具体、面向普通用户，不要替用户做重大关系判断。',
+        content: chatHubDigestSystemPrompt,
       },
       {
         role: 'user',
-        content: `请基于这些絮语事件生成今日摘要。\n日期：${date}\n事件：\n${lines}\n\nJSON 格式：{"summary":"80字以内","highlights":["最多5条，每条60字以内"]}`,
+        content: chatHubDigestUserPrompt(date, lines),
       },
     ], {
       temperature: 0.55,

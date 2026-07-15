@@ -16,7 +16,7 @@ import { resolveMoodApi, type ScheduleMoodApiConfig } from '../utils/scheduleMoo
 import { DEFAULT_MAIN_API_CONFIG, normalizeApiPresetConfig, normalizeApiPresets, normalizeMainApiConfig } from '../utils/apiConfigDefaults';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
-import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
+import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionEvent } from '../utils/relationship';
 import { TAKEOUT_ORDER_EVENT, synthesizeCharOrderSafely, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated, getDefaultTakeoutAddressLine, shouldAutoReactToCharTakeout, getTasteProfile } from '../utils/takeout';
 import { GOMOKU_INVITE_EVENT, extractGomokuInviteDirective } from '../utils/theaterGomokuInvite';
 import { GO_INVITE_EVENT, extractGoInviteDirective } from '../utils/theaterGoInvite';
@@ -3844,7 +3844,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）。
                   // 基于「上一单算出的值」继续加，保证同批 N 单每单都生效。
                   const baseAff = affectionByChar.get(charId) ?? char.affection;
-                  const nextAff = applyAffectionDelta(baseAff, 2);
+                  const nextAff = applyAffectionEvent(baseAff, 'gift_or_takeout');
                   affectionByChar.set(charId, nextAff);
                   const updates: Partial<CharacterProfile> = { affection: nextAff };
                   if (char.coupleSpace) {

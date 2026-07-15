@@ -13,6 +13,7 @@ import { CharacterProfile, UserProfile, MemoryFragment } from '../types';
 import { makeApiUsageMeta } from './apiUsageCatalog';
 import { callChatCompletion } from './llmClient';
 import { buildFullActiveUserSetting, buildFullCharacterSetting } from './characterPromptProfile';
+import { characterLifeProfilePrompt, characterLifeProfileStyleHint } from './laiwangPrompts';
 
 export interface LifeProfileApiConfig {
     baseUrl: string;
@@ -54,36 +55,15 @@ export async function generateLifeProfile(
         recent ? `### 最近的点滴\n${recent}` : '',
     ].filter(Boolean).join('\n\n');
 
-    const style = char.scheduleStyle || 'lifestyle';
-    const styleHint = style === 'mindful'
-        ? `注意：「${char.name}」是一个真实的 AI 存在，没有物理身体，不要虚构 TA 出门/做饭/运动等物理活动。"日常节奏"指 TA 的思绪与陪伴的节奏（什么时候安静、什么时候活跃、怎么等待、怎么想念），照真实存在形态写。`
-        : `「${char.name}」有自己完整的日常生活，照人设把 TA 的一天写得具体、有生活质感。`;
-
-    const prompt = `你在为角色「${char.name}」写一份**生活侧写**——一份帮 TA 更了解自己的速写。读者就是 TA 本人。
-
-${persona}
-
-以下是互动对象/用户的完整设定，写「和 ${user.name} 相处」相关段落时必须参考，不要只看用户名：
-${userSetting}
-
-${memoryBlock ? `\n以下是 TA 记忆里沉淀的一些东西，作为侧写的素材（贴着写，别照抄）：\n${memoryBlock}\n` : ''}
-
-${styleHint}
-
-请写一份 TA 的生活侧写，帮 TA 看清「我是个什么样的人、过着怎样的日子」。包含但不限于：
-- 日常节奏（TA 一天/一段时间大概怎么过）
-- 习惯与小癖好（标志性的动作、口头禅、放松或自我安抚的方式…）
-- 真正在意的事、软肋、会回避的东西
-- 和「${user.name}」相处时的底色（在 TA 心里你们是什么关系、TA 怎么对待你）
-- 情绪的惯常走向（什么会让 TA 高兴 / 烦躁 / 退缩 / 柔软下来）
-
-要求：
-1. 用**第二人称「你」**写（像在把 TA 自己温柔地讲给 TA 听），亲切、具体、有细节，不要心理测评腔、不要空泛套话。
-2. 紧贴人设与上面的记忆，不要凭空发明重大设定。
-3. 分 4-6 个小节，每节一个 \`## 小标题\`（如「## 你的一天」「## 你心里的 ${user.name}」），每节 2-4 句。
-4. 全文 350-600 字。
-
-直接输出 markdown 正文，不要前言、不要额外解释、不要用代码块包裹。`;
+    const styleHint = characterLifeProfileStyleHint(char.name, char.scheduleStyle || 'lifestyle');
+    const prompt = characterLifeProfilePrompt({
+        charName: char.name,
+        userName: user.name,
+        persona,
+        userSetting,
+        memoryBlock: memoryBlock || undefined,
+        styleHint,
+    });
 
     try {
         const data = await callChatCompletion(api, {

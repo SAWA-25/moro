@@ -33,6 +33,7 @@ import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 import { callChatCompletion } from '../utils/llmClient';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { buildFullCharacterSetting, buildFullActiveUserSetting } from '../utils/characterPromptProfile';
+import { characterImportMemoriesPrompt, characterMemoryMonthlyRefineSystemPrompt } from '../utils/laiwangPrompts';
 
 // ── 剪影集专属胶片资料册色板：冷雾白 + 鼠尾草绿 + 胶片灰 ──
 const INK = '#2f3432';
@@ -479,13 +480,12 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
       //   (A) 任务声明放最前，明确这是总结不是角色扮演
       //   (B) 拆 system+user：规则/身份/任务走 system，原始日记走 user，
       //       让模型看清哪段是指令、哪段是数据
-      const taskPreamble = `### 任务（最优先，请先读此段再读后文）
-你正在执行"月度记忆精炼"：把 user 消息里提供的【${year}-${month} 每日记忆碎片】压缩成一份简洁的月度核心记忆。
-这是**总结写作任务**，不是角色扮演对话——不要进入聊天模式、不要等待对方发言、不要只输出空白或沉默，直接输出总结正文。`;
-
-      const systemContent = formattedPrompt
-          ? `${taskPreamble}\n\n### 角色视角（仅供写作口吻参考）\n${identityContext}### 详细规则与输出格式\n${formattedPrompt}`
-          : `${taskPreamble}\n\n### 角色视角（仅供写作口吻参考）\n${identityContext}### 详细规则\n以该角色的第一人称写作，使用与日记相同的语言（中文），输出一段精简的月度核心记忆。`;
+      const systemContent = characterMemoryMonthlyRefineSystemPrompt({
+          year,
+          month,
+          identityContext,
+          formattedPrompt,
+      });
       const userContent = rawText;
 
       const t0 = performance.now();
@@ -650,7 +650,7 @@ const Character: React.FC<{ onExit?: () => void; manualTarget?: { anchorId?: str
       setImportStatus('正在分析旧文本，请稍等…');
 
       try {
-          const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`;
+          const prompt = characterImportMemoriesPrompt(importText);
           const data = await callChatCompletion(auxApi, {
               model: auxApi.model,
               messages: [{ role: "user", content: prompt }],

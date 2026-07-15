@@ -21,10 +21,12 @@ import {
   charPhoneCheckFollowupPrompt,
   charPhoneCheckScriptGuard,
   convoLines,
+  innerVoicePromptBody,
   liveGroupModePromptBlock,
   livePrivateDraftPromptBody,
   proactiveFallbackHint,
   proactivePendingReplyHint,
+  relationshipBlock,
   shopGiftReplyHint,
   swOfflineProactiveSystemPrompt,
   userScreenWatchCommentSystemPrompt,
@@ -380,6 +382,35 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('不要默认去朋友圈');
     expect(text).toContain('不要把查岗目标写成发动态');
     expect(text).toContain('极少数情况下');
+  });
+
+  it('keeps affection prompts stable, gradual, and non-servile', () => {
+    const relationship = relationshipBlock({
+      userName: '小夏',
+      relationshipLabel: '暧昧对象',
+      affection: 88,
+      marriageActive: false,
+    });
+    const innerVoice = innerVoicePromptBody({
+      charName: '阿迟',
+      recent: '小夏：今天有点想你\n阿迟：……嗯。',
+      currentAffection: 72,
+      relLine: '你和用户当前的关系是「好友」（close）。',
+      curStage: 'close',
+      curLabel: '好友',
+    });
+
+    expect(relationship).toContain('当前好感档位：牵挂');
+    expect(relationship).toContain('好感不是“用户表现评分”');
+    expect(relationship).toContain('不是“服从度”');
+    expect(relationship).toContain('长期情绪账户');
+    expect(relationship).toContain('数字高，不代表你要每次温柔满分');
+    expect(relationship).toContain('事件尺度请克制');
+    expect(innerVoice).toContain('好感评估细则');
+    expect(innerVoice).toContain('普通礼貌、顺从、寒暄、单次夸奖通常不该超过 ±2');
+    expect(innerVoice).toContain('投喂/礼物/一句贴心话通常是 +1~2');
+    expect(innerVoice).toContain('decisive=true 只给真正改变关系结构的事');
+    expect(innerVoice).toContain('如果最近对话素材不足，就保守维持');
   });
 
   it('includes shop gift ritual and wishlist context for shop replies', () => {

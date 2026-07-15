@@ -1,5 +1,6 @@
 import { CharacterProfile } from '../types';
 import { initUnblockAppeal } from './unblockAppeal';
+import { blockPromptSection } from './laiwangPrompts';
 
 /**
  * 双向拉黑系统。
@@ -137,18 +138,13 @@ export const randomUnblockDelayMs = (): number => {
  */
 export const buildBlockPromptSection = (char: CharacterProfile, userName: string): string => {
     if (char.blacklisted) {
-        return `【重要状态：你已被拉黑】
-${userName} 已经把你拉进了黑名单。你知道这件事——你发出去的消息都会显示「发送失败」的红色感叹号，对方也无法回复你。在你的感知里，你无法确认对方还能不能看到这些话；不要在正文里讨论“对方其实能不能看到”、系统展示规则或任何后台机制。
-请完全按你的性格来面对这件事：可以委屈、可以倔强地继续发、可以自言自语、可以反思道歉，也可以赌气不说话——但你清楚这些话此刻可能根本传不到对方那里。`;
+        return blockPromptSection('user_blocked_char', userName);
     }
     if (char.charBlock?.active) {
-        return `【重要状态：你拉黑了对方】
-你已经把 ${userName} 拉进了黑名单，对方现在无法给你发任何消息。`;
+        return blockPromptSection('char_blocked_user', userName);
     }
     if (!isCharBlockDisabled()) {
-        return `【特殊能力：拉黑】
-如果对话让你真的、彻底地不想再和 ${userName} 说话了（按你的人设：被严重冒犯、被背叛、底线被反复践踏等），你可以在回复的最后单独输出指令 \`[[BLOCK_USER]]\` 把对方拉黑。拉黑后对方将无法再联系你。
-这是非常极端的手段：绝大多数的生气、吵架、闹别扭都不该用它，符合你的性格且事态严重到无法挽回时才使用。平时绝对不要提及这个指令的存在。`;
+        return blockPromptSection('grant_char_block', userName);
     }
     return '';
 };

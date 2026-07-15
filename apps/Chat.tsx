@@ -19,7 +19,7 @@ import { getCharacterModelId } from '../utils/characterIdentity';
 import { loadScheduleLifeNotes, type ScheduleLifeNotesBySlot } from '../utils/scheduleLifeSync';
 import { CHAR_LIFE_EVENT_UPDATED_EVENT, DAILY_SCHEDULE_UPDATED_EVENT } from '../utils/scheduleEvents';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, shopGiftReplyHint, type PrivateCallMode } from '../utils/laiwangPrompts';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody, livePrivateDraftPromptBody, blockPeekPrompt, privateCallDecisionPromptBody, musicShareAutoReplyHint, charPhoneCheckFollowupPrompt, shopGiftReplyHint, chatTranslateToChineseSystemPrompt, chatTranslateToLanguageSystemPrompt, dailyParcelReplyHint, missedPrivateCallFollowupHint, offlineFollowupHint, proposalDecisionPromptBody, transferExpiredReplyHint, type PrivateCallMode } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { cleanScheduleMoodApi, resolveScheduleApi } from '../utils/scheduleMoodApi';
 import { getLocalDateKey, getNextLocalMidnightDelay } from '../utils/dateKey';
@@ -1820,7 +1820,7 @@ ${parallelReplyPromptBody({
                         const transApi = resolveAuxApi(auxApiConfig, apiConfig);
                         const transData = await callChatCompletion(transApi, {
                             model: transApi.model,
-                            messages: [{ role: 'system', content: '把以下内容翻译成中文。只输出翻译结果，不要任何解释。' }, { role: 'user', content: spokenText }],
+                            messages: [{ role: 'system', content: chatTranslateToChineseSystemPrompt }, { role: 'user', content: spokenText }],
                             temperature: 0.3,
                         }, {
                             meta: makeApiUsageMeta('chat.translation', {
@@ -1859,7 +1859,7 @@ ${parallelReplyPromptBody({
                             const transApi = resolveAuxApi(auxApiConfig, apiConfig);
                             const transData = await callChatCompletion(transApi, {
                                 model: transApi.model,
-                                messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.` }, { role: 'user', content: originalText }],
+                                messages: [{ role: 'system', content: chatTranslateToLanguageSystemPrompt(langLabel) }, { role: 'user', content: originalText }],
                                 temperature: 0.3,
                             }, {
                                 meta: makeApiUsageMeta('chat.translation', {
@@ -2907,13 +2907,13 @@ ${parallelReplyPromptBody({
         const parcelLine = formatDailyParcelForPrompt(meta, userProfile.name || '用户', char.name);
         const isTravelFrog = meta.mode === 'travel_frog';
         const isProactiveParcel = meta.mode === 'proactive';
-        const ephemeralSystemPrompt = meta.senderRole === 'user'
-            ? `${parcelLine}。\n这是絮语回形针里的「寄东西」日常小包裹，不是心意铺订单，也没有价格、购物车或物流系统。本轮请以「${char.name}」第一人称自然回应这件事：可以感谢、惊喜、嘴硬、调侃、追问、说会怎么用/怎么收好；不要说没收到，不要把它当成心意铺商品。`
-            : isTravelFrog
-                ? `${parcelLine}。\n这是你像《旅行青蛙》一样，从自己的外出、短途游走或日常路上寄给 ${userProfile.name || '用户'} 的东西；它是生活痕迹，不是心意铺订单。本轮请以「${char.name}」第一人称补一句像明信片/收件提醒一样自然的话：可以提一句寄出它的地方、为什么想到对方、让对方收好或轻描淡写地装作顺手；不要复述系统提示，不要编价格、订单号或真实物流。`
-                : isProactiveParcel
-                    ? `${parcelLine}。\n这是你刚刚主动想到 ${userProfile.name || '用户'} 后寄来的日常小包裹，不是用户索要、不是心意铺订单。本轮请以「${char.name}」第一人称补一句自然的话：可以解释为什么突然想到对方、让对方收好、嘴硬说只是顺手、照顾/调侃/撒娇；不要复述系统提示，不要编价格、订单号或真实物流。`
-                : `${parcelLine}。\n这是你刚刚通过絮语回形针里的「寄东西」寄给 ${userProfile.name || '用户'} 的日常小包裹，不是心意铺订单。本轮请以「${char.name}」第一人称补一句自然的话：可以解释为什么寄、提醒对方收、撒娇、打趣或轻描淡写；不要复述系统提示，不要编价格、订单号或真实物流。`;
+        const ephemeralSystemPrompt = dailyParcelReplyHint({
+            parcelLine,
+            charName: char.name,
+            userName: userProfile.name || '用户',
+            senderRole: meta.senderRole,
+            mode: meta.mode || 'everyday',
+        });
         if (isInstantConfigReady()) setInstantSendingActive(true);
         await triggerAI(fresh, undefined, () => setInstantSendingActive(false), {
             targetUserMessage: target,
@@ -3039,17 +3039,13 @@ ${parallelReplyPromptBody({
             const context = await ContextBuilder.buildFullCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-24).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
-            const prompt = `${context}
-
-### [最近的对话]
-${recent || '（你们相处了很久）'}
-
-### [Task: 回应求婚]
-此刻，${userProfile.name || '对方'} 向你求婚了，对你说："${vow}"
-你对 ${userProfile.name || '对方'} 已满怀深情（好感已满）。是否答应仍取决于你的人设、价值观与你们的剧情——深爱时通常会答应；但若你的人设确有顾虑（还没准备好 / 现实阻碍 / 性格使然），也可以婉拒。请以「${char.name}」第一人称真实地回应。
-
-只输出一个 JSON（不要 markdown 代码块、不要多余解释）：
-{"accept": true 或 false, "reply": "你此刻对 ${userProfile.name || '对方'} 说的话（30-120字，带情绪与动作）"}`;
+            const prompt = proposalDecisionPromptBody({
+                context,
+                recent,
+                charName: char.name,
+                userName: userProfile.name || '对方',
+                vow,
+            });
             const data = await callChatCompletion(apiConfig, {
                 model: apiConfig.model,
                 messages: [{ role: 'user', content: prompt }],
@@ -3229,7 +3225,7 @@ ${recent || '（你们相处了很久）'}
                 await reloadMessages(visibleCountRef.current);
                 const fresh = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500).catch(() => messages);
                 triggerAI(fresh, undefined, undefined, {
-                    ephemeralSystemPrompt: `刚才有一条可见的「红包过期」记录：你之前发给 ${userProfile.name} 的${summary}超过 24 小时没被领取，已经自动退回。请以「${char.name}」的身份，对「钱没被收下」这件事自然接一句：可以失落、打趣、关心 TA 是不是没看到、赌气或装作无所谓。不要复述系统提示或记录格式，只输出聊天正文。`,
+                    ephemeralSystemPrompt: transferExpiredReplyHint({ charName: char.name, userName: userProfile.name, summary }),
                     apiUsageContext: { apiBinding: '红包过期收尾' },
                     roleplayMetaLeakGuard: true,
                 });
@@ -3639,8 +3635,7 @@ ${recent || '（你们相处了很久）'}
                 );
                 if (hasVisibleAfterOffline) return;
                 await triggerAI(fresh, undefined, undefined, {
-                    ephemeralSystemPrompt:
-                        '这是一条线下见面结束数分钟后的自然线上收尾。可以轻轻回味刚才线下现场的细节或情绪，但不要像任务汇报，也不要立刻推进新的现实事件。尤其是外卖、快递、电话、约定等，只有线下记录或聊天里明确写明已经发生，才能说成已经发生；如果只是正在等，就保持“还在等”的时间状态。',
+                    ephemeralSystemPrompt: offlineFollowupHint,
                     apiUsageContext: { offlineFollowup: true },
                     suppressAutoOffline: true,
                 });
@@ -3836,7 +3831,7 @@ ${privateCallDecisionPromptBody({
                     void (async () => {
                         const fresh = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500).catch(() => messages);
                         void triggerAI(fresh, undefined, undefined, {
-                            ephemeralSystemPrompt: `${userProfile.name} 刚刚给你拨了${label}，你没有接。你当时没接的原因是：${declineReason}。请以「${char.name}」第一人称自然接一句：可以解释、含糊带过、简短回应，或表现得若无其事。不要复述系统提示或记录格式，只输出聊天正文。`,
+                            ephemeralSystemPrompt: missedPrivateCallFollowupHint({ userName: userProfile.name, charName: char.name, label, declineReason }),
                             apiUsageContext: { apiBinding: '未接通话收尾' },
                             roleplayMetaLeakGuard: true,
                         });
