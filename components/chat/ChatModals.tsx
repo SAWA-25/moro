@@ -263,110 +263,170 @@ const ChatModals: React.FC<ChatModalsProps> = ({
         setModalType('none');
     };
 
+    const formatMoney = (value: number): string => {
+        if (!Number.isFinite(value)) return '0';
+        return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '');
+    };
+    const transferAmount = parseFloat(transferAmt);
+    const hasTransferAmount = Number.isFinite(transferAmount) && transferAmount > 0;
+    const insufficientTransferBalance = hasTransferAmount && transferAmount > walletBalance;
+    const canSubmitTransfer = hasTransferAmount && !insufficientTransferBalance;
+    const transferAmountLabel = hasTransferAmount ? formatMoney(transferAmount) : '--';
+    const transferNoteText = transferNote.trim();
+    const transferDisplayNote = transferMode === 'redpacket'
+        ? (transferNoteText || '恭喜发财，大吉大利')
+        : (transferNoteText || '给你的一点心意');
+    const transferPasswordText = transferPassword.trim();
+    const transferQuickAmounts = transferMode === 'redpacket' ? [5, 20, 52, 88, 188, 520] : [20, 52, 88, 200, 520, 1314];
+
     return (
         <>
             <JournalSheet
                 open={modalType === 'transfer'} title="转账与红包" en="Send Money"
-                sub={transferMode === 'redpacket' ? '设置金额并发送红包' : '设置金额并发送转账'}
+                sub={transferMode === 'redpacket' ? '包一个红包给 TA' : '给 TA 转一笔钱'}
                 tape="blush" pattern="heart" paper="cream"
                 onClose={() => setModalType('none')}
                 footer={<>
                     <SealBtn kind="ghost" onClick={() => setModalType('none')}>再想想</SealBtn>
-                    <SealBtn kind="ink" onClick={onTransfer}>
+                    <SealBtn kind="ink" onClick={onTransfer} disabled={!canSubmitTransfer}>
                         {transferMode === 'redpacket' ? '发送红包' : '发送转账'}
                     </SealBtn>
                 </>}
             >
                 <div className="space-y-4">
-                    {/* 模式切换 */}
-                    <div className="flex gap-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
                         <button
                             onClick={() => setTransferMode('transfer')}
-                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
+                            className="py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
                             style={{
-                                background: transferMode === 'transfer' ? '#fff4f7' : '#fffdfa',
-                                color: transferMode === 'transfer' ? '#5a3140' : '#a892a3',
-                                border: transferMode === 'transfer' ? '1px solid #d8a5b7' : '1px solid #eed6df',
+                                background: transferMode === 'transfer' ? '#fff7ed' : '#fffdfa',
+                                color: transferMode === 'transfer' ? '#8a4b16' : '#a892a3',
+                                border: transferMode === 'transfer' ? '1px solid #f0bf75' : '1px solid #eed6df',
                                 borderRadius: 14,
-                                boxShadow: transferMode === 'transfer' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
+                                boxShadow: transferMode === 'transfer' ? '0 10px 20px -16px rgba(180,108,36,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
                         >
-                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: '#a892a3', border: '1px solid #eed6df' }}>¥</span>
+                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: transferMode === 'transfer' ? '#b86b20' : '#a892a3', border: '1px solid #eed6df' }}>¥</span>
                             <span>转账</span>
                         </button>
                         <button
                             onClick={() => setTransferMode('redpacket')}
-                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
+                            className="py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
                             style={{
-                                background: transferMode === 'redpacket' ? '#fff4f7' : '#fffdfa',
-                                color: transferMode === 'redpacket' ? '#5a3140' : '#a892a3',
-                                border: transferMode === 'redpacket' ? '1px solid #d8a5b7' : '1px solid #eed6df',
+                                background: transferMode === 'redpacket' ? '#fff1f2' : '#fffdfa',
+                                color: transferMode === 'redpacket' ? '#9f1239' : '#a892a3',
+                                border: transferMode === 'redpacket' ? '1px solid #f3a4b5' : '1px solid #eed6df',
                                 borderRadius: 14,
-                                boxShadow: transferMode === 'redpacket' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
+                                boxShadow: transferMode === 'redpacket' ? '0 10px 20px -16px rgba(190,18,60,0.40)' : 'none',
                                 ...CUTE_STACK,
                             }}
                         >
-                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: '#a892a3', border: '1px solid #eed6df' }}>包</span>
+                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: transferMode === 'redpacket' ? '#be123c' : '#a892a3', border: '1px solid #eed6df' }}>包</span>
                             <span>红包</span>
                         </button>
                     </div>
-                    {/* 金额 */}
-                    <div className="flex items-end gap-2 px-1">
-                        <span className="text-[18px] font-bold pb-1.5 select-none" style={{ color: '#857f74' }}>¥</span>
-                        <input
-                            type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
-                            placeholder="输入金额"
-                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-[#eed6df] focus:border-[#d8a5b7] placeholder:text-[#c4bdb0] placeholder:text-[15px]"
-                            style={{ color: INK, caretColor: '#d8a5b7' }}
-                            autoFocus
-                        />
+
+                    <div className="rounded-[22px] p-3.5 relative overflow-hidden" style={{ background: transferMode === 'redpacket' ? 'linear-gradient(145deg,#fff7f7,#fff1f2)' : 'linear-gradient(145deg,#fffaf0,#fff7ed)', border: '1px solid #eed6df' }}>
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                            <div className="min-w-0">
+                                <div className="text-[9px] font-mono tracking-[0.22em] uppercase" style={{ color: INK_SOFT }}>{transferMode === 'redpacket' ? 'Packet Preview' : 'Transfer Preview'}</div>
+                                <div className="text-[13px] font-black truncate" style={{ color: INK }}>发给 {activeCharacter.name}</div>
+                            </div>
+                            <div className="px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0" style={{ background: '#fffdfa', color: transferMode === 'redpacket' ? '#be123c' : '#b86b20', border: '1px solid #eed6df' }}>
+                                {transferMode === 'redpacket' ? (transferPasswordText ? '口令红包' : '普通红包') : '即时转账'}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto] gap-3 items-stretch">
+                            <div className="rounded-[18px] p-3 min-w-0" style={{ background: '#fffdfa', border: '1px solid rgba(238,214,223,0.9)' }}>
+                                <div className="flex items-end gap-1">
+                                    <span className="text-[16px] font-black pb-1" style={{ color: transferMode === 'redpacket' ? '#be123c' : '#b86b20' }}>¥</span>
+                                    <span className="text-[34px] leading-none font-black tabular-nums" style={{ color: INK, fontFamily: 'var(--font-display)' }}>{transferAmountLabel}</span>
+                                </div>
+                                <div className="mt-2 text-[12px] leading-relaxed line-clamp-2" style={{ color: '#6b665d' }}>「{transferDisplayNote}」</div>
+                            </div>
+                            <div className="w-[82px] rounded-[18px] relative overflow-hidden flex flex-col items-center justify-center text-center" style={{ background: transferMode === 'redpacket' ? 'linear-gradient(180deg,#e54b4b,#b91c1c)' : 'linear-gradient(180deg,#f6b24a,#d97706)', color: '#fffdfa', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' }}>
+                                <div className="text-[9px] tracking-[0.2em] uppercase font-mono opacity-80">{transferMode === 'redpacket' ? 'OPEN' : 'PAY'}</div>
+                                <div className="mt-1 w-9 h-9 rounded-full flex items-center justify-center text-[18px] font-black" style={{ background: 'rgba(255,253,250,0.18)', border: '1px solid rgba(255,255,255,0.35)' }}>
+                                    {transferMode === 'redpacket' ? '開' : '¥'}
+                                </div>
+                                <div className="mt-1 text-[10px] font-black">{transferMode === 'redpacket' ? '红包封面' : '转账单'}</div>
+                            </div>
+                        </div>
                     </div>
-                    {/* 快捷金额贴片（点一下就填，含 520 / 1314 这种心意数） */}
-                    <div className="flex flex-wrap gap-2 px-1">
-                        {[5, 20, 52, 88, 520, 1314].map(v => {
-                            const active = (parseFloat(transferAmt) || 0) === v;
-                            return (
-                                <button
-                                    key={v}
-                                    onClick={() => setTransferAmt(String(v))}
-                                    className="px-3 py-1 text-[12px] font-bold transition-all active:scale-95"
-                                    style={{
-                                        background: active ? '#fff4f7' : '#fffdfa',
-                                        color: active ? '#5a3140' : '#6b665d',
-                                        border: active ? '1px solid #d8a5b7' : '1px solid #eed6df',
-                                        borderRadius: 9999,
-                                        ...CUTE_STACK,
-                                    }}
-                                >¥{v}</button>
-                            );
-                        })}
+
+                    <div className="rounded-[18px] p-3.5 space-y-3" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                        <div className="flex items-end gap-2">
+                            <span className="text-[20px] font-black pb-1 select-none" style={{ color: '#857f74' }}>¥</span>
+                            <input
+                                type="number" min="0" step="0.01" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
+                                placeholder="0.00"
+                                className="flex-1 min-w-0 bg-transparent px-1 py-1.5 text-[28px] font-black outline-none border-0 border-b-2 border-[#eed6df] focus:border-[#d8a5b7] placeholder:text-[#c4bdb0]"
+                                style={{ color: INK, caretColor: '#d8a5b7', fontFamily: 'var(--font-display)' }}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {transferQuickAmounts.map(v => {
+                                const active = (parseFloat(transferAmt) || 0) === v;
+                                return (
+                                    <button
+                                        key={v}
+                                        onClick={() => setTransferAmt(String(v))}
+                                        className="px-3 py-1 text-[12px] font-bold transition-all active:scale-95"
+                                        style={{
+                                            background: active ? '#fff4f7' : '#fff',
+                                            color: active ? '#5a3140' : '#6b665d',
+                                            border: active ? '1px solid #d8a5b7' : '1px solid #eed6df',
+                                            borderRadius: 9999,
+                                            ...CUTE_STACK,
+                                        }}
+                                    >¥{v}</button>
+                                );
+                            })}
+                        </div>
                     </div>
-                    {transferMode === 'redpacket' && (
-                        <LinedInput
-                            value={transferNote} onChange={e => setTransferNote(e.target.value)}
-                            tag="红包备注"
-                            placeholder="比如：恭喜发财，大吉大利" maxLength={30}
-                        />
-                    )}
+
+                    <LinedInput
+                        value={transferNote} onChange={e => setTransferNote(e.target.value)}
+                        tag={transferMode === 'redpacket' ? '祝福语' : '转账说明'}
+                        placeholder={transferMode === 'redpacket' ? '比如：恭喜发财，大吉大利' : '比如：路上买点热饮'}
+                        maxLength={36}
+                    />
                     {transferMode === 'redpacket' && (
                         <LinedInput
                             value={transferPassword} onChange={e => setTransferPassword(e.target.value)}
                             tag="口令（选填）"
-                            placeholder="填了就是口令红包 · TA 要答对才领得到" maxLength={20}
+                            placeholder="填了就是口令红包"
+                            maxLength={20}
                         />
                     )}
-                    {/* 钱包余额（存钱罐营业所得），转账/红包从这里扣 */}
-                    {(() => {
-                        const amt = parseFloat(transferAmt) || 0;
-                        const insufficient = amt > walletBalance;
-                        return (
-                            <div className="flex items-center justify-between px-1 text-[12px]" style={{ color: insufficient ? '#9a3b3b' : '#857f74' }}>
-                                <span>钱包余额 ¥{Math.round(walletBalance)}</span>
-                                {insufficient && <span className="font-bold">不够啦，去存钱罐营业赚点</span>}
-                            </div>
-                        );
-                    })()}
+
+                    <div className="rounded-[18px] p-3 space-y-2 text-[12px]" style={{ background: '#fbfaf8', border: '1px solid #eed6df', color: '#857f74' }}>
+                        <div className="flex items-center justify-between gap-3">
+                            <span>可用余额</span>
+                            <span className="font-black tabular-nums" style={{ color: INK }}>¥{formatMoney(walletBalance)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <span>本次扣款</span>
+                            <span className="font-black tabular-nums" style={{ color: hasTransferAmount ? '#9f1239' : INK_SOFT }}>{hasTransferAmount ? `-¥${formatMoney(transferAmount)}` : '¥0'}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <span>手续费</span>
+                            <span className="font-black tabular-nums" style={{ color: INK }}>¥0</span>
+                        </div>
+                        <div className="pt-2 flex items-center justify-between gap-3" style={{ borderTop: '1px solid #eed6df' }}>
+                            <span>发送后余额</span>
+                            <span className="font-black tabular-nums" style={{ color: insufficientTransferBalance ? '#9a3b3b' : INK }}>{hasTransferAmount ? `¥${formatMoney(walletBalance - transferAmount)}` : `¥${formatMoney(walletBalance)}`}</span>
+                        </div>
+                    </div>
+                    {insufficientTransferBalance ? (
+                        <NoteStrip tone="warn">余额不够，先去人生拟营业或调整金额。</NoteStrip>
+                    ) : (
+                        <NoteStrip tone="info">
+                            {transferMode === 'redpacket' ? '红包会作为聊天卡片发出，并写入本地钱包流水。' : '转账会生成一张转账单，并写入本地钱包流水。'}
+                        </NoteStrip>
+                    )}
                 </div>
             </JournalSheet>
 

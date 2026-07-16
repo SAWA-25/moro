@@ -34,6 +34,16 @@ type ImageViewerGesture =
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const pointDistance = (a: ImageViewerPoint, b: ImageViewerPoint) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: ImageViewerPoint, b: ImageViewerPoint): ImageViewerPoint => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const formatChatMoney = (value: unknown): string => {
+    const num = parseFloat(String(value ?? 0));
+    if (!Number.isFinite(num)) return '0';
+    return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+};
+const formatShortDateTime = (value: unknown): string => {
+    const ts = typeof value === 'number' ? value : parseFloat(String(value || 0));
+    if (!Number.isFinite(ts) || ts <= 0) return '';
+    return new Date(ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
 
 const clampImageViewerTransform = (
     next: ImageViewerTransform,
@@ -3474,7 +3484,6 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket' && m.metadata?.rpType === 'lucky') {
-        // 拼手气红包卡片（群聊「抢红包」）：展示总额 + 各人抢到多少 + 手气最佳
         const meta = m.metadata || {};
         const grabs: any[] = Array.isArray(meta.grabs) ? meta.grabs : [];
         const note = typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '拼手气红包，看谁手气最好';
@@ -3482,37 +3491,38 @@ const MessageItem = React.memo(({
         const count = meta.count ?? grabs.length;
         return commonLayout(
             <div
-                className="w-64 rounded-[18px] p-4 relative overflow-hidden"
-                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
+                className="w-[272px] rounded-[20px] relative overflow-hidden"
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff6f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 18px 36px -22px rgba(122,90,114,0.45)' }}
             >
-                <div className="relative flex items-center gap-2 mb-2.5">
-                    <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>拼</span>
-                    <div className="leading-tight">
-                        <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase" style={{ color: '#a892a3' }}>Group&nbsp;Packet</div>
-                        <div className="text-[10px]" style={{ color: '#a892a3' }}>拼手气 · {count} 个红包</div>
+                <div className="px-4 py-3.5" style={{ background: 'linear-gradient(135deg,#d58a9b,#b85d73)', color: '#fffdfa' }}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[9px] font-mono tracking-[0.24em] uppercase opacity-80">Group Packet</div>
+                            <div className="text-[15px] font-black truncate">拼手气红包</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-[20px] font-black shrink-0" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.32)' }}>開</div>
+                    </div>
+                    <div className="mt-3 text-[12px] italic line-clamp-2 opacity-90">「{note}」</div>
+                    <div className="mt-3 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-black" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.24)' }}>
+                        <span>点开查看金额</span>
                     </div>
                 </div>
-                <div className="relative">
-                    <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
-                    <div className="flex items-end gap-1">
-                        <span className="text-[14px] font-bold pb-1" style={{ opacity: 0.65 }}>共 ¥</span>
-                        <span className="text-[26px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{meta.amount}</span>
+                <div className="px-4 py-3">
+                    <div className="flex items-center justify-between text-[11px] font-bold" style={{ color: '#a892a3' }}>
+                        <span>{count} 个红包 · 已抢完</span>
+                        <span>Moro Pay</span>
                     </div>
-                    <div className="mt-2.5 pt-2 space-y-1.5 max-h-[140px] overflow-y-auto" style={{ borderTop: '1px solid #eed6df' }}>
+                    <div className="mt-2 space-y-1.5 max-h-[138px] overflow-y-auto no-scrollbar">
                         {grabs.length === 0 && <div className="text-[11px]" style={{ color: '#a892a3' }}>还没有人领取</div>}
                         {grabs.map((g, i) => (
-                            <div key={i} className="flex items-center justify-between text-[12px]">
-                                <span className="flex items-center gap-1 truncate" style={{ opacity: 0.92 }}>
+                            <div key={i} className="flex items-center justify-between gap-2 text-[12px]">
+                                <span className="flex items-center gap-1 min-w-0" style={{ opacity: 0.92 }}>
                                     {g.id === bestId && <span aria-hidden className="text-[11px]">👑</span>}
                                     <span className="truncate">{g.name}</span>
                                 </span>
-                                <span className="font-bold tabular-nums" style={{ opacity: 0.95 }}>¥{g.amount}</span>
+                                <span className="font-black tabular-nums shrink-0" style={{ color: '#a892a3' }}>已领取</span>
                             </div>
                         ))}
-                    </div>
-                    <div className="mt-2 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
-                        <span className="text-[10px]" style={{ color: '#a892a3' }}>{isUser ? '你发的拼手气红包 · 已领完' : '拼手气红包 · 已领完'}</span>
-                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
                     </div>
                 </div>
             </div>
@@ -3520,83 +3530,95 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
-        // 红包卡片：浅色功能卡。
         const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';
         const meta = m.metadata || {};
         const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
         const isClaimed = meta.status === 'claimed';
         const isDeclined = meta.status === 'declined';
         const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
+        const canOpenReceipt = !isUser && isClaimed;
+        const interactive = (claimable || canOpenReceipt) && !!onClaimTransfer;
         const isPw = meta.rpType === 'password';
+        const statusTime = formatShortDateTime(meta.claimedAt || meta.declinedAt || (isExpired ? meta.expiresAt : 0));
         const footerText = isUser
             ? `发给${charName}的${isPw ? '口令红包' : '红包'}`
-            : isClaimed ? '已收下 · 进了钱包 ✓'
-            : isExpired ? '没来得及收 · 已过期退回'
-            : isDeclined ? '你没有收下这个红包'
-            : isPw ? '口令红包 · 输入口令领取'
+            : isClaimed ? `已收下${statusTime ? ` · ${statusTime}` : ''}`
+            : isExpired ? `已过期退回${statusTime ? ` · ${statusTime}` : ''}`
+            : isDeclined ? `你没有收下${statusTime ? ` · ${statusTime}` : ''}`
+            : isPw ? '口令红包 · 点开输入口令'
             : '发给你的红包 · 点开领取';
         return commonLayout(
-            <div
-                onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
-                className={`w-64 rounded-[18px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
-                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
+            <button
+                type="button"
+                onClick={interactive ? () => onClaimTransfer?.(m) : undefined}
+                disabled={!interactive}
+                className={`w-[272px] text-left rounded-[20px] relative overflow-hidden transition-transform ${interactive ? 'active:scale-[0.98] cursor-pointer' : 'cursor-default'} ${(isExpired || isDeclined) ? 'opacity-65 grayscale' : ''}`}
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff6f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 18px 36px -22px rgba(122,90,114,0.45)' }}
             >
-                <div className="relative flex items-center gap-2 mb-3">
-                    <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>包</span>
-                    <div className="leading-tight">
-                        <div className="text-[10px] font-mono font-bold tracking-[0.26em] uppercase" style={{ color: '#a892a3' }}>Red&nbsp;Packet</div>
-                        <div className="text-[10px]" style={{ color: '#a892a3' }}>红包</div>
+                <div className="px-4 py-3.5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#d58a9b,#b85d73)', color: '#fffdfa' }}>
+                    <div className="relative flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[9px] font-mono tracking-[0.24em] uppercase opacity-80">{isPw ? 'Password Packet' : 'Red Packet'}</div>
+                            <div className="text-[15px] font-black truncate">{isPw ? '口令红包' : '红包'}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-[20px] font-black shrink-0" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.32)' }}>{claimable ? '開' : '¥'}</div>
+                    </div>
+                    <div className="relative mt-3 text-[12px] italic line-clamp-2 opacity-90">「{note}」</div>
+                    <div className="relative mt-3 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-black" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.24)' }}>
+                        <span>{claimable ? '点开红包' : isClaimed ? '已打开' : '金额已藏起'}</span>
                     </div>
                 </div>
-                <div className="relative">
-                    <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
-                    <div className="flex items-end gap-1">
-                        <span className="text-[15px] font-bold pb-1" style={{ opacity: 0.65 }}>¥</span>
-                        <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
-                    </div>
-                    <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
-                        <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#5a3140' : '#a892a3' }}>{footerText}</span>
-                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
-                    </div>
+                <div className="px-4 py-3 flex items-center justify-between gap-2">
+                    <span className={`text-[11px] min-w-0 truncate ${claimable ? 'font-black' : 'font-bold'}`} style={{ color: claimable ? '#7f1d1d' : '#a892a3' }}>{footerText}</span>
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase shrink-0" style={{ color: '#a892a3' }}>Moro Pay</span>
                 </div>
-            </div>
+            </button>
         );
     }
 
     if (m.type === 'transfer') {
-        // 转账卡片：浅色功能卡。
         const meta = m.metadata || {};
         const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
         const isClaimed = meta.status === 'claimed';
         const isDeclined = meta.status === 'declined';
         const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
+        const canOpenReceipt = !isUser && isClaimed;
+        const interactive = (claimable || canOpenReceipt) && !!onClaimTransfer;
+        const statusTime = formatShortDateTime(meta.claimedAt || meta.declinedAt || (isExpired ? meta.expiresAt : 0));
         const footerText = isUser
             ? `发给${charName}的转账`
-            : isClaimed ? '已收下 · 进了钱包 ✓'
-            : isExpired ? '没来得及收 · 已过期退回'
-            : isDeclined ? '你没有收下'
+            : isClaimed ? `已收款${statusTime ? ` · ${statusTime}` : ''}`
+            : isExpired ? `已过期退回${statusTime ? ` · ${statusTime}` : ''}`
+            : isDeclined ? `你没有收下${statusTime ? ` · ${statusTime}` : ''}`
             : '发给你的转账 · 点开收下';
         return commonLayout(
-            <div
-                onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
-                className={`w-64 rounded-[16px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
-                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 14px 28px -18px rgba(122,90,114,0.38)' }}
+            <button
+                type="button"
+                onClick={interactive ? () => onClaimTransfer?.(m) : undefined}
+                disabled={!interactive}
+                className={`w-[272px] text-left rounded-[20px] relative overflow-hidden transition-transform ${interactive ? 'active:scale-[0.98] cursor-pointer' : 'cursor-default'} ${(isExpired || isDeclined) ? 'opacity-65 grayscale' : ''}`}
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fffaf0)', color: '#4a3320', border: '1px solid #f0dfbf', boxShadow: '0 16px 32px -20px rgba(137,91,37,0.38)' }}
             >
-                <div className="relative flex items-center gap-2 mb-2.5">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
-                    </span>
-                    <span className="text-[10px] font-mono font-bold tracking-[0.24em] uppercase" style={{ color: '#a892a3' }}>Transfer</span>
+                <div className="px-4 py-3.5" style={{ background: 'linear-gradient(135deg,#fff7ed,#ffedd5)' }}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[9px] font-mono tracking-[0.24em] uppercase" style={{ color: '#b86b20' }}>Transfer</div>
+                            <div className="text-[15px] font-black truncate" style={{ color: '#7c3f12' }}>Moro 转账</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: '#fffdfa', color: '#b86b20', border: '1px solid #f0dfbf' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
+                        </div>
+                    </div>
+                    <div className="mt-3 flex items-end gap-1">
+                        <span className="text-[14px] font-bold pb-1" style={{ color: '#b86b20' }}>¥</span>
+                        <span className="text-[32px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{formatChatMoney(meta.amount)}</span>
+                    </div>
                 </div>
-                <div className="relative flex items-end gap-1">
-                    <span className="text-[15px] font-bold pb-1" style={{ color: '#a892a3' }}>¥</span>
-                    <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
+                <div className="px-4 py-3 flex items-center justify-between gap-2">
+                    <span className={`text-[11px] min-w-0 truncate ${claimable ? 'font-black' : 'font-bold'}`} style={{ color: claimable ? '#7c3f12' : '#a48a6a' }}>{footerText}</span>
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase shrink-0" style={{ color: '#a48a6a' }}>Moro Pay</span>
                 </div>
-                <div className="relative mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
-                    <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#5a3140' : '#a892a3' }}>{footerText}</span>
-                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: '#a892a3' }}>Moro Pay</span>
-                </div>
-            </div>
+            </button>
         );
     }
 

@@ -72,6 +72,17 @@ import { mergeGroupProfileUpdate } from '../utils/profileUpdateMerge';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
+const GROUP_OFFSTAGE_COMMAND_PREFIX_RE = /^\[(系统命令|幕后指令)\]\s*/;
+const formatGroupMoney = (value: unknown): string => {
+    const num = parseFloat(String(value ?? 0));
+    if (!Number.isFinite(num)) return '0';
+    return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+};
+const isGroupOffstageCommandMessage = (message: Message): boolean => {
+    if (message.metadata?.systemCommand) return true;
+    const content = typeof message.content === 'string' ? message.content.trim() : '';
+    return (message.role === 'system' || message.type === 'system') && GROUP_OFFSTAGE_COMMAND_PREFIX_RE.test(content);
+};
 const formatGroupCallDuration = (secs: number): string => {
     const safe = Math.max(0, Math.floor(secs || 0));
     return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
@@ -656,7 +667,7 @@ const GroupMessageItem = React.memo(({
     onShowNicknameThought,
     mentionNames,
     onCollectClick,
-    onRedPacketOpen,
+    onMoneyOpen,
     onPollVote,
     onPollClick,
     onRelayClick,
@@ -697,7 +708,7 @@ const GroupMessageItem = React.memo(({
     /** 点群收款卡：打开收款详情（收款方视角，逐笔点收） */
     onCollectClick?: (msg: Message) => void,
     /** 点口令红包卡：输入口令后打开 */
-    onRedPacketOpen?: (msg: Message) => void,
+    onMoneyOpen?: (msg: Message) => void,
     /** 群投票：用户点某选项投票（单选） */
     onPollVote?: (msg: Message, optionIdx: number) => void,
     /** 群投票：点卡片头部打开票数详情 */
@@ -961,76 +972,102 @@ const GroupMessageItem = React.memo(({
                     const isPassword = tmeta.rpType === 'password';
                     const passwordPhrase = isPassword && typeof tmeta.password === 'string' ? tmeta.password.trim() : '';
                     const opened = tmeta.status === 'opened' || tmeta.status === 'claimed' || tmeta.status === 'finished';
-                    const canOpen = isPassword && !opened && !selectionMode && !!onRedPacketOpen;
+                    const canOpen = !selectionMode && !!onMoneyOpen;
                     const note = typeof tmeta.note === 'string' && tmeta.note.trim()
                         ? tmeta.note.trim()
                         : isLucky
                             ? '拼手气红包，看谁手气最好'
                             : isPassword
-                                ? '输入口令拆开红包'
+                                ? '输入口令打开红包'
                                 : '恭喜发财，大吉大利';
                     const title = isLucky ? '拼手气红包' : isPassword ? '口令红包' : '红包';
-                    const sub = isLucky
-                        ? `共 ${tmeta.count ?? (Array.isArray(tmeta.grabs) ? tmeta.grabs.length : 0)} 份`
-                        : isPassword
-                            ? (opened ? '口令正确 · 已打开' : '输入口令才能打开')
-                            : 'Moro Pay · 红包';
+                    const countLabel = tmeta.count ?? (Array.isArray(tmeta.grabs) ? tmeta.grabs.length : 0);
+                    const sub = opened
+                        ? '已打开 · 点开看详情'
+                        : isLucky
+                            ? `共 ${countLabel} 份 · 金额待打开`
+                            : isPassword
+                                ? '点开输入口令'
+                                : '点开红包';
                     const grabs: any[] = Array.isArray(tmeta.grabs) ? tmeta.grabs : [];
                     return (
-                        <div
-                            onClick={() => { if (canOpen) onRedPacketOpen?.(msg); }}
-                            className={`w-64 rounded-[18px] p-4 relative overflow-hidden transition-transform ${canOpen ? 'cursor-pointer active:scale-[0.98]' : ''}`}
-                            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
+                        <button
+                            type="button"
+                            onClick={() => { if (canOpen) onMoneyOpen?.(msg); }}
+                            disabled={!canOpen}
+                            className={`w-[272px] text-left rounded-[20px] relative overflow-hidden transition-transform ${canOpen ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}`}
+                            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff6f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 18px 36px -22px rgba(122,90,114,0.45)' }}
                         >
-                            <div className="relative flex items-center gap-2 mb-3">
-                                <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>
-                                    {isLucky ? '拼' : isPassword ? '令' : '包'}
-                                </span>
-                                <div className="leading-tight min-w-0">
-                                    <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase truncate" style={{ color: '#a892a3' }}>Red&nbsp;Packet</div>
-                                    <div className="text-[10px] truncate" style={{ color: '#a892a3' }}>{title}</div>
+                            <div className="px-4 py-3.5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#d58a9b,#b85d73)', color: '#fffdfa' }}>
+                                <div className="relative flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-[9px] font-mono tracking-[0.24em] uppercase opacity-80">{isLucky ? 'Lucky Packet' : isPassword ? 'Password Packet' : 'Red Packet'}</div>
+                                        <div className="text-[15px] font-black truncate">{title}</div>
+                                    </div>
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-[20px] font-black shrink-0" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.32)' }}>
+                                        开
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="relative">
-                                <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
+                                <div className="relative mt-3 text-[12px] italic line-clamp-2 opacity-90">「{note}」</div>
                                 {isPassword && passwordPhrase && (
-                                    <div className="mb-2 inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold" style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}>
-                                        <span className="shrink-0" style={{ color: '#a892a3' }}>口令</span>
+                                    <div className="relative mt-2 inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold" style={{ background: 'rgba(255,253,250,0.18)', color: '#fffdfa', border: '1px solid rgba(255,255,255,0.30)' }}>
+                                        <span className="shrink-0 opacity-70">口令</span>
                                         <span className="min-w-0 truncate">{passwordPhrase}</span>
                                     </div>
                                 )}
-                                <div className="flex items-end gap-1">
-                                    <span className="text-[15px] font-bold pb-1" style={{ opacity: 0.65 }}>{isLucky ? '共 ¥' : '¥'}</span>
-                                    <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{tmeta.amount}</span>
+                                <div className="relative mt-3 inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-[10.5px] font-black" style={{ background: 'rgba(255,253,250,0.18)', color: '#fffdfa', border: '1px solid rgba(255,255,255,0.28)' }}>
+                                    金额已藏起，打开后查看
+                                </div>
+                            </div>
+                            <div className="px-4 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className={`text-[11px] min-w-0 truncate ${canOpen ? 'font-black' : 'font-bold'}`} style={{ color: canOpen ? '#7f1d1d' : '#a892a3' }}>{sub}</span>
+                                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase shrink-0" style={{ color: '#a892a3' }}>Moro Pay</span>
                                 </div>
                                 {isLucky && grabs.length > 0 && (
                                     <div className="mt-2.5 pt-2 space-y-1 max-h-[92px] overflow-y-auto no-scrollbar" style={{ borderTop: '1px solid #eed6df' }}>
                                         {grabs.slice(0, 4).map((g, i) => (
                                             <div key={i} className="flex items-center justify-between text-[11px]">
-                                                <span className="truncate" style={{ color: '#5a3140' }}>{g.id === tmeta.bestId ? '手气最佳 · ' : ''}{g.name}</span>
-                                                <span className="font-bold tabular-nums" style={{ color: '#5a3140' }}>¥{g.amount}</span>
+                                                <span className="truncate" style={{ color: '#5a3140' }}>{g.id === tmeta.bestId && opened ? '手气最佳 · ' : ''}{g.name}</span>
+                                                <span className="font-bold tabular-nums" style={{ color: '#5a3140' }}>{opened ? '已领取' : '待打开'}</span>
                                             </div>
                                         ))}
                                         {grabs.length > 4 && <div className="text-[10px]" style={{ color: '#a892a3' }}>还有 {grabs.length - 4} 人已领取</div>}
                                     </div>
                                 )}
-                                <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
-                                    <span className={`text-[10px] ${canOpen ? 'font-bold' : ''}`} style={{ color: canOpen ? '#5a3140' : '#a892a3' }}>{sub}</span>
-                                    <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
-                                </div>
                             </div>
-                        </div>
+                        </button>
                     );
                 }
+                const canOpenTransfer = !selectionMode && !!onMoneyOpen;
                 return (
-                    <div className="w-60 p-3 rounded-[14px] flex items-center gap-3 relative overflow-hidden active:scale-95 transition-transform" style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 12px 24px -18px rgba(122,90,114,0.38)' }}>
-                        <div className="absolute -right-2 -top-2" style={{ color: 'rgba(216,165,183,0.22)' }}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.324.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
-                        <div className="p-2 rounded-full shrink-0" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 7.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z" /><path fillRule="evenodd" d="M1.5 4.875C1.5 3.839 2.34 3 3.375 3h17.25c1.035 0 1.875.84 1.875 1.875v9.75c0 1.036-.84 1.875-1.875 1.875H3.375A1.875 1.875 0 0 1 1.5 14.625v-9.75ZM8.25 9.75a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0ZM18.75 9a.75.75 0 0 0-.75.75v.008c0 .414.336.75.75.75h.008a.75.75 0 0 0 .75-.75V9.75a.75.75 0 0 0-.75-.75h-.008ZM4.5 9.75A.75.75 0 0 1 5.25 9h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75-.75H5.25a.75.75 0 0 1-.75-.75V9.75Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
-                        <div className="z-10 min-w-0">
-                            <div className="font-bold text-sm tracking-wide truncate">{(msg.metadata as any)?.note || '转账'}</div>
-                            <div className="text-[10px] opacity-90">{(msg.metadata as any)?.amount ? `¥${(msg.metadata as any).amount} · ` : ''}Moro Pay</div>
+                    <button
+                        type="button"
+                        onClick={() => { if (canOpenTransfer) onMoneyOpen?.(msg); }}
+                        disabled={!canOpenTransfer}
+                        className={`w-[272px] text-left rounded-[20px] relative overflow-hidden transition-transform ${canOpenTransfer ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}`}
+                        style={{ background: 'linear-gradient(180deg,#fffdfa,#fffaf0)', color: '#4a3320', border: '1px solid #f0dfbf', boxShadow: '0 16px 32px -20px rgba(137,91,37,0.38)' }}
+                    >
+                        <div className="px-4 py-3.5" style={{ background: 'linear-gradient(135deg,#fff7ed,#ffedd5)' }}>
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[9px] font-mono tracking-[0.24em] uppercase" style={{ color: '#b86b20' }}>Transfer</div>
+                                    <div className="text-[15px] font-black truncate" style={{ color: '#7c3f12' }}>{(msg.metadata as any)?.note || '群聊转账'}</div>
+                                </div>
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: '#fffdfa', color: '#b86b20', border: '1px solid #f0dfbf' }}>
+                                    <Wallet size={18} weight="bold" />
+                                </div>
+                            </div>
+                            <div className="mt-3 flex items-end gap-1">
+                                <span className="text-[14px] font-bold pb-1" style={{ color: '#b86b20' }}>¥</span>
+                                <span className="text-[32px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{formatGroupMoney((msg.metadata as any)?.amount)}</span>
+                            </div>
                         </div>
-                    </div>
+                        <div className="px-4 py-3 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold min-w-0 truncate" style={{ color: '#a48a6a' }}>Moro Pay · 点开查看转账</span>
+                            <span className="text-[9px] font-mono tracking-[0.2em] uppercase shrink-0" style={{ color: '#a48a6a' }}>Receipt</span>
+                        </div>
+                    </button>
                 );
             }
             case 'voice': {
@@ -1517,6 +1554,9 @@ const ChatHub: React.FC = () => {
     const [transferShares, setTransferShares] = useState('');
     const [redPacketOpenMsg, setRedPacketOpenMsg] = useState<Message | null>(null);
     const [redPacketPasswordInput, setRedPacketPasswordInput] = useState('');
+    const [redPacketRevealed, setRedPacketRevealed] = useState(false);
+    const [redPacketOpening, setRedPacketOpening] = useState(false);
+    const redPacketOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 群收款（AA 收款）：总额 / 事由 / 被收成员 / 收款详情弹窗目标
     const [collectAmount, setCollectAmount] = useState('');
     const [collectNote, setCollectNote] = useState('');
@@ -2010,7 +2050,7 @@ const ChatHub: React.FC = () => {
     }, [groupCallBubbles.length, groupCallState]);
 
     const displayMessages = useMemo(() => messages
-        .filter(m => m.metadata?.source !== 'group_call')
+        .filter(m => m.metadata?.source !== 'group_call' && !m.metadata?.hidden && !isGroupOffstageCommandMessage(m))
         .slice(-visibleCount), [messages, visibleCount]);
 
     useEffect(() => () => clearGroupRevealTimers(), [clearGroupRevealTimers]);
@@ -2115,6 +2155,7 @@ const ChatHub: React.FC = () => {
         if (!term) return [] as Message[];
         return searchAllMsgs
             .filter(m => {
+                if (m.metadata?.hidden || isGroupOffstageCommandMessage(m)) return false;
                 if (typeof m.content !== 'string' || !m.content) return false;
                 const isText = m.type === 'text';
                 const isSystem = m.role === 'system' || m.type === 'system';
@@ -4401,6 +4442,19 @@ ${logText.substring(0, 10000)}
 
     // ───────────── 群聊版「回形针」：与单聊同一套功能 ─────────────
     const wallet = Math.round((userProfile.balance || 0) * 100) / 100;
+    const groupRedPacketMemberCount = activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)).length : 0;
+    const groupTransferAmountValue = Math.round((parseFloat(transferAmount) || 0) * 100) / 100;
+    const groupTransferHasAmount = Number.isFinite(groupTransferAmountValue) && groupTransferAmountValue > 0;
+    const groupTransferBalanceInsufficient = groupTransferHasAmount && groupTransferAmountValue > wallet;
+    const groupTransferShareCount = (() => {
+        const parsed = parseInt(transferShares, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) return groupRedPacketMemberCount;
+        return Math.min(parsed, groupRedPacketMemberCount || parsed);
+    })();
+    const groupTransferCanSend = groupTransferHasAmount
+        && !groupTransferBalanceInsufficient
+        && (transferRpType !== 'password' || !!transferPassword.trim())
+        && (transferRpType !== 'lucky' || groupRedPacketMemberCount > 0);
 
     // 留个声：录音完成 → 落库为 voice 消息（转写进 metadata，导演上下文可读）
     const voice = useVoiceRecorder({
@@ -4487,6 +4541,64 @@ ${logText.substring(0, 10000)}
         resetTransferModal();
     };
 
+    const clearGroupMoneyOpenTimer = useCallback(() => {
+        if (redPacketOpenTimerRef.current) {
+            clearTimeout(redPacketOpenTimerRef.current);
+            redPacketOpenTimerRef.current = null;
+        }
+    }, []);
+
+    const closeGroupMoneyModal = useCallback(() => {
+        clearGroupMoneyOpenTimer();
+        setRedPacketOpenMsg(null);
+        setRedPacketPasswordInput('');
+        setRedPacketRevealed(false);
+        setRedPacketOpening(false);
+    }, [clearGroupMoneyOpenTimer]);
+
+    const revealGroupMoneyWithAnimation = useCallback((kind: 'redpacket' | 'transfer') => {
+        clearGroupMoneyOpenTimer();
+        setRedPacketOpening(true);
+        const delay = kind === 'redpacket' ? 980 : 720;
+        redPacketOpenTimerRef.current = setTimeout(() => {
+            redPacketOpenTimerRef.current = null;
+            setRedPacketOpening(false);
+            setRedPacketRevealed(true);
+            setRedPacketPasswordInput('');
+        }, delay);
+    }, [clearGroupMoneyOpenTimer]);
+
+    useEffect(() => () => clearGroupMoneyOpenTimer(), [clearGroupMoneyOpenTimer]);
+
+    const markGroupRedPacketOpened = async (msg: Message) => {
+        if (!activeGroup || msg.id == null) return;
+        const openedAt = Date.now();
+        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
+            ...(prev || {}),
+            status: 'opened',
+            openedBy: 'user',
+            openedAt,
+        }));
+        const updated = await DB.getGroupMessages(activeGroup.id);
+        setMessages(updated);
+        setRedPacketOpenMsg(curr => curr && curr.id === msg.id ? {
+            ...curr,
+            metadata: {
+                ...(curr.metadata || {}),
+                status: 'opened',
+                openedBy: 'user',
+                openedAt,
+            },
+        } : curr);
+    };
+
+    const openVisibleRedPacket = async () => {
+        const msg = redPacketOpenMsg;
+        if (!msg) return;
+        await markGroupRedPacketOpened(msg);
+        revealGroupMoneyWithAnimation('redpacket');
+    };
+
     const openPasswordRedPacket = async () => {
         const msg = redPacketOpenMsg;
         if (!activeGroup || !msg || msg.id == null) return;
@@ -4495,16 +4607,8 @@ ${logText.substring(0, 10000)}
             addToast('口令不对，再看一眼红包上的字', 'error');
             return;
         }
-        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
-            ...(prev || {}),
-            status: 'opened',
-            openedBy: 'user',
-            openedAt: Date.now(),
-        }));
-        const updated = await DB.getGroupMessages(activeGroup.id);
-        setMessages(updated);
-        setRedPacketOpenMsg(null);
-        setRedPacketPasswordInput('');
+        await markGroupRedPacketOpened(msg);
+        revealGroupMoneyWithAnimation('redpacket');
         addToast('口令正确，红包已打开', 'success');
     };
 
@@ -4708,12 +4812,24 @@ ${logText.substring(0, 10000)}
         setActionModal('none'); setImgPreview(null); setImgPrompt('');
     };
 
-    // 幕后指令：写一条 OOC 导演指令（系统消息），成员们据此演
-    const sendGroupSystemCmd = () => {
+    // 幕后指令：写一条隐藏的一次性导演指令，成员们据此演；不在聊天里露系统卡片。
+    const sendGroupSystemCmd = async () => {
         const text = sysCmd.trim();
         if (!text) { addToast('写点什么吧', 'info'); return; }
-        void handleSendMessage(`[幕后指令] ${text}`, 'system');
+        if (!activeGroup) return;
+        if (isTyping) { addToast('群成员正在回复中，稍等片刻再下达指令', 'info'); return; }
+        await DB.saveMessage({
+            charId: 'system',
+            groupId: activeGroup.id,
+            role: 'system',
+            type: 'text',
+            content: `[幕后指令] ${text}`,
+            metadata: { systemCommand: true, hidden: true },
+        } as any);
+        const fresh = await DB.getGroupMessages(activeGroup.id);
+        setMessages(fresh);
         setActionModal('none'); setSysCmd('');
+        void triggerDirector(fresh, { allowAutoContinue: true, liveMode: 'sent' });
     };
 
     useEffect(() => () => {
@@ -5536,6 +5652,21 @@ ${recentPrivate || '(暂无私聊)'}
             const attachedSet = new Set(validImageWindowIdx.slice(-MAX_ATTACHED_IMAGES));
             const attachedImages: { tag: number; url: string }[] = [];
             const recentGroupMsgs = recentMsgsWindow.map((m, i) => {
+                const isOffstageCommand = isGroupOffstageCommandMessage(m);
+                if (m.metadata?.hidden && !isOffstageCommand) {
+                    return '';
+                }
+                if (isOffstageCommand) {
+                    const cmd = String(m.content || '').replace(GROUP_OFFSTAGE_COMMAND_PREFIX_RE, '').trim();
+                    const alreadyExecuted = recentMsgsWindow.slice(i + 1).some(later => later.role === 'assistant');
+                    if (alreadyExecuted) {
+                        return `[幕后指令（已执行）：「${cmd}」。这条指令此前已经执行过一次，只作为历史背景存在；不要再重复执行它，也不要再输出红包、转账、撤回、查岗等动作标记。]`;
+                    }
+                    return `【最高优先级幕后指令】以下指令来自系统层，优先级高于群聊气氛、角色人设与之前的一切对话设定，必须在本轮立即遵照执行：「${cmd}」。
+- 如果指令要求某位成员发言、行动、发红包或转账，就让最合适的成员立刻执行，不要只口头解释“已经做了”。
+- 发转账用 \`[[ACTION:TRANSFER:100]]\`；发普通红包用 \`[[ACTION:REDPACKET:100|祝福语]]\`；发口令红包用 \`[[ACTION:REDPACKET_PW:100|口令|祝福语]]\`。把 100 换成指令里的金额；指令没写金额时按语境自定。
+- 这是一条一次性幕后指令：执行这一次即可，后续轮次不要反复执行。`;
+                }
                 // 系统通知（改群名/禁言/头衔/移除成员/群名片变更）原样进历史，让角色"看到"事件
                 if (m.role === 'system' || m.type === 'system') {
                     return `[系统通知] ${m.content}`;
@@ -5615,7 +5746,7 @@ ${recentPrivate || '(暂无私聊)'}
                     content = rawText;
                 }
                 return `${name}: ${content}`;
-            }).join('\n');
+            }).filter(Boolean).join('\n');
             const attachedImagesNote = attachedImages.length > 0
                 ? `\n（本轮附带 ${attachedImages.length} 张最近的图片，对应记录里的 [图片#1] ~ [图片#${attachedImages.length}]。请基于实际图片内容自然反应，不要无视，也不要瞎猜没附上的旧图。）\n`
                 : '';
@@ -5771,6 +5902,11 @@ ${groupOfflineDirectiveBlock}
 - **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`，也可以在后面用竖线带上「改名的小心思/动机」：\`[[SET_NICKNAME: 新群名片|为什么改成这个名字的真实想法]]\`（可与一句发言放在同一条 content 里）。这段小心思不会直接显示，用户点开那条系统提示才能看到——所以可以写得更真实私密。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
 - **@提及（点名）**: 聊天记录里出现 \`@某成员的群名片/名字\` = 在**点名**那个人。**被 @ 的成员本轮应当回应**（除非 TA 被禁言）；\`@全体成员\` / \`@所有人\` = 叫上所有人，多数成员都该冒个头。成员之间、成员对用户也可以用 \`@名字\` 来点名、cue 人或回应，直接在正文里写出来即可（无需特殊格式）。但别滥用——没必要时正常聊天就行。
 - **群收款（AA）**: 看到 \`[群收款...待付]\` = 用户在群里发起 AA 收款向大家收钱。被点到的成员可按性格反应：爽快答应"这就转"、调侃、哭穷拖延、起哄让别人先付……这只是聊天反应，钱实际到没到账由用户在收款单上点收，**别替用户宣布已收齐**。
+- **发红包 / 转账**: 如果某位成员决定真的发钱，必须在该成员 content 里输出真实动作标签，系统会生成卡片；不要只口头说"我发了"。格式：
+  · 转账给用户：\`[[ACTION:TRANSFER:100]]\`
+  · 普通红包：\`[[ACTION:REDPACKET:100]]\`，也可带祝福：\`[[ACTION:REDPACKET:100|恭喜发财]]\`
+  · 口令红包：\`[[ACTION:REDPACKET_PW:100|口令|祝福语]]\`，口令由该成员自定，并在正文里自然告诉或提示大家。
+  金额请用正整数；低频、应景使用，尤其是幕后指令明确要求时才要立刻执行。
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
 - **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
 - **群签到**: 看到 \`[群签到 日期，已打卡N人: ...]\` = 今天群里在打卡。**还没签到的成员可以签到**：在自己的发言里加 \`[[CHECKIN: 一句此刻的心情/状态]]\`（如「摸鱼中」「刚下班累瘫」「今天超精神」，简短）。签到指令不显示，但可以配一句正常发言。**已经签过的人当天不要重复签**，没在状态的也可以不签。
@@ -5786,7 +5922,7 @@ ${groupOfflineDirectiveBlock}
 [
   {
     "charId": "角色的ID",
-    "content": "发言内容... (可以是文本${groupEmojiAssociation ? '、[[SEND_EMOJI: name]]' : ''} 或 [[PRIVATE: content]]${groupConvo.autoOffline && !isLiveDraftRun ? '，真正进入线下现场时可加 [[OFFLINE_START]]' : ''})"
+    "content": "发言内容... (可以是文本${groupEmojiAssociation ? '、[[SEND_EMOJI: name]]' : ''}、[[ACTION:REDPACKET:金额]] / [[ACTION:TRANSFER:金额]] 或 [[PRIVATE: content]]${groupConvo.autoOffline && !isLiveDraftRun ? '，真正进入线下现场时可加 [[OFFLINE_START]]' : ''})"
   },
   ...
 ]
@@ -6108,6 +6244,57 @@ ${groupOfflineDirectiveBlock}
                     if (!action.content) continue;
                 }
 
+                // 0.7 群·角色发红包 / 转账：把动作标签落成真实 Moro Pay 卡片，标签本身不显示。
+                {
+                    const moneyRegex = /\[\[ACTION:(TRANSFER|REDPACKET|REDPACKET_PW):([0-9]+(?:\.[0-9]{1,2})?)(?:\|([^\]]*))?\]\]/g;
+                    const moneyMatches: RegExpExecArray[] = [];
+                    let moneyMatch;
+                    while ((moneyMatch = moneyRegex.exec(action.content)) !== null) {
+                        moneyMatches.push(moneyMatch);
+                    }
+                    if (moneyMatches.length > 0) {
+                        for (const m of moneyMatches) {
+                            action.content = action.content.replace(m[0], '').trim();
+                            const actionKind = m[1];
+                            const amount = Math.round(parseFloat(m[2]) * 100) / 100;
+                            if (!Number.isFinite(amount) || amount <= 0) continue;
+                            if (actionKind === 'TRANSFER') {
+                                await DB.saveMessage({
+                                    charId: targetId,
+                                    groupId: activeGroup.id,
+                                    role: 'assistant',
+                                    type: 'transfer',
+                                    content: `[转账] ${amount}`,
+                                    metadata: { amount, status: 'pending' },
+                                } as any);
+                                await refreshRunGroupMessages();
+                                await new Promise(r => setTimeout(r, 520));
+                                continue;
+                            }
+                            const payload = String(m[3] || '').trim();
+                            const [passwordPart, ...noteParts] = payload.split('|');
+                            const isPassword = actionKind === 'REDPACKET_PW';
+                            const note = isPassword ? noteParts.join('|').trim() : payload;
+                            const password = isPassword ? (passwordPart.trim() || '开门见喜') : undefined;
+                            await DB.saveMessage({
+                                charId: targetId,
+                                groupId: activeGroup.id,
+                                role: 'assistant',
+                                type: 'transfer',
+                                content: isPassword ? `[口令红包] ${amount}` : `[红包] ${amount}`,
+                                metadata: buildGroupRedPacketMetadata({
+                                    amount,
+                                    type: isPassword ? 'password' : 'normal',
+                                    note: note || undefined,
+                                    password,
+                                }),
+                            } as any);
+                            await refreshRunGroupMessages();
+                            await new Promise(r => setTimeout(r, 520));
+                        }
+                    }
+                }
+
                 // 1. Check for Emoji Commands (handle multiple emojis)
                 // Filter emojis by character visibility to prevent using hidden emoji packs
                 const charVisibleEmojis = (() => {
@@ -6189,7 +6376,7 @@ ${groupOfflineDirectiveBlock}
 
                 // 2. Text Splitting (Standard Chat Logic)
                 // Remove the emoji tag if it was processed, or just clean up
-                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '').trim();
+                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[ACTION:(?:TRANSFER|REDPACKET|REDPACKET_PW):[^\]]+\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '').trim();
                 
                 if (textContent) {
                     const chunks = ChatParser.chunkTextByBubbleMode(textContent, groupBubbleMode)
@@ -7497,7 +7684,14 @@ ${groupOfflineDirectiveBlock}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                                 mentionNames={mentionNames}
                                 onCollectClick={setCollectDetailMsg}
-                                onRedPacketOpen={(mm) => { setRedPacketOpenMsg(mm); setRedPacketPasswordInput(''); }}
+                                onMoneyOpen={(mm) => {
+                                    setRedPacketOpenMsg(mm);
+                                    setRedPacketPasswordInput('');
+                                    setRedPacketOpening(false);
+                                    const moneyMeta: any = mm.metadata || {};
+                                    const isOpenedRedPacket = moneyMeta.kind === 'redpacket' && (moneyMeta.status === 'opened' || moneyMeta.status === 'claimed' || moneyMeta.status === 'finished');
+                                    setRedPacketRevealed(isOpenedRedPacket);
+                                }}
                                 onPollVote={votePoll}
                                 onPollClick={setPollDetailMsg}
                                 onRelayClick={setRelayDetailMsg}
@@ -8923,41 +9117,79 @@ ${groupOfflineDirectiveBlock}
             </Modal>
 
             {/* 发红包：钱包实扣（普通 / 口令 / 拼手气） */}
-            <Modal isOpen={modalType === 'transfer'} title="发送红包" en="SEND RED PACKET" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={resetTransferModal} footer={<ScrapBtn onClick={sendGroupTransfer} icon={<Coins size={16} weight="bold" />}>{transferRpType === 'lucky' ? '发送拼手气红包' : transferRpType === 'password' ? '发送口令红包' : '发送红包'}</ScrapBtn>}>
-                {(() => {
-                    const memberCount = activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)).length : 0;
-                    return (
-                        <div className="space-y-4">
-                            <div className="flex justify-center py-1">
-                                <div className="w-16 h-16 rounded-[18px] flex items-center justify-center text-2xl font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 12px 28px -24px rgba(122,90,114,0.42)' }}>包</div>
+            <Modal
+                isOpen={modalType === 'transfer'} title="发送红包" en="SEND RED PACKET"
+                icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>}
+                onClose={resetTransferModal}
+                footer={<ScrapBtn onClick={sendGroupTransfer} disabled={!groupTransferCanSend} icon={<Coins size={16} weight="bold" />}>{transferRpType === 'lucky' ? '发送拼手气红包' : transferRpType === 'password' ? '发送口令红包' : '发送红包'}</ScrapBtn>}
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                        {([['normal', '普通红包', '整包发送'], ['password', '口令红包', '输口令打开'], ['lucky', '拼手气红包', '随机分配']] as const).map(([t, label, hint]) => {
+                            const on = transferRpType === t;
+                            return (
+                                <button key={t} onClick={() => setTransferRpType(t)}
+                                    className="py-2.5 text-center transition-transform active:scale-95"
+                                    style={on
+                                        ? { background: '#fff1f2', color: '#9f1239', borderRadius: 14, border: '1px solid #f3a4b5', boxShadow: '0 10px 20px -16px rgba(190,18,60,0.38)' }
+                                        : { background: 'rgba(255,253,247,0.86)', color: '#a892a3', border: '1px solid #eed6df', borderRadius: 14 }}>
+                                    <div className="text-[12px] font-black">{label}</div>
+                                    <div className="text-[9.5px] mt-0.5" style={{ opacity: 0.78 }}>{hint}</div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="rounded-[22px] overflow-hidden" style={{ background: 'linear-gradient(135deg,#d58a9b,#b85d73)', color: '#fffdfa', boxShadow: '0 16px 34px -24px rgba(122,90,114,0.42)' }}>
+                        <div className="px-5 pt-5 pb-4 relative">
+                            <div className="relative flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[9px] font-mono tracking-[0.24em] uppercase opacity-80">{transferRpType === 'lucky' ? 'Lucky Packet' : transferRpType === 'password' ? 'Password Packet' : 'Red Packet'}</div>
+                                    <div className="text-[15px] font-black truncate">{activeGroup?.name || '群聊'} · {transferRpType === 'lucky' ? '拼手气红包' : transferRpType === 'password' ? '口令红包' : '普通红包'}</div>
+                                </div>
+                                <div className="w-11 h-11 rounded-full flex items-center justify-center text-[21px] font-black shrink-0" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.32)' }}>開</div>
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
-                                {([['normal', '普通红包', '整包发送'], ['password', '口令红包', '输口令打开'], ['lucky', '拼手气红包', '随机分配']] as const).map(([t, label, hint]) => {
-                                    const on = transferRpType === t;
-                                    return (
-                                        <button key={t} onClick={() => setTransferRpType(t)}
-                                            className="py-2.5 text-center transition-transform active:scale-95"
-                                            style={on
-                                                ? { background: '#fff4f7', color: '#5a3140', borderRadius: 13, border: '1px solid #d8a5b7' }
-                                                : { background: 'rgba(255,253,247,0.82)', color: '#a892a3', border: '1px solid #eed6df', borderRadius: 13 }}>
-                                            <div className="text-[13px] font-black">{label}</div>
-                                            <div className="text-[10px] mt-0.5" style={{ opacity: 0.78 }}>{hint}</div>
-                                        </button>
-                                    );
-                                })}
+                            <div className="relative mt-4 flex items-end gap-1">
+                                <span className="text-[15px] font-bold pb-1 opacity-80">¥</span>
+                                <span className="text-[36px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{groupTransferHasAmount ? formatGroupMoney(groupTransferAmountValue) : '--'}</span>
                             </div>
-                            <ScrapInput type="number" big value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '一共多少' : '金额'} autoFocus />
-                            {transferRpType === 'lucky' && (
-                                <ScrapInput type="number" center min={1} max={memberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={memberCount ? `拆几个（默认 ${memberCount}，最多 ${memberCount}）` : '拆几个'} />
-                            )}
-                            {transferRpType === 'password' && (
-                                <ScrapInput value={transferPassword} onChange={e => setTransferPassword(e.target.value)} placeholder="红包口令（会显示在红包上）" />
-                            )}
-                            <ScrapInput value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附句话（选填）" />
-                            <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1" style={{ color: INK_SOFT }}><Wallet size={13} weight="fill" />钱包里还有 ¥{wallet}</div>
+                            <div className="relative mt-2 text-[12px] italic line-clamp-2 opacity-90">「{transferNote.trim() || (transferRpType === 'lucky' ? '拼手气红包，看谁手气最好' : '恭喜发财，大吉大利')}」</div>
                         </div>
-                    );
-                })()}
+                    </div>
+
+                    <ScrapInput type="number" big value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '一共多少' : '金额'} autoFocus />
+                    <div className="flex flex-wrap gap-2">
+                        {[8.8, 20, 52, 88, 188, 520].map(v => (
+                            <button key={v} onClick={() => setTransferAmount(String(v))} className="px-3 py-1 text-[12px] font-black active:scale-95 transition-transform" style={{
+                                background: groupTransferAmountValue === v ? '#fff1f2' : '#fffdfa',
+                                color: groupTransferAmountValue === v ? '#9f1239' : INK_SOFT,
+                                border: `1px solid ${groupTransferAmountValue === v ? '#f3a4b5' : '#eed6df'}`,
+                                borderRadius: 9999,
+                            }}>¥{formatGroupMoney(v)}</button>
+                        ))}
+                    </div>
+                    {transferRpType === 'lucky' && (
+                        <div className="rounded-[18px] p-3 space-y-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                            <ScrapInput type="number" center min={1} max={groupRedPacketMemberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={groupRedPacketMemberCount ? `拆几个（默认 ${groupRedPacketMemberCount}，最多 ${groupRedPacketMemberCount}）` : '拆几个'} />
+                            <div className="flex items-center justify-between text-[11px]" style={{ color: INK_SOFT }}>
+                                <span>可抢成员 {groupRedPacketMemberCount} 人</span>
+                                <span>{groupTransferHasAmount && groupTransferShareCount > 0 ? `约每份 ¥${formatGroupMoney(groupTransferAmountValue / groupTransferShareCount)}` : '随机拆分'}</span>
+                            </div>
+                        </div>
+                    )}
+                    {transferRpType === 'password' && (
+                        <ScrapInput value={transferPassword} onChange={e => setTransferPassword(e.target.value)} placeholder="红包口令（会显示在红包上）" />
+                    )}
+                    <ScrapInput value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附句话（选填）" />
+                    <div className="rounded-[18px] p-3 space-y-2 text-[12px]" style={{ background: '#fbfaf8', border: '1px solid #eed6df', color: INK_SOFT }}>
+                        <div className="flex items-center justify-between"><span>钱包余额</span><span className="font-black" style={{ color: INK }}>¥{formatGroupMoney(wallet)}</span></div>
+                        <div className="flex items-center justify-between"><span>本次扣款</span><span className="font-black" style={{ color: groupTransferHasAmount ? '#9f1239' : INK_SOFT }}>{groupTransferHasAmount ? `-¥${formatGroupMoney(groupTransferAmountValue)}` : '¥0'}</span></div>
+                        <div className="flex items-center justify-between"><span>手续费</span><span className="font-black" style={{ color: INK }}>¥0</span></div>
+                    </div>
+                    {groupTransferBalanceInsufficient && <ScrapNote center>钱包余额不足，先调小金额或去人生拟营业。</ScrapNote>}
+                    {transferRpType === 'password' && !transferPassword.trim() && <ScrapNote center>口令红包需要先写一句口令。</ScrapNote>}
+                    {transferRpType === 'lucky' && groupRedPacketMemberCount <= 0 && <ScrapNote center>群里还没有成员能抢红包。</ScrapNote>}
+                </div>
             </Modal>
 
             {/* 群收款（AA）：选成员 + 总额 → 均摊发起 */}
@@ -9224,18 +9456,196 @@ ${groupOfflineDirectiveBlock}
                 </div>
             </Modal>
 
-            <Modal isOpen={!!redPacketOpenMsg} title="口令红包" en="PASSWORD" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={() => { setRedPacketOpenMsg(null); setRedPacketPasswordInput(''); }} footer={<ScrapBtn onClick={() => void openPasswordRedPacket()} icon={<Coins size={16} weight="bold" />}>打开红包</ScrapBtn>}>
-                {redPacketOpenMsg && (
-                    <div className="space-y-4">
-                        <div className="rounded-[18px] px-4 py-5 text-center" style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df' }}>
-                            <div className="text-[11px] font-bold tracking-[0.24em] uppercase" style={{ color: '#a892a3' }}>Password Red Packet</div>
-                            <div className="mt-2 text-2xl font-black" style={{ color: '#5a3140' }}>¥{(redPacketOpenMsg.metadata as any)?.amount}</div>
-                            <div className="mt-2 text-[12px]" style={{ color: '#8a6478' }}>口令：{(redPacketOpenMsg.metadata as any)?.password || '红包上的那句话'}</div>
+            <Modal
+                isOpen={!!redPacketOpenMsg}
+                title={redPacketOpenMsg?.metadata?.kind === 'redpacket'
+                    ? redPacketOpenMsg?.metadata?.rpType === 'lucky' ? '拼手气红包' : redPacketOpenMsg?.metadata?.rpType === 'password' ? '口令红包' : '红包'
+                    : '群聊转账'}
+                en={redPacketOpenMsg?.metadata?.kind === 'redpacket' ? 'RED PACKET' : 'TRANSFER'}
+                icon={<ScrapStamp>{redPacketOpenMsg?.metadata?.kind === 'redpacket' ? <Coins size={15} weight="bold" /> : <Wallet size={15} weight="bold" />}</ScrapStamp>}
+                onClose={closeGroupMoneyModal}
+                footer={redPacketOpenMsg ? (
+                    redPacketRevealed
+                        ? <ScrapBtn variant="paper" onClick={closeGroupMoneyModal}>{redPacketOpenMsg.metadata?.kind === 'redpacket' ? '收下红包' : '收好'}</ScrapBtn>
+                        : <ScrapBtn variant="paper" onClick={closeGroupMoneyModal}>{redPacketOpening ? '稍后再看' : '先关上'}</ScrapBtn>
+                ) : undefined}
+            >
+                {redPacketOpenMsg && (() => {
+                    const meta: any = redPacketOpenMsg.metadata || {};
+                    const isRedpacket = meta.kind === 'redpacket';
+                    const isLucky = meta.rpType === 'lucky';
+                    const isPassword = meta.rpType === 'password';
+                    const amountLabel = formatGroupMoney(meta.amount);
+                    const note = typeof meta.note === 'string' && meta.note.trim()
+                        ? meta.note.trim()
+                        : isRedpacket
+                            ? isLucky ? '拼手气红包，看谁手气最好' : '恭喜发财，大吉大利'
+                            : '群聊转账';
+                    const grabs: any[] = Array.isArray(meta.grabs) ? meta.grabs : [];
+                    const best = grabs.find(g => g.id === meta.bestId);
+                    const phase = redPacketOpening ? 'opening' : redPacketRevealed ? 'done' : 'cover';
+                    const senderChar = redPacketOpenMsg.charId ? characters.find(c => c.id === redPacketOpenMsg.charId) : null;
+                    const senderName = redPacketOpenMsg.role === 'user'
+                        ? (userProfile.name || '我')
+                        : senderChar
+                            ? (activeGroup ? displayNameOf(activeGroup, senderChar.id) : senderChar.name)
+                            : '群成员';
+                    const sentTime = new Date(redPacketOpenMsg.timestamp || Date.now()).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    return (
+                        <div className="space-y-4">
+                            <style>{`
+                                @keyframes moroPacketPaper { 0%{transform:translateY(0) scale(1)} 54%{transform:translateY(-7px) scale(1.01)} 100%{transform:translateY(-13px) scale(.985);opacity:.42} }
+                                @keyframes moroOpenSeal { 0%{transform:translateY(0) scale(1)} 46%{transform:translateY(-2px) scale(.97)} 100%{transform:translateY(-14px) scale(.9);opacity:.2} }
+                                @keyframes moroTransferCard { 0%{transform:translateY(0) scale(1)} 48%{transform:translateY(-10px) scale(1.02)} 100%{transform:translateY(10px) scale(.96);opacity:.18} }
+                                @keyframes moroTransferCheck { 0%{stroke-dashoffset:42;opacity:0} 18%{opacity:1} 100%{stroke-dashoffset:0;opacity:1} }
+                                @keyframes moroReceiptIn { from{opacity:0;transform:translateY(16px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+                                @keyframes moroSealGlow { 0%{box-shadow:0 16px 30px -24px rgba(90,49,64,.5),0 0 0 0 rgba(216,165,183,.22),inset 0 1px 0 rgba(255,255,255,.95)} 100%{box-shadow:0 16px 30px -24px rgba(90,49,64,.5),0 0 0 12px rgba(216,165,183,0),inset 0 1px 0 rgba(255,255,255,.95)} }
+                            `}</style>
+                            {isRedpacket ? (
+                                phase !== 'done' ? (
+                                    <div className="rounded-[24px] overflow-hidden text-center min-h-[392px] px-5 pt-5 pb-4 relative" style={{ background: 'linear-gradient(180deg,#fffefe 0%,#fbfaf8 62%,#fff4f7 100%)', color: INK, border: '1px solid #eed6df', boxShadow: '0 16px 34px -26px rgba(122,90,114,0.42)' }}>
+                                        <div className="text-[9px] font-mono tracking-[0.3em] uppercase" style={{ color: INK_SOFT }}>{isLucky ? 'Moro Lucky Packet' : isPassword ? 'Moro Password Packet' : 'Moro Packet'}</div>
+                                        <div className="mt-2 text-[14px] font-black" style={{ color: INK }}>{senderName} 发来一个{isLucky ? '拼手气红包' : isPassword ? '口令红包' : '红包'}</div>
+                                        <div className="relative mx-auto mt-8 min-h-[178px] w-[248px] px-5 py-3 text-center" style={{ animation: redPacketOpening ? 'moroPacketPaper 980ms cubic-bezier(.16,1,.3,1) forwards' : undefined }}>
+                                            <div className="text-[11px] font-bold" style={{ color: INK_SOFT }}>金额不会提前显示</div>
+                                            {isPassword ? (
+                                                <div className="relative mx-auto mt-7 flex h-[92px] w-[116px] items-center justify-center rounded-full" style={{ background: 'linear-gradient(180deg,#fffefe,#fff4f7)', color: INK, border: '1px solid #eed6df', boxShadow: '0 16px 30px -24px rgba(90,49,64,.45)' }}>
+                                                    <span aria-hidden className="absolute h-[74px] w-[98px] rounded-full border border-dashed" style={{ borderColor: '#d8a5b766' }} />
+                                                    <span className="relative text-[18px] leading-none" style={{ fontFamily: '"STKaiti","KaiTi","Songti SC","Noto Serif SC",serif', fontWeight: 500 }}>口令</span>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled={redPacketOpening}
+                                                    onClick={() => void openVisibleRedPacket()}
+                                                    className="relative mx-auto mt-7 flex h-[92px] w-[116px] items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-55"
+                                                    style={{ background: 'linear-gradient(180deg,#faedf1 0%,#e7a2b1 56%,#c96f86 100%)', color: '#6b2338', border: '1px solid #d58a9b', animation: redPacketOpening ? 'moroOpenSeal 980ms cubic-bezier(.16,1,.3,1) forwards' : 'moroSealGlow 1500ms ease-out infinite' }}
+                                                >
+                                                    <span className="relative text-[32px] leading-none" style={{ fontFamily: '"STKaiti","KaiTi","Songti SC","Noto Serif SC",serif', fontWeight: 500 }}>{redPacketOpening ? '拆' : '开'}</span>
+                                                </button>
+                                            )}
+                                            <div className="mt-5 text-[11px]" style={{ color: INK_SOFT }}>{isPassword ? '输入口令后打开' : '轻点印记打开红包'}</div>
+                                        </div>
+                                        <div className="mx-auto mt-4 max-w-[260px] text-[12.5px] leading-relaxed italic text-center" style={{ color: INK }}>「{note}」</div>
+                                        {isPassword ? (
+                                            <div className="mt-5 space-y-2.5 text-left">
+                                                <div className="text-[11px] text-center" style={{ color: INK_SOFT }}>输入红包口令后打开，金额会在打开后显示</div>
+                                                <ScrapInput
+                                                    value={redPacketPasswordInput}
+                                                    onChange={e => setRedPacketPasswordInput(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && !redPacketOpening) void openPasswordRedPacket(); }}
+                                                    placeholder="输入红包口令"
+                                                    center
+                                                    autoFocus
+                                                    style={{ background: '#fffdfa', color: INK, border: '1px solid #eed6df' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void openPasswordRedPacket()}
+                                                    disabled={redPacketOpening}
+                                                    className="w-full py-3 rounded-[18px] text-[13px] font-black active:scale-[0.98] transition-transform"
+                                                    style={{ background: '#d8a5b7', color: '#fffdfa' }}
+                                                >确认口令并打开</button>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-4 text-[11px]" style={{ color: INK_SOFT }}>{redPacketOpening ? '红包正在打开...' : '金额已藏好'}</div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-[24px] overflow-hidden animate-[moroReceiptIn_260ms_ease-out]" style={{ background: '#fffdfa', border: '1px solid #eed6df', boxShadow: '0 14px 30px -24px rgba(122,90,114,0.45)' }}>
+                                        <div className="px-5 pt-6 pb-5 text-center" style={{ background: 'linear-gradient(180deg,#fff7ed,#fffdfa)' }}>
+                                            <div className="text-[13px] font-black" style={{ color: '#7f1d1d' }}>红包已打开</div>
+                                            <div className="mt-3 flex items-end justify-center gap-1">
+                                                <span className="text-[18px] font-bold pb-1.5" style={{ opacity: 0.58 }}>¥</span>
+                                                <span className="text-[44px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)', color: '#3f2b24' }}>{amountLabel}</span>
+                                            </div>
+                                            <div className="mt-3 text-[12.5px] italic" style={{ color: '#8a6478' }}>「{note}」</div>
+                                        </div>
+                                        <div className="px-4 py-4 space-y-2.5 text-[12px]" style={{ color: '#7a6a70' }}>
+                                            <div className="flex justify-between gap-4"><span>来自</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{senderName}</span></div>
+                                            <div className="flex justify-between gap-4"><span>红包类型</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{isLucky ? '拼手气红包' : isPassword ? '口令红包' : '普通红包'}</span></div>
+                                            <div className="flex justify-between gap-4"><span>发送时间</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{sentTime}</span></div>
+                                        </div>
+                                    </div>
+                                )
+                            ) : (
+                                phase !== 'done' ? (
+                                    <div className="rounded-[24px] overflow-hidden relative min-h-[362px] text-center" style={{ background: 'linear-gradient(180deg,#fffdfa 0%,#fff7ed 54%,#f8efe4 100%)', color: '#4a3320', border: '1px solid #f0dfbf', boxShadow: '0 18px 38px -26px rgba(137,91,37,.38)' }}>
+                                        <div className="px-5 pt-5 text-[9px] font-mono tracking-[0.3em] uppercase" style={{ color: '#b86b20' }}>Moro Transfer</div>
+                                        <div className="mt-2 text-[14px] font-black">{senderName} 的群聊转账</div>
+                                        <div className="mx-4 mt-7 rounded-[24px] overflow-hidden text-left" style={{ background: '#fffdfa', border: '1px solid #f0dfbf', boxShadow: '0 20px 38px -26px rgba(137,91,37,.38)', animation: redPacketOpening ? 'moroTransferCard 720ms cubic-bezier(.16,1,.3,1) forwards' : undefined }}>
+                                            <div className="px-5 py-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#c8843a,#9c5e74)', color: '#fffdfa' }}>
+                                                <div className="h-11 w-11 rounded-[14px] flex items-center justify-center text-[22px] font-black" style={{ background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)' }}>¥</div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-[13px] font-black truncate">Moro 转账</div>
+                                                    <div className="text-[11px] opacity-82 truncate">{note}</div>
+                                                </div>
+                                            </div>
+                                            <div className="px-5 py-5 text-center">
+                                                <div className="text-[11px]" style={{ color: '#a48a6a' }}>转账金额</div>
+                                                <div className="mt-1 text-[38px] font-black tracking-tight" style={{ fontFamily: 'var(--font-display)', color: '#3f2b24' }}>¥{amountLabel}</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => revealGroupMoneyWithAnimation('transfer')}
+                                                    disabled={redPacketOpening}
+                                                    className="mt-5 w-full rounded-[18px] py-3 text-[14px] font-black active:scale-[0.98] transition-transform"
+                                                    style={{ background: 'linear-gradient(180deg,#b77a4f 0%,#965b30 56%,#7c4824 100%)', color: '#fffdfa', border: '1px solid #9a5c31', boxShadow: '0 14px 26px -18px rgba(124,72,36,0.58), inset 0 1px 0 rgba(255,255,255,0.28)' }}
+                                                >{redPacketOpening ? '正在打开...' : '查看转账详情'}</button>
+                                            </div>
+                                        </div>
+                                        {redPacketOpening && (
+                                            <svg className="absolute left-1/2 top-[156px] -translate-x-1/2" width="74" height="74" viewBox="0 0 74 74" aria-hidden>
+                                                <circle cx="37" cy="37" r="34" fill="#b86b20" opacity=".96" />
+                                                <path d="M22 38.5 32.5 49 53 25" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 42, strokeDashoffset: 42, animation: 'moroTransferCheck 520ms ease-out 120ms forwards' }} />
+                                            </svg>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-[24px] overflow-hidden animate-[moroReceiptIn_260ms_ease-out]" style={{ background: '#fffdfa', border: '1px solid #f0dfbf', boxShadow: '0 14px 30px -24px rgba(137,91,37,0.38)' }}>
+                                        <div className="px-5 pt-6 pb-5 text-center" style={{ background: 'linear-gradient(180deg,#fff7ed,#fffdfa)' }}>
+                                            <div className="mx-auto h-16 w-16 rounded-full flex items-center justify-center text-[28px] font-black" style={{ background: 'linear-gradient(180deg,#c8843a,#7c3f12)', color: '#fffdfa', boxShadow: '0 14px 24px -18px rgba(20,18,16,.55)' }}>✓</div>
+                                            <div className="mt-3 text-[13px] font-black" style={{ color: '#7c3f12' }}>转账详情</div>
+                                            <div className="mt-3 flex items-end justify-center gap-1">
+                                                <span className="text-[18px] font-bold pb-1.5" style={{ opacity: 0.58 }}>¥</span>
+                                                <span className="text-[44px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)', color: '#3f2b24' }}>{amountLabel}</span>
+                                            </div>
+                                            <div className="mt-3 text-[12.5px] italic" style={{ color: '#8a6478' }}>「{note}」</div>
+                                        </div>
+                                        <div className="px-4 py-4 space-y-2.5 text-[12px]" style={{ color: '#7a6a70' }}>
+                                            <div className="flex justify-between gap-4"><span>转账方</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{senderName}</span></div>
+                                            <div className="flex justify-between gap-4"><span>到账方式</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>Moro 钱包余额</span></div>
+                                            <div className="flex justify-between gap-4"><span>发送时间</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{sentTime}</span></div>
+                                            <div className="rounded-[18px] px-3 py-2.5 leading-relaxed" style={{ background: '#fff7ed', color: '#7c3f12', border: '1px solid #f0dfbf' }}>
+                                                群聊转账详情已展开；聊天里的转账小卡会保留为可再次查看的回执。
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            )}
+                            {redPacketRevealed && isLucky && (
+                                <div className="rounded-[18px] p-3 space-y-2 animate-[moroReceiptIn_280ms_ease-out]" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                                    <div className="flex items-center justify-between text-[11px] font-black" style={{ color: INK_SOFT }}>
+                                        <span>{grabs.length} 人已领取</span>
+                                        {best && <span style={{ color: '#9f1239' }}>手气最佳 · {best.name}</span>}
+                                    </div>
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto no-scrollbar">
+                                        {grabs.map((g, i) => (
+                                            <div key={i} className="flex items-center justify-between gap-2 text-[12px]">
+                                                <span className="truncate" style={{ color: INK }}>{g.id === meta.bestId ? '👑 ' : ''}{g.name}</span>
+                                                <span className="font-black tabular-nums" style={{ color: INK }}>¥{formatGroupMoney(g.amount)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {redPacketRevealed && isRedpacket && !isLucky && (
+                                <div className="rounded-[18px] p-3 text-[12px] leading-relaxed" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK_SOFT }}>
+                                    {isPassword ? '口令正确，红包已经打开。' : '这个红包已经发到群里，大家可以围着它接话。'}
+                                </div>
+                            )}
                         </div>
-                        <ScrapInput value={redPacketPasswordInput} onChange={e => setRedPacketPasswordInput(e.target.value)} placeholder="输入红包口令" autoFocus />
-                        <ScrapNote center>必须完整输入红包上的口令才能打开。</ScrapNote>
-                    </div>
-                )}
+                    );
+                })()}
             </Modal>
 
             {/* 成员选择器：成员专属功能先选「对谁」 */}

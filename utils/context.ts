@@ -327,6 +327,9 @@ export const ContextBuilder = {
                 if (cs.forceReplyEnabled) {
                     lines.push(convoLines.forceReply(user.name));
                 }
+                if (cs.healthyRomanceMode) {
+                    lines.push(convoLines.healthyRomance(user.name));
+                }
                 if (cs.allowPhoneBrowse) {
                     lines.push(convoLines.allowPhoneBrowse);
                 }

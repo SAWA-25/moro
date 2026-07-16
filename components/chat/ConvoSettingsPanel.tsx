@@ -1080,6 +1080,13 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Entry
+                        manualAnchor="manual-chat-healthy-romance"
+                        mark="☘" title="正常恋爱模式"
+                        note="开启后，恋爱互动会更强调尊重、理解、共情、沟通和边界；每个角色可以有自己的恋爱方式和灰度，但不会把亲密写成支配或许可关系。"
+                        side={<CandyToggle candy="#d8a5b7" on={!!cs.healthyRomanceMode} onToggle={() => updateConvo({ healthyRomanceMode: !cs.healthyRomanceMode })} />}
+                    />
+
+                    <Entry
                         manualAnchor="manual-chat-force-reply"
                         mark="☘" title="强制你回话"
                         note="开启后，TA 在强控制欲、占有欲、吃醋、担心、急事或关系拉扯上头时，可以低频要求你立刻回到这段单聊。触发后不提供稍后关闭，直到你发出一条可见回复。"

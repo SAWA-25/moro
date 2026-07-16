@@ -36,6 +36,7 @@ describe('private chat visible message filter', () => {
       msg(5, 'call transcript', { source: 'call' }),
       msg(6, 'proactive hint', { proactiveHint: true }),
       msg(7, 'group message', undefined, { groupId: 'group-1' }),
+      msg(8, 'system command', { systemCommand: true }),
     ];
 
     expect(filterPrivateChatVisibleMessages(history).map(m => m.content)).toEqual(['visible']);
@@ -46,6 +47,7 @@ describe('private chat visible message filter', () => {
       archiveMsg('visible snapshot'),
       archiveMsg('hidden snapshot', { hidden: true }),
       archiveMsg('block peek snapshot', { blockPeek: true }),
+      archiveMsg('system command snapshot', { systemCommand: true }),
     ];
 
     expect(filterPrivateChatVisibleArchiveMessages(snapshot).map(m => m.content)).toEqual(['visible snapshot']);

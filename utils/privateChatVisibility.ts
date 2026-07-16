@@ -7,6 +7,7 @@ export const isPrivateChatVisibleMetadata = (metadata?: any): boolean => {
   return metadata?.source !== 'date'
     && metadata?.source !== 'call'
     && !metadata?.proactiveHint
+    && !metadata?.systemCommand
     && !metadata?.hidden
     && !metadata?.blockPeek;
 };

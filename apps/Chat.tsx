@@ -587,7 +587,9 @@ const Chat: React.FC = () => {
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
     const [claimTarget, setClaimTarget] = useState<Message | null>(null);
     const [claimRevealed, setClaimRevealed] = useState(false); // 收款弹窗领取确认前后两态
+    const [claimOpening, setClaimOpening] = useState(false); // 点开后的专属开启动画阶段
     const [claimPwInput, setClaimPwInput] = useState(''); // 口令红包：领取前要先答对的口令
+    const claimOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
     const scheduleRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2816,19 +2818,56 @@ ${parallelReplyPromptBody({
     };
 
     // ── 收款流程：角色发来的转账 / 红包，点开卡片 → 弹窗让用户选择是否收下 ──
+    const formatTransferMoney = (value: number): string => {
+        if (!Number.isFinite(value)) return '0';
+        return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '');
+    };
+
+    const clearClaimOpenTimer = useCallback(() => {
+        if (claimOpenTimerRef.current) {
+            clearTimeout(claimOpenTimerRef.current);
+            claimOpenTimerRef.current = null;
+        }
+    }, []);
+
+    const closeClaimModal = useCallback(() => {
+        clearClaimOpenTimer();
+        setClaimTarget(null);
+        setClaimRevealed(false);
+        setClaimOpening(false);
+        setClaimPwInput('');
+    }, [clearClaimOpenTimer]);
+
+    const revealClaimWithAnimation = useCallback((kind: 'redpacket' | 'transfer') => {
+        clearClaimOpenTimer();
+        setClaimOpening(true);
+        const delay = kind === 'redpacket' ? 980 : 720;
+        claimOpenTimerRef.current = setTimeout(() => {
+            claimOpenTimerRef.current = null;
+            setClaimOpening(false);
+            setClaimRevealed(true);
+            setClaimPwInput('');
+        }, delay);
+    }, [clearClaimOpenTimer]);
+
+    useEffect(() => () => clearClaimOpenTimer(), [clearClaimOpenTimer]);
+
     const handleClaimRequest = useCallback((m: Message) => {
         const meta: any = m.metadata || {};
         const expired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
-        if (meta.status === 'claimed' || meta.status === 'declined' || expired) return;
-        setClaimRevealed(false);
+        if (meta.status === 'declined' || expired) return;
+        clearClaimOpenTimer();
+        setClaimRevealed(meta.status === 'claimed');
+        setClaimOpening(false);
+        setClaimPwInput('');
         setClaimTarget(m);
-    }, []);
+    }, [clearClaimOpenTimer]);
 
     const handleAcceptTransfer = async () => {
         const m = claimTarget;
         if (!m) return;
         const amt = Math.abs(parseFloat(String(m.metadata?.amount))) || 0;
-        setClaimTarget(null);
+        closeClaimModal();
         if (amt > 0) adjustUserBalance(+amt, {
             note: `${char?.name || '角色'}发来的${m.metadata?.kind === 'redpacket' ? '红包' : '转账'}`,
             category: 'transfer',
@@ -2840,13 +2879,13 @@ ${parallelReplyPromptBody({
         }); // 收到的钱进入用户钱包余额
         await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'claimed', claimedAt: Date.now() }));
         await reloadMessages(visibleCountRef.current);
-        addToast(`收下了 ¥${Math.round(amt)} · 已进入钱包`, 'success');
+        addToast(`收下了 ¥${formatTransferMoney(amt)} · 已进入钱包`, 'success');
     };
 
     const handleDeclineTransfer = async () => {
         const m = claimTarget;
         if (!m) return;
-        setClaimTarget(null);
+        closeClaimModal();
         await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'declined', declinedAt: Date.now() }));
         await reloadMessages(visibleCountRef.current);
         addToast('没有收下', 'info');
@@ -3875,10 +3914,11 @@ ${privateCallDecisionPromptBody({
             role: 'system',
             type: 'text',
             content: `[系统命令] ${cmd}`,
-            metadata: { systemCommand: true },
+            metadata: { systemCommand: true, hidden: true },
         } as any);
+        const fresh = await DB.getRecentMessagesByCharId(char.id, char.contextLimit || 500);
         await reloadMessages(visibleCountRef.current);
-        triggerAI(messages);
+        triggerAI(fresh);
     };
 
     const resetPhoneLockSession = () => {
@@ -7970,7 +8010,7 @@ ${privateCallDecisionPromptBody({
                         'transfer',
                         { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined, ...(isPw ? { rpType: 'password', password: pw } : {}) } : {}) }
                     );
-                    addToast(isPw ? `口令红包已寄出 · 钱包 -¥${Math.round(amt)}` : transferMode === 'redpacket' ? `红包已寄出 · 钱包 -¥${Math.round(amt)}` : `零花钱已寄出 · 钱包 -¥${Math.round(amt)}`, 'success');
+                    addToast(isPw ? `口令红包已寄出 · 钱包 -¥${formatTransferMoney(amt)}` : transferMode === 'redpacket' ? `红包已寄出 · 钱包 -¥${formatTransferMoney(amt)}` : `零花钱已寄出 · 钱包 -¥${formatTransferMoney(amt)}`, 'success');
                     setModalType('none');
                     setTransferNote('');
                     setTransferPassword('');
@@ -9051,63 +9091,156 @@ ${privateCallDecisionPromptBody({
                 const isRedpacket = meta.kind === 'redpacket';
                 const amt = Math.abs(parseFloat(String(meta.amount))) || 0;
                 const note = isRedpacket && typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '';
-                const hair = '1px solid #eed6df';
+                const amountLabel = formatTransferMoney(amt);
                 const isPassword = isRedpacket && meta.rpType === 'password';
-                const closeModal = () => { setClaimTarget(null); setClaimRevealed(false); setClaimPwInput(''); };
+                const phase = claimOpening ? 'opening' : claimRevealed ? 'done' : 'cover';
+                const sentTime = new Date(claimTarget.timestamp || Date.now()).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                const alreadyClaimed = meta.status === 'claimed';
+                const doneTitle = isRedpacket
+                    ? alreadyClaimed ? '红包已收下' : '红包已打开，等待收下'
+                    : alreadyClaimed ? '转账已收款' : '转账已打开，等待确认收款';
+                const doneHint = isRedpacket
+                    ? alreadyClaimed ? '红包金额已进入你的钱包余额，聊天卡片会保留这张回执。' : '确认收下后会进入你的钱包；超过 24 小时不领会自动退回。'
+                    : alreadyClaimed ? '这笔转账已进入你的钱包余额，聊天卡片会保留这张回执。' : '确认收款后会进入你的钱包余额，聊天卡片会标记为已收款。';
+                const verifyPasswordAndOpen = () => {
+                    const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase();
+                    if (ok) revealClaimWithAnimation('redpacket');
+                    else addToast('口令不对，再想想？', 'error');
+                };
                 return (
-                    <div className="absolute inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={closeModal}>
+                    <div className="absolute inset-0 z-[400] flex items-center justify-center p-5 animate-fade-in" style={{ background: 'rgba(20,18,16,0.52)', backdropFilter: 'blur(5px)' }} onClick={closeClaimModal}>
+                        <style>{`
+                            @keyframes moroPacketPaper { 0%{transform:translateY(0) scale(1)} 54%{transform:translateY(-7px) scale(1.01)} 100%{transform:translateY(-13px) scale(.985);opacity:.42} }
+                            @keyframes moroOpenSeal { 0%{transform:translateY(0) scale(1)} 46%{transform:translateY(-2px) scale(.97)} 100%{transform:translateY(-14px) scale(.9);opacity:.2} }
+                            @keyframes moroTransferCard { 0%{transform:translateY(0) scale(1)} 48%{transform:translateY(-10px) scale(1.02)} 100%{transform:translateY(10px) scale(.96);opacity:.18} }
+                            @keyframes moroTransferCheck { 0%{stroke-dashoffset:42;opacity:0} 18%{opacity:1} 100%{stroke-dashoffset:0;opacity:1} }
+                            @keyframes moroReceiptIn { from{opacity:0;transform:translateY(16px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+                            @keyframes moroSealGlow { 0%{box-shadow:0 16px 30px -24px rgba(90,49,64,.5),0 0 0 0 rgba(216,165,183,.22),inset 0 1px 0 rgba(255,255,255,.95)} 100%{box-shadow:0 16px 30px -24px rgba(90,49,64,.5),0 0 0 12px rgba(216,165,183,0),inset 0 1px 0 rgba(255,255,255,.95)} }
+                        `}</style>
                         <div
-                            className="w-[min(84vw,330px)] relative rounded-[22px] overflow-hidden animate-pop-in"
+                            className={`${phase === 'done' ? 'w-[min(88vw,356px)] overflow-hidden' : 'w-[min(88vw,330px)]'} relative animate-pop-in`}
                             onClick={e => e.stopPropagation()}
-                            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', boxShadow: '0 30px 60px -24px rgba(122,90,114,0.45)', border: '1px solid #eed6df' }}
+                            style={phase === 'done' ? { borderRadius: 28, background: '#fffdfa', color: '#3f2b24', boxShadow: '0 30px 68px -24px rgba(20,18,16,0.68)', border: '1px solid rgba(255,255,255,0.72)' } : { color: '#3f2b24' }}
                         >
-                            <div className="px-7 pt-8 pb-6 text-center relative">
-                                <div className="text-[9px] font-mono tracking-[0.28em] uppercase mb-2" style={{ color: '#a892a3' }}>{isRedpacket ? 'Red Packet' : 'Transfer'}</div>
-                                <div className="text-[14px] font-bold">{displayCharName} 给你发送了{isRedpacket ? '红包' : '一笔转账'}</div>
-                                {note && <div className="text-[12.5px] mt-1.5 italic" style={{ opacity: 0.8 }}>「{note}」</div>}
-                                {!claimRevealed ? (
-                                    isPassword ? (
-                                        <div className="mt-4 space-y-2.5">
-                                            <div className="text-[11px]" style={{ color: '#a892a3' }}>这是口令红包 · 输入正确口令后领取</div>
-                                            <input
-                                                value={claimPwInput}
-                                                onChange={e => setClaimPwInput(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); } }}
-                                                placeholder="在此输入口令"
-                                                className="w-full px-3 py-2.5 rounded-xl text-center text-[14px] outline-none"
-                                                style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}
-                                                autoFocus
-                                            />
-                                            <button
-                                                onClick={() => { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); }}
-                                                className="w-full py-2.5 rounded-xl text-[13px] font-bold active:scale-95 transition-transform"
-                                                style={{ background: '#d8a5b7', color: '#fffdfa' }}
-                                            >确认口令</button>
+                            {phase !== 'done' ? (
+                                isRedpacket ? (
+                                    <div className="relative">
+                                        <div className="rounded-[24px] overflow-hidden text-left" style={{ background: 'linear-gradient(180deg,#fffdfa,#fff6f7)', border: '1px solid #eed6df', boxShadow: '0 30px 68px -26px rgba(20,18,16,0.58)', animation: claimOpening ? 'moroPacketPaper 980ms cubic-bezier(.16,1,.3,1) forwards' : undefined }}>
+                                            <div className="px-5 py-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#d58a9b,#b85d73)', color: '#fffdfa' }}>
+                                                <div className="h-11 w-11 rounded-full flex items-center justify-center text-[21px] font-black shrink-0" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.32)', fontFamily: '"STKaiti","KaiTi","Songti SC","Noto Serif SC",serif', fontWeight: 500 }}>{isPassword ? '令' : '开'}</div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-[9px] font-mono tracking-[0.28em] uppercase opacity-80">{isPassword ? 'Password Packet' : 'Moro Packet'}</div>
+                                                    <div className="text-[15px] font-black truncate">{displayCharName} 发来一个红包</div>
+                                                    <div className="text-[11px] truncate opacity-82">金额不会提前显示</div>
+                                                </div>
+                                            </div>
+                                            <div className="px-5 py-5 text-center">
+                                                {isPassword ? (
+                                                    <div className="space-y-2.5 text-left">
+                                                        <input
+                                                            value={claimPwInput}
+                                                            onChange={e => setClaimPwInput(e.target.value)}
+                                                            onKeyDown={e => { if (e.key === 'Enter' && !claimOpening) verifyPasswordAndOpen(); }}
+                                                            placeholder="输入红包口令"
+                                                            className="w-full px-3 py-3 rounded-[18px] text-center text-[14px] outline-none"
+                                                            style={{ background: '#fffdfa', color: INK, border: '1px solid #eed6df' }}
+                                                            autoFocus
+                                                        />
+                                                        <button
+                                                            onClick={verifyPasswordAndOpen}
+                                                            disabled={claimOpening}
+                                                            className="w-full py-3 rounded-[18px] text-[13px] font-black active:scale-[0.98] transition-transform disabled:opacity-60"
+                                                            style={{ background: '#b85d73', color: '#fffdfa' }}
+                                                        >{claimOpening ? '红包正在打开...' : '确认口令并打开'}</button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        disabled={claimOpening}
+                                                        onClick={() => revealClaimWithAnimation('redpacket')}
+                                                        className="relative mx-auto flex h-[72px] w-[104px] items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-55"
+                                                        style={{ background: 'linear-gradient(180deg,#faedf1 0%,#e7a2b1 56%,#c96f86 100%)', color: '#6b2338', border: '1px solid #d58a9b', animation: claimOpening ? 'moroOpenSeal 980ms cubic-bezier(.16,1,.3,1) forwards' : 'moroSealGlow 1500ms ease-out infinite' }}
+                                                    >
+                                                        <span className="relative text-[30px] leading-none" style={{ fontFamily: '"STKaiti","KaiTi","Songti SC","Noto Serif SC",serif', fontWeight: 500 }}>{claimOpening ? '拆' : '开'}</span>
+                                                    </button>
+                                                )}
+                                                <div className="mt-4 text-[12.5px] leading-relaxed italic" style={{ color: '#8a6478' }}>「{note || '恭喜发财，大吉大利'}」</div>
+                                                <div className="mt-3 inline-flex rounded-full px-3 py-1.5 text-[11px] font-black" style={{ background: '#fff4f7', color: '#a892a3', border: '1px solid #eed6df' }}>{claimOpening ? '红包正在打开...' : isPassword ? '输入口令后打开' : '金额已藏好'}</div>
+                                            </div>
                                         </div>
-                                    ) : (
-                                    <button
-                                        onClick={() => setClaimRevealed(true)}
-                                        className="mt-5 mx-auto w-20 h-20 rounded-full flex flex-col items-center justify-center active:scale-90 transition-transform"
-                                        style={{ background: '#d8a5b7', color: '#fffdfa', boxShadow: '0 0 0 5px rgba(216,165,183,0.18), 0 12px 24px -16px rgba(122,90,114,0.55)' }}
-                                    >
-                                        <span className="text-[22px] leading-none">{isRedpacket ? '¥' : '↥'}</span>
-                                        <span className="text-[10px] font-bold mt-0.5">查看</span>
-                                    </button>
-                                    )
-                                ) : (
-                                    <div className="mt-4 animate-pop-in">
-                                        <div className="flex items-end justify-center gap-1">
-                                            <span className="text-[18px] font-bold pb-1.5" style={{ opacity: 0.6 }}>¥</span>
-                                            <span className="text-[36px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{meta.amount}</span>
-                                        </div>
-                                        <div className="text-[10.5px] mt-2.5 leading-relaxed" style={{ opacity: 0.55 }}>收下后进入你的钱包余额 · 超过 24 小时不领自动退回</div>
                                     </div>
-                                )}
-                            </div>
-                            {claimRevealed && (
-                                <div className="flex" style={{ borderTop: hair }}>
-                                    <button onClick={() => { void handleDeclineTransfer(); setClaimRevealed(false); }} className="flex-1 py-3.5 text-[14px] font-medium active:opacity-70" style={{ opacity: 0.62 }}>先不收</button>
-                                    <button onClick={() => { void handleAcceptTransfer(); setClaimRevealed(false); }} className="flex-1 py-3.5 text-[14px] font-bold active:opacity-80" style={{ borderLeft: hair }}>收下 ¥{Math.round(amt)}</button>
+                                ) : (
+                                    <div className="relative">
+                                        <div className="rounded-[24px] overflow-hidden text-left" style={{ background: 'linear-gradient(180deg,#fffdfa,#fffaf0)', border: '1px solid #f0dfbf', boxShadow: '0 30px 68px -26px rgba(20,18,16,0.58)', animation: claimOpening ? 'moroTransferCard 720ms cubic-bezier(.16,1,.3,1) forwards' : undefined }}>
+                                            <div className="px-5 py-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#fff7ed,#ffedd5)', color: '#4a3320' }}>
+                                                <div className="h-11 w-11 rounded-full flex items-center justify-center text-[22px] font-black shrink-0" style={{ background: '#fffdfa', color: '#b86b20', border: '1px solid #f0dfbf' }}>¥</div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-[9px] font-mono tracking-[0.28em] uppercase" style={{ color: '#b86b20' }}>Moro Transfer</div>
+                                                    <div className="text-[15px] font-black truncate" style={{ color: '#7c3f12' }}>{displayCharName} 向你转账</div>
+                                                    <div className="text-[11px] truncate" style={{ color: '#a48a6a' }}>{note || '请确认收款'}</div>
+                                                </div>
+                                            </div>
+                                            <div className="px-5 py-6 text-center">
+                                                <div className="text-[11px] font-bold" style={{ color: '#a48a6a' }}>待收款金额</div>
+                                                <div className="mt-1 flex items-end justify-center gap-1">
+                                                    <span className="text-[18px] font-bold pb-1.5" style={{ color: '#b86b20' }}>¥</span>
+                                                    <span className="text-[44px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)', color: '#3f2b24' }}>{amountLabel}</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => revealClaimWithAnimation('transfer')}
+                                                    disabled={claimOpening}
+                                                    className="mt-6 w-full rounded-[18px] py-3.5 text-[14px] font-black active:scale-[0.98] transition-transform disabled:opacity-60"
+                                                    style={{ background: 'linear-gradient(180deg,#b77a4f 0%,#965b30 56%,#7c4824 100%)', color: '#fffdfa', border: '1px solid #9a5c31', boxShadow: '0 14px 26px -18px rgba(124,72,36,0.58), inset 0 1px 0 rgba(255,255,255,0.28)' }}
+                                                >{claimOpening ? '正在收款...' : '确认收款'}</button>
+                                            </div>
+                                        </div>
+                                        {claimOpening && (
+                                            <svg className="absolute left-1/2 top-[132px] -translate-x-1/2" width="74" height="74" viewBox="0 0 74 74" aria-hidden>
+                                                <circle cx="37" cy="37" r="34" fill="#b86b20" opacity=".96" />
+                                                <path d="M22 38.5 32.5 49 53 25" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 42, strokeDashoffset: 42, animation: 'moroTransferCheck 520ms ease-out 120ms forwards' }} />
+                                            </svg>
+                                        )}
+                                    </div>
+                                )
+                            ) : (
+                                <div className="min-h-[438px] animate-[moroReceiptIn_260ms_ease-out]">
+                                    <div className="px-6 pt-7 pb-5 text-center" style={{ background: isRedpacket ? 'linear-gradient(180deg,#fff7ed,#fffdfa)' : 'linear-gradient(180deg,#fff7ed,#fffdfa)' }}>
+                                        {!isRedpacket && (
+                                            <div className="mx-auto h-16 w-16 rounded-full flex items-center justify-center text-[30px]"
+                                                style={{ background: 'linear-gradient(180deg,#c8843a,#7c3f12)', color: '#fffdfa', boxShadow: '0 14px 24px -18px rgba(20,18,16,.38)', fontWeight: 900 }}
+                                            >✓</div>
+                                        )}
+                                        <div className={`${isRedpacket ? 'mt-0' : 'mt-3'} text-[13px] font-black`} style={{ color: isRedpacket ? '#7f1d1d' : '#7c3f12' }}>{doneTitle}</div>
+                                        <div className="mt-3 flex items-end justify-center gap-1">
+                                            <span className="text-[18px] font-bold pb-1.5" style={{ opacity: 0.58 }}>¥</span>
+                                            <span className="text-[44px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{amountLabel}</span>
+                                        </div>
+                                        {note && <div className="mt-3 text-[12.5px] italic" style={{ color: '#8a6478' }}>「{note}」</div>}
+                                    </div>
+                                    <div className="px-5 py-4 space-y-2.5 text-[12px]" style={{ color: '#7a6a70' }}>
+                                        <div className="flex justify-between gap-4"><span>{isRedpacket ? '来自' : '转账方'}</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{displayCharName}</span></div>
+                                        <div className="flex justify-between gap-4"><span>{isRedpacket ? '红包类型' : '到账方式'}</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{isRedpacket ? (isPassword ? '口令红包' : '普通红包') : 'Moro 钱包余额'}</span></div>
+                                        <div className="flex justify-between gap-4"><span>发送时间</span><span className="font-bold text-right" style={{ color: '#3f2b24' }}>{sentTime}</span></div>
+                                        <div className="rounded-[18px] px-3 py-2.5 leading-relaxed" style={{ background: '#fff7ed', color: isRedpacket ? '#9f1239' : '#7c3f12', border: `1px solid ${isRedpacket ? '#fed7aa' : '#f0dfbf'}` }}>
+                                            {doneHint}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            {claimRevealed && alreadyClaimed ? (
+                                <div className="flex" style={{ borderTop: '1px solid #eee4dd' }}>
+                                    <button onClick={closeClaimModal} className="flex-1 py-3.5 text-[14px] font-black active:opacity-80" style={{ color: isRedpacket ? '#9f1239' : '#7c3f12' }}>知道了</button>
+                                </div>
+                            ) : claimRevealed && (
+                                <div className="flex" style={{ borderTop: '1px solid #eee4dd' }}>
+                                    {isRedpacket ? (
+                                        <button onClick={() => { void handleAcceptTransfer(); }} className="flex-1 py-3.5 text-[14px] font-black active:opacity-80" style={{ color: '#9f1239' }}>收下红包</button>
+                                    ) : (
+                                        <>
+                                            <button onClick={() => { void handleDeclineTransfer(); }} className="flex-1 py-3.5 text-[14px] font-medium active:opacity-70" style={{ opacity: 0.62 }}>退回</button>
+                                            <button onClick={() => { void handleAcceptTransfer(); }} className="flex-1 py-3.5 text-[14px] font-black active:opacity-80" style={{ borderLeft: '1px solid #eee4dd', color: '#7c3f12' }}>确认收款</button>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>

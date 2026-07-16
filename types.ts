@@ -4102,6 +4102,8 @@ export interface ConvoSettings {
     proactiveCallEnabled?: boolean;
     /** 强制回话：角色在强控制欲/吃醋/担心/急事等低频场景可要求用户立刻回到本单聊回复。默认关。 */
     forceReplyEnabled?: boolean;
+    /** 正常恋爱模式：让正式恋爱互动更尊重、理解、共情和有边界，避免把角色放大成病态极端恋爱模板。默认关。 */
+    healthyRomanceMode?: boolean;
     /** 主动为用户点外卖：开启后角色可在合适场景（饭点/降温/用户喊饿…）主动替用户下单外卖并代付，
      *  在聊天里生成可点开的外卖订单小票。关闭则永不触发该行为。默认关。 */
     proactiveTakeoutOrder?: boolean;

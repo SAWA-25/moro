@@ -137,6 +137,31 @@ describe('ContextBuilder character identity anchor', () => {
     expect(context).not.toContain('[[OFFLINE_START]]');
   });
 
+  it('injects healthy romance guidance only when enabled', () => {
+    const disabled = ContextBuilder.buildCoreContext(char, user, false);
+    const enabled = ContextBuilder.buildCoreContext(
+      { ...char, convoSettings: { healthyRomanceMode: true } },
+      user,
+      false,
+    );
+
+    expect(disabled).not.toContain('正常恋爱模式：开启');
+    expect(enabled).toContain('正常恋爱模式：开启');
+    expect(enabled).toContain('按你的完整人设、当前关系和最近相处来长出来');
+    expect(enabled).toContain('温柔的人会照顾细节');
+    expect(enabled).toContain('嘴硬的人会绕一下再心软');
+    expect(enabled).toContain('不要把所有角色都改成同一种甜宠、卑微、全天候安抚的恋人');
+    expect(enabled).toContain('灰度、误会、试探、退让、确认和反复拉扯');
+    expect(enabled).toContain('尊重、理解、共情');
+    expect(enabled).toContain('亲密不等于所有权、许可权或支配权');
+    expect(enabled).toContain('自己的选择、人际关系、沉默、拒绝和离开的空间');
+    expect(enabled).not.toContain('你' + '属于' + '我');
+    expect(enabled).not.toContain('你' + '只能' + '是我的');
+    expect(enabled).not.toContain('没有' + '我允许');
+    expect(enabled).toContain('病态极端控制');
+    expect(enabled).toContain('先停下、听懂、道歉或协商');
+  });
+
   it('treats the current schedule location as a chat baseline that recent chat may override', () => {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');

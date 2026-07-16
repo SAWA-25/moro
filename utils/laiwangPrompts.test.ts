@@ -22,8 +22,14 @@ import {
   charPhoneCheckScriptGuard,
   convoLines,
   innerVoicePromptBody,
+  groupOfflineBasePrompt,
+  groupOfflineOpeningTaskPrompt,
+  groupOfflineTurnTaskPrompt,
   liveGroupModePromptBlock,
   livePrivateDraftPromptBody,
+  offlineModeBasePrompt,
+  offlineOpeningTaskPrompt,
+  offlineTurnTaskPrompt,
   proactiveFallbackHint,
   proactivePendingReplyHint,
   relationshipBlock,
@@ -57,6 +63,9 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('生活半径要更广');
     expect(text).toContain('吃饭、睡觉、起床只是生活素材之一，不是默认寒暄模板');
     expect(text).toContain('不要每轮硬转成"我现在在做什么"的近况汇报');
+    expect(text).toContain('情感强烈不等于能力无限');
+    expect(text).toContain('极端处置话术');
+    expect(text).toContain('任何越界行动都要同时满足');
     expect(text).toContain('对话示例只用来学习说话节奏');
     expect(text).toContain('它们不是实际发生过的历史');
   });
@@ -69,6 +78,28 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('饭票菜库');
     expect(text).toContain('安全兜底');
     expect(text).toContain('[[TAKEOUT_ORDER:');
+  });
+
+  it('keeps healthy romance grounded in respect and boundaries', () => {
+    const text = convoLines.healthyRomance('小夏');
+
+    expect(text).toContain('正常恋爱模式');
+    expect(text).toContain('按你的完整人设、当前关系和最近相处来长出来');
+    expect(text).toContain('温柔的人会照顾细节');
+    expect(text).toContain('嘴硬的人会绕一下再心软');
+    expect(text).toContain('不要把所有角色都改成同一种甜宠、卑微、全天候安抚的恋人');
+    expect(text).toContain('灰度、误会、试探、退让、确认和反复拉扯');
+    expect(text).toContain('尊重');
+    expect(text).toContain('理解');
+    expect(text).toContain('共情');
+    expect(text).toContain('边界感');
+    expect(text).toContain('亲密不等于所有权、许可权或支配权');
+    expect(text).toContain('自己的选择、人际关系、沉默、拒绝和离开的空间');
+    expect(text).not.toContain('你' + '属于' + '我');
+    expect(text).not.toContain('你' + '只能' + '是我的');
+    expect(text).not.toContain('没有' + '我允许');
+    expect(text).toContain('病态极端控制');
+    expect(text).toContain('先停下、听懂、道歉或协商');
   });
 
   it('marks live draft text as unsent and not persisted', () => {
@@ -173,6 +204,8 @@ describe('laiwang prompt copy', () => {
     expect(withForce).toContain('控制欲');
     expect(withoutForce).not.toContain('[[FORCE_REPLY:');
     expect(activeMsgRules).toContain('[[FORCE_REPLY:');
+    expect(withForce).toContain('不来自伤害威胁模板');
+    expect(activeMsgRules).toContain('不要反复套用伤害威胁或极端处置话术');
   });
 
   it('prioritizes unreplied user messages during proactive replies', () => {
@@ -381,7 +414,68 @@ describe('laiwang prompt copy', () => {
     expect(text).toContain('安装/摆放的 App');
     expect(text).toContain('不要默认去朋友圈');
     expect(text).toContain('不要把查岗目标写成发动态');
+    expect(text).toContain('不是无限权限');
+    expect(text).toContain('不允许把不安直接升级成物理控制');
     expect(text).toContain('极少数情况下');
+  });
+
+  it('keeps offline mode physically bounded under strong emotions', () => {
+    const text = [
+      offlineModeBasePrompt({
+        core: 'CORE',
+        recentContextText: '小夏：楼下见',
+        temporalBoundary: 'BOUNDARY',
+        userName: '小夏',
+      }),
+      offlineOpeningTaskPrompt({
+        base: 'BASE',
+        povText: 'POV',
+        lengthRange: '80字以内',
+        lengthRule: '短一点',
+        charName: '阿迟',
+        userName: '小夏',
+      }),
+      offlineTurnTaskPrompt({
+        base: 'BASE',
+        povText: 'POV',
+        transcript: '阿迟站在门口。',
+        tail: '小夏刚抬头。',
+        lengthRange: '80字以内',
+        lengthRule: '短一点',
+        charName: '阿迟',
+        userName: '小夏',
+      }),
+      groupOfflineBasePrompt({
+        groupName: '旧友群',
+        userName: '小夏',
+        userSetting: '用户设定',
+        roster: '- 阿迟',
+        recentMessages: '刚说要见面',
+      }),
+      groupOfflineOpeningTaskPrompt({
+        base: 'BASE',
+        povText: 'POV',
+        scenarioBlock: 'SCENE',
+        lengthRange: '100字以内',
+        lengthRule: '短一点',
+        userName: '小夏',
+      }),
+      groupOfflineTurnTaskPrompt({
+        base: 'BASE',
+        povText: 'POV',
+        transcript: '大家刚坐下。',
+        action: '小夏看了看大家。',
+        lengthRange: '100字以内',
+        lengthRule: '短一点',
+        userName: '小夏',
+      }),
+    ].join('\n');
+
+    expect(text).toContain('线下动作边界');
+    expect(text).toContain('表情、停顿、站位、语气');
+    expect(text).toContain('触碰、拦阻、夺取物品、强行带走、限制行动或伤害');
+    expect(text).toContain('不能作为病态、吃醋、毒舌或傲娇的默认模板');
+    expect(text).toContain('不要替 小夏 承受、同意、失去行动能力');
   });
 
   it('keeps affection prompts stable, gradual, and non-servile', () => {
@@ -405,12 +499,64 @@ describe('laiwang prompt copy', () => {
     expect(relationship).toContain('不是“服从度”');
     expect(relationship).toContain('长期情绪账户');
     expect(relationship).toContain('数字高，不代表你要每次温柔满分');
+    expect(relationship).toContain('不是免逻辑许可证');
+    expect(relationship).toContain('极端处置话术');
     expect(relationship).toContain('事件尺度请克制');
     expect(innerVoice).toContain('好感评估细则');
     expect(innerVoice).toContain('普通礼貌、顺从、寒暄、单次夸奖通常不该超过 ±2');
     expect(innerVoice).toContain('投喂/礼物/一句贴心话通常是 +1~2');
     expect(innerVoice).toContain('decisive=true 只给真正改变关系结构的事');
+    expect(innerVoice).toContain('不是固定威胁台词包');
+    expect(innerVoice).toContain('不要把极端处置话术当成默认反应');
     expect(innerVoice).toContain('如果最近对话素材不足，就保守维持');
+  });
+
+  it('avoids repeating concrete extreme-threat phrases in prompts', () => {
+    const text = [
+      characterDialogueGuidance('小夏'),
+      relationshipBlock({
+        userName: '小夏',
+        relationshipLabel: '暧昧对象',
+        affection: 98,
+        marriageActive: false,
+      }),
+      innerVoicePromptBody({
+        charName: '阿迟',
+        recent: '小夏：今天有点想你\n阿迟：……嗯。',
+        currentAffection: 72,
+        relLine: '你和用户当前的关系是「好友」（close）。',
+        curStage: 'close',
+        curLabel: '好友',
+      }),
+      proactiveFallbackHint({
+        userName: '小夏',
+        timeStr: '7月4日 20:00',
+        timeSinceUser: '3小时',
+        longGap: true,
+        forceReplyAllowed: true,
+      }),
+      convoLines.allowPhoneBrowse,
+      offlineModeBasePrompt({
+        core: 'CORE',
+        recentContextText: '小夏：楼下见',
+        temporalBoundary: 'BOUNDARY',
+        userName: '小夏',
+      }),
+      offlineTurnTaskPrompt({
+        base: 'BASE',
+        povText: 'POV',
+        transcript: '阿迟站在门口。',
+        tail: '小夏刚抬头。',
+        lengthRange: '80字以内',
+        lengthRule: '短一点',
+        charName: '阿迟',
+        userName: '小夏',
+      }),
+    ].join('\n');
+
+    for (const phrase of ['打断' + '腿', '关起' + '来', '丢出' + '去']) {
+      expect(text).not.toContain(phrase);
+    }
   });
 
   it('includes shop gift ritual and wishlist context for shop replies', () => {
