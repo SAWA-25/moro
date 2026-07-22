@@ -432,11 +432,26 @@ const TakeoutCardView: React.FC<{
     const reviewed = !!order?.review;
 
     // 外卖订单卡：与来往浅色聊天设置保持一致。
+    const stopCardGesture = (event: React.SyntheticEvent) => {
+        event.stopPropagation();
+    };
+
     return commonLayout(
-        <div
-            onClick={() => onOpen?.(m)}
-            className="w-64 rounded-[16px] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer"
-            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df', boxShadow: '0 14px 26px -18px rgba(122,90,114,0.38)' }}
+        <button
+            type="button"
+            onClick={(event) => {
+                event.stopPropagation();
+                onOpen?.(m);
+            }}
+            onMouseDown={stopCardGesture}
+            onMouseMove={stopCardGesture}
+            onMouseUp={stopCardGesture}
+            onTouchStart={stopCardGesture}
+            onTouchMove={stopCardGesture}
+            onTouchEnd={stopCardGesture}
+            className="block w-64 rounded-[16px] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer text-left appearance-none"
+            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df', boxShadow: '0 14px 26px -18px rgba(122,90,114,0.38)', font: 'inherit' }}
+            aria-label={`打开${snap.storeName || '外卖'}订单详情`}
         >
             <div className="px-4 py-2 flex items-center justify-between" style={{ background: '#fff4f7', borderBottom: '1px solid #eed6df' }}>
                 <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#5a3140' }}>🍱 外卖订单</span>
@@ -468,7 +483,7 @@ const TakeoutCardView: React.FC<{
                     <span className="text-[14px] font-black" style={{ color: '#5a3140' }}>¥{total}</span>
                 </div>
             </div>
-        </div>
+        </button>
     );
 };
 

@@ -287,4 +287,63 @@ describe('schedule generator character identity', () => {
 
     expect(chatHasScheduleSignal(messages)).toBe(true);
   });
+
+  it('treats short room movement as a schedule signal', () => {
+    const messages = [{
+      id: 1,
+      charId: 'char-isaac',
+      role: 'assistant',
+      type: 'text',
+      content: '我先回客厅。',
+      timestamp: Date.now(),
+    }] as Message[];
+
+    expect(chatHasScheduleSignal(messages)).toBe(true);
+  });
+
+  it('treats explicit appointments and same-day plan changes as schedule signals', () => {
+    const messages = [
+      {
+        id: 1,
+        charId: 'char-isaac',
+        role: 'user',
+        type: 'text',
+        content: '今晚八点一起看电影。',
+        timestamp: Date.now(),
+      },
+      {
+        id: 2,
+        charId: 'char-isaac',
+        role: 'assistant',
+        type: 'text',
+        content: '我今天不去公司了，下午临时请假。',
+        timestamp: Date.now(),
+      },
+    ] as Message[];
+
+    expect(chatHasScheduleSignal(messages)).toBe(true);
+  });
+
+  it('does not treat ordinary来去到 chatter as a schedule signal', () => {
+    const messages = [
+      {
+        id: 1,
+        charId: 'char-isaac',
+        role: 'user',
+        type: 'text',
+        content: '你来了呀，今天过得怎么样？',
+        timestamp: Date.now(),
+      },
+      {
+        id: 2,
+        charId: 'char-isaac',
+        role: 'assistant',
+        type: 'text',
+        content: '刚看到，来笑一下。',
+        timestamp: Date.now(),
+      },
+    ] as Message[];
+
+    expect(chatHasScheduleSignal(messages)).toBe(false);
+  });
 });

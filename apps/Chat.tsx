@@ -4,7 +4,7 @@ import { useMusic } from '../context/MusicContext';
 import { useUserScreenWatch } from '../context/UserScreenWatchContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, UserProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState, ScreenPeekCard, ChatAlarm, ChatAlarmChannel, ChatAlarmKind, ChatParcelDirection, ChatParcelMeta, ChatParcelMode } from '../types';
-import { setTakeoutIntent, buildTakeoutCardMeta, takeoutChatForTarget } from '../utils/takeout';
+import { setTakeoutIntent, setTakeoutOpenOrderIntent, buildTakeoutCardMeta, takeoutChatForTarget } from '../utils/takeout';
 import { DAILY_PARCEL_ITEM_PRESETS, DAILY_PARCEL_METHODS, TRAVEL_FROG_PARCEL_ITEM_PRESETS, TRAVEL_FROG_PARCEL_METHODS, formatDailyParcelForPrompt, generateCharacterParcelDraft, makeDailyParcelMeta } from '../utils/dailyParcel';
 import { resolveUnblockAppealDecision, type UnblockAppealDecision } from '../utils/unblockAppealActions';
 import { unblockCharacterByUser } from '../utils/blockActions';
@@ -592,6 +592,7 @@ const Chat: React.FC = () => {
     const claimOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
+    const scheduleReconcileInFlightRef = useRef<string>('');
     const scheduleRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // 回神：自我校准结果弹窗 + 进行中状态
     const [recenterResult, setRecenterResult] = useState<RecenterResult | null>(null);
@@ -2309,25 +2310,35 @@ ${parallelReplyPromptBody({
         if (lastReconcileSigRef.current === sig) return;       // 同一批消息不重复触发
 
         const COOLDOWN_MS = 8 * 60 * 1000;
+        const NO_CHANGE_COOLDOWN_MS = 90 * 1000;
         const key = `schedule_reconcile_at_${char.id}`;
         let last = 0;
         try { last = Number(localStorage.getItem(key) || '0'); } catch { /* ignore */ }
         if (Date.now() - last < COOLDOWN_MS) return;
+        if (scheduleReconcileInFlightRef.current === char.id) return;
 
         lastReconcileSigRef.current = sig;
-        try { localStorage.setItem(key, String(Date.now())); } catch { /* ignore */ }
+        scheduleReconcileInFlightRef.current = char.id;
+        // 先放一个短冷却，避免同一段无关聊天频繁打 API；只有真的保存了新日程才升级成完整冷却。
+        try { localStorage.setItem(key, String(Date.now() - COOLDOWN_MS + NO_CHANGE_COOLDOWN_MS)); } catch { /* ignore */ }
 
         const targetCharId = char.id;
         const curChar = char;
         const curSchedule = scheduleData;
         let cancelled = false;
         (async () => {
+            let updated: DailySchedule | null = null;
             try {
                 const recent = await DB.getRecentMessagesByCharId(targetCharId, 50);
-                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, scheduleApi);
+                updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, scheduleApi);
                 if (!cancelled && updated) await applyScheduleState(curChar, updated);
             } catch (e) {
                 console.warn('[Schedule/Reconcile] effect failed:', e);
+            } finally {
+                if (scheduleReconcileInFlightRef.current === targetCharId) scheduleReconcileInFlightRef.current = '';
+                if (updated) {
+                    try { localStorage.setItem(key, String(Date.now())); } catch { /* ignore */ }
+                }
             }
         })();
         return () => { cancelled = true; };
@@ -7732,6 +7743,7 @@ ${privateCallDecisionPromptBody({
              {/* 外卖订单小票详情：点开聊天里的外卖卡片看具体内容 */}
              {takeoutCardTarget && (() => {
                  const t: any = takeoutCardTarget.metadata?.takeout || (takeoutCardOrder ? buildTakeoutCardMeta(takeoutCardOrder, (id) => characters.find(c => c.id === id)?.name || '') : {});
+                 const takeoutOrderId = takeoutCardOrder?.id || takeoutCardTarget.metadata?.takeoutOrderId || t.takeoutOrderId;
                  const items: { name: string; qty: number; emoji?: string }[] = (takeoutCardOrder?.items as any) || t.items || [];
                  const customerName = takeoutCardOrder?.initiatedBy === 'char' && takeoutCardOrder.payer !== 'me'
                      ? (characters.find(c => c.id === takeoutCardOrder.payer)?.name || displayCharName || 'TA')
@@ -7791,7 +7803,7 @@ ${privateCallDecisionPromptBody({
                              </div>
                              <div className="flex border-t border-slate-100 shrink-0">
                                  <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }} className="flex-1 py-3.5 text-[14px] text-slate-500 font-medium active:bg-slate-50">合上</button>
-                                  <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#5a3140' }}>查看进度</button>
+                                  <button onClick={() => { if (takeoutOrderId) setTakeoutOpenOrderIntent({ orderId: takeoutOrderId, source: 'orders' }); setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#5a3140' }}>查看进度</button>
                              </div>
                          </div>
                      </div>

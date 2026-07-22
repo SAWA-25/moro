@@ -606,17 +606,23 @@ export async function generateDailyScheduleForChar(
 // 为控制日程协调成本：先用廉价的关键词信号过一道闸（chatHasScheduleSignal），
 // 命中才花一次 LLM 调用做协调（reconcileScheduleWithChat），调用方再叠一层冷却。
 
-/** 时间/约定类信号词——命中才值得花 LLM 协调日程 */
-const SCHEDULE_SIGNAL_RE = new RegExp(
-    [
-        // 明确时间点
-        '\\d{1,2}\\s*[:：]\\s*\\d{2}', '\\d{1,2}\\s*点', '半夜|凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|今晚|今早|今天|明天|待会|等下|等会|马上|一会儿|稍后',
-        // 约定/计划/变更动词
-        '约|约好|说好|一起|要去|得去|准备去|打算|计划|安排|出门|回家|下班|上班|开会|加班|见面|碰面|来接|去接|赴约|改时间|改约|取消|推迟|提前|没空|有空',
-        // 当前地点 / 房间变化（如“来卧室找我”“回客厅”“把东西拿到书房”）
-        '来|过来|回来|回到|回去|去|到|进来|出去|上楼|下楼|找我|找你|拿.*来|带.*来|客厅|卧室|书房|厨房|餐厅|阳台|浴室|卫生间|沙发|床上|房间|门口|楼下|楼上',
-    ].join('|'),
-);
+/** 时间/约定类信号词——命中才值得花 LLM 协调日程。避免用单字“来/去/到”误触发普通聊天。 */
+const SCHEDULE_HARD_TIME_RE = /(?:\d{1,2}\s*[:：]\s*\d{2}|\d{1,2}\s*(?:点|时|點)(?:半|\d{1,2}分?)?|半夜|凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|今晚|今早|明天|明早|明晚|待会儿?|等下|等会儿?|马上|一会儿|稍后)/;
+const SCHEDULE_DAY_RE = /(?:今天|明天|周[一二三四五六日天末]|星期[一二三四五六日天]|这个周末|下周)/;
+const SCHEDULE_ACTION_RE = /(?:约|约好|说好|一起|要去|得去|准备去|打算|计划|安排|出门|回家|下班|上班|开会|加班|见面|碰面|来接|去接|接你|接我|赴约|改时间|改约|取消|推迟|提前|没空|有空|不去|不来|不能去|临时|请假|翘班|看电影|吃饭|睡觉|休息)/;
+const SCHEDULE_COMMIT_RE = /(?:约好|说好|来接|去接|接你|接我|见面|碰面|赴约|改时间|改约|取消|推迟|提前)/;
+const SCHEDULE_ROOM_RE = /(?:客厅|卧室|书房|厨房|餐厅|阳台|浴室|卫生间|厕所|沙发|床上|房间|门口|楼下|楼上)/;
+const SCHEDULE_ROOM_MOVE_RE = /(?:(?:来|过来|回|回来|回到|回去|去|到|进来|出去|上楼|下楼|拿|带).{0,12}(?:客厅|卧室|书房|厨房|餐厅|阳台|浴室|卫生间|厕所|沙发|床上|房间|门口|楼下|楼上)|(?:客厅|卧室|书房|厨房|餐厅|阳台|浴室|卫生间|厕所|沙发|床上|房间|门口|楼下|楼上).{0,12}(?:找我|找你|等我|等你|过来|过去|回来|回去|拿来|带来|见面))/;
+
+function messageHasScheduleSignal(content: string): boolean {
+    const text = content.replace(/\s+/g, '');
+    if (!text) return false;
+    if (SCHEDULE_ROOM_RE.test(text) && SCHEDULE_ROOM_MOVE_RE.test(text)) return true;
+    if (SCHEDULE_COMMIT_RE.test(text)) return true;
+    if (SCHEDULE_HARD_TIME_RE.test(text) && SCHEDULE_ACTION_RE.test(text)) return true;
+    if (SCHEDULE_DAY_RE.test(text) && SCHEDULE_ACTION_RE.test(text)) return true;
+    return false;
+}
 
 /**
  * 廉价闸门：最近几条消息里有没有「跟今天日程相关」的约定/时间/变更信号。
@@ -628,7 +634,7 @@ export function chatHasScheduleSignal(messages: Message[]): boolean {
     for (const m of tail) {
         if (m.type && m.type !== 'text') continue;
         const c = typeof m.content === 'string' ? m.content : '';
-        if (c && SCHEDULE_SIGNAL_RE.test(c)) return true;
+        if (c && messageHasScheduleSignal(c)) return true;
     }
     return false;
 }

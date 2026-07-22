@@ -14,7 +14,7 @@ import {
     generateStores, generateStoresAI, liveTakeoutStatus, STATUS_LABEL, etaText, newRider, PACK_FEE,
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
-    consumeTakeoutIntent, notifyTakeoutUpdated, TAKEOUT_UPDATED_EVENT,
+    consumeTakeoutIntent, consumeTakeoutOpenOrderIntent, notifyTakeoutUpdated, TAKEOUT_UPDATED_EVENT,
     generateStoreReviews, generateStoreReviewsAI, reviewQuickTags, generateReviewReplies,
     getPinnedStores, togglePinnedStore, type StoreNpcReview,
     sortStores, filterStores, storePromoDiscount, parseStorePromo, bestRedpacket, TAKEOUT_REDPACKETS,
@@ -425,6 +425,12 @@ const TakeoutApp: React.FC = () => {
         setUnsealOrder(null);
         setView('detail');
     }, [orders]);
+    useEffect(() => {
+        const intent = consumeTakeoutOpenOrderIntent();
+        if (!intent?.orderId) return;
+        setOrderBucket('all');
+        openOrderDetail(intent.orderId, intent.source || 'orders');
+    }, [openOrderDetail]);
 
     useManualDeepLink(AppID.Takeout, useCallback((target) => {
         const anchor = target.anchorId || 'manual-takeout-root';

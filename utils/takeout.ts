@@ -2133,6 +2133,26 @@ export function consumeTakeoutIntent(): TakeoutIntent | null {
     return null;
 }
 
+// ── 从聊天订单小票打开外卖 App 的「票根详情意图」 ───────────────
+const OPEN_ORDER_INTENT_KEY = 'moro_takeout_open_order_intent_v1';
+export interface TakeoutOpenOrderIntent { orderId: string; source?: TakeoutMainTab; }
+
+export function setTakeoutOpenOrderIntent(intent: TakeoutOpenOrderIntent | null): void {
+    try {
+        if (intent?.orderId) localStorage.setItem(OPEN_ORDER_INTENT_KEY, JSON.stringify(intent));
+        else localStorage.removeItem(OPEN_ORDER_INTENT_KEY);
+    } catch { /* ignore */ }
+}
+
+/** 读取并清除一次性票根详情意图。 */
+export function consumeTakeoutOpenOrderIntent(): TakeoutOpenOrderIntent | null {
+    try {
+        const raw = localStorage.getItem(OPEN_ORDER_INTENT_KEY);
+        if (raw) { localStorage.removeItem(OPEN_ORDER_INTENT_KEY); return JSON.parse(raw) as TakeoutOpenOrderIntent; }
+    } catch { /* ignore */ }
+    return null;
+}
+
 // ── 「钉在墙上的常去铺子」（按店名收藏，店铺每次刷新会变，故以名字为锚） ──────
 const PINNED_KEY = 'moro_takeout_pinned_v1';
 
