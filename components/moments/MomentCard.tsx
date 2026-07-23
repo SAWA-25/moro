@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatCircle, Heart, Lock, PaperPlaneTilt, Repeat } from '@phosphor-icons/react';
+import { ChatCircle, Heart, Lock, PaperPlaneTilt, Repeat, Trash } from '@phosphor-icons/react';
 import { SocialComment, SocialPost } from '../../types';
 import { displayableImages, formatRelativeTime, postDisplayText } from './momentsUtils';
 
@@ -50,7 +50,6 @@ const MomentCard: React.FC<MomentCardProps> = ({
     post, userName, isReacting,
     onToggleLike, onComment, onRepost, onShareToChat, onDeletePost, onDeleteComment, onOpenCommentInChat, onPreviewImage,
 }) => {
-    const isOwn = post.authorType === 'user';
     const images = displayableImages(post);
     const text = postDisplayText(post);
     const likedBy = post.likedBy || [];
@@ -64,6 +63,13 @@ const MomentCard: React.FC<MomentCardProps> = ({
         } else {
             onComment(post, { commentId: c.id, name: c.authorName });
         }
+    };
+
+    const handleDeletePost = () => {
+        const tip = post.authorType === 'user'
+            ? '删除这条此刻？'
+            : `删除「${post.authorName}」的这条此刻？`;
+        if (window.confirm(tip)) onDeletePost(post);
     };
 
     // 常驻操作行的小圆钮（替代隐藏式弹出条，按键直接可见）
@@ -132,7 +138,7 @@ const MomentCard: React.FC<MomentCardProps> = ({
                     </div>
                 )}
 
-                {/* 常驻操作行：赞 / 留言 / 转发 / 递给 TA（+ 自己的帖可撕掉） */}
+                {/* 常驻操作行：赞 / 留言 / 转发 / 递给 TA（+ 任意帖可删除） */}
                 <div className="flex items-center gap-2 mt-3">
                     <ActionBtn onClick={() => onToggleLike(post)} label={userLiked ? '取消赞' : '赞'} active={userLiked}>
                         <Heart size={15} weight={userLiked ? 'fill' : 'regular'} />
@@ -146,14 +152,13 @@ const MomentCard: React.FC<MomentCardProps> = ({
                     <ActionBtn onClick={() => onShareToChat(post)} label="递给 TA">
                         <PaperPlaneTilt size={15} />
                     </ActionBtn>
-                    {isOwn && (
-                        <button
-                            onClick={() => { if (window.confirm('撕掉这条瞬间？')) onDeletePost(post); }}
-                            className="ml-auto text-[11px] text-slate-300 active:text-rose-400"
-                        >
-                            撕掉
-                        </button>
-                    )}
+                    <button
+                        onClick={handleDeletePost}
+                        title="删除"
+                        className="ml-auto w-8 h-8 rounded-full flex items-center justify-center border bg-white text-slate-300 border-slate-200 hover:text-rose-400 active:scale-90 transition-all"
+                    >
+                        <Trash size={15} />
+                    </button>
                 </div>
 
                 {/* 赞 + 留言区块：虚线纸条 */}

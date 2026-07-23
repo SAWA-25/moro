@@ -85,6 +85,18 @@ export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> 
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-07-23-moments-delete-all-posts',
+    date: '2026-07-23',
+    title: '此刻动态都能删了',
+    kind: 'feature',
+    summary: '絮语「此刻」里，用户自己、角色和路人发的动态都可以删除了。',
+    items: [
+      '每条此刻卡片右下角都有删除按钮，点一下会先确认再删掉。',
+      '用户、角色、路人氛围帖都能删；删除后会从本地此刻列表里移除，赞和留言也会一起清掉。',
+      '删掉的只是本地此刻流，不会影响聊天记录或其他 App 里的内容。',
+    ],
+  },
+  {
     id: '2026-07-22-chat-schedule-reconcile-trigger-fix',
     date: '2026-07-22',
     title: '絮语今日作息会更稳地记住约定',
