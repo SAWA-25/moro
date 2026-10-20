@@ -409,7 +409,7 @@ export function budgetChatMessages(
 }
 
 // ---------------------------------------------------------------------------
-// 请求级兜底：所有 /chat/completions 请求（含群聊 / 主动消息 / 各 App 裸 fetch）
+// 请求级兜底：所有聊天补全请求（含群聊 / 主动消息 / 各 App 裸 fetch）
 // 发出前统一按 token 预算裁一次；撞到服务端「上下文过长」报错时记住真实上限并自动重发一次。
 
 const CONTEXT_ERROR_PATTERN = /context[_\s-]*(?:length|window|size)|maximum context|context_length_exceeded|too many tokens|prompt is too long|input is too long|tokens? exceed|exceeds? (?:the )?(?:maximum|max)|maximum (?:input )?tokens|reduce the length|上下文|超出.*(?:长度|token)|token.*(?:超|上限)|输入过长/i;

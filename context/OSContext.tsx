@@ -944,6 +944,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               || 'GET';
           return String(method).toUpperCase();
       };
+      const endpointIsChatCompletions = (url: string): boolean => isTrackedApiUrl(url) && /completions(?:[/?#]|$)/i.test(url);
       const isTrackedApiUrl = (url: string): boolean => /\/(?:chat\/completions|models)(?:[/?#]|$)/i.test(url);
       const noisyExternalTextPattern = /google-analytics\.com|googletagmanager\.com|\b(?:www\.)?google\.com\/g\/collect(?:[/?#]|$)/i;
       const isNoisyExternalUrl = (url: string): boolean => {
@@ -995,7 +996,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           // 上下文 token 预算（对齐 SillyTavern）：所有聊天补全请求发出前按 token 上限裁旧历史，
           // 撞到服务端「上下文过长」时记住真实上限、重新裁剪后自动重发一次。
-          const isChatCompletion = method === 'POST' && typeof body === 'string' && /\/chat\/completions(?:[/?#]|$)/i.test(urlStr);
+          const isChatCompletion = method === 'POST' && typeof body === 'string' && endpointIsChatCompletions(urlStr);
           const budgetOn = isChatCompletion && isMainContextBudgetEnabled();
           let budgetedInfo: ReturnType<typeof budgetChatRequestBody> = null;
           if (budgetOn) {
