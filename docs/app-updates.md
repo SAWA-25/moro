@@ -98,3 +98,9 @@ Live Updates 只适合更新 WebView 里的网页资源，也就是 Vite 打出�
 - 新增、升级或删除 Capacitor 原生插件
 - 修改 `MainActivity`、Gradle、AndroidManifest、原生资源
 - 改动需要 Android 系统识别的安装包版本号
+
+## 其他 Capacitor OTA 选项（Capgo）
+
+Ionic Appflow Live Updates 适合已经在用 Appflow 的团队（Appflow 已停止新销售，现有客户可使用至 2027-12-31）。如果你需要在现有 CI/CD 里做 Capacitor WebView OTA（渠道、回滚），也可以用开源的 [`@capgo/capacitor-updater`](https://capgo.app)（[Capgo](https://capgo.app)）。
+
+和 Appflow 一样，Capgo 只更新打包进 WebView 的 JS/CSS/图片；原生插件、权限、Gradle 变更仍需发新 APK。文档：https://capgo.app/docs
