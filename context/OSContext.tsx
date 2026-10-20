@@ -37,6 +37,7 @@ import { runVRSession } from '../utils/vrWorld/runSession';
 import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { ChatParser } from '../utils/chatParser';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
+import { budgetChatRequestBody, isContextOverflowError, isMainContextBudgetEnabled, learnFromContextOverflow } from '../utils/contextBudget';
 import { makeApiUsageMeta } from '../utils/apiUsageCatalog';
 import { callChatCompletion } from '../utils/llmClient';
 import { INSTALLED_APPS } from '../constants';
@@ -991,9 +992,30 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const body = (config as any)?.body;
           const meta = (config as any)?.__moroMeta;
           const startedAt = nowMs();
-          
+
+          // 上下文 token 预算（对齐 SillyTavern）：所有聊天补全请求发出前按 token 上限裁旧历史，
+          // 撞到服务端「上下文过长」时记住真实上限、重新裁剪后自动重发一次。
+          const isChatCompletion = method === 'POST' && typeof body === 'string' && /\/chat\/completions(?:[/?#]|$)/i.test(urlStr);
+          const budgetOn = isChatCompletion && isMainContextBudgetEnabled();
+          let budgetedInfo: ReturnType<typeof budgetChatRequestBody> = null;
+          if (budgetOn) {
+              budgetedInfo = budgetChatRequestBody(body, true);
+              if (budgetedInfo?.changed) args[1] = { ...(config as RequestInit), body: budgetedInfo.body };
+          }
+
           try {
-              const response = await originalFetch(...args);
+              let response = await originalFetch(...args);
+              if (budgetOn && budgetedInfo && [400, 413, 422].includes(response.status)) {
+                  const errText = await response.clone().text().catch(() => '');
+                  if (isContextOverflowError(errText)) {
+                      learnFromContextOverflow(budgetedInfo.model, errText, budgetedInfo.estimatedTokens);
+                      const retry = budgetChatRequestBody(body, true);
+                      if (retry && retry.estimatedTokens < budgetedInfo.estimatedTokens) {
+                          console.warn(`[ContextBudget] 上下文超限，已按新上限重新裁剪并重试：≈${budgetedInfo.estimatedTokens}→${retry.estimatedTokens} tokens`);
+                          response = await originalFetch(resource, { ...(config as RequestInit), body: retry.body });
+                      }
+                  }
+              }
               const durationMs = Math.round(nowMs() - startedAt);
               const trackedApi = isTrackedApiUrl(urlStr);
 

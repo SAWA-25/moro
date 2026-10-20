@@ -3,7 +3,12 @@ import {
     AUX_CHAT_CONTEXT_BUDGET_ENABLED_KEY,
     MAIN_CHAT_CONTEXT_BUDGET_ENABLED_KEY,
     budgetChatMessages,
+    budgetChatRequestBody,
     estimateMessagesChars,
+    isContextOverflowError,
+    learnFromContextOverflow,
+    parseContextOverflowError,
+    resolveInputTokenBudget,
     isAuxContextBudgetEnabled,
     isMainContextBudgetEnabled,
     setAuxContextBudgetEnabled,
@@ -70,6 +75,55 @@ describe('contextBudget', () => {
         expect(result.messages).toBe(messages);
         expect(result.removedMessages).toBe(0);
         expect(result.afterChars).toBe(result.beforeChars);
+    });
+
+    it('trims oldest history by token budget, keeping system blocks and the latest turn', () => {
+        const messages = [
+            { role: 'system', content: 'core' },
+            ...Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `第${i}条${'很长的中文内容'.repeat(60)}` })),
+            { role: 'system', content: 'reminder' },
+            { role: 'user', content: 'latest question' },
+        ];
+        const result = budgetChatMessages(messages, { maxTokens: 3_000, protectedTail: 2, enabled: true });
+
+        expect(result.messages[0].content).toBe('core');
+        expect(result.messages.some(m => m.content === 'reminder')).toBe(true);
+        expect(result.messages[result.messages.length - 1].content).toBe('latest question');
+        expect(result.messages.some(m => String(m.content).startsWith('第0条'))).toBe(false);
+        expect(result.messages.some(m => String(m.content).startsWith('第39条'))).toBe(true);
+        expect(result.afterTokens).toBeLessThanOrEqual(3_000);
+    });
+
+    it('learns the real limit from a context overflow error and shrinks the next request', () => {
+        const storage = new Map<string, string>();
+        vi.stubGlobal('localStorage', {
+            getItem: (key: string) => storage.get(key) ?? null,
+            setItem: (key: string, value: string) => { storage.set(key, value); },
+            removeItem: (key: string) => { storage.delete(key); },
+        });
+        const err = "This model's maximum context length is 32768 tokens. However, you requested 50000 tokens (46000 in the messages, 4000 in the completion).";
+        expect(isContextOverflowError(err)).toBe(true);
+        expect(parseContextOverflowError(err)).toEqual({ limit: 32768, actual: 46000 });
+        expect(isContextOverflowError('Invalid API key')).toBe(false);
+
+        const before = resolveInputTokenBudget({ model: 'm', maxTokens: 4000 });
+        learnFromContextOverflow('m', err, 40_000);
+        const after = resolveInputTokenBudget({ model: 'm', maxTokens: 4000 });
+        expect(after).toBeLessThan(before);
+        expect(after).toBeLessThan(32768 - 4000);
+
+        const body = JSON.stringify({
+            model: 'm',
+            max_tokens: 4000,
+            messages: [
+                { role: 'system', content: 'core' },
+                ...Array.from({ length: 200 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: '字'.repeat(500) })),
+            ],
+        });
+        const budgeted = budgetChatRequestBody(body, true)!;
+        expect(budgeted.changed).toBe(true);
+        expect(budgeted.estimatedTokens).toBeLessThanOrEqual(after);
+        expect(JSON.parse(budgeted.body).messages[0].content).toBe('core');
     });
 
     it('keeps main API and aux API switches independent', () => {

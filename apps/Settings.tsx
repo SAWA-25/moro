@@ -30,6 +30,9 @@ import {
     isMainContextBudgetEnabled,
     setAuxContextBudgetEnabled,
     setMainContextBudgetEnabled,
+    getContextTokenLimit,
+    setContextTokenLimit,
+    clearLearnedModelContexts,
 } from '../utils/contextBudget';
 import {
     checkConfiguredAppUpdate,
@@ -427,6 +430,7 @@ const Settings: React.FC = () => {
     typeof apiConfig.temperature === 'number' ? apiConfig.temperature : 0.85
   );
   const [mainContextBudgetOn, setMainContextBudgetOn] = useState<boolean>(() => isMainContextBudgetEnabled());
+  const [contextTokenLimit, setContextTokenLimitState] = useState<number>(() => getContextTokenLimit());
   const [localMiniMaxKey, setLocalMiniMaxKey] = useState(apiConfig.minimaxApiKey || '');
   const [localMiniMaxGroupId, setLocalMiniMaxGroupId] = useState(apiConfig.minimaxGroupId || '');
   const [localMiniMaxRegion, setLocalMiniMaxRegion] = useState<'domestic' | 'overseas'>(
@@ -1827,6 +1831,23 @@ const Settings: React.FC = () => {
                     </div>
                     <InkSwitch on={mainContextBudgetOn} onChange={handleMainContextBudgetToggle} title="上下文防爆保护" />
                 </div>
+                {mainContextBudgetOn && (
+                    <div className="rounded-[16px] border border-[#e7e1d6] bg-[#fffdf8] px-3 py-3 space-y-1.5">
+                        <div className="text-[11px] font-black text-[#2f3437]">上下文上限 · tokens</div>
+                        <input
+                            type="number"
+                            min={4000}
+                            step={1000}
+                            value={contextTokenLimit}
+                            onChange={(e) => setContextTokenLimitState(parseInt(e.target.value, 10) || 0)}
+                            onBlur={() => { setContextTokenLimit(contextTokenLimit); setContextTokenLimitState(getContextTokenLimit()); clearLearnedModelContexts(); }}
+                            className={`${FIELD} font-mono`}
+                        />
+                        <p className="text-[10px] text-[#69716d] leading-relaxed">
+                            同酒馆的「上下文长度」：按模型窗口填（如 32000 / 128000 / 200000）。超出时自动丢最旧的聊天记录，人设、世界书和最近几轮对话保留。模型报「上下文过长」时会自动记住真实上限并重发。
+                        </p>
+                    </div>
+                )}
 
                 {/* 高级（流式 / 温度）— 默认折叠，灰色低调 */}
                 <div className="pt-1">

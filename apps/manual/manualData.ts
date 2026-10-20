@@ -85,6 +85,19 @@ export const MANUAL_UPDATE_NOTICE_DATE_PINNED_HEADLINES: Record<string, string> 
 
 export const MANUAL_UPDATE_NOTICES: ManualUpdateNotice[] = [
   {
+    id: '2026-10-20-context-token-budget',
+    date: '2026-10-20',
+    title: '不再动不动报「上下文过长」',
+    kind: 'fix',
+    summary: '聊天、群聊、主动消息和各 App 的 AI 请求，现在会像酒馆一样按 token 上限自动裁剪旧聊天记录，减少「上下文输入过大」报错。',
+    items: [
+      '文具盒 → 主 API 打开「上下文防爆保护」后，可以填「上下文上限 · tokens」，按你用的模型窗口填（比如 32000、128000），默认 128000。',
+      '超出时只丢最旧的聊天记录，人设、世界书、预设和最近几轮对话都会保留；更早的内容仍可通过记忆系统回想起来。',
+      '如果模型还是返回「上下文过长」，会自动读出它的真实上限、记住，并马上裁短后重发一次，之后同一个模型不会再撞同样的错。',
+      '关掉「上下文防爆保护」则完全按原样发送，和以前一致。',
+    ],
+  },
+  {
     id: '2026-07-23-moments-delete-all-posts',
     date: '2026-07-23',
     title: '此刻动态都能删了',
